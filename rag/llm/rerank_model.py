@@ -92,7 +92,7 @@ class DefaultRerank(Base):
 
 
 class JinaRerank(Base):
-    def __init__(self, key, model_name="jina-reranker-v1-base-en",
+    def __init__(self, key, model_name="jina-reranker-v2-base-multilingual",
                  base_url="https://api.jina.ai/v1/rerank"):
         self.base_url = "https://api.jina.ai/v1/rerank"
         self.headers = {
