@@ -32,6 +32,9 @@ from .crawler import Crawler, CrawlerParam
 from .invoke import Invoke, InvokeParam
 from .template import Template, TemplateParam
 
+# 邮件功能
+
+
 
 def component_class(class_name):
     m = importlib.import_module("agent.component")
