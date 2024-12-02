@@ -589,6 +589,8 @@ export default {
       teamMembers: '团队成员',
       joinedTeams: '加入的团队',
       sureDelete: '您确定要删除该成员吗？',
+      quit: '退出',
+      sureQuit: '确定退出加入的团队吗？',
     },
     message: {
       registered: '注册成功',
