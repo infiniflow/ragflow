@@ -92,7 +92,7 @@ class DefaultRerank(Base):
 
 
 class JinaRerank(Base):
-    def __init__(self, key, model_name="jina-reranker-v1-base-en",
+    def __init__(self, key, model_name="jina-reranker-v2-base-multilingual",
                  base_url="https://api.jina.ai/v1/rerank"):
         self.base_url = "https://api.jina.ai/v1/rerank"
         self.headers = {
@@ -157,6 +157,8 @@ class YoudaoRerank(DefaultRerank):
 class XInferenceRerank(Base):
     def __init__(self, key="xxxxxxx", model_name="", base_url=""):
         if base_url.find("/v1") == -1:
+            base_url = urljoin(base_url, "/v1/rerank")
+        if base_url.find("/rerank") == -1:
             base_url = urljoin(base_url, "/v1/rerank")
         self.model_name = model_name
         self.base_url = base_url
@@ -452,4 +454,5 @@ class QWenRerank(Base):
             for r in resp.output.results:
                 rank[r.index] = r.relevance_score
             return rank, resp.usage.total_tokens
-        return rank, 0
+        else:
+            raise ValueError(f"Error calling QWenRerank model {self.model_name}: {resp.status_code} - {resp.text}")

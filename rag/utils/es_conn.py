@@ -16,13 +16,15 @@ from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr,
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
 
+ATTEMPT_TIME = 2
+
 
 @singleton
 class ESConnection(DocStoreConnection):
     def __init__(self):
         self.info = {}
         logging.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
-        for _ in range(24):
+        for _ in range(ATTEMPT_TIME):
             try:
                 self.es = Elasticsearch(
                     settings.ES["hosts"].split(","),
@@ -83,6 +85,9 @@ class ESConnection(DocStoreConnection):
             logging.exception("ESConnection.createIndex error %s" % (indexName))
 
     def deleteIdx(self, indexName: str, knowledgebaseId: str):
+        if len(knowledgebaseId) > 0:
+            # The index need to be alive after any kb deletion since all kb under this tenant are in one index.
+            return
         try:
             self.es.indices.delete(index=indexName, allow_no_indices=True)
         except NotFoundError:
@@ -92,7 +97,7 @@ class ESConnection(DocStoreConnection):
 
     def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
         s = Index(indexName, self.es)
-        for i in range(3):
+        for i in range(ATTEMPT_TIME):
             try:
                 return s.exists()
             except Exception as e:
@@ -119,8 +124,14 @@ class ESConnection(DocStoreConnection):
         bqry = Q("bool", must=[])
         condition["kb_id"] = knowledgebaseIds
         for k, v in condition.items():
-            if not isinstance(k, str) or not v:
+            if k == "available_int":
+                if v == 0:
+                    bqry.filter.append(Q("range", available_int={"lt": 1}))
+                else:
+                    bqry.filter.append(
+                        Q("bool", must_not=Q("range", available_int={"lt": 1})))
                 continue
+            if not v: continue
             if isinstance(v, list):
                 bqry.filter.append(Q("terms", **{k: v}))
             elif isinstance(v, str) or isinstance(v, int):
@@ -140,13 +151,13 @@ class ESConnection(DocStoreConnection):
                 vector_similarity_weight = float(weights.split(",")[1])
         for m in matchExprs:
             if isinstance(m, MatchTextExpr):
-                minimum_should_match = "0%"
-                if "minimum_should_match" in m.extra_options:
-                    minimum_should_match = str(int(m.extra_options["minimum_should_match"] * 100)) + "%"
+                minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
+                if isinstance(minimum_should_match, float):
+                    minimum_should_match = str(int(minimum_should_match * 100)) + "%"
                 bqry.must.append(Q("query_string", fields=m.fields,
-                                type="best_fields", query=m.matching_text,
-                                minimum_should_match=minimum_should_match,
-                                boost=1))
+                                   type="best_fields", query=m.matching_text,
+                                   minimum_should_match=minimum_should_match,
+                                   boost=1))
                 bqry.boost = 1.0 - vector_similarity_weight
 
             elif isinstance(m, MatchDenseExpr):
@@ -180,7 +191,7 @@ class ESConnection(DocStoreConnection):
         q = s.to_dict()
         logging.debug(f"ESConnection.search {str(indexNames)} query: " + json.dumps(q))
 
-        for i in range(3):
+        for i in range(ATTEMPT_TIME):
             try:
                 res = self.es.search(index=indexNames,
                                      body=q,
@@ -201,17 +212,17 @@ class ESConnection(DocStoreConnection):
         raise Exception("ESConnection.search timeout.")
 
     def get(self, chunkId: str, indexName: str, knowledgebaseIds: list[str]) -> dict | None:
-        for i in range(3):
+        for i in range(ATTEMPT_TIME):
             try:
                 res = self.es.get(index=(indexName),
                                   id=chunkId, source=True, )
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
-                if not res.get("found"):
-                    return None
                 chunk = res["_source"]
                 chunk["id"] = chunkId
                 return chunk
+            except NotFoundError:
+                return None
             except Exception as e:
                 logging.exception(f"ESConnection.get({chunkId}) got exception")
                 if str(e).find("Timeout") > 0:
@@ -233,10 +244,11 @@ class ESConnection(DocStoreConnection):
             operations.append(d_copy)
 
         res = []
-        for _ in range(100):
+        for _ in range(ATTEMPT_TIME):
             try:
+                res = []
                 r = self.es.bulk(index=(indexName), operations=operations,
-                                 refresh=False, timeout="600s")
+                                 refresh=False, timeout="60s")
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 
@@ -246,8 +258,11 @@ class ESConnection(DocStoreConnection):
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
                 return res
             except Exception as e:
+                res.append(str(e))
                 logging.warning("ESConnection.insert got exception: " + str(e))
+                res = []
                 if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
+                    res.append(str(e))
                     time.sleep(3)
                     continue
         return res
@@ -258,7 +273,7 @@ class ESConnection(DocStoreConnection):
         if "id" in condition and isinstance(condition["id"], str):
             # update specific single document
             chunkId = condition["id"]
-            for i in range(3):
+            for i in range(ATTEMPT_TIME):
                 try:
                     self.es.update(index=indexName, id=chunkId, doc=doc)
                     return True
@@ -282,7 +297,7 @@ class ESConnection(DocStoreConnection):
                         f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
             scripts = []
             for k, v in newValue.items():
-                if not isinstance(k, str) or not v:
+                if (not isinstance(k, str) or not v) and k != "available_int":
                     continue
                 if isinstance(v, str):
                     scripts.append(f"ctx._source.{k} = '{v}'")
@@ -326,7 +341,7 @@ class ESConnection(DocStoreConnection):
                 else:
                     raise Exception("Condition value must be int, str or list.")
         logging.debug("ESConnection.delete query: " + json.dumps(qry.to_dict()))
-        for _ in range(10):
+        for _ in range(ATTEMPT_TIME):
             try:
                 res = self.es.delete_by_query(
                     index=indexName,
@@ -388,7 +403,7 @@ class ESConnection(DocStoreConnection):
             if not hlts:
                 continue
             txt = "...".join([a for a in list(hlts.items())[0][1]])
-            if not is_english(txt.split(" ")):
+            if not is_english(txt.split()):
                 ans[d["_id"]] = txt
                 continue
 
@@ -437,7 +452,7 @@ class ESConnection(DocStoreConnection):
             sql = sql.replace(p, r, 1)
         logging.debug(f"ESConnection.sql to es: {sql}")
 
-        for i in range(3):
+        for i in range(ATTEMPT_TIME):
             try:
                 res = self.es.sql.query(body={"query": sql, "fetch_size": fetch_size}, format=format,
                                         request_timeout="2s")

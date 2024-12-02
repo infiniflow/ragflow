@@ -7,6 +7,7 @@ import infinity
 from infinity.common import ConflictType, InfinityException, SortType
 from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
+from infinity.errors import ErrorCode
 from rag import settings
 from rag.utils import singleton
 import polars as pl
@@ -47,6 +48,17 @@ def equivalent_condition_to_str(condition: dict) -> str:
     return " AND ".join(cond)
 
 
+def concat_dataframes(df_list: list[pl.DataFrame], selectFields: list[str]) -> pl.DataFrame:
+    """
+    Concatenate multiple dataframes into one.
+    """
+    if df_list:
+        return pl.concat(df_list)
+    schema = dict()
+    for fieldnm in selectFields:
+        schema[fieldnm] = str
+    return pl.DataFrame(schema=schema)
+
 @singleton
 class InfinityConnection(DocStoreConnection):
     def __init__(self):
@@ -61,10 +73,13 @@ class InfinityConnection(DocStoreConnection):
             try:
                 connPool = ConnectionPool(infinity_uri)
                 inf_conn = connPool.get_conn()
-                _ = inf_conn.show_current_node()
+                res = inf_conn.show_current_node()
                 connPool.release_conn(inf_conn)
                 self.connPool = connPool
-                break
+                if res.error_code == ErrorCode.OK and res.server_status=="started":
+                    break
+                logging.warn(f"Infinity status: {res.server_status}. Waiting Infinity {infinity_uri} to be healthy.")
+                time.sleep(5)
             except Exception as e:
                 logging.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)
@@ -89,10 +104,9 @@ class InfinityConnection(DocStoreConnection):
         inf_conn = self.connPool.get_conn()
         res = inf_conn.show_current_node()
         self.connPool.release_conn(inf_conn)
-        color = "green" if res.error_code == 0 else "red"
         res2 = {
             "type": "infinity",
-            "status": f"{res.role} {color}",
+            "status": "green" if res.error_code == 0 and res.server_status == "started" else "red",
             "error": res.error_msg,
         }
         return res2
@@ -217,15 +231,10 @@ class InfinityConnection(DocStoreConnection):
                 if len(filter_cond) != 0:
                     filter_fulltext = f"({filter_cond}) AND {filter_fulltext}"
                 logging.debug(f"filter_fulltext: {filter_fulltext}")
-                minimum_should_match = "0%"
-                if "minimum_should_match" in matchExpr.extra_options:
-                    minimum_should_match = (
-                            str(int(matchExpr.extra_options["minimum_should_match"] * 100))
-                            + "%"
-                    )
-                    matchExpr.extra_options.update(
-                        {"minimum_should_match": minimum_should_match}
-                    )
+                minimum_should_match = matchExpr.extra_options.get("minimum_should_match", 0.0)
+                if isinstance(minimum_should_match, float):
+                    str_minimum_should_match = str(int(minimum_should_match * 100)) + "%"
+                    matchExpr.extra_options["minimum_should_match"] = str_minimum_should_match
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
@@ -286,7 +295,7 @@ class InfinityConnection(DocStoreConnection):
                 kb_res = builder.to_pl()
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
-        res = pl.concat(df_list)
+        res = concat_dataframes(df_list, selectFields)
         logging.debug("INFINITY search tables: " + str(table_list))
         return res
 
@@ -301,9 +310,11 @@ class InfinityConnection(DocStoreConnection):
             table_name = f"{indexName}_{knowledgebaseId}"
             table_instance = db_instance.get_table(table_name)
             kb_res = table_instance.output(["*"]).filter(f"id = '{chunkId}'").to_pl()
-            df_list.append(kb_res)
+            if len(kb_res) != 0 and kb_res.shape[0] > 0:
+                df_list.append(kb_res)
+
         self.connPool.release_conn(inf_conn)
-        res = pl.concat(df_list)
+        res = concat_dataframes(df_list, ["id"])
         res_fields = self.getFields(res, res.columns)
         return res_fields.get(chunkId, None)
 
@@ -317,7 +328,7 @@ class InfinityConnection(DocStoreConnection):
             table_instance = db_instance.get_table(table_name)
         except InfinityException as e:
             # src/common/status.cppm, kTableNotExist = 3022
-            if e.error_code != 3022:
+            if e.error_code != ErrorCode.TABLE_NOT_EXIST:
                 raise
             vector_size = 0
             patt = re.compile(r"q_(?P<vector_size>\d+)_vec")
@@ -337,6 +348,9 @@ class InfinityConnection(DocStoreConnection):
             for k, v in d.items():
                 if k.endswith("_kwd") and isinstance(v, list):
                     d[k] = " ".join(v)
+                if k == 'kb_id':
+                    if isinstance(d[k], list):
+                        d[k] = d[k][0] # since d[k] is a list, but we need a str
         ids = ["'{}'".format(d["id"]) for d in documents]
         str_ids = ", ".join(ids)
         str_filter = f"id IN ({str_ids})"
@@ -410,7 +424,7 @@ class InfinityConnection(DocStoreConnection):
                     v = list(v)
                 elif fieldnm == "important_kwd":
                     assert isinstance(v, str)
-                    v = v.split(" ")
+                    v = v.split()
                 else:
                     if not isinstance(v, str):
                         v = str(v)

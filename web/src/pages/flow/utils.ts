@@ -119,6 +119,7 @@ const buildOperatorParams = (operatorName: string) =>
 export const buildDslComponentsByGraph = (
   nodes: Node<NodeData>[],
   edges: Edge[],
+  oldDslComponents: DSLComponents,
 ): DSLComponents => {
   const components: DSLComponents = {};
 
@@ -129,6 +130,7 @@ export const buildDslComponentsByGraph = (
       const operatorName = x.data.label;
       components[id] = {
         obj: {
+          ...(oldDslComponents[id]?.obj ?? {}),
           component_name: operatorName,
           params:
             buildOperatorParams(operatorName)(

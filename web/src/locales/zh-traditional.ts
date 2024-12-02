@@ -75,6 +75,7 @@ export default {
       namePlaceholder: '請輸入名稱',
       doc: '文件',
       searchKnowledgePlaceholder: '搜索',
+      noMoreData: 'It is all, nothing more',
     },
     knowledgeDetails: {
       dataset: '數據集',
@@ -152,6 +153,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K塊將被送入Rerank型號。`,
       delimiter: `分段標識符`,
+      delimiterTip:
+        '支援多字元作為分隔符，多字元分隔符用`包裹。如配置成這樣：\n`##`;那麼就會用換行，兩個#以及分號先對文字進行分割，然後按照「 token number」大小進行拼裝。',
       html4excel: '表格轉HTML',
       html4excelTip: `Excel 是否會被解析為 HTML 表格。如果為 FALSE，Excel 中的每一行都會形成一個區塊。`,
       autoKeywords: '自動關鍵字',
@@ -295,7 +298,7 @@ export default {
       search: '搜尋',
       all: '所有',
       enabled: '啟用',
-      disabled: '禁用的',
+      disabled: '禁用',
       keyword: '關鍵詞',
       function: '函數',
       chunkMessage: '請輸入值！',
@@ -364,8 +367,8 @@ export default {
       topPMessage: 'Top P 是必填項',
       topPTip:
         '該參數也稱為“核心採樣”，它設置一個閾值來選擇較小的單詞集進行採樣。它專注於最可能的單詞，剔除不太可能的單詞。',
-      presencePenalty: '出席處罰',
-      presencePenaltyMessage: '出席處罰是必填項',
+      presencePenalty: '存在處罰',
+      presencePenaltyMessage: '存在處罰是必填項',
       presencePenaltyTip:
         '這會通過懲罰對話中已經出現的單詞來阻止模型重複相同的信息。',
       frequencyPenalty: '頻率懲罰',
@@ -565,6 +568,7 @@ export default {
       refuse: '拒絕',
       teamMembers: '團隊成員',
       joinedTeams: '加入的團隊',
+      sureDelete: '您確定刪除該成員嗎？',
     },
     message: {
       registered: '註冊成功',
@@ -997,6 +1001,8 @@ export default {
       optional: '可選項',
       pasteFileLink: '貼上文件連結',
       testRun: '試運行',
+      template: '模板轉換',
+      templateDescription: '此元件用於排版各種元件的輸出。 ',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

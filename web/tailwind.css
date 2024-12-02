@@ -39,6 +39,14 @@
     --background-inverse-standard-foreground: rgb(92, 81, 81);
 
     --button-blue-text: rgb(22, 119, 255);
+
+    --colors-outline-sentiment-primary: rgba(127, 105, 255, 1);
+    --colors-outline-neutral-strong: rgba(112, 107, 107, 0.15);
+
+    --colors-text-core-standard: rgba(127, 105, 255, 1);
+    --colors-text-neutral-strong: rgb(130, 121, 121);
+    --colors-text-neutral-standard: rgba(230, 227, 246, 1);
+    --colors-text-functional-danger: rgba(255, 81, 81, 1);
   }
 
   .dark {
@@ -108,6 +116,14 @@
     --colors-background-neutral-standard: rgba(11, 10, 18, 1);
     --colors-background-neutral-strong: rgba(29, 26, 44, 1);
     --colors-background-neutral-weak: rgba(17, 16, 23, 1);
+
+    --colors-outline-sentiment-primary: rgba(146, 118, 255, 1);
+    --colors-outline-neutral-strong: rgba(255, 255, 255, 0.15);
+
+    --colors-text-core-standard: rgba(137, 126, 255, 1);
+    --colors-text-neutral-strong: rgba(255, 255, 255, 1);
+    --colors-text-neutral-standard: rgba(230, 227, 246, 1);
+    --colors-text-functional-danger: rgba(255, 81, 81, 1);
   }
 }
 

@@ -1,8 +1,8 @@
 # base stage
 FROM ubuntu:22.04 AS base
 USER root
+SHELL ["/bin/bash", "-c"]
 
-ARG ARCH=amd64
 ENV LIGHTEN=0
 
 WORKDIR /ragflow
@@ -18,7 +18,7 @@ RUN sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' 
 
 RUN --mount=type=cache,id=ragflow_base_apt,target=/var/cache/apt,sharing=locked \
     apt update && DEBIAN_FRONTEND=noninteractive apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus default-jdk python3-pip pipx \
-    libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget \
+    libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget git \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && pip3 config set global.trusted-host "pypi.tuna.tsinghua.edu.cn mirrors.pku.edu.cn" && pip3 config set global.extra-index-url "https://mirrors.pku.edu.cn/pypi/web/simple" \
@@ -28,8 +28,11 @@ RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple &&
 # https://forum.aspose.com/t/aspose-slides-for-net-no-usable-version-of-libssl-found-with-linux-server/271344/13
 # aspose-slides on linux/arm64 is unavailable
 RUN --mount=type=bind,source=libssl1.1_1.1.1f-1ubuntu2_amd64.deb,target=/root/libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
-    if [ "${ARCH}" = "amd64" ]; then \
+    --mount=type=bind,source=libssl1.1_1.1.1f-1ubuntu2_arm64.deb,target=/root/libssl1.1_1.1.1f-1ubuntu2_arm64.deb \
+    if [ "$(uname -m)" = "x86_64" ]; then \
         dpkg -i /root/libssl1.1_1.1.1f-1ubuntu2_amd64.deb; \
+    elif [ "$(uname -m)" = "aarch64" ]; then \
+        dpkg -i /root/libssl1.1_1.1.1f-1ubuntu2_arm64.deb; \
     fi
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
@@ -56,20 +59,39 @@ USER root
 
 WORKDIR /ragflow
 
+# install dependencies from poetry.lock file
+COPY pyproject.toml poetry.toml poetry.lock ./
+
+RUN --mount=type=cache,id=ragflow_builder_poetry,target=/root/.cache/pypoetry,sharing=locked \
+    if [ "$LIGHTEN" == "1" ]; then \
+        poetry install --no-root; \
+    else \
+        poetry install --no-root --with=full; \
+    fi
+
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_builder_npm,target=/root/.npm,sharing=locked \
     cd web && npm install --force && npm run build
 
-# install dependencies from poetry.lock file
-COPY pyproject.toml poetry.toml poetry.lock ./
+COPY .git /ragflow/.git
 
-RUN --mount=type=cache,id=ragflow_builder_poetry,target=/root/.cache/pypoetry,sharing=locked \
-    if [ "$LIGHTEN" -eq 0 ]; then \
-        poetry install --no-root --with=full; \
+RUN current_commit=$(git rev-parse --short HEAD); \
+    last_tag=$(git describe --tags --abbrev=0); \
+    commit_count=$(git rev-list --count "$last_tag..HEAD"); \
+    version_info=""; \
+    if [ "$commit_count" -eq 0 ]; then \
+        version_info=$last_tag; \
     else \
-        poetry install --no-root; \
-    fi
+        version_info="$current_commit($last_tag~$commit_count)"; \
+    fi; \
+    if [ "$LIGHTEN" == "1" ]; then \
+        version_info="$version_info slim"; \
+    else \
+        version_info="$version_info full"; \
+    fi; \
+    echo "RAGFlow version: $version_info"; \
+    echo $version_info > /ragflow/VERSION
 
 # production stage
 FROM base AS production
@@ -77,20 +99,16 @@ USER root
 
 WORKDIR /ragflow
 
+# Copy Python environment and packages
+ENV VIRTUAL_ENV=/ragflow/.venv
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+
 # Install python packages' dependencies
 # cv2 requires libGL.so.1
 RUN --mount=type=cache,id=ragflow_production_apt,target=/var/cache/apt,sharing=locked \
     apt update && apt install -y --no-install-recommends nginx libgl1 vim less && \
     rm -rf /var/lib/apt/lists/*
-
-COPY web web
-COPY api api
-COPY conf conf
-COPY deepdoc deepdoc
-COPY rag rag
-COPY agent agent
-COPY graphrag graphrag
-COPY pyproject.toml poetry.toml poetry.lock ./
 
 # Copy models downloaded via download_deps.py
 RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
@@ -122,25 +140,31 @@ COPY cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 # Add dependencies of selenium
 RUN --mount=type=bind,source=chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
     unzip /chrome-linux64.zip && \
-    mv chrome-linux64 /opt/chrome/ && \
+    mv chrome-linux64 /opt/chrome && \
     ln -s /opt/chrome/chrome /usr/local/bin/
 RUN --mount=type=bind,source=chromedriver-linux64-121-0-6167-85,target=/chromedriver-linux64.zip \
     unzip -j /chromedriver-linux64.zip chromedriver-linux64/chromedriver && \
     mv chromedriver /usr/local/bin/ && \
     rm -f /usr/bin/google-chrome
 
-# Copy compiled web pages
-COPY --from=builder /ragflow/web/dist /ragflow/web/dist
-
-# Copy Python environment and packages
-ENV VIRTUAL_ENV=/ragflow/.venv
-COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
-ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
-
 ENV PYTHONPATH=/ragflow/
+
+COPY web web
+COPY api api
+COPY conf conf
+COPY deepdoc deepdoc
+COPY rag rag
+COPY agent agent
+COPY graphrag graphrag
+COPY pyproject.toml poetry.toml poetry.lock ./
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
+
+# Copy compiled web pages
+COPY --from=builder /ragflow/web/dist /ragflow/web/dist
+
+COPY --from=builder /ragflow/VERSION /ragflow/VERSION
 
 ENTRYPOINT ["./entrypoint.sh"]

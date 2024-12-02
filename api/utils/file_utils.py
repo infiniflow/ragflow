@@ -146,7 +146,7 @@ def rewrite_yaml_conf(conf_path, config):
 
 
 def rewrite_json_file(filepath, json_data):
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding='utf-8') as f:
         json.dump(json_data, f, indent=4, separators=(",", ": "))
     f.close()
 
@@ -170,29 +170,52 @@ def filename_type(filename):
     return FileType.OTHER.value
 
 def thumbnail_img(filename, blob):
+    """
+    MySQL LongText max length is 65535
+    """
     filename = filename.lower()
     if re.match(r".*\.pdf$", filename):
         pdf = pdfplumber.open(BytesIO(blob))
         buffered = BytesIO()
-        pdf.pages[0].to_image(resolution=32).annotated.save(buffered, format="png")
-        return buffered.getvalue()
+        resolution = 32
+        img = None
+        for _ in range(10):
+            # https://github.com/jsvine/pdfplumber?tab=readme-ov-file#creating-a-pageimage-with-to_image
+            pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
+            img = buffered.getvalue()
+            if len(img) >= 64000 and resolution >= 2:
+                resolution = resolution / 2
+                buffered = BytesIO()
+            else:
+                break
+        return img
 
-    if re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):
+    elif re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):
         image = Image.open(BytesIO(blob))
         image.thumbnail((30, 30))
         buffered = BytesIO()
         image.save(buffered, format="png")
         return buffered.getvalue()
 
-    if re.match(r".*\.(ppt|pptx)$", filename):
+    elif re.match(r".*\.(ppt|pptx)$", filename):
         import aspose.slides as slides
         import aspose.pydrawing as drawing
         try:
             with slides.Presentation(BytesIO(blob)) as presentation:
                 buffered = BytesIO()
-                presentation.slides[0].get_thumbnail(0.03, 0.03).save(
-                    buffered, drawing.imaging.ImageFormat.png)
-                return buffered.getvalue()
+                scale = 0.03
+                img = None
+                for _ in range(10):
+                    # https://reference.aspose.com/slides/python-net/aspose.slides/slide/get_thumbnail/#float-float
+                    presentation.slides[0].get_thumbnail(scale, scale).save(
+                        buffered, drawing.imaging.ImageFormat.png)
+                    img = buffered.getvalue()
+                    if len(img) >= 64000:
+                        scale = scale / 2.0
+                        buffered = BytesIO()
+                    else:
+                        break
+                return img
         except Exception:
             pass
     return None

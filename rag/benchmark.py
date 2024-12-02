@@ -237,8 +237,8 @@ class Benchmark:
                 scores = sorted(scores, key=lambda kk: kk[1])
                 for score in scores[:10]:
                     f.write('- text: ' + str(texts[score[0]]) + '\t qrel: ' + str(score[1]) + '\n')
-        json.dump(qrels, open(os.path.join(file_path, dataset + '.qrels.json'), "w+"), indent=2)
-        json.dump(run, open(os.path.join(file_path, dataset + '.run.json'), "w+"), indent=2)
+        json.dump(qrels, open(os.path.join(file_path, dataset + '.qrels.json'), "w+", encoding='utf-8'), indent=2)
+        json.dump(run, open(os.path.join(file_path, dataset + '.run.json'), "w+", encoding='utf-8'), indent=2)
         print(os.path.join(file_path, dataset + '_result.md'), 'Saved!')
 
     def __call__(self, dataset, file_path, miracl_corpus=''):

@@ -5,7 +5,7 @@ slug: /http_api_reference
 
 # HTTP API Reference
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/develop/acquire_ragflow_api_key.md).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 ---
 
@@ -2028,8 +2028,8 @@ curl --request POST \
   The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`  
   Indicates whether to output responses in a streaming way:
-  - `true`: Enable streaming.
-  - `false`: Disable streaming (default).
+  - `true`: Enable streaming (default).
+  - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
   The ID of session. If it is not provided, a new session will be generated.
 
@@ -2120,7 +2120,7 @@ Failure:
 
 ---
 
-## Create session with an agent
+## Create session with agent
 
 **POST** `/api/v1/agents/{agent_id}/sessions`
 
@@ -2239,8 +2239,8 @@ curl --request POST \
   The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`  
   Indicates whether to output responses in a streaming way:  
-  - `true`: Enable streaming.
-  - `false`: Disable streaming (default).
+  - `true`: Enable streaming (default).
+  - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
   The ID of the session. If it is not provided, a new session will be generated.
 

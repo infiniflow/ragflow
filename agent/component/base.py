@@ -385,10 +385,14 @@ class ComponentBase(ABC):
         """
         return """{{
             "component_name": "{}",
-            "params": {}
+            "params": {},
+            "output": {},
+            "inputs": {}
         }}""".format(self.component_name,
-                     self._param
-                     )
+                     self._param,
+                     json.dumps(json.loads(str(self._param)).get("output", {}), ensure_ascii=False),
+                     json.dumps(json.loads(str(self._param)).get("inputs", []), ensure_ascii=False)
+        )
 
     def __init__(self, canvas, id, param: ComponentParamBase):
         self._canvas = canvas

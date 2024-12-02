@@ -54,7 +54,7 @@ class FulltextQueryer:
     def rmWWW(txt):
         patts = [
             (
-                r"是*(什么样的|哪家|一下|那家|请问|啥样|咋样了|什么时候|何时|何地|何人|是否|是不是|多少|哪里|怎么|哪儿|怎么样|如何|哪些|是啥|啥是|啊|吗|呢|吧|咋|什么|有没有|呀)是*",
+                r"是*(什么样的|哪家|一下|那家|请问|啥样|咋样了|什么时候|何时|何地|何人|是否|是不是|多少|哪里|怎么|哪儿|怎么样|如何|哪些|是啥|啥是|啊|吗|呢|吧|咋|什么|有没有|呀|谁|哪位|哪个)是*",
                 "",
             ),
             (r"(^| )(what|who|how|which|where|why)('re|'s)? ", " "),
@@ -74,7 +74,7 @@ class FulltextQueryer:
 
         if not self.isChinese(txt):
             txt = FulltextQueryer.rmWWW(txt)
-            tks = rag_tokenizer.tokenize(txt).split(" ")
+            tks = rag_tokenizer.tokenize(txt).split()
             keywords = [t for t in tks if t]
             tks_w = self.tw.weights(tks, preprocess=False)
             tks_w = [(re.sub(r"[ \\\"'^]", "", tk), w) for tk, w in tks_w]
@@ -83,7 +83,7 @@ class FulltextQueryer:
             syns = []
             for tk, w in tks_w:
                 syn = self.syn.lookup(tk)
-                syn = rag_tokenizer.tokenize(" ".join(syn)).split(" ")
+                syn = rag_tokenizer.tokenize(" ".join(syn)).split()
                 keywords.extend(syn)
                 syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn]
                 syns.append(" ".join(syn))
@@ -114,7 +114,7 @@ class FulltextQueryer:
 
         txt = FulltextQueryer.rmWWW(txt)
         qs, keywords = [], []
-        for tt in self.tw.split(txt)[:256]:  # .split(" "):
+        for tt in self.tw.split(txt)[:256]:  # .split():
             if not tt:
                 continue
             keywords.append(tt)
@@ -125,7 +125,7 @@ class FulltextQueryer:
             tms = []
             for tk, w in sorted(twts, key=lambda x: x[1] * -1):
                 sm = (
-                    rag_tokenizer.fine_grained_tokenize(tk).split(" ")
+                    rag_tokenizer.fine_grained_tokenize(tk).split()
                     if need_fine_grained_tokenize(tk)
                     else []
                 )
@@ -194,7 +194,7 @@ class FulltextQueryer:
         def toDict(tks):
             d = {}
             if isinstance(tks, str):
-                tks = tks.split(" ")
+                tks = tks.split()
             for t, c in self.tw.weights(tks, preprocess=False):
                 if t not in d:
                     d[t] = 0

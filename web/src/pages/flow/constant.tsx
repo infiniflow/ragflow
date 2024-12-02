@@ -19,6 +19,7 @@ import { ReactComponent as NoteIcon } from '@/assets/svg/note.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
 import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
+import { ReactComponent as TemplateIcon } from '@/assets/svg/template.svg';
 import { ReactComponent as TuShareIcon } from '@/assets/svg/tushare.svg';
 import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
@@ -85,6 +86,7 @@ export enum Operator {
   Note = 'Note',
   Crawler = 'Crawler',
   Invoke = 'Invoke',
+  Template = 'Template',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -124,6 +126,7 @@ export const operatorIconMap = {
   [Operator.Note]: NoteIcon,
   [Operator.Crawler]: CrawlerIcon,
   [Operator.Invoke]: InvokeIcon,
+  [Operator.Template]: TemplateIcon,
 };
 
 export const operatorMap: Record<
@@ -253,6 +256,9 @@ export const operatorMap: Record<
   [Operator.Invoke]: {
     backgroundColor: '#dee0e2',
   },
+  [Operator.Template]: {
+    backgroundColor: '#dee0e2',
+  },
 };
 
 export const componentMenuList = [
@@ -285,6 +291,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Concentrator,
+  },
+  {
+    name: Operator.Template,
   },
   {
     name: Operator.Note,
@@ -446,7 +455,7 @@ export const initialArXivValues = {
 
 export const initialGoogleValues = {
   top_n: 10,
-  api_key: 'Xxx(get from https://serpapi.com/manage-api-key)',
+  api_key: 'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
   country: 'cn',
   language: 'en',
   ...initialQueryBaseValues,
@@ -456,7 +465,7 @@ export const initialBingValues = {
   top_n: 10,
   channel: 'Webpages',
   api_key:
-    '"YOUR_ACCESS_KEY"(get from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)',
+    'YOUR_API_KEY (obtained from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)',
   country: 'CH',
   language: 'en',
   ...initialQueryBaseValues,
@@ -566,6 +575,11 @@ export const initialInvokeValues = {
   clean_html: false,
 };
 
+export const initialTemplateValues = {
+  content: '',
+  parameters: [],
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -645,6 +659,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Crawler]: [Operator.Begin],
   [Operator.Note]: [],
   [Operator.Invoke]: [Operator.Begin],
+  [Operator.Template]: [Operator.Begin, Operator.Relevant],
 };
 
 export const NodeMap = {
@@ -680,6 +695,7 @@ export const NodeMap = {
   [Operator.Note]: 'noteNode',
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'invokeNode',
+  [Operator.Template]: 'templateNode',
 };
 
 export const LanguageOptions = [

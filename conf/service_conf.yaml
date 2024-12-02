@@ -17,6 +17,9 @@ es:
   hosts: 'http://es01:1200'
   username: 'elastic'
   password: 'infini_rag_flow'
+infinity:
+  uri: 'infinity:23817'
+  db_name: 'default_db'
 redis:
   db: 1
   password: 'infini_rag_flow' 

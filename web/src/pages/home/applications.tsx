@@ -1,6 +1,8 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Segmented, SegmentedValue } from '@/components/ui/segmented ';
 import { ChevronRight, Cpu, MessageSquare, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 const applications = [
   {
@@ -34,24 +36,42 @@ const applications = [
 ];
 
 export function Applications() {
+  const [val, setVal] = useState('all');
+  const options = useMemo(() => {
+    return [
+      {
+        label: 'All',
+        value: 'all',
+      },
+      {
+        label: 'Chat',
+        value: 'chat',
+      },
+      {
+        label: 'Search',
+        value: 'search',
+      },
+      {
+        label: 'Agent',
+        value: 'agent',
+      },
+    ];
+  }, []);
+
+  const handleChange = (path: SegmentedValue) => {
+    setVal(path as string);
+  };
+
   return (
     <section className="mt-12">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Applications</h2>
-        <div className="flex bg-colors-background-inverse-standard rounded-lg p-1">
-          <Button variant="default" size="sm">
-            All
-          </Button>
-          <Button variant="ghost" size="sm">
-            Chat
-          </Button>
-          <Button variant="ghost" size="sm">
-            Search
-          </Button>
-          <Button variant="ghost" size="sm">
-            Agents
-          </Button>
-        </div>
+        <Segmented
+          options={options}
+          value={val}
+          onChange={handleChange}
+          className="bg-colors-background-inverse-standard"
+        ></Segmented>
       </div>
       <div className="grid grid-cols-4 gap-6">
         {[...Array(12)].map((_, i) => {

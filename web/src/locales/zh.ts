@@ -75,6 +75,7 @@ export default {
       namePlaceholder: '请输入名称',
       doc: '文档',
       searchKnowledgePlaceholder: '搜索',
+      noMoreData: '没有更多数据了',
     },
     knowledgeDetails: {
       dataset: '数据集',
@@ -153,6 +154,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K块将被送入Rerank型号。`,
       delimiter: `分段标识符`,
+      delimiterTip:
+        '支持多字符作为分隔符，多字符分隔符用`包裹。如配置成这样：\n`##`;那么就会用换行，两个#以及分号先对文本进行分割，然后按照“ token number”大小进行拼装。',
       html4excel: '表格转HTML',
       html4excelTip: `Excel 是否将被解析为 HTML 表。如果为 FALSE，Excel 中的每一行都将形成一个块。`,
       autoKeywords: '自动关键词',
@@ -312,7 +315,7 @@ export default {
       search: '搜索',
       all: '所有',
       enabled: '启用',
-      disabled: '禁用的',
+      disabled: '禁用',
       keyword: '关键词',
       function: '函数',
       chunkMessage: '请输入值！',
@@ -381,8 +384,8 @@ export default {
       topPMessage: 'Top P 是必填项',
       topPTip:
         '该参数也称为“核心采样”，它设置一个阈值来选择较小的单词集进行采样。 它专注于最可能的单词，剔除不太可能的单词。',
-      presencePenalty: '出席处罚',
-      presencePenaltyMessage: '出席处罚是必填项',
+      presencePenalty: '存在处罚',
+      presencePenaltyMessage: '存在处罚是必填项',
       presencePenaltyTip:
         '这会通过惩罚对话中已经出现的单词来阻止模型重复相同的信息。',
       frequencyPenalty: '频率惩罚',
@@ -437,6 +440,7 @@ export default {
       multiTurnTip:
         '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
       howUseId: '如何使用聊天ID？',
+      description: '助理描述',
     },
     setting: {
       profile: '概要',
@@ -584,6 +588,7 @@ export default {
       refuse: '拒绝',
       teamMembers: '团队成员',
       joinedTeams: '加入的团队',
+      sureDelete: '您确定要删除该成员吗？',
     },
     message: {
       registered: '注册成功',
@@ -1017,6 +1022,8 @@ export default {
       optional: '可选项',
       pasteFileLink: '粘贴文件链接',
       testRun: '试运行',
+      template: '模板转换',
+      templateDescription: '该组件用于排版各种组件的输出。',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -252,7 +252,7 @@ def feishu_callback():
     if res["code"] != 0:
         return redirect("/?error=%s" % res["message"])
 
-    if "contact:user.email:readonly" not in res["data"]["scope"].split(" "):
+    if "contact:user.email:readonly" not in res["data"]["scope"].split():
         return redirect("/?error=contact:user.email:readonly not in scope")
     session["access_token"] = res["data"]["access_token"]
     session["access_token_from"] = "feishu"
@@ -518,6 +518,7 @@ def user_register(user_id, user):
                 "model_type": llm.model_type,
                 "api_key": settings.API_KEY,
                 "api_base": settings.LLM_BASE_URL,
+                "max_tokens": llm.max_tokens if llm.max_tokens else 8192
             }
         )
 

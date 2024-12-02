@@ -33,11 +33,12 @@ from rag.utils import num_tokens_from_string, truncate
 import google.generativeai as genai 
 import json
 
+
 class Base(ABC):
     def __init__(self, key, model_name):
         pass
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         raise NotImplementedError("Please implement encode method!")
 
     def encode_queries(self, text: str):
@@ -77,7 +78,7 @@ class DefaultEmbedding(Base):
                                                             use_fp16=torch.cuda.is_available())
         self._model = DefaultEmbedding._model
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         texts = [truncate(t, 2048) for t in texts]
         token_count = 0
         for t in texts:
@@ -100,7 +101,7 @@ class OpenAIEmbed(Base):
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         texts = [truncate(t, 8191) for t in texts]
         res = self.client.embeddings.create(input=texts,
                                             model=self.model_name)
@@ -122,7 +123,7 @@ class LocalAIEmbed(Base):
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         res = self.client.embeddings.create(input=texts, model=self.model_name)
         return (
             np.array([d.embedding for d in res.data]),
@@ -199,7 +200,7 @@ class ZhipuEmbed(Base):
         self.client = ZhipuAI(api_key=key)
         self.model_name = model_name
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         arr = []
         tks_num = 0
         for txt in texts:
@@ -220,7 +221,7 @@ class OllamaEmbed(Base):
         self.client = Client(host=kwargs["base_url"])
         self.model_name = model_name
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         arr = []
         tks_num = 0
         for txt in texts:
@@ -251,7 +252,7 @@ class FastEmbed(Base):
             from fastembed import TextEmbedding
             self._model = TextEmbedding(model_name, cache_dir, threads, **kwargs)
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         # Using the internal tokenizer to encode the texts and get the total
         # number of tokens
         encodings = self._model.model.tokenizer.encode_batch(texts)
@@ -277,7 +278,7 @@ class XinferenceEmbed(Base):
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         res = self.client.embeddings.create(input=texts,
                                             model=self.model_name)
         return np.array([d.embedding for d in res.data]
@@ -321,7 +322,7 @@ class YoudaoEmbed(Base):
 
 
 class JinaEmbed(Base):
-    def __init__(self, key, model_name="jina-embeddings-v2-base-zh",
+    def __init__(self, key, model_name="jina-embeddings-v3",
                  base_url="https://api.jina.ai/v1/embeddings"):
 
         self.base_url = "https://api.jina.ai/v1/embeddings"
@@ -393,7 +394,7 @@ class MistralEmbed(Base):
         self.client = MistralClient(api_key=key)
         self.model_name = model_name
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         texts = [truncate(t, 8196) for t in texts]
         res = self.client.embeddings(input=texts,
                                             model=self.model_name)
@@ -417,7 +418,7 @@ class BedrockEmbed(Base):
         self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
                                    aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         texts = [truncate(t, 8196) for t in texts]
         embeddings = []
         token_count = 0
@@ -455,7 +456,7 @@ class GeminiEmbed(Base):
         genai.configure(api_key=key)
         self.model_name = 'models/' + model_name
         
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         texts = [truncate(t, 2048) for t in texts]
         token_count = sum(num_tokens_from_string(text) for text in texts)
         result = genai.embed_content(
@@ -540,7 +541,7 @@ class CoHereEmbed(Base):
         self.client = Client(api_key=key)
         self.model_name = model_name
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         res = self.client.embed(
             texts=texts,
             model=self.model_name,
@@ -598,13 +599,15 @@ class SILICONFLOWEmbed(Base):
         self.base_url = base_url
         self.model_name = model_name
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         payload = {
             "model": self.model_name,
             "input": texts,
             "encoding_format": "float",
         }
         res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        if "data" not in res or not isinstance(res["data"], list) or len(res["data"])!= len(texts):
+            raise ValueError(f"SILICONFLOWEmbed.encode got invalid response from {self.base_url}")
         return (
             np.array([d["embedding"] for d in res["data"]]),
             res["usage"]["total_tokens"],
@@ -617,6 +620,8 @@ class SILICONFLOWEmbed(Base):
             "encoding_format": "float",
         }
         res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        if "data" not in res or not isinstance(res["data"], list) or len(res["data"])!= 1:
+            raise ValueError(f"SILICONFLOWEmbed.encode_queries got invalid response from {self.base_url}")
         return np.array(res["data"][0]["embedding"]), res["usage"]["total_tokens"]
 
 
@@ -627,7 +632,7 @@ class ReplicateEmbed(Base):
         self.model_name = model_name
         self.client = Client(api_token=key)
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         res = self.client.run(self.model_name, input={"texts": json.dumps(texts)})
         return np.array(res), sum([num_tokens_from_string(text) for text in texts])
 
@@ -646,7 +651,7 @@ class BaiduYiyanEmbed(Base):
         self.client = qianfan.Embedding(ak=ak, sk=sk)
         self.model_name = model_name
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         res = self.client.do(model=self.model_name, texts=texts).body
         return (
             np.array([r["embedding"] for r in res["data"]]),
@@ -668,7 +673,7 @@ class VoyageEmbed(Base):
         self.client = voyageai.Client(api_key=key)
         self.model_name = model_name
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         res = self.client.embed(
             texts=texts, model=self.model_name, input_type="document"
         )
@@ -690,7 +695,7 @@ class HuggingFaceEmbed(Base):
         self.model_name = model_name
         self.base_url = base_url or "http://127.0.0.1:8080"
 
-    def encode(self, texts: list, batch_size=32):
+    def encode(self, texts: list, batch_size=16):
         embeddings = []
         for text in texts:
             response = requests.post(
@@ -717,3 +722,10 @@ class HuggingFaceEmbed(Base):
         else:
             raise Exception(f"Error: {response.status_code} - {response.text}")
 
+class VolcEngineEmbed(OpenAIEmbed):
+    def __init__(self, key, model_name, base_url="https://ark.cn-beijing.volces.com/api/v3"):
+        if not base_url:
+            base_url = "https://ark.cn-beijing.volces.com/api/v3"
+        ark_api_key = json.loads(key).get('ark_api_key', '')
+        model_name = json.loads(key).get('ep_id', '') + json.loads(key).get('endpoint_id', '')
+        super().__init__(ark_api_key,model_name,base_url)

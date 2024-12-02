@@ -9,7 +9,7 @@ const datasets = [
     files: '1,242 files',
     size: '152 MB',
     created: '12.02.2024',
-    image: '/image-3.png',
+    image: 'https://github.com/shadcn.png',
   },
   {
     id: 2,
@@ -17,7 +17,7 @@ const datasets = [
     files: '1,242 files',
     size: '152 MB',
     created: '12.02.2024',
-    image: '/image.png',
+    image: 'https://github.com/shadcn.png',
   },
   {
     id: 3,
@@ -25,7 +25,7 @@ const datasets = [
     files: '1,242 files',
     size: '152 MB',
     created: '12.02.2024',
-    image: '/rectangle-86.png',
+    image: 'https://github.com/shadcn.png',
   },
   {
     id: 4,
@@ -33,7 +33,7 @@ const datasets = [
     files: '1,242 files',
     size: '152 MB',
     created: '12.02.2024',
-    image: '/image-2.png',
+    image: 'https://github.com/shadcn.png',
   },
 ];
 
@@ -76,7 +76,7 @@ export function Datasets() {
             </CardContent>
           </Card>
         ))}
-        <Button className="bg-[#9276ff] h-auto" variant={'secondary'}>
+        <Button className="h-auto " variant={'tertiary'}>
           See all
         </Button>
       </div>

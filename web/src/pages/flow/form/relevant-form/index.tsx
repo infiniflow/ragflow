@@ -3,13 +3,11 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Select } from 'antd';
 import { Operator } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
-import { useSetLlmSetting } from '../../hooks';
 import { IOperatorForm } from '../../interface';
 import { useWatchConnectionChanges } from './hooks';
 
 const RelevantForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
-  useSetLlmSetting(form);
   const buildRelevantOptions = useBuildFormSelectOptions(
     Operator.Relevant,
     node?.id,

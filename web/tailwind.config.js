@@ -25,6 +25,16 @@ module.exports = {
         background: 'var(--background)',
         foreground: 'hsl(var(--foreground))',
         buttonBlueText: 'var(--button-blue-text)',
+
+        'colors-outline-sentiment-primary':
+          'var(--colors-outline-sentiment-primary)',
+        'colors-outline-neutral-strong': 'var(--colors-outline-neutral-strong)',
+
+        'colors-text-core-standard': 'var(--colors-text-core-standard)',
+        'colors-text-neutral-strong': 'var(--colors-text-neutral-strong)',
+        'colors-text-neutral-standard': 'var(--colors-text-neutral-standard)',
+        'colors-text-functional-danger': 'var(--colors-text-functional-danger)',
+
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
@@ -168,5 +178,5 @@ module.exports = {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [require('tailwindcss-animate'), require('@tailwindcss/line-clamp')],
 };

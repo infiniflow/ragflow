@@ -1,11 +1,13 @@
 ---
-sidebar_position: 6
+sidebar_position: 7
 slug: /deploy_local_llm
 ---
 
 # Deploy a local LLM
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+
+Run models locally using Ollama, Xinference, or other frameworks.
 
 RAGFlow supports deploying models locally using Ollama, Xinference, IPEX-LLM, or jina. If you have locally deployed models to leverage or wish to enable GPU or CUDA for inference acceleration, you can bind Ollama or Xinference into RAGFlow and use either of them as a local "server" for interacting with your local models.
 
@@ -72,9 +74,9 @@ In the popup window, complete basic settings for Ollama:
 4. OPTIONAL: Switch on the toggle under **Does it support Vision?** if your model includes an image-to-text model.
 
 :::caution NOTE
+- If RAGFlow is in Docker and Ollama runs on the same host machine, use `http://host.docker.internal:11434` as base URL.
 - If your Ollama and RAGFlow run on the same machine, use `http://localhost:11434` as base URL.
-- If your Ollama and RAGFlow run on the same machine and Ollama is in Docker, use `http://host.docker.internal:11434` as base URL. 
-- If your Ollama runs on a different machine from RAGFlow, use `http://<IP_OF_OLLAMA_MACHINE>:11434` as base URL. 
+- If your Ollama runs on a different machine from RAGFlow, use `http://<IP_OF_OLLAMA_MACHINE>:11434` as base URL.
 :::
 
 :::danger WARNING
@@ -106,7 +108,7 @@ Click on your logo **>** **Model Providers** **>** **System Model Settings** to 
 
 Update your chat model accordingly in **Chat Configuration**:
 
-> If your local model is an embedding model, update it on the configruation page of your knowledge base.
+> If your local model is an embedding model, update it on the configuration page of your knowledge base.
 
 ## Deploy a local model using Xinference
 
@@ -159,7 +161,7 @@ Click on your logo **>** **Model Providers** **>** **System Model Settings** to 
 
 Update your chat model accordingly in **Chat Configuration**:
 
-> If your local model is an embedding model, update it on the configruation page of your knowledge base.
+> If your local model is an embedding model, update it on the configuration page of your knowledge base.
 
 ## Deploy a local model using IPEX-LLM
 

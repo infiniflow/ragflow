@@ -34,7 +34,7 @@ const Login = () => {
 
       if (title === 'login') {
         const code = await login({
-          email: params.email,
+          email: `${params.email}`.trim(),
           password: rsaPassWord,
         });
         if (code === 0) {

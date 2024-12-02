@@ -23,7 +23,7 @@ import { FormInstance, message } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
 import dayjs from 'dayjs';
 import { humanId } from 'human-id';
-import { get, lowerFirst } from 'lodash';
+import { get, isEmpty, lowerFirst, pick } from 'lodash';
 import trim from 'lodash/trim';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
@@ -60,6 +60,7 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSwitchValues,
+  initialTemplateValues,
   initialTuShareValues,
   initialWenCaiValues,
   initialWikipediaValues,
@@ -139,6 +140,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Note]: initialNoteValues,
       [Operator.Crawler]: initialCrawlerValues,
       [Operator.Invoke]: initialInvokeValues,
+      [Operator.Template]: initialTemplateValues,
     };
   }, [llmId]);
 
@@ -268,6 +270,7 @@ export const useSaveGraph = () => {
       const dslComponents = buildDslComponentsByGraph(
         currentNodes ?? nodes,
         edges,
+        data.dsl.components,
       );
       return setFlow({
         id,
@@ -346,24 +349,31 @@ export const useFlowIsFetching = () => {
   return useIsFetching({ queryKey: ['flowDetail'] }) > 0;
 };
 
-export const useSetLlmSetting = (form?: FormInstance) => {
-  const initialLlmSetting = undefined;
-
+export const useSetLlmSetting = (
+  form?: FormInstance,
+  formData?: Record<string, any>,
+) => {
+  const initialLlmSetting = pick(
+    formData,
+    Object.values(variableEnabledFieldMap),
+  );
   useEffect(() => {
     const switchBoxValues = Object.keys(variableEnabledFieldMap).reduce<
       Record<string, boolean>
     >((pre, field) => {
-      pre[field] =
-        initialLlmSetting === undefined
-          ? true
-          : !!initialLlmSetting[
-              variableEnabledFieldMap[
-                field as keyof typeof variableEnabledFieldMap
-              ] as keyof Variable
-            ];
+      pre[field] = isEmpty(initialLlmSetting)
+        ? true
+        : !!initialLlmSetting[
+            variableEnabledFieldMap[
+              field as keyof typeof variableEnabledFieldMap
+            ] as keyof Variable
+          ];
       return pre;
     }, {});
-    const otherValues = settledModelVariableMap[ModelVariableType.Precise];
+    let otherValues = settledModelVariableMap[ModelVariableType.Precise];
+    if (!isEmpty(initialLlmSetting)) {
+      otherValues = initialLlmSetting;
+    }
     form?.setFieldsValue({
       ...switchBoxValues,
       ...otherValues,

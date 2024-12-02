@@ -111,7 +111,7 @@ def create(tenant_id):
         req['prompt_config'] = {}
     for key in key_list_2:
         temp = req['prompt_config'].get(key)
-        if not temp:
+        if (not temp and key == 'system') or (key not in req["prompt_config"]):
             req['prompt_config'][key] = default_prompt[key]
     for p in req['prompt_config']["parameters"]:
         if p["optional"]:
@@ -161,7 +161,7 @@ def update(tenant_id,chat_id):
             return get_error_data_result("`datasets` can't be empty")
         if ids:
             for kb_id in ids:
-                kbs = KnowledgebaseService.accessible(kb_id=chat_id, user_id=tenant_id)
+                kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
                 if not kbs:
                     return get_error_data_result(f"You don't own the dataset {kb_id}")
                 kbs = KnowledgebaseService.query(id=kb_id)
