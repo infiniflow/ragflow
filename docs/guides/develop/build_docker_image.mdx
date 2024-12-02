@@ -21,10 +21,6 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
 - Disk &ge; 50 GB
 - Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1
 
-:::tip NOTE
-If you have not installed Docker on your local machine (Windows, Mac, or Linux), see the [Install Docker Engine](https://docs.docker.com/engine/install/) guide.
-:::
-
 ## Build a Docker image
 
 <Tabs
@@ -37,6 +33,11 @@ If you have not installed Docker on your local machine (Windows, Mac, or Linux),
 
 This image is approximately 1 GB in size and relies on external LLM and embedding services.
 
+:::tip NOTE
+We are currently unable to regularly build multi-arch images with CI and have no plans to publish arm64 images in the near future.  
+However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
+:::
+
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
@@ -44,38 +45,25 @@ pip3 install huggingface-hub nltk
 python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
+
 
   </TabItem>
   <TabItem value="including">
 
-## Build a Docker image including embedding models
-
 This image is approximately 9 GB in size. As it includes embedding models, it relies on external LLM services only.  
 
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
-```
-
-  </TabItem>
-  <TabItem value="linux/arm64">
-
-## 🔧 Build a Docker image for linux arm64
-
+:::tip NOTE
 We are currently unable to regularly build multi-arch images with CI and have no plans to publish arm64 images in the near future.  
-However, you can build an image yourself on a linux/arm64 host machine:
+However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
+:::
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 pip3 install huggingface-hub nltk
 python3 download_deps.py
-docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
-  </TabItem>
 
+  </TabItem>
 </Tabs>
