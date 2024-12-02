@@ -322,7 +322,7 @@ class YoudaoEmbed(Base):
 
 
 class JinaEmbed(Base):
-    def __init__(self, key, model_name="jina-embeddings-v2-base-zh",
+    def __init__(self, key, model_name="jina-embeddings-v3",
                  base_url="https://api.jina.ai/v1/embeddings"):
 
         self.base_url = "https://api.jina.ai/v1/embeddings"
