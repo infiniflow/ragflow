@@ -47,6 +47,7 @@ from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
 from api.versions import get_ragflow_version
 from api.utils import show_configs
+from rag.settings import print_rag_settings
 
 
 def update_progress():
@@ -75,6 +76,7 @@ if __name__ == '__main__':
     )
     show_configs()
     settings.init_settings()
+    print_rag_settings()
 
     # init db
     init_web_db()

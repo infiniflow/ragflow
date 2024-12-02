@@ -124,7 +124,8 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         start = timer()
-        callback(msg="OCR is running...")
+        first_start = start
+        callback(msg="OCR started")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -132,22 +133,26 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished")
-        logging.info("OCR({}~{}): {}".format(from_page, to_page, timer() - start))
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
+        logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.63, "Layout analysis finished.")
+        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.65, "Table analysis finished.")
+        callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
+
+        start = timer()
         self._text_merge()
-        callback(0.67, "Text merging finished")
+        callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
         tbls = self._extract_table_figure(True, zoomin, True, True)
         # self._naive_vertical_merge()
         self._concat_downward()
         # self._filter_forpages()
 
-        logging.info("layouts cost: {}s".format(timer() - start))
+        logging.info("layouts cost: {}s".format(timer() - first_start))
         return [(b["text"], self._line_tag(b, zoomin))
                 for b in self.boxes], tbls
 
@@ -170,7 +175,7 @@ class Markdown(MarkdownParser):
             else:
                 if sections and sections[-1][0].strip().find("#") == 0:
                     sec_, _ = sections.pop(-1)
-                    sections.append((sec_+"\n"+sec, ""))
+                    sections.append((sec_ + "\n" + sec, ""))
                 else:
                     sections.append((sec, ""))
 
@@ -188,7 +193,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Next, these successive pieces are merge into chunks whose token number is no more than 'Max token number'.
     """
 
-    eng = lang.lower() == "english"  # is_english(cks)
+    is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
             "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": True})
@@ -201,8 +206,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     pdf_parser = None
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections, tbls = Docx()(filename, binary)
-        res = tokenize_table(tbls, doc, eng)  # just for table
+        sections, tables = Docx()(filename, binary)
+        res = tokenize_table(tables, doc, is_english)  # just for table
 
         callback(0.8, "Finish parsing.")
         st = timer()
@@ -215,16 +220,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         if kwargs.get("section_only", False):
             return chunks
 
-        res.extend(tokenize_chunks_docx(chunks, doc, eng, images))
+        res.extend(tokenize_chunks_docx(chunks, doc, is_english, images))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf(
-        ) if parser_config.get("layout_recognize", True) else PlainParser()
-        sections, tbls = pdf_parser(filename if not binary else binary,
-                                    from_page=from_page, to_page=to_page, callback=callback)
-        res = tokenize_table(tbls, doc, eng)
+        pdf_parser = Pdf() if parser_config.get("layout_recognize", True) else PlainParser()
+        sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+        res = tokenize_table(tables, doc, is_english)
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -243,8 +246,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections, tbls = Markdown(int(parser_config.get("chunk_token_num", 128)))(filename, binary)
-        res = tokenize_table(tbls, doc, eng)
+        sections, tables = Markdown(int(parser_config.get("chunk_token_num", 128)))(filename, binary)
+        res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
@@ -284,7 +287,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if kwargs.get("section_only", False):
         return chunks
 
-    res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
+    res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
     return res
 
