@@ -602,6 +602,8 @@ The above is the content you need to summarize.`,
       teamMembers: 'Team Members',
       joinedTeams: 'Joined Teams',
       sureDelete: 'Are you sure to remove this member?',
+      quit: 'Quit',
+      sureQuit: 'Are you sure you want to quit the team you joined?',
     },
     message: {
       registered: 'Registered!',
