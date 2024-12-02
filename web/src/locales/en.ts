@@ -304,6 +304,8 @@ The above is the content you need to summarize.`,
       randomSeedMessage: 'Random seed is required',
       entityTypes: 'Entity types',
       vietnamese: 'Vietamese',
+      pageRank: 'Page rank',
+      pageRankTip: `This is used to boost the relevance score. The relevance score with all the retrieved chunks will plus this number, When you want to search the given knowledge base at first place, set a higher pagerank score than others.`,
     },
     chunk: {
       chunk: 'Chunk',

@@ -947,7 +947,7 @@ class API4Conversation(DataBaseModel):
     reference = JSONField(null=True, default=[])
     tokens = IntegerField(default=0)
     source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
-
+    dsl = JSONField(null=True, default={})
     duration = FloatField(default=0, index=True)
     round = IntegerField(default=0, index=True)
     thumb_up = IntegerField(default=0, index=True)
@@ -1070,3 +1070,10 @@ def migrate_db():
             )
         except Exception:
             pass
+        try:
+            migrate(
+                migrator.add_column("api_4_conversation","dsl",JSONField(null=True, default={}))
+            )
+        except Exception:
+            pass
+
