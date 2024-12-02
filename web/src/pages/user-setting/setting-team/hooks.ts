@@ -69,3 +69,20 @@ export const useHandleAgreeTenant = () => {
 
   return { handleAgree };
 };
+
+export const useHandleQuitUser = () => {
+  const { deleteTenantUser, loading } = useDeleteTenantUser();
+  const showDeleteConfirm = useShowDeleteConfirm();
+  const { t } = useTranslation();
+
+  const handleQuitTenantUser = (userId: string, tenantId: string) => () => {
+    showDeleteConfirm({
+      title: t('setting.sureQuit'),
+      onOk: async () => {
+        deleteTenantUser({ userId, tenantId });
+      },
+    });
+  };
+
+  return { handleQuitTenantUser, loading };
+};
