@@ -174,6 +174,18 @@ def validate_request(*args, **kwargs):
 
     return wrapper
 
+def not_allowed_parameters(*params):
+    def decorator(f):
+        def wrapper(*args, **kwargs):
+            input_arguments = flask_request.json or flask_request.form.to_dict()
+            for param in params:
+                if param in input_arguments:
+                    return get_json_result(
+                        code=settings.RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
+
 
 def is_localhost(ip):
     return ip in {'127.0.0.1', '::1', '[::1]', 'localhost'}
