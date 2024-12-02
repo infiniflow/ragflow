@@ -29,12 +29,8 @@ spec:
       - name: ragflow
         image: {{ .Values.env.RAGFLOW_IMAGE }}
         ports:
-          - containerPort: 9380
-            name: http
           - containerPort: 80
-            name: http-80
-          - containerPort: 443
-            name: https
+            name: http
         volumeMounts:
           - mountPath: /etc/nginx/conf.d/ragflow.conf
             subPath: ragflow.conf
@@ -70,15 +66,7 @@ spec:
     app.kubernetes.io/component: ragflow
   ports:
     - protocol: TCP
-      port: 9380
+      port: 80
       targetPort: http
       name: http
-    - protocol: TCP
-      port: 80
-      targetPort: http-80
-      name: http-80
-    - protocol: TCP
-      port: 443
-      targetPort: https
-      name: https
   type: {{ .Values.ragflow.service.type }}
