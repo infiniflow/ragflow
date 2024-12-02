@@ -21,7 +21,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
+from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
 from api.db import StatusEnum, FileSource
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -70,6 +70,7 @@ def create():
 @manager.route('/update', methods=['post'])
 @login_required
 @validate_request("kb_id", "name", "description", "permission", "parser_id")
+@not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
 def update():
     req = request.json
     req["name"] = req["name"].strip()
