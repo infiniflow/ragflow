@@ -7,11 +7,14 @@ metadata:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: infinity
 spec:
+  {{- with .Values.infinity.storage.className }}
+  storageClassName: {{ . }}
+  {{- end }}
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi
+      storage: {{ .Values.infinity.storage.capacity }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -26,8 +29,10 @@ spec:
     matchLabels:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: infinity
+  {{- with .Values.infinity.deployment.strategy }}
   strategy:
-    type: Recreate
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -38,7 +43,7 @@ spec:
     spec:
       containers:
       - name: infinity
-        image: infiniflow/infinity:v0.5.0-dev5
+        image: {{ .Values.infinity.image.repository }}:{{ .Values.infinity.image.tag }}
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config
@@ -52,10 +57,10 @@ spec:
         volumeMounts:
           - mountPath: /var/infinity
             name: infinity-data
-        # TODO: Add this
-        # resources:
-        #   limits:
-        #     memory: TODO
+        {{- with .Values.infinity.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
         securityContext:
           capabilities:
             add:
@@ -99,5 +104,5 @@ spec:
       port: 5432
       targetPort: psql
       name: psql
-  type: ClusterIP # Change to NodePort or LoadBalancer if required
+  type: {{ .Values.infinity.service.type }}
 {{- end -}}

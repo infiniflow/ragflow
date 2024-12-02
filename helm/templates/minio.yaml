@@ -7,11 +7,14 @@ metadata:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: minio
 spec:
+  {{- with .Values.minio.storage.className }}
+  storageClassName: {{ . }}
+  {{- end }}
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi
+      storage: {{ .Values.minio.storage.capacity }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -28,8 +31,10 @@ spec:
     matchLabels:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: minio
+  {{- with .Values.minio.deployment.strategy }}
   strategy:
-    type: Recreate
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -38,7 +43,7 @@ spec:
     spec:
       containers:
       - name: minio
-        image: quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
+        image: {{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config
@@ -51,6 +56,10 @@ spec:
             name: s3
           - containerPort: 9001
             name: console
+        {{- with .Values.minio.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
         volumeMounts:
           - mountPath: /data
             name: minio-data
@@ -79,4 +88,4 @@ spec:
       protocol: TCP
       port: 9001
       targetPort: console
-  type: ClusterIP
+  type: {{ .Values.minio.service.type }}

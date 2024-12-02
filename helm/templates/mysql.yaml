@@ -1,4 +1,21 @@
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ragflow.fullname" . }}-mysql
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+spec:
+  {{- with .Values.mysql.storage.className }}
+  storageClassName: {{ . }}
+  {{- end }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.mysql.storage.capacity }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,8 +29,10 @@ spec:
     matchLabels:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: mysql
+  {{- with .Values.mysql.deployment.strategy }}
   strategy:
-    type: Recreate
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -25,7 +44,7 @@ spec:
     spec:
       containers:
       - name: mysql
-        image: mysql:8.0.39
+        image: {{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config
@@ -39,6 +58,10 @@ spec:
         ports:
           - containerPort: 3306
             name: mysql
+        {{- with .Values.mysql.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
         volumeMounts:
           - mountPath: /var/lib/mysql
             name: mysql-data
@@ -55,20 +78,6 @@ spec:
             name: mysql-init-script
 ---
 apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ include "ragflow.fullname" . }}-mysql
-  labels:
-    {{- include "ragflow.labels" . | nindent 4 }}
-    app.kubernetes.io/component: mysql
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
----
-apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "ragflow.fullname" . }}-mysql
@@ -83,4 +92,4 @@ spec:
     - protocol: TCP
       port: 3306
       targetPort: mysql
-  type: ClusterIP
+  type: {{ .Values.mysql.service.type }}

@@ -12,6 +12,10 @@ spec:
     matchLabels:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: ragflow
+  {{- with .Values.ragflow.deployment.strategy }}
+  strategy:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -44,11 +48,10 @@ spec:
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config
-        # resources:
-        #   limits:
-        #     memory: # TODO: Add this
-        # securityContext:
-        #   runAsUser: 1000
+        {{- with .Values.ragflow.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
       volumes:
         - name: nginx-config-volume
           configMap:
@@ -78,4 +81,4 @@ spec:
       port: 443
       targetPort: https
       name: https
-  type: LoadBalancer # TODO: Default to ClusterIP after testing
+  type: {{ .Values.ragflow.service.type }}
