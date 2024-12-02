@@ -23,6 +23,7 @@ from rag.utils.doc_store_conn import (
     OrderByExpr,
 )
 
+logger = logging.getLogger('ragflow.infinity_conn')
 
 def equivalent_condition_to_str(condition: dict) -> str:
     assert "_id" not in condition
@@ -68,7 +69,7 @@ class InfinityConnection(DocStoreConnection):
             host, port = infinity_uri.split(":")
             infinity_uri = infinity.common.NetworkAddress(host, int(port))
         self.connPool = None
-        logging.info(f"Use Infinity {infinity_uri} as the doc engine.")
+        logger.info(f"Use Infinity {infinity_uri} as the doc engine.")
         for _ in range(24):
             try:
                 connPool = ConnectionPool(infinity_uri)
@@ -78,16 +79,16 @@ class InfinityConnection(DocStoreConnection):
                 self.connPool = connPool
                 if res.error_code == ErrorCode.OK and res.server_status=="started":
                     break
-                logging.warn(f"Infinity status: {res.server_status}. Waiting Infinity {infinity_uri} to be healthy.")
+                logger.warn(f"Infinity status: {res.server_status}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)
             except Exception as e:
-                logging.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
+                logger.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)
         if self.connPool is None:
             msg = f"Infinity {infinity_uri} didn't become healthy in 120s."
-            logging.error(msg)
+            logger.error(msg)
             raise Exception(msg)
-        logging.info(f"Infinity {infinity_uri} is healthy.")
+        logger.info(f"Infinity {infinity_uri} is healthy.")
 
     """
     Database operations
@@ -162,7 +163,7 @@ class InfinityConnection(DocStoreConnection):
                     )
                     break
         self.connPool.release_conn(inf_conn)
-        logging.info(
+        logger.info(
             f"INFINITY created table {table_name}, vector size {vectorSize}"
         )
 
@@ -172,7 +173,7 @@ class InfinityConnection(DocStoreConnection):
         db_instance = inf_conn.get_database(self.dbName)
         db_instance.drop_table(table_name, ConflictType.Ignore)
         self.connPool.release_conn(inf_conn)
-        logging.info(f"INFINITY dropped table {table_name}")
+        logger.info(f"INFINITY dropped table {table_name}")
 
     def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
         table_name = f"{indexName}_{knowledgebaseId}"
@@ -183,7 +184,7 @@ class InfinityConnection(DocStoreConnection):
             self.connPool.release_conn(inf_conn)
             return True
         except Exception as e:
-            logging.warning(f"INFINITY indexExist {str(e)}")
+            logger.warning(f"INFINITY indexExist {str(e)}")
         return False
 
     """
@@ -230,7 +231,7 @@ class InfinityConnection(DocStoreConnection):
                 )
                 if len(filter_cond) != 0:
                     filter_fulltext = f"({filter_cond}) AND {filter_fulltext}"
-                logging.debug(f"filter_fulltext: {filter_fulltext}")
+                logger.debug(f"filter_fulltext: {filter_fulltext}")
                 minimum_should_match = matchExpr.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
                     str_minimum_should_match = str(int(minimum_should_match * 100)) + "%"
@@ -296,7 +297,7 @@ class InfinityConnection(DocStoreConnection):
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, selectFields)
-        logging.debug("INFINITY search tables: " + str(table_list))
+        logger.debug("INFINITY search tables: " + str(table_list))
         return res
 
     def get(
@@ -356,18 +357,18 @@ class InfinityConnection(DocStoreConnection):
         str_filter = f"id IN ({str_ids})"
         table_instance.delete(str_filter)
         # for doc in documents:
-        #     logging.info(f"insert position_list: {doc['position_list']}")
-        # logging.info(f"InfinityConnection.insert {json.dumps(documents)}")
+        #     logger.info(f"insert position_list: {doc['position_list']}")
+        # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
         table_instance.insert(documents)
         self.connPool.release_conn(inf_conn)
-        logging.debug(f"inserted into {table_name} {str_ids}.")
+        logger.debug(f"inserted into {table_name} {str_ids}.")
         return []
 
     def update(
             self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str
     ) -> bool:
         # if 'position_list' in newValue:
-        #     logging.info(f"upsert position_list: {newValue['position_list']}")
+        #     logger.info(f"upsert position_list: {newValue['position_list']}")
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
         table_name = f"{indexName}_{knowledgebaseId}"
@@ -388,7 +389,7 @@ class InfinityConnection(DocStoreConnection):
         try:
             table_instance = db_instance.get_table(table_name)
         except Exception:
-            logging.warning(
+            logger.warning(
                 f"Skipped deleting `{filter}` from table {table_name} since the table doesn't exist."
             )
             return 0
