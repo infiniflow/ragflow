@@ -455,7 +455,7 @@ def delete(tenant_id,chat_id):
     return get_result()
 
 @manager.route('/sessions/ask', methods=['POST']) # type: ignore
-@token_require
+@token_required
 def ask_about(tenant_id):
     req = request.json
     if not req.get("question"):
