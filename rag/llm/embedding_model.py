@@ -680,11 +680,10 @@ class VoyageEmbed(Base):
         return np.array(res.embeddings), res.total_tokens
 
     def encode_queries(self, text):
-        res = self.client.embed
         res = self.client.embed(
             texts=text, model=self.model_name, input_type="query"
             )
-        return np.array(res.embeddings), res.total_tokens
+        return np.array(res.embeddings)[0], res.total_tokens
 
 
 class HuggingFaceEmbed(Base):
