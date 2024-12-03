@@ -258,7 +258,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.json$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = JsonParser(int(parser_config.get("chunk_token_num", 128)))(binary)
+        chunk_token_num = int(parser_config.get("chunk_token_num", 128))
+        sections = JsonParser(chunk_token_num)(binary)
         sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 
