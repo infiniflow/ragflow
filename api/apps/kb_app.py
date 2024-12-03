@@ -102,6 +102,14 @@ def update():
         if not KnowledgebaseService.update_by_id(kb.id, req):
             return get_data_error_result()
 
+        if kb.pagerank != req.get("pagerank", 0):
+            if req.get("pagerank", 0) > 0:
+                settings.docStoreConn.update({"kb_id": kb.id}, {"pagerank_fea": req["pagerank"]},
+                                         search.index_name(kb.tenant_id), kb.id)
+            else:
+                settings.docStoreConn.update({"exist": "pagerank_fea"}, {"remove": "pagerank_fea"},
+                                         search.index_name(kb.tenant_id), kb.id)
+
         e, kb = KnowledgebaseService.get_by_id(kb.id)
         if not e:
             return get_data_error_result(
