@@ -154,6 +154,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K块将被送入Rerank型号。`,
       delimiter: `分段标识符`,
+      delimiterTip:
+        '支持多字符作为分隔符，多字符分隔符用`包裹。如配置成这样：\n`##`;那么就会用换行，两个#以及分号先对文本进行分割，然后按照“ token number”大小进行拼装。',
       html4excel: '表格转HTML',
       html4excelTip: `Excel 是否将被解析为 HTML 表。如果为 FALSE，Excel 中的每一行都将形成一个块。`,
       autoKeywords: '自动关键词',
@@ -302,6 +304,9 @@ export default {
       thresholdTip: '阈值越大，聚类越少。',
       maxClusterTip: '最大聚类数。',
       entityTypes: '实体类型',
+      pageRank: '页面排名',
+      pageRankTip: `这用于提高相关性得分。所有检索到的块的相关性得分将加上此数字。
+当您想首先搜索给定的知识库时，请设置比其他知识库更高的 pagerank 得分。`,
     },
     chunk: {
       chunk: '解析块',
@@ -587,6 +592,8 @@ export default {
       teamMembers: '团队成员',
       joinedTeams: '加入的团队',
       sureDelete: '您确定要删除该成员吗？',
+      quit: '退出',
+      sureQuit: '确定退出加入的团队吗？',
     },
     message: {
       registered: '注册成功',

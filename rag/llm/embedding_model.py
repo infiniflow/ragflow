@@ -322,7 +322,7 @@ class YoudaoEmbed(Base):
 
 
 class JinaEmbed(Base):
-    def __init__(self, key, model_name="jina-embeddings-v2-base-zh",
+    def __init__(self, key, model_name="jina-embeddings-v3",
                  base_url="https://api.jina.ai/v1/embeddings"):
 
         self.base_url = "https://api.jina.ai/v1/embeddings"
@@ -606,6 +606,8 @@ class SILICONFLOWEmbed(Base):
             "encoding_format": "float",
         }
         res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        if "data" not in res or not isinstance(res["data"], list) or len(res["data"])!= len(texts):
+            raise ValueError(f"SILICONFLOWEmbed.encode got invalid response from {self.base_url}")
         return (
             np.array([d["embedding"] for d in res["data"]]),
             res["usage"]["total_tokens"],
@@ -618,6 +620,8 @@ class SILICONFLOWEmbed(Base):
             "encoding_format": "float",
         }
         res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        if "data" not in res or not isinstance(res["data"], list) or len(res["data"])!= 1:
+            raise ValueError(f"SILICONFLOWEmbed.encode_queries got invalid response from {self.base_url}")
         return np.array(res["data"][0]["embedding"]), res["usage"]["total_tokens"]
 
 

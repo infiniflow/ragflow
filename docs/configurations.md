@@ -149,15 +149,15 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
   
 - `name`: The MySQL database name. Defaults to `rag_flow`.
 - `user`: The username for MySQL.
-- `password`: The password for MySQL. When updated, you must revise the `MYSQL_PASSWORD` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
+- `password`: The password for MySQL.
 - `port`: The MySQL serving port inside the Docker container. Defaults to `3306`.
 - `max_connections`: The maximum number of concurrent connections to the MySQL database. Defaults to `100`.
 - `stale_timeout`: Timeout in seconds.
 
 ### `minio`
   
-- `user`: The username for MinIO. When updated, you must revise the `MINIO_USER` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
-- `password`: The password for MinIO. When updated, you must revise the `MINIO_PASSWORD` variable in [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) accordingly.
+- `user`: The username for MinIO.
+- `password`: The password for MinIO.
 - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
 ### `oauth`  

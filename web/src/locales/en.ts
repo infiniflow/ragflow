@@ -157,6 +157,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K chunks will be fed into rerank models.`,
       delimiter: `Delimiter`,
+      delimiterTip:
+        'Supports multiple characters as separators, and the multiple character separators are wrapped with `. For example, if it is configured like this: \n`##`; then the text will be separated by line breaks, two #s and a semicolon, and then assembled according to the size of the "token number".',
       html4excel: 'Excel to HTML',
       html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables; otherwise, it will be parsed into key-value pairs by row.`,
       autoKeywords: 'Auto-keyword',
@@ -301,6 +303,9 @@ The above is the content you need to summarize.`,
       randomSeed: 'Random seed',
       randomSeedMessage: 'Random seed is required',
       entityTypes: 'Entity types',
+      pageRank: 'Page rank',
+      pageRankTip: `This is used to boost the relevance score. The relevance score with all the retrieved chunks will plus this number.
+When you want to search the given knowledge base at first place, set a higher pagerank score than others.`,
     },
     chunk: {
       chunk: 'Chunk',
@@ -600,6 +605,8 @@ The above is the content you need to summarize.`,
       teamMembers: 'Team Members',
       joinedTeams: 'Joined Teams',
       sureDelete: 'Are you sure to remove this member?',
+      quit: 'Quit',
+      sureQuit: 'Are you sure you want to quit the team you joined?',
     },
     message: {
       registered: 'Registered!',

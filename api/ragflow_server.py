@@ -19,15 +19,10 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
 import logging
+import os
 from api.utils.log_utils import initRootLogger
-initRootLogger("ragflow_server")
-for module in ["pdfminer"]:
-    module_logger = logging.getLogger(module)
-    module_logger.setLevel(logging.WARNING)
-for module in ["peewee"]:
-    module_logger = logging.getLogger(module)
-    module_logger.handlers.clear()
-    module_logger.propagate = True
+LOG_LEVELS = os.environ.get("LOG_LEVELS", "")
+initRootLogger("ragflow_server", LOG_LEVELS)
 
 import os
 import signal
@@ -47,6 +42,7 @@ from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
 from api.versions import get_ragflow_version
 from api.utils import show_configs
+from rag.settings import print_rag_settings
 
 
 def update_progress():
@@ -75,6 +71,7 @@ if __name__ == '__main__':
     )
     show_configs()
     settings.init_settings()
+    print_rag_settings()
 
     # init db
     init_web_db()
