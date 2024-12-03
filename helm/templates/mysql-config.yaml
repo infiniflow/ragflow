@@ -1,0 +1,9 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init-script
+data:
+  init.sql: |-
+    CREATE DATABASE IF NOT EXISTS rag_flow;
+    USE rag_flow;

@@ -1,0 +1,153 @@
+# Based on docker compose .env file
+env:
+  # The type of doc engine to use.
+  # Available options:
+  # - `elasticsearch` (default)
+  # - `infinity` (https://github.com/infiniflow/infinity)
+  # DOC_ENGINE: elasticsearch
+  DOC_ENGINE: infinity
+
+  # The version of Elasticsearch.
+  STACK_VERSION: "8.11.3"
+
+  # The password for Elasticsearch
+  ELASTIC_PASSWORD: infini_rag_flow_helm
+
+  # The password for MySQL
+  MYSQL_PASSWORD: infini_rag_flow_helm
+  # The database of the MySQL service to use
+  MYSQL_DBNAME: rag_flow
+
+  # The username for MinIO.
+  MINIO_ROOT_USER: rag_flow
+  # The password for MinIO
+  MINIO_PASSWORD: infini_rag_flow_helm
+
+  # The password for Redis
+  REDIS_PASSWORD: infini_rag_flow_helm
+
+  # The RAGFlow Docker image to download.
+  # Defaults to the dev-slim edition, which is the RAGFlow Docker image without embedding models.
+  RAGFLOW_IMAGE: infiniflow/ragflow:dev-slim
+  #
+  # To download the RAGFlow Docker image with embedding models, uncomment the following line instead:
+  # RAGFLOW_IMAGE=infiniflow/ragflow:dev
+  #
+  # The Docker image of the dev edition includes:
+  # - Built-in embedding models:
+  #   - BAAI/bge-large-zh-v1.5
+  #   - BAAI/bge-reranker-v2-m3
+  #   - maidalun1020/bce-embedding-base_v1
+  #   - maidalun1020/bce-reranker-base_v1
+  # - Embedding models that will be downloaded once you select them in the RAGFlow UI:
+  #   - BAAI/bge-base-en-v1.5
+  #   - BAAI/bge-large-en-v1.5
+  #   - BAAI/bge-small-en-v1.5
+  #   - BAAI/bge-small-zh-v1.5
+  #   - jinaai/jina-embeddings-v2-base-en
+  #   - jinaai/jina-embeddings-v2-small-en
+  #   - nomic-ai/nomic-embed-text-v1.5
+  #   - sentence-transformers/all-MiniLM-L6-v2
+  #
+  #
+
+  # The local time zone.
+  TIMEZONE: "Asia/Shanghai"
+
+  # Uncomment the following line if you have limited access to huggingface.co:
+  # HF_ENDPOINT: https://hf-mirror.com
+
+  # The maximum file size for each uploaded file, in bytes.
+  # You can uncomment this line and update the value if you wish to change 128M file size limit
+  # MAX_CONTENT_LENGTH: "134217728"
+
+ragflow:
+  deployment:
+    strategy:
+    resources:
+  service:
+    # Use LoadBalancer to expose the web interface externally
+    type: ClusterIP
+
+infinity:
+  image:
+    repository: infiniflow/infinity
+    tag: v0.5.0-dev5
+  storage:
+    className:
+    capacity: 5Gi
+  deployment:
+    strategy:
+    resources:
+  service:
+    type: ClusterIP
+
+elasticsearch:
+  storage:
+    className:
+    capacity: 20Gi
+  deployment:
+    strategy:
+    resources:
+      requests:
+        memory: 8Gi
+  service:
+    type: ClusterIP
+
+minio:
+  image:
+    repository: quay.io/minio/minio
+    tag: RELEASE.2023-12-20T01-00-02Z
+  storage:
+    className:
+    capacity: 5Gi
+  deployment:
+    strategy:
+    resources:
+  service:
+    type: ClusterIP
+
+mysql:
+  image:
+    repository: mysql
+    tag: 8.0.39
+  storage:
+    className:
+    capacity: 5Gi
+  deployment:
+    strategy:
+    resources:
+  service:
+    type: ClusterIP
+
+redis:
+  image:
+    repository: valkey/valkey
+    tag: 8
+  storage:
+    className:
+    capacity: 5Gi
+  deployment:
+    strategy:
+    resources:
+  service:
+    type: ClusterIP
+
+
+# This block is for setting up web service ingress. For more information, see:
+# https://kubernetes.io/docs/concepts/services-networking/ingress/
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local

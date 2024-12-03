@@ -1,0 +1,95 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ragflow.fullname" . }}-mysql
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+spec:
+  {{- with .Values.mysql.storage.className }}
+  storageClassName: {{ . }}
+  {{- end }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.mysql.storage.capacity }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ragflow.fullname" . }}-mysql
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mysql
+  {{- with .Values.mysql.deployment.strategy }}
+  strategy:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: mysql
+      annotations:
+        checksum/config-mysql: {{ include (print $.Template.BasePath "/mysql-config.yaml") . | sha256sum }}
+        checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
+    spec:
+      containers:
+      - name: mysql
+        image: {{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}
+        envFrom:
+          - secretRef:
+              name: {{ include "ragflow.fullname" . }}-env-config
+        args:
+          - --max_connections=1000
+          - --character-set-server=utf8mb4
+          - --collation-server=utf8mb4_general_ci
+          - --default-authentication-plugin=mysql_native_password
+          - --tls_version=TLSv1.2,TLSv1.3
+          - --init-file=/data/application/init.sql
+        ports:
+          - containerPort: 3306
+            name: mysql
+        {{- with .Values.mysql.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+          - mountPath: /var/lib/mysql
+            name: mysql-data
+          - mountPath: /data/application/init.sql
+            subPath: init.sql
+            readOnly: true
+            name: init-script-volume
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: {{ include "ragflow.fullname" . }}-mysql
+        - name: init-script-volume
+          configMap:
+            name: mysql-init-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ragflow.fullname" . }}-mysql
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+spec:
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+  ports:
+    - protocol: TCP
+      port: 3306
+      targetPort: mysql
+  type: {{ .Values.mysql.service.type }}
