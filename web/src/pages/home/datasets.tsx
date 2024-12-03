@@ -45,7 +45,7 @@ export function Datasets() {
         {datasets.map((dataset) => (
           <Card
             key={dataset.id}
-            className="bg-colors-background-inverse-weak flex-1"
+            className="bg-colors-background-inverse-weak flex-1 border-colors-outline-neutral-standard"
           >
             <CardContent className="p-4">
               <div className="flex justify-between mb-4">
@@ -69,7 +69,7 @@ export function Datasets() {
                     Created {dataset.created}
                   </p>
                 </div>
-                <Button variant="secondary" size="icon">
+                <Button variant="icon" size="icon">
                   <ChevronRight className="h-6 w-6" />
                 </Button>
               </div>
