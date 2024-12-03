@@ -2,6 +2,7 @@ from abc import ABC
 import json
 import smtplib
 import logging
+import re
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
@@ -10,19 +11,19 @@ from agent.component.base import ComponentBase, ComponentParamBase
 
 class EmailParam(ComponentParamBase):
     """
-    Define the Email component parameters.
+    定义邮件组件参数。
     """
     def __init__(self):
         super().__init__()
-        # Fixed configuration parameters
-        self.smtp_server = ""  # SMTP server address
-        self.smtp_port = 465  # SMTP port
-        self.email = ""  # Sender email
-        self.password = ""  # Email authorization code
-        self.sender_name = ""  # Sender name
+        # 固定配置参数
+        self.smtp_server = ""  # SMTP服务器地址
+        self.smtp_port = 465  # SMTP端口
+        self.email = ""  # 发件人邮箱
+        self.password = ""  # 邮箱授权码
+        self.sender_name = ""  # 发件人名称
 
     def check(self):
-        # Check required parameters
+        # 检查必填参数
         self.check_empty(self.smtp_server, "SMTP Server")
         self.check_empty(self.email, "Email")
         self.check_empty(self.password, "Password")
@@ -31,100 +32,132 @@ class EmailParam(ComponentParamBase):
 class Email(ComponentBase, ABC):
     component_name = "Email"
     
+    def _extract_json(self, text):
+        """
+        从文本中提取JSON数据
+        """
+        try:
+            # 1. 尝试直接解析为JSON
+            return json.loads(text)
+        except json.JSONDecodeError:
+            try:
+                # 2. 尝试在文本中查找JSON格式的字符串
+                json_pattern = r'\{[^{}]*\}'
+                matches = re.findall(json_pattern, text)
+                if matches:
+                    for match in matches:
+                        try:
+                            return json.loads(match)
+                        except json.JSONDecodeError:
+                            continue
+            except Exception:
+                pass
+            
+            # 3. 如果都失败了，返回None
+            return None
+    
+    def _validate_email_data(self, email_data):
+        """
+        验证邮件数据的有效性
+        """
+        if not isinstance(email_data, dict):
+            return False
+        
+        # 检查必要字段
+        if "to_email" not in email_data:
+            return False
+            
+        # 验证邮箱格式
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email_data["to_email"]):
+            return False
+            
+        return True
+    
     def _run(self, history, **kwargs):
-        # Get upstream component output and parse JSON
+        # 获取上游组件输出并解析JSON
         ans = self.get_input()
-        print(ans, type(ans), "==================================",37)
-        # 判断ans是否为json类型
-        if ans.startswith("{") and ans.endswith("}"):
-            # 清除{}以外的内容
-            ans = ans.replace("{", "").replace("}", "")
-        ans = json.loads(ans)
-        print(ans, type(ans), "==================================",43)
-        content = "".join(ans["content"]) if "content" in ans else ""
+        content = "".join(ans["content"][0]) if "content" in ans else ""
         if not content:
-            return Email.be_output("No content to send")
-
+            return Email.be_output("101")  # 没有内容可发送
+            
         success = False
         try:
-            # Parse JSON string passed from upstream
-            email_data = json.loads(content)
-            
-            # Validate required fields
-            if "to_email" not in email_data:
-                return Email.be_output("Missing required field: to_email")
-                return Email.be_output("收件人邮箱是必填项")
-
-            # Create email object
+            # 解析从上游传递的数据
+            email_data = self._extract_json(content)
+            if not email_data:
+                return Email.be_output("101")  # JSON格式无效
+                
+            # 验证邮件数据
+            if not self._validate_email_data(email_data):
+                return Email.be_output("106")  # 邮件数据格式无效
+                
+            # 创建邮件对象
             msg = MIMEMultipart('alternative')
-            
-            # Properly handle sender name encoding
+            # 正确处理发件人名称编码
             msg['From'] = formataddr((str(Header(self._param.sender_name,'utf-8')), self._param.email))
             msg['To'] = email_data["to_email"]
             if "cc_email" in email_data and email_data["cc_email"]:
                 msg['Cc'] = email_data["cc_email"]
-            msg['Subject'] = Header(email_data.get("subject", "No Subject"), 'utf-8').encode()
-
-            # Use content from email_data or default content
-            email_content = email_data.get("content", "No content provided")
-            # msg.attach(MIMEText(email_content, 'plain', 'utf-8'))
-            msg.attach(MIMEText(email_content, 'html', 'utf-8'))
-
-            # Connect to SMTP server and send
-            logging.info(f"Connecting to SMTP server {self._param.smtp_server}:{self._param.smtp_port}")
+            msg['Subject'] = Header(email_data.get("subject", "无主题"), 'utf-8').encode()
             
+            # 使用email_data中的内容或默认内容
+            email_content = email_data.get("content", "未提供内容")
+            msg.attach(MIMEText(email_content, 'html', 'utf-8'))
+            
+            # 连接SMTP服务器并发送
+            logging.info(f"正在连接SMTP服务器 {self._param.smtp_server}:{self._param.smtp_port}")
             context = smtplib.ssl.create_default_context()
             with smtplib.SMTP_SSL(self._param.smtp_server, self._param.smtp_port, context=context) as server:
-                # Login
-                logging.info(f"Attempting to login with email: {self._param.email}")
+                # 登录
+                logging.info(f"尝试使用邮箱登录: {self._param.email}")
                 server.login(self._param.email, self._param.password)
                 
-                # Get all recipient list
+                # 获取所有收件人列表
                 recipients = [email_data["to_email"]]
                 if "cc_email" in email_data and email_data["cc_email"]:
                     recipients.extend(email_data["cc_email"].split(','))
                 
-                # Send email
-                logging.info(f"Sending email to recipients: {recipients}")
+                # 发送邮件
+                logging.info(f"正在发送邮件给收件人: {recipients}")
                 try:
                     server.send_message(msg, self._param.email, recipients)
                     success = True
                 except Exception as e:
-                    logging.error(f"Error during send_message: {str(e)}")
-                    # Try alternative method
+                    logging.error(f"发送消息时出错: {str(e)}")
+                    # 尝试替代方法
                     server.sendmail(self._param.email, recipients, msg.as_string())
                     success = True
-                
+                    
                 try:
                     server.quit()
                 except Exception as e:
-                    # Ignore errors when closing connection
-                    logging.warning(f"Non-fatal error during connection close: {str(e)}")
-
+                    # 关闭连接时忽略错误
+                    logging.warning(f"关闭连接时的非致命错误: {str(e)}")
+                    
             if success:
-                return Email.be_output("Email sent successfully")
-
-        except json.JSONDecodeError:
-            error_msg = "Invalid JSON format in input"
+                return Email.be_output(True)
+                
+        except smtplib.SMTPAuthenticationError:
+            # 102 SMTP认证失败。请检查您的邮箱和授权码。
+            error_msg = "102"
             logging.error(error_msg)
             return Email.be_output(error_msg)
             
-        except smtplib.SMTPAuthenticationError:
-            error_msg = "SMTP Authentication failed. Please check your email and authorization code."
-            logging.error(error_msg)
-            return Email.be_output(f"Failed to send email: {error_msg}")
-            
         except smtplib.SMTPConnectError:
-            error_msg = f"Failed to connect to SMTP server {self._param.smtp_server}:{self._param.smtp_port}"
+            # 103 无法连接到SMTP服务器
+            error_msg = "103"
             logging.error(error_msg)
-            return Email.be_output(f"Failed to send email: {error_msg}")
+            return Email.be_output(error_msg)
             
         except smtplib.SMTPException as e:
-            error_msg = f"SMTP error occurred: {str(e)}"
+            # 104 发生SMTP错误
+            error_msg = "104"
             logging.error(error_msg)
-            return Email.be_output(f"Failed to send email: {error_msg}")
+            return Email.be_output(error_msg)
             
         except Exception as e:
-            error_msg = f"Unexpected error: {str(e)}"
+            # 105 发生意外错误
+            error_msg = "105"
             logging.error(error_msg)
-            return Email.be_output(f"Failed to send email: {error_msg}") 
+            return Email.be_output(error_msg)
