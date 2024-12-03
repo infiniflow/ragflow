@@ -9,7 +9,7 @@ const PageRank = () => {
       <Flex gap={20} align="center">
         <Flex flex={1}>
           <Form.Item
-            name={['parser_config', 'pagerank']}
+            name={['pagerank']}
             noStyle
             initialValue={0}
             rules={[{ required: true }]}
@@ -18,7 +18,7 @@ const PageRank = () => {
           </Form.Item>
         </Flex>
         <Form.Item
-          name={['parser_config', 'pagerank']}
+          name={['pagerank']}
           noStyle
           initialValue={0}
           rules={[{ required: true }]}
