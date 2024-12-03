@@ -354,7 +354,7 @@ class Dealer:
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": json.loads(position_list)
             }
-            if highlight:
+            if highlight and sres.highlight:
                 if id in sres.highlight:
                     d["highlight"] = rmSpace(sres.highlight[id])
                 else:
