@@ -2,6 +2,7 @@ from abc import ABC
 import json
 import smtplib
 import logging
+import re
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
@@ -31,54 +32,79 @@ class EmailParam(ComponentParamBase):
 class Email(ComponentBase, ABC):
     component_name = "Email"
     
+    def _extract_json(self, text):
+        """
+        从文本中提取JSON数据
+        """
+        try:
+            # 1. 尝试直接解析为JSON
+            return json.loads(text)
+        except json.JSONDecodeError:
+            try:
+                # 2. 尝试在文本中查找JSON格式的字符串
+                json_pattern = r'\{[^{}]*\}'
+                matches = re.findall(json_pattern, text)
+                if matches:
+                    for match in matches:
+                        try:
+                            return json.loads(match)
+                        except json.JSONDecodeError:
+                            continue
+            except Exception:
+                pass
+            
+            # 3. 如果都失败了，返回None
+            return None
+    
+    def _validate_email_data(self, email_data):
+        """
+        验证邮件数据的有效性
+        """
+        if not isinstance(email_data, dict):
+            return False
+        
+        # 检查必要字段
+        if "to_email" not in email_data:
+            return False
+            
+        # 验证邮箱格式
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email_data["to_email"]):
+            return False
+            
+        return True
+    
     def _run(self, history, **kwargs):
-        # 获取上游组件的输出并解析JSON
+        # 获取上游组件输出并解析JSON
         ans = self.get_input()
         content = "".join(ans["content"]) if "content" in ans else ""
         if not content:
-            return Email.be_output("没有内容可发送")
-        
+            return Email.be_output("101")  # 没有内容可发送
+            
         success = False
         try:
-            # 从内容中提取JSON部分
-            try:
-                # 尝试直接解析整个内容
-                email_data = json.loads(content)
-            except json.JSONDecodeError:
-                # 如果失败，尝试从文本中提取JSON部分
-                import re
-                # 匹配最外层的花括号及其内容
-                json_match = re.search(r'({[^{]*?})', content, re.DOTALL)
-                if json_match:
-                    try:
-                        email_data = json.loads(json_match.group(1))
-                    except json.JSONDecodeError:
-                        return Email.be_output("101")  # JSON格式无效
-                else:
-                    return Email.be_output("101")  # JSON格式无效
-
-            # 验证必要字段
-            if "to_email" not in email_data:
-                return Email.be_output("请问收件人的邮箱地址是什么？")
-
+            # 解析从上游传递的数据
+            email_data = self._extract_json(content)
+            if not email_data:
+                return Email.be_output("101")  # JSON格式无效
+                
+            # 验证邮件数据
+            if not self._validate_email_data(email_data):
+                return Email.be_output("106")  # 邮件数据格式无效
+                
             # 创建邮件对象
             msg = MIMEMultipart('alternative')
-            
             # 正确处理发件人名称编码
             msg['From'] = formataddr((str(Header(self._param.sender_name,'utf-8')), self._param.email))
             msg['To'] = email_data["to_email"]
             if "cc_email" in email_data and email_data["cc_email"]:
                 msg['Cc'] = email_data["cc_email"]
             msg['Subject'] = Header(email_data.get("subject", "无主题"), 'utf-8').encode()
-
+            
             # 使用email_data中的内容或默认内容
             email_content = email_data.get("content", "未提供内容")
-            # 如果内容包含HTML标签，使用HTML格式发送
-            if '<' in email_content and '>' in email_content:
-                msg.attach(MIMEText(email_content, 'html', 'utf-8'))
-            else:
-                msg.attach(MIMEText(email_content, 'plain', 'utf-8'))
-
+            msg.attach(MIMEText(email_content, 'html', 'utf-8'))
+            
             # 连接SMTP服务器并发送
             logging.info(f"正在连接SMTP服务器 {self._param.smtp_server}:{self._param.smtp_port}")
             context = smtplib.ssl.create_default_context()
@@ -108,16 +134,10 @@ class Email(ComponentBase, ABC):
                 except Exception as e:
                     # 关闭连接时忽略错误
                     logging.warning(f"关闭连接时的非致命错误: {str(e)}")
-
+                    
             if success:
                 return Email.be_output(True)
                 
-        except json.JSONDecodeError:
-            # 101 输入的JSON格式无效
-            error_msg = "101"
-            logging.error(error_msg)
-            return Email.be_output(error_msg)
-            
         except smtplib.SMTPAuthenticationError:
             # 102 SMTP认证失败。请检查您的邮箱和授权码。
             error_msg = "102"
