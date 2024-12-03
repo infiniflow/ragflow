@@ -453,12 +453,13 @@ class BedrockEmbed(Base):
 class GeminiEmbed(Base):
     def __init__(self, key, model_name='models/text-embedding-004',
                  **kwargs):
-        genai.configure(api_key=key)
+        self.key = key
         self.model_name = 'models/' + model_name
         
     def encode(self, texts: list, batch_size=16):
         texts = [truncate(t, 2048) for t in texts]
         token_count = sum(num_tokens_from_string(text) for text in texts)
+        genai.configure(api_key=self.key)
         result = genai.embed_content(
             model=self.model_name,
             content=texts,
@@ -467,6 +468,7 @@ class GeminiEmbed(Base):
         return np.array(result['embedding']),token_count
     
     def encode_queries(self, text):
+        genai.configure(api_key=self.key)
         result = genai.embed_content(
             model=self.model_name,
             content=truncate(text,2048),
