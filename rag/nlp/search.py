@@ -75,7 +75,7 @@ class Dealer:
 
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
                                  "doc_id", "position_list", "knowledge_graph_kwd",
-                                 "available_int", "content_with_weight"])
+                                 "available_int", "content_with_weight", "pagerank_fea"])
         kwds = set([])
 
         qst = req.get("question", "")
@@ -234,11 +234,13 @@ class Dealer:
         vector_column = f"q_{vector_size}_vec"
         zero_vector = [0.0] * vector_size
         ins_embd = []
+        pageranks = []
         for chunk_id in sres.ids:
             vector = sres.field[chunk_id].get(vector_column, zero_vector)
             if isinstance(vector, str):
                 vector = [float(v) for v in vector.split("\t")]
             ins_embd.append(vector)
+            pageranks.append(sres.field[chunk_id].get("pagerank_fea", 0))
         if not ins_embd:
             return [], [], []
 
@@ -257,7 +259,8 @@ class Dealer:
                                                         ins_embd,
                                                         keywords,
                                                         ins_tw, tkweight, vtweight)
-        return sim, tksim, vtsim
+
+        return sim+np.array(pageranks, dtype=float), tksim, vtsim
 
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
                vtweight=0.7, cfield="content_ltks"):
@@ -351,7 +354,7 @@ class Dealer:
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": json.loads(position_list)
             }
-            if highlight:
+            if highlight and sres.highlight:
                 if id in sres.highlight:
                     d["highlight"] = rmSpace(sres.highlight[id])
                 else:

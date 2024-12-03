@@ -21,6 +21,7 @@ class DataSet(Base):
         self.chunk_count = 0
         self.chunk_method = "naive"
         self.parser_config = None
+        self.pagerank = 0
         for k in list(res_dict.keys()):
             if k not in self.__dict__:
                 res_dict.pop(k)

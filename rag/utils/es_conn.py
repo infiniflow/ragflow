@@ -175,6 +175,7 @@ class ESConnection(DocStoreConnection):
                           )
 
         if bqry:
+            bqry.should.append(Q("rank_feature", field="pagerank_fea", linear={}, boost=10))
             s = s.query(bqry)
         for field in highlightFields:
             s = s.highlight(field)
@@ -283,11 +284,15 @@ class ESConnection(DocStoreConnection):
                         f"ESConnection.update(index={indexName}, id={id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                     if str(e).find("Timeout") > 0:
                         continue
+            return False
         else:
             # update unspecific maybe-multiple documents
             bqry = Q("bool")
             for k, v in condition.items():
                 if not isinstance(k, str) or not v:
+                    continue
+                if k == "exist":
+                    bqry.filter.append(Q("exists", field=v))
                     continue
                 if isinstance(v, list):
                     bqry.filter.append(Q("terms", **{k: v}))
@@ -298,6 +303,9 @@ class ESConnection(DocStoreConnection):
                         f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
             scripts = []
             for k, v in newValue.items():
+                if k == "remove":
+                    scripts.append(f"ctx._source.remove('{v}');")
+                    continue
                 if (not isinstance(k, str) or not v) and k != "available_int":
                     continue
                 if isinstance(v, str):
@@ -307,21 +315,21 @@ class ESConnection(DocStoreConnection):
                 else:
                     raise Exception(
                         f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
-            ubq = UpdateByQuery(
-                index=indexName).using(
-                self.es).query(bqry)
-            ubq = ubq.script(source="; ".join(scripts))
-            ubq = ubq.params(refresh=True)
-            ubq = ubq.params(slices=5)
-            ubq = ubq.params(conflicts="proceed")
-            for i in range(3):
-                try:
-                    _ = ubq.execute()
-                    return True
-                except Exception as e:
-                    logger.error("ESConnection.update got exception: " + str(e))
-                    if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
-                        continue
+        ubq = UpdateByQuery(
+            index=indexName).using(
+            self.es).query(bqry)
+        ubq = ubq.script(source="; ".join(scripts))
+        ubq = ubq.params(refresh=True)
+        ubq = ubq.params(slices=5)
+        ubq = ubq.params(conflicts="proceed")
+        for i in range(3):
+            try:
+                _ = ubq.execute()
+                return True
+            except Exception as e:
+                logger.error("ESConnection.update got exception: " + str(e))
+                if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
+                    continue
         return False
 
     def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:
