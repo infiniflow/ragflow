@@ -25,7 +25,7 @@ from rag.utils import truncate
 
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
-    def __init__(self, max_cluster, llm_model, embd_model, prompt, max_token=512, threshold=0.1):
+    def __init__(self, max_cluster, llm_model, embd_model, prompt, max_token=128000, threshold=0.1):
         self._max_cluster = max_cluster
         self._llm_model = llm_model
         self._embd_model = embd_model

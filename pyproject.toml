@@ -132,6 +132,12 @@ flagembedding = "1.2.10"
 torch = "2.3.0"
 transformers = "4.38.1"
 
+
+[[tool.poetry.source]]
+name = "mirrors"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+priority = "default"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

@@ -2,7 +2,7 @@ import { Form, FormInstance, Input, InputRef, Typography } from 'antd';
 import React, { useContext, useEffect, useRef, useState } from 'react';
 
 const EditableContext = React.createContext<FormInstance<any> | null>(null);
-const { Paragraph, Text } = Typography;
+const { Text } = Typography;
 
 interface EditableRowProps {
   index: number;
@@ -95,9 +95,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
         // style={{ paddingRight: 24 }}
         onClick={toggleEdit}
       >
-        <Text ellipsis={{ tooltip: children }} style={{ width: 70 }}>
-          {children}
-        </Text>
+        <Text>{children}</Text>
       </div>
     );
   }

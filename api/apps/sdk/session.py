@@ -79,7 +79,8 @@ def create_agent_session(tenant_id, agent_id):
         "dialog_id": cvs.id,
         "user_id": req.get("usr_id","") if isinstance(req, dict) else "",
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
-        "source": "agent"
+        "source": "agent",
+        "dsl":json.loads(cvs.dsl)
     }
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
@@ -237,7 +238,8 @@ def agent_completion(tenant_id, agent_id):
             "dialog_id": cvs.id,
             "user_id": req.get("user_id",""),
             "message": [{"role": "assistant", "content": canvas.get_prologue()}],
-            "source": "agent"
+            "source": "agent",
+            "dsl": json.loads(cvs.dsl)
         }
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
@@ -246,6 +248,7 @@ def agent_completion(tenant_id, agent_id):
         e, conv = API4ConversationService.get_by_id(req["session_id"])
         if not e:
             return get_error_data_result(message="Session not found!")
+        canvas = Canvas(json.dumps(conv.dsl), tenant_id)
 
     messages = conv.message
     question = req.get("question")
@@ -266,12 +269,10 @@ def agent_completion(tenant_id, agent_id):
         msg.append(m)
     if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
-
-    if "quote" not in req: req["quote"] = False
     stream = req.get("stream", True)
-
     def fillin_conv(ans):
         reference = ans["reference"]
+        print(reference,flush=True)
         temp_reference = deepcopy(ans["reference"])
         nonlocal conv, message_id
         if not conv.reference:
@@ -313,16 +314,18 @@ def agent_completion(tenant_id, agent_id):
         conv.reference = []
     conv.message.append({"role": "assistant", "content": "", "id": message_id})
     conv.reference.append({"chunks": [], "doc_aggs": []})
-
     final_ans = {"reference": [], "content": ""}
 
     canvas.add_user_input(msg[-1]["content"])
-
+    # 历史记录解析
+    for m in conv.message:
+        canvas.history.append((m["role"],m["content"])) # 历史记录解析
+    
     if stream:
         def sse():
             nonlocal answer, cvs
             try:
-                for ans in canvas.run(stream=True):
+                for ans in canvas.run(stream=stream):
                     if ans.get("running_status"):
                         yield "data:" + json.dumps({"code": 0, "message": "",
                                                     "data": {"answer": ans["content"],
@@ -341,10 +344,10 @@ def agent_completion(tenant_id, agent_id):
                 canvas.history.append(("assistant", final_ans["content"]))
                 if final_ans.get("reference"):
                     canvas.reference.append(final_ans["reference"])
-                cvs.dsl = json.loads(str(canvas))
+                conv.dsl = json.loads(str(canvas))
                 API4ConversationService.append_message(conv.id, conv.to_dict())
             except Exception as e:
-                cvs.dsl = json.loads(str(canvas))
+                conv.dsl = json.loads(str(canvas))
                 API4ConversationService.append_message(conv.id, conv.to_dict())
                 yield "data:" + json.dumps({"code": 500, "message": str(e),
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
@@ -364,14 +367,13 @@ def agent_completion(tenant_id, agent_id):
         canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
         if final_ans.get("reference"):
             canvas.reference.append(final_ans["reference"])
-        cvs.dsl = json.loads(str(canvas))
+        conv.dsl = json.loads(str(canvas))
 
         result = {"answer": final_ans["content"], "reference": final_ans.get("reference", [])}
         fillin_conv(result)
         API4ConversationService.append_message(conv.id, conv.to_dict())
         rename_field(result)
         return get_result(data=result)
-
 
 @manager.route('/chats/<chat_id>/sessions', methods=['GET'])
 @token_required
