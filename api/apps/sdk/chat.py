@@ -104,9 +104,12 @@ def create(tenant_id):
         "parameters": [
             {"key": "knowledge", "optional": False}
         ],
-        "empty_response": "Sorry! No relevant content was found in the knowledge base!"
+        "empty_response": "Sorry! No relevant content was found in the knowledge base!",
+        "quote":True,
+        "tts":False,
+        "refine_multiturn":True
     }
-    key_list_2 = ["system", "prologue", "parameters", "empty_response"]
+    key_list_2 = ["system", "prologue", "parameters", "empty_response","quote","tts","refine_multiturn"]
     if "prompt_config" not in req:
         req['prompt_config'] = {}
     for key in key_list_2:
