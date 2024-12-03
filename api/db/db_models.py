@@ -703,6 +703,7 @@ class Knowledgebase(DataBaseModel):
         default=ParserType.NAIVE.value,
         index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
+    pagerank = IntegerField(default=0, index=False)
     status = CharField(
         max_length=1,
         null=True,
@@ -1076,4 +1077,9 @@ def migrate_db():
             )
         except Exception:
             pass
-
+        try:
+            migrate(
+                migrator.add_column("knowledgebase", "pagerank", IntegerField(default=0, index=False))
+            )
+        except Exception:
+            pass
