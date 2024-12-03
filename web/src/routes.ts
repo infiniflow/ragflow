@@ -67,6 +67,10 @@ const routes = [
             component: '@/pages/user-setting/setting-profile',
           },
           {
+            path: '/user-setting/locale',
+            component: '@/pages/user-setting/setting-locale',
+          },
+          {
             path: '/user-setting/password',
             component: '@/pages/user-setting/setting-password',
           },
