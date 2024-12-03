@@ -129,7 +129,13 @@ const routes = [
   {
     path: '/home',
     layout: false,
-    component: '@/pages/home',
+    component: '@/layouts/next',
+    routes: [
+      {
+        path: '/home',
+        component: '@/pages/home',
+      },
+    ],
   },
   {
     path: '/datasets',
