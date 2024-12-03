@@ -1,0 +1,27 @@
+name: Publish Helm chart
+
+on:
+  push:
+
+jobs:
+  build_push_chart:
+    name: Build and push Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          # This is important for the semver action to work correctly
+          # when determining the number of commits since the last tag
+          fetch-depth: 0
+
+      - name: Get SemVer version for current commit
+        id: semver
+        uses: azimuth-cloud/github-actions/semver@master
+
+      - name: Publish Helm charts
+        uses: azimuth-cloud/github-actions/helm-publish@master
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: ${{ steps.semver.outputs.version }}
+          app-version: ${{ steps.semver.outputs.short-sha }}
