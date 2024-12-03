@@ -234,6 +234,7 @@ class Canvas(ABC):
             except Exception as e:
                 yield {"content": "*Exception*: {}".format(e), "running_status": True}
                 logging.exception("Canvas.run got exception")
+                ran += 1
 
             if ran >= len(self.path[-1]) and waiting:
                 without_dependent_checking = waiting
