@@ -1,6 +1,8 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
+import { CloseOutlined } from '@ant-design/icons';
 import { Drawer, Flex, Form, Input } from 'antd';
+import { lowerFirst } from 'lodash';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
 import { Operator, operatorMap } from '../constant';
@@ -15,6 +17,7 @@ import CategorizeForm from '../form/categorize-form';
 import CrawlerForm from '../form/crawler-form';
 import DeepLForm from '../form/deepl-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
+import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
 import GenerateForm from '../form/generate-form';
 import GithubForm from '../form/github-form';
@@ -30,16 +33,13 @@ import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SwitchForm from '../form/switch-form';
+import TemplateForm from '../form/template-form';
 import TuShareForm from '../form/tushare-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import OperatorIcon from '../operator-icon';
-
-import { CloseOutlined } from '@ant-design/icons';
-import { lowerFirst } from 'lodash';
-import TemplateForm from '../form/template-form';
 import { getDrawerWidth } from '../utils';
 import styles from './index.less';
 
@@ -81,6 +81,7 @@ const FormMap = {
   [Operator.Concentrator]: () => <></>,
   [Operator.Note]: () => <></>,
   [Operator.Template]: TemplateForm,
+  [Operator.Email]: EmailForm,
 };
 
 const EmptyContent = () => <div></div>;
