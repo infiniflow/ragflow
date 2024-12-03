@@ -92,9 +92,9 @@ class RAGFlowJsonParser:
         """Splits JSON into a list of JSON chunks"""
 
         if convert_lists:
-            chunks = self._json_split(self._list_to_dict_preprocessing(json_data))
+            chunks = self._json_split(self._list_to_dict_preprocessing(json_data), None, None)
         else:
-            chunks = self._json_split(json_data)
+            chunks = self._json_split(json_data, None, None)
 
         # Remove the last chunk if it's empty
         if not chunks[-1]:
