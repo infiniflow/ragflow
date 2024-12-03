@@ -457,26 +457,28 @@ class ComponentBase(ABC):
             self._param.inputs = []
             outs = []
             for q in self._param.query:
-                if q["component_id"]:
-                    if q["component_id"].split("@")[0].lower().find("begin") >= 0:
-                        cpn_id, key = q["component_id"].split("@")
+                if q.get("component_id"):
+                    component_id = q.get("component_id")
+                    if component_id.split("@")[0].lower().find("begin") >= 0:
+                        cpn_id, key = component_id.split("@")
                         for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
                             if p["key"] == key:
                                 outs.append(pd.DataFrame([{"content": p.get("value", "")}]))
-                                self._param.inputs.append({"component_id": q["component_id"],
+                                self._param.inputs.append({"component_id": component_id,
                                                            "content": p.get("value", "")})
                                 break
                         else:
                             assert False, f"Can't find parameter '{key}' for {cpn_id}"
                         continue
 
-                    outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
-                    self._param.inputs.append({"component_id": q["component_id"],
+                    outs.append(self._canvas.get_component(component_id)["obj"].output(allow_partial=False)[1])
+                    self._param.inputs.append({"component_id": component_id,
                                                "content": "\n".join(
                                                    [str(d["content"]) for d in outs[-1].to_dict('records')])})
-                elif q["value"]:
-                    self._param.inputs.append({"component_id": None, "content": q["value"]})
-                    outs.append(pd.DataFrame([{"content": q["value"]}]))
+                elif q.get("value"):
+                    value = q.get("value")
+                    self._param.inputs.append({"component_id": None, "content":value})
+                    outs.append(pd.DataFrame([{"content": value}]))
             if outs:
                 df = pd.concat(outs, ignore_index=True)
                 if "content" in df: df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
