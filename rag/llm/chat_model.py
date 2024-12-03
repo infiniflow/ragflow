@@ -22,7 +22,7 @@ from abc import ABC
 from openai import OpenAI
 import openai
 from ollama import Client
-from rag.nlp import is_english
+from rag.nlp import is_chinese
 from rag.utils import num_tokens_from_string
 from groq import Groq
 import os
@@ -47,8 +47,10 @@ class Base(ABC):
                 **gen_conf)
             ans = response.choices[0].message.content.strip()
             if response.choices[0].finish_reason == "length":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                if is_chinese(ans):
+                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                else:
+                    ans += "...\nFor the content length reason, it stopped, continue?"
             return ans, response.usage.total_tokens
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
@@ -80,8 +82,10 @@ class Base(ABC):
                 else: total_tokens = resp.usage.total_tokens
 
                 if resp.choices[0].finish_reason == "length":
-                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                        [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    if is_chinese(ans):
+                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    else:
+                        ans += "...\nFor the content length reason, it stopped, continue?"
                 yield ans
 
         except openai.APIError as e:
@@ -167,8 +171,10 @@ class BaiChuanChat(Base):
                 **self._format_params(gen_conf))
             ans = response.choices[0].message.content.strip()
             if response.choices[0].finish_reason == "length":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                if is_chinese([ans]):
+                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                else:
+                    ans += "...\nFor the content length reason, it stopped, continue?"
             return ans, response.usage.total_tokens
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
@@ -207,8 +213,10 @@ class BaiChuanChat(Base):
                     else resp.usage["total_tokens"]
                 )
                 if resp.choices[0].finish_reason == "length":
-                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                        [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    if is_chinese([ans]):
+                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    else:
+                        ans += "...\nFor the content length reason, it stopped, continue?"
                 yield ans
 
         except Exception as e:
@@ -242,8 +250,10 @@ class QWenChat(Base):
                 ans += response.output.choices[0]['message']['content']
                 tk_count += response.usage.total_tokens
                 if response.output.choices[0].get("finish_reason", "") == "length":
-                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                        [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    if is_chinese([ans]):
+                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    else:
+                        ans += "...\nFor the content length reason, it stopped, continue?"
                 return ans, tk_count
 
             return "**ERROR**: " + response.message, tk_count
@@ -276,8 +286,10 @@ class QWenChat(Base):
                     ans = resp.output.choices[0]['message']['content']
                     tk_count = resp.usage.total_tokens
                     if resp.output.choices[0].get("finish_reason", "") == "length":
-                        ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                            [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                        if is_chinese(ans):
+                            ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                        else:
+                            ans += "...\nFor the content length reason, it stopped, continue?"
                     yield ans
                 else:
                     yield ans + "\n**ERROR**: " + resp.message if not re.search(r" (key|quota)", str(resp.message).lower()) else "Out of credit. Please set the API key in **settings > Model providers.**"
@@ -308,8 +320,10 @@ class ZhipuChat(Base):
             )
             ans = response.choices[0].message.content.strip()
             if response.choices[0].finish_reason == "length":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                if is_chinese(ans):
+                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                else:
+                    ans += "...\nFor the content length reason, it stopped, continue?"
             return ans, response.usage.total_tokens
         except Exception as e:
             return "**ERROR**: " + str(e), 0
@@ -333,8 +347,10 @@ class ZhipuChat(Base):
                 delta = resp.choices[0].delta.content
                 ans += delta
                 if resp.choices[0].finish_reason == "length":
-                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                        [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    if is_chinese(ans):
+                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    else:
+                        ans += "...\nFor the content length reason, it stopped, continue?"
                     tk_count = resp.usage.total_tokens
                 if resp.choices[0].finish_reason == "stop": tk_count = resp.usage.total_tokens
                 yield ans
@@ -525,8 +541,10 @@ class MiniMaxChat(Base):
             response = response.json()
             ans = response["choices"][0]["message"]["content"].strip()
             if response["choices"][0]["finish_reason"] == "length":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                if is_chinese(ans):
+                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                else:
+                    ans += "...\nFor the content length reason, it stopped, continue?"
             return ans, response["usage"]["total_tokens"]
         except Exception as e:
             return "**ERROR**: " + str(e), 0
@@ -594,8 +612,10 @@ class MistralChat(Base):
                 **gen_conf)
             ans = response.choices[0].message.content
             if response.choices[0].finish_reason == "length":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                if is_chinese(ans):
+                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                else:
+                    ans += "...\nFor the content length reason, it stopped, continue?"
             return ans, response.usage.total_tokens
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
@@ -618,8 +638,10 @@ class MistralChat(Base):
                 ans += resp.choices[0].delta.content
                 total_tokens += 1
                 if resp.choices[0].finish_reason == "length":
-                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                        [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    if is_chinese(ans):
+                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    else:
+                        ans += "...\nFor the content length reason, it stopped, continue?"
                 yield ans
 
         except openai.APIError as e:
@@ -811,8 +833,10 @@ class GroqChat:
             )
             ans = response.choices[0].message.content
             if response.choices[0].finish_reason == "length":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                    [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                if is_chinese(ans):
+                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                else:
+                    ans += "...\nFor the content length reason, it stopped, continue?"
             return ans, response.usage.total_tokens
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0
@@ -838,8 +862,10 @@ class GroqChat:
                 ans += resp.choices[0].delta.content
                 total_tokens += 1
                 if resp.choices[0].finish_reason == "length":
-                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-                        [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    if is_chinese(ans):
+                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    else:
+                        ans += "...\nFor the content length reason, it stopped, continue?"
                 yield ans
 
         except Exception as e:
