@@ -50,13 +50,15 @@ function NoteNode({ data, id }: NodeProps<NodeData>) {
           }}
         ></SvgIcon>
       </NodeResizeControl>
-      <section className={styles.noteNode}>
+      <section
+        className={classNames(
+          styles.noteNode,
+          theme === 'dark' ? styles.dark : '',
+        )}
+      >
         <Flex
           justify={'space-between'}
-          className={classNames(
-            theme === 'dark' ? styles.noteTitleDark : styles.noteTitle,
-            'note-drag-handle',
-          )}
+          className={classNames('note-drag-handle')}
           align="center"
           gap={6}
         >

@@ -77,7 +77,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
   return (
     <List.Item>
       <Card
-        className={theme == 'dark' ? styles.addedCardDark : styles.addedCard}
+        className={theme === 'dark' ? styles.addedCardDark : styles.addedCard}
       >
         <Row align={'middle'}>
           <Col span={12}>

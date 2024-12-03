@@ -76,6 +76,7 @@ export default {
       namePlaceholder: 'Vui lòng nhập tên!',
       doc: 'Tài liệu',
       searchKnowledgePlaceholder: 'Tìm kiếm',
+      noMoreData: 'Tất cả chỉ có thế, không còn gì nữa',
     },
     knowledgeDetails: {
       dataset: 'Dữ liệu',
