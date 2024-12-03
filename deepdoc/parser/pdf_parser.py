@@ -956,8 +956,12 @@ class RAGFlowPdfParser:
                                 enumerate(self.pdf.pages[page_from:page_to])]
             self.page_images_x2 = [p.to_image(resolution=72 * zoomin * 2).annotated for i, p in
                                 enumerate(self.pdf.pages[page_from:page_to])]
-            self.page_chars = [[{**c, 'top': c['top'], 'bottom': c['bottom']} for c in page.dedupe_chars().chars if self._has_color(c)] for page in
-                               self.pdf.pages[page_from:page_to]]
+            try:
+                self.page_chars = [[{**c, 'top': c['top'], 'bottom': c['bottom']} for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
+            except Exception as e:
+                logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
+                self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
+                
             self.total_page = len(self.pdf.pages)
         except Exception:
             logging.exception("RAGFlowPdfParser __images__")

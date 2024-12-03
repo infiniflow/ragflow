@@ -287,6 +287,9 @@ export default {
       thresholdTip: '閾值越大，聚類越少。',
       maxClusterTip: '最大聚類數。',
       entityTypes: '實體類型',
+      pageRank: '頁面排名',
+      pageRankTip: `這用來提高相關性分數。所有檢索到的區塊的相關性得分將加上該數字。
+當您想要先搜尋給定的知識庫時，請設定比其他人更高的 pagerank 分數。`,
     },
     chunk: {
       chunk: '解析塊',
@@ -569,6 +572,8 @@ export default {
       teamMembers: '團隊成員',
       joinedTeams: '加入的團隊',
       sureDelete: '您確定刪除該成員嗎？',
+      quit: '退出',
+      sureQuit: '確定退出加入的團隊嗎？',
     },
     message: {
       registered: '註冊成功',

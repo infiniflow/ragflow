@@ -78,8 +78,10 @@ def create_agent_session(tenant_id, agent_id):
         "id": get_uuid(),
         "dialog_id": cvs.id,
         "user_id": req.get("usr_id","") if isinstance(req, dict) else "",
+        "user_id": req.get("usr_id","") if isinstance(req, dict) else "",
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
-        "source": "agent"
+        "source": "agent",
+        "dsl":json.loads(cvs.dsl)
     }
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
@@ -89,9 +91,11 @@ def create_agent_session(tenant_id, agent_id):
 @manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT'])
 @token_required
 def update(tenant_id,chat_id,session_id):
+def update(tenant_id,chat_id,session_id):
     req = request.json
     req["dialog_id"] = chat_id
     conv_id = session_id
+    conv = ConversationService.query(id=conv_id,dialog_id=chat_id)
     conv = ConversationService.query(id=conv_id,dialog_id=chat_id)
     if not conv:
         return get_error_data_result(message="Session does not exist")
@@ -124,10 +128,12 @@ def completion(tenant_id, chat_id):
         ConversationService.save(**conv)
         e, conv = ConversationService.get_by_id(conv["id"])
         session_id=conv.id
+        session_id=conv.id
     else:
         session_id = req.get("session_id")
     if not req.get("question"):
         return get_error_data_result(message="Please input your question.")
+    conv = ConversationService.query(id=session_id,dialog_id=chat_id)
     conv = ConversationService.query(id=session_id,dialog_id=chat_id)
     if not conv:
         return get_error_data_result(message="Session does not exist")
@@ -183,6 +189,7 @@ def completion(tenant_id, chat_id):
             reference["chunks"] = chunk_list
         ans["id"] = message_id
         ans["session_id"]=session_id
+        ans["session_id"]=session_id
 
     def stream():
         nonlocal dia, msg, req, conv
@@ -190,9 +197,11 @@ def completion(tenant_id, chat_id):
             for ans in chat(dia, msg, **req):
                 fillin_conv(ans)
                 yield "data:" + json.dumps({"code": 0,  "data": ans}, ensure_ascii=False) + "\n\n"
+                yield "data:" + json.dumps({"code": 0,  "data": ans}, ensure_ascii=False) + "\n\n"
             ConversationService.update_by_id(conv.id, conv.to_dict())
         except Exception as e:
             yield "data:" + json.dumps({"code": 500, "message": str(e),
+                                        "data": {"answer": "**ERROR**: " + str(e),"reference": []}},
                                         "data": {"answer": "**ERROR**: " + str(e),"reference": []}},
                                        ensure_ascii=False) + "\n\n"
         yield "data:" + json.dumps({"code": 0, "data": True}, ensure_ascii=False) + "\n\n"
@@ -237,7 +246,8 @@ def agent_completion(tenant_id, agent_id):
             "dialog_id": cvs.id,
             "user_id": req.get("user_id",""),
             "message": [{"role": "assistant", "content": canvas.get_prologue()}],
-            "source": "agent"
+            "source": "agent",
+            "dsl": json.loads(cvs.dsl)
         }
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
@@ -246,6 +256,7 @@ def agent_completion(tenant_id, agent_id):
         e, conv = API4ConversationService.get_by_id(req["session_id"])
         if not e:
             return get_error_data_result(message="Session not found!")
+        canvas = Canvas(json.dumps(conv.dsl), tenant_id)
 
     messages = conv.message
     question = req.get("question")
@@ -266,10 +277,10 @@ def agent_completion(tenant_id, agent_id):
         msg.append(m)
     if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
-    if "quote" not in req: req["quote"] = False
     stream = req.get("stream", True)
     def fillin_conv(ans):
         reference = ans["reference"]
+        print(reference,flush=True)
         temp_reference = deepcopy(ans["reference"])
         nonlocal conv, message_id
         if not conv.reference:
@@ -322,7 +333,7 @@ def agent_completion(tenant_id, agent_id):
         def sse():
             nonlocal answer, cvs
             try:
-                for ans in canvas.run(stream=True):
+                for ans in canvas.run(stream=stream):
                     if ans.get("running_status"):
                         yield "data:" + json.dumps({"code": 0, "message": "",
                                                     "data": {"answer": ans["content"],
@@ -341,10 +352,10 @@ def agent_completion(tenant_id, agent_id):
                 canvas.history.append(("assistant", final_ans["content"]))
                 if final_ans.get("reference"):
                     canvas.reference.append(final_ans["reference"])
-                cvs.dsl = json.loads(str(canvas))
+                conv.dsl = json.loads(str(canvas))
                 API4ConversationService.append_message(conv.id, conv.to_dict())
             except Exception as e:
-                cvs.dsl = json.loads(str(canvas))
+                conv.dsl = json.loads(str(canvas))
                 API4ConversationService.append_message(conv.id, conv.to_dict())
                 yield "data:" + json.dumps({"code": 500, "message": str(e),
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
@@ -364,7 +375,7 @@ def agent_completion(tenant_id, agent_id):
         canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
         if final_ans.get("reference"):
             canvas.reference.append(final_ans["reference"])
-        cvs.dsl = json.loads(str(canvas))
+        conv.dsl = json.loads(str(canvas))
 
         result = {"answer": final_ans["content"], "reference": final_ans.get("reference", [])}
         fillin_conv(result)
@@ -372,9 +383,9 @@ def agent_completion(tenant_id, agent_id):
         rename_field(result)
         return get_result(data=result)
 
-
 @manager.route('/chats/<chat_id>/sessions', methods=['GET'])
 @token_required
+def list_session(chat_id,tenant_id):
 def list_session(chat_id,tenant_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message=f"You don't own the assistant {chat_id}.")
@@ -387,6 +398,7 @@ def list_session(chat_id,tenant_id):
         desc = False
     else:
         desc = True
+    convs = ConversationService.get_list(chat_id,page_number,items_per_page,orderby,desc,id,name)
     convs = ConversationService.get_list(chat_id,page_number,items_per_page,orderby,desc,id,name)
     if not convs:
         return get_result(data=[])
@@ -430,6 +442,7 @@ def list_session(chat_id,tenant_id):
 @manager.route('/chats/<chat_id>/sessions', methods=["DELETE"])
 @token_required
 def delete(tenant_id,chat_id):
+def delete(tenant_id,chat_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You don't own the chat")
     req = request.json
@@ -438,6 +451,7 @@ def delete(tenant_id,chat_id):
         ids = None
     else:
         ids=req.get("ids")
+        ids=req.get("ids")
 
     if not ids:
         conv_list = []
@@ -445,7 +459,9 @@ def delete(tenant_id,chat_id):
             conv_list.append(conv.id)
     else:
         conv_list=ids
+        conv_list=ids
     for id in conv_list:
+        conv = ConversationService.query(id=id,dialog_id=chat_id)
         conv = ConversationService.query(id=id,dialog_id=chat_id)
         if not conv:
             return get_error_data_result(message="The chat doesn't own the session")
@@ -461,9 +477,12 @@ def ask_about(tenant_id):
     if not req.get("dataset_ids"):
         return get_error_data_result("`dataset_ids` is required.")
     if not isinstance(req.get("dataset_ids"),list):
+    if not isinstance(req.get("dataset_ids"),list):
         return get_error_data_result("`dataset_ids` should be a list.")
     req["kb_ids"]=req.pop("dataset_ids")
+    req["kb_ids"]=req.pop("dataset_ids")
     for kb_id in req["kb_ids"]:
+        if not KnowledgebaseService.accessible(kb_id,tenant_id):
         if not KnowledgebaseService.accessible(kb_id,tenant_id):
             return get_error_data_result(f"You don't own the dataset {kb_id}.")
         kbs = KnowledgebaseService.query(id=kb_id)
