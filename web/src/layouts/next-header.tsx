@@ -72,7 +72,10 @@ export function Header() {
           className="w-[100] h-[100] mr-[12]"
           onClick={handleLogoClick}
         />
-        <Button variant="secondary">
+        <Button
+          variant="secondary"
+          className="bg-colors-background-inverse-standard"
+        >
           <Github />
           21.5k stars
           <Star />
@@ -87,13 +90,13 @@ export function Header() {
         ></Segmented>
       </div>
       <div className="flex items-center gap-4">
-        <Container>
+        <Container className="bg-colors-background-inverse-standard">
           V 0.13.0
           <Button variant="secondary" className="size-8">
             <ChevronDown />
           </Button>
         </Container>
-        <Container className="px-3 py-2">
+        <Container className="px-3 py-2 bg-colors-background-inverse-standard">
           <Avatar className="w-[30px] h-[30px]">
             <AvatarImage src="https://github.com/shadcn.png" />
             <AvatarFallback>CN</AvatarFallback>
