@@ -22,8 +22,7 @@ Cargo.lock
 
 .idea/
 .vscode/
-
-
+demo.py
 # Exclude Mac generated files
 .DS_Store
 
