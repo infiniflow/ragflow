@@ -53,6 +53,7 @@ class Email(ComponentBase, ABC):
             # Validate required fields
             if "to_email" not in email_data:
                 return Email.be_output("Missing required field: to_email")
+                return Email.be_output("收件人邮箱是必填项")
 
             # Create email object
             msg = MIMEMultipart('alternative')
