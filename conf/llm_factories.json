@@ -654,8 +654,8 @@
                 },
                 {
                     "llm_name": "mistral-nemo",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
                     "model_type": "chat"
                 },
                 {
