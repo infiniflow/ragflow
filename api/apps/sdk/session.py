@@ -33,19 +33,19 @@ from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=['POST']) # type: ignore
+@manager.route('/chats/<chat_id>/sessions', methods=['POST'])
 @token_required
 def create(tenant_id,chat_id):
     req = request.json
     req["dialog_id"] = chat_id
-    e, dia = DialogService.get_by_id(req["dialog_id"])
-    if not e:
-        return get_error_data_result(message="Dialog not found")
+    dia = DialogService.query(tenant_id=tenant_id, id=req["dialog_id"], status=StatusEnum.VALID.value)
+    if not dia:
+        return get_error_data_result(message="You do not own the assistant.")
     conv = {
         "id": get_uuid(),
         "dialog_id": req["dialog_id"],
-        "name": req.get("name", "New session"), 
-        "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
+        "name": req.get("name", "New session"),
+        "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}]
     }
     if not conv.get("name"):
         return get_error_data_result(message="`name` can not be empty.")
@@ -60,10 +60,9 @@ def create(tenant_id,chat_id):
     return get_result(data=conv)
 
 
-@manager.route('/agents/<agent_id>/sessions', methods=['POST']) # type: ignore
+@manager.route('/agents/<agent_id>/sessions', methods=['POST'])
 @token_required
 def create_agent_session(tenant_id, agent_id):
-    req = request.json
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
@@ -77,7 +76,7 @@ def create_agent_session(tenant_id, agent_id):
     conv = {
         "id": get_uuid(),
         "dialog_id": cvs.id,
-        "user_id": req.get("usr_id","") if isinstance(req, dict) else "",
+        "user_id": tenant_id,
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent",
         "dsl":json.loads(cvs.dsl)
@@ -87,7 +86,7 @@ def create_agent_session(tenant_id, agent_id):
     return get_result(data=conv)
 
 
-@manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT']) # type: ignore
+@manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT'])
 @token_required
 def update(tenant_id,chat_id,session_id):
     req = request.json
@@ -109,16 +108,19 @@ def update(tenant_id,chat_id,session_id):
     return get_result()
 
 
-@manager.route('/chats/<chat_id>/completions', methods=['POST']) # type: ignore
+@manager.route('/chats/<chat_id>/completions', methods=['POST'])
 @token_required
 def completion(tenant_id, chat_id):
+    dia= DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
+    if not dia:
+        return get_error_data_result(message="You do not own the chat")
     req = request.json
     if not req.get("session_id"):
         conv = {
             "id": get_uuid(),
             "dialog_id": chat_id,
             "name": req.get("name", "New session"),
-            "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
+            "message": [{"role": "assistant", "content":  dia[0].prompt_config.get("prologue")}]
         }
         if not conv.get("name"):
             return get_error_data_result(message="`name` can not be empty.")
@@ -133,8 +135,6 @@ def completion(tenant_id, chat_id):
     if not conv:
         return get_error_data_result(message="Session does not exist")
     conv = conv[0]
-    if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(message="You do not own the chat")
     msg = []
     question = {
         "content": req.get("question"),
@@ -217,7 +217,7 @@ def completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
-@manager.route('/agents/<agent_id>/completions', methods=['POST']) # type: ignore
+@manager.route('/agents/<agent_id>/completions', methods=['POST'])
 @token_required
 def agent_completion(tenant_id, agent_id):
     req = request.json
@@ -274,7 +274,6 @@ def agent_completion(tenant_id, agent_id):
 
     def fillin_conv(ans):
         reference = ans["reference"]
-        print(reference,flush=True)
         temp_reference = deepcopy(ans["reference"])
         nonlocal conv, message_id
         if not conv.reference:
@@ -288,7 +287,7 @@ def agent_completion(tenant_id, agent_id):
             for chunk in chunks:
                 new_chunk = {
                     "id": chunk["chunk_id"],
-                    "content": chunk["content_with_weight"],
+                    "content": chunk["content"],
                     "document_id": chunk["doc_id"],
                     "document_name": chunk["docnm_kwd"],
                     "dataset_id": chunk["kb_id"],
@@ -375,7 +374,9 @@ def agent_completion(tenant_id, agent_id):
         rename_field(result)
         return get_result(data=result)
 
-@manager.route('/chats/<chat_id>/sessions', methods=['GET']) # type: ignore
+
+
+@manager.route('/chats/<chat_id>/sessions', methods=['GET'])
 @token_required
 def list_session(chat_id,tenant_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
@@ -428,8 +429,62 @@ def list_session(chat_id,tenant_id):
         del conv["reference"]
     return get_result(data=convs)
 
+@manager.route('/agents/<agent_id>/sessions', methods=['GET'])
+@token_required
+def list_agent_session(agent_id,tenant_id):
+    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+        return get_error_data_result(message=f"You don't own the agent {agent_id}.")
+    id = request.args.get("id")
+    if not API4ConversationService.query(id=id,user_id=tenant_id):
+        return get_error_data_result(f"You don't own the session {id}")
+    page_number = int(request.args.get("page", 1))
+    items_per_page = int(request.args.get("page_size", 30))
+    orderby = request.args.get("orderby", "update_time")
+    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
+        desc = False
+    else:
+        desc = True
+    convs = API4ConversationService.get_list(agent_id,tenant_id,page_number,items_per_page,orderby,desc,id)
+    if not convs:
+        return get_result(data=[])
+    for conv in convs:
+        conv['messages'] = conv.pop("message")
+        infos = conv["messages"]
+        for info in infos:
+            if "prompt" in info:
+                info.pop("prompt")
+        conv["agent_id"] = conv.pop("dialog_id")
+        if conv["reference"]:
+            messages = conv["messages"]
+            message_num = 0
+            chunk_num = 0
+            while message_num < len(messages):
+                if message_num != 0 and messages[message_num]["role"] != "user":
+                    chunk_list = []
+                    if "chunks" in conv["reference"][chunk_num]:
+                        chunks = conv["reference"][chunk_num]["chunks"]
+                        for chunk in chunks:
+                            new_chunk = {
+                                "id": chunk["chunk_id"],
+                                "content": chunk["content"],
+                                "document_id": chunk["doc_id"],
+                                "document_name": chunk["docnm_kwd"],
+                                "dataset_id": chunk["kb_id"],
+                                "image_id": chunk.get("image_id", ""),
+                                "similarity": chunk["similarity"],
+                                "vector_similarity": chunk["vector_similarity"],
+                                "term_similarity": chunk["term_similarity"],
+                                "positions": chunk["positions"],
+                            }
+                            chunk_list.append(new_chunk)
+                    chunk_num += 1
+                    messages[message_num]["reference"] = chunk_list
+                message_num += 1
+        del conv["reference"]
+    return get_result(data=convs)
 
-@manager.route('/chats/<chat_id>/sessions', methods=["DELETE"]) # type: ignore
+
+@manager.route('/chats/<chat_id>/sessions', methods=["DELETE"])
 @token_required
 def delete(tenant_id,chat_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
@@ -454,7 +509,7 @@ def delete(tenant_id,chat_id):
         ConversationService.delete_by_id(id)
     return get_result()
 
-@manager.route('/sessions/ask', methods=['POST']) # type: ignore
+@manager.route('/sessions/ask', methods=['POST'])
 @token_required
 def ask_about(tenant_id):
     req = request.json
@@ -492,7 +547,7 @@ def ask_about(tenant_id):
     return resp
 
 
-@manager.route('/sessions/related_questions', methods=['POST']) # type: ignore
+@manager.route('/sessions/related_questions', methods=['POST'])
 @token_required
 def related_questions(tenant_id):
     req = request.json

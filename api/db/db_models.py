@@ -1083,3 +1083,4 @@ def migrate_db():
             )
         except Exception:
             pass
+

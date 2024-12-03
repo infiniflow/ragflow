@@ -26,7 +26,7 @@ from api.utils.api_utils import get_result
 
 
 
-@manager.route('/chats', methods=['POST']) # type: ignore
+@manager.route('/chats', methods=['POST'])
 @token_required
 def create(tenant_id):
     req=request.json
@@ -104,9 +104,12 @@ def create(tenant_id):
         "parameters": [
             {"key": "knowledge", "optional": False}
         ],
-        "empty_response": "Sorry! No relevant content was found in the knowledge base!"
+        "empty_response": "Sorry! No relevant content was found in the knowledge base!",
+        "quote":True,
+        "tts":False,
+        "refine_multiturn":True
     }
-    key_list_2 = ["system", "prologue", "parameters", "empty_response"]
+    key_list_2 = ["system", "prologue", "parameters", "empty_response","quote","tts","refine_multiturn"]
     if "prompt_config" not in req:
         req['prompt_config'] = {}
     for key in key_list_2:
@@ -147,7 +150,7 @@ def create(tenant_id):
     res["avatar"] = res.pop("icon")
     return get_result(data=res)
 
-@manager.route('/chats/<chat_id>', methods=['PUT']) # type: ignore
+@manager.route('/chats/<chat_id>', methods=['PUT'])
 @token_required
 def update(tenant_id,chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
@@ -235,7 +238,7 @@ def update(tenant_id,chat_id):
     return get_result()
 
 
-@manager.route('/chats', methods=['DELETE']) # type: ignore
+@manager.route('/chats', methods=['DELETE'])
 @token_required
 def delete(tenant_id):
     req = request.json
@@ -257,7 +260,7 @@ def delete(tenant_id):
         DialogService.update_by_id(id, temp_dict)
     return get_result()
 
-@manager.route('/chats', methods=['GET']) # type: ignore
+@manager.route('/chats', methods=['GET'])
 @token_required
 def list_chat(tenant_id):
     id = request.args.get("id")

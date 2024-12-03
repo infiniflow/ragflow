@@ -27,13 +27,13 @@ from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 
 
-@manager.route('/templates', methods=['GET'])# type: ignore
+@manager.route('/templates', methods=['GET'])
 @login_required
 def templates():
     return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
 
 
-@manager.route('/list', methods=['GET'])# type: ignore
+@manager.route('/list', methods=['GET'])
 @login_required
 def canvas_list():
     return get_json_result(data=sorted([c.to_dict() for c in \
@@ -41,7 +41,7 @@ def canvas_list():
                            )
 
 
-@manager.route('/rm', methods=['POST']) # type: ignore
+@manager.route('/rm', methods=['POST'])
 @validate_request("canvas_ids")
 @login_required
 def rm():
@@ -54,7 +54,7 @@ def rm():
     return get_json_result(data=True)
 
 
-@manager.route('/set', methods=['POST'])# type: ignore
+@manager.route('/set', methods=['POST'])
 @validate_request("dsl", "title")
 @login_required
 def save():
@@ -65,7 +65,7 @@ def save():
     req["dsl"] = json.loads(req["dsl"])
     if "id" not in req:
         if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip()):
-            return server_error_response(ValueError("Duplicated title."))
+            return get_data_error_result(f"{req['title'].strip()} already exists.")
         req["id"] = get_uuid()
         if not UserCanvasService.save(**req):
             return get_data_error_result(message="Fail to save canvas.")
@@ -78,7 +78,7 @@ def save():
     return get_json_result(data=req)
 
 
-@manager.route('/get/<canvas_id>', methods=['GET']) # type: ignore
+@manager.route('/get/<canvas_id>', methods=['GET'])
 @login_required
 def get(canvas_id):
     e, c = UserCanvasService.get_by_id(canvas_id)
@@ -87,7 +87,7 @@ def get(canvas_id):
     return get_json_result(data=c.to_dict())
 
 
-@manager.route('/completion', methods=['POST']) # type: ignore
+@manager.route('/completion', methods=['POST'])
 @validate_request("id")
 @login_required
 def run():
@@ -163,7 +163,7 @@ def run():
         return get_json_result(data={"answer": final_ans["content"], "reference": final_ans.get("reference", [])})
 
 
-@manager.route('/reset', methods=['POST']) # type: ignore
+@manager.route('/reset', methods=['POST'])
 @validate_request("id")
 @login_required
 def reset():
@@ -186,7 +186,7 @@ def reset():
         return server_error_response(e)
 
 
-@manager.route('/test_db_connect', methods=['POST'])# type: ignore
+@manager.route('/test_db_connect', methods=['POST'])
 @validate_request("db_type", "database", "username", "host", "port", "password")
 @login_required
 def test_db_connect():
