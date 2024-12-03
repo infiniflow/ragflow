@@ -1,0 +1,72 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ragflow.fullname" . }}
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ragflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ragflow
+  {{- with .Values.ragflow.deployment.strategy }}
+  strategy:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ragflow
+      annotations:
+        checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
+        checksum/config-ragflow: {{ include (print $.Template.BasePath "/ragflow_config.yaml") . | sha256sum }}
+    spec:
+      containers:
+      - name: ragflow
+        image: {{ .Values.env.RAGFLOW_IMAGE }}
+        ports:
+          - containerPort: 80
+            name: http
+        volumeMounts:
+          - mountPath: /etc/nginx/conf.d/ragflow.conf
+            subPath: ragflow.conf
+            name: nginx-config-volume
+          - mountPath: /etc/nginx/proxy.conf
+            subPath: proxy.conf
+            name: nginx-config-volume
+          - mountPath: /etc/nginx/nginx.conf
+            subPath: nginx.conf
+            name: nginx-config-volume
+        envFrom:
+          - secretRef:
+              name: {{ include "ragflow.fullname" . }}-env-config
+        {{- with .Values.ragflow.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
+      volumes:
+        - name: nginx-config-volume
+          configMap:
+            name: nginx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ragflow.fullname" . }}
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ragflow
+spec:
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ragflow
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: http
+      name: http
+  type: {{ .Values.ragflow.service.type }}

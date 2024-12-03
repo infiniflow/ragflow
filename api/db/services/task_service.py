@@ -53,6 +53,7 @@ class TaskService(CommonService):
             Knowledgebase.tenant_id,
             Knowledgebase.language,
             Knowledgebase.embd_id,
+            Knowledgebase.pagerank,
             Tenant.img2txt_id,
             Tenant.asr_id,
             Tenant.llm_id,

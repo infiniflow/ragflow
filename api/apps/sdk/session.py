@@ -45,7 +45,7 @@ def create(tenant_id,chat_id):
         "id": get_uuid(),
         "dialog_id": req["dialog_id"],
         "name": req.get("name", "New session"),
-        "message": [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
+        "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}]
     }
     if not conv.get("name"):
         return get_error_data_result(message="`name` can not be empty.")
@@ -274,7 +274,6 @@ def agent_completion(tenant_id, agent_id):
 
     def fillin_conv(ans):
         reference = ans["reference"]
-        print(reference,flush=True)
         temp_reference = deepcopy(ans["reference"])
         nonlocal conv, message_id
         if not conv.reference:
@@ -288,7 +287,7 @@ def agent_completion(tenant_id, agent_id):
             for chunk in chunks:
                 new_chunk = {
                     "id": chunk["chunk_id"],
-                    "content": chunk["content_with_weight"],
+                    "content": chunk["content"],
                     "document_id": chunk["doc_id"],
                     "document_name": chunk["docnm_kwd"],
                     "dataset_id": chunk["kb_id"],
