@@ -38,13 +38,24 @@ const EmailForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         <h4>{t('dynamicParameters')}</h4>
         <div>{t('jsonFormatTip')}</div>
         <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4 }}>
-          {`{
+          {`
+{
   "to_email": "recipient@example.com",  
   "cc_email": "cc@example.com",
   "subject": "Email Subject",           
   "content": "Email Content"            
-}`}
+}
+`}
         </pre>
+        {'发送成功返回True'}
+        {'报错信息'}
+        {`
+101： 输入的JSON格式无效
+102： SMTP认证失败。请检查您的邮箱和授权码。
+103： 无法连接到SMTP服务器
+104： 发生SMTP错误
+105： 发生意外错误
+`}
       </div>
     </Form>
   );

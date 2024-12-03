@@ -33,8 +33,7 @@ class AnswerParam(ComponentParamBase):
 
     def check(self):
         return True
-
-
+    
 class Answer(ComponentBase, ABC):
     component_name = "Answer"
 
