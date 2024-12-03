@@ -1,0 +1,13 @@
+# Zenith client configuration
+zenithClient:
+  iconUrl: https://raw.githubusercontent.com/infiniflow/ragflow/refs/heads/main/web/public/logo.svg
+  description:
+  label: "RAGFlow"
+  skipAuth: false
+
+
+# RAGflow values
+ragflow:
+  env:
+    RAGFLOW_IMAGE: infiniflow/ragflow:v0.14.0
+    DOC_ENGINE: infinity
