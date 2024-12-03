@@ -120,7 +120,7 @@ def message_fit_in(msg, max_length=4000):
 
 
 def llm_id2llm_type(llm_id):
-    llm_id = llm_id.split("@")[0]
+    llm_id, _ = TenantLLMService.split_model_name_and_factory(llm_id)
     fnm = os.path.join(get_project_base_directory(), "conf")
     llm_factories = json.load(open(os.path.join(fnm, "llm_factories.json"), "r"))
     for llm_factory in llm_factories["factory_llm_infos"]:
@@ -132,11 +132,7 @@ def llm_id2llm_type(llm_id):
 def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     st = timer()
-    tmp = dialog.llm_id.split("@")
-    fid = None
-    llm_id = tmp[0]
-    if len(tmp)>1: fid = tmp[1]
-
+    llm_id, fid = TenantLLMService.split_model_name_and_factory(dialog.llm_id)
     llm = LLMService.query(llm_name=llm_id) if not fid else LLMService.query(llm_name=llm_id, fid=fid)
     if not llm:
         llm = TenantLLMService.query(tenant_id=dialog.tenant_id, llm_name=llm_id) if not fid else \
