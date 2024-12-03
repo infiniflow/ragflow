@@ -201,6 +201,7 @@ def build_chunks(task, progress_callback):
         "doc_id": task["doc_id"],
         "kb_id": str(task["kb_id"])
     }
+    if task["pagerank"]: doc["pagerank_fea"] = int(task["pagerank"])
     el = 0
     for ck in cks:
         d = copy.deepcopy(doc)
@@ -339,6 +340,7 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         "docnm_kwd": row["name"],
         "title_tks": rag_tokenizer.tokenize(row["name"])
     }
+    if row["pagerank"]: doc["pagerank_fea"] = int(row["pagerank"])
     res = []
     tk_count = 0
     for content, vctr in chunks[original_length:]:
@@ -431,7 +433,7 @@ def do_handle_task(task):
             progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
     logging.info("Indexing {} elapsed: {:.2f}".format(task_document_name, timer() - start_ts))
     if doc_store_result:
-        error_message = "Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
+        error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
         progress_callback(-1, msg=error_message)
         settings.docStoreConn.delete({"doc_id": task_doc_id}, search.index_name(task_tenant_id), task_dataset_id)
         logging.error(error_message)
