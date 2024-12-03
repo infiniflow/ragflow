@@ -11,6 +11,7 @@
 #  limitations under the License.
 #
 
+import logging
 import os
 from copy import deepcopy
 
@@ -439,7 +440,7 @@ class Recognizer(object):
             end_index = min((i + 1) * batch_size, len(imgs))
             batch_image_list = imgs[start_index:end_index]
             inputs = self.preprocess(batch_image_list)
-            print("preprocess")
+            logging.debug("preprocess")
             for ins in inputs:
                 bb = self.postprocess(self.ort_sess.run(None, {k:v for k,v in ins.items() if k in self.input_names})[0], ins, thr)
                 res.append(bb)

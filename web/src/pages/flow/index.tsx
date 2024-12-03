@@ -5,7 +5,7 @@ import { ReactFlowProvider } from 'reactflow';
 import FlowCanvas from './canvas';
 import Sider from './flow-sider';
 import FlowHeader from './header';
-import { useFetchDataOnMount } from './hooks';
+import { useCopyPaste, useFetchDataOnMount } from './hooks';
 
 const { Content } = Layout;
 
@@ -18,17 +18,21 @@ function RagFlow() {
   } = useSetModalState();
 
   useFetchDataOnMount();
+  useCopyPaste();
 
   return (
     <Layout>
       <ReactFlowProvider>
         <Sider setCollapsed={setCollapsed} collapsed={collapsed}></Sider>
         <Layout>
-          <FlowHeader showChatDrawer={showChatDrawer}></FlowHeader>
+          <FlowHeader
+            showChatDrawer={showChatDrawer}
+            chatDrawerVisible={chatDrawerVisible}
+          ></FlowHeader>
           <Content style={{ margin: 0 }}>
             <FlowCanvas
-              chatDrawerVisible={chatDrawerVisible}
-              hideChatDrawer={hideChatDrawer}
+              drawerVisible={chatDrawerVisible}
+              hideDrawer={hideChatDrawer}
             ></FlowCanvas>
           </Content>
         </Layout>

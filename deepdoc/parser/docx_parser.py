@@ -47,7 +47,7 @@ class RAGFlowDocxParser:
             for p, n in patt:
                 if re.search(p, b):
                     return n
-            tks = [t for t in rag_tokenizer.tokenize(b).split(" ") if len(t) > 1]
+            tks = [t for t in rag_tokenizer.tokenize(b).split() if len(t) > 1]
             if len(tks) > 3:
                 if len(tks) < 12:
                     return "Tx"
@@ -110,7 +110,7 @@ class RAGFlowDocxParser:
             return lines
         return ["\n".join(lines)]
 
-    def __call__(self, fnm, from_page=0, to_page=100000):
+    def __call__(self, fnm, from_page=0, to_page=100000000):
         self.doc = Document(fnm) if isinstance(
             fnm, str) else Document(BytesIO(fnm))
         pn = 0 # parsed page
@@ -130,7 +130,7 @@ class RAGFlowDocxParser:
                 if 'lastRenderedPageBreak' in run._element.xml:
                     pn += 1
 
-            secs.append(("".join(runs_within_single_paragraph), p.style.name)) # then concat run.text as part of the paragraph
+            secs.append(("".join(runs_within_single_paragraph), p.style.name if hasattr(p.style, 'name') else '')) # then concat run.text as part of the paragraph
 
         tbls = [self.__extract_table_content(tb) for tb in self.doc.tables]
         return secs, tbls

@@ -10,7 +10,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import os, sys
+import logging
+import os
+import sys
+
 sys.path.insert(
     0,
     os.path.abspath(
@@ -47,7 +50,7 @@ def main(args):
         if args.mode.lower() == "tsr":
             #lyt = [t for t in lyt if t["type"] == "table column"]
             html = get_table_html(images[i], lyt, ocr)
-            with open(outputs[i] + ".html", "w+") as f:
+            with open(outputs[i] + ".html", "w+", encoding='utf-8') as f:
                 f.write(html)
             lyt = [{
                 "type": t["label"],
@@ -56,7 +59,7 @@ def main(args):
             } for t in lyt]
         img = draw_box(images[i], lyt, labels, float(args.threshold))
         img.save(outputs[i], quality=95)
-        print("save result to: " + outputs[i])
+        logging.info("save result to: " + outputs[i])
 
 
 def get_table_html(img, tb_cpns, ocr):

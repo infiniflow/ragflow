@@ -10,6 +10,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from tika import parser
 import re
 from io import BytesIO
@@ -21,7 +22,6 @@ from rag.nlp import bullets_category, remove_contents_table, hierarchical_merge,
     make_colon_as_title, tokenize_chunks, docx_question_level
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
-from rag.settings import cron_logger
 
 
 class Docx(DocxParser):
@@ -108,7 +108,9 @@ class Pdf(PdfParser):
 
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
-        callback(msg="OCR is running...")
+        from timeit import default_timer as timer
+        start = timer()
+        callback(msg="OCR started")
         self.__images__(
             filename if not binary else binary,
             zoomin,
@@ -116,17 +118,16 @@ class Pdf(PdfParser):
             to_page,
             callback
         )
-        callback(msg="OCR finished")
+        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
-        from timeit import default_timer as timer
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.67, "Layout analysis finished")
-        cron_logger.info("layouts:".format(
-            (timer() - start) / (self.total_page + 0.1)))
+        callback(0.67, "Layout analysis ({:.2f}s)".format(timer() - start))
+        logging.debug("layouts:".format(
+            ))
         self._naive_vertical_merge()
 
-        callback(0.8, "Text extraction finished")
+        callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
 
         return [(b["text"], self._line_tag(b, zoomin))
                 for b in self.boxes], None

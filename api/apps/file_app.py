@@ -18,7 +18,6 @@ import pathlib
 import re
 
 import flask
-from elasticsearch_dsl import Q
 from flask import request
 from flask_login import login_required, current_user
 
@@ -29,11 +28,9 @@ from api.utils import get_uuid
 from api.db import FileType, FileSource
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
-from api.settings import RetCode
+from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
-from rag.nlp import search
-from rag.utils.es_conn import ELASTICSEARCH
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -49,24 +46,24 @@ def upload():
 
     if 'file' not in request.files:
         return get_json_result(
-            data=False, retmsg='No file part!', retcode=RetCode.ARGUMENT_ERROR)
+            data=False, message='No file part!', code=settings.RetCode.ARGUMENT_ERROR)
     file_objs = request.files.getlist('file')
 
     for file_obj in file_objs:
         if file_obj.filename == '':
             return get_json_result(
-                data=False, retmsg='No file selected!', retcode=RetCode.ARGUMENT_ERROR)
+                data=False, message='No file selected!', code=settings.RetCode.ARGUMENT_ERROR)
     file_res = []
     try:
         for file_obj in file_objs:
             e, file = FileService.get_by_id(pf_id)
             if not e:
                 return get_data_error_result(
-                    retmsg="Can't find this folder!")
+                    message="Can't find this folder!")
             MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
             if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(current_user.id) >= MAX_FILE_NUM_PER_USER:
                 return get_data_error_result(
-                    retmsg="Exceed the maximum file number of a free user!")
+                    message="Exceed the maximum file number of a free user!")
 
             # split file name path
             if not file_obj.filename:
@@ -85,13 +82,13 @@ def upload():
             if file_len != len_id_list:
                 e, file = FileService.get_by_id(file_id_list[len_id_list - 1])
                 if not e:
-                    return get_data_error_result(retmsg="Folder not found!")
+                    return get_data_error_result(message="Folder not found!")
                 last_folder = FileService.create_folder(file, file_id_list[len_id_list - 1], file_obj_names,
                                                         len_id_list)
             else:
                 e, file = FileService.get_by_id(file_id_list[len_id_list - 2])
                 if not e:
-                    return get_data_error_result(retmsg="Folder not found!")
+                    return get_data_error_result(message="Folder not found!")
                 last_folder = FileService.create_folder(file, file_id_list[len_id_list - 2], file_obj_names,
                                                         len_id_list)
 
@@ -137,10 +134,10 @@ def create():
     try:
         if not FileService.is_parent_folder_exist(pf_id):
             return get_json_result(
-                data=False, retmsg="Parent Folder Doesn't Exist!", retcode=RetCode.OPERATING_ERROR)
+                data=False, message="Parent Folder Doesn't Exist!", code=settings.RetCode.OPERATING_ERROR)
         if FileService.query(name=req["name"], parent_id=pf_id):
             return get_data_error_result(
-                retmsg="Duplicated folder name in the same folder.")
+                message="Duplicated folder name in the same folder.")
 
         if input_file_type == FileType.FOLDER.value:
             file_type = FileType.FOLDER.value
@@ -181,14 +178,14 @@ def list_files():
     try:
         e, file = FileService.get_by_id(pf_id)
         if not e:
-            return get_data_error_result(retmsg="Folder not found!")
+            return get_data_error_result(message="Folder not found!")
 
         files, total = FileService.get_by_pf_id(
             current_user.id, pf_id, page_number, items_per_page, orderby, desc, keywords)
 
         parent_folder = FileService.get_parent_folder(pf_id)
         if not FileService.get_parent_folder(pf_id):
-            return get_json_result(retmsg="File not found!")
+            return get_json_result(message="File not found!")
 
         return get_json_result(data={"total": total, "files": files, "parent_folder": parent_folder.to_json()})
     except Exception as e:
@@ -212,7 +209,7 @@ def get_parent_folder():
     try:
         e, file = FileService.get_by_id(file_id)
         if not e:
-            return get_data_error_result(retmsg="Folder not found!")
+            return get_data_error_result(message="Folder not found!")
 
         parent_folder = FileService.get_parent_folder(file_id)
         return get_json_result(data={"parent_folder": parent_folder.to_json()})
@@ -227,7 +224,7 @@ def get_all_parent_folders():
     try:
         e, file = FileService.get_by_id(file_id)
         if not e:
-            return get_data_error_result(retmsg="Folder not found!")
+            return get_data_error_result(message="Folder not found!")
 
         parent_folders = FileService.get_all_parent_folders(file_id)
         parent_folders_res = []
@@ -248,9 +245,9 @@ def rm():
         for file_id in file_ids:
             e, file = FileService.get_by_id(file_id)
             if not e:
-                return get_data_error_result(retmsg="File or Folder not found!")
+                return get_data_error_result(message="File or Folder not found!")
             if not file.tenant_id:
-                return get_data_error_result(retmsg="Tenant not found!")
+                return get_data_error_result(message="Tenant not found!")
             if file.source_type == FileSource.KNOWLEDGEBASE:
                 continue
 
@@ -259,13 +256,13 @@ def rm():
                 for inner_file_id in file_id_list:
                     e, file = FileService.get_by_id(inner_file_id)
                     if not e:
-                        return get_data_error_result(retmsg="File not found!")
+                        return get_data_error_result(message="File not found!")
                     STORAGE_IMPL.rm(file.parent_id, file.location)
                 FileService.delete_folder_by_pf_id(current_user.id, file_id)
             else:
                 if not FileService.delete(file):
                     return get_data_error_result(
-                        retmsg="Database error (File removal)!")
+                        message="Database error (File removal)!")
 
             # delete file2document
             informs = File2DocumentService.get_by_file_id(file_id)
@@ -273,13 +270,13 @@ def rm():
                 doc_id = inform.document_id
                 e, doc = DocumentService.get_by_id(doc_id)
                 if not e:
-                    return get_data_error_result(retmsg="Document not found!")
+                    return get_data_error_result(message="Document not found!")
                 tenant_id = DocumentService.get_tenant_id(doc_id)
                 if not tenant_id:
-                    return get_data_error_result(retmsg="Tenant not found!")
+                    return get_data_error_result(message="Tenant not found!")
                 if not DocumentService.remove_document(doc, tenant_id):
                     return get_data_error_result(
-                        retmsg="Database error (Document removal)!")
+                        message="Database error (Document removal)!")
             File2DocumentService.delete_by_file_id(file_id)
 
         return get_json_result(data=True)
@@ -295,30 +292,30 @@ def rename():
     try:
         e, file = FileService.get_by_id(req["file_id"])
         if not e:
-            return get_data_error_result(retmsg="File not found!")
+            return get_data_error_result(message="File not found!")
         if file.type != FileType.FOLDER.value \
             and pathlib.Path(req["name"].lower()).suffix != pathlib.Path(
                 file.name.lower()).suffix:
             return get_json_result(
                 data=False,
-                retmsg="The extension of file can't be changed",
-                retcode=RetCode.ARGUMENT_ERROR)
+                message="The extension of file can't be changed",
+                code=settings.RetCode.ARGUMENT_ERROR)
         for file in FileService.query(name=req["name"], pf_id=file.parent_id):
             if file.name == req["name"]:
                 return get_data_error_result(
-                    retmsg="Duplicated file name in the same folder.")
+                    message="Duplicated file name in the same folder.")
 
         if not FileService.update_by_id(
                 req["file_id"], {"name": req["name"]}):
             return get_data_error_result(
-                retmsg="Database error (File rename)!")
+                message="Database error (File rename)!")
 
         informs = File2DocumentService.get_by_file_id(req["file_id"])
         if informs:
             if not DocumentService.update_by_id(
                     informs[0].document_id, {"name": req["name"]}):
                 return get_data_error_result(
-                    retmsg="Database error (Document rename)!")
+                    message="Database error (Document rename)!")
 
         return get_json_result(data=True)
     except Exception as e:
@@ -331,7 +328,7 @@ def get(file_id):
     try:
         e, file = FileService.get_by_id(file_id)
         if not e:
-            return get_data_error_result(retmsg="Document not found!")
+            return get_data_error_result(message="Document not found!")
         b, n = File2DocumentService.get_storage_address(file_id=file_id)
         response = flask.make_response(STORAGE_IMPL.get(b, n))
         ext = re.search(r"\.([^.]+)$", file.name)
@@ -359,12 +356,12 @@ def move():
         for file_id in file_ids:
             e, file = FileService.get_by_id(file_id)
             if not e:
-                return get_data_error_result(retmsg="File or Folder not found!")
+                return get_data_error_result(message="File or Folder not found!")
             if not file.tenant_id:
-                return get_data_error_result(retmsg="Tenant not found!")
+                return get_data_error_result(message="Tenant not found!")
         fe, _ = FileService.get_by_id(parent_id)
         if not fe:
-            return get_data_error_result(retmsg="Parent Folder not found!")
+            return get_data_error_result(message="Parent Folder not found!")
         FileService.move_file(file_ids, parent_id)
         return get_json_result(data=True)
     except Exception as e:

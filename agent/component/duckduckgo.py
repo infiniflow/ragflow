@@ -13,10 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 from duckduckgo_search import DDGS
 import pandas as pd
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
@@ -62,5 +62,5 @@ class DuckDuckGo(ComponentBase, ABC):
             return DuckDuckGo.be_output("")
 
         df = pd.DataFrame(duck_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logging.debug("df: {df}")
         return df

@@ -6,15 +6,13 @@ Reference:
 """
 
 import logging
-from typing import Any, cast, List
 import html
+from typing import Any, cast
 from graspologic.partition import hierarchical_leiden
 from graspologic.utils import largest_connected_component
 
 import networkx as nx
 from networkx import is_empty
-
-log = logging.getLogger(__name__)
 
 
 def _stabilize_graph(graph: nx.Graph) -> nx.Graph:
@@ -99,7 +97,7 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
     max_cluster_size = args.get("max_cluster_size", 12)
     use_lcc = args.get("use_lcc", True)
     if args.get("verbose", False):
-        log.info(
+        logging.debug(
             "Running leiden with max_cluster_size=%s, lcc=%s", max_cluster_size, use_lcc
         )
     if not graph.nodes(): return {}
@@ -134,7 +132,7 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
     return results_by_level
 
 
-def add_community_info2graph(graph: nx.Graph, nodes: List[str], community_title):
+def add_community_info2graph(graph: nx.Graph, nodes: list[str], community_title):
     for n in nodes:
         if "communities" not in graph.nodes[n]:
             graph.nodes[n]["communities"] = []

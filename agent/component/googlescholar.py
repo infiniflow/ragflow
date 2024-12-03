@@ -13,9 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 import pandas as pd
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
 from scholarly import scholarly
 
@@ -58,13 +58,13 @@ class GoogleScholar(ComponentBase, ABC):
                     'pub_url'] + '"></a> ' + "\n author: " + ",".join(pub['bib']['author']) + '\n Abstract: ' + pub[
                                                    'bib'].get('abstract', 'no abstract')})
 
-            except StopIteration or Exception as e:
-                print("**ERROR** " + str(e))
+            except StopIteration or Exception:
+                logging.exception("GoogleScholar")
                 break
 
         if not scholar_res:
             return GoogleScholar.be_output("")
 
         df = pd.DataFrame(scholar_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logging.debug(f"df: {df}")
         return df

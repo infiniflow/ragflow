@@ -20,6 +20,7 @@ import GenerateForm from '../form/generate-form';
 import GithubForm from '../form/github-form';
 import GoogleForm from '../form/google-form';
 import GoogleScholarForm from '../form/google-scholar-form';
+import InvokeForm from '../form/invoke-form';
 import Jin10Form from '../form/jin10-form';
 import KeywordExtractForm from '../form/keyword-extract-form';
 import MessageForm from '../form/message-form';
@@ -38,6 +39,8 @@ import OperatorIcon from '../operator-icon';
 
 import { CloseOutlined } from '@ant-design/icons';
 import { lowerFirst } from 'lodash';
+import TemplateForm from '../form/template-form';
+import { getDrawerWidth } from '../utils';
 import styles from './index.less';
 
 interface IProps {
@@ -74,11 +77,15 @@ const FormMap = {
   [Operator.Jin10]: Jin10Form,
   [Operator.TuShare]: TuShareForm,
   [Operator.Crawler]: CrawlerForm,
+  [Operator.Invoke]: InvokeForm,
+  [Operator.Concentrator]: () => <></>,
+  [Operator.Note]: () => <></>,
+  [Operator.Template]: TemplateForm,
 };
 
 const EmptyContent = () => <div></div>;
 
-const FlowDrawer = ({
+const FormDrawer = ({
   visible,
   hideModal,
   node,
@@ -131,7 +138,7 @@ const FlowDrawer = ({
       open={visible}
       getContainer={false}
       mask={false}
-      width={470}
+      width={getDrawerWidth()}
       closeIcon={null}
     >
       <section className={styles.formWrapper}>
@@ -147,4 +154,4 @@ const FlowDrawer = ({
   );
 };
 
-export default FlowDrawer;
+export default FormDrawer;

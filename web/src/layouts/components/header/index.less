@@ -31,7 +31,7 @@
 }
 
 .radioGroup {
-  & > label {
+  & label {
     height: 40px;
     line-height: 40px;
     border: 0 !important;
@@ -44,6 +44,9 @@
   }
   :global(.ant-radio-button-wrapper-checked) {
     border-radius: 6px !important;
+    & a {
+      color: white;
+    }
   }
 }
 

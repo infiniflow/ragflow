@@ -4,722 +4,1566 @@
   "description": "A recruitment pitch assistant capable of pitching a candidate, presenting a job opportunity, addressing queries, and requesting the candidate's contact details. Let's begin by linking a knowledge base containing the job description in 'Retrieval'!",
   "canvas_type": "chatbot",
   "dsl": {
-    "answer": [],
-    "components": {
-      "answer:0": {
-        "downstream": ["categorize:0"],
-        "obj": {
-          "component_name": "Answer",
-          "params": {}
-        },
-        "upstream": ["begin", "message:reject"]
-      },
-      "answer:1": {
-        "downstream": ["categorize:1"],
-        "obj": {
-          "component_name": "Answer",
-          "params": {}
-        },
-        "upstream": [
-          "generate:aboutJob",
-          "generate:nowechat",
-          "generate:get_wechat",
-          "message:introduction",
-          "generate:casual"
-        ]
-      },
-      "begin": {
-        "downstream": ["answer:0"],
-        "obj": {
-          "component_name": "Begin",
-          "params": {
-            "prologue": "您好！我是Infiniflow 的HRBP，正在找寻AIGC方面的人才，了解到您是这方面的大佬，然后冒昧的就联系到您。这边有个机会想和您分享，RAGFlow正在招聘您这个岗位的资深的工程师不知道您那边是不是感兴趣？"
-          }
-        },
-        "upstream": []
-      },
-      "categorize:0": {
-        "downstream": [
-          "message:introduction",
-          "generate:casual",
-          "retrieval:0",
-          "message:reject"
-        ],
-        "obj": {
-          "component_name": "Categorize",
-          "params": {
-            "category_description": {
-              "about_job": {
-                "description": "该问题关于职位本身或公司的信息。",
-                "examples": "什么岗位？\n汇报对象是谁?\n公司多少人？\n公司有啥产品？\n具体工作内容是啥？\n地点哪里？\n双休吗？",
-                "to": "retrieval:0"
-              },
-              "answer": {
-                "description": "该回答表示他对于该职位不感兴趣，或感觉受到骚扰。",
-                "examples": "不需要\n不感兴趣\n暂时不看\n不要\nno\n我已经不干这个了\n我不是这个方向的",
-                "to": "message:reject"
-              },
-              "casual": {
-                "description": "该问题不关于职位本身或公司的信息，属于闲聊。",
-                "examples": "你好\n好久不见\n你男的女的？\n你是猴子派来的救兵吗？\n上午开会了?\n你叫啥？\n最近市场如何?生意好做吗？",
-                "to": "generate:casual"
-              },
-              "interested": {
-                "description": "该回答表示他对于该职位感兴趣。",
-                "examples": "嗯\n说吧\n说说看\n还好吧\n是的\n哦\nyes\n具体说说",
-                "to": "message:introduction"
-              }
-            },
-            "llm_id": "deepseek-chat"
-          }
-        },
-        "upstream": ["answer:0"]
-      },
-      "categorize:1": {
-        "downstream": [
-          "generate:get_wechat",
-          "generate:nowechat",
-          "retrieval:0",
-          "generate:casual"
-        ],
-        "obj": {
-          "component_name": "Categorize",
-          "params": {
-            "category_description": {
-              "about_job": {
-                "description": "该问题关于职位本身或公司的信息。",
-                "examples": "什么岗位？\n汇报对象是谁?\n公司多少人？\n公司有啥产品？\n具体工作内容是啥？\n地点哪里？\n双休吗？",
-                "to": "retrieval:0"
-              },
-              "casual": {
-                "description": "该问题不关于职位本身或公司的信息，属于闲聊。",
-                "examples": "你好\n好久不见\n你男的女的？\n你是猴子派来的救兵吗？\n上午开会了?\n你叫啥？\n最近市场如何?生意好做吗？",
-                "to": "generate:casual"
-              },
-              "giveup": {
-                "description": "该回答表示他不愿意加微信。",
-                "examples": "不需要\n不感兴趣\n暂时不看\n不要\nno\n不方便\n不知道还要加我微信",
-                "to": "generate:nowechat"
-              },
-              "wechat": {
-                "description": "该回答表示他愿意加微信,或者已经报了微信号。",
-                "examples": "嗯\n可以\n是的\n哦\nyes\n15002333453\nwindblow_2231",
-                "to": "generate:get_wechat"
-              }
-            },
-            "llm_id": "deepseek-chat",
-            "message_history_window_size": 8
-          }
-        },
-        "upstream": ["answer:1"]
-      },
-      "generate:aboutJob": {
-        "downstream": ["answer:1"],
-        "obj": {
-          "component_name": "Generate",
-          "params": {
-            "llm_id": "deepseek-chat",
-            "prompt": "你是公司的HR，候选人问了有关职位或公司的问题，你根据以下职位信息回答。如果职位信息中不包含候选人的问题就回答不清楚、不知道、有待确认等。回答完后引导候选人加微信号，如：\n - 方便加一下微信吗，我把JD发您看看？\n  - 微信号多少，我把详细职位JD发您？\n      职位信息如下:\n      {input}\n      职位信息如上。"
-          }
-        },
-        "upstream": ["relevant:0", "retrieval:0"]
-      },
-      "generate:casual": {
-        "downstream": ["answer:1"],
-        "obj": {
-          "component_name": "Generate",
-          "params": {
-            "cite": false,
-            "llm_id": "deepseek-chat",
-            "message_history_window_size": 12,
-            "prompt": "你是公司负责招聘的HR，现在候选人的聊了和职位无关的话题，请耐心的回应候选人，并将话题往该AGI的职位上带，最好能要到候选人微信号以便后面保持联系。"
-          }
-        },
-        "upstream": ["categorize:0", "categorize:1"]
-      },
-      "generate:get_wechat": {
-        "downstream": ["answer:1"],
-        "obj": {
-          "component_name": "Generate",
-          "params": {
-            "cite": false,
-            "llm_id": "deepseek-chat",
-            "message_history_window_size": 12,
-            "prompt": "你是公司负责招聘的HR，候选人表示不反感加微信，如果对方已经报了微信号，表示感谢和信任并表示马上会加上；如果没有，则问对方微信号多少。你的微信号是weixin_kevin，E-mail是kkk@ragflow.com。说话不要重复。不要总是您好。"
-          }
-        },
-        "upstream": ["categorize:1"]
-      },
-      "generate:nowechat": {
-        "downstream": ["answer:1"],
-        "obj": {
-          "component_name": "Generate",
-          "params": {
-            "cite": false,
-            "llm_id": "deepseek-chat",
-            "message_history_window_size": 12,
-            "prompt": "你是公司负责招聘的HR，当你提出加微信时对方表示拒绝。你需要耐心礼貌的回应候选人，表示对于保护隐私信息给予理解，也可以询问他对该职位的看法和顾虑。并在恰当的时机再次询问微信联系方式。也可以鼓励候选人主动与你取得联系。你的微信号是weixin_kevin，E-mail是kkk@ragflow.com。说话不要重复。不要总是您好。"
-          }
-        },
-        "upstream": ["categorize:1"]
-      },
-      "message:introduction": {
-        "downstream": ["answer:1"],
-        "obj": {
-          "component_name": "Message",
-          "params": {
-            "messages": [
-              "我简单介绍一下：\nRAGFlow 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。https://github.com/infiniflow/ragflow\n您那边还有什么要了解的？"
-            ]
-          }
-        },
-        "upstream": ["categorize:0"]
-      },
-      "message:reject": {
-        "downstream": ["answer:0"],
-        "obj": {
-          "component_name": "Message",
-          "params": {
-            "messages": [
-              "好的，祝您生活愉快，工作顺利。",
-              "哦，好的，感谢您宝贵的时间！"
-            ]
-          }
-        },
-        "upstream": ["categorize:0"]
-      },
-      "retrieval:0": {
-        "downstream": ["generate:aboutJob"],
-        "obj": {
-          "component_name": "Retrieval",
-          "params": {
-            "kb_ids": [],
-            "keywords_similarity_weight": 0.3,
-            "rerank_id": "BAAI/bge-reranker-v2-m3",
-            "similarity_threshold": 0.2,
-            "top_k": 1024,
-            "top_n": 6
-          }
-        },
-        "upstream": ["categorize:0", "categorize:1"]
-      }
-    },
-    "graph": {
-      "edges": [
-        {
-          "id": "7a045a3d-5881-4a57-9467-75946941a642",
-          "label": "",
-          "source": "begin",
-          "target": "answer:0"
-        },
-        {
-          "id": "9c6c78c1-532c-423d-9712-61c47a452f0e",
-          "label": "",
-          "source": "message:reject",
-          "target": "answer:0"
-        },
-        {
-          "id": "e35ab5a1-9a64-44df-8eb6-c2f09204b6ff",
-          "label": "",
-          "source": "categorize:0",
-          "sourceHandle": "interested",
-          "target": "message:introduction"
-        },
-        {
-          "id": "988d6196-6fc7-4004-88e2-d2b008366aa4",
-          "label": "",
-          "source": "categorize:0",
-          "sourceHandle": "casual",
-          "target": "generate:casual"
-        },
-        {
-          "id": "1cdf2cbc-761b-4a2c-b84d-1cac54357a45",
-          "label": "",
-          "source": "categorize:0",
-          "sourceHandle": "about_job",
-          "target": "retrieval:0"
-        },
-        {
-          "id": "12014f4f-a062-4155-bc08-f28d209c0a61",
-          "label": "",
-          "source": "categorize:1",
-          "sourceHandle": "wechat",
-          "target": "generate:get_wechat"
-        },
-        {
-          "id": "2e5df83c-1c46-4054-9205-3ab2b3fec50b",
-          "label": "",
-          "source": "categorize:1",
-          "sourceHandle": "giveup",
-          "target": "generate:nowechat"
-        },
-        {
-          "id": "e037992a-a1c6-4bb0-ab28-382c17993efa",
-          "label": "",
-          "source": "relevant:0",
-          "target": "generate:aboutJob"
-        },
-        {
-          "id": "reactflow__edge-retrieval:0b-generate:aboutJobc",
-          "source": "retrieval:0",
-          "sourceHandle": "b",
-          "target": "generate:aboutJob",
-          "targetHandle": "c",
-          "type": "buttonEdge"
-        },
-        {
-          "id": "reactflow__edge-answer:0b-categorize:0a",
-          "source": "answer:0",
-          "sourceHandle": "b",
-          "target": "categorize:0",
-          "targetHandle": "a",
-          "type": "buttonEdge"
-        },
-        {
-          "id": "reactflow__edge-categorize:0answer-message:rejectb",
-          "source": "categorize:0",
-          "sourceHandle": "answer",
-          "target": "message:reject",
-          "targetHandle": "b",
-          "type": "buttonEdge"
-        },
-        {
-          "id": "reactflow__edge-categorize:1about_job-retrieval:0a",
-          "source": "categorize:1",
-          "sourceHandle": "about_job",
-          "target": "retrieval:0",
-          "targetHandle": "a",
-          "type": "buttonEdge"
-        },
-        {
-          "id": "reactflow__edge-generate:aboutJoba-answer:1d",
-          "source": "generate:aboutJob",
-          "sourceHandle": "a",
-          "target": "answer:1",
-          "targetHandle": "d",
-          "type": "buttonEdge"
-        },
-        {
-          "id": "reactflow__edge-generate:nowechatb-answer:1d",
-          "source": "generate:nowechat",
-          "sourceHandle": "b",
-          "target": "answer:1",
-          "targetHandle": "d",
-          "type": "buttonEdge"
-        },
-        {
-          "id": "reactflow__edge-generate:get_wechatb-answer:1d",
-          "source": "generate:get_wechat",
-          "sourceHandle": "b",
-          "target": "answer:1",
-          "targetHandle": "d",
-          "type": "buttonEdge"
-        },
-        {
-          "id": "reactflow__edge-message:introductionb-answer:1c",
-          "source": "message:introduction",
-          "sourceHandle": "b",
-          "target": "answer:1",
-          "targetHandle": "c",
-          "type": "buttonEdge"
-        },
-        {
-          "id": "reactflow__edge-generate:casualb-answer:1c",
-          "source": "generate:casual",
-          "sourceHandle": "b",
-          "target": "answer:1",
-          "targetHandle": "c",
-          "type": "buttonEdge"
-        },
-        {
-          "id": "reactflow__edge-categorize:1casual-generate:casuald",
-          "source": "categorize:1",
-          "sourceHandle": "casual",
-          "target": "generate:casual",
-          "targetHandle": "d",
-          "type": "buttonEdge"
-        },
-        {
-          "id": "reactflow__edge-answer:1d-categorize:1c",
-          "source": "answer:1",
-          "sourceHandle": "d",
-          "target": "categorize:1",
-          "targetHandle": "c",
-          "type": "buttonEdge"
-        }
-      ],
-      "nodes": [
-        {
-          "data": {
-            "form": {
+      "answer": [],
+      "components": {
+        "begin": {
+          "obj": {
+            "component_name": "Begin",
+            "params": {
               "prologue": "您好！我是英飞流负责招聘的HR，了解到您是这方面的大佬，然后冒昧的就联系到您。这边有个机会想和您分享，RAGFlow正在招聘您这个岗位的资深的工程师不知道您那边是不是感兴趣？"
-            },
-            "label": "Begin",
-            "name": "开场白"
+            }
           },
-          "dragging": false,
-          "height": 50,
-          "id": "begin",
-          "position": {
-            "x": -692.1713416056568,
-            "y": 194.90435403074903
-          },
-          "positionAbsolute": {
-            "x": -692.1713416056568,
-            "y": 194.90435403074903
-          },
-          "selected": true,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "beginNode",
-          "width": 50
+          "downstream": [
+            "answer:0"
+          ],
+          "upstream": []
         },
-        {
-          "data": {
-            "form": {},
-            "label": "Answer",
-            "name": "交互1"
+        "answer:0": {
+          "obj": {
+            "component_name": "Answer",
+            "params": {}
           },
-          "dragging": false,
-          "height": 100,
-          "id": "answer:0",
-          "position": {
-            "x": -513.0700577637697,
-            "y": 169.76025544916462
-          },
-          "positionAbsolute": {
-            "x": -513.0700577637697,
-            "y": 169.76025544916462
-          },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "logicNode",
-          "width": 100
+          "downstream": [
+            "categorize:0"
+          ],
+          "upstream": [
+            "begin",
+            "message:reject"
+          ]
         },
-        {
-          "data": {
-            "form": {
+        "categorize:0": {
+          "obj": {
+            "component_name": "Categorize",
+            "params": {
               "category_description": {
-                "about_job": {
+                "answer": {
                   "description": "该问题关于职位本身或公司的信息。",
                   "examples": "什么岗位？\n汇报对象是谁?\n公司多少人？\n公司有啥产品？\n具体工作内容是啥？\n地点哪里？\n双休吗？",
-                  "to": "retrieval:0"
-                },
-                "answer": {
-                  "description": "该回答表示他对于该职位不感兴趣，或感觉受到骚扰。",
-                  "examples": "不需要\n不感兴趣\n暂时不看\n不要\nno\n我已经不干这个了\n我不是这个方向的",
-                  "to": "message:reject"
+                  "to": "Retrieval:ShaggyRadiosRetire"
                 },
                 "casual": {
                   "description": "该问题不关于职位本身或公司的信息，属于闲聊。",
                   "examples": "你好\n好久不见\n你男的女的？\n你是猴子派来的救兵吗？\n上午开会了?\n你叫啥？\n最近市场如何?生意好做吗？",
-                  "to": "generate:casual"
+                  "to": "Generate:ProudEarsWorry"
                 },
                 "interested": {
                   "description": "该回答表示他对于该职位感兴趣。",
                   "examples": "嗯\n说吧\n说说看\n还好吧\n是的\n哦\nyes\n具体说说",
-                  "to": "message:introduction"
+                  "to": "Message:MajorPigsYell"
+                },
+                "reject": {
+                  "description": "该回答表示他对于该职位不感兴趣，或感觉受到骚扰。",
+                  "examples": "不需要\n不感兴趣\n暂时不看\n不要\nno\n我已经不干这个了\n我不是这个方向的",
+                  "to": "message:reject"
                 }
               },
-              "llm_id": "deepseek-chat"
-            },
-            "label": "Categorize",
-            "name": "是否感兴趣？"
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "max_tokens": 512,
+              "message_history_window_size": 1,
+              "presence_penalty": 0.4,
+              "temperature": 0.1,
+              "top_p": 0.3
+            }
           },
-          "dragging": false,
-          "height": 100,
-          "id": "categorize:0",
-          "position": {
-            "x": -309.96403785137636,
-            "y": 169.00239716590943
-          },
-          "positionAbsolute": {
-            "x": -309.96403785137636,
-            "y": 169.00239716590943
-          },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "categorizeNode",
-          "width": 100
+          "downstream": [
+            "message:reject",
+            "Retrieval:ShaggyRadiosRetire",
+            "Generate:ProudEarsWorry",
+            "Message:MajorPigsYell"
+          ],
+          "upstream": [
+            "answer:0"
+          ]
         },
-        {
-          "data": {
-            "form": {
-              "messages": [
-                "我简单介绍一下：\nRAGFlow 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。https://github.com/infiniflow/ragflow\n您那边还有什么要了解的？"
-              ]
-            },
-            "label": "Message",
-            "name": "职位简介"
-          },
-          "dragging": false,
-          "height": 100,
-          "id": "message:introduction",
-          "position": {
-            "x": -51.02519645488289,
-            "y": 349.6917583392981
-          },
-          "positionAbsolute": {
-            "x": -51.02519645488289,
-            "y": 349.6917583392981
-          },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "logicNode",
-          "width": 100
-        },
-        {
-          "data": {
-            "form": {},
-            "label": "Answer",
-            "name": "交互2"
-          },
-          "dragging": false,
-          "height": 100,
-          "id": "answer:1",
-          "position": {
-            "x": 298.21364134074753,
-            "y": 213.98337252187758
-          },
-          "positionAbsolute": {
-            "x": 298.21364134074753,
-            "y": 213.98337252187758
-          },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "logicNode",
-          "width": 100
-        },
-        {
-          "data": {
-            "form": {
+        "categorize:1": {
+          "obj": {
+            "component_name": "Categorize",
+            "params": {
               "category_description": {
                 "about_job": {
                   "description": "该问题关于职位本身或公司的信息。",
                   "examples": "什么岗位？\n汇报对象是谁?\n公司多少人？\n公司有啥产品？\n具体工作内容是啥？\n地点哪里？\n双休吗？",
-                  "to": "retrieval:0"
+                  "to": "Retrieval:ColdEelsArrive"
                 },
                 "casual": {
                   "description": "该问题不关于职位本身或公司的信息，属于闲聊。",
                   "examples": "你好\n好久不见\n你男的女的？\n你是猴子派来的救兵吗？\n上午开会了?\n你叫啥？\n最近市场如何?生意好做吗？",
-                  "to": "generate:casual"
+                  "to": "Generate:ToughLawsCheat"
                 },
                 "giveup": {
                   "description": "该回答表示他不愿意加微信。",
                   "examples": "不需要\n不感兴趣\n暂时不看\n不要\nno\n不方便\n不知道还要加我微信",
-                  "to": "generate:nowechat"
+                  "to": "Generate:DirtyToolsTrain"
                 },
                 "wechat": {
                   "description": "该回答表示他愿意加微信,或者已经报了微信号。",
                   "examples": "嗯\n可以\n是的\n哦\nyes\n15002333453\nwindblow_2231",
-                  "to": "generate:get_wechat"
+                  "to": "Generate:KindCarrotsSit"
                 }
               },
-              "llm_id": "deepseek-chat",
-              "message_history_window_size": 8
-            },
-            "label": "Categorize",
-            "name": "可以加微信？"
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "max_tokens": 512,
+              "message_history_window_size": 8,
+              "presence_penalty": 0.4,
+              "temperature": 0.1,
+              "top_p": 0.3
+            }
           },
-          "dragging": false,
-          "height": 100,
-          "id": "categorize:1",
-          "position": {
-            "x": -119.93600563737203,
-            "y": -133.18866096986446
-          },
-          "positionAbsolute": {
-            "x": -119.93600563737203,
-            "y": -133.18866096986446
-          },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "categorizeNode",
-          "width": 100
+          "downstream": [
+            "Retrieval:ColdEelsArrive",
+            "Generate:ToughLawsCheat",
+            "Generate:KindCarrotsSit",
+            "Generate:DirtyToolsTrain"
+          ],
+          "upstream": [
+            "Answer:TwentyMugsDeny"
+          ]
         },
-        {
-          "data": {
-            "form": {
-              "cite": false,
-              "llm_id": "deepseek-chat",
-              "message_history_window_size": 12,
-              "prompt": "你是公司负责招聘的HR，现在候选人的聊了和职位无关的话题，请耐心的回应候选人，并将话题往该AGI的职位上带，最好能要到候选人微信号以便后面保持联系。",
-              "temperature": 0.9
-            },
-            "label": "Generate",
-            "name": "闲聊"
-          },
-          "dragging": false,
-          "height": 150,
-          "id": "generate:casual",
-          "position": {
-            "x": -48.359250171260534,
-            "y": 143.59859683874504
-          },
-          "positionAbsolute": {
-            "x": -48.359250171260534,
-            "y": 143.59859683874504
-          },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "logicNode",
-          "width": 150
-        },
-        {
-          "data": {
-            "form": {
-              "kb_ids": [],
-              "keywords_similarity_weight": 0.3,
-              "rerank_id": "BAAI/bge-reranker-v2-m3",
-              "similarity_threshold": 0.2,
-              "top_k": 1024,
-              "top_n": 6
-            },
-            "label": "Retrieval",
-            "name": "搜索职位信息"
-          },
-          "dragging": false,
-          "height": 100,
-          "id": "retrieval:0",
-          "position": {
-            "x": -101.52202227916538,
-            "y": -358.45298158846384
-          },
-          "positionAbsolute": {
-            "x": -101.52202227916538,
-            "y": -358.45298158846384
-          },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "logicNode",
-          "width": 100
-        },
-        {
-          "data": {
-            "form": {
-              "llm_id": "deepseek-chat",
-              "prompt": "你是公司负责招聘的HR，候选人问了有关职位或公司的问题，你根据以下职位信息回答。如果职位信息中不包含候选人的问题就回答不清楚、不知道、有待确认等。回答完后引导候选人加微信号，如：\n - 方便加一下微信吗，我把JD发您看看？\n  - 微信号多少，我把详细职位JD发您？\n      职位信息如下:\n      {input}\n      职位信息如上。",
-              "temperature": 0.02
-            },
-            "label": "Generate",
-            "name": "回答职位信息并加微信"
-          },
-          "dragging": false,
-          "height": 150,
-          "id": "generate:aboutJob",
-          "position": {
-            "x": 304.7173665956045,
-            "y": -385.9093198974024
-          },
-          "positionAbsolute": {
-            "x": 304.7173665956045,
-            "y": -385.9093198974024
-          },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "logicNode",
-          "width": 150
-        },
-        {
-          "data": {
-            "form": {
-              "cite": false,
-              "llm_id": "deepseek-chat",
-              "message_history_window_size": 12,
-              "prompt": "你是公司负责招聘的HR，候选人表示不反感加微信，如果对方已经报了微信号，表示感谢和信任并表示马上会加上；如果没有，则问对方微信号多少。你的微信号是weixin_kevin，E-mail是kkk@ragflow.com。说话不要重复。不要总是您好。",
-              "temperature": 0.1
-            },
-            "label": "Generate",
-            "name": "加微信"
-          },
-          "dragging": false,
-          "height": 150,
-          "id": "generate:get_wechat",
-          "position": {
-            "x": 116.79445463510353,
-            "y": -67.85553023223919
-          },
-          "positionAbsolute": {
-            "x": 116.79445463510353,
-            "y": -67.85553023223919
-          },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "logicNode",
-          "width": 150
-        },
-        {
-          "data": {
-            "form": {
-              "cite": false,
-              "llm_id": "deepseek-chat",
-              "message_history_window_size": 12,
-              "prompt": "你是公司负责招聘的HR，当你提出加微信时对方表示拒绝。你需要耐心礼貌的回应候选人，表示对于保护隐私信息给予理解，也可以询问他对该职位的看法和顾虑。并在恰当的时机再次询问微信联系方式。也可以鼓励候选人主动与你取得联系。你的微信号是weixin_kevin，E-mail是kkk@ragflow.com。说话不要重复。不要总是您好。",
-              "temperature": 0.1
-            },
-            "label": "Generate",
-            "name": "不同意加微信后引导"
-          },
-          "dragging": false,
-          "height": 150,
-          "id": "generate:nowechat",
-          "position": {
-            "x": 118.16110794816632,
-            "y": -274.2256218457169
-          },
-          "positionAbsolute": {
-            "x": 118.16110794816632,
-            "y": -274.2256218457169
-          },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "logicNode",
-          "width": 150
-        },
-        {
-          "data": {
-            "form": {
+        "message:reject": {
+          "obj": {
+            "component_name": "Message",
+            "params": {
               "messages": [
                 "好的，祝您生活愉快，工作顺利。",
                 "哦，好的，感谢您宝贵的时间！"
               ]
-            },
-            "label": "Message",
-            "name": "再会"
+            }
           },
-          "dragging": false,
-          "height": 100,
-          "id": "message:reject",
-          "position": {
-            "x": -433.0908363083062,
-            "y": -25.10708583724005
+          "downstream": [
+            "answer:0"
+          ],
+          "upstream": [
+            "categorize:0"
+          ]
+        },
+        "Answer:TwentyMugsDeny": {
+          "obj": {
+            "component_name": "Answer",
+            "params": {}
           },
-          "positionAbsolute": {
-            "x": -433.0908363083062,
-            "y": -25.10708583724005
+          "downstream": [
+            "categorize:1"
+          ],
+          "upstream": [
+            "Message:MajorPigsYell",
+            "Generate:TruePawsReport",
+            "Generate:ToughLawsCheat",
+            "Generate:KindCarrotsSit",
+            "Generate:DirtyToolsTrain",
+            "Generate:FluffyPillowsGrow",
+            "Generate:ProudEarsWorry"
+          ]
+        },
+        "Retrieval:ShaggyRadiosRetire": {
+          "obj": {
+            "component_name": "Retrieval",
+            "params": {
+              "kb_ids": [],
+              "keywords_similarity_weight": 0.3,
+              "similarity_threshold": 0.2,
+              "top_k": 1024,
+              "top_n": 6
+            }
           },
-          "selected": false,
-          "sourcePosition": "left",
-          "targetPosition": "right",
-          "type": "logicNode",
-          "width": 100
+          "downstream": [
+            "Generate:TruePawsReport"
+          ],
+          "upstream": [
+            "categorize:0"
+          ]
+        },
+        "Generate:TruePawsReport": {
+          "obj": {
+            "component_name": "Generate",
+            "params": {
+              "cite": false,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameters": [],
+              "presence_penalty": 0.4,
+              "prompt": "你是公司负责招聘的HR，候选人问了有关职位或公司的问题，你根据以下职位信息回答。如果职位信息中不包含候选人的问题就回答不清楚、不知道、有待确认等。回答完后引导候选人加微信号，如：\n - 方便加一下微信吗，我把JD发您看看？\n  - 微信号多少，我把详细职位JD发您？\n      职位信息如下:\n      {input}\n      职位信息如上。",
+              "temperature": 0.1,
+              "top_p": 0.3
+            }
+          },
+          "downstream": [
+            "Answer:TwentyMugsDeny"
+          ],
+          "upstream": [
+            "Retrieval:ShaggyRadiosRetire"
+          ]
+        },
+        "Generate:ProudEarsWorry": {
+          "obj": {
+            "component_name": "Generate",
+            "params": {
+              "cite": false,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameters": [],
+              "presence_penalty": 0.4,
+              "prompt": "你是公司负责招聘的HR，现在候选人的聊了和职位无关的话题，请耐心的回应候选人，并将话题往该AGI的职位上带，最好能要到候选人微信号以便后面保持联系。",
+              "temperature": 0.1,
+              "top_p": 0.3
+            }
+          },
+          "downstream": [
+            "Answer:TwentyMugsDeny"
+          ],
+          "upstream": [
+            "categorize:0"
+          ]
+        },
+        "Message:MajorPigsYell": {
+          "obj": {
+            "component_name": "Message",
+            "params": {
+              "messages": [
+                "我简单介绍一下：\nRAGFlow 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。https://github.com/infiniflow/ragflow\n您那边还有什么要了解的？"
+              ]
+            }
+          },
+          "downstream": [
+            "Answer:TwentyMugsDeny"
+          ],
+          "upstream": [
+            "categorize:0"
+          ]
+        },
+        "Generate:ToughLawsCheat": {
+          "obj": {
+            "component_name": "Generate",
+            "params": {
+              "cite": false,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameters": [],
+              "presence_penalty": 0.4,
+              "prompt": "你是公司负责招聘的HR，现在候选人的聊了和职位无关的话题，请耐心的回应候选人，并将话题往该AGI的职位上带，最好能要到候选人微信号以便后面保持联系。",
+              "temperature": 0.1,
+              "top_p": 0.3
+            }
+          },
+          "downstream": [
+            "Answer:TwentyMugsDeny"
+          ],
+          "upstream": [
+            "categorize:1"
+          ]
+        },
+        "Retrieval:ColdEelsArrive": {
+          "obj": {
+            "component_name": "Retrieval",
+            "params": {
+              "kb_ids": [],
+              "keywords_similarity_weight": 0.3,
+              "similarity_threshold": 0.2,
+              "top_k": 1024,
+              "top_n": 6
+            }
+          },
+          "downstream": [
+            "Generate:FluffyPillowsGrow"
+          ],
+          "upstream": [
+            "categorize:1"
+          ]
+        },
+        "Generate:KindCarrotsSit": {
+          "obj": {
+            "component_name": "Generate",
+            "params": {
+              "cite": false,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameters": [],
+              "presence_penalty": 0.4,
+              "prompt": "你是公司负责招聘的HR，候选人表示不反感加微信，如果对方已经报了微信号，表示感谢和信任并表示马上会加上；如果没有，则问对方微信号多少。你的微信号是weixin_kevin，E-mail是kkk@ragflow.com。说话不要重复。不要总是您好。",
+              "temperature": 0.1,
+              "top_p": 0.3
+            }
+          },
+          "downstream": [
+            "Answer:TwentyMugsDeny"
+          ],
+          "upstream": [
+            "categorize:1"
+          ]
+        },
+        "Generate:DirtyToolsTrain": {
+          "obj": {
+            "component_name": "Generate",
+            "params": {
+              "cite": false,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameters": [],
+              "presence_penalty": 0.4,
+              "prompt": "你是公司负责招聘的HR，当你提出加微信时对方表示拒绝。你需要耐心礼貌的回应候选人，表示对于保护隐私信息给予理解，也可以询问他对该职位的看法和顾虑。并在恰当的时机再次询问微信联系方式。也可以鼓励候选人主动与你取得联系。你的微信号是weixin_kevin，E-mail是kkk@ragflow.com。说话不要重复。不要总是您好。",
+              "temperature": 0.1,
+              "top_p": 0.3
+            }
+          },
+          "downstream": [
+            "Answer:TwentyMugsDeny"
+          ],
+          "upstream": [
+            "categorize:1"
+          ]
+        },
+        "Generate:FluffyPillowsGrow": {
+          "obj": {
+            "component_name": "Generate",
+            "params": {
+              "cite": false,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameters": [
+                {
+                  "component_id": "Retrieval:ColdEelsArrive",
+                  "id": "5166a107-e859-4c71-99a2-3a216c775347",
+                  "key": "jd"
+                }
+              ],
+              "presence_penalty": 0.4,
+              "prompt": "你是公司负责招聘的HR，候选人问了有关职位或公司的问题，你根据以下职位信息回答。如果职位信息中不包含候选人的问题就回答不清楚、不知道、有待确认等。回答完后引导候选人加微信号，如：\n - 方便加一下微信吗，我把JD发您看看？\n  - 微信号多少，我把详细职位JD发您？\n      职位信息如下:\n      {jd}\n      职位信息如上。",
+              "temperature": 0.1,
+              "top_p": 0.3
+            }
+          },
+          "downstream": [
+            "Answer:TwentyMugsDeny"
+          ],
+          "upstream": [
+            "Retrieval:ColdEelsArrive"
+          ]
         }
-      ]
+      },
+      "embed_id": "",
+      "graph": {
+        "nodes": [
+          {
+            "data": {
+              "form": {
+                "prologue": "您好！我是英飞流负责招聘的HR，了解到您是这方面的大佬，然后冒昧的就联系到您。这边有个机会想和您分享，RAGFlow正在招聘您这个岗位的资深的工程师不知道您那边是不是感兴趣？"
+              },
+              "label": "Begin",
+              "name": "开场白"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "begin",
+            "position": {
+              "x": -1034.5459371394727,
+              "y": -4.596073111491364
+            },
+            "positionAbsolute": {
+              "x": -1034.5459371394727,
+              "y": -4.596073111491364
+            },
+            "selected": false,
+            "sourcePosition": "left",
+            "targetPosition": "right",
+            "type": "beginNode",
+            "width": 100
+          },
+          {
+            "data": {
+              "form": {},
+              "label": "Answer",
+              "name": "交互1"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "answer:0",
+            "position": {
+              "x": -781.130188267973,
+              "y": -1.5248388351160145
+            },
+            "positionAbsolute": {
+              "x": -781.130188267973,
+              "y": -1.5248388351160145
+            },
+            "selected": false,
+            "sourcePosition": "left",
+            "targetPosition": "right",
+            "type": "logicNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "category_description": {
+                  "answer": {
+                    "description": "该问题关于职位本身或公司的信息。",
+                    "examples": "什么岗位？\n汇报对象是谁?\n公司多少人？\n公司有啥产品？\n具体工作内容是啥？\n地点哪里？\n双休吗？",
+                    "to": "Retrieval:ShaggyRadiosRetire"
+                  },
+                  "casual": {
+                    "description": "该问题不关于职位本身或公司的信息，属于闲聊。",
+                    "examples": "你好\n好久不见\n你男的女的？\n你是猴子派来的救兵吗？\n上午开会了?\n你叫啥？\n最近市场如何?生意好做吗？",
+                    "to": "Generate:ProudEarsWorry"
+                  },
+                  "interested": {
+                    "description": "该回答表示他对于该职位感兴趣。",
+                    "examples": "嗯\n说吧\n说说看\n还好吧\n是的\n哦\nyes\n具体说说",
+                    "to": "Message:MajorPigsYell"
+                  },
+                  "reject": {
+                    "description": "该回答表示他对于该职位不感兴趣，或感觉受到骚扰。",
+                    "examples": "不需要\n不感兴趣\n暂时不看\n不要\nno\n我已经不干这个了\n我不是这个方向的",
+                    "to": "message:reject"
+                  }
+                },
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 512,
+                "message_history_window_size": 1,
+                "parameter": "Precise",
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Categorize",
+              "name": "是否感兴趣？"
+            },
+            "dragging": false,
+            "height": 223,
+            "id": "categorize:0",
+            "position": {
+              "x": -511.7953063678477,
+              "y": -91.33627890840192
+            },
+            "positionAbsolute": {
+              "x": -511.7953063678477,
+              "y": -91.33627890840192
+            },
+            "selected": false,
+            "sourcePosition": "left",
+            "targetPosition": "right",
+            "type": "categorizeNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "category_description": {
+                  "about_job": {
+                    "description": "该问题关于职位本身或公司的信息。",
+                    "examples": "什么岗位？\n汇报对象是谁?\n公司多少人？\n公司有啥产品？\n具体工作内容是啥？\n地点哪里？\n双休吗？",
+                    "to": "Retrieval:ColdEelsArrive"
+                  },
+                  "casual": {
+                    "description": "该问题不关于职位本身或公司的信息，属于闲聊。",
+                    "examples": "你好\n好久不见\n你男的女的？\n你是猴子派来的救兵吗？\n上午开会了?\n你叫啥？\n最近市场如何?生意好做吗？",
+                    "to": "Generate:ToughLawsCheat"
+                  },
+                  "giveup": {
+                    "description": "该回答表示他不愿意加微信。",
+                    "examples": "不需要\n不感兴趣\n暂时不看\n不要\nno\n不方便\n不知道还要加我微信",
+                    "to": "Generate:DirtyToolsTrain"
+                  },
+                  "wechat": {
+                    "description": "该回答表示他愿意加微信,或者已经报了微信号。",
+                    "examples": "嗯\n可以\n是的\n哦\nyes\n15002333453\nwindblow_2231",
+                    "to": "Generate:KindCarrotsSit"
+                  }
+                },
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 512,
+                "message_history_window_size": 8,
+                "parameter": "Precise",
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Categorize",
+              "name": "可以加微信？"
+            },
+            "dragging": false,
+            "height": 223,
+            "id": "categorize:1",
+            "position": {
+              "x": 650.2305440350307,
+              "y": 54.40917808770183
+            },
+            "positionAbsolute": {
+              "x": 650.2305440350307,
+              "y": 54.40917808770183
+            },
+            "selected": false,
+            "sourcePosition": "left",
+            "targetPosition": "right",
+            "type": "categorizeNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "messages": [
+                  "好的，祝您生活愉快，工作顺利。",
+                  "哦，好的，感谢您宝贵的时间！"
+                ]
+              },
+              "label": "Message",
+              "name": "再会"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "message:reject",
+            "position": {
+              "x": -506.16645843250325,
+              "y": 197.6224867858366
+            },
+            "positionAbsolute": {
+              "x": -506.16645843250325,
+              "y": 197.6224867858366
+            },
+            "selected": false,
+            "sourcePosition": "left",
+            "targetPosition": "right",
+            "type": "logicNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {},
+              "label": "Answer",
+              "name": "交互2"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "Answer:TwentyMugsDeny",
+            "position": {
+              "x": 361.4824760998825,
+              "y": 142.99203467677523
+            },
+            "positionAbsolute": {
+              "x": 361.4824760998825,
+              "y": 142.99203467677523
+            },
+            "selected": false,
+            "sourcePosition": "left",
+            "targetPosition": "right",
+            "type": "logicNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "kb_ids": [],
+                "keywords_similarity_weight": 0.3,
+                "similarity_threshold": 0.2,
+                "top_k": 1024,
+                "top_n": 6
+              },
+              "label": "Retrieval",
+              "name": "搜索职位信息"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "Retrieval:ShaggyRadiosRetire",
+            "position": {
+              "x": -200.47207828507428,
+              "y": -241.8885484926048
+            },
+            "positionAbsolute": {
+              "x": -200.47207828507428,
+              "y": -241.8885484926048
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "retrievalNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "cite": false,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 256,
+                "message_history_window_size": 12,
+                "parameter": "Precise",
+                "parameters": [],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "你是公司负责招聘的HR，候选人问了有关职位或公司的问题，你根据以下职位信息回答。如果职位信息中不包含候选人的问题就回答不清楚、不知道、有待确认等。回答完后引导候选人加微信号，如：\n - 方便加一下微信吗，我把JD发您看看？\n  - 微信号多少，我把详细职位JD发您？\n      职位信息如下:\n      {input}\n      职位信息如上。",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "回答职位信息并加微信"
+            },
+            "dragging": false,
+            "height": 86,
+            "id": "Generate:TruePawsReport",
+            "position": {
+              "x": 114.45914512584898,
+              "y": -243.16108786794368
+            },
+            "positionAbsolute": {
+              "x": 114.45914512584898,
+              "y": -243.16108786794368
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "cite": false,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 256,
+                "message_history_window_size": 12,
+                "parameter": "Precise",
+                "parameters": [],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "你是公司负责招聘的HR，现在候选人的聊了和职位无关的话题，请耐心的回应候选人，并将话题往该AGI的职位上带，最好能要到候选人微信号以便后面保持联系。",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "闲聊"
+            },
+            "dragging": false,
+            "height": 86,
+            "id": "Generate:ProudEarsWorry",
+            "position": {
+              "x": -201.4798710337693,
+              "y": 19.284469688181446
+            },
+            "positionAbsolute": {
+              "x": -201.4798710337693,
+              "y": 19.284469688181446
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "messages": [
+                  "我简单介绍一下：\nRAGFlow 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。https://github.com/infiniflow/ragflow\n您那边还有什么要了解的？"
+                ]
+              },
+              "label": "Message",
+              "name": "职位简介"
+            },
+            "dragging": false,
+            "height": 82,
+            "id": "Message:MajorPigsYell",
+            "position": {
+              "x": -202.68382467291758,
+              "y": 127.64631378626683
+            },
+            "positionAbsolute": {
+              "x": -202.68382467291758,
+              "y": 127.64631378626683
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "messageNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "cite": false,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 256,
+                "message_history_window_size": 12,
+                "parameter": "Precise",
+                "parameters": [],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "你是公司负责招聘的HR，现在候选人的聊了和职位无关的话题，请耐心的回应候选人，并将话题往该AGI的职位上带，最好能要到候选人微信号以便后面保持联系。",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "闲聊(1)"
+            },
+            "dragging": false,
+            "height": 86,
+            "id": "Generate:ToughLawsCheat",
+            "position": {
+              "x": 719.4828084484998,
+              "y": -241.13160131733764
+            },
+            "positionAbsolute": {
+              "x": 719.4828084484998,
+              "y": -241.13160131733764
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "kb_ids": [],
+                "keywords_similarity_weight": 0.3,
+                "similarity_threshold": 0.2,
+                "top_k": 1024,
+                "top_n": 6
+              },
+              "label": "Retrieval",
+              "name": "搜索职位信息(1)"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "Retrieval:ColdEelsArrive",
+            "position": {
+              "x": 681.881985627923,
+              "y": -7.791846853624122
+            },
+            "positionAbsolute": {
+              "x": 681.881985627923,
+              "y": -7.791846853624122
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "retrievalNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "cite": false,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 256,
+                "message_history_window_size": 12,
+                "parameter": "Precise",
+                "parameters": [],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "你是公司负责招聘的HR，候选人表示不反感加微信，如果对方已经报了微信号，表示感谢和信任并表示马上会加上；如果没有，则问对方微信号多少。你的微信号是weixin_kevin，E-mail是kkk@ragflow.com。说话不要重复。不要总是您好。",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "加微信"
+            },
+            "dragging": false,
+            "height": 86,
+            "id": "Generate:KindCarrotsSit",
+            "position": {
+              "x": 679.5187009685263,
+              "y": 298.0100840992407
+            },
+            "positionAbsolute": {
+              "x": 679.5187009685263,
+              "y": 298.0100840992407
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "cite": false,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 256,
+                "message_history_window_size": 12,
+                "parameter": "Precise",
+                "parameters": [],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "你是公司负责招聘的HR，当你提出加微信时对方表示拒绝。你需要耐心礼貌的回应候选人，表示对于保护隐私信息给予理解，也可以询问他对该职位的看法和顾虑。并在恰当的时机再次询问微信联系方式。也可以鼓励候选人主动与你取得联系。你的微信号是weixin_kevin，E-mail是kkk@ragflow.com。说话不要重复。不要总是您好。",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "不同意加微信后引导"
+            },
+            "dragging": false,
+            "height": 86,
+            "id": "Generate:DirtyToolsTrain",
+            "position": {
+              "x": 730.3091106290796,
+              "y": 400.61576075500216
+            },
+            "positionAbsolute": {
+              "x": 730.3091106290796,
+              "y": 400.61576075500216
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "text": "接收用户第一次输入，或在判断后输出静态消息。"
+              },
+              "label": "Note",
+              "name": "N: 交互1"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:SharpWingsGrab",
+            "position": {
+              "x": -785.4239137349989,
+              "y": -137.47929075064422
+            },
+            "positionAbsolute": {
+              "x": -785.4239137349989,
+              "y": -137.47929075064422
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 190
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 190
+          },
+          {
+            "data": {
+              "form": {
+                "text": "大模型判断用户的输入属于哪一种分类，传给不同的组件。"
+              },
+              "label": "Note",
+              "name": "N:是否感兴趣"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:ThickOrangesMelt",
+            "position": {
+              "x": -514.737951592251,
+              "y": -232.7753166367196
+            },
+            "positionAbsolute": {
+              "x": -514.737951592251,
+              "y": -232.7753166367196
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 198
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 198
+          },
+          {
+            "data": {
+              "form": {
+                "text": "接收用户对职位不感兴趣的相关输入，随机返回一条静态消息。"
+              },
+              "label": "Note",
+              "name": "N: 再会"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:FineDaysCheat",
+            "position": {
+              "x": -503.7220442517189,
+              "y": 256.16661862133213
+            },
+            "positionAbsolute": {
+              "x": -503.7220442517189,
+              "y": 256.16661862133213
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 203
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 203
+          },
+          {
+            "data": {
+              "form": {
+                "text": "接收用户对职位感兴趣的相关输入，返回其中的静态消息。"
+              },
+              "label": "Note",
+              "name": "N:职位简介"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:WeakTaxesBegin",
+            "position": {
+              "x": -203.55578459215516,
+              "y": 261.2072463084719
+            },
+            "positionAbsolute": {
+              "x": -203.55578459215516,
+              "y": 261.2072463084719
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 208
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 208
+          },
+          {
+            "data": {
+              "form": {
+                "text": "接收用户闲聊，根据闲聊内容，大模型返回相应的回答。"
+              },
+              "label": "Note",
+              "name": "N: 闲聊"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:FourCornersHelp",
+            "position": {
+              "x": -195.26410221591698,
+              "y": -125.75023229737762
+            },
+            "positionAbsolute": {
+              "x": -195.26410221591698,
+              "y": -125.75023229737762
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 213
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 213
+          },
+          {
+            "data": {
+              "form": {
+                "text": "接收用户对于职位或者公司的问题，检索知识库，返回检索到的内容。"
+              },
+              "label": "Note",
+              "name": "N: 搜索职位信息"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:FortyTiresDance",
+            "position": {
+              "x": -199.51694815612117,
+              "y": -382.54628777242647
+            },
+            "positionAbsolute": {
+              "x": -199.51694815612117,
+              "y": -382.54628777242647
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 197
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 197
+          },
+          {
+            "data": {
+              "form": {
+                "text": "大模型根据检索到的职位信息，回答用户的输入并请求加微信。"
+              },
+              "label": "Note",
+              "name": "N: 回答职位信息"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:SixMasksTie",
+            "position": {
+              "x": 113.93495615504537,
+              "y": -379.38880767320825
+            },
+            "positionAbsolute": {
+              "x": 113.93495615504537,
+              "y": -379.38880767320825
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 205
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 205
+          },
+          {
+            "data": {
+              "form": {
+                "text": "在第一轮的交互完成后，在确定用户的意愿基础上，继续后续的交流。"
+              },
+              "label": "Note",
+              "name": "N: 交互2"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 132,
+            "id": "Note:HipAnimalsLose",
+            "position": {
+              "x": 361.5573430860398,
+              "y": 202.76501272911685
+            },
+            "positionAbsolute": {
+              "x": 361.5573430860398,
+              "y": 202.76501272911685
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 132,
+              "width": 200
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "text": "接收用户不愿意加微信的请求，大模型生成回答，回答与礼貌用语和引导用户加微信相关。"
+              },
+              "label": "Note",
+              "name": "N: 不同意加微信后"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 144,
+            "id": "Note:CalmClownsOpen",
+            "position": {
+              "x": 729.1949314413447,
+              "y": 498.6371247123624
+            },
+            "positionAbsolute": {
+              "x": 729.1949314413447,
+              "y": 498.6371247123624
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 144,
+              "width": 200
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "text": "接收用户加微信的请求或微信号的信息。如果是加微信请求，则大模型返回询问微信的回答；如果是微信号的信息，则大模型返回礼貌性的回答。"
+              },
+              "label": "Note",
+              "name": "N: 加微信"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 149,
+            "id": "Note:EightSuitsAdmire",
+            "position": {
+              "x": 1118.6632741834096,
+              "y": 300.1313513476347
+            },
+            "positionAbsolute": {
+              "x": 1118.6632741834096,
+              "y": 300.1313513476347
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 149,
+              "width": 481
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 481
+          },
+          {
+            "data": {
+              "form": {
+                "text": "大模型判断用户的输入属于哪一种分类，传给不同的组件。"
+              },
+              "label": "Note",
+              "name": "N：可以加微信？"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:SillyPillowsCrash",
+            "position": {
+              "x": 1006.2146104300559,
+              "y": 61.99026665969035
+            },
+            "positionAbsolute": {
+              "x": 1006.2146104300559,
+              "y": 61.99026665969035
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 267
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 267
+          },
+          {
+            "data": {
+              "form": {
+                "text": "接收用户对于职位或者公司的问题，检索知识库，返回检索到的内容。"
+              },
+              "label": "Note",
+              "name": "N: 搜索职位信息(1)"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:PurplePathsHeal",
+            "position": {
+              "x": 679.0610551820539,
+              "y": -146.81167586458758
+            },
+            "positionAbsolute": {
+              "x": 679.0610551820539,
+              "y": -146.81167586458758
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 269
+          },
+          {
+            "data": {
+              "form": {
+                "text": "接收用户闲聊，根据闲聊内容，大模型返回相应的回答。"
+              },
+              "label": "Note",
+              "name": "N：闲聊(1)"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 129,
+            "id": "Note:VastHumansAttend",
+            "position": {
+              "x": 719.3077199915283,
+              "y": -382.2721004750209
+            },
+            "positionAbsolute": {
+              "x": 719.3077199915283,
+              "y": -382.2721004750209
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 129,
+              "width": 200
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "cite": false,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 256,
+                "message_history_window_size": 12,
+                "parameter": "Precise",
+                "parameters": [
+                  {
+                    "component_id": "Retrieval:ColdEelsArrive",
+                    "id": "5166a107-e859-4c71-99a2-3a216c775347",
+                    "key": "jd"
+                  }
+                ],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "你是公司负责招聘的HR，候选人问了有关职位或公司的问题，你根据以下职位信息回答。如果职位信息中不包含候选人的问题就回答不清楚、不知道、有待确认等。回答完后引导候选人加微信号，如：\n - 方便加一下微信吗，我把JD发您看看？\n  - 微信号多少，我把详细职位JD发您？\n      职位信息如下:\n      {jd}\n      职位信息如上。",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "回答职位信息并加微信"
+            },
+            "dragging": false,
+            "height": 128,
+            "id": "Generate:FluffyPillowsGrow",
+            "position": {
+              "x": 411.4591451258489,
+              "y": -7.161087867943763
+            },
+            "positionAbsolute": {
+              "x": 411.4591451258489,
+              "y": -7.161087867943763
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode",
+            "width": 200
+          }
+        ],
+        "edges": [
+          {
+            "id": "7a045a3d-5881-4a57-9467-75946941a642",
+            "label": "",
+            "source": "begin",
+            "target": "answer:0"
+          },
+          {
+            "id": "9c6c78c1-532c-423d-9712-61c47a452f0e",
+            "label": "",
+            "source": "message:reject",
+            "target": "answer:0"
+          },
+          {
+            "id": "reactflow__edge-answer:0b-categorize:0a",
+            "source": "answer:0",
+            "sourceHandle": "b",
+            "target": "categorize:0",
+            "targetHandle": "a",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Answer:TwentyMugsDenyb-categorize:1a",
+            "markerEnd": "logo",
+            "source": "Answer:TwentyMugsDeny",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "categorize:1",
+            "targetHandle": "a",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Retrieval:ShaggyRadiosRetireb-Generate:TruePawsReportc",
+            "markerEnd": "logo",
+            "source": "Retrieval:ShaggyRadiosRetire",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:TruePawsReport",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-categorize:0reject-message:rejectb",
+            "markerEnd": "logo",
+            "source": "categorize:0",
+            "sourceHandle": "reject",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "message:reject",
+            "targetHandle": "b",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-categorize:0answer-Retrieval:ShaggyRadiosRetirec",
+            "markerEnd": "logo",
+            "source": "categorize:0",
+            "sourceHandle": "answer",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Retrieval:ShaggyRadiosRetire",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-categorize:0casual-Generate:ProudEarsWorryc",
+            "markerEnd": "logo",
+            "source": "categorize:0",
+            "sourceHandle": "casual",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:ProudEarsWorry",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Message:MajorPigsYellb-Answer:TwentyMugsDenyc",
+            "markerEnd": "logo",
+            "source": "Message:MajorPigsYell",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Answer:TwentyMugsDeny",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-categorize:0interested-Message:MajorPigsYellc",
+            "markerEnd": "logo",
+            "source": "categorize:0",
+            "sourceHandle": "interested",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Message:MajorPigsYell",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Generate:TruePawsReportb-Answer:TwentyMugsDenyc",
+            "markerEnd": "logo",
+            "source": "Generate:TruePawsReport",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Answer:TwentyMugsDeny",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-categorize:1about_job-Retrieval:ColdEelsArriveb",
+            "markerEnd": "logo",
+            "source": "categorize:1",
+            "sourceHandle": "about_job",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Retrieval:ColdEelsArrive",
+            "targetHandle": "b",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-categorize:1casual-Generate:ToughLawsCheatb",
+            "markerEnd": "logo",
+            "source": "categorize:1",
+            "sourceHandle": "casual",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:ToughLawsCheat",
+            "targetHandle": "b",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-categorize:1wechat-Generate:KindCarrotsSitb",
+            "markerEnd": "logo",
+            "source": "categorize:1",
+            "sourceHandle": "wechat",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:KindCarrotsSit",
+            "targetHandle": "b",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-categorize:1giveup-Generate:DirtyToolsTrainb",
+            "markerEnd": "logo",
+            "source": "categorize:1",
+            "sourceHandle": "giveup",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:DirtyToolsTrain",
+            "targetHandle": "b",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Generate:ToughLawsCheatc-Answer:TwentyMugsDenyc",
+            "markerEnd": "logo",
+            "source": "Generate:ToughLawsCheat",
+            "sourceHandle": "c",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Answer:TwentyMugsDeny",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Generate:KindCarrotsSitc-Answer:TwentyMugsDenyc",
+            "markerEnd": "logo",
+            "source": "Generate:KindCarrotsSit",
+            "sourceHandle": "c",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Answer:TwentyMugsDeny",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Generate:DirtyToolsTrainc-Answer:TwentyMugsDenyc",
+            "markerEnd": "logo",
+            "source": "Generate:DirtyToolsTrain",
+            "sourceHandle": "c",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Answer:TwentyMugsDeny",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Retrieval:ColdEelsArrivec-Generate:FluffyPillowsGrowb",
+            "markerEnd": "logo",
+            "source": "Retrieval:ColdEelsArrive",
+            "sourceHandle": "c",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:FluffyPillowsGrow",
+            "targetHandle": "b",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Generate:FluffyPillowsGrowc-Answer:TwentyMugsDenyc",
+            "markerEnd": "logo",
+            "source": "Generate:FluffyPillowsGrow",
+            "sourceHandle": "c",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Answer:TwentyMugsDeny",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "type": "buttonEdge",
+            "markerEnd": "logo",
+            "style": {
+              "strokeWidth": 2,
+              "stroke": "rgb(202 197 245)"
+            },
+            "source": "Generate:ProudEarsWorry",
+            "sourceHandle": "b",
+            "target": "Answer:TwentyMugsDeny",
+            "targetHandle": "c",
+            "id": "reactflow__edge-Generate:ProudEarsWorryb-Answer:TwentyMugsDenyc"
+          }
+        ]
+      },
+      "history": [],
+      "messages": [],
+      "path": [],
+      "reference": []
     },
-    "history": [],
-    "messages": [],
-    "path": [],
-    "reference": []
-  },
   "avatar": "data:image/jpeg;base64,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"
 }

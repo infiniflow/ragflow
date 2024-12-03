@@ -6,6 +6,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import type { FormProps } from 'antd';
 import { Form, Input } from 'antd';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
 type FieldType = {
   top_n?: number;
@@ -19,7 +20,7 @@ const onFinishFailed: FormProps<FieldType>['onFinishFailed'] = (errorInfo) => {
   console.log('Failed:', errorInfo);
 };
 
-const RetrievalForm = ({ onValuesChange, form }: IOperatorForm) => {
+const RetrievalForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
   return (
     <Form
@@ -31,6 +32,7 @@ const RetrievalForm = ({ onValuesChange, form }: IOperatorForm) => {
       form={form}
       layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <SimilaritySlider
         isTooltipShown
         vectorSimilarityWeightName="keywords_similarity_weight"

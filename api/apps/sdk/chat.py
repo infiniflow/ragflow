@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 from flask import request
-
+from api import settings
 from api.db import StatusEnum
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -32,14 +32,19 @@ def create(tenant_id):
     req=request.json
     ids= req.get("dataset_ids")
     if not ids:
-        return get_error_data_result(retmsg="`dataset_ids` is required")
+        return get_error_data_result(message="`dataset_ids` is required")
     for kb_id in ids:
-        kbs = KnowledgebaseService.query(id=kb_id,tenant_id=tenant_id)
+        kbs = KnowledgebaseService.accessible(kb_id=kb_id,user_id=tenant_id)
         if not kbs:
             return get_error_data_result(f"You don't own the dataset {kb_id}")
-        kb=kbs[0]
+        kbs = KnowledgebaseService.query(id=kb_id)
+        kb = kbs[0]
         if kb.chunk_num == 0:
             return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+    kbs = KnowledgebaseService.get_by_ids(ids)
+    embd_count = list(set([kb.embd_id for kb in kbs]))
+    if len(embd_count) != 1:
+        return get_result(message='Datasets use different embedding models."',code=settings.RetCode.AUTHENTICATION_ERROR)
     req["kb_ids"] = ids
     # llm
     llm = req.get("llm")
@@ -51,7 +56,7 @@ def create(tenant_id):
         req["llm_setting"] = req.pop("llm")
     e, tenant = TenantService.get_by_id(tenant_id)
     if not e:
-        return get_error_data_result(retmsg="Tenant not found!")
+        return get_error_data_result(message="Tenant not found!")
     # prompt
     prompt = req.get("prompt")
     key_mapping = {"parameters": "variables",
@@ -82,12 +87,12 @@ def create(tenant_id):
     if not req.get("llm_id"):
         req["llm_id"] = tenant.llm_id
     if not req.get("name"):
-        return get_error_data_result(retmsg="`name` is required.")
+        return get_error_data_result(message="`name` is required.")
     if DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(retmsg="Duplicated chat name in creating chat.")
+        return get_error_data_result(message="Duplicated chat name in creating chat.")
     # tenant_id
     if req.get("tenant_id"):
-        return get_error_data_result(retmsg="`tenant_id` must not be provided.")
+        return get_error_data_result(message="`tenant_id` must not be provided.")
     req["tenant_id"] = tenant_id
     # prompt more parameter
     default_prompt = {
@@ -106,21 +111,21 @@ def create(tenant_id):
         req['prompt_config'] = {}
     for key in key_list_2:
         temp = req['prompt_config'].get(key)
-        if not temp:
+        if (not temp and key == 'system') or (key not in req["prompt_config"]):
             req['prompt_config'][key] = default_prompt[key]
     for p in req['prompt_config']["parameters"]:
         if p["optional"]:
             continue
         if req['prompt_config']["system"].find("{%s}" % p["key"]) < 0:
             return get_error_data_result(
-                retmsg="Parameter '{}' is not used".format(p["key"]))
+                message="Parameter '{}' is not used".format(p["key"]))
     # save
     if not DialogService.save(**req):
-        return get_error_data_result(retmsg="Fail to new a chat!")
+        return get_error_data_result(message="Fail to new a chat!")
     # response
     e, res = DialogService.get_by_id(req["id"])
     if not e:
-        return get_error_data_result(retmsg="Fail to new a chat!")
+        return get_error_data_result(message="Fail to new a chat!")
     res = res.to_json()
     renamed_dict = {}
     for key, value in res["prompt_config"].items():
@@ -146,20 +151,29 @@ def create(tenant_id):
 @token_required
 def update(tenant_id,chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
-        return get_error_data_result(retmsg='You do not own the chat')
+        return get_error_data_result(message='You do not own the chat')
     req =request.json
     ids = req.get("dataset_ids")
+    if "show_quotation" in req:
+        req["do_refer"]=req.pop("show_quotation")
     if "dataset_ids" in req:
         if not ids:
             return get_error_data_result("`datasets` can't be empty")
         if ids:
             for kb_id in ids:
-                kbs = KnowledgebaseService.query(id=kb_id, tenant_id=tenant_id)
+                kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
                 if not kbs:
                     return get_error_data_result(f"You don't own the dataset {kb_id}")
+                kbs = KnowledgebaseService.query(id=kb_id)
                 kb = kbs[0]
                 if kb.chunk_num == 0:
                     return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+            kbs = KnowledgebaseService.get_by_ids(ids)
+            embd_count=list(set([kb.embd_id for kb in kbs]))
+            if len(embd_count) != 1 :
+                return get_result(
+                    message='Datasets use different embedding models."',
+                    code=settings.RetCode.AUTHENTICATION_ERROR)
             req["kb_ids"] = ids
     llm = req.get("llm")
     if llm:
@@ -170,7 +184,7 @@ def update(tenant_id,chat_id):
         req["llm_setting"] = req.pop("llm")
     e, tenant = TenantService.get_by_id(tenant_id)
     if not e:
-        return get_error_data_result(retmsg="Tenant not found!")
+        return get_error_data_result(message="Tenant not found!")
     if req.get("rerank_model"):
         if not TenantLLMService.query(tenant_id=tenant_id,llm_name=req.get("rerank_model"),model_type="rerank"):
             return get_error_data_result(f"`rerank_model` {req.get('rerank_model')} doesn't exist")
@@ -195,18 +209,18 @@ def update(tenant_id,chat_id):
     res = res.to_json()
     if "name" in req:
         if not req.get("name"):
-            return get_error_data_result(retmsg="`name` is not empty.")
+            return get_error_data_result(message="`name` is not empty.")
         if req["name"].lower() != res["name"].lower() \
                 and len(
             DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 0:
-            return get_error_data_result(retmsg="Duplicated chat name in updating dataset.")
+            return get_error_data_result(message="Duplicated chat name in updating dataset.")
     if "prompt_config" in req:
         res["prompt_config"].update(req["prompt_config"])
         for p in res["prompt_config"]["parameters"]:
             if p["optional"]:
                 continue
             if res["prompt_config"]["system"].find("{%s}" % p["key"]) < 0:
-                return get_error_data_result(retmsg="Parameter '{}' is not used".format(p["key"]))
+                return get_error_data_result(message="Parameter '{}' is not used".format(p["key"]))
     if "llm_setting" in req:
         res["llm_setting"].update(req["llm_setting"])
     req["prompt_config"] = res["prompt_config"]
@@ -217,7 +231,7 @@ def update(tenant_id,chat_id):
     if "dataset_ids" in req:
         req.pop("dataset_ids")
     if not DialogService.update_by_id(chat_id, req):
-        return get_error_data_result(retmsg="Chat not found!")
+        return get_error_data_result(message="Chat not found!")
     return get_result()
 
 
@@ -225,12 +239,20 @@ def update(tenant_id,chat_id):
 @token_required
 def delete(tenant_id):
     req = request.json
-    ids = req.get("ids")
+    if not req:
+        ids=None
+    else:
+        ids=req.get("ids")
     if not ids:
-        return get_error_data_result(retmsg="`ids` are required")
-    for id in ids:
+        id_list = []
+        dias=DialogService.query(tenant_id=tenant_id,status=StatusEnum.VALID.value)
+        for dia in dias:
+            id_list.append(dia.id)
+    else:
+        id_list=ids
+    for id in id_list:
         if not DialogService.query(tenant_id=tenant_id, id=id, status=StatusEnum.VALID.value):
-            return get_error_data_result(retmsg=f"You don't own the chat {id}")
+            return get_error_data_result(message=f"You don't own the chat {id}")
         temp_dict = {"status": StatusEnum.INVALID.value}
         DialogService.update_by_id(id, temp_dict)
     return get_result()
@@ -240,11 +262,11 @@ def delete(tenant_id):
 def list_chat(tenant_id):
     id = request.args.get("id")
     name = request.args.get("name")
-    chat = DialogService.query(id=id,name=name,status=StatusEnum.VALID.value)
+    chat = DialogService.query(id=id,name=name,status=StatusEnum.VALID.value,tenant_id=tenant_id)
     if not chat:
-        return get_error_data_result(retmsg="The chat doesn't exist")
+        return get_error_data_result(message="The chat doesn't exist")
     page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 1024))
+    items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "create_time")
     if request.args.get("desc") == "False" or request.args.get("desc") == "false":
         desc = False
@@ -260,7 +282,8 @@ def list_chat(tenant_id):
                    "quote": "show_quote",
                    "system": "prompt",
                    "rerank_id": "rerank_model",
-                   "vector_similarity_weight": "keywords_similarity_weight"}
+                   "vector_similarity_weight": "keywords_similarity_weight",
+                   "do_refer":"show_quotation"}
     key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id"]
     for res in chats:
         for key, value in res["prompt_config"].items():
@@ -281,7 +304,7 @@ def list_chat(tenant_id):
         for kb_id in res["kb_ids"]:
             kb = KnowledgebaseService.query(id=kb_id)
             if not kb :
-                return get_error_data_result(retmsg=f"Don't exist the kb {kb_id}")
+                return get_error_data_result(message=f"Don't exist the kb {kb_id}")
             kb_list.append(kb[0].to_json())
         del res["kb_ids"]
         res["datasets"] = kb_list

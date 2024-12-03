@@ -10,8 +10,9 @@ import {
   Jin10TypeOptions,
 } from '../../constant';
 import { IOperatorForm } from '../../interface';
+import DynamicInputVariable from '../components/dynamic-input-variable';
 
-const Jin10Form = ({ onValuesChange, form }: IOperatorForm) => {
+const Jin10Form = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   const jin10TypeOptions = useMemo(() => {
@@ -59,12 +60,12 @@ const Jin10Form = ({ onValuesChange, form }: IOperatorForm) => {
   return (
     <Form
       name="basic"
-      labelCol={{ span: 9 }}
-      wrapperCol={{ span: 15 }}
       autoComplete="off"
       form={form}
       onValuesChange={onValuesChange}
+      layout={'vertical'}
     >
+      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
       <Form.Item label={t('type')} name={'type'} initialValue={'flash'}>
         <Select options={jin10TypeOptions}></Select>
       </Form.Item>

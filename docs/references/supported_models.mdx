@@ -1,0 +1,67 @@
+---
+sidebar_position: 0
+slug: /supported_models
+---
+
+# Supported models
+import APITable from '@site/src/components/APITable';
+
+A complete list of models supported by RAGFlow, which will continue to expand.
+
+```mdx-code-block
+<APITable>
+```
+
+| Provider              | Chat               | Embedding          | Rerank             | Multimodal         | ASR                | TTS                |
+| --------------------- | ------------------ | ------------------ | ------------------ | ------------------ | ------------------ | ------------------ |
+| Anthropic             | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| Azure-OpenAI          | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: | :heavy_check_mark: |                    |
+| BAAI                  |                    | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |
+| BaiChuan              | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
+| BaiduYiyan            | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
+| Bedrock               | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
+| Cohere                | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
+| DeepSeek              | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| FastEmbed             |                    | :heavy_check_mark: |                    |                    |                    |                    |
+| Fish Audio            |                    |                    |                    |                    |                    | :heavy_check_mark: |
+| Gemini                | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: |                    |                    |
+| Google Cloud          | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| Groq                  | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| HuggingFace           | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
+| Jina                  |                    | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |
+| LeptonAI              | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| LocalAI               | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: |                    |                    |
+| LM-Studio             | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
+| MiniMax               | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| Mistral               | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
+| Moonshot              | :heavy_check_mark: |                    |                    | :heavy_check_mark: |                    |                    |
+| novita.ai             | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| NVIDIA                | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
+| Ollama                | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: |                    |                    |
+| OpenAI                | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| OpenAI-API-Compatible | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
+| OpenRouter            | :heavy_check_mark: |                    |                    | :heavy_check_mark: |                    |                    |
+| PerfXCloud            | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
+| Replicate             | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
+| SILICONFLOW           | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
+| StepFun               | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| Tencent Hunyuan       | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| Tencent Cloud         |                    |                    |                    |                    | :heavy_check_mark: |                    |
+| TogetherAI            | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
+| Tongyi-Qianwen        | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| Upstage               | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
+| VolcEngine            | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| Voyage AI             |                    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    |                    |
+| Xinference            | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| XunFei Spark          | :heavy_check_mark: |                    |                    |                    |                    | :heavy_check_mark: |
+| Youdao                |                    | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |
+| ZHIPU-AI              | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: |                    |                    |
+| 01.AI                 | :heavy_check_mark: |                    |                    |                    |                    |                    |
+
+```mdx-code-block
+</APITable>
+```
+
+:::note
+The list of supported models is extracted from [this source](https://github.com/infiniflow/ragflow/blob/main/rag/llm/__init__.py) and may not be the most current. For the latest supported model list, please refer to the Python file.
+:::

@@ -14,15 +14,14 @@
 #  limitations under the License.
 #
 
-import collections
 import logging
+import collections
 import os
 import re
-import logging
 import traceback
+from typing import Any
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
 
 from graphrag.mind_map_prompt import MIND_MAP_EXTRACTION_PROMPT
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
@@ -39,7 +38,6 @@ class MindMapResult:
 
 
 class MindMapExtractor:
-
     _llm: CompletionLLM
     _input_text_key: str
     _mind_map_prompt: str
@@ -90,26 +88,26 @@ class MindMapExtractor:
             prompt_variables = {}
 
         try:
-            max_workers = int(os.environ.get('MINDMAP_EXTRACTOR_MAX_WORKERS', 12))
-            exe = ThreadPoolExecutor(max_workers=max_workers)
-            threads = []
-            token_count = max(self._llm.max_length * 0.8, self._llm.max_length-512)
-            texts = []
             res = []
-            cnt = 0
-            for i in range(len(sections)):
-                section_cnt = num_tokens_from_string(sections[i])
-                if cnt + section_cnt >= token_count and texts:
+            max_workers = int(os.environ.get('MINDMAP_EXTRACTOR_MAX_WORKERS', 12))
+            with ThreadPoolExecutor(max_workers=max_workers) as exe:
+                threads = []
+                token_count = max(self._llm.max_length * 0.8, self._llm.max_length - 512)
+                texts = []
+                cnt = 0
+                for i in range(len(sections)):
+                    section_cnt = num_tokens_from_string(sections[i])
+                    if cnt + section_cnt >= token_count and texts:
+                        threads.append(exe.submit(self._process_document, "".join(texts), prompt_variables))
+                        texts = []
+                        cnt = 0
+                    texts.append(sections[i])
+                    cnt += section_cnt
+                if texts:
                     threads.append(exe.submit(self._process_document, "".join(texts), prompt_variables))
-                    texts = []
-                    cnt = 0
-                texts.append(sections[i])
-                cnt += section_cnt
-            if texts:
-                threads.append(exe.submit(self._process_document, "".join(texts), prompt_variables))
 
-            for i, _ in enumerate(threads):
-                res.append(_.result())
+                for i, _ in enumerate(threads):
+                    res.append(_.result())
 
             if not res:
                 return MindMapResult(output={"id": "root", "children": []})
@@ -163,14 +161,14 @@ class MindMapExtractor:
             elif isinstance(value, list):
                 new_value = {}
                 for i in range(len(value)):
-                    if isinstance(value[i], list):
+                    if isinstance(value[i], list) and i > 0:
                         new_value[value[i - 1]] = value[i][0]
                 data[key] = new_value
             else:
                 continue
         return data
 
-    def _todict(self, layer:collections.OrderedDict):
+    def _todict(self, layer: collections.OrderedDict):
         to_ret = layer
         if isinstance(layer, collections.OrderedDict):
             to_ret = dict(layer)
@@ -194,6 +192,6 @@ class MindMapExtractor:
         gen_conf = {"temperature": 0.5}
         response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         response = re.sub(r"```[^\n]*", "", response)
-        print(response)
-        print("---------------------------------------------------\n", self._todict(markdown_to_json.dictify(response)))
+        logging.debug(response)
+        logging.debug(self._todict(markdown_to_json.dictify(response)))
         return self._todict(markdown_to_json.dictify(response))

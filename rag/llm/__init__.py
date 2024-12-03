@@ -39,7 +39,7 @@ EmbeddingModel = {
     "NVIDIA": NvidiaEmbed,
     "LM-Studio": LmStudioEmbed,
     "OpenAI-API-Compatible": OpenAI_APIEmbed,
-    "cohere": CoHereEmbed,
+    "Cohere": CoHereEmbed,
     "TogetherAI": TogetherAIEmbed,
     "PerfXCloud": PerfXCloudEmbed,
     "Upstage": UpstageEmbed,
@@ -48,6 +48,7 @@ EmbeddingModel = {
     "BaiduYiyan": BaiduYiyanEmbed,
     "Voyage AI": VoyageEmbed,
     "HuggingFace": HuggingFaceEmbed,
+    "VolcEngine":VolcEngineEmbed,
 }
 
 CvModel = {
@@ -83,7 +84,6 @@ ChatModel = {
     "VolcEngine": VolcEngineChat,
     "BaiChuan": BaiChuanChat,
     "MiniMax": MiniMaxChat,
-    "Minimax": MiniMaxChat,
     "Mistral": MistralChat,
     "Gemini": GeminiChat,
     "Bedrock": BedrockChat,
@@ -93,7 +93,7 @@ ChatModel = {
     "NVIDIA": NvidiaChat,
     "LM-Studio": LmStudioChat,
     "OpenAI-API-Compatible": OpenAI_APIChat,
-    "cohere": CoHereChat,
+    "Cohere": CoHereChat,
     "LeptonAI": LeptonAIChat,
     "TogetherAI": TogetherAIChat,
     "PerfXCloud": PerfXCloudChat,
@@ -111,6 +111,7 @@ ChatModel = {
 }
 
 RerankModel = {
+    "LocalAI":LocalAIRerank,
     "BAAI": DefaultRerank,
     "Jina": JinaRerank,
     "Youdao": YoudaoRerank,
@@ -118,7 +119,7 @@ RerankModel = {
     "NVIDIA": NvidiaRerank,
     "LM-Studio": LmStudioRerank,
     "OpenAI-API-Compatible": OpenAI_APIRerank,
-    "cohere": CoHereRerank,
+    "Cohere": CoHereRerank,
     "TogetherAI": TogetherAIRerank,
     "SILICONFLOW": SILICONFLOWRerank,
     "BaiduYiyan": BaiduYiyanRerank,

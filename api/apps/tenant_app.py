@@ -17,6 +17,7 @@
 from flask import request
 from flask_login import login_required, current_user
 
+from api import settings
 from api.db import UserTenantRole, StatusEnum
 from api.db.db_models import UserTenant
 from api.db.services.user_service import UserTenantService, UserService
@@ -28,6 +29,12 @@ from api.utils.api_utils import get_json_result, validate_request, server_error_
 @manager.route("/<tenant_id>/user/list", methods=["GET"])
 @login_required
 def user_list(tenant_id):
+    if current_user.id != tenant_id:
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR)
+
     try:
         users = UserTenantService.get_by_tenant_id(tenant_id)
         for u in users:
@@ -41,17 +48,23 @@ def user_list(tenant_id):
 @login_required
 @validate_request("email")
 def create(tenant_id):
+    if current_user.id != tenant_id:
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR)
+
     req = request.json
     usrs = UserService.query(email=req["email"])
     if not usrs:
-        return get_data_error_result(retmsg="User not found.")
+        return get_data_error_result(message="User not found.")
 
     user_id = usrs[0].id
     user_tenants = UserTenantService.query(user_id=user_id, tenant_id=tenant_id)
     if user_tenants:
         if user_tenants[0].status == UserTenantRole.NORMAL.value:
-            return get_data_error_result(retmsg="This user is in the team already.")
-        return get_data_error_result(retmsg="Invitation notification is sent.")
+            return get_data_error_result(message="This user is in the team already.")
+        return get_data_error_result(message="Invitation notification is sent.")
 
     UserTenantService.save(
         id=get_uuid(),
@@ -70,6 +83,12 @@ def create(tenant_id):
 @manager.route('/<tenant_id>/user/<user_id>', methods=['DELETE'])
 @login_required
 def rm(tenant_id, user_id):
+    if current_user.id != tenant_id and current_user.id != user_id:
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR)
+
     try:
         UserTenantService.filter_delete([UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id])
         return get_json_result(data=True)

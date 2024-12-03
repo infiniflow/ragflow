@@ -62,7 +62,7 @@ function NoteNode({ data, id }: NodeProps<NodeData>) {
             onChange={handleNameChange}
             className={styles.noteName}
           ></Input>
-          <NodeDropdown id={id}></NodeDropdown>
+          <NodeDropdown id={id} label={data.label}></NodeDropdown>
         </Flex>
         <Form
           onValuesChange={handleValuesChange}

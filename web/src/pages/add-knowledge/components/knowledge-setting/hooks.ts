@@ -59,6 +59,7 @@ export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
         'parser_id',
         'language',
         'parser_config',
+        'pagerank',
       ]),
       avatar: fileList,
     });

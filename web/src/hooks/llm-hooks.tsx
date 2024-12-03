@@ -211,12 +211,12 @@ export const useSaveApiKey = () => {
     mutationKey: ['saveApiKey'],
     mutationFn: async (params: IApiKeySavingParams) => {
       const { data } = await userService.set_api_key(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(t('message.modified'));
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -242,10 +242,10 @@ export const useSaveTenantInfo = () => {
     mutationKey: ['saveTenantInfo'],
     mutationFn: async (params: ISystemModelSettingSavingParams) => {
       const { data } = await userService.set_tenant_info(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(t('message.modified'));
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -263,12 +263,12 @@ export const useAddLlm = () => {
     mutationKey: ['addLlm'],
     mutationFn: async (params: IAddLlmRequestBody) => {
       const { data } = await userService.add_llm(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.modified'));
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -286,12 +286,12 @@ export const useDeleteLlm = () => {
     mutationKey: ['deleteLlm'],
     mutationFn: async (params: IDeleteLlmRequestBody) => {
       const { data } = await userService.delete_llm(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.deleted'));
       }
-      return data.retcode;
+      return data.code;
     },
   });
 
@@ -309,12 +309,12 @@ export const useDeleteFactory = () => {
     mutationKey: ['deleteFactory'],
     mutationFn: async (params: IDeleteLlmRequestBody) => {
       const { data } = await userService.deleteFactory(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
         message.success(t('message.deleted'));
       }
-      return data.retcode;
+      return data.code;
     },
   });
 

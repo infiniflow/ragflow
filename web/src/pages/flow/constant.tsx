@@ -12,12 +12,14 @@ import { ReactComponent as ExeSqlIcon } from '@/assets/svg/exesql.svg';
 import { ReactComponent as GithubIcon } from '@/assets/svg/github.svg';
 import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
+import { ReactComponent as InvokeIcon } from '@/assets/svg/invoke-ai.svg';
 import { ReactComponent as Jin10Icon } from '@/assets/svg/jin10.svg';
 import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as NoteIcon } from '@/assets/svg/note.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
 import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
+import { ReactComponent as TemplateIcon } from '@/assets/svg/template.svg';
 import { ReactComponent as TuShareIcon } from '@/assets/svg/tushare.svg';
 import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
@@ -42,6 +44,14 @@ import {
   SendOutlined,
 } from '@ant-design/icons';
 import upperFirst from 'lodash/upperFirst';
+import {
+  CloudUpload,
+  ListOrdered,
+  OptionIcon,
+  TextCursorInput,
+  ToggleLeft,
+  WrapText,
+} from 'lucide-react';
 
 export enum Operator {
   Begin = 'Begin',
@@ -75,6 +85,8 @@ export enum Operator {
   TuShare = 'TuShare',
   Note = 'Note',
   Crawler = 'Crawler',
+  Invoke = 'Invoke',
+  Template = 'Template',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -113,6 +125,8 @@ export const operatorIconMap = {
   [Operator.TuShare]: TuShareIcon,
   [Operator.Note]: NoteIcon,
   [Operator.Crawler]: CrawlerIcon,
+  [Operator.Invoke]: InvokeIcon,
+  [Operator.Template]: TemplateIcon,
 };
 
 export const operatorMap: Record<
@@ -239,6 +253,12 @@ export const operatorMap: Record<
   [Operator.Crawler]: {
     backgroundColor: '#dee0e2',
   },
+  [Operator.Invoke]: {
+    backgroundColor: '#dee0e2',
+  },
+  [Operator.Template]: {
+    backgroundColor: '#dee0e2',
+  },
 };
 
 export const componentMenuList = [
@@ -271,6 +291,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Concentrator,
+  },
+  {
+    name: Operator.Template,
   },
   {
     name: Operator.Note,
@@ -332,12 +355,20 @@ export const componentMenuList = [
   {
     name: Operator.Crawler,
   },
+  {
+    name: Operator.Invoke,
+  },
 ];
+
+const initialQueryBaseValues = {
+  query: [],
+};
 
 export const initialRetrievalValues = {
   similarity_threshold: 0.2,
   keywords_similarity_weight: 0.3,
   top_n: 8,
+  ...initialQueryBaseValues,
 };
 
 export const initialBeginValues = {
@@ -381,6 +412,7 @@ export const initialCategorizeValues = {
   ...initialLlmBaseValues,
   message_history_window_size: 1,
   category_description: {},
+  ...initialQueryBaseValues,
 };
 
 export const initialMessageValues = {
@@ -390,51 +422,60 @@ export const initialMessageValues = {
 export const initialKeywordExtractValues = {
   ...initialLlmBaseValues,
   top_n: 1,
+  ...initialQueryBaseValues,
 };
 export const initialDuckValues = {
   top_n: 10,
   channel: Channel.Text,
+  ...initialQueryBaseValues,
 };
 
 export const initialBaiduValues = {
   top_n: 10,
+  ...initialQueryBaseValues,
 };
 
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
+  ...initialQueryBaseValues,
 };
 
 export const initialPubMedValues = {
   top_n: 10,
   email: '',
+  ...initialQueryBaseValues,
 };
 
 export const initialArXivValues = {
   top_n: 10,
   sort_by: 'relevance',
+  ...initialQueryBaseValues,
 };
 
 export const initialGoogleValues = {
   top_n: 10,
-  api_key: 'Xxx(get from https://serpapi.com/manage-api-key)',
+  api_key: 'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
   country: 'cn',
   language: 'en',
+  ...initialQueryBaseValues,
 };
 
 export const initialBingValues = {
   top_n: 10,
   channel: 'Webpages',
   api_key:
-    '"YOUR_ACCESS_KEY"(get from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)',
+    'YOUR_API_KEY (obtained from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)',
   country: 'CH',
   language: 'en',
+  ...initialQueryBaseValues,
 };
 
 export const initialGoogleScholarValues = {
   top_n: 5,
   sort_by: 'relevance',
   patents: true,
+  ...initialQueryBaseValues,
 };
 
 export const initialDeepLValues = {
@@ -444,12 +485,14 @@ export const initialDeepLValues = {
 
 export const initialGithubValues = {
   top_n: 5,
+  ...initialQueryBaseValues,
 };
 
 export const initialBaiduFanyiValues = {
   appid: 'xxx',
   secret_key: 'xxx',
   trans_type: 'translate',
+  ...initialQueryBaseValues,
 };
 
 export const initialQWeatherValues = {
@@ -457,6 +500,7 @@ export const initialQWeatherValues = {
   type: 'weather',
   user_type: 'free',
   time_period: 'now',
+  ...initialQueryBaseValues,
 };
 
 export const initialExeSqlValues = {
@@ -468,13 +512,18 @@ export const initialExeSqlValues = {
   password: '',
   loop: 3,
   top_n: 30,
+  ...initialQueryBaseValues,
 };
 
 export const initialSwitchValues = { conditions: [] };
 
-export const initialWenCaiValues = { top_n: 20, query_type: 'stock' };
+export const initialWenCaiValues = {
+  top_n: 20,
+  query_type: 'stock',
+  ...initialQueryBaseValues,
+};
 
-export const initialAkShareValues = { top_n: 10 };
+export const initialAkShareValues = { top_n: 10, ...initialQueryBaseValues };
 
 export const initialYahooFinanceValues = {
   info: true,
@@ -483,6 +532,7 @@ export const initialYahooFinanceValues = {
   balance_sheet: false,
   cash_flow_statement: false,
   news: true,
+  ...initialQueryBaseValues,
 };
 
 export const initialJin10Values = {
@@ -491,6 +541,7 @@ export const initialJin10Values = {
   flash_type: '1',
   contain: '',
   filter: '',
+  ...initialQueryBaseValues,
 };
 
 export const initialConcentratorValues = {};
@@ -499,6 +550,7 @@ export const initialTuShareValues = {
   token: 'xxx',
   src: 'eastmoney',
   start_date: '2024-01-01 09:00:00',
+  ...initialQueryBaseValues,
 };
 
 export const initialNoteValues = {
@@ -507,6 +559,25 @@ export const initialNoteValues = {
 
 export const initialCrawlerValues = {
   extract_type: 'markdown',
+  ...initialQueryBaseValues,
+};
+
+export const initialInvokeValues = {
+  url: 'http://',
+  method: 'GET',
+  timeout: 60,
+  headers: `{
+  "Accept": "*/*",
+  "Cache-Control": "no-cache",
+  "Connection": "keep-alive"
+}`,
+  proxy: 'http://',
+  clean_html: false,
+};
+
+export const initialTemplateValues = {
+  content: '',
+  parameters: [],
 };
 
 export const CategorizeAnchorPointPositions = [
@@ -587,6 +658,8 @@ export const RestrictedUpstreamMap = {
   [Operator.TuShare]: [Operator.Begin],
   [Operator.Crawler]: [Operator.Begin],
   [Operator.Note]: [],
+  [Operator.Invoke]: [Operator.Begin],
+  [Operator.Template]: [Operator.Begin, Operator.Relevant],
 };
 
 export const NodeMap = {
@@ -621,6 +694,8 @@ export const NodeMap = {
   [Operator.TuShare]: 'ragNode',
   [Operator.Note]: 'noteNode',
   [Operator.Crawler]: 'ragNode',
+  [Operator.Invoke]: 'invokeNode',
+  [Operator.Template]: 'templateNode',
 };
 
 export const LanguageOptions = [
@@ -2808,3 +2883,21 @@ export const TuShareSrcOptions = [
   'jinrongjie',
 ];
 export const CrawlerResultOptions = ['markdown', 'html', 'content'];
+
+export enum BeginQueryType {
+  Line = 'line',
+  Paragraph = 'paragraph',
+  Options = 'options',
+  File = 'file',
+  Integer = 'integer',
+  Boolean = 'boolean',
+}
+
+export const BeginQueryTypeIconMap = {
+  [BeginQueryType.Line]: TextCursorInput,
+  [BeginQueryType.Paragraph]: WrapText,
+  [BeginQueryType.Options]: OptionIcon,
+  [BeginQueryType.File]: CloudUpload,
+  [BeginQueryType.Integer]: ListOrdered,
+  [BeginQueryType.Boolean]: ToggleLeft,
+};

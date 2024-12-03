@@ -96,7 +96,7 @@ export const useSendSharedMessage = (conversationId: string) => {
         messages: [...(derivedMessages ?? []), message],
       });
 
-      if (res && (res?.response.status !== 200 || res?.data?.retcode !== 0)) {
+      if (res && (res?.response.status !== 200 || res?.data?.code !== 0)) {
         // cancel loading
         setValue(message.content);
         removeLatestMessage();
@@ -111,7 +111,7 @@ export const useSendSharedMessage = (conversationId: string) => {
         sendMessage(message);
       } else {
         const data = await setConversation('user id');
-        if (data.retcode === 0) {
+        if (data.code === 0) {
           const id = data.data.id;
           sendMessage(message, id);
         }

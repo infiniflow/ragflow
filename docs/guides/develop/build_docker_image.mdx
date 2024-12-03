@@ -21,10 +21,6 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
 - Disk &ge; 50 GB
 - Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1
 
-:::tip NOTE
-If you have not installed Docker on your local machine (Windows, Mac, or Linux), see the [Install Docker Engine](https://docs.docker.com/engine/install/) guide.
-:::
-
 ## Build a Docker image
 
 <Tabs
@@ -37,6 +33,10 @@ If you have not installed Docker on your local machine (Windows, Mac, or Linux),
 
 This image is approximately 1 GB in size and relies on external LLM and embedding services.
 
+:::tip NOTE
+While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
+:::
+
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
@@ -45,12 +45,15 @@ python3 download_deps.py
 docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```
 
+
   </TabItem>
   <TabItem value="including">
 
-## Build a Docker image including embedding models
-
 This image is approximately 9 GB in size. As it includes embedding models, it relies on external LLM services only.  
+
+:::tip NOTE
+While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
+:::
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git

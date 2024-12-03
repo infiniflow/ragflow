@@ -24,15 +24,14 @@ const buildCategorizeListFromObject = (
 ) => {
   // Categorize's to field has two data sources, with edges as the data source.
   // Changes in the edge or to field need to be synchronized to the form field.
-  return Object.keys(categorizeItem).reduce<Array<ICategorizeItem>>(
-    (pre, cur) => {
+  return Object.keys(categorizeItem)
+    .reduce<Array<ICategorizeItem>>((pre, cur) => {
       // synchronize edge data to the to field
 
       pre.push({ name: cur, ...categorizeItem[cur] });
       return pre;
-    },
-    [],
-  );
+    }, [])
+    .sort((a, b) => a.index - b.index);
 };
 
 /**

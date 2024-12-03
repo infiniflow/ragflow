@@ -14,12 +14,12 @@
 #  limitations under the License.
 #
 
+import logging
 import json
 import os
 import time
-import logging
 import re
-
+from nltk.corpus import wordnet
 from api.utils.file_utils import get_project_base_directory
 
 
@@ -32,15 +32,15 @@ class Dealer:
         path = os.path.join(get_project_base_directory(), "rag/res", "synonym.json")
         try:
             self.dictionary = json.load(open(path, 'r'))
-        except Exception as e:
-            logging.warn("Missing synonym.json")
+        except Exception:
+            logging.warning("Missing synonym.json")
             self.dictionary = {}
 
         if not redis:
             logging.warning(
                 "Realtime synonym is disabled, since no redis connection.")
         if not len(self.dictionary.keys()):
-            logging.warning(f"Fail to load synonym")
+            logging.warning("Fail to load synonym")
 
         self.redis = redis
         self.load()
@@ -67,6 +67,10 @@ class Dealer:
             logging.error("Fail to load synonym!" + str(e))
 
     def lookup(self, tk):
+        if re.match(r"[a-z]+$", tk):
+            res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets(tk)]) - set([tk]))
+            return [t for t in res if t]
+
         self.lookup_num += 1
         self.load()
         res = self.dictionary.get(re.sub(r"[ \t]+", " ", tk.lower()), [])

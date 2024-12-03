@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
@@ -104,7 +105,7 @@ class RewriteQuestion(Generate, ABC):
         self._canvas.history.pop()
         self._canvas.history.append(("user", ans))
 
-        print(ans, ":::::::::::::::::::::::::::::::::")
+        logging.debug(ans)
         return RewriteQuestion.be_output(ans)
 
 

@@ -3,7 +3,7 @@
         {
             "name": "OpenAI",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,MODERATION",
             "status": "1",
             "llm": [
                 {
@@ -89,7 +89,7 @@
         {
             "name": "Tongyi-Qianwen",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,SPEECH2TEXT,MODERATION",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,TTS,SPEECH2TEXT,MODERATION",
             "status": "1",
             "llm": [
                 {
@@ -161,6 +161,18 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "glm-4-plus",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 128000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "glm-4-0520",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 128000,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "glm-4",
                     "tags": "LLM,CHAT,",
                     "max_tokens": 128000,
@@ -180,6 +192,12 @@
                 },
                 {
                     "llm_name": "glm-4-flash",
+                    "tags": "LLM,CHAT,",
+                    "max_tokens": 128000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "glm-4-flashx",
                     "tags": "LLM,CHAT,",
                     "max_tokens": 128000,
                     "model_type": "chat"
@@ -334,7 +352,7 @@
         {
             "name": "Xinference",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION,TEXT RE-RANK",
+            "tags": "LLM,TEXT EMBEDDING,TTS,SPEECH2TEXT,MODERATION,TEXT RE-RANK",
             "status": "1",
             "llm": []
         },
@@ -507,6 +525,18 @@
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 8196,
                     "model_type": "embedding"
+                },
+                {
+                    "llm_name": "jina-reranker-v2-base-multilingual",
+                    "tags": "RE-RANK,8k",
+                    "max_tokens": 8196,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "jina-embeddings-v3",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 8196,
+                    "model_type": "embedding"
                 }
             ]
         },
@@ -640,7 +670,7 @@
                     "llm_name": "gpt-4o",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
-                    "model_type": "chat,image2text"
+                    "model_type": "image2text"
                 },
                 {
                     "llm_name": "gpt-3.5-turbo",
@@ -1299,7 +1329,7 @@
             "llm": []
         },
         {
-            "name": "cohere",
+            "name": "Cohere",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING, TEXT RE-RANK",
             "status": "1",
@@ -2018,6 +2048,60 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "Qwen/Qwen2.5-72B-Instruct-128K",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-72B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-7B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-14B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-32B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-Math-72B-Instruct",
+                    "tags": "LLM,CHAT,Math,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-Coder-7B-Instruct",
+                    "tags": "LLM,CHAT,FIM,Coder,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Pro/Qwen/Qwen2.5-7B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Pro/Qwen/Qwen2.5-Coder-7B-Instruct",
+                    "tags": "LLM,CHAT,FIM,Coder,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "01-ai/Yi-1.5-34B-Chat-16K",
                     "tags": "LLM,CHAT,16k",
                     "max_tokens": 16384,
@@ -2122,6 +2206,12 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "yi-lightning",
+                    "tags": "LLM,CHAT,16k",
+                    "max_tokens": 16384,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "yi-large",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
@@ -2225,7 +2315,7 @@
         {
             "name": "XunFei Spark",
             "logo": "",
-            "tags": "LLM",
+            "tags": "LLM,TTS",
             "status": "1",
             "llm": []
         },
@@ -2263,6 +2353,12 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "claude-3-5-sonnet-20241022",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "claude-3-opus-20240229",
                     "tags": "LLM,CHAT,200k",
                     "max_tokens": 204800,
@@ -2293,8 +2389,8 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "claude-instant-1.2",
-                    "tags": "LLM,CHAT,100k",
+                    "llm_name": "claude-3-5-sonnet-20241022",
+                    "tags": "LLM,CHAT,200k",
                     "max_tokens": 102400,
                     "model_type": "chat"
                 }
@@ -2349,6 +2445,18 @@
                     "model_type": "embedding"
                 },
                 {
+                    "llm_name": "voyage-3",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-3-lite",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },                
+                {
                     "llm_name": "rerank-1",
                     "tags": "RE-RANK, 8000",
                     "max_tokens": 8000,
@@ -2358,6 +2466,18 @@
                     "llm_name": "rerank-lite-1",
                     "tags": "RE-RANK, 4000",
                     "max_tokens": 4000,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-2",
+                    "tags": "RE-RANK, 16000",
+                    "max_tokens": 16000,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-2-lite",
+                    "tags": "RE-RANK, 8000",
+                    "max_tokens": 8000,
                     "model_type": "rerank"
                 }
             ]
@@ -2370,11 +2490,11 @@
             "llm": []
         },
         {
-      "name": "HuggingFace",
-      "logo": "",
-      "tags": "TEXT EMBEDDING",
-      "status": "1",
-      "llm": []
-    }
+            "name": "HuggingFace",
+            "logo": "",
+            "tags": "TEXT EMBEDDING",
+            "status": "1",
+            "llm": []
+        }
     ]
 }

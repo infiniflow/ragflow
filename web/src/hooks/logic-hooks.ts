@@ -248,8 +248,8 @@ export const useSpeechWithSse = (url: string = api.tts) => {
       });
       try {
         const res = await response.clone().json();
-        if (res?.retcode !== 0) {
-          message.error(res?.retmsg);
+        if (res?.code !== 0) {
+          message.error(res?.message);
         }
       } catch (error) {
         console.warn('🚀 ~ error:', error);
@@ -556,4 +556,25 @@ export const useHandleChunkMethodSelectChange = (form: FormInstance) => {
   );
 
   return handleChange;
+};
+
+// reset form fields when modal is form, closed
+export const useResetFormOnCloseModal = ({
+  form,
+  visible,
+}: {
+  form: FormInstance;
+  visible?: boolean;
+}) => {
+  const prevOpenRef = useRef<boolean>();
+  useEffect(() => {
+    prevOpenRef.current = visible;
+  }, [visible]);
+  const prevOpen = prevOpenRef.current;
+
+  useEffect(() => {
+    if (!visible && prevOpen) {
+      form.resetFields();
+    }
+  }, [form, prevOpen, visible]);
 };

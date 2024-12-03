@@ -26,6 +26,7 @@ RUN dnf install -y nginx
 
 ADD ./web ./web
 ADD ./api ./api
+ADD ./docs ./docs
 ADD ./conf ./conf
 ADD ./deepdoc ./deepdoc
 ADD ./rag ./rag
@@ -37,7 +38,7 @@ RUN dnf install -y openmpi openmpi-devel python3-openmpi
 ENV C_INCLUDE_PATH /usr/include/openmpi-x86_64:$C_INCLUDE_PATH
 ENV LD_LIBRARY_PATH /usr/lib64/openmpi/lib:$LD_LIBRARY_PATH
 RUN rm /root/miniconda3/envs/py11/compiler_compat/ld
-RUN cd ./web && npm i --force && npm run build
+RUN cd ./web && npm i && npm run build
 RUN conda run -n py11 pip install $(grep -ivE "mpi4py" ./requirements.txt) # without mpi4py==3.1.5
 RUN conda run -n py11 pip install redis
 
@@ -52,6 +53,7 @@ RUN conda run -n py11 python -m nltk.downloader wordnet
 ENV PYTHONPATH=/ragflow/
 ENV HF_ENDPOINT=https://hf-mirror.com
 
+COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 ADD docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 

@@ -10,8 +10,8 @@ export const useCatchError = (api: string) => {
   const fetchDocument = useCallback(async () => {
     const ret = await axios.get(api);
     const { data } = ret;
-    if (!(data instanceof ArrayBuffer) && data.retcode !== 0) {
-      setError(data.retmsg);
+    if (!(data instanceof ArrayBuffer) && data.code !== 0) {
+      setError(data.message);
     }
     return ret;
   }, [api]);

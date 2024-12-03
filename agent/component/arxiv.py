@@ -13,12 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 import arxiv
 import pandas as pd
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
-
 
 class ArXivParam(ComponentParamBase):
     """
@@ -65,5 +64,5 @@ class ArXiv(ComponentBase, ABC):
             return ArXiv.be_output("")
 
         df = pd.DataFrame(arxiv_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logging.debug(f"df: {str(df)}")
         return df

@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 47.4% 11.2%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 47.4% 11.2%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 210 40% 98%;
+
+    --ring: 215 20.2% 65.1%;
+
+    --radius: 0.5rem;
+
+    --background-inverse-standard: rgba(58, 56, 65, 0.15);
+    --background-inverse-standard-foreground: rgb(92, 81, 81);
+
+    --button-blue-text: rgb(22, 119, 255);
+
+    --colors-outline-sentiment-primary: rgba(127, 105, 255, 1);
+    --colors-outline-neutral-strong: rgba(112, 107, 107, 0.15);
+
+    --colors-text-core-standard: rgba(127, 105, 255, 1);
+    --colors-text-neutral-strong: rgb(130, 121, 121);
+    --colors-text-neutral-standard: rgba(230, 227, 246, 1);
+    --colors-text-functional-danger: rgba(255, 81, 81, 1);
+  }
+
+  .dark {
+    --background: rgba(11, 10, 18, 1);
+    --foreground: 213 31% 91%;
+
+    --muted: 223 47% 11%;
+    --muted-foreground: 215.4 16.3% 56.9%;
+
+    --accent: 216 34% 17%;
+    --accent-foreground: 210 40% 98%;
+
+    --popover: 224 71% 4%;
+    --popover-foreground: 215 20.2% 65.1%;
+
+    --border: 216 34% 17%;
+    --input: 216 34% 17%;
+
+    --card: 224 71% 4%;
+    --card-foreground: 213 31% 91%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 1.2%;
+
+    --secondary: 222.2 47.4% 11.2%;
+    --secondary-foreground: 210 40% 98%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+
+    --ring: 216 34% 17%;
+
+    --radius: 0.5rem;
+
+    --background-inverse-standard: rgba(230, 227, 246, 0.15);
+    --background-inverse-standard-foreground: rgba(255, 255, 255, 1);
+
+    --background-inverse-weak: rgba(184, 181, 203, 0.15);
+    --background-inverse-weak-foreground: rgba(255, 255, 255, 1);
+
+    --background-core-standard: rgba(137, 126, 255, 1);
+    --background-core-standard-foreground: rgba(255, 255, 255, 1);
+
+    --background-inverse-strong: rgba(255, 255, 255, 0.15);
+    --background-inverse-strong-foreground: rgba(255, 255, 255, 1);
+
+    --background-core-weak: rgb(101, 75, 248);
+    --background-core-weak-foreground: rgba(255, 255, 255, 1);
+
+    --colors-background-core-standard: rgba(137, 126, 255, 1);
+    --colors-background-core-strong: rgba(152, 147, 255, 1);
+    --colors-background-core-weak: rgba(101, 75, 248, 1);
+    --colors-background-functional-solid-danger: rgba(255, 57, 92, 1);
+    --colors-background-functional-solid-notice: rgba(255, 208, 94, 1);
+    --colors-background-functional-solid-positive: rgba(74, 225, 145, 1);
+    --colors-background-functional-transparent-danger: rgba(234, 50, 83, 0.2);
+    --colors-background-functional-transparent-notice: rgba(248, 208, 111, 0.5);
+    --colors-background-functional-transparent-positive: rgba(
+      65,
+      203,
+      130,
+      0.5
+    );
+    --colors-background-inverse-standard: rgba(230, 227, 246, 0.15);
+    --colors-background-inverse-strong: rgba(255, 255, 255, 0.15);
+    --colors-background-inverse-weak: rgba(184, 181, 203, 0.15);
+    --colors-background-neutral-standard: rgba(11, 10, 18, 1);
+    --colors-background-neutral-strong: rgba(29, 26, 44, 1);
+    --colors-background-neutral-weak: rgba(17, 16, 23, 1);
+
+    --colors-outline-sentiment-primary: rgba(146, 118, 255, 1);
+    --colors-outline-neutral-strong: rgba(255, 255, 255, 0.15);
+
+    --colors-text-core-standard: rgba(137, 126, 255, 1);
+    --colors-text-neutral-strong: rgba(255, 255, 255, 1);
+    --colors-text-neutral-standard: rgba(230, 227, 246, 1);
+    --colors-text-functional-danger: rgba(255, 81, 81, 1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-colors-background-neutral-standard text-foreground;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
+  }
+}

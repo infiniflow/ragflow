@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import functools
 import json
 import random
@@ -33,13 +34,12 @@ from itsdangerous import URLSafeTimedSerializer
 from werkzeug.http import HTTP_STATUS_CODES
 
 from api.db.db_models import APIToken
-from api.settings import (
-    REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC,
-    stat_logger, CLIENT_AUTHENTICATION, HTTP_APP_KEY, SECRET_KEY
-)
-from api.settings import RetCode
+from api import settings
+
+from api import settings
 from api.utils import CustomJSONEncoder, get_uuid
 from api.utils import json_dumps
+from api.constants import REQUEST_WAIT_SEC, REQUEST_MAX_WAIT_SEC
 
 requests.models.complexjson.dumps = functools.partial(
     json.dumps, cls=CustomJSONEncoder)
@@ -58,13 +58,13 @@ def request(**kwargs):
             {}).items()}
     prepped = requests.Request(**kwargs).prepare()
 
-    if CLIENT_AUTHENTICATION and HTTP_APP_KEY and SECRET_KEY:
+    if settings.CLIENT_AUTHENTICATION and settings.HTTP_APP_KEY and settings.SECRET_KEY:
         timestamp = str(round(time() * 1000))
         nonce = str(uuid1())
-        signature = b64encode(HMAC(SECRET_KEY.encode('ascii'), b'\n'.join([
+        signature = b64encode(HMAC(settings.SECRET_KEY.encode('ascii'), b'\n'.join([
             timestamp.encode('ascii'),
             nonce.encode('ascii'),
-            HTTP_APP_KEY.encode('ascii'),
+            settings.HTTP_APP_KEY.encode('ascii'),
             prepped.path_url.encode('ascii'),
             prepped.body if kwargs.get('json') else b'',
             urlencode(
@@ -78,7 +78,7 @@ def request(**kwargs):
         prepped.headers.update({
             'TIMESTAMP': timestamp,
             'NONCE': nonce,
-            'APP-KEY': HTTP_APP_KEY,
+            'APP-KEY': settings.HTTP_APP_KEY,
             'SIGNATURE': signature,
         })
 
@@ -97,19 +97,19 @@ def get_exponential_backoff_interval(retries, full_jitter=False):
     return max(0, countdown)
 
 
-def get_data_error_result(retcode=RetCode.DATA_ERROR,
-                          retmsg='Sorry! Data missing!'):
+def get_data_error_result(code=settings.RetCode.DATA_ERROR,
+                          message='Sorry! Data missing!'):
     import re
     result_dict = {
-        "retcode": retcode,
-        "retmsg": re.sub(
+        "code": code,
+        "message": re.sub(
             r"rag",
             "seceum",
-            retmsg,
+            message,
             flags=re.IGNORECASE)}
     response = {}
     for key, value in result_dict.items():
-        if value is None and key != "retcode":
+        if value is None and key != "code":
             continue
         else:
             response[key] = value
@@ -117,29 +117,25 @@ def get_data_error_result(retcode=RetCode.DATA_ERROR,
 
 
 def server_error_response(e):
-    stat_logger.exception(e)
+    logging.exception(e)
     try:
         if e.code == 401:
-            return get_json_result(retcode=401, retmsg=repr(e))
+            return get_json_result(code=401, message=repr(e))
     except BaseException:
         pass
     if len(e.args) > 1:
         return get_json_result(
-            retcode=RetCode.EXCEPTION_ERROR, retmsg=repr(e.args[0]), data=e.args[1])
-    if repr(e).find("index_not_found_exception") >= 0:
-        return get_json_result(retcode=RetCode.EXCEPTION_ERROR,
-                               retmsg="No chunk found, please upload file and parse it.")
-
-    return get_json_result(retcode=RetCode.EXCEPTION_ERROR, retmsg=repr(e))
+            code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+    return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
 
 
-def error_response(response_code, retmsg=None):
-    if retmsg is None:
-        retmsg = HTTP_STATUS_CODES.get(response_code, 'Unknown Error')
+def error_response(response_code, message=None):
+    if message is None:
+        message = HTTP_STATUS_CODES.get(response_code, 'Unknown Error')
 
     return Response(json.dumps({
-        'retmsg': retmsg,
-        'retcode': response_code,
+        'message': message,
+        'code': response_code,
     }), status=response_code, mimetype='application/json')
 
 
@@ -171,12 +167,24 @@ def validate_request(*args, **kwargs):
                     error_string += "required argument values: {}".format(
                         ",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
                 return get_json_result(
-                    retcode=RetCode.ARGUMENT_ERROR, retmsg=error_string)
+                    code=settings.RetCode.ARGUMENT_ERROR, message=error_string)
             return func(*_args, **_kwargs)
 
         return decorated_function
 
     return wrapper
+
+def not_allowed_parameters(*params):
+    def decorator(f):
+        def wrapper(*args, **kwargs):
+            input_arguments = flask_request.json or flask_request.form.to_dict()
+            for param in params:
+                if param in input_arguments:
+                    return get_json_result(
+                        code=settings.RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 def is_localhost(ip):
@@ -196,8 +204,8 @@ def send_file_in_mem(data, filename):
     return send_file(f, as_attachment=True, attachment_filename=filename)
 
 
-def get_json_result(retcode=RetCode.SUCCESS, retmsg='success', data=None):
-    response = {"retcode": retcode, "retmsg": retmsg, "data": data}
+def get_json_result(code=settings.RetCode.SUCCESS, message='success', data=None):
+    response = {"code": code, "message": message, "data": data}
     return jsonify(response)
 
 def apikey_required(func):
@@ -207,7 +215,7 @@ def apikey_required(func):
         objs = APIToken.query(token=token)
         if not objs:
             return build_error_result(
-                error_msg='API-KEY is invalid!', retcode=RetCode.FORBIDDEN
+                message='API-KEY is invalid!', code=settings.RetCode.FORBIDDEN
             )
         kwargs['tenant_id'] = objs[0].tenant_id
         return func(*args, **kwargs)
@@ -215,19 +223,19 @@ def apikey_required(func):
     return decorated_function
 
 
-def build_error_result(retcode=RetCode.FORBIDDEN, error_msg='success'):
-    response = {"error_code": retcode, "error_msg": error_msg}
+def build_error_result(code=settings.RetCode.FORBIDDEN, message='success'):
+    response = {"code": code, "message": message}
     response = jsonify(response)
-    response.status_code = retcode
+    response.status_code = code
     return response
 
 
-def construct_response(retcode=RetCode.SUCCESS,
-                       retmsg='success', data=None, auth=None):
-    result_dict = {"retcode": retcode, "retmsg": retmsg, "data": data}
+def construct_response(code=settings.RetCode.SUCCESS,
+                       message='success', data=None, auth=None):
+    result_dict = {"code": code, "message": message, "data": data}
     response_dict = {}
     for key, value in result_dict.items():
-        if value is None and key != "retcode":
+        if value is None and key != "code":
             continue
         else:
             response_dict[key] = value
@@ -242,7 +250,7 @@ def construct_response(retcode=RetCode.SUCCESS,
     return response
 
 
-def construct_result(code=RetCode.DATA_ERROR, message='data is missing'):
+def construct_result(code=settings.RetCode.DATA_ERROR, message='data is missing'):
     import re
     result_dict = {"code": code, "message": re.sub(r"rag", "seceum", message, flags=re.IGNORECASE)}
     response = {}
@@ -254,7 +262,7 @@ def construct_result(code=RetCode.DATA_ERROR, message='data is missing'):
     return jsonify(response)
 
 
-def construct_json_result(code=RetCode.SUCCESS, message='success', data=None):
+def construct_json_result(code=settings.RetCode.SUCCESS, message='success', data=None):
     if data is None:
         return jsonify({"code": code, "message": message})
     else:
@@ -262,29 +270,28 @@ def construct_json_result(code=RetCode.SUCCESS, message='success', data=None):
 
 
 def construct_error_response(e):
-    stat_logger.exception(e)
+    logging.exception(e)
     try:
         if e.code == 401:
-            return construct_json_result(code=RetCode.UNAUTHORIZED, message=repr(e))
+            return construct_json_result(code=settings.RetCode.UNAUTHORIZED, message=repr(e))
     except BaseException:
         pass
     if len(e.args) > 1:
-        return construct_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
-    if repr(e).find("index_not_found_exception") >= 0:
-        return construct_json_result(code=RetCode.EXCEPTION_ERROR,
-                                     message="No chunk found, please upload file and parse it.")
-
-    return construct_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+        return construct_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+    return construct_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
 
 
 def token_required(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
-        token = flask_request.headers.get('Authorization').split()[1]
+        authorization_list=flask_request.headers.get('Authorization').split()
+        if len(authorization_list) < 2:
+            return get_json_result(data=False,message="Please check your authorization format.")
+        token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
             return get_json_result(
-                data=False, retmsg='Token is not valid!', retcode=RetCode.AUTHENTICATION_ERROR
+                data=False, message='Token is not valid!', code=settings.RetCode.AUTHENTICATION_ERROR
             )
         kwargs['tenant_id'] = objs[0].tenant_id
         return func(*args, **kwargs)
@@ -292,26 +299,26 @@ def token_required(func):
     return decorated_function
 
 
-def get_result(retcode=RetCode.SUCCESS, retmsg='error', data=None):
-    if retcode == 0:
+def get_result(code=settings.RetCode.SUCCESS, message="", data=None):
+    if code == 0:
         if data is not None:
-            response = {"code": retcode, "data": data}
+            response = {"code": code, "data": data}
         else:
-            response = {"code": retcode}
+            response = {"code": code}
     else:
-        response = {"code": retcode, "message": retmsg}
+        response = {"code": code, "message": message}
     return jsonify(response)
 
 
-def get_error_data_result(retmsg='Sorry! Data missing!', retcode=RetCode.DATA_ERROR,
+def get_error_data_result(message='Sorry! Data missing!', code=settings.RetCode.DATA_ERROR,
                           ):
     import re
     result_dict = {
-        "code": retcode,
+        "code": code,
         "message": re.sub(
             r"rag",
             "seceum",
-            retmsg,
+            message,
             flags=re.IGNORECASE)}
     response = {}
     for key, value in result_dict.items():
@@ -337,14 +344,14 @@ def valid(permission,valid_permission,language,valid_language,chunk_method,valid
 
 def valid_parameter(parameter,valid_values):
     if parameter and parameter not in valid_values:
-       return get_error_data_result(f"`{parameter}` is not in {valid_values}")
+       return get_error_data_result(f"'{parameter}' is not in {valid_values}")
 
 def get_parser_config(chunk_method,parser_config):
     if parser_config:
         return parser_config
     if not chunk_method:
         chunk_method = "naive"
-    key_mapping={"naive":{"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False,"layout_recognize": True, "raptor": {"user_raptor": False}},
+    key_mapping={"naive":{"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False,"layout_recognize": True, "raptor": {"use_raptor": False}},
                  "qa":{"raptor":{"use_raptor":False}},
                  "resume":None,
                  "manual":{"raptor":{"use_raptor":False}},
@@ -354,6 +361,8 @@ def get_parser_config(chunk_method,parser_config):
                  "laws":{"raptor":{"use_raptor":False}},
                  "presentation":{"raptor":{"use_raptor":False}},
                  "one":None,
-                 "knowledge_graph":{"chunk_token_num":8192,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}}
+                 "knowledge_graph":{"chunk_token_num":8192,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]},
+                 "email":None,
+                 "picture":None}
     parser_config=key_mapping[chunk_method]
     return parser_config

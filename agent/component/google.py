@@ -13,10 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 from serpapi import GoogleSearch
 import pandas as pd
-from agent.settings import DEBUG
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
@@ -85,12 +85,12 @@ class Google(ComponentBase, ABC):
                  "hl": self._param.language, "num": self._param.top_n})
             google_res = [{"content": '<a href="' + i["link"] + '">' + i["title"] + '</a>    ' + i["snippet"]} for i in
                           client.get_dict()["organic_results"]]
-        except Exception as e:
+        except Exception:
             return Google.be_output("**ERROR**: Existing Unavailable Parameters!")
 
         if not google_res:
             return Google.be_output("")
 
         df = pd.DataFrame(google_res)
-        if DEBUG: print(df, ":::::::::::::::::::::::::::::::::")
+        logging.debug(f"df: {df}")
         return df

@@ -21,6 +21,7 @@ import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { history } from 'umi';
 
 export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
   const { i18n } = useTranslation();
@@ -31,7 +32,7 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
     gcTime: 0,
     queryFn: async () => {
       const { data } = await userService.user_info();
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         i18n.changeLanguage(
           LanguageTranslationMap[
             data.data.language as keyof typeof LanguageTranslationMap
@@ -53,7 +54,7 @@ export const useFetchTenantInfo = (): ResponseGetType<ITenantInfo> => {
     gcTime: 0,
     queryFn: async () => {
       const { data: res } = await userService.get_tenant_info();
-      if (res.retcode === 0) {
+      if (res.code === 0) {
         // llm_id is chat_id
         // asr_id is speech2txt
         const { data } = res;
@@ -67,6 +68,9 @@ export const useFetchTenantInfo = (): ResponseGetType<ITenantInfo> => {
                 }}
               ></div>
             ),
+            onOk() {
+              history.push('/user-setting/model');
+            },
           });
         }
         data.chat_id = data.llm_id;
@@ -112,11 +116,11 @@ export const useSaveSetting = () => {
       userInfo: { new_password: string } | Partial<IUserInfo>,
     ) => {
       const { data } = await userService.setting(userInfo);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(t('message.modified'));
         queryClient.invalidateQueries({ queryKey: ['userInfo'] });
       }
-      return data?.retcode;
+      return data?.code;
     },
   });
 
@@ -131,7 +135,7 @@ export const useFetchSystemVersion = () => {
     try {
       setLoading(true);
       const { data } = await userService.getSystemVersion();
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         setVersion(data.data);
         setLoading(false);
       }
@@ -152,7 +156,7 @@ export const useFetchSystemStatus = () => {
   const fetchSystemStatus = useCallback(async () => {
     setLoading(true);
     const { data } = await userService.getSystemStatus();
-    if (data.retcode === 0) {
+    if (data.code === 0) {
       setSystemStatus(data.data);
       setLoading(false);
     }
@@ -196,7 +200,7 @@ export const useRemoveSystemToken = () => {
     mutationKey: ['removeSystemToken'],
     mutationFn: async (token: string) => {
       const { data } = await userService.removeToken({}, token);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(t('message.deleted'));
         queryClient.invalidateQueries({ queryKey: ['fetchSystemTokenList'] });
       }
@@ -217,7 +221,7 @@ export const useCreateSystemToken = () => {
     mutationKey: ['createSystemToken'],
     mutationFn: async (params: Record<string, any>) => {
       const { data } = await userService.createToken(params);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchSystemTokenList'] });
       }
       return data?.data ?? [];
@@ -260,10 +264,10 @@ export const useAddTenantUser = () => {
     mutationKey: ['addTenantUser'],
     mutationFn: async (email: string) => {
       const { data } = await addTenantUser(tenantInfo.tenant_id, email);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['listTenantUser'] });
       }
-      return data?.retcode;
+      return data?.code;
     },
   });
 
@@ -292,7 +296,7 @@ export const useDeleteTenantUser = () => {
         tenantId: tenantId ?? tenantInfo.tenant_id,
         userId,
       });
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(t('message.deleted'));
         queryClient.invalidateQueries({ queryKey: ['listTenantUser'] });
         queryClient.invalidateQueries({ queryKey: ['listTenant'] });
@@ -338,7 +342,7 @@ export const useAgreeTenant = () => {
     mutationKey: ['agreeTenant'],
     mutationFn: async (tenantId: string) => {
       const { data } = await agreeTenant(tenantId);
-      if (data.retcode === 0) {
+      if (data.code === 0) {
         message.success(t('message.operated'));
         queryClient.invalidateQueries({ queryKey: ['listTenant'] });
       }

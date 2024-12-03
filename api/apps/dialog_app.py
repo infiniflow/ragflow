@@ -20,7 +20,7 @@ from api.db.services.dialog_service import DialogService
 from api.db import StatusEnum
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
-from api.settings import RetCode
+from api import settings
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result
@@ -68,17 +68,23 @@ def set_dialog():
             continue
         if prompt_config["system"].find("{%s}" % p["key"]) < 0:
             return get_data_error_result(
-                retmsg="Parameter '{}' is not used".format(p["key"]))
+                message="Parameter '{}' is not used".format(p["key"]))
 
     try:
         e, tenant = TenantService.get_by_id(current_user.id)
         if not e:
-            return get_data_error_result(retmsg="Tenant not found!")
+            return get_data_error_result(message="Tenant not found!")
+        kbs = KnowledgebaseService.get_by_ids(req.get("kb_ids"))
+        embd_count = len(set([kb.embd_id for kb in kbs]))
+        if embd_count != 1:
+            return get_data_error_result(message=f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"')
+
         llm_id = req.get("llm_id", tenant.llm_id)
         if not dialog_id:
             if not req.get("kb_ids"):
                 return get_data_error_result(
-                    retmsg="Fail! Please select knowledgebase!")
+                    message="Fail! Please select knowledgebase!")
+
             dia = {
                 "id": get_uuid(),
                 "tenant_id": current_user.id,
@@ -96,20 +102,20 @@ def set_dialog():
                 "icon": icon
             }
             if not DialogService.save(**dia):
-                return get_data_error_result(retmsg="Fail to new a dialog!")
+                return get_data_error_result(message="Fail to new a dialog!")
             e, dia = DialogService.get_by_id(dia["id"])
             if not e:
-                return get_data_error_result(retmsg="Fail to new a dialog!")
+                return get_data_error_result(message="Fail to new a dialog!")
             return get_json_result(data=dia.to_json())
         else:
             del req["dialog_id"]
             if "kb_names" in req:
                 del req["kb_names"]
             if not DialogService.update_by_id(dialog_id, req):
-                return get_data_error_result(retmsg="Dialog not found!")
+                return get_data_error_result(message="Dialog not found!")
             e, dia = DialogService.get_by_id(dialog_id)
             if not e:
-                return get_data_error_result(retmsg="Fail to update a dialog!")
+                return get_data_error_result(message="Fail to update a dialog!")
             dia = dia.to_dict()
             dia["kb_ids"], dia["kb_names"] = get_kb_names(dia["kb_ids"])
             return get_json_result(data=dia)
@@ -124,7 +130,7 @@ def get():
     try:
         e, dia = DialogService.get_by_id(dialog_id)
         if not e:
-            return get_data_error_result(retmsg="Dialog not found!")
+            return get_data_error_result(message="Dialog not found!")
         dia = dia.to_dict()
         dia["kb_ids"], dia["kb_names"] = get_kb_names(dia["kb_ids"])
         return get_json_result(data=dia)
@@ -174,8 +180,8 @@ def rm():
                     break
             else:
                 return get_json_result(
-                    data=False, retmsg=f'Only owner of dialog authorized for this operation.',
-                    retcode=RetCode.OPERATING_ERROR)
+                    data=False, message='Only owner of dialog authorized for this operation.',
+                    code=settings.RetCode.OPERATING_ERROR)
             dialog_list.append({"id": id,"status":StatusEnum.INVALID.value})
         DialogService.update_many_by_id(dialog_list)
         return get_json_result(data=True)

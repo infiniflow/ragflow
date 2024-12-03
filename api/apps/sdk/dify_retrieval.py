@@ -18,7 +18,7 @@ from flask import request, jsonify
 from api.db import LLMType, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.settings import retrievaler, kg_retrievaler, RetCode
+from api import settings
 from api.utils.api_utils import validate_request, build_error_result, apikey_required
 
 
@@ -37,14 +37,14 @@ def retrieval(tenant_id):
 
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
-            return build_error_result(error_msg="Knowledgebase not found!", retcode=RetCode.NOT_FOUND)
+            return build_error_result(message="Knowledgebase not found!", code=settings.RetCode.NOT_FOUND)
 
         if kb.tenant_id != tenant_id:
-            return build_error_result(error_msg="Knowledgebase not found!", retcode=RetCode.NOT_FOUND)
+            return build_error_result(message="Knowledgebase not found!", code=settings.RetCode.NOT_FOUND)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
-        retr = retrievaler if kb.parser_id != ParserType.KG else kg_retrievaler
+        retr = settings.retrievaler if kb.parser_id != ParserType.KG else settings.kg_retrievaler
         ranks = retr.retrieval(
             question,
             embd_mdl,
@@ -58,20 +58,19 @@ def retrieval(tenant_id):
         )
         records = []
         for c in ranks["chunks"]:
-            if "vector" in c:
-                del c["vector"]
+            c.pop("vector", None)
             records.append({
                 "content": c["content_ltks"],
                 "score": c["similarity"],
                 "title": c["docnm_kwd"],
-                "metadata": ""
+                "metadata": {}
             })
 
         return jsonify({"records": records})
     except Exception as e:
         if str(e).find("not_found") > 0:
             return build_error_result(
-                error_msg=f'No chunk found! Check the chunk status please!',
-                retcode=RetCode.NOT_FOUND
+                message='No chunk found! Check the chunk status please!',
+                code=settings.RetCode.NOT_FOUND
             )
-        return build_error_result(error_msg=str(e), retcode=RetCode.SERVER_ERROR)
+        return build_error_result(message=str(e), code=settings.RetCode.SERVER_ERROR)

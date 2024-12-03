@@ -16,197 +16,162 @@
 import os
 from datetime import date
 from enum import IntEnum, Enum
-from api.utils.file_utils import get_project_base_directory
-from api.utils.log_utils import LoggerFactory, getLogger
+import rag.utils.es_conn
+import rag.utils.infinity_conn
 
-# Logger
-LoggerFactory.set_directory(
-    os.path.join(
-        get_project_base_directory(),
-        "logs",
-        "api"))
-# {CRITICAL: 50, FATAL:50, ERROR:40, WARNING:30, WARN:30, INFO:20, DEBUG:10, NOTSET:0}
-LoggerFactory.LEVEL = 30
-
-stat_logger = getLogger("stat")
-access_logger = getLogger("access")
-database_logger = getLogger("database")
-chat_logger = getLogger("chat")
-
-from rag.utils.es_conn import ELASTICSEARCH
+import rag.utils
 from rag.nlp import search
 from graphrag import search as kg_search
 from api.utils import get_base_config, decrypt_database_config
+from api.constants import RAG_FLOW_SERVICE_NAME
 
-API_VERSION = "v1"
-RAG_FLOW_SERVICE_NAME = "ragflow"
-SERVER_MODULE = "rag_flow_server.py"
-TEMP_DIRECTORY = os.path.join(get_project_base_directory(), "temp")
-RAG_FLOW_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
 
-SUBPROCESS_STD_LOG_NAME = "std.log"
-
-ERROR_REPORT = True
-ERROR_REPORT_WITH_PATH = False
-
-MAX_TIMESTAMP_INTERVAL = 60
-SESSION_VALID_PERIOD = 7 * 24 * 60 * 60
-
-REQUEST_TRY_TIMES = 3
-REQUEST_WAIT_SEC = 2
-REQUEST_MAX_WAIT_SEC = 300
-
-USE_REGISTRY = get_base_config("use_registry")
-
-LLM = get_base_config("user_default_llm", {})
-LLM_FACTORY = LLM.get("factory", "Tongyi-Qianwen")
-LLM_BASE_URL = LLM.get("base_url")
-
-if not LIGHTEN:
-    default_llm = {
-        "Tongyi-Qianwen": {
-            "chat_model": "qwen-plus",
-            "embedding_model": "text-embedding-v2",
-            "image2text_model": "qwen-vl-max",
-            "asr_model": "paraformer-realtime-8k-v1",
-        },
-        "OpenAI": {
-            "chat_model": "gpt-3.5-turbo",
-            "embedding_model": "text-embedding-ada-002",
-            "image2text_model": "gpt-4-vision-preview",
-            "asr_model": "whisper-1",
-        },
-        "Azure-OpenAI": {
-            "chat_model": "gpt-35-turbo",
-            "embedding_model": "text-embedding-ada-002",
-            "image2text_model": "gpt-4-vision-preview",
-            "asr_model": "whisper-1",
-        },
-        "ZHIPU-AI": {
-            "chat_model": "glm-3-turbo",
-            "embedding_model": "embedding-2",
-            "image2text_model": "glm-4v",
-            "asr_model": "",
-        },
-        "Ollama": {
-            "chat_model": "qwen-14B-chat",
-            "embedding_model": "flag-embedding",
-            "image2text_model": "",
-            "asr_model": "",
-        },
-        "Moonshot": {
-            "chat_model": "moonshot-v1-8k",
-            "embedding_model": "",
-            "image2text_model": "",
-            "asr_model": "",
-        },
-        "DeepSeek": {
-            "chat_model": "deepseek-chat",
-            "embedding_model": "",
-            "image2text_model": "",
-            "asr_model": "",
-        },
-        "VolcEngine": {
-            "chat_model": "",
-            "embedding_model": "",
-            "image2text_model": "",
-            "asr_model": "",
-        },
-        "BAAI": {
-            "chat_model": "",
-            "embedding_model": "BAAI/bge-large-zh-v1.5",
-            "image2text_model": "",
-            "asr_model": "",
-            "rerank_model": "BAAI/bge-reranker-v2-m3",
-        }
-    }
-
-    CHAT_MDL = default_llm[LLM_FACTORY]["chat_model"]
-    EMBEDDING_MDL = default_llm["BAAI"]["embedding_model"]
-    RERANK_MDL = default_llm["BAAI"]["rerank_model"]
-    ASR_MDL = default_llm[LLM_FACTORY]["asr_model"]
-    IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"]
-else:
-    CHAT_MDL = EMBEDDING_MDL = RERANK_MDL = ASR_MDL = IMAGE2TEXT_MDL = ""
-
-API_KEY = LLM.get("api_key", "")
-PARSERS = LLM.get(
-    "parsers",
-    "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,knowledge_graph:Knowledge Graph,email:Email")
-
-# distribution
-DEPENDENT_DISTRIBUTION = get_base_config("dependent_distribution", False)
-RAG_FLOW_UPDATE_CHECK = False
-
-HOST = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("host", "127.0.0.1")
-HTTP_PORT = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("http_port")
-
-SECRET_KEY = get_base_config(
-    RAG_FLOW_SERVICE_NAME,
-    {}).get("secret_key", str(date.today()))
-
-TOKEN_EXPIRE_IN = get_base_config(
-    RAG_FLOW_SERVICE_NAME, {}).get(
-        "token_expires_in", 3600)
-
-NGINX_HOST = get_base_config(
-    RAG_FLOW_SERVICE_NAME, {}).get(
-        "nginx", {}).get("host") or HOST
-NGINX_HTTP_PORT = get_base_config(
-    RAG_FLOW_SERVICE_NAME, {}).get(
-        "nginx", {}).get("http_port") or HTTP_PORT
-
-RANDOM_INSTANCE_ID = get_base_config(
-    RAG_FLOW_SERVICE_NAME, {}).get(
-        "random_instance_id", False)
-
-PROXY = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("proxy")
-PROXY_PROTOCOL = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("protocol")
+LLM = None
+LLM_FACTORY = None
+LLM_BASE_URL = None
+CHAT_MDL = ""
+EMBEDDING_MDL = ""
+RERANK_MDL = ""
+ASR_MDL = ""
+IMAGE2TEXT_MDL = ""
+API_KEY = None
+PARSERS = None
+HOST_IP = None
+HOST_PORT = None
+SECRET_KEY = None
 
 DATABASE_TYPE = os.getenv("DB_TYPE", 'mysql')
 DATABASE = decrypt_database_config(name=DATABASE_TYPE)
 
-# Switch
-# upload
-UPLOAD_DATA_FROM_CLIENT = True
-
 # authentication
-AUTHENTICATION_CONF = get_base_config("authentication", {})
+AUTHENTICATION_CONF = None
 
 # client
-CLIENT_AUTHENTICATION = AUTHENTICATION_CONF.get(
-    "client", {}).get(
+CLIENT_AUTHENTICATION = None
+HTTP_APP_KEY = None
+GITHUB_OAUTH = None
+FEISHU_OAUTH = None
+
+DOC_ENGINE = None
+docStoreConn = None
+
+retrievaler = None
+kg_retrievaler = None
+
+
+def init_settings():
+    global LLM, LLM_FACTORY, LLM_BASE_URL, LIGHTEN, DATABASE_TYPE, DATABASE
+    LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
+    DATABASE_TYPE = os.getenv("DB_TYPE", 'mysql')
+    DATABASE = decrypt_database_config(name=DATABASE_TYPE)
+    LLM = get_base_config("user_default_llm", {})
+    LLM_FACTORY = LLM.get("factory", "Tongyi-Qianwen")
+    LLM_BASE_URL = LLM.get("base_url")
+
+    global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
+    if not LIGHTEN:
+        default_llm = {
+            "Tongyi-Qianwen": {
+                "chat_model": "qwen-plus",
+                "embedding_model": "text-embedding-v2",
+                "image2text_model": "qwen-vl-max",
+                "asr_model": "paraformer-realtime-8k-v1",
+            },
+            "OpenAI": {
+                "chat_model": "gpt-3.5-turbo",
+                "embedding_model": "text-embedding-ada-002",
+                "image2text_model": "gpt-4-vision-preview",
+                "asr_model": "whisper-1",
+            },
+            "Azure-OpenAI": {
+                "chat_model": "gpt-35-turbo",
+                "embedding_model": "text-embedding-ada-002",
+                "image2text_model": "gpt-4-vision-preview",
+                "asr_model": "whisper-1",
+            },
+            "ZHIPU-AI": {
+                "chat_model": "glm-3-turbo",
+                "embedding_model": "embedding-2",
+                "image2text_model": "glm-4v",
+                "asr_model": "",
+            },
+            "Ollama": {
+                "chat_model": "qwen-14B-chat",
+                "embedding_model": "flag-embedding",
+                "image2text_model": "",
+                "asr_model": "",
+            },
+            "Moonshot": {
+                "chat_model": "moonshot-v1-8k",
+                "embedding_model": "",
+                "image2text_model": "",
+                "asr_model": "",
+            },
+            "DeepSeek": {
+                "chat_model": "deepseek-chat",
+                "embedding_model": "",
+                "image2text_model": "",
+                "asr_model": "",
+            },
+            "VolcEngine": {
+                "chat_model": "",
+                "embedding_model": "",
+                "image2text_model": "",
+                "asr_model": "",
+            },
+            "BAAI": {
+                "chat_model": "",
+                "embedding_model": "BAAI/bge-large-zh-v1.5",
+                "image2text_model": "",
+                "asr_model": "",
+                "rerank_model": "BAAI/bge-reranker-v2-m3",
+            }
+        }
+
+        if LLM_FACTORY:
+            CHAT_MDL = default_llm[LLM_FACTORY]["chat_model"] + f"@{LLM_FACTORY}"
+            ASR_MDL = default_llm[LLM_FACTORY]["asr_model"] + f"@{LLM_FACTORY}"
+            IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"] + f"@{LLM_FACTORY}"
+        EMBEDDING_MDL = default_llm["BAAI"]["embedding_model"] + "@BAAI"
+        RERANK_MDL = default_llm["BAAI"]["rerank_model"] + "@BAAI"
+
+    global API_KEY, PARSERS, HOST_IP, HOST_PORT, SECRET_KEY
+    API_KEY = LLM.get("api_key", "")
+    PARSERS = LLM.get(
+        "parsers",
+        "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,knowledge_graph:Knowledge Graph,email:Email")
+
+    HOST_IP = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("host", "127.0.0.1")
+    HOST_PORT = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("http_port")
+
+    SECRET_KEY = get_base_config(
+        RAG_FLOW_SERVICE_NAME,
+        {}).get("secret_key", str(date.today()))
+
+    global AUTHENTICATION_CONF, CLIENT_AUTHENTICATION, HTTP_APP_KEY, GITHUB_OAUTH, FEISHU_OAUTH
+    # authentication
+    AUTHENTICATION_CONF = get_base_config("authentication", {})
+
+    # client
+    CLIENT_AUTHENTICATION = AUTHENTICATION_CONF.get(
+        "client", {}).get(
         "switch", False)
-HTTP_APP_KEY = AUTHENTICATION_CONF.get("client", {}).get("http_app_key")
-GITHUB_OAUTH = get_base_config("oauth", {}).get("github")
-FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
-WECHAT_OAUTH = get_base_config("oauth", {}).get("wechat")
+    HTTP_APP_KEY = AUTHENTICATION_CONF.get("client", {}).get("http_app_key")
+    GITHUB_OAUTH = get_base_config("oauth", {}).get("github")
+    FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
 
-# site
-SITE_AUTHENTICATION = AUTHENTICATION_CONF.get("site", {}).get("switch", False)
+    global DOC_ENGINE, docStoreConn, retrievaler, kg_retrievaler
+    DOC_ENGINE = os.environ.get('DOC_ENGINE', "elasticsearch")
+    if DOC_ENGINE == "elasticsearch":
+        docStoreConn = rag.utils.es_conn.ESConnection()
+    elif DOC_ENGINE == "infinity":
+        docStoreConn = rag.utils.infinity_conn.InfinityConnection()
+    else:
+        raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
-# permission
-PERMISSION_CONF = get_base_config("permission", {})
-PERMISSION_SWITCH = PERMISSION_CONF.get("switch")
-COMPONENT_PERMISSION = PERMISSION_CONF.get("component")
-DATASET_PERMISSION = PERMISSION_CONF.get("dataset")
-
-HOOK_MODULE = get_base_config("hook_module")
-HOOK_SERVER_NAME = get_base_config("hook_server_name")
-
-ENABLE_MODEL_STORE = get_base_config('enable_model_store', False)
-# authentication
-USE_AUTHENTICATION = False
-USE_DATA_AUTHENTICATION = False
-AUTOMATIC_AUTHORIZATION_OUTPUT_DATA = True
-USE_DEFAULT_TIMEOUT = False
-AUTHENTICATION_DEFAULT_TIMEOUT = 7 * 24 * 60 * 60  # s
-PRIVILEGE_COMMAND_WHITELIST = []
-CHECK_NODES_IDENTITY = False
-
-retrievaler = search.Dealer(ELASTICSEARCH)
-kg_retrievaler = kg_search.KGSearch(ELASTICSEARCH)
+    retrievaler = search.Dealer(docStoreConn)
+    kg_retrievaler = kg_search.KGSearch(docStoreConn)
 
 
 class CustomEnum(Enum):
@@ -225,16 +190,6 @@ class CustomEnum(Enum):
     @classmethod
     def names(cls):
         return [member.name for member in cls.__members__.values()]
-
-
-class PythonDependenceName(CustomEnum):
-    Rag_Source_Code = "python"
-    Python_Env = "miniconda"
-
-
-class ModelStorage(CustomEnum):
-    REDIS = "redis"
-    MYSQL = "mysql"
 
 
 class RetCode(IntEnum, CustomEnum):

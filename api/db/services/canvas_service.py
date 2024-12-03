@@ -22,5 +22,6 @@ from api.db.services.common_service import CommonService
 class CanvasTemplateService(CommonService):
     model = CanvasTemplate
 
+
 class UserCanvasService(CommonService):
     model = UserCanvas

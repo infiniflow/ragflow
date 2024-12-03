@@ -20,6 +20,7 @@ from rag.nlp import tokenize, is_english
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, PptParser, PlainParser
 from PyPDF2 import PdfReader as pdf2_read
+import json
 
 
 class Ppt(PptParser):
@@ -58,11 +59,12 @@ class Pdf(PdfParser):
 
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
-        callback(msg="OCR is running...")
+        from timeit import default_timer as timer
+        start = timer()
+        callback(msg="OCR started")
         self.__images__(filename if not binary else binary,
                         zoomin, from_page, to_page, callback)
-        callback(0.8, "Page {}~{}: OCR finished".format(
-            from_page, min(to_page, self.total_page)))
+        callback(msg="Page {}~{}: OCR finished ({:.2f}s)".format(from_page, min(to_page, self.total_page), timer() - start))
         assert len(self.boxes) == len(self.page_images), "{} vs. {}".format(
             len(self.boxes), len(self.page_images))
         res = []
@@ -107,9 +109,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             d = copy.deepcopy(doc)
             pn += from_page
             d["image"] = img
-            d["page_num_int"] = [pn + 1]
-            d["top_int"] = [0]
-            d["position_int"] = [(pn + 1, 0, img.size[0], 0, img.size[1])]
+            d["page_num_list"] = json.dumps([pn + 1])
+            d["top_list"] = json.dumps([0])
+            d["position_list"] = json.dumps([(pn + 1, 0, img.size[0], 0, img.size[1])])
             tokenize(d, txt, eng)
             res.append(d)
         return res
@@ -123,10 +125,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             pn += from_page
             if img:
                 d["image"] = img
-            d["page_num_int"] = [pn + 1]
-            d["top_int"] = [0]
-            d["position_int"] = [
-                (pn + 1, 0, img.size[0] if img else 0, 0, img.size[1] if img else 0)]
+            d["page_num_list"] = json.dumps([pn + 1])
+            d["top_list"] = json.dumps([0])
+            d["position_list"] = json.dumps([
+                (pn + 1, 0, img.size[0] if img else 0, 0, img.size[1] if img else 0)])
             tokenize(d, txt, eng)
             res.append(d)
         return res

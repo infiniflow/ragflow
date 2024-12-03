@@ -77,6 +77,7 @@ export function useDynamicSVGImport(
 }
 
 interface IProps {
+  title?: string;
   onOk?: (...args: any[]) => any;
   onCancel?: (...args: any[]) => any;
 }
@@ -86,10 +87,10 @@ export const useShowDeleteConfirm = () => {
   const { t } = useTranslation();
 
   const showDeleteConfirm = useCallback(
-    ({ onOk, onCancel }: IProps): Promise<number> => {
+    ({ title, onOk, onCancel }: IProps): Promise<number> => {
       return new Promise((resolve, reject) => {
         modal.confirm({
-          title: t('common.deleteModalTitle'),
+          title: title ?? t('common.deleteModalTitle'),
           icon: <ExclamationCircleFilled />,
           // content: 'Some descriptions',
           okText: t('common.ok'),

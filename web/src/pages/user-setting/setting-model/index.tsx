@@ -402,7 +402,7 @@ const UserSettingModel = () => {
         hideModal={hideTencentCloudAddingModal}
         onOk={onTencentCloudAddingOk}
         loading={TencentCloudAddingLoading}
-        llmFactory={'Tencent TencentCloud'}
+        llmFactory={'Tencent Cloud'}
       ></TencentCloudModal>
       <SparkModal
         visible={SparkAddingVisible}
