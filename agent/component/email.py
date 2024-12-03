@@ -59,7 +59,7 @@ class Email(ComponentBase, ABC):
 
             # 验证必要字段
             if "to_email" not in email_data:
-                return Email.be_output("收件人邮箱是必填项")
+                return Email.be_output("请问收件人的邮箱地址是什么？")
 
             # 创建邮件对象
             msg = MIMEMultipart('alternative')
