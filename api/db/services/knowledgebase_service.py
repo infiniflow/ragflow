@@ -227,4 +227,3 @@ class KnowledgebaseService(CommonService):
         if not docs:
             return False
         return True
-
