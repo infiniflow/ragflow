@@ -30,6 +30,8 @@ import json
 import requests
 import asyncio
 
+LENGTH_NOTIFICATION_CN = "······\n由于长度的原因，回答被截断了，要继续吗？"
+LENGTH_NOTIFICATION_EN = "...\nFor the content length reason, it stopped, continue?"
 
 class Base(ABC):
     def __init__(self, key, model_name, base_url):
@@ -48,9 +50,9 @@ class Base(ABC):
             ans = response.choices[0].message.content.strip()
             if response.choices[0].finish_reason == "length":
                 if is_chinese(ans):
-                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    ans += LENGTH_NOTIFICATION_CN
                 else:
-                    ans += "...\nFor the content length reason, it stopped, continue?"
+                    ans += LENGTH_NOTIFICATION_EN
             return ans, response.usage.total_tokens
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
@@ -83,9 +85,9 @@ class Base(ABC):
 
                 if resp.choices[0].finish_reason == "length":
                     if is_chinese(ans):
-                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                        ans += LENGTH_NOTIFICATION_CN
                     else:
-                        ans += "...\nFor the content length reason, it stopped, continue?"
+                        ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
         except openai.APIError as e:
@@ -172,9 +174,9 @@ class BaiChuanChat(Base):
             ans = response.choices[0].message.content.strip()
             if response.choices[0].finish_reason == "length":
                 if is_chinese([ans]):
-                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    ans += LENGTH_NOTIFICATION_CN
                 else:
-                    ans += "...\nFor the content length reason, it stopped, continue?"
+                    ans += LENGTH_NOTIFICATION_EN
             return ans, response.usage.total_tokens
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
@@ -214,9 +216,9 @@ class BaiChuanChat(Base):
                 )
                 if resp.choices[0].finish_reason == "length":
                     if is_chinese([ans]):
-                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                        ans += LENGTH_NOTIFICATION_CN
                     else:
-                        ans += "...\nFor the content length reason, it stopped, continue?"
+                        ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
         except Exception as e:
@@ -251,9 +253,9 @@ class QWenChat(Base):
                 tk_count += response.usage.total_tokens
                 if response.output.choices[0].get("finish_reason", "") == "length":
                     if is_chinese([ans]):
-                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                        ans += LENGTH_NOTIFICATION_CN
                     else:
-                        ans += "...\nFor the content length reason, it stopped, continue?"
+                        ans += LENGTH_NOTIFICATION_EN
                 return ans, tk_count
 
             return "**ERROR**: " + response.message, tk_count
@@ -287,9 +289,9 @@ class QWenChat(Base):
                     tk_count = resp.usage.total_tokens
                     if resp.output.choices[0].get("finish_reason", "") == "length":
                         if is_chinese(ans):
-                            ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                            ans += LENGTH_NOTIFICATION_CN
                         else:
-                            ans += "...\nFor the content length reason, it stopped, continue?"
+                            ans += LENGTH_NOTIFICATION_EN
                     yield ans
                 else:
                     yield ans + "\n**ERROR**: " + resp.message if not re.search(r" (key|quota)", str(resp.message).lower()) else "Out of credit. Please set the API key in **settings > Model providers.**"
@@ -321,9 +323,9 @@ class ZhipuChat(Base):
             ans = response.choices[0].message.content.strip()
             if response.choices[0].finish_reason == "length":
                 if is_chinese(ans):
-                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    ans += LENGTH_NOTIFICATION_CN
                 else:
-                    ans += "...\nFor the content length reason, it stopped, continue?"
+                    ans += LENGTH_NOTIFICATION_EN
             return ans, response.usage.total_tokens
         except Exception as e:
             return "**ERROR**: " + str(e), 0
@@ -348,9 +350,9 @@ class ZhipuChat(Base):
                 ans += delta
                 if resp.choices[0].finish_reason == "length":
                     if is_chinese(ans):
-                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                        ans += LENGTH_NOTIFICATION_CN
                     else:
-                        ans += "...\nFor the content length reason, it stopped, continue?"
+                        ans += LENGTH_NOTIFICATION_EN
                     tk_count = resp.usage.total_tokens
                 if resp.choices[0].finish_reason == "stop": tk_count = resp.usage.total_tokens
                 yield ans
@@ -542,9 +544,9 @@ class MiniMaxChat(Base):
             ans = response["choices"][0]["message"]["content"].strip()
             if response["choices"][0]["finish_reason"] == "length":
                 if is_chinese(ans):
-                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    ans += LENGTH_NOTIFICATION_CN
                 else:
-                    ans += "...\nFor the content length reason, it stopped, continue?"
+                    ans += LENGTH_NOTIFICATION_EN
             return ans, response["usage"]["total_tokens"]
         except Exception as e:
             return "**ERROR**: " + str(e), 0
@@ -613,9 +615,9 @@ class MistralChat(Base):
             ans = response.choices[0].message.content
             if response.choices[0].finish_reason == "length":
                 if is_chinese(ans):
-                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    ans += LENGTH_NOTIFICATION_CN
                 else:
-                    ans += "...\nFor the content length reason, it stopped, continue?"
+                    ans += LENGTH_NOTIFICATION_EN
             return ans, response.usage.total_tokens
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
@@ -639,9 +641,9 @@ class MistralChat(Base):
                 total_tokens += 1
                 if resp.choices[0].finish_reason == "length":
                     if is_chinese(ans):
-                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                        ans += LENGTH_NOTIFICATION_CN
                     else:
-                        ans += "...\nFor the content length reason, it stopped, continue?"
+                        ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
         except openai.APIError as e:
@@ -834,9 +836,9 @@ class GroqChat:
             ans = response.choices[0].message.content
             if response.choices[0].finish_reason == "length":
                 if is_chinese(ans):
-                    ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                    ans += LENGTH_NOTIFICATION_CN
                 else:
-                    ans += "...\nFor the content length reason, it stopped, continue?"
+                    ans += LENGTH_NOTIFICATION_EN
             return ans, response.usage.total_tokens
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0
@@ -863,9 +865,9 @@ class GroqChat:
                 total_tokens += 1
                 if resp.choices[0].finish_reason == "length":
                     if is_chinese(ans):
-                        ans += "······\n由于长度的原因，回答被截断了，要继续吗？"
+                        ans += LENGTH_NOTIFICATION_CN
                     else:
-                        ans += "...\nFor the content length reason, it stopped, continue?"
+                        ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
         except Exception as e:
