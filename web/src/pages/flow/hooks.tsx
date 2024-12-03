@@ -44,6 +44,7 @@ import {
   initialCrawlerValues,
   initialDeepLValues,
   initialDuckValues,
+  initialEmailValues,
   initialExeSqlValues,
   initialGenerateValues,
   initialGithubValues,
@@ -141,7 +142,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Crawler]: initialCrawlerValues,
       [Operator.Invoke]: initialInvokeValues,
       [Operator.Template]: initialTemplateValues,
-      // 邮件功能
+      [Operator.Email]: initialEmailValues,
     };
   }, [llmId]);
 

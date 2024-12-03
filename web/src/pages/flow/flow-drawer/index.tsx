@@ -17,6 +17,7 @@ import CategorizeForm from '../form/categorize-form';
 import CrawlerForm from '../form/crawler-form';
 import DeepLForm from '../form/deepl-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
+import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
 import GenerateForm from '../form/generate-form';
 import GithubForm from '../form/github-form';
@@ -39,7 +40,6 @@ import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import OperatorIcon from '../operator-icon';
-// 邮件功能
 import { getDrawerWidth } from '../utils';
 import styles from './index.less';
 
@@ -81,6 +81,7 @@ const FormMap = {
   [Operator.Concentrator]: () => <></>,
   [Operator.Note]: () => <></>,
   [Operator.Template]: TemplateForm,
+  [Operator.Email]: EmailForm,
 };
 
 const EmptyContent = () => <div></div>;

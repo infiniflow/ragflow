@@ -31,8 +31,7 @@ from .akshare import AkShare, AkShareParam
 from .crawler import Crawler, CrawlerParam
 from .invoke import Invoke, InvokeParam
 from .template import Template, TemplateParam
-
-# 邮件功能
+from .email import Email, EmailParam
 
 
 
