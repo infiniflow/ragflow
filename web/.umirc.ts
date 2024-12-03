@@ -34,7 +34,7 @@ export default defineConfig({
   proxy: [
     {
       context: ['/api', '/v1'],
-      target: 'http://apiappai.kunkeji.com/',
+      target: 'http://127.0.0.1:9380/',
       changeOrigin: true,
       ws: true,
       logger: console,

@@ -56,7 +56,22 @@ export function EmailNode({
             <span className={styles.configLabel}>From:</span>
             <span className={styles.configValue}>{data.form?.email}</span>
           </div>
+          <div className={styles.expandIcon}>{showDetails ? '▼' : '▶'}</div>
         </div>
+
+        {showDetails && (
+          <div className={styles.jsonExample}>
+            <div className={styles.jsonTitle}>Expected Input JSON:</div>
+            <pre className={styles.jsonContent}>
+              {`{
+  "to_email": "...",
+  "cc_email": "...", 
+  "subject": "...",
+  "content": "..."
+}`}
+            </pre>
+          </div>
+        )}
       </Flex>
     </section>
   );
