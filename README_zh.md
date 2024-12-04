@@ -54,9 +54,9 @@
 
 ## 🔥 近期更新
 
+- 2024-12-04 支持知识库的 Pagerank 分数。
 - 2024-11-22 完善了 Agent 中的变量定义和使用。
 - 2024-11-01 对解析后的 chunk 加入关键词抽取和相关问题生成以提高召回的准确度。
-- 2024-09-13 增加知识库问答搜索模式。
 - 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
 - 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
 
@@ -332,9 +332,9 @@ RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们�
 
 ## 👥 加入社区
 
-扫二维码添加 InfinifFlow 小助手，进 RAGFlow 交流群。
+扫二维码添加 RAGFlow 小助手，进 RAGFlow 交流群。
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/87095713-7ad2-4c48-bd11-10030d0e30ae" width=50% height=50%>
+  <img src="https://github.com/infiniflow/ragflow/assets/7248/bccf284f-46f2-4445-9809-8f1030fb7585" width=50% height=50%>
 </p>
 
