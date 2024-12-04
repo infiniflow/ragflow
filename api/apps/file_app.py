@@ -329,13 +329,8 @@ def get(file_id):
         e, file = FileService.get_by_id(file_id)
         if not e:
             return get_data_error_result(message="Document not found!")
-
-        blob = STORAGE_IMPL.get(file.parent_id, file.location)
-        if not blob:
-            b, n = File2DocumentService.get_storage_address(file_id=file_id)
-            blob = STORAGE_IMPL.get(b, n)
-
-        response = flask.make_response(blob)
+        b, n = File2DocumentService.get_storage_address(file_id=file_id)
+        response = flask.make_response(STORAGE_IMPL.get(b, n))
         ext = re.search(r"\.([^.]+)$", file.name)
         if ext:
             if file.type == FileType.VISUAL.value:
