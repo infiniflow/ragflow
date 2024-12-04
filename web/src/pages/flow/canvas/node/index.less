@@ -270,3 +270,77 @@
     transform: translateY(0);
   }
 }
+
+.jsExecutorNodeContainer {
+  padding: 8px;
+  font-size: 12px;
+
+  .scriptConfig {
+    background: rgba(0, 0, 0, 0.02);
+    border-radius: 4px;
+    padding: 8px;
+    position: relative;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.04);
+    }
+
+    .configItem {
+      display: flex;
+      align-items: center;
+      margin-bottom: 4px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      .configLabel {
+        color: #666;
+        width: 45px;
+        flex-shrink: 0;
+      }
+
+      .configValue {
+        color: #333;
+        word-break: break-all;
+      }
+    }
+
+    .expandIcon {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #666;
+      font-size: 12px;
+    }
+  }
+
+  .scriptContent {
+    background: #f5f5f5;
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 4px;
+    animation: slideDown 0.2s ease-out;
+
+    pre {
+      margin: 0;
+      color: #333;
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

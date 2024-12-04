@@ -493,7 +493,7 @@ export default {
       showMoreModels: '展示更多模型',
       baseUrl: 'Base-Url',
       baseUrlTip:
-        '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
+        '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL���',
       modify: '修改',
       systemModelSettings: '系统模型设置',
       chatModel: '聊天模型',
@@ -507,7 +507,7 @@ export default {
         '所有新创建的知识库都将使用默认的多模块模型。 它可以描述图片或视频。',
       sequence2txtModel: 'Sequence2txt模型',
       sequence2txtModelTip:
-        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。',
+        '所有新创建的知识库都将使用���认的 ASR 模型。 使用此模型将语音翻译为相应的文本。',
       rerankModel: 'Rerank模型',
       rerankModelTip: `默认的重读模型用于用户问题检索到重读块。`,
       workspace: '工作空间',
@@ -1053,6 +1053,28 @@ export default {
       ccEmailTip: 'cc_email: 抄送邮箱(可选)',
       subjectTip: 'subject: 邮件主题(可选)',
       contentTip: 'content: 邮件内容(可选)',
+      jsExecutor: 'JavaScript执行器',
+      jsExecutorDescription: '该组件可以执行JavaScript代码处理多个输入。',
+      inputNameRequired: '请输入变量名',
+      inputNamePlaceholder: '输入变量名',
+      addInputVariable: '添加输入变量',
+      script: 'JavaScript脚本',
+      scriptHelp: '脚本说明',
+      scriptHelpContent: `可用变量:
+- input_names中定义的变量名
+- 使用vars[变量名]访问上游输入
+
+示例:
+// 合并两个输入
+return vars.input1 + vars.input2;
+
+// 处理JSON
+let data = JSON.parse(vars.input0);
+return data.field;
+
+// 默认(直接返回第一个输入)
+return vars.input0;`,
+      noInputs: '无输入变量',
     },
     footer: {
       profile: 'All rights reserved @ React',

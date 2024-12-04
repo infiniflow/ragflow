@@ -51,6 +51,7 @@ import {
   initialGoogleScholarValues,
   initialGoogleValues,
   initialInvokeValues,
+  initialJSExecutorValues,
   initialJin10Values,
   initialKeywordExtractValues,
   initialMessageValues,
@@ -143,6 +144,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Invoke]: initialInvokeValues,
       [Operator.Template]: initialTemplateValues,
       [Operator.Email]: initialEmailValues,
+      [Operator.JSExecutor]: initialJSExecutorValues,
     };
   }, [llmId]);
 

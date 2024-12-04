@@ -4,6 +4,7 @@ import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as BeginIcon } from '@/assets/svg/begin.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
+import { ReactComponent as CodeIcon } from '@/assets/svg/code.svg';
 import { ReactComponent as ConcentratorIcon } from '@/assets/svg/concentrator.svg';
 import { ReactComponent as CrawlerIcon } from '@/assets/svg/crawler.svg';
 import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
@@ -91,6 +92,7 @@ export enum Operator {
   Invoke = 'Invoke',
   Template = 'Template',
   Email = 'Email',
+  JSExecutor = 'JSExecutor',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -132,6 +134,7 @@ export const operatorIconMap = {
   [Operator.Invoke]: InvokeIcon,
   [Operator.Template]: TemplateIcon,
   [Operator.Email]: EmailIcon,
+  [Operator.JSExecutor]: CodeIcon,
 };
 
 export const operatorMap: Record<
@@ -265,6 +268,7 @@ export const operatorMap: Record<
     backgroundColor: '#dee0e2',
   },
   [Operator.Email]: { backgroundColor: '#e6f7ff' },
+  [Operator.JSExecutor]: { backgroundColor: '#e6f7ff' },
 };
 
 export const componentMenuList = [
@@ -366,6 +370,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Email,
+  },
+  {
+    name: Operator.JSExecutor,
   },
 ];
 
@@ -601,6 +608,11 @@ export const initialEmailValues = {
   content: '',
 };
 
+export const initialJSExecutorValues = {
+  input_names: ['input0'],
+  script: '',
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -682,6 +694,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Invoke]: [Operator.Begin],
   [Operator.Template]: [Operator.Begin, Operator.Relevant],
   [Operator.Email]: [Operator.Begin],
+  [Operator.JSExecutor]: [],
 };
 
 export const NodeMap = {
@@ -719,6 +732,7 @@ export const NodeMap = {
   [Operator.Invoke]: 'invokeNode',
   [Operator.Template]: 'templateNode',
   [Operator.Email]: 'emailNode',
+  [Operator.JSExecutor]: 'jsExecutorNode',
 };
 
 export const LanguageOptions = [

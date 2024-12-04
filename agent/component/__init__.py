@@ -32,6 +32,7 @@ from .crawler import Crawler, CrawlerParam
 from .invoke import Invoke, InvokeParam
 from .template import Template, TemplateParam
 from .email import Email, EmailParam
+from .jsexecutor import JSExecutor, JSExecutorParam
 
 
 

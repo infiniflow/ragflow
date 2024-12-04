@@ -25,6 +25,7 @@ import GoogleForm from '../form/google-form';
 import GoogleScholarForm from '../form/google-scholar-form';
 import InvokeForm from '../form/invoke-form';
 import Jin10Form from '../form/jin10-form';
+import JSExecutorForm from '../form/jsexecutor-form';
 import KeywordExtractForm from '../form/keyword-extract-form';
 import MessageForm from '../form/message-form';
 import PubMedForm from '../form/pubmed-form';
@@ -82,6 +83,7 @@ const FormMap = {
   [Operator.Note]: () => <></>,
   [Operator.Template]: TemplateForm,
   [Operator.Email]: EmailForm,
+  [Operator.JSExecutor]: JSExecutorForm,
 };
 
 const EmptyContent = () => <div></div>;
