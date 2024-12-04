@@ -87,22 +87,16 @@ export interface ISwitchForm {
   no: string;
 }
 
-export interface IJSExecutorForm {
-  input_names: string[];
-  script: string;
-}
-
 export type NodeData = {
-  label: string;
-  name: string;
+  label: string; // operator type
+  name: string; // operator name
   color: string;
   form:
     | IBeginForm
     | IRetrievalForm
     | IGenerateForm
     | ICategorizeForm
-    | ISwitchForm
-    | IJSExecutorForm;
+    | ISwitchForm;
 };
 
 export type IPosition = { top: number; right: number; idx: number };
