@@ -31,38 +31,9 @@ class EmailParam(ComponentParamBase):
 
 class Email(ComponentBase, ABC):
     component_name = "Email"
-    
-    def _extract_json(self, text):
-        """
-        从文本中提取JSON数据
-        """
-        try:
-            # 1. 尝试直接解析为JSON
-            return json.loads(text)
-        except json.JSONDecodeError:
-            try:
-                # 2. 尝试在文本中查找JSON格式的字符串
-                json_pattern = r'\{[^{}]*\}'
-                matches = re.findall(json_pattern, text)
-                if matches:
-                    for match in matches:
-                        try:
-                            return json.loads(match)
-                        except json.JSONDecodeError:
-                            continue
-            except Exception:
-                pass
-            
-            # 3. 如果都失败了，返回None
-            return None
-    
     def _validate_email_data(self, email_data):
-        """
-        验证邮件数据的有效性
-        """
         if not isinstance(email_data, dict):
             return False
-        
         # 检查必要字段
         if "to_email" not in email_data:
             return False
@@ -77,16 +48,17 @@ class Email(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         # 获取上游组件输出并解析JSON
         ans = self.get_input()
-        content = "".join(ans["content"][0]) if "content" in ans else ""
+        content = ans.get("content", "")[0]
+        # 对content内容进行清洗，仅提取JSON字符串
         if not content:
             return Email.be_output("101")  # 没有内容可发送
-            
         success = False
         try:
-            # 解析从上游传递的数据
-            email_data = self._extract_json(content)
+            email_data = json.loads(content)
+            
             if not email_data:
                 return Email.be_output("101")  # JSON格式无效
+                
             # 验证邮件数据
             if not self._validate_email_data(email_data):
                 return Email.be_output("106")  # 邮件数据格式无效
@@ -138,25 +110,25 @@ class Email(ComponentBase, ABC):
                 return Email.be_output(True)
                 
         except smtplib.SMTPAuthenticationError:
-            # 102 SMTP认证失败。请检查您的邮箱和授权码。
+            # 102 SMTP认证失败请检查您的邮箱和授权码。
             error_msg = "102"
-            logging.error(error_msg)
+            logging.error(error_msg+": "+str(e))
             return Email.be_output(error_msg)
             
         except smtplib.SMTPConnectError:
             # 103 无法连接到SMTP服务器
             error_msg = "103"
-            logging.error(error_msg)
+            logging.error(error_msg+": "+str(e))
             return Email.be_output(error_msg)
             
         except smtplib.SMTPException as e:
             # 104 发生SMTP错误
             error_msg = "104"
-            logging.error(error_msg)
+            logging.error(error_msg+": "+str(e))
             return Email.be_output(error_msg)
             
         except Exception as e:
             # 105 发生意外错误
             error_msg = "105"
-            logging.error(error_msg)
+            logging.error(error_msg+": "+str(e))
             return Email.be_output(error_msg)
