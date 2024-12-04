@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Flex, Form, Input, Modal, Select, Space, InputNumber } from 'antd';
+import { Flex, Form, Input, InputNumber, Modal, Select, Space } from 'antd';
 import { useMemo } from 'react';
 import { BedrockRegionList } from '../constant';
 
@@ -34,7 +34,7 @@ const BedrockModal = ({
     const data = {
       ...values,
       llm_factory: llmFactory,
-      max_tokens:values.max_tokens,
+      max_tokens: values.max_tokens,
     };
 
     onOk?.(data);
@@ -136,7 +136,6 @@ const BedrockModal = ({
             style={{ width: '100%' }}
           />
         </Form.Item>
-
       </Form>
     </Modal>
   );

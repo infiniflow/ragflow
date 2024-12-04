@@ -323,7 +323,7 @@ def rename():
 
 
 @manager.route('/get/<file_id>', methods=['GET'])
-# @login_required
+@login_required
 def get(file_id):
     try:
         e, file = FileService.get_by_id(file_id)

@@ -1,3 +1,5 @@
+import { Authorization } from '@/constants/authorization';
+import { getAuthorization } from '@/utils/authorization-util';
 import jsPreviewExcel from '@js-preview/excel';
 import axios from 'axios';
 import mammoth from 'mammoth';
@@ -23,7 +25,12 @@ export const useCatchError = (api: string) => {
 
 export const useFetchDocument = () => {
   const fetchDocument = useCallback(async (api: string) => {
-    const ret = await axios.get(api, { responseType: 'arraybuffer' });
+    const ret = await axios.get(api, {
+      headers: {
+        [Authorization]: getAuthorization(),
+      },
+      responseType: 'arraybuffer',
+    });
     return ret;
   }, []);
 
@@ -64,30 +71,34 @@ export const useFetchExcel = (filePath: string) => {
 
 export const useFetchDocx = (filePath: string) => {
   const [succeed, setSucceed] = useState(true);
+  const [error, setError] = useState<string>();
   const { fetchDocument } = useFetchDocument();
   const containerRef = useRef<HTMLDivElement>(null);
-  const { error } = useCatchError(filePath);
 
   const fetchDocumentAsync = useCallback(async () => {
-    const jsonFile = await fetchDocument(filePath);
-    mammoth
-      .convertToHtml(
-        { arrayBuffer: jsonFile.data },
-        { includeDefaultStyleMap: true },
-      )
-      .then((result) => {
-        setSucceed(true);
-        const docEl = document.createElement('div');
-        docEl.className = 'document-container';
-        docEl.innerHTML = result.value;
-        const container = containerRef.current;
-        if (container) {
-          container.innerHTML = docEl.outerHTML;
-        }
-      })
-      .catch(() => {
-        setSucceed(false);
-      });
+    try {
+      const jsonFile = await fetchDocument(filePath);
+      mammoth
+        .convertToHtml(
+          { arrayBuffer: jsonFile.data },
+          { includeDefaultStyleMap: true },
+        )
+        .then((result) => {
+          setSucceed(true);
+          const docEl = document.createElement('div');
+          docEl.className = 'document-container';
+          docEl.innerHTML = result.value;
+          const container = containerRef.current;
+          if (container) {
+            container.innerHTML = docEl.outerHTML;
+          }
+        })
+        .catch(() => {
+          setSucceed(false);
+        });
+    } catch (error: any) {
+      setError(error.toString());
+    }
   }, [filePath, fetchDocument]);
 
   useEffect(() => {
