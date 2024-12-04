@@ -45,8 +45,13 @@ const methods = {
     url: connectFileToKnowledge,
     method: 'post',
   },
-  getDocumentFile: {
+  getFile: {
     url: getFile,
+    method: 'get',
+    responseType: 'blob',
+  },
+  getDocumentFile: {
+    url: get_document_file,
     method: 'get',
     responseType: 'blob',
   },

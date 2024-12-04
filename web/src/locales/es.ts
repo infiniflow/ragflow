@@ -231,7 +231,8 @@ export default {
       maxTokensMessage: 'El máximo de tokens es obligatorio',
       maxTokensTip:
         'Esto establece la longitud máxima de la salida del modelo, medida en el número de tokens (palabras o piezas de palabras).',
-      maxTokensInvalidMessage: 'Por favor, ingresa un número válido para Max Tokens.',
+      maxTokensInvalidMessage:
+        'Por favor, ingresa un número válido para Max Tokens.',
       maxTokensMinMessage: 'Max Tokens no puede ser menor que 0.',
       quote: 'Mostrar cita',
       quoteTip: '¿Debe mostrarse la fuente del texto original?',
@@ -284,7 +285,8 @@ export default {
       maxTokensMessage: 'El máximo de tokens es obligatorio',
       maxTokensTip:
         'Esto establece la longitud máxima de la salida del modelo, medida en el número de tokens (palabras o piezas de palabras).',
-      maxTokensInvalidMessage: 'Por favor, ingresa un número válido para Max Tokens.',
+      maxTokensInvalidMessage:
+        'Por favor, ingresa un número válido para Max Tokens.',
       maxTokensMinMessage: 'Max Tokens no puede ser menor que 0.',
       password: 'Contraseña',
       passwordDescription:
