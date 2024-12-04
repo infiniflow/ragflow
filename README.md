@@ -75,7 +75,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
-- 2024-12-04 Supports pagerank score to knowledge base.
+- 2024-12-04 Adds support for pagerank score in knowledge base.
 - 2024-11-22 Adds more variables to Agent.
 - 2024-11-01 Adds keyword extraction and related question generation to the parsed chunks to improve the accuracy of retrieval.
 - 2024-08-22 Support text to SQL statements through RAG.
