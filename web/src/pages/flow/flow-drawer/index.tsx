@@ -39,6 +39,7 @@ import OperatorIcon from '../operator-icon';
 
 import { CloseOutlined } from '@ant-design/icons';
 import { lowerFirst } from 'lodash';
+import EmailForm from '../form/email-form';
 import TemplateForm from '../form/template-form';
 import { getDrawerWidth } from '../utils';
 import styles from './index.less';
@@ -81,6 +82,7 @@ const FormMap = {
   [Operator.Concentrator]: () => <></>,
   [Operator.Note]: () => <></>,
   [Operator.Template]: TemplateForm,
+  [Operator.Email]: EmailForm,
 };
 
 const EmptyContent = () => <div></div>;

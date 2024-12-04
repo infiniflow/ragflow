@@ -1,8 +1,7 @@
 import { useShowDeleteConfirm, useTranslate } from '@/hooks/common-hooks';
 import { useRemoveNextDocument } from '@/hooks/document-hooks';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { api_host } from '@/utils/api';
-import { downloadFile } from '@/utils/file-util';
+import { downloadDocument } from '@/utils/file-util';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -12,6 +11,7 @@ import {
 import { Button, Dropdown, MenuProps, Space, Tooltip } from 'antd';
 import { isParserRunning } from '../utils';
 
+import { DocumentType } from '../constant';
 import styles from './index.less';
 
 interface IProps {
@@ -32,6 +32,7 @@ const ParsingActionCell = ({
   const { t } = useTranslate('knowledgeDetails');
   const { removeDocument } = useRemoveNextDocument();
   const showDeleteConfirm = useShowDeleteConfirm();
+  const isVirtualDocument = record.type === DocumentType.Virtual;
 
   const onRmDocument = () => {
     if (!isRunning) {
@@ -40,8 +41,8 @@ const ParsingActionCell = ({
   };
 
   const onDownloadDocument = () => {
-    downloadFile({
-      url: `${api_host}/document/get/${documentId}`,
+    downloadDocument({
+      id: documentId,
       filename: record.name,
     });
   };
@@ -74,15 +75,17 @@ const ParsingActionCell = ({
 
   return (
     <Space size={0}>
-      <Dropdown
-        menu={{ items: chunkItems }}
-        trigger={['click']}
-        disabled={isRunning}
-      >
-        <Button type="text" className={styles.iconButton}>
-          <ToolOutlined size={20} />
-        </Button>
-      </Dropdown>
+      {isVirtualDocument || (
+        <Dropdown
+          menu={{ items: chunkItems }}
+          trigger={['click']}
+          disabled={isRunning}
+        >
+          <Button type="text" className={styles.iconButton}>
+            <ToolOutlined size={20} />
+          </Button>
+        </Dropdown>
+      )}
       <Tooltip title={t('rename', { keyPrefix: 'common' })}>
         <Button
           type="text"
@@ -103,16 +106,18 @@ const ParsingActionCell = ({
           <DeleteOutlined size={20} />
         </Button>
       </Tooltip>
-      <Tooltip title={t('download', { keyPrefix: 'common' })}>
-        <Button
-          type="text"
-          disabled={isRunning}
-          onClick={onDownloadDocument}
-          className={styles.iconButton}
-        >
-          <DownloadOutlined size={20} />
-        </Button>
-      </Tooltip>
+      {isVirtualDocument || (
+        <Tooltip title={t('download', { keyPrefix: 'common' })}>
+          <Button
+            type="text"
+            disabled={isRunning}
+            onClick={onDownloadDocument}
+            className={styles.iconButton}
+          >
+            <DownloadOutlined size={20} />
+          </Button>
+        </Tooltip>
+      )}
     </Space>
   );
 };

@@ -57,3 +57,8 @@ export enum KnowledgeSearchParams {
   DocumentId = 'doc_id',
   KnowledgeId = 'id',
 }
+
+export enum DocumentType {
+  Virtual = 'virtual',
+  Visual = 'visual',
+}

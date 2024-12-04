@@ -7,7 +7,7 @@ import { Badge, DescriptionsProps, Flex, Popover, Space, Tag } from 'antd';
 import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
-import { RunningStatus, RunningStatusMap } from '../constant';
+import { DocumentType, RunningStatus, RunningStatusMap } from '../constant';
 import { useHandleRunDocumentByIds } from '../hooks';
 import { isParserRunning } from '../utils';
 import styles from './index.less';
@@ -96,7 +96,7 @@ export const ParsingStatusCell = ({ record }: IProps) => {
     handleRunDocumentByIds(record.id, isRunning);
   };
 
-  return (
+  return record.type === DocumentType.Virtual ? null : (
     <Flex justify={'space-between'} align="center">
       <Popover content={<PopoverContent record={record}></PopoverContent>}>
         <Tag color={runningStatus.color}>
