@@ -81,6 +81,7 @@ const FormMap = {
   [Operator.Concentrator]: () => <></>,
   [Operator.Note]: () => <></>,
   [Operator.Template]: TemplateForm,
+  [Operator.Email]: EmailForm,
 };
 
 const EmptyContent = () => <div></div>;
