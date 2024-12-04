@@ -3,32 +3,37 @@ import { Button } from '@/components/ui/button';
 import { Container } from '@/components/ui/container';
 import { Segmented, SegmentedValue } from '@/components/ui/segmented ';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
+import { cn } from '@/lib/utils';
+import { Routes } from '@/routes';
 import {
   ChevronDown,
   Cpu,
   Github,
+  House,
   Library,
   MessageSquareText,
   Search,
   Star,
   Zap,
 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useLocation } from 'umi';
 
 export function Header() {
   const { t } = useTranslate('header');
   const { pathname } = useLocation();
   const navigate = useNavigateWithFromState();
-  const [currentPath, setCurrentPath] = useState('/home');
+  // const [currentPath, setCurrentPath] = useState(Routes.Home);
+  const { navigateToHome } = useNavigatePage();
 
   const tagsData = useMemo(
     () => [
-      { path: '/home', name: t('knowledgeBase'), icon: Library },
-      { path: '/chat', name: t('chat'), icon: MessageSquareText },
-      { path: '/search', name: t('search'), icon: Search },
-      { path: '/flow', name: t('flow'), icon: Cpu },
+      { path: Routes.Datasets, name: t('knowledgeBase'), icon: Library },
+      { path: Routes.Chat, name: t('chat'), icon: MessageSquareText },
+      { path: Routes.Search, name: t('search'), icon: Search },
+      { path: Routes.Agent, name: t('flow'), icon: Cpu },
       // { path: '/file', name: t('fileManager'), icon: FileIcon },
     ],
     [t],
@@ -50,17 +55,21 @@ export function Header() {
     });
   }, [tagsData]);
 
-  // const currentPath = useMemo(() => {
-  //   return tagsData.find((x) => pathname.startsWith(x.path))?.name || 'home';
-  // }, [pathname, tagsData]);
+  const currentPath = useMemo(() => {
+    return (
+      tagsData.find((x) => pathname.startsWith(x.path))?.path || Routes.Home
+    );
+  }, [pathname, tagsData]);
+
+  const isHome = Routes.Home === currentPath;
 
   const handleChange = (path: SegmentedValue) => {
-    // navigate(path as string);
-    setCurrentPath(path as string);
+    navigate(path as Routes);
+    // setCurrentPath(path as Routes);
   };
 
   const handleLogoClick = useCallback(() => {
-    navigate('/');
+    navigate(Routes.Home);
   }, [navigate]);
 
   return (
@@ -81,7 +90,22 @@ export function Header() {
           <Star />
         </Button>
       </div>
-      <div>
+      <div className="flex gap-2 items-center">
+        <Button
+          variant={'icon'}
+          size={'icon'}
+          onClick={navigateToHome}
+          className={cn({
+            'bg-colors-background-inverse-strong': isHome,
+          })}
+        >
+          <House
+            className={cn({
+              'text-colors-text-inverse-strong': isHome,
+            })}
+          />
+        </Button>
+        <div className="h-8 w-[1px] bg-colors-outline-neutral-strong"></div>
         <Segmented
           options={options}
           value={currentPath}
@@ -90,7 +114,7 @@ export function Header() {
         ></Segmented>
       </div>
       <div className="flex items-center gap-4">
-        <Container className="bg-colors-background-inverse-standard">
+        <Container className="bg-colors-background-inverse-standard hidden xl:flex">
           V 0.13.0
           <Button variant="secondary" className="size-8">
             <ChevronDown />
@@ -101,7 +125,7 @@ export function Header() {
             <AvatarImage src="https://github.com/shadcn.png" />
             <AvatarFallback>CN</AvatarFallback>
           </Avatar>
-          yifanwu92@gmail.com
+          <span className="max-w-14 truncate"> yifanwu92@gmail.com</span>
           <Button
             variant="destructive"
             className="py-[2px] px-[8px] h-[23px] rounded-[4px]"
