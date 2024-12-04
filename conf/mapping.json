@@ -140,10 +140,18 @@
         }
       },
       {
-        "string": {
+        "rank_feature": {
           "match": "*_fea",
           "mapping": {
             "type": "rank_feature"
+          }
+        }
+      },
+      {
+        "rank_features": {
+          "match": "*_feas",
+          "mapping": {
+            "type": "rank_features"
           }
         }
       },

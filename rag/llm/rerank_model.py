@@ -126,7 +126,6 @@ class YoudaoRerank(DefaultRerank):
             with YoudaoRerank._model_lock:
                 if not YoudaoRerank._model:
                     try:
-                        logging.info("LOADING BCE...")
                         YoudaoRerank._model = RerankerModel(model_name_or_path=os.path.join(
                             get_home_cache_dir(),
                             re.sub(r"^[a-zA-Z0-9]+/", "", model_name)))

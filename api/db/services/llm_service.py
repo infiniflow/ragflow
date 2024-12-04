@@ -191,15 +191,18 @@ class TenantLLMService(CommonService):
 
         num = 0
         try:
-            tenant_llms = cls.query(tenant_id=tenant_id, llm_name=llm_name)
-            if tenant_llms:
+            if llm_factory:
+                tenant_llms = cls.query(tenant_id=tenant_id, llm_name=llm_name, llm_factory=llm_factory)
+            else:
+                tenant_llms = cls.query(tenant_id=tenant_id, llm_name=llm_name)
+            if not tenant_llms:
+                if not llm_factory: llm_factory = mdlnm
+                num = cls.model.create(tenant_id=tenant_id, llm_factory=llm_factory, llm_name=llm_name, used_tokens=used_tokens)
+            else:
                 tenant_llm = tenant_llms[0]
                 num = cls.model.update(used_tokens=tenant_llm.used_tokens + used_tokens)\
                     .where(cls.model.tenant_id == tenant_id, cls.model.llm_factory == tenant_llm.llm_factory, cls.model.llm_name == llm_name)\
                     .execute()
-            else:
-                if not llm_factory: llm_factory = mdlnm
-                num = cls.model.create(tenant_id=tenant_id, llm_factory=llm_factory, llm_name=llm_name, used_tokens=used_tokens)
         except Exception:
             logging.exception("TenantLLMService.increase_usage got exception")
         return num
@@ -229,13 +232,13 @@ class LLMBundle(object):
             self.max_length = lm.max_tokens
             break
     
-    def encode(self, texts: list, batch_size=32):
-        emd, used_tokens = self.mdl.encode(texts, batch_size)
+    def encode(self, texts: list):
+        embeddings, used_tokens = self.mdl.encode(texts)
         if not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens):
             logging.error(
                 "LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
-        return emd, used_tokens
+        return embeddings, used_tokens
 
     def encode_queries(self, query: str):
         emd, used_tokens = self.mdl.encode_queries(query)
@@ -277,7 +280,7 @@ class LLMBundle(object):
                         logging.error(
                             "LLMBundle.tts can't update token usage for {}/TTS".format(self.tenant_id))
                 return
-            yield chunk     
+            yield chunk
 
     def chat(self, system, history, gen_conf):
         txt, used_tokens = self.mdl.chat(system, history, gen_conf)

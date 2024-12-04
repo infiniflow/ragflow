@@ -40,6 +40,10 @@ import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import OperatorIcon from '../operator-icon';
+import { CloseOutlined } from '@ant-design/icons';
+import { lowerFirst } from 'lodash';
+import EmailForm from '../form/email-form';
+import TemplateForm from '../form/template-form';
 import { getDrawerWidth } from '../utils';
 import styles from './index.less';
 
