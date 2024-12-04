@@ -278,6 +278,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         answer = ""
         for ans in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
             answer = ans
+            logging.info("answer_stream : {}".format(ans))
             delta_ans = ans[len(last_ans):]
             if num_tokens_from_string(delta_ans) < 16:
                 continue
