@@ -120,7 +120,7 @@ class FulltextQueryer:
             keywords.append(tt)
             twts = self.tw.weights([tt])
             syns = self.syn.lookup(tt)
-            if syns: keywords.extend(syns)
+            if syns and len(keywords) < 32: keywords.extend(syns)
             logging.debug(json.dumps(twts, ensure_ascii=False))
             tms = []
             for tk, w in sorted(twts, key=lambda x: x[1] * -1):
@@ -140,17 +140,24 @@ class FulltextQueryer:
                 sm = [FulltextQueryer.subSpecialChar(m) for m in sm if len(m) > 1]
                 sm = [m for m in sm if len(m) > 1]
 
-                keywords.append(re.sub(r"[ \\\"']+", "", tk))
-                keywords.extend(sm)
-                if len(keywords) >= 12:
-                    break
+                if len(keywords) < 32:
+                    keywords.append(re.sub(r"[ \\\"']+", "", tk))
+                    keywords.extend(sm)
 
                 tk_syns = self.syn.lookup(tk)
+                tk_syns = [FulltextQueryer.subSpecialChar(s) for s in tk_syns]
+                if len(keywords) < 32: keywords.extend([s for s in tk_syns if s])
+                tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
+                tk_syns = [f"\"{s}\"" if s.find(" ")>0 else s for s in tk_syns]
+
+                if len(keywords) >= 32:
+                    break
+
                 tk = FulltextQueryer.subSpecialChar(tk)
                 if tk.find(" ") > 0:
                     tk = '"%s"' % tk
                 if tk_syns:
-                    tk = f"({tk} %s)" % " ".join(tk_syns)
+                    tk = f"({tk} OR (%s)^0.2)" % " ".join(tk_syns)
                 if sm:
                     tk = f'{tk} OR "%s" OR ("%s"~2)^0.5' % (" ".join(sm), " ".join(sm))
                 if tk.strip():
@@ -159,14 +166,14 @@ class FulltextQueryer:
             tms = " ".join([f"({t})^{w}" for t, w in tms])
 
             if len(twts) > 1:
-                tms += ' ("%s"~4)^1.5' % (" ".join([t for t, _ in twts]))
+                tms += ' ("%s"~2)^1.5' % rag_tokenizer.tokenize(tt)
             if re.match(r"[0-9a-z ]+$", tt):
                 tms = f'("{tt}" OR "%s")' % rag_tokenizer.tokenize(tt)
 
             syns = " OR ".join(
                 [
-                    '"%s"^0.7'
-                    % FulltextQueryer.subSpecialChar(rag_tokenizer.tokenize(s))
+                    '"%s"'
+                    % rag_tokenizer.tokenize(FulltextQueryer.subSpecialChar(s))
                     for s in syns
                 ]
             )
