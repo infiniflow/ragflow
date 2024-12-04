@@ -230,6 +230,14 @@ def is_english(texts):
         return True
     return False
 
+def is_chinese(text):
+    chinese = 0
+    for ch in text:
+        if '\u4e00' <= ch <= '\u9fff':
+            chinese += 1
+    if chinese / len(text) > 0.2:
+        return True
+    return False
 
 def tokenize(d, t, eng):
     d["content_with_weight"] = t
