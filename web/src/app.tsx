@@ -51,7 +51,6 @@ function Root({ children }: React.PropsWithChildren) {
     <>
       <ConfigProvider
         theme={{
-          cssVar: true,
           token: {
             fontFamily: 'Inter',
           },
