@@ -1,0 +1,31 @@
+{
+    "$schema": "http://json-schema.org/schema#",
+    "type": "object",
+    "properties": {
+        "ragflow": {
+            "type": "object",
+            "properties": {
+                "env": {
+                    "type": "object",
+                    "properties": {
+                        "MYSQL_PASSWORD": {
+                            "type": "string"
+                        },
+                        "MINIO_PASSWORD": {
+                            "type": "string"
+                        },
+                        "REDIS_PASSWORD": {
+                            "type": "string"
+                        },
+                        "ELASTIC_PASSWORD": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["MYSQL_PASSWORD", "MINIO_PASSWORD", "REDIS_PASSWORD", "ELASTIC_PASSWORD"]
+                }
+            },
+            "required": ["env"]
+        }
+    },
+    "required": ["ragflow"]
+}

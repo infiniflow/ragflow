@@ -1,0 +1,11 @@
+apiVersion: zenith.stackhpc.com/v1alpha1
+kind: Client
+metadata:
+  name: {{ include "ragflow-azimuth.fullname" . }}
+  labels: {{ include "ragflow-azimuth.labels" . | nindent 4 }}
+spec:
+  reservationName: {{ include "ragflow-azimuth.fullname" . }}
+  upstream:
+    serviceName: {{ .Release.Name }}
+  auth:
+    skip: {{ .Values.zenithClient.skipAuth }}

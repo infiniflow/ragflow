@@ -1,0 +1,23 @@
+# Generate random passwords for backend services
+controls:
+  /ragflow/env/MYSQL_PASSWORD:
+    visuallyHidden: true
+  /ragflow/env/MINIO_PASSWORD:
+    visuallyHidden: true
+  /ragflow/env/REDIS_PASSWORD:
+    visuallyHidden: true
+  /ragflow/env/ELASTIC_PASSWORD:
+    visuallyHidden: true
+defaultGenerators:
+  /ragflow/env/MYSQL_PASSWORD:
+    type: random
+    length: 32
+  /ragflow/env/MINIO_PASSWORD:
+    type: random
+    length: 32
+  /ragflow/env/REDIS_PASSWORD:
+    type: random
+    length: 32
+  /ragflow/env/ELASTIC_PASSWORD:
+    type: random
+    length: 32
