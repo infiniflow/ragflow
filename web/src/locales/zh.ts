@@ -64,7 +64,7 @@ export default {
       setting: '用户设置',
       logout: '登出',
       fileManager: '文件管理',
-      flow: 'Agent',
+      flow: '工作流',
       search: '搜索',
     },
     knowledgeList: {
@@ -499,7 +499,7 @@ export default {
       chatModel: '聊天模型',
       chatModelTip: '所有新创建的知识库都会使用默认的聊天LLM。',
       ttsModel: 'TTS模型',
-      ttsModelTip: '��认的tts模型会被用于在对话过程中请求语音生成时使用',
+      ttsModelTip: '默认的tts模型会被用于在对话过程中请求语音生成时使用',
       embeddingModel: '嵌入模型',
       embeddingModelTip: '所有新创建的知识库都将使用的默认嵌入模型。',
       img2txtModel: 'Img2txt模型',
@@ -666,7 +666,7 @@ export default {
       addMessage: '新增消息',
       loop: '循环上限',
       loopTip:
-        'loop为当前组件循环次数上限，当循环次数超过loop的值时，说明组件不能完成当前任务，请重新优化agent',
+        'loop为当前组件循环次数上限，当循环次数超过loop的值时，说明组件不能完成当前任务，请重新优化工作流',
       yes: '是',
       no: '否',
       key: 'key',
@@ -679,7 +679,7 @@ export default {
       beginDescription: '这是流程开始的地方',
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应。`,
-      generateDescription: `此组��用于调用LLM生成文本，请注意提示的设置。`,
+      generateDescription: `此组件用于调用LLM生成文本，请注意提示的设置。`,
       categorizeDescription: `此组件用于对文本进行分类。请指定类别的名称、描述和示例。每个类别都指向不同的下游组件。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。只有“检索”可作为其下游。`,
@@ -691,7 +691,7 @@ export default {
       promptText: `请总结以下段落。注意数字，不要胡编乱造。段落如下：
 {input}
 以上就是你需要总结的内容。`,
-      createGraph: '创建 Agent',
+      createGraph: '创建工作流',
       createFromTemplates: '从模板创建',
       retrieval: '知识检索',
       generate: '生成回答',
@@ -1020,7 +1020,7 @@ export default {
       input: '输入',
       output: '输出',
       parameter: '参数',
-      howUseId: '如何使用Agent ID？',
+      howUseId: '如何使用工作流ID？',
       content: '内容',
       operationResults: '运行结果',
       autosaved: '已自动保存',

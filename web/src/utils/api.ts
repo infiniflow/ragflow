@@ -1,4 +1,4 @@
-let api_host = `/v1`;
+let api_host = `http://apiappai.kunkeji.com/v1`;
 
 export { api_host };
 

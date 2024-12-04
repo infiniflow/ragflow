@@ -87,7 +87,6 @@ class Email(ComponentBase, ABC):
             email_data = self._extract_json(content)
             if not email_data:
                 return Email.be_output("101")  # JSON格式无效
-                
             # 验证邮件数据
             if not self._validate_email_data(email_data):
                 return Email.be_output("106")  # 邮件数据格式无效
