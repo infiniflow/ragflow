@@ -1,0 +1,75 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  ragflow.conf: |
+    server {
+        listen 80;
+        server_name _;
+        root /ragflow/web/dist;
+
+        gzip on;
+        gzip_min_length 1k;
+        gzip_comp_level 9;
+        gzip_types text/plain application/javascript application/x-javascript text/css application/xml text/javascript application/x-httpd-php image/jpeg image/gif image/png;
+        gzip_vary on;
+        gzip_disable "MSIE [1-6]\.";
+
+        location ~ ^/(v1|api) {
+            proxy_pass http://localhost:9380;
+            include proxy.conf;
+        }
+
+        location / {
+            index index.html;
+            try_files $uri $uri/ /index.html;
+        }
+
+        # Cache-Control: max-age~@~AExpires
+        location ~ ^/static/(css|js|media)/ {
+            expires 10y;
+            access_log off;
+        }
+    }
+  proxy.conf: |
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_buffering off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+  nginx.conf: |
+    user  root;
+    worker_processes  auto;
+
+    error_log  /var/log/nginx/error.log notice;
+    pid        /var/run/nginx.pid;
+
+    events {
+        worker_connections  1024;
+    }
+
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+
+        log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for"';
+
+        access_log  /var/log/nginx/access.log  main;
+
+        sendfile        on;
+        #tcp_nopush     on;
+
+        keepalive_timeout  65;
+
+        #gzip  on;
+        client_max_body_size 128M;
+
+        include /etc/nginx/conf.d/ragflow.conf;
+    }
