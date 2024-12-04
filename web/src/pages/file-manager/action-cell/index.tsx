@@ -1,13 +1,12 @@
 import NewDocumentLink from '@/components/new-document-link';
 import SvgIcon from '@/components/svg-icon';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useDownloadFile } from '@/hooks/file-manager-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
-import { api_host } from '@/utils/api';
 import {
   getExtension,
   isSupportedPreviewDocumentType,
 } from '@/utils/document-util';
-import { downloadFile } from '@/utils/file-util';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -42,12 +41,13 @@ const ActionCell = ({
     [documentId],
     setSelectedRowKeys,
   );
+  const { downloadFile, loading } = useDownloadFile();
   const extension = getExtension(record.name);
   const isKnowledgeBase = record.source_type === 'knowledgebase';
 
   const onDownloadDocument = () => {
     downloadFile({
-      url: `${api_host}/file/get/${documentId}`,
+      id: documentId,
       filename: record.name,
     });
   };
@@ -106,7 +106,12 @@ const ActionCell = ({
       )}
       {record.type !== 'folder' && (
         <Tooltip title={t('download', { keyPrefix: 'common' })}>
-          <Button type="text" disabled={beingUsed} onClick={onDownloadDocument}>
+          <Button
+            type="text"
+            disabled={beingUsed}
+            loading={loading}
+            onClick={onDownloadDocument}
+          >
             <DownloadOutlined size={20} />
           </Button>
         </Tooltip>
