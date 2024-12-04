@@ -131,23 +131,6 @@ export const useDownloadFile = () => {
   return { data, loading, downloadFile: mutateAsync };
 };
 
-export const useLoadFile = () => {
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-    error,
-  } = useMutation({
-    mutationKey: ['downloadFile'],
-    mutationFn: async (params: { id: string }) => {
-      const response = await fileManagerService.getFile({}, params.id);
-      const blob = new Blob([response.data], { type: response.data.type });
-      return blob;
-    },
-  });
-  return { data, loading, loadFile: mutateAsync, error };
-};
-
 export const useRenameFile = () => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
