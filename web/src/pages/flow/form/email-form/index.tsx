@@ -45,6 +45,17 @@ const EmailForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   "content": "Email Content"            
 }`}
         </pre>
+        <div>
+          状态码：
+          <ul>
+            <li>发送成功返回True</li>
+            <li>101： 输入的JSON格式无效</li>
+            <li>102： SMTP认证失败。请检查您的邮箱和授权码。</li>
+            <li>103： 无法连接到SMTP服务器</li>
+            <li>104： 发生SMTP错误</li>
+            <li>105： 发生意外错误</li>
+          </ul>
+        </div>
       </div>
     </Form>
   );
