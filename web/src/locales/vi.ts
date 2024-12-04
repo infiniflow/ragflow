@@ -637,8 +637,8 @@ export default {
       requestError: 'Lỗi yêu cầu',
       networkAnomalyDescription:
         'Mạng của bạn có sự bất thường và bạn không thể kết nối với máy chủ.',
-      networkAnomaly: 'bất thường mạng',
-      hint: 'gợi ý',
+      networkAnomaly: 'Bất thường mạng',
+      hint: 'Gợi ý',
     },
     fileManager: {
       name: 'Tên',
