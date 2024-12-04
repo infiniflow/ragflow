@@ -75,6 +75,7 @@ export default {
       namePlaceholder: '請輸入名稱',
       doc: '文件',
       searchKnowledgePlaceholder: '搜索',
+      noMoreData: 'It is all, nothing more',
     },
     knowledgeImport: {
       importFile: '导入文件',
@@ -160,6 +161,8 @@ export default {
       topK: 'Top-K',
       topKTip: `K塊將被送入Rerank型號。`,
       delimiter: `分段標識符`,
+      delimiterTip:
+        '支援多字元作為分隔符，多字元分隔符用`包裹。如配置成這樣：\n`##`;那麼就會用換行，兩個#以及分號先對文字進行分割，然後按照「 token number」大小進行拼裝。',
       html4excel: '表格轉HTML',
       html4excelTip: `Excel 是否會被解析為 HTML 表格。如果為 FALSE，Excel 中的每一行都會形成一個區塊。`,
       autoKeywords: '自動關鍵字',
@@ -292,6 +295,9 @@ export default {
       thresholdTip: '閾值越大，聚類越少。',
       maxClusterTip: '最大聚類數。',
       entityTypes: '實體類型',
+      pageRank: '頁面排名',
+      pageRankTip: `這用來提高相關性分數。所有檢索到的區塊的相關性得分將加上該數字。
+當您想要先搜尋給定的知識庫時，請設定比其他人更高的 pagerank 分數。`,
     },
     chunk: {
       chunk: '解析塊',
@@ -303,7 +309,7 @@ export default {
       search: '搜尋',
       all: '所有',
       enabled: '啟用',
-      disabled: '禁用的',
+      disabled: '禁用',
       keyword: '關鍵詞',
       function: '函數',
       chunkMessage: '請輸入值！',
@@ -574,6 +580,8 @@ export default {
       teamMembers: '團隊成員',
       joinedTeams: '加入的團隊',
       sureDelete: '您確定刪除該成員嗎？',
+      quit: '退出',
+      sureQuit: '確定退出加入的團隊嗎？',
     },
     message: {
       registered: '註冊成功',

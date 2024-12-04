@@ -104,9 +104,12 @@ def create(tenant_id):
         "parameters": [
             {"key": "knowledge", "optional": False}
         ],
-        "empty_response": "Sorry! No relevant content was found in the knowledge base!"
+        "empty_response": "Sorry! No relevant content was found in the knowledge base!",
+        "quote":True,
+        "tts":False,
+        "refine_multiturn":True
     }
-    key_list_2 = ["system", "prologue", "parameters", "empty_response"]
+    key_list_2 = ["system", "prologue", "parameters", "empty_response","quote","tts","refine_multiturn"]
     if "prompt_config" not in req:
         req['prompt_config'] = {}
     for key in key_list_2:
@@ -161,7 +164,7 @@ def update(tenant_id,chat_id):
             return get_error_data_result("`datasets` can't be empty")
         if ids:
             for kb_id in ids:
-                kbs = KnowledgebaseService.accessible(kb_id=chat_id, user_id=tenant_id)
+                kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
                 if not kbs:
                     return get_error_data_result(f"You don't own the dataset {kb_id}")
                 kbs = KnowledgebaseService.query(id=kb_id)

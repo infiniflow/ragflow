@@ -1,6 +1,7 @@
 import logging
 import time
 from minio import Minio
+from minio.error import S3Error
 from io import BytesIO
 from rag import settings
 from rag.utils import singleton
@@ -102,8 +103,11 @@ class RAGFlowMinio(object):
                 return True
             else:
                 return False
+        except S3Error as e:
+            if e.code in ["NoSuchKey", "NoSuchBucket", "ResourceNotFound"]:
+                return False
         except Exception:
-            logging.exception(f"Not found: {bucket}/{filename}")
+            logging.exception(f"obj_exist {bucket}/{filename} got exception")
             return False
 
     def get_presigned_url(self, bucket, fnm, expires):

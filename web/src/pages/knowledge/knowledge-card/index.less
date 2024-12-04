@@ -23,6 +23,35 @@
   .footerTop {
     padding-bottom: 2px;
   }
+
+  .titleWrapper {
+    margin: 16px 0;
+    overflow: hidden;
+
+    .title {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 24px;
+      line-height: 32px;
+      font-weight: 600;
+      color: rgba(0, 0, 0, 0.88);
+      word-break: break-all;
+    }
+
+    .description {
+      margin-top: 4px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 20px;
+      color: rgba(0, 0, 0, 0.45);
+    }
+  }
 }
 
 .card {

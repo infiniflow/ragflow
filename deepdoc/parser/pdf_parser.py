@@ -108,13 +108,13 @@ class RAGFlowPdfParser:
         h = max(self.__height(up), self.__height(down))
         y_dis = self._y_dis(up, down)
         LEN = 6
-        tks_down = rag_tokenizer.tokenize(down["text"][:LEN]).split(" ")
-        tks_up = rag_tokenizer.tokenize(up["text"][-LEN:]).split(" ")
+        tks_down = rag_tokenizer.tokenize(down["text"][:LEN]).split()
+        tks_up = rag_tokenizer.tokenize(up["text"][-LEN:]).split()
         tks_all = up["text"][-LEN:].strip() \
                   + (" " if re.match(r"[a-zA-Z0-9]+",
                                      up["text"][-1] + down["text"][0]) else "") \
                   + down["text"][:LEN].strip()
-        tks_all = rag_tokenizer.tokenize(tks_all).split(" ")
+        tks_all = rag_tokenizer.tokenize(tks_all).split()
         fea = [
             up.get("R", -1) == down.get("R", -1),
             y_dis / h,
@@ -152,7 +152,7 @@ class RAGFlowPdfParser:
             max(len(up["text"]), len(down["text"])),
             len(tks_all) - len(tks_up) - len(tks_down),
             len(tks_down) - len(tks_up),
-            tks_down[-1] == tks_up[-1],
+            tks_down[-1] == tks_up[-1] if tks_down and tks_up else False,
             max(down["in_row"], up["in_row"]),
             abs(down["in_row"] - up["in_row"]),
             len(tks_down) == 1 and rag_tokenizer.tag(tks_down[0]).find("n") >= 0,
@@ -565,13 +565,13 @@ class RAGFlowPdfParser:
             if i >= len(self.boxes):
                 break
             prefix = self.boxes[i]["text"].strip()[:3] if not eng else " ".join(
-                self.boxes[i]["text"].strip().split(" ")[:2])
+                self.boxes[i]["text"].strip().split()[:2])
             while not prefix:
                 self.boxes.pop(i)
                 if i >= len(self.boxes):
                     break
                 prefix = self.boxes[i]["text"].strip()[:3] if not eng else " ".join(
-                    self.boxes[i]["text"].strip().split(" ")[:2])
+                    self.boxes[i]["text"].strip().split()[:2])
             self.boxes.pop(i)
             if i >= len(self.boxes) or not prefix:
                 break
@@ -956,8 +956,12 @@ class RAGFlowPdfParser:
                                 enumerate(self.pdf.pages[page_from:page_to])]
             self.page_images_x2 = [p.to_image(resolution=72 * zoomin * 2).annotated for i, p in
                                 enumerate(self.pdf.pages[page_from:page_to])]
-            self.page_chars = [[{**c, 'top': c['top'], 'bottom': c['bottom']} for c in page.dedupe_chars().chars if self._has_color(c)] for page in
-                               self.pdf.pages[page_from:page_to]]
+            try:
+                self.page_chars = [[{**c, 'top': c['top'], 'bottom': c['bottom']} for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
+            except Exception as e:
+                logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
+                self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
+                
             self.total_page = len(self.pdf.pages)
         except Exception:
             logging.exception("RAGFlowPdfParser __images__")

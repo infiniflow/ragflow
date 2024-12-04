@@ -7,10 +7,13 @@ import requests
 
 HOST_ADDRESS = os.getenv('HOST_ADDRESS', 'http://127.0.0.1:9380')
 
-def generate_random_email():
-    return 'user_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))+'@1.com'
+# def generate_random_email():
+#     return 'user_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))+'@1.com'
 
-EMAIL = generate_random_email()
+def generate_email():
+    return 'user_123@1.com'
+
+EMAIL = generate_email()
 # password is "123"
 PASSWORD='''ctAseGvejiaSWWZ88T/m4FQVOpQyUvP+x7sXtdv3feqZACiQleuewkUi35E16wSd5C5QcnkkcV9cYc8TKPTRZlxappDuirxghxoOvFcJxFU4ixLsD
 fN33jCHRoDUW81IH9zjij/vaw8IbVyb6vuwg6MX6inOEBRRzVbRYxXOu1wkWY6SsI8X70oF9aeLFp/PzQpjoe/YbSqpTq8qqrmHzn9vO+yvyYyvmDsphXe
@@ -37,7 +40,10 @@ def login():
 
 @pytest.fixture(scope="session")
 def get_api_key_fixture():
-    register()
+    try:
+        register()
+    except Exception as e:
+        print(e)
     auth = login()
     url = HOST_ADDRESS + "/v1/system/new_token"
     auth = {"Authorization": auth}
@@ -49,7 +55,10 @@ def get_api_key_fixture():
 
 @pytest.fixture(scope="session")
 def get_auth():
-    register()
+    try:
+        register()
+    except Exception as e:
+        print(e)
     auth = login()
     return auth
 

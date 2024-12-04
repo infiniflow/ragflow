@@ -1,8 +1,7 @@
 import { useShowDeleteConfirm, useTranslate } from '@/hooks/common-hooks';
 import { useRemoveNextDocument } from '@/hooks/document-hooks';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { api_host } from '@/utils/api';
-import { downloadFile } from '@/utils/file-util';
+import { downloadDocument } from '@/utils/file-util';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -40,8 +39,8 @@ const ParsingActionCell = ({
   };
 
   const onDownloadDocument = () => {
-    downloadFile({
-      url: `${api_host}/document/get/${documentId}`,
+    downloadDocument({
+      id: documentId,
       filename: record.name,
     });
   };

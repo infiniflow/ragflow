@@ -64,27 +64,27 @@ def build_knowledge_graph_chunks(tenant_id: str, chunks: list[str], callback, en
     BATCH_SIZE=4
     texts, graphs = [], []
     cnt = 0
-    threads = []
     max_workers = int(os.environ.get('GRAPH_EXTRACTOR_MAX_WORKERS', 50))
-    exe = ThreadPoolExecutor(max_workers=max_workers)
-    for i in range(len(chunks)):
-        tkn_cnt = num_tokens_from_string(chunks[i])
-        if cnt+tkn_cnt >= left_token_count and texts:
+    with ThreadPoolExecutor(max_workers=max_workers) as exe:
+        threads = []
+        for i in range(len(chunks)):
+            tkn_cnt = num_tokens_from_string(chunks[i])
+            if cnt+tkn_cnt >= left_token_count and texts:
+                for b in range(0, len(texts), BATCH_SIZE):
+                    threads.append(exe.submit(ext, ["\n".join(texts[b:b+BATCH_SIZE])], {"entity_types": entity_types}, callback))
+                texts = []
+                cnt = 0
+            texts.append(chunks[i])
+            cnt += tkn_cnt
+        if texts:
             for b in range(0, len(texts), BATCH_SIZE):
                 threads.append(exe.submit(ext, ["\n".join(texts[b:b+BATCH_SIZE])], {"entity_types": entity_types}, callback))
-            texts = []
-            cnt = 0
-        texts.append(chunks[i])
-        cnt += tkn_cnt
-    if texts:
-        for b in range(0, len(texts), BATCH_SIZE):
-            threads.append(exe.submit(ext, ["\n".join(texts[b:b+BATCH_SIZE])], {"entity_types": entity_types}, callback))
 
-    callback(0.5, "Extracting entities.")
-    graphs = []
-    for i, _ in enumerate(threads):
-        graphs.append(_.result().output)
-        callback(0.5 + 0.1*i/len(threads), f"Entities extraction progress ... {i+1}/{len(threads)}")
+        callback(0.5, "Extracting entities.")
+        graphs = []
+        for i, _ in enumerate(threads):
+            graphs.append(_.result().output)
+            callback(0.5 + 0.1*i/len(threads), f"Entities extraction progress ... {i+1}/{len(threads)}")
 
     graph = reduce(graph_merge, graphs) if graphs else nx.Graph()
     er = EntityResolution(llm_bdl)

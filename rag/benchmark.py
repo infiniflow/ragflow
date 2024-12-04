@@ -63,16 +63,13 @@ class Benchmark:
                 run[query][c["chunk_id"]] = c["similarity"]
         return run
 
-    def embedding(self, docs, batch_size=16):
-        vects = []
-        cnts = [d["content_with_weight"] for d in docs]
-        for i in range(0, len(cnts), batch_size):
-            vts, c = self.embd_mdl.encode(cnts[i: i + batch_size])
-            vects.extend(vts.tolist())
-        assert len(docs) == len(vects)
+    def embedding(self, docs):
+        texts = [d["content_with_weight"] for d in docs]
+        embeddings, _ = self.embd_mdl.encode(texts)
+        assert len(docs) == len(embeddings)
         vector_size = 0
         for i, d in enumerate(docs):
-            v = vects[i]
+            v = embeddings[i]
             vector_size = len(v)
             d["q_%d_vec" % len(v)] = v
         return docs, vector_size
@@ -237,8 +234,8 @@ class Benchmark:
                 scores = sorted(scores, key=lambda kk: kk[1])
                 for score in scores[:10]:
                     f.write('- text: ' + str(texts[score[0]]) + '\t qrel: ' + str(score[1]) + '\n')
-        json.dump(qrels, open(os.path.join(file_path, dataset + '.qrels.json'), "w+"), indent=2)
-        json.dump(run, open(os.path.join(file_path, dataset + '.run.json'), "w+"), indent=2)
+        json.dump(qrels, open(os.path.join(file_path, dataset + '.qrels.json'), "w+", encoding='utf-8'), indent=2)
+        json.dump(run, open(os.path.join(file_path, dataset + '.run.json'), "w+", encoding='utf-8'), indent=2)
         print(os.path.join(file_path, dataset + '_result.md'), 'Saved!')
 
     def __call__(self, dataset, file_path, miracl_corpus=''):

@@ -20,7 +20,7 @@
         <img alt="Lencana Daring" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.14.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.14.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.14.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.14.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Rilis%20Terbaru" alt="Rilis Terbaru">
@@ -72,9 +72,9 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
-- 22-11-2024 Peningkatan definisi dan penggunaan variabel di Agen.
+- 2024-12-04 Mendukung skor pagerank ke basis pengetahuan.
+- 2024-11-22 Peningkatan definisi dan penggunaan variabel di Agen.
 - 2024-11-01: Penambahan ekstraksi kata kunci dan pembuatan pertanyaan terkait untuk meningkatkan akurasi pengambilan.
-- 2024-09-13: Penambahan mode pencarian untuk Q&A basis pengetahuan.
 - 2024-08-22: Dukungan untuk teks ke pernyataan SQL melalui RAG.
 - 2024-08-02: Dukungan GraphRAG yang terinspirasi oleh [graphrag](https://github.com/microsoft/graphrag) dan mind map.
 
@@ -169,14 +169,14 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    ```
 
    > - Untuk mengunduh versi tertentu dari image Docker RAGFlow slim, perbarui variabel `RAGFlow_IMAGE` di *
-       *docker/.env** sesuai dengan versi yang diinginkan. Misalnya, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0-slim`.
+       *docker/.env** sesuai dengan versi yang diinginkan. Misalnya, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1-slim`.
        Setelah mengubah ini, jalankan ulang perintah di atas untuk memulai unduhan.
    > - Untuk mengunduh versi dev dari image Docker RAGFlow *termasuk* model embedding dan library Python, perbarui
        variabel `RAGFlow_IMAGE` di **docker/.env** menjadi `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. Setelah mengubah ini,
        jalankan ulang perintah di atas untuk memulai unduhan.
    > - Untuk mengunduh versi tertentu dari image Docker RAGFlow *termasuk* model embedding dan library Python, perbarui
        variabel `RAGFlow_IMAGE` di **docker/.env** sesuai dengan versi yang diinginkan. Misalnya,
-       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0`. Setelah mengubah ini, jalankan ulang perintah di atas untuk memulai unduhan.
+       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1`. Setelah mengubah ini, jalankan ulang perintah di atas untuk memulai unduhan.
 
    > **CATATAN:** Image Docker RAGFlow yang mencakup model embedding dan library Python berukuran sekitar 9GB
    dan mungkin memerlukan waktu lebih lama untuk dimuat.
@@ -307,9 +307,8 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    ```bash
    cd web
    npm install --force
-   ```  
-7. Konfigurasikan frontend untuk memperbarui `proxy.target` di **.umirc.ts** menjadi `http://127.0.0.1:9380`:
-8. Jalankan aplikasi frontend:
+   ```
+7. Jalankan aplikasi frontend:
    ```bash
    npm run dev 
    ```  

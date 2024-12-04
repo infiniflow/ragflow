@@ -60,6 +60,11 @@ def list_chunk():
         sres = settings.retrievaler.search(query, search.index_name(tenant_id), kb_ids, highlight=True)
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
+            chunk_elem = sres.field[id]
+            if 'position_list' in chunk_elem:
+                if isinstance(chunk_elem["position_list"], str):
+                    chunk_elem.pop('position_list') # Infinity will store position list as empty str
+
             d = {
                 "chunk_id": id,
                 "content_with_weight": rmSpace(sres.highlight[id]) if question and id in sres.highlight else sres.field[
@@ -96,7 +101,7 @@ def get():
         kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
         chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
         if chunk is None:
-            return server_error_response("Chunk not found")
+            return server_error_response(Exception("Chunk not found"))
         k = []
         for n in chunk.keys():
             if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
@@ -155,7 +160,7 @@ def set():
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
         v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
-        settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
+        settings.docStoreConn.update({"id": req["chunk_id"]}, d, search.index_name(tenant_id), doc.kb_id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -222,11 +227,17 @@ def create():
             return get_data_error_result(message="Document not found!")
         d["kb_id"] = [doc.kb_id]
         d["docnm_kwd"] = doc.name
+        d["title_tks"] = rag_tokenizer.tokenize(doc.name)
         d["doc_id"] = doc.id
 
         tenant_id = DocumentService.get_tenant_id(req["doc_id"])
         if not tenant_id:
             return get_data_error_result(message="Tenant not found!")
+
+        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+        if not e:
+            return get_data_error_result(message="Knowledgebase not found!")
+        if kb.pagerank: d["pagerank_fea"] = kb.pagerank
 
         embd_id = DocumentService.get_embd_id(req["doc_id"])
         embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING.value, embd_id)

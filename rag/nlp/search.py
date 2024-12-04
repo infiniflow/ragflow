@@ -46,6 +46,9 @@ class Dealer:
 
     def get_vector(self, txt, emb_mdl, topk=10, similarity=0.1):
         qv, _ = emb_mdl.encode_queries(txt)
+        shape = np.array(qv).shape
+        if len(shape) > 1:
+            raise Exception(f"Dealer.get_vector returned array's shape {shape} doesn't match expectation(exact one dimension).")
         embedding_data = [float(v) for v in qv]
         vector_column_name = f"q_{len(embedding_data)}_vec"
         return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
@@ -72,7 +75,7 @@ class Dealer:
 
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
                                  "doc_id", "position_list", "knowledge_graph_kwd",
-                                 "available_int", "content_with_weight"])
+                                 "available_int", "content_with_weight", "pagerank_fea"])
         kwds = set([])
 
         qst = req.get("question", "")
@@ -114,7 +117,7 @@ class Dealer:
 
             for k in keywords:
                 kwds.add(k)
-                for kk in rag_tokenizer.fine_grained_tokenize(k).split(" "):
+                for kk in rag_tokenizer.fine_grained_tokenize(k).split():
                     if len(kk) < 2:
                         continue
                     if kk in kwds:
@@ -186,7 +189,7 @@ class Dealer:
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(
                 len(ans_v[0]), len(chunk_v[0]))
 
-        chunks_tks = [rag_tokenizer.tokenize(self.qryr.rmWWW(ck)).split(" ")
+        chunks_tks = [rag_tokenizer.tokenize(self.qryr.rmWWW(ck)).split()
                       for ck in chunks]
         cites = {}
         thr = 0.63
@@ -195,7 +198,7 @@ class Dealer:
                 sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i],
                                                                 chunk_v,
                                                                 rag_tokenizer.tokenize(
-                                                                    self.qryr.rmWWW(pieces_[i])).split(" "),
+                                                                    self.qryr.rmWWW(pieces_[i])).split(),
                                                                 chunks_tks,
                                                                 tkweight, vtweight)
                 mx = np.max(sim) * 0.99
@@ -231,11 +234,13 @@ class Dealer:
         vector_column = f"q_{vector_size}_vec"
         zero_vector = [0.0] * vector_size
         ins_embd = []
+        pageranks = []
         for chunk_id in sres.ids:
             vector = sres.field[chunk_id].get(vector_column, zero_vector)
             if isinstance(vector, str):
                 vector = [float(v) for v in vector.split("\t")]
             ins_embd.append(vector)
+            pageranks.append(sres.field[chunk_id].get("pagerank_fea", 0))
         if not ins_embd:
             return [], [], []
 
@@ -244,17 +249,18 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
-            content_ltks = sres.field[i][cfield].split(" ")
-            title_tks = [t for t in sres.field[i].get("title_tks", "").split(" ") if t]
+            content_ltks = sres.field[i][cfield].split()
+            title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
-            tks = content_ltks + title_tks + important_kwd
+            tks = content_ltks + title_tks*2 + important_kwd*5
             ins_tw.append(tks)
 
         sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
                                                         ins_embd,
                                                         keywords,
                                                         ins_tw, tkweight, vtweight)
-        return sim, tksim, vtsim
+
+        return sim+np.array(pageranks, dtype=float), tksim, vtsim
 
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
                vtweight=0.7, cfield="content_ltks"):
@@ -265,8 +271,8 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
-            content_ltks = sres.field[i][cfield].split(" ")
-            title_tks = [t for t in sres.field[i].get("title_tks", "").split(" ") if t]
+            content_ltks = sres.field[i][cfield].split()
+            title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
             tks = content_ltks + title_tks + important_kwd
             ins_tw.append(tks)
@@ -279,8 +285,8 @@ class Dealer:
     def hybrid_similarity(self, ans_embd, ins_embd, ans, inst):
         return self.qryr.hybrid_similarity(ans_embd,
                                            ins_embd,
-                                           rag_tokenizer.tokenize(ans).split(" "),
-                                           rag_tokenizer.tokenize(inst).split(" "))
+                                           rag_tokenizer.tokenize(ans).split(),
+                                           rag_tokenizer.tokenize(inst).split())
 
     def retrieval(self, question, embd_mdl, tenant_ids, kb_ids, page, page_size, similarity_threshold=0.2,
                   vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True, rerank_mdl=None, highlight=False):
@@ -348,7 +354,7 @@ class Dealer:
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": json.loads(position_list)
             }
-            if highlight:
+            if highlight and sres.highlight:
                 if id in sres.highlight:
                     d["highlight"] = rmSpace(sres.highlight[id])
                 else:

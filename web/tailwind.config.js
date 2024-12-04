@@ -23,16 +23,20 @@ module.exports = {
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'var(--background)',
-        foreground: 'hsl(var(--foreground))',
+        foreground: 'var(--colors-text-neutral-strong)',
         buttonBlueText: 'var(--button-blue-text)',
 
         'colors-outline-sentiment-primary':
           'var(--colors-outline-sentiment-primary)',
         'colors-outline-neutral-strong': 'var(--colors-outline-neutral-strong)',
+        'colors-outline-neutral-standard':
+          'var(--colors-outline-neutral-standard)',
 
         'colors-text-core-standard': 'var(--colors-text-core-standard)',
         'colors-text-neutral-strong': 'var(--colors-text-neutral-strong)',
         'colors-text-neutral-standard': 'var(--colors-text-neutral-standard)',
+        'colors-text-functional-danger': 'var(--colors-text-functional-danger)',
+        'colors-text-inverse-strong': 'var(--colors-text-inverse-strong)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',
@@ -77,6 +81,11 @@ module.exports = {
         backgroundCoreWeak: {
           DEFAULT: 'var(--background-core-weak)',
           foreground: 'var(--background-core-weak-foreground)',
+        },
+
+        'colors-background-inverse-standard': {
+          DEFAULT: 'var(--colors-background-inverse-standard)',
+          foreground: 'var(--colors-background-inverse-standard-foreground)',
         },
 
         'color-background-brand-default': {
@@ -177,5 +186,5 @@ module.exports = {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [require('tailwindcss-animate'), require('@tailwindcss/line-clamp')],
 };

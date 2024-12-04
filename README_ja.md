@@ -20,7 +20,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.14.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.14.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.14.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.14.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -54,9 +54,9 @@
 
 ## 🔥 最新情報
 
+- 2024-12-04 ナレッジ ベースへのページランク スコアをサポートしました。
 - 2024-11-22 エージェントでの変数の定義と使用法を改善しました。
 - 2024-11-01 再現の精度を向上させるために、解析されたチャンクにキーワード抽出と関連質問の生成を追加しました。
-- 2024-09-13 ナレッジベース Q&A の検索モードを追加しました。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
 - 2024-08-02 [graphrag](https://github.com/microsoft/graphrag) からインスピレーションを得た GraphRAG とマインド マップをサポートします。
 
@@ -148,9 +148,9 @@
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > - 特定のバージョンのRAGFlow slim Dockerイメージをダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0`とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
+   > - 特定のバージョンのRAGFlow slim Dockerイメージをダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1`とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
    > - RAGFlowの埋め込みモデルとPythonライブラリを含む開発版Dockerイメージをダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を`RAGFLOW_IMAGE=infiniflow/ragflow:dev`に更新します。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
-   > - 特定のバージョンのRAGFlow Dockerイメージ（埋め込みモデルとPythonライブラリを含む）をダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.0`とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。  
+   > - 特定のバージョンのRAGFlow Dockerイメージ（埋め込みモデルとPythonライブラリを含む）をダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1`とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。  
    
    > **NOTE:** 埋め込みモデルとPythonライブラリを含むRAGFlow Dockerイメージのサイズは約9GBであり、読み込みにかなりの時間がかかる場合があります。
 
@@ -289,8 +289,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    cd web
    npm install --force
    ```  
-7. フロントエンドを設定し、**.umirc.ts** の `proxy.target` を `http://127.0.0.1:9380` に更新します:
-8. フロントエンドサービスを起動する:  
+7. フロントエンドサービスを起動する:  
    ```bash
    npm run dev 
    ```

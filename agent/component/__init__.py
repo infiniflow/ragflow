@@ -31,6 +31,8 @@ from .akshare import AkShare, AkShareParam
 from .crawler import Crawler, CrawlerParam
 from .invoke import Invoke, InvokeParam
 from .template import Template, TemplateParam
+from .email import Email, EmailParam
+
 
 
 def component_class(class_name):

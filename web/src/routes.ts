@@ -129,7 +129,50 @@ const routes = [
   {
     path: '/home',
     layout: false,
-    component: '@/pages/home',
+    component: '@/layouts/next',
+    routes: [
+      {
+        path: '/home',
+        component: '@/pages/home',
+      },
+    ],
+  },
+  {
+    path: '/datasets',
+    layout: false,
+    component: '@/layouts/next',
+    routes: [
+      {
+        path: '/datasets',
+        component: '@/pages/datasets',
+      },
+    ],
+  },
+  {
+    path: '/dataset',
+    layout: false,
+    component: '@/layouts/next',
+    routes: [
+      { path: '/dataset', redirect: '/dataset/dataset' },
+      {
+        path: '/dataset',
+        component: '@/pages/dataset',
+        routes: [
+          {
+            path: '/dataset/dataset',
+            component: '@/pages/dataset/dataset',
+          },
+          {
+            path: '/dataset/configuration',
+            component: '@/pages/dataset/settings',
+          },
+          {
+            path: '/dataset/testing',
+            component: '@/pages/dataset/testing',
+          },
+        ],
+      },
+    ],
   },
   {
     path: '/profile-setting',
@@ -152,6 +195,10 @@ const routes = [
       {
         path: '/profile-setting/model',
         component: '@/pages/profile-setting/model',
+      },
+      {
+        path: '/profile-setting/prompt',
+        component: '@/pages/profile-setting/prompt',
       },
     ],
   },
