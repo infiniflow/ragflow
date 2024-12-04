@@ -1,3 +1,4 @@
+import fileManagerService from '@/services/file-manager-service';
 import { UploadFile } from 'antd';
 
 export const transformFile2Base64 = (val: any): Promise<any> => {
@@ -100,29 +101,41 @@ export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
   return '';
 };
 
-export const downloadFile = ({
-  url,
+export const downloadFileFromBlob = (blob: Blob, name?: string) => {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  if (name) {
+    a.download = name;
+  }
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
+
+export const downloadFile = async ({
+  id,
   filename,
   target,
 }: {
-  url: string;
+  id: string;
   filename?: string;
   target?: string;
 }) => {
-  console.log('downloadFile', url);
-  const downloadElement = document.createElement('a');
-  downloadElement.style.display = 'none';
-  downloadElement.href = url;
-  if (target) {
-    downloadElement.target = '_blank';
-  }
-  downloadElement.rel = 'noopener noreferrer';
-  if (filename) {
-    downloadElement.download = filename;
-  }
-  document.body.appendChild(downloadElement);
-  downloadElement.click();
-  document.body.removeChild(downloadElement);
+  const response = await fileManagerService.getFile({}, id);
+  const blob = new Blob([response.data], { type: response.data.type });
+  downloadFileFromBlob(blob, filename);
+};
+
+export const downloadDocument = async ({
+  id,
+  filename,
+}: {
+  id: string;
+  filename?: string;
+}) => {
+  const response = await fileManagerService.getDocumentFile({}, id);
+  const blob = new Blob([response.data], { type: response.data.type });
+  downloadFileFromBlob(blob, filename);
 };
 
 const Units = ['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
