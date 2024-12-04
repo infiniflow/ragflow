@@ -1,5 +1,5 @@
 import { useTheme } from '@/components/theme-provider';
-import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { UserOutlined } from '@ant-design/icons';
 import { Avatar, Flex } from 'antd';
 import classNames from 'classnames';
@@ -19,7 +19,7 @@ export function RetrievalNode({
 }: NodeProps<NodeData>) {
   const knowledgeBaseIds: string[] = get(data, 'form.kb_ids', []);
   const { theme } = useTheme();
-  const { list: knowledgeList } = useNextFetchKnowledgeList(true);
+  const { list: knowledgeList } = useFetchKnowledgeList(true);
   const knowledgeBases = useMemo(() => {
     return knowledgeBaseIds.map((x) => {
       const item = knowledgeList.find((y) => x === y.id);
