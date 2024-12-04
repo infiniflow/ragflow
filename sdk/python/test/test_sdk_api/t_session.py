@@ -108,3 +108,10 @@ def test_create_agent_conversation_with_success(get_api_key_fixture):
     rag = RAGFlow(API_KEY,HOST_ADDRESS)
     session = Agent.create_session("2e45b5209c1011efa3e90242ac120006", rag)
     session.ask("What is this job")
+
+@pytest.mark.skip(reason="")
+def test_list_agent_sessions_with_success(get_api_key_fixture):
+    API_KEY = "ragflow-BkOGNhYjIyN2JiODExZWY5MzVhMDI0Mm"
+    agent_id = "2710f2269b4611ef8fdf0242ac120006"
+    rag = RAGFlow(API_KEY,HOST_ADDRESS)
+    Agent.list_sessions(agent_id,rag)

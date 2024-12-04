@@ -8,12 +8,12 @@ class Session(Base):
         self.id = None
         self.name = "New session"
         self.messages = [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
-        self.chat_id = None
-        self.agent_id = None
         for key,value in res_dict.items():
             if key =="chat_id" and value is not None:
+                self.chat_id = None
                 self.__session_type = "chat"
             if key == "agent_id" and value is not None:
+                self.agent_id = None
                 self.__session_type = "agent"
         super().__init__(rag, res_dict)
 

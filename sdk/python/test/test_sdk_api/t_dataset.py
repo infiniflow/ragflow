@@ -51,4 +51,5 @@ def test_delete_datasets_with_success(get_api_key_fixture):
 def test_list_datasets_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
+    rag.create_dataset("test_list_datasets")
     rag.list_datasets()

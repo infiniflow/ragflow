@@ -1,4 +1,4 @@
----
+from sdk.python.ragflow_sdk import Agentfrom docutils.nodes import titlefrom sdk.python.ragflow_sdk import Agent---
 sidebar_position: 2
 slug: /python_api_reference
 ---
@@ -1513,4 +1513,123 @@ while True:
     for ans in session.ask(question, stream=True):
         print(ans.content[len(cont):], end='', flush=True)
         cont = ans.content
+```
+---
+
+## List agent sessions
+
+```python
+Agent.list_sessions(
+    agent_id,
+    rag
+    page: int = 1, 
+    page_size: int = 30, 
+    orderby: str = "update_time", 
+    desc: bool = True,
+    id: str = None
+) -> List[Session]
+```
+
+Lists sessions associated with the current agent.
+
+### Parameters
+
+#### page: `int`
+
+Specifies the page on which the sessions will be displayed. Defaults to `1`.
+
+#### page_size: `int`
+
+The number of sessions on each page. Defaults to `30`.
+
+#### orderby: `str`
+
+The field by which sessions should be sorted. Available options:
+
+- `"create_time"`
+- `"update_time"`(default)
+
+#### desc: `bool`
+
+Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `True`.
+
+#### id: `str`
+
+The ID of the agent session to retrieve. Defaults to `None`.
+
+
+### Returns
+
+- Success: A list of `Session` objects associated with the current agent.
+- Failure: `Exception`.
+
+### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+agent_id = "2710f2269b4611ef8fdf0242ac120006"
+sessions=Agent.list_sessions(agent_id,rag_object)
+for session in sessions:
+    print(session)
+```
+
+---
+## List agents
+
+```python
+RAGFlow.list_agents(
+    page: int = 1, 
+    page_size: int = 30, 
+    orderby: str = "create_time", 
+    desc: bool = True,
+    id: str = None,
+    title: str = None
+) -> List[Agent]
+```
+
+Lists agents.
+
+### Parameters
+
+#### page: `int`
+
+Specifies the page on which the agents will be displayed. Defaults to `1`.
+
+#### page_size: `int`
+
+The number of agents on each page. Defaults to `30`.
+
+#### orderby: `str`
+
+The attribute by which the results are sorted. Available options:
+
+- `"create_time"` (default)
+- `"update_time"`
+
+#### desc: `bool`
+
+Indicates whether the retrieved agents should be sorted in descending order. Defaults to `True`.
+
+#### id: `str`  
+
+The ID of the agent to retrieve. Defaults to `None`.
+
+#### name: `str`  
+
+The name of the agent to retrieve. Defaults to `None`.
+
+### Returns
+
+- Success: A list of `Agent` objects.
+- Failure: `Exception`.
+
+### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+for agent in rag_object.list_agents():
+    print(agent)
 ```
