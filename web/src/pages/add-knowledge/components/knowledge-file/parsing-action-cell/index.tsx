@@ -11,6 +11,7 @@ import {
 import { Button, Dropdown, MenuProps, Space, Tooltip } from 'antd';
 import { isParserRunning } from '../utils';
 
+import { DocumentType } from '../constant';
 import styles from './index.less';
 
 interface IProps {
@@ -31,6 +32,7 @@ const ParsingActionCell = ({
   const { t } = useTranslate('knowledgeDetails');
   const { removeDocument } = useRemoveNextDocument();
   const showDeleteConfirm = useShowDeleteConfirm();
+  const isVirtualDocument = record.type === DocumentType.Virtual;
 
   const onRmDocument = () => {
     if (!isRunning) {
@@ -73,15 +75,17 @@ const ParsingActionCell = ({
 
   return (
     <Space size={0}>
-      <Dropdown
-        menu={{ items: chunkItems }}
-        trigger={['click']}
-        disabled={isRunning}
-      >
-        <Button type="text" className={styles.iconButton}>
-          <ToolOutlined size={20} />
-        </Button>
-      </Dropdown>
+      {isVirtualDocument || (
+        <Dropdown
+          menu={{ items: chunkItems }}
+          trigger={['click']}
+          disabled={isRunning}
+        >
+          <Button type="text" className={styles.iconButton}>
+            <ToolOutlined size={20} />
+          </Button>
+        </Dropdown>
+      )}
       <Tooltip title={t('rename', { keyPrefix: 'common' })}>
         <Button
           type="text"
@@ -102,16 +106,18 @@ const ParsingActionCell = ({
           <DeleteOutlined size={20} />
         </Button>
       </Tooltip>
-      <Tooltip title={t('download', { keyPrefix: 'common' })}>
-        <Button
-          type="text"
-          disabled={isRunning}
-          onClick={onDownloadDocument}
-          className={styles.iconButton}
-        >
-          <DownloadOutlined size={20} />
-        </Button>
-      </Tooltip>
+      {isVirtualDocument || (
+        <Tooltip title={t('download', { keyPrefix: 'common' })}>
+          <Button
+            type="text"
+            disabled={isRunning}
+            onClick={onDownloadDocument}
+            className={styles.iconButton}
+          >
+            <DownloadOutlined size={20} />
+          </Button>
+        </Tooltip>
+      )}
     </Space>
   );
 };
