@@ -29,6 +29,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
 from api import settings
 from rag.app.resume import forbidden_select_fields4resume
+from rag.llm import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN
 from rag.nlp.search import index_name
 from rag.utils import rmSpace, num_tokens_from_string, encoder
 from api.utils.file_utils import get_project_base_directory
@@ -273,20 +274,82 @@ def chat(dialog, messages, stream=True, **kwargs):
             (done_tm - retrieval_tm) * 1000)
         return {"answer": answer, "reference": refs, "prompt": prompt}
 
+
+    #注释原先流式代码
+    # if stream:
+    #     last_ans = ""
+    #     answer = ""
+    #     for ans in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
+    #         answer = ans
+    #         logging.info("answer_stream : {}".format(ans))
+    #         delta_ans = ans[len(last_ans):]
+    #         if num_tokens_from_string(delta_ans) < 16:
+    #             continue
+    #         last_ans = answer
+    #         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
+    #     delta_ans = answer[len(last_ans):]
+    #     if delta_ans:
+    #         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
+    #     yield decorate_answer(answer)
+
     if stream:
-        last_ans = ""
+        # logging.info("stream_mode : {}".format(msg[1:]))
         answer = ""
-        for ans in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
-            answer = ans
-            delta_ans = ans[len(last_ans):]
-            if num_tokens_from_string(delta_ans) < 16:
-                continue
-            last_ans = answer
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
-        delta_ans = answer[len(last_ans):]
-        if delta_ans:
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
-        yield decorate_answer(answer)
+        for delta in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
+            # 检查是否为总令牌数或通知信息
+            if isinstance(delta, str):
+                if delta.isdigit():
+                    # 处理总令牌数（如果需要）
+                    total_tokens = int(delta)
+                    # logging.info(f"Total tokens used: {total_tokens}")
+                    continue
+                elif delta in [LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN]:
+                    # 处理长度通知信息
+                    answer += delta
+                    # logging.info(f"Length notification: {delta}")
+                    audio = tts(tts_mdl, delta)
+                    yield {"answer": answer, "reference": {}, "audio_binary": audio}
+                    continue
+                elif "\n**ERROR**:" in delta:
+                    # 处理错误信息
+                    answer += delta
+                    # logging.error(f"Error in response: {delta}")
+                    yield {"answer": answer, "reference": {}, "audio_binary": b''}  # 错误时不生成音频
+                    continue
+
+                # 处理增量文本
+                delta_ans = delta
+                # if num_tokens_from_string(delta_ans) < 16:
+                #     continue  # 根据需求调整阈值
+
+                # 更新完整的答案
+                answer += delta_ans
+
+                # 生成音频
+                audio = tts(tts_mdl, delta_ans)
+                # logging.info(f"Generated audio for delta: {delta_ans}")
+                yield {"answer": delta_ans, "reference": {}, "audio_binary": audio}
+            elif isinstance(delta, dict):
+                # 如果 chat_streamly 仍返回字典（不推荐）
+                # 例如: {"new_text": "新增内容", "position": 10}
+                new_text = delta.get("new_text", "")
+                if not new_text:
+                    continue
+                if num_tokens_from_string(new_text) < 16:
+                    continue
+
+                # 更新完整的答案
+                answer += new_text
+
+                # 生成音频
+                audio = tts(tts_mdl, new_text)
+                # logging.info(f"Generated audio for new_text: {new_text}")
+                yield {"answer": answer, "reference": {}, "audio_binary": audio}
+
+        # 最终装饰答案
+        decorated_answer = decorate_answer(answer)
+        # logging.info(f"Final decorated answer: {decorated_answer}")
+        yield decorated_answer
     else:
         answer = chat_mdl.chat(prompt, msg[1:], gen_conf)
         logging.debug("User: {}|Assistant: {}".format(
