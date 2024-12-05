@@ -68,6 +68,7 @@ def list_chunk():
                 "doc_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_kwd": sres.field[id].get("important_kwd", []),
+                "question_kwd": sres.field[id].get("question_kwd", []),
                 "image_id": sres.field[id].get("img_id", ""),
                 "available_int": sres.field[id].get("available_int", 1),
                 "positions": json.loads(sres.field[id].get("position_list", "[]")),
@@ -115,7 +116,7 @@ def get():
 @manager.route('/set', methods=['POST'])
 @login_required
 @validate_request("doc_id", "chunk_id", "content_with_weight",
-                  "important_kwd")
+                  "important_kwd", "question_kwd")
 def set():
     req = request.json
     d = {
@@ -125,6 +126,8 @@ def set():
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["important_kwd"] = req["important_kwd"]
     d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
+    d["question_kwd"] = req["question_kwd"]
+    d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
     if "available_int" in req:
         d["available_int"] = req["available_int"]
 
@@ -152,7 +155,7 @@ def set():
             d = beAdoc(d, arr[0], arr[1], not any(
                 [rag_tokenizer.is_chinese(t) for t in q + a]))
 
-        v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
+        v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
         v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
         settings.docStoreConn.update({"id": req["chunk_id"]}, d, search.index_name(tenant_id), doc.kb_id)
@@ -213,6 +216,8 @@ def create():
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["important_kwd"] = req.get("important_kwd", [])
     d["important_tks"] = rag_tokenizer.tokenize(" ".join(req.get("important_kwd", [])))
+    d["question_kwd"] = req.get("question_kwd", [])
+    d["question_tks"] = rag_tokenizer.tokenize("\n".join(req.get("question_kwd", [])))
     d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
 
@@ -237,7 +242,7 @@ def create():
         embd_id = DocumentService.get_embd_id(req["doc_id"])
         embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING.value, embd_id)
 
-        v, c = embd_mdl.encode([doc.name, req["content_with_weight"]])
+        v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
         v = 0.1 * v[0] + 0.9 * v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
         settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)

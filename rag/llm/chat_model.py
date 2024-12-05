@@ -23,7 +23,7 @@ from abc import ABC
 from openai import OpenAI
 import openai
 from ollama import Client
-from rag.nlp import is_chinese
+from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
 from groq import Groq
 import os
@@ -177,7 +177,7 @@ class HuggingFaceChat(Base):
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
-        super().__init__(key, model_name, base_url)
+        super().__init__(key, model_name.split("___")[0], base_url)
 
 
 class DeepSeekChat(Base):
