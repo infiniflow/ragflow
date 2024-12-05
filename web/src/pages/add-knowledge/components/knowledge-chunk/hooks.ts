@@ -99,10 +99,12 @@ export const useUpdateChunk = () => {
       content,
       keywords,
       available_int,
+      question_kwd,
     }: {
       content: string;
       keywords: string;
       available_int: number;
+      question_kwd: string;
     }) => {
       const code = await createChunk({
         content_with_weight: content,
@@ -110,6 +112,7 @@ export const useUpdateChunk = () => {
         chunk_id: chunkId,
         important_kwd: keywords, // keywords
         available_int,
+        question_kwd,
       });
 
       if (code === 0) {

@@ -25,6 +25,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
   const [form] = Form.useForm();
   const [checked, setChecked] = useState(false);
   const [keywords, setKeywords] = useState<string[]>([]);
+  const [question, setQuestion] = useState<string[]>([]);
   const { removeChunk } = useDeleteChunkByIds();
   const { data } = useFetchChunk(chunkId);
   const { t } = useTranslation();
@@ -35,14 +36,17 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
         content_with_weight,
         important_kwd = [],
         available_int,
+        question_kwd = [],
       } = data.data;
       form.setFieldsValue({ content: content_with_weight });
       setKeywords(important_kwd);
+      setQuestion(question_kwd);
       setChecked(available_int === 1);
     }
 
     if (!chunkId) {
       setKeywords([]);
+      setQuestion([]);
       form.setFieldsValue({ content: undefined });
     }
   }, [data, form, chunkId]);
@@ -53,6 +57,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
       onOk?.({
         content: values.content,
         keywords, // keywords
+        question_kwd: question,
         available_int: checked ? 1 : 0, // available_int
       });
     } catch (errorInfo) {
@@ -90,6 +95,10 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
       <section>
         <p className="mb-2">{t('chunk.keyword')} *</p>
         <EditTag tags={keywords} setTags={setKeywords} />
+      </section>
+      <section className="pt-2">
+        <p className="mb-2">{t('chunk.question')} *</p>
+        <EditTag tags={question} setTags={setQuestion} />
       </section>
       {chunkId && (
         <section>
