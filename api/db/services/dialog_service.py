@@ -293,7 +293,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     #     yield decorate_answer(answer)
 
     if stream:
-        logging.info("stream_mode : {}".format(msg[1:]))
+        # logging.info("stream_mode : {}".format(msg[1:]))
         answer = ""
         for delta in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
             # 检查是否为总令牌数或通知信息

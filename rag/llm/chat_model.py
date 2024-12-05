@@ -97,7 +97,6 @@ class Base(ABC):
     #     yield total_tokens
 
     def chat_streamly(self, system, history, gen_conf):
-        logging.info("lizheng_test: chat_streamly")
         if system:
             history.insert(0, {"role": "system", "content": system})
 
