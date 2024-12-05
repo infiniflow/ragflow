@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import re
 
 from openai.lib.azure import AzureOpenAI
@@ -57,9 +58,49 @@ class Base(ABC):
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
 
+    # def chat_streamly(self, system, history, gen_conf):
+    #     if system:
+    #         history.insert(0, {"role": "system", "content": system})
+    #     ans = ""
+    #     total_tokens = 0
+    #     try:
+    #         response = self.client.chat.completions.create(
+    #             model=self.model_name,
+    #             messages=history,
+    #             stream=True,
+    #             **gen_conf)
+    #         for resp in response:
+    #             if not resp.choices: continue
+    #             if not resp.choices[0].delta.content:
+    #                 resp.choices[0].delta.content = ""
+    #             ans += resp.choices[0].delta.content
+    #
+    #             if not hasattr(resp, "usage") or not resp.usage:
+    #                 total_tokens = (
+    #                             total_tokens
+    #                             + num_tokens_from_string(resp.choices[0].delta.content)
+    #                     )
+    #             elif isinstance(resp.usage, dict):
+    #                 total_tokens = resp.usage.get("total_tokens", total_tokens)
+    #             else: total_tokens = resp.usage.total_tokens
+    #
+    #             if resp.choices[0].finish_reason == "length":
+    #                 if is_chinese(ans):
+    #                     ans += LENGTH_NOTIFICATION_CN
+    #                 else:
+    #                     ans += LENGTH_NOTIFICATION_EN
+    #             yield ans
+    #
+    #     except openai.APIError as e:
+    #         yield ans + "\n**ERROR**: " + str(e)
+    #
+    #     yield total_tokens
+
     def chat_streamly(self, system, history, gen_conf):
+        logging.info("lizheng_test: chat_streamly")
         if system:
             history.insert(0, {"role": "system", "content": system})
+
         ans = ""
         total_tokens = 0
         try:
@@ -67,32 +108,45 @@ class Base(ABC):
                 model=self.model_name,
                 messages=history,
                 stream=True,
-                **gen_conf)
+                **gen_conf
+            )
             for resp in response:
-                if not resp.choices: continue
-                if not resp.choices[0].delta.content:
-                    resp.choices[0].delta.content = ""
-                ans += resp.choices[0].delta.content
+                if not resp.choices:
+                    continue
+                # 获取delta内容，确保其为字符串
+                delta_content = resp.choices[0].delta.content or ""
+                if not delta_content:
+                    continue
+                # 累积答案
+                ans += delta_content
 
+                # 更新令牌计数
                 if not hasattr(resp, "usage") or not resp.usage:
                     total_tokens = (
-                                total_tokens
-                                + num_tokens_from_string(resp.choices[0].delta.content)
-                        )
+                            total_tokens
+                            + num_tokens_from_string(delta_content)
+                    )
                 elif isinstance(resp.usage, dict):
                     total_tokens = resp.usage.get("total_tokens", total_tokens)
-                else: total_tokens = resp.usage.total_tokens
+                else:
+                    total_tokens = resp.usage.total_tokens
 
+                # 仅返回新增的部分
+                yield delta_content
+
+                # 处理完成原因
                 if resp.choices[0].finish_reason == "length":
                     if is_chinese(ans):
-                        ans += LENGTH_NOTIFICATION_CN
+                        notification = LENGTH_NOTIFICATION_CN
                     else:
-                        ans += LENGTH_NOTIFICATION_EN
-                yield ans
+                        notification = LENGTH_NOTIFICATION_EN
+                    yield notification
 
         except openai.APIError as e:
+            # 返回错误信息
             yield ans + "\n**ERROR**: " + str(e)
 
+        # 返回总令牌数
         yield total_tokens
 
 
