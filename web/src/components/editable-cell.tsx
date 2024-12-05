@@ -90,11 +90,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
         <Input ref={inputRef} onPressEnter={save} onBlur={save} />
       </Form.Item>
     ) : (
-      <div
-        className="editable-cell-value-wrap"
-        // style={{ paddingRight: 24 }}
-        onClick={toggleEdit}
-      >
+      <div onClick={toggleEdit} className="truncate">
         <Text>{children}</Text>
       </div>
     );
