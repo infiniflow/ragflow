@@ -310,6 +310,7 @@ export default {
       graph: '知識圖譜',
       mind: '心智圖',
       question: '問題',
+      questionTip: `如果存在給定的問題，則區塊的嵌入將基於它們。`,
     },
     chat: {
       newConversation: '新會話',
