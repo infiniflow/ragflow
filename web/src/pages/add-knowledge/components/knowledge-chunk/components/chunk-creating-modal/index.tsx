@@ -1,8 +1,8 @@
 import EditTag from '@/components/edit-tag';
 import { useFetchChunk } from '@/hooks/chunk-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { DeleteOutlined } from '@ant-design/icons';
-import { Divider, Form, Input, Modal, Space, Switch } from 'antd';
+import { DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { Divider, Form, Input, Modal, Space, Switch, Tooltip } from 'antd';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDeleteChunkByIds } from '../../hooks';
@@ -41,7 +41,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
       form.setFieldsValue({ content: content_with_weight });
       setKeywords(important_kwd);
       setQuestion(question_kwd);
-      setChecked(available_int === 1);
+      setChecked(available_int !== 0);
     }
 
     if (!chunkId) {
@@ -93,11 +93,16 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
         </Form.Item>
       </Form>
       <section>
-        <p className="mb-2">{t('chunk.keyword')} *</p>
+        <p className="mb-2">{t('chunk.keyword')} </p>
         <EditTag tags={keywords} setTags={setKeywords} />
       </section>
-      <section className="pt-2">
-        <p className="mb-2">{t('chunk.question')} *</p>
+      <section className="mt-4">
+        <div className="flex items-center gap-2 mb-2">
+          <span>{t('chunk.question')}</span>
+          <Tooltip title={t('chunk.questionTip')}>
+            <QuestionCircleOutlined className="text-xs" />
+          </Tooltip>
+        </div>
         <EditTag tags={question} setTags={setQuestion} />
       </section>
       {chunkId && (

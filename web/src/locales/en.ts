@@ -326,6 +326,7 @@ The above is the content you need to summarize.`,
       graph: 'Knowledge graph',
       mind: 'Mind map',
       question: 'Question',
+      questionTip: `If there're given questions, the embedding of the chunk will be based on them.`,
     },
     chat: {
       newConversation: 'New conversation',
