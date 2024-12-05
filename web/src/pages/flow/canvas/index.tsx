@@ -1,16 +1,8 @@
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { FolderOutput, Import } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import ReactFlow, {
   Background,
   ConnectionMode,
-  ControlButton,
   Controls,
   NodeMouseHandler,
 } from 'reactflow';
@@ -200,32 +192,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
         deleteKeyCode={['Delete', 'Backspace']}
       >
         <Background />
-        <Controls>
-          <ControlButton
-            onClick={() => alert('Something magical just happened. ✨')}
-          >
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger>
-                  <Import />
-                </TooltipTrigger>
-                <TooltipContent>Import</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </ControlButton>
-          <ControlButton
-            onClick={() => alert('Something magical just happened. ✨')}
-          >
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger>
-                  <FolderOutput />
-                </TooltipTrigger>
-                <TooltipContent>Export</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </ControlButton>
-        </Controls>
+        <Controls />
       </ReactFlow>
       {formDrawerVisible && (
         <FormDrawer
