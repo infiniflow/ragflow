@@ -1,8 +1,21 @@
 .tweenGroup {
-  display: inline-block;
-  :global(.ant-tag) {
-    margin-bottom: 8px;
-    font-size: 14px;
-    padding: 2px 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.tag {
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 20px 2px 4px;
+  font-size: 14px;
+  .textEllipsis();
+  position: relative;
+  :global(.ant-tag-close-icon) {
+    position: absolute;
+    top: 7px;
+    right: 4px;
   }
 }
