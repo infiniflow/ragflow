@@ -74,7 +74,7 @@ class Dealer:
         offset, limit = pg * ps, (pg + 1) * ps
 
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
-                                 "doc_id", "position_list", "knowledge_graph_kwd",
+                                 "doc_id", "position_list", "knowledge_graph_kwd", "question_kwd", "question_tks",
                                  "available_int", "content_with_weight", "pagerank_fea"])
         kwds = set([])
 
@@ -251,8 +251,9 @@ class Dealer:
         for i in sres.ids:
             content_ltks = sres.field[i][cfield].split()
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
+            question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
-            tks = content_ltks + title_tks*2 + important_kwd*5
+            tks = content_ltks + title_tks*2 + important_kwd*5 + question_tks*6
             ins_tw.append(tks)
 
         sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
@@ -322,11 +323,14 @@ class Dealer:
             sim = tsim = vsim = [1]*len(sres.ids)
             idx = list(range(len(sres.ids)))
 
+        def floor_sim(score):
+            return (int(score * 100.)%100)/100.
+
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
         for i in idx:
-            if sim[i] < similarity_threshold:
+            if floor_sim(sim[i]) < similarity_threshold:
                 break
             if len(ranks["chunks"]) >= page_size:
                 if aggs:
@@ -337,8 +341,6 @@ class Dealer:
             dnm = chunk["docnm_kwd"]
             did = chunk["doc_id"]
             position_list = chunk.get("position_list", "[]")
-            if not position_list:
-                position_list = "[]"
             d = {
                 "chunk_id": id,
                 "content_ltks": chunk["content_ltks"],

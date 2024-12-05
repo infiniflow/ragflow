@@ -61,9 +61,9 @@ class Document(Base):
             return chunks
         raise Exception(res.get("message"))
 
-
-    def add_chunk(self, content: str,important_keywords: list[str] = []):
-        res = self.post(f'/datasets/{self.dataset_id}/documents/{self.id}/chunks', {"content":content,"important_keywords":important_keywords})
+    def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = []):
+        res = self.post(f'/datasets/{self.dataset_id}/documents/{self.id}/chunks',
+                        {"content":content,"important_keywords":important_keywords, "questions": questions})
         res = res.json()
         if res.get("code") == 0:
             return Chunk(self.rag,res["data"].get("chunk"))

@@ -11,6 +11,8 @@
 	"name_kwd": {"type": "varchar", "default": ""},
 	"important_kwd": {"type": "varchar", "default": ""},
 	"important_tks": {"type": "varchar", "default": ""},
+	"question_kwd": {"type": "varchar", "default": ""},
+	"question_tks": {"type": "varchar", "default": ""},
 	"content_with_weight": {"type": "varchar", "default": ""},
 	"content_ltks": {"type": "varchar", "default": ""},
 	"content_sm_ltks": {"type": "varchar", "default": ""},

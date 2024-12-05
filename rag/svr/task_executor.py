@@ -255,13 +255,8 @@ def build_chunks(task, progress_callback):
         progress_callback(msg="Start to generate questions for every chunk ...")
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
         for d in docs:
-            qst = question_proposal(chat_mdl, d["content_with_weight"], task["parser_config"]["auto_questions"])
-            d["content_with_weight"] = f"Question: \n{qst}\n\nAnswer:\n" + d["content_with_weight"]
-            qst = rag_tokenizer.tokenize(qst)
-            if "content_ltks" in d:
-                d["content_ltks"] += " " + qst
-            if "content_sm_ltks" in d:
-                d["content_sm_ltks"] += " " + rag_tokenizer.fine_grained_tokenize(qst)
+            d["question_kwd"] = question_proposal(chat_mdl, d["content_with_weight"], task["parser_config"]["auto_questions"]).split("\n")
+            d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
         progress_callback(msg="Question generation completed in {:.2f}s".format(timer() - st))
 
     return docs
@@ -275,9 +270,16 @@ def init_kb(row, vector_size: int):
 def embedding(docs, mdl, parser_config=None, callback=None):
     if parser_config is None:
         parser_config = {}
-    batch_size = 32
-    tts, cnts = [rmSpace(d["title_tks"]) for d in docs if d.get("title_tks")], [
-        re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", d["content_with_weight"]) for d in docs]
+    batch_size = 16
+    tts, cnts = [], []
+    for d in docs:
+        tts.append(rmSpace(d["title_tks"]))
+        c = "\n".join(d.get("question_kwd", []))
+        if not c:
+            c = d["content_with_weight"]
+        c = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", c)
+        cnts.append(c)
+
     tk_count = 0
     if len(tts) == len(cnts):
         tts_ = np.array([])

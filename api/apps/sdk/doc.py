@@ -844,6 +844,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
                 "doc_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_kwd": sres.field[id].get("important_kwd", []),
+                "question_kwd": sres.field[id].get("question_kwd", []),
                 "img_id": sres.field[id].get("img_id", ""),
                 "available_int": sres.field[id].get("available_int", 1),
                 "positions": sres.field[id].get("position_int", "").split("\t"),
@@ -879,6 +880,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
             "content_with_weight": "content",
             "doc_id": "document_id",
             "important_kwd": "important_keywords",
+            "question_kwd": "questions",
             "img_id": "image_id",
             "available_int": "available",
         }
@@ -978,6 +980,11 @@ def add_chunk(tenant_id, dataset_id, document_id):
             return get_error_data_result(
                 "`important_keywords` is required to be a list"
             )
+    if "questions" in req:
+        if type(req["questions"]) != list:
+            return get_error_data_result(
+                "`questions` is required to be a list"
+            )
     md5 = hashlib.md5()
     md5.update((req["content"] + document_id).encode("utf-8"))
 
@@ -992,6 +999,10 @@ def add_chunk(tenant_id, dataset_id, document_id):
     d["important_tks"] = rag_tokenizer.tokenize(
         " ".join(req.get("important_keywords", []))
     )
+    d["question_kwd"] = req.get("questions", [])
+    d["question_tks"] = rag_tokenizer.tokenize(
+        "\n".join(req.get("questions", []))
+    )
     d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
     d["kb_id"] = dataset_id
@@ -1001,7 +1012,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
     embd_mdl = TenantLLMService.model_instance(
         tenant_id, LLMType.EMBEDDING.value, embd_id
     )
-    v, c = embd_mdl.encode([doc.name, req["content"]])
+    v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
     settings.docStoreConn.insert([d], search.index_name(tenant_id), dataset_id)
@@ -1013,6 +1024,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
         "content_with_weight": "content",
         "doc_id": "document_id",
         "important_kwd": "important_keywords",
+        "question_kwd": "questions",
         "kb_id": "dataset_id",
         "create_timestamp_flt": "create_timestamp",
         "create_time": "create_time",
@@ -1166,8 +1178,13 @@ def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     if "important_keywords" in req:
         if not isinstance(req["important_keywords"], list):
             return get_error_data_result("`important_keywords` should be a list")
-        d["important_kwd"] = req.get("important_keywords")
+        d["important_kwd"] = req.get("important_keywords", [])
         d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_keywords"]))
+    if "questions" in req:
+        if not isinstance(req["questions"], list):
+            return get_error_data_result("`questions` should be a list")
+        d["question_kwd"] = req.get("questions")
+        d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
     if "available" in req:
         d["available_int"] = int(req["available"])
     embd_id = DocumentService.get_embd_id(document_id)
@@ -1185,7 +1202,7 @@ def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             d, arr[0], arr[1], not any([rag_tokenizer.is_chinese(t) for t in q + a])
         )
 
-    v, c = embd_mdl.encode([doc.name, d["content_with_weight"]])
+    v, c = embd_mdl.encode([doc.name, d["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
     settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(tenant_id), dataset_id)
@@ -1353,6 +1370,7 @@ def retrieval_test(tenant_id):
                 "content_with_weight": "content",
                 "doc_id": "document_id",
                 "important_kwd": "important_keywords",
+                "question_kwd": "questions",
                 "docnm_kwd": "document_keyword",
             }
             rename_chunk = {}

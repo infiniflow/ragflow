@@ -6,6 +6,7 @@ class Chunk(Base):
         self.id = ""
         self.content = ""
         self.important_keywords = []
+        self.questions = []
         self.create_time = ""
         self.create_timestamp = 0.0
         self.dataset_id = None

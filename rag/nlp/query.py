@@ -31,6 +31,7 @@ class FulltextQueryer:
             "title_sm_tks^5",
             "important_kwd^30",
             "important_tks^20",
+            "question_tks^20",
             "content_ltks^2",
             "content_sm_ltks",
         ]
