@@ -326,7 +326,6 @@ When you want to search the given knowledge base at first place, set a higher pa
       graph: 'Knowledge graph',
       mind: 'Mind map',
       question: 'Question',
-      questionTip: `If there're given questions, the embedding of the chunk will be based on them.`,
     },
     chat: {
       newConversation: 'New conversation',

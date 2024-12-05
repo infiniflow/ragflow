@@ -45,10 +45,8 @@ const EditTag = ({ tags, setTags }: EditTagsProps) => {
   };
 
   const forMap = (tag: string) => {
-    return (
+    const tagElem = (
       <Tag
-        key={tag}
-        className={styles.tag}
         closable
         onClose={(e) => {
           e.preventDefault();
@@ -57,6 +55,11 @@ const EditTag = ({ tags, setTags }: EditTagsProps) => {
       >
         {tag}
       </Tag>
+    );
+    return (
+      <span key={tag} style={{ display: 'inline-block' }}>
+        {tagElem}
+      </span>
     );
   };
 
@@ -68,8 +71,8 @@ const EditTag = ({ tags, setTags }: EditTagsProps) => {
   };
 
   return (
-    <div>
-      {Array.isArray(tagChild) && tagChild.length > 0 && (
+    <>
+      <span>
         <TweenOneGroup
           className={styles.tweenGroup}
           enter={{
@@ -88,7 +91,7 @@ const EditTag = ({ tags, setTags }: EditTagsProps) => {
         >
           {tagChild}
         </TweenOneGroup>
-      )}
+      </span>
       {inputVisible ? (
         <Input
           ref={inputRef}
@@ -104,7 +107,7 @@ const EditTag = ({ tags, setTags }: EditTagsProps) => {
           <PlusOutlined />
         </Tag>
       )}
-    </div>
+    </>
   );
 };
 

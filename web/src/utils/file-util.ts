@@ -112,6 +112,20 @@ export const downloadFileFromBlob = (blob: Blob, name?: string) => {
   window.URL.revokeObjectURL(url);
 };
 
+export const downloadFile = async ({
+  id,
+  filename,
+  target,
+}: {
+  id: string;
+  filename?: string;
+  target?: string;
+}) => {
+  const response = await fileManagerService.getFile({}, id);
+  const blob = new Blob([response.data], { type: response.data.type });
+  downloadFileFromBlob(blob, filename);
+};
+
 export const downloadDocument = async ({
   id,
   filename,
