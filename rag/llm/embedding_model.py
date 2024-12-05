@@ -745,7 +745,7 @@ class HuggingFaceEmbed(Base):
         if not model_name:
             raise ValueError("Model name cannot be None")
         self.key = key
-        self.model_name = model_name
+        self.model_name = model_name.split("___")[0]
         self.base_url = base_url or "http://127.0.0.1:8080"
 
     def encode(self, texts: list):
@@ -774,6 +774,7 @@ class HuggingFaceEmbed(Base):
             return np.array(embedding[0]), num_tokens_from_string(text)
         else:
             raise Exception(f"Error: {response.status_code} - {response.text}")
+
 
 class VolcEngineEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url="https://ark.cn-beijing.volces.com/api/v3"):
