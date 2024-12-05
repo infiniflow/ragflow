@@ -230,9 +230,7 @@ RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
-docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
 ```
 
 ## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
@@ -242,8 +240,6 @@ docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
