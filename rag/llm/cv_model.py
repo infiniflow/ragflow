@@ -29,6 +29,7 @@ import requests
 from rag.nlp import is_english
 from api.utils import get_uuid
 from api.utils.file_utils import get_project_base_directory
+from google.generativeai import client, GenerativeModel, GenerationConfig
 
 
 class Base(ABC):
@@ -57,39 +58,6 @@ class Base(ABC):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    # def chat_streamly(self, system, history, gen_conf, image=""):
-    #     if system:
-    #         history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
-    #
-    #     ans = ""
-    #     tk_count = 0
-    #     try:
-    #         for his in history:
-    #             if his["role"] == "user":
-    #                 his["content"] = self.chat_prompt(his["content"], image)
-    #
-    #         response = self.client.chat.completions.create(
-    #             model=self.model_name,
-    #             messages=history,
-    #             max_tokens=gen_conf.get("max_tokens", 1000),
-    #             temperature=gen_conf.get("temperature", 0.3),
-    #             top_p=gen_conf.get("top_p", 0.7),
-    #             stream=True
-    #         )
-    #         for resp in response:
-    #             if not resp.choices[0].delta.content: continue
-    #             delta = resp.choices[0].delta.content
-    #             ans += delta
-    #             if resp.choices[0].finish_reason == "length":
-    #                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
-    #                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-    #                 tk_count = resp.usage.total_tokens
-    #             if resp.choices[0].finish_reason == "stop": tk_count = resp.usage.total_tokens
-    #             yield ans
-    #     except Exception as e:
-    #         yield ans + "\n**ERROR**: " + str(e)
-    #
-    #     yield tk_count
 
     def chat_streamly(self, system, history, gen_conf, image=""):
         if system:
@@ -97,8 +65,6 @@ class Base(ABC):
 
         ans = ""
         tk_count = 0
-        last_sent_length = 0  # 跟踪上一次发送的内容长度
-
         try:
             for his in history:
                 if his["role"] == "user":
@@ -113,38 +79,75 @@ class Base(ABC):
                 stream=True
             )
             for resp in response:
-                if not resp.choices[0].delta.content:
-                    continue
+                if not resp.choices[0].delta.content: continue
                 delta = resp.choices[0].delta.content
                 ans += delta
-
-                # 计算新增部分
-                new_text = delta
-                position = last_sent_length  # 新增部分的起始位置
-                last_sent_length += len(new_text)
-
-                # 构建增量协议
-                incremental_update = {
-                    "new_text": new_text,
-                    "position": position
-                }
-
                 if resp.choices[0].finish_reason == "length":
-                    message = "...\nFor the content length reason, it stopped, continue?" if is_english(
+                    ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                         [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
-                    incremental_update["new_text"] = message
-                    incremental_update["position"] = last_sent_length
                     tk_count = resp.usage.total_tokens
-
-                if resp.choices[0].finish_reason == "stop":
-                    tk_count = resp.usage.total_tokens
-
-                yield incremental_update
-
+                if resp.choices[0].finish_reason == "stop": tk_count = resp.usage.total_tokens
+                yield ans
         except Exception as e:
-            yield {"error": f"**ERROR**: {str(e)}"}
+            yield ans + "\n**ERROR**: " + str(e)
 
         yield tk_count
+
+    # Comment on the original LLM code
+    # def chat_streamly(self, system, history, gen_conf, image=""):
+    #     if system:
+    #         history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
+    #
+    #     ans = ""
+    #     tk_count = 0
+    #     last_sent_length = 0  # 跟踪上一次发送的内容长度
+    #
+    #     try:
+    #         for his in history:
+    #             if his["role"] == "user":
+    #                 his["content"] = self.chat_prompt(his["content"], image)
+    #
+    #         response = self.client.chat.completions.create(
+    #             model=self.model_name,
+    #             messages=history,
+    #             max_tokens=gen_conf.get("max_tokens", 1000),
+    #             temperature=gen_conf.get("temperature", 0.3),
+    #             top_p=gen_conf.get("top_p", 0.7),
+    #             stream=True
+    #         )
+    #         for resp in response:
+    #             if not resp.choices[0].delta.content:
+    #                 continue
+    #             delta = resp.choices[0].delta.content
+    #             ans += delta
+    #
+    #             # 计算新增部分
+    #             new_text = delta
+    #             position = last_sent_length  # 新增部分的起始位置
+    #             last_sent_length += len(new_text)
+    #
+    #             # 构建增量协议
+    #             incremental_update = {
+    #                 "new_text": new_text,
+    #                 "position": position
+    #             }
+    #
+    #             if resp.choices[0].finish_reason == "length":
+    #                 message = "...\nFor the content length reason, it stopped, continue?" if is_english(
+    #                     [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+    #                 incremental_update["new_text"] = message
+    #                 incremental_update["position"] = last_sent_length
+    #                 tk_count = resp.usage.total_tokens
+    #
+    #             if resp.choices[0].finish_reason == "stop":
+    #                 tk_count = resp.usage.total_tokens
+    #
+    #             yield incremental_update
+    #
+    #     except Exception as e:
+    #         yield {"error": f"**ERROR**: {str(e)}"}
+    #
+    #     yield tk_count
 
         
     def image2base64(self, image):

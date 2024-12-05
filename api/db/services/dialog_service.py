@@ -274,6 +274,8 @@ def chat(dialog, messages, stream=True, **kwargs):
             (done_tm - retrieval_tm) * 1000)
         return {"answer": answer, "reference": refs, "prompt": prompt}
 
+
+    #注释原先流式代码
     # if stream:
     #     last_ans = ""
     #     answer = ""
@@ -341,12 +343,12 @@ def chat(dialog, messages, stream=True, **kwargs):
 
                 # 生成音频
                 audio = tts(tts_mdl, new_text)
-                logging.info(f"Generated audio for new_text: {new_text}")
+                # logging.info(f"Generated audio for new_text: {new_text}")
                 yield {"answer": answer, "reference": {}, "audio_binary": audio}
 
         # 最终装饰答案
         decorated_answer = decorate_answer(answer)
-        logging.info(f"Final decorated answer: {decorated_answer}")
+        # logging.info(f"Final decorated answer: {decorated_answer}")
         yield decorated_answer
     else:
         answer = chat_mdl.chat(prompt, msg[1:], gen_conf)
