@@ -1055,6 +1055,8 @@ export default {
       ccEmailTip: 'cc_email: 抄送邮箱(可选)',
       subjectTip: 'subject: 邮件主题(可选)',
       contentTip: 'content: 邮件内容(可选)',
+      jsonUploadTypeErrorMessage: '请上传json文件',
+      jsonUploadContentErrorMessage: 'json 文件错误',
     },
     footer: {
       profile: 'All rights reserved @ React',
