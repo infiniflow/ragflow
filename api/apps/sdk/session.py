@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import re
 import json
 from copy import deepcopy
@@ -189,7 +190,7 @@ def completion(tenant_id, chat_id):
         nonlocal dia, msg, req, conv
         try:
             for ans in chat(dia, msg, **req):
-                print("ans:", ans)
+                #logging.info("ans : {}".format(ans))
                 fillin_conv(ans)
                 yield "data:" + json.dumps({"code": 0, "data": ans}, ensure_ascii=False) + "\n\n"
             ConversationService.update_by_id(conv.id, conv.to_dict())
