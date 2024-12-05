@@ -194,7 +194,7 @@ class LocalAIRerank(Base):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {key}"
         }
-        self.model_name = model_name.replace("___LocalAI","")
+        self.model_name = model_name.split("___")[0]
 
     def similarity(self, query: str, texts: list):
         # noway to config Ragflow , use fix setting
@@ -286,7 +286,7 @@ class OpenAI_APIRerank(Base):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {key}"
         }
-        self.model_name = model_name
+        self.model_name = model_name.split("___")[0]
 
     def similarity(self, query: str, texts: list):
         # noway to config Ragflow , use fix setting

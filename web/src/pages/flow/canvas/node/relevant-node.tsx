@@ -38,7 +38,7 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
         isConnectable
         className={styles.handle}
         id={'yes'}
-        style={{ ...RightHandleStyle, top: 59 }}
+        style={{ ...RightHandleStyle, top: 57 + 20 }}
       ></Handle>
       <Handle
         type="source"
@@ -46,7 +46,7 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
         isConnectable
         className={styles.handle}
         id={'no'}
-        style={{ ...RightHandleStyle, top: 112 }}
+        style={{ ...RightHandleStyle, top: 115 + 20 }}
       ></Handle>
       <NodeHeader
         id={id}

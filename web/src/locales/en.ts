@@ -325,6 +325,7 @@ The above is the content you need to summarize.`,
       ellipse: 'Ellipse',
       graph: 'Knowledge graph',
       mind: 'Mind map',
+      question: 'Question',
     },
     chat: {
       newConversation: 'New conversation',
