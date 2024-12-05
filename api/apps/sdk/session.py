@@ -431,7 +431,7 @@ def list_session(tenant_id, chat_id):
 
 @manager.route('/agents/<agent_id>/sessions', methods=['GET'])
 @token_required
-def list_agent_session(agent_id, tenant_id):
+def list_agent_session(tenant_id, agent_id):
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_error_data_result(message=f"You don't own the agent {agent_id}.")
     id = request.args.get("id")
