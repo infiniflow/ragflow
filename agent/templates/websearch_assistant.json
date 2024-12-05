@@ -577,7 +577,7 @@
                 "text": "Based on the keywords, searches on Wikipedia and returns the found content."
               },
               "label": "Note",
-              "name": "N: Wiukipedia"
+              "name": "N: Wikipedia"
             },
             "dragging": false,
             "height": 128,

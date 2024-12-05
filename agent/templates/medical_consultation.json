@@ -534,7 +534,7 @@
           {
             "data": {
               "form": {
-                "text": "A prompt sumerize content from search result from PubMed and Q&A dataset."
+                "text": "A prompt summarize content from search result from PubMed and Q&A dataset."
               },
               "label": "Note",
               "name": "N: LLM"
