@@ -325,6 +325,7 @@ When you want to search the given knowledge base at first place, set a higher pa
       ellipse: 'Ellipse',
       graph: 'Knowledge graph',
       mind: 'Mind map',
+      question: 'Question',
     },
     chat: {
       newConversation: 'New conversation',

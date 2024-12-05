@@ -309,6 +309,7 @@ export default {
       ellipse: '省略',
       graph: '知識圖譜',
       mind: '心智圖',
+      question: '問題',
     },
     chat: {
       newConversation: '新會話',
