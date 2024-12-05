@@ -311,3 +311,13 @@ class Canvas(ABC):
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
+
+    def judge_translation(self):
+        try:
+            begin=self.dsl["components"]["begin"]["obj"]
+            query = json.loads(str(begin._param)).get("query")
+            if query[0].get("name") == "Target Language" and query[1].get("name") == "Files":
+                return True
+        except Exception:
+            return  False
+
