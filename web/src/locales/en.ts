@@ -1077,6 +1077,8 @@ When you want to search the given knowledge base at first place, set a higher pa
       ccEmailTip: 'cc_email: CC email (Optional)',
       subjectTip: 'subject: Email subject (Optional)',
       contentTip: 'content: Email content (Optional)',
+      jsonUploadTypeErrorMessage: 'Please upload json file',
+      jsonUploadContentErrorMessage: 'json file error',
     },
     footer: {
       profile: 'All rights reserved @ React',
