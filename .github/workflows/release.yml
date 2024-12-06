@@ -110,8 +110,6 @@ jobs:
     - name: Build ragflow-sdk
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
-        apt install -y pipx && \
-        pipx install poetry && \
         cd sdk/python && \
         poetry build
 
