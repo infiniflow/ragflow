@@ -84,7 +84,15 @@ const useFetchTokenListBeforeOtherStep = (idKey: string, dialogId?: string) => {
     [idKey]: dialogId,
   });
 
-  const token =
+  let token = '',
+    beta = '';
+
+  if (Array.isArray(tokenList) && tokenList.length > 0) {
+    token = tokenList[0].token;
+    beta = tokenList[0].beta;
+  }
+
+  token =
     Array.isArray(tokenList) && tokenList.length > 0 ? tokenList[0].token : '';
 
   const handleOperate = useCallback(async () => {
@@ -100,6 +108,7 @@ const useFetchTokenListBeforeOtherStep = (idKey: string, dialogId?: string) => {
 
   return {
     token,
+    beta,
     handleOperate,
   };
 };
@@ -111,7 +120,7 @@ export const useShowEmbedModal = (idKey: string, dialogId?: string) => {
     showModal: showEmbedModal,
   } = useSetModalState();
 
-  const { handleOperate, token } = useFetchTokenListBeforeOtherStep(
+  const { handleOperate, token, beta } = useFetchTokenListBeforeOtherStep(
     idKey,
     dialogId,
   );
@@ -128,6 +137,7 @@ export const useShowEmbedModal = (idKey: string, dialogId?: string) => {
     hideEmbedModal,
     embedVisible,
     embedToken: token,
+    beta,
   };
 };
 

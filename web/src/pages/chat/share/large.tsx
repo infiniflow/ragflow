@@ -1,12 +1,10 @@
 import MessageInput from '@/components/message-input';
 import MessageItem from '@/components/message-item';
 import { MessageType, SharedFrom } from '@/constants/chat';
-import { useFetchNextSharedConversation } from '@/hooks/chat-hooks';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { Flex, Spin } from 'antd';
 import { forwardRef } from 'react';
 import {
-  useCreateSharedConversationOnMount,
   useGetSharedChatSearchParams,
   useSendSharedMessage,
 } from '../shared-hooks';
@@ -14,8 +12,9 @@ import { buildMessageItemReference } from '../utils';
 import styles from './index.less';
 
 const ChatContainer = () => {
-  const { conversationId } = useCreateSharedConversationOnMount();
-  const { data } = useFetchNextSharedConversation(conversationId);
+  const { from, sharedId: conversationId } = useGetSharedChatSearchParams();
+
+  // const { data } = useFetchNextSharedConversation(conversationId);
 
   const {
     handlePressEnter,
@@ -25,9 +24,12 @@ const ChatContainer = () => {
     loading,
     ref,
     derivedMessages,
-  } = useSendSharedMessage(conversationId);
+  } = useSendSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
-  const { from } = useGetSharedChatSearchParams();
+
+  if (!conversationId) {
+    return <div>empty</div>;
+  }
 
   return (
     <>
@@ -44,7 +46,7 @@ const ChatContainer = () => {
                     reference={buildMessageItemReference(
                       {
                         message: derivedMessages,
-                        reference: data?.data?.reference,
+                        reference: [],
                       },
                       message,
                     )}

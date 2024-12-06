@@ -117,6 +117,7 @@ export interface IToken {
   token: string;
   update_date?: any;
   update_time?: any;
+  beta: string;
 }
 
 export interface IStats {

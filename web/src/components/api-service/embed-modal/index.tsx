@@ -1,5 +1,6 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import HightLightMarkdown from '@/components/highlight-markdown';
+import { SharedFrom } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Card, Modal, Tabs, TabsProps } from 'antd';
@@ -9,13 +10,15 @@ const EmbedModal = ({
   visible,
   hideModal,
   token = '',
-}: IModalProps<any> & { token: string }) => {
+  form,
+  beta = '',
+}: IModalProps<any> & { token: string; form: SharedFrom; beta: string }) => {
   const { t } = useTranslate('chat');
 
   const text = `
   ~~~ html
   <iframe
-  src="${location.origin}/chat/share?shared_id=${token}"
+  src="${location.origin}/chat/share?shared_id=${token}&from=${form}&auth=${beta}"
   style="width: 100%; height: 100%; min-height: 600px"
   frameborder="0"
 >
