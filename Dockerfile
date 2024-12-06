@@ -120,7 +120,7 @@ RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
 
 COPY .git /ragflow/.git
 
-RUN version_info=$(git describe --tags --match=v* --dirty --always); \
+RUN version_info=$(git describe --tags --match=v* --always); \
     if [ "$LIGHTEN" == "1" ]; then \
         version_info="$version_info slim"; \
     else \
