@@ -36,20 +36,18 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
 ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.0.0.jar"
 
 # Setup apt
+# cv2 requires libGL.so.1
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
         sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
     fi; \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
-    apt update && apt --no-install-recommends install -y ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
-# cv2 requires libGL.so.1
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    apt update && DEBIAN_FRONTEND=noninteractive apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus default-jdk python3-pip pipx \
-    libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget git nginx libgl1 vim less && \
-    rm -rf /var/lib/apt/lists/*
+    apt update && \
+    apt --no-install-recommends install -y ca-certificates && \
+    apt update && \
+    DEBIAN_FRONTEND=noninteractive apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus default-jdk python3-pip pipx \
+    libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget git nginx libgl1 vim less
 
 RUN if [ "$NEED_MIRROR" == "1" ]; then \
         pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
@@ -74,8 +72,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt purge -y nodejs npm && \
     apt autoremove && \
     apt update && \
-    apt install -y nodejs cargo && \
-    rm -rf /var/lib/apt/lists/*
+    apt install -y nodejs cargo
 
 # Add dependencies of selenium
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
