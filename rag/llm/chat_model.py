@@ -122,7 +122,10 @@ class Base(ABC):
 
                     # 更新令牌计数
                     if not hasattr(resp, "usage") or not resp.usage:
-                        total_tokens += num_tokens_from_string(delta_content)
+                        total_tokens = (
+                                    total_tokens
+                                    + num_tokens_from_string(resp.choices[0].delta.content)
+                        )
                     elif isinstance(resp.usage, dict):
                         total_tokens = resp.usage.get("total_tokens", total_tokens)
                     else:

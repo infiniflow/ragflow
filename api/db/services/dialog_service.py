@@ -303,13 +303,13 @@ def chat(dialog, messages, stream=True, **kwargs):
                     total_tokens = int(delta)
                     # logging.info(f"Total tokens used: {total_tokens}")
                     continue
-                elif delta in [LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN]:
-                    # 处理长度通知信息
-                    answer += delta
-                    # logging.info(f"Length notification: {delta}")
-                    audio = tts(tts_mdl, delta)
-                    yield {"answer": answer, "reference": {}, "audio_binary": audio}
-                    continue
+                # elif delta in [LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN]:
+                #     # 处理长度通知信息
+                #     answer += delta
+                #     # logging.info(f"Length notification: {delta}")
+                #     audio = tts(tts_mdl, delta)
+                #     yield {"answer": answer, "reference": {}, "audio_binary": audio}
+                #     continue
                 elif "\n**ERROR**:" in delta:
                     # 处理错误信息
                     answer += delta
