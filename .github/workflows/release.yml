@@ -50,10 +50,10 @@ jobs:
     - name: Move the existing mutable tag
       # https://github.com/softprops/action-gh-release/issues/171
       run: |
+        git fetch --tags
         if [[ $GITHUB_EVENT_NAME == 'schedule' ]]; then
           # Determine if a given tag exists and matches a specific Git commit.
           # actions/checkout@v4 fetch-tags doesn't work when triggered by schedule
-          git fetch --tags
           if [ "$(git rev-parse -q --verify "refs/tags/$RELEASE_TAG")" = "$GITHUB_SHA" ]; then
             echo "mutable tag $RELEASE_TAG exists and matches $GITHUB_SHA"
           else
