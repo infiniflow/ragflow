@@ -247,9 +247,7 @@ Image ini berukuran sekitar 1 GB dan bergantung pada aplikasi LLM eksternal dan 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
-docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
 ```
 
 ## 🔧 Membangun Docker Image Termasuk Model Embedding
@@ -259,8 +257,6 @@ Image ini berukuran sekitar 9 GB. Karena sudah termasuk model embedding, ia hany
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 

@@ -52,9 +52,8 @@ jobs:
       - name: Build ragflow:dev-slim
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
-          cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co ${RUNNER_WORKSPACE_PREFIX}/nltk_data ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb  ${RUNNER_WORKSPACE_PREFIX}/tika-server*.jar* ${RUNNER_WORKSPACE_PREFIX}/chrome* ${RUNNER_WORKSPACE_PREFIX}/cl100k_base.tiktoken .
           sudo docker pull ubuntu:22.04
-          sudo docker build --progress=plain -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+          sudo docker build --progress=plain --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
 
       - name: Build ragflow:dev
         run: |

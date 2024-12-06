@@ -228,9 +228,7 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
-docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
 ```
 
 ## 🔧 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
@@ -240,8 +238,6 @@ docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
