@@ -63,6 +63,16 @@ jobs:
           fi
         fi
 
+    - name: Create or overwrite a release
+      # https://github.com/actions/upload-release-asset has been replaced by https://github.com/softprops/action-gh-release
+      uses: softprops/action-gh-release@v2
+      with:
+        token: ${{ secrets.MY_GITHUB_TOKEN }}  # Use the secret as an environment variable
+        prerelease: ${{ env.PRERELEASE }}
+        tag_name: ${{ env.RELEASE_TAG }}
+        # The body field does not support environment variable substitution directly.
+        body_path: release_body.md
+
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
 
