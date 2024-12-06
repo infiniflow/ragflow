@@ -40,9 +40,7 @@ While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlo
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
-docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
 ```
 
 
@@ -58,8 +56,6 @@ While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlo
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
 docker build -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
