@@ -235,7 +235,7 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
 ```
 
 ## 🔧 源码编译 Docker 镜像（包含 embedding 模型）
@@ -245,21 +245,23 @@ docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:dev .
 ```
 
 ## 🔨 以源代码启动服务
 
 1. 安装 Poetry。如已经安装，可跳过本步骤：  
    ```bash
-   curl -sSL https://install.python-poetry.org | python3 -
+   pipx install poetry
+   pipx inject poetry poetry-plugin-pypi-mirror
+   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
+   export POETRY_PYPI_MIRROR_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
    ```
 
 2. 下载源代码并安装 Python 依赖：  
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
    ~/.local/bin/poetry install --sync --no-root # install RAGFlow dependent python modules
    ```
 

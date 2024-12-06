@@ -264,14 +264,14 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
 
 1. Instal Poetry, atau lewati langkah ini jika sudah terinstal:
    ```bash
-   curl -sSL https://install.python-poetry.org | python3 -
+   pipx install poetry
+   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
    ```
 
 2. Clone kode sumber dan instal dependensi Python:
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
    ~/.local/bin/poetry install --sync --no-root # install modul python RAGFlow
    ```
 

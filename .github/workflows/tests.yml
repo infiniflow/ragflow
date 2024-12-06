@@ -53,11 +53,11 @@ jobs:
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
           sudo docker pull ubuntu:22.04
-          sudo docker build --progress=plain --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
+          sudo docker build --progress=plain --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
 
       - name: Build ragflow:dev
         run: |
-          sudo docker build --progress=plain -f Dockerfile -t infiniflow/ragflow:dev .
+          sudo docker build --progress=plain --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:dev .
 
       - name: Start ragflow:dev-slim
         run: |
