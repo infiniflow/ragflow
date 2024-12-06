@@ -25,7 +25,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
       with:
-        ssh-key: ${{ secrets.MY_DEPLOY_KEY }}
+        token: ${{ secrets.MY_GITHUB_TOKEN }}  # Use the secret as an environment variable
 
     - name: Prepare release body
       run: |
