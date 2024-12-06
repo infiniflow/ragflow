@@ -45,10 +45,7 @@ jobs:
         echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
         echo "PRERELEASE=$PRERELEASE" >> $GITHUB_ENV
         RELEASE_DATETIME=$(date --rfc-3339=seconds)
-        cat <<EOF > release_template.md
-        Release $RELEASE_TAG created from $GITHUB_SHA at $RELEASE_DATETIME
-        EOF
-        envsubst < release_template.md > release_body.md
+        echo Release $RELEASE_TAG created from $GITHUB_SHA at $RELEASE_DATETIME > release_body.md
 
     - name: Move the existing mutable tag
       # https://github.com/softprops/action-gh-release/issues/171
