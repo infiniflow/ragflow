@@ -334,17 +334,19 @@ const Chat = () => {
                         {x.name}
                       </Text>
                     </div>
-                    {conversationActivated === x.id && x.id !== '' && (
-                      <section>
-                        <Dropdown
-                          menu={{ items: buildConversationItems(x.id) }}
-                        >
-                          <ChatAppCube
-                            className={styles.cubeIcon}
-                          ></ChatAppCube>
-                        </Dropdown>
-                      </section>
-                    )}
+                    {conversationActivated === x.id &&
+                      x.id !== '' &&
+                      !x.is_new && (
+                        <section>
+                          <Dropdown
+                            menu={{ items: buildConversationItems(x.id) }}
+                          >
+                            <ChatAppCube
+                              className={styles.cubeIcon}
+                            ></ChatAppCube>
+                          </Dropdown>
+                        </section>
+                      )}
                   </Flex>
                 </Card>
               ))}

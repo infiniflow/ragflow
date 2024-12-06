@@ -156,7 +156,7 @@ export default {
       delimiterTip:
         '支援多字元作為分隔符，多字元分隔符用`包裹。如配置成這樣：\n`##`;那麼就會用換行，兩個#以及分號先對文字進行分割，然後按照「 token number」大小進行拼裝。',
       html4excel: '表格轉HTML',
-      html4excelTip: `Excel 是否會被解析為 HTML 表格。如果為 FALSE，Excel 中的每一行都會形成一個區塊。`,
+      html4excelTip: `啟用後，電子表格將解析為 HTML 表格，一張表格最多 256 行。否則，會按行解析成鍵值對。`,
       autoKeywords: '自動關鍵字',
       autoKeywordsTip: `在查詢此類關鍵字時，為每個區塊提取 N 個關鍵字以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。 `,
       autoQuestions: '自動問題',
@@ -1011,6 +1011,8 @@ export default {
       testRun: '試運行',
       template: '模板轉換',
       templateDescription: '此元件用於排版各種元件的輸出。 ',
+      jsonUploadTypeErrorMessage: '請上傳json檔',
+      jsonUploadContentErrorMessage: 'json 檔案錯誤',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

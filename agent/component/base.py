@@ -383,6 +383,9 @@ class ComponentBase(ABC):
             "params": {}
         }
         """
+        out = json.loads(str(self._param)).get("output", {})
+        if isinstance(out, dict) and "vector" in out:
+            del out["vector"]
         return """{{
             "component_name": "{}",
             "params": {},
@@ -390,7 +393,7 @@ class ComponentBase(ABC):
             "inputs": {}
         }}""".format(self.component_name,
                      self._param,
-                     json.dumps(json.loads(str(self._param)).get("output", {}), ensure_ascii=False),
+                     json.dumps(out, ensure_ascii=False),
                      json.dumps(json.loads(str(self._param)).get("inputs", []), ensure_ascii=False)
         )
 

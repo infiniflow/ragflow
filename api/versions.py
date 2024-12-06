@@ -42,28 +42,11 @@ def get_ragflow_version() -> str:
 def get_closest_tag_and_count():
     try:
         # Get the current commit hash
-        commit_id = (
-            subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+        version_info = (
+            subprocess.check_output(["git", "describe", "--tags", "--match=v*", "--dirty"])
             .strip()
             .decode("utf-8")
         )
-        # Get the closest tag
-        closest_tag = (
-            subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"])
-            .strip()
-            .decode("utf-8")
-        )
-        # Get the commit count since the closest tag
-        process = subprocess.Popen(
-            ["git", "rev-list", "--count", f"{closest_tag}..HEAD"],
-            stdout=subprocess.PIPE,
-        )
-        commits_count, _ = process.communicate()
-        commits_count = int(commits_count.strip())
-
-        if commits_count == 0:
-            return closest_tag
-        else:
-            return f"{commit_id}({closest_tag}~{commits_count})"
+        return version_info
     except Exception:
         return "unknown"

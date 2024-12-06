@@ -160,7 +160,7 @@ export default {
       delimiterTip:
         'Supports multiple characters as separators, and the multiple character separators are wrapped with `. For example, if it is configured like this: \n`##`; then the text will be separated by line breaks, two #s and a semicolon, and then assembled according to the size of the "token number".',
       html4excel: 'Excel to HTML',
-      html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables; otherwise, it will be parsed into key-value pairs by row.`,
+      html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables, and at most 256 rows for one table. Otherwise, it will be parsed into key-value pairs by row.`,
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Extract N keywords for each chunk to increase their ranking for queries containing those keywords. You can check or update the added keywords for a chunk from the chunk list. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
       autoQuestions: 'Auto-question',
@@ -1077,6 +1077,8 @@ The above is the content you need to summarize.`,
       ccEmailTip: 'cc_email: CC email (Optional)',
       subjectTip: 'subject: Email subject (Optional)',
       contentTip: 'content: Email content (Optional)',
+      jsonUploadTypeErrorMessage: 'Please upload json file',
+      jsonUploadContentErrorMessage: 'json file error',
     },
     footer: {
       profile: 'All rights reserved @ React',

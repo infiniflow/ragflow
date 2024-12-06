@@ -1,3 +1,4 @@
+import { FileMimeType } from '@/constants/common';
 import fileManagerService from '@/services/file-manager-service';
 import { UploadFile } from 'antd';
 
@@ -136,4 +137,12 @@ export const formatBytes = (x: string | number) => {
   }
 
   return n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + Units[l];
+};
+
+export const downloadJsonFile = async (
+  data: Record<string, any>,
+  fileName: string,
+) => {
+  const blob = new Blob([JSON.stringify(data)], { type: FileMimeType.Json });
+  downloadFileFromBlob(blob, fileName);
 };
