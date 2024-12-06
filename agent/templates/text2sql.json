@@ -440,7 +440,7 @@
           {
             "data": {
               "form": {
-                "text": "DDL(Data Definition Language).\n\nSearches for relevent database creation statements.\n\nIt should bind with a KB to which DDL is dumped in.\nYou could use  'General' as parsing method and ';' as delimiter."
+                "text": "DDL(Data Definition Language).\n\nSearches for relevant database creation statements.\n\nIt should bind with a KB to which DDL is dumped in.\nYou could use  'General' as parsing method and ';' as delimiter."
               },
               "label": "Note",
               "name": "N: DDL"

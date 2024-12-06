@@ -90,7 +90,7 @@
               "message_history_window_size": 12,
               "parameters": [],
               "presence_penalty": 0.4,
-              "prompt": "Role: You are a customer support.  \n\nTask: Please answer the question based on content of knowledge base. \n\nReuirements & restrictions:\n  -  DO NOT make things up when all knowledge base content is irrelevant to the question. \n  - Answers need to consider chat history.\n  - Request about customer's contact information like, Wechat number, LINE number, twitter, discord, etc,. , when knowlegebase content can't answer his question. So,  product expert could contact him soon to solve his problem.\n\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
+              "prompt": "Role: You are a customer support.  \n\nTask: Please answer the question based on content of knowledge base. \n\nRequirements & restrictions:\n  -  DO NOT make things up when all knowledge base content is irrelevant to the question. \n  - Answers need to consider chat history.\n  - Request about customer's contact information like, Wechat number, LINE number, twitter, discord, etc,. , when knowledge base content can't answer his question. So,  product expert could contact him soon to solve his problem.\n\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
               "temperature": 0.1,
               "top_p": 0.3
             }
@@ -336,7 +336,7 @@
                 "parameters": [],
                 "presencePenaltyEnabled": true,
                 "presence_penalty": 0.4,
-                "prompt": "Role: You are a customer support.  \n\nTask: Please answer the question based on content of knowledge base. \n\nReuirements & restrictions:\n  -  DO NOT make things up when all knowledge base content is irrelevant to the question. \n  - Answers need to consider chat history.\n  - Request about customer's contact information like, Wechat number, LINE number, twitter, discord, etc,. , when knowlegebase content can't answer his question. So,  product expert could contact him soon to solve his problem.\n\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
+                "prompt": "Role: You are a customer support.  \n\nTask: Please answer the question based on content of knowledge base. \n\nRequirements & restrictions:\n  -  DO NOT make things up when all knowledge base content is irrelevant to the question. \n  - Answers need to consider chat history.\n  - Request about customer's contact information like, Wechat number, LINE number, twitter, discord, etc,. , when knowledge base content can't answer his question. So,  product expert could contact him soon to solve his problem.\n\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
                 "temperature": 0.1,
                 "temperatureEnabled": true,
                 "topPEnabled": true,
@@ -603,7 +603,7 @@
           {
             "data": {
               "form": {
-                "text": "Static messages.\nDefine replys after recieve user's contact information."
+                "text": "Static messages.\nDefine response after receive user's contact information."
               },
               "label": "Note",
               "name": "N: What else?"
@@ -691,7 +691,7 @@
           {
             "data": {
               "form": {
-                "text": "Complete questions by conversation history.\nUser: What's RAGFlow?\nAssistant: RAGFlow is xxx.\nUser: How to deloy it?\n\nRefine it: How to deploy RAGFlow?"
+                "text": "Complete questions by conversation history.\nUser: What's RAGFlow?\nAssistant: RAGFlow is xxx.\nUser: How to deploy it?\n\nRefine it: How to deploy RAGFlow?"
               },
               "label": "Note",
               "name": "N: Refine Question"

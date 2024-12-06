@@ -476,7 +476,7 @@
                                 "text": "Translation Agent: Agentic translation using reflection workflow\n\nThis is inspired by Andrew NG's project: https://github.com/andrewyng/translation-agent\n\n1. Prompt an LLM to translate a text into the target language;\n2. Have the LLM reflect on the translation and provide constructive suggestions for improvement;\n3. Use these suggestions to improve the translation."
                             },
                             "label": "Note",
-                            "name": "Breif"
+                            "name": "Brief"
                         },
                         "dragHandle": ".note-drag-handle",
                         "dragging": false,
