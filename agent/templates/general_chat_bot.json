@@ -70,8 +70,8 @@
                   "to": "QWeather:DeepKiwisTeach"
                 },
                 "2. finance": {
-                  "description": "Question is about finace/economic information, stock market, economic news.",
-                  "examples": "昨日涨幅大于5%的军工股？\nStocks have MACD buyin signals？\nWhen is the next interest rate cut by the Federal Reserve?\n国家救市都有哪些举措？",
+                  "description": "Question is about finance/economic information, stock market, economic news.",
+                  "examples": "Stocks have MACD buy signals？\nWhen is the next interest rate cut by the Federal Reserve?\n",
                   "to": "Concentrator:TrueGeckosSlide"
                 },
                 "3. medical": {
@@ -268,7 +268,7 @@
               "message_history_window_size": 12,
               "parameters": [],
               "presence_penalty": 0.4,
-              "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Provide useful advice to your friend.\n- Tell jokes to make  your firend happy.\n\nThe following is the weatcher information:\n{weather}",
+              "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Provide useful advice to your friend.\n- Tell jokes to make your friend happy.\n\nThe following is the weather information:\n{weather}",
               "temperature": 0.1,
               "top_p": 0.3
             }
@@ -497,7 +497,7 @@
                 }
               ],
               "presence_penalty": 0.4,
-              "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Tell your friend the weather if there's weather information provided. If your friend did not provide region information, ask about where he/she is.\n\nThe following is the weatcher information:\n{weather}\n",
+              "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Tell your friend the weather if there's weather information provided. If your friend did not provide region information, ask about where he/she is.\n\nThe following is the weather information:\n{weather}\n",
               "temperature": 0.1,
               "top_p": 0.3
             }
@@ -622,8 +622,8 @@
                     "to": "QWeather:DeepKiwisTeach"
                   },
                   "2. finance": {
-                    "description": "Question is about finace/economic information, stock market, economic news.",
-                    "examples": "昨日涨幅大于5%的军工股？\nStocks have MACD buyin signals？\nWhen is the next interest rate cut by the Federal Reserve?\n国家救市都有哪些举措？",
+                    "description": "Question is about finance/economic information, stock market, economic news.",
+                    "examples": "Stocks have MACD buy signals？\nWhen is the next interest rate cut by the Federal Reserve?\n",
                     "to": "Concentrator:TrueGeckosSlide"
                   },
                   "3. medical": {
@@ -927,7 +927,7 @@
                 "parameters": [],
                 "presencePenaltyEnabled": true,
                 "presence_penalty": 0.4,
-                "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Provide useful advice to your friend.\n- Tell jokes to make  your firend happy.\n\nThe following is the weatcher information:\n{weather}",
+                "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Provide useful advice to your friend.\n- Tell jokes to make  your friend happy.\n\nThe following is the weather information:\n{weather}",
                 "temperature": 0.1,
                 "temperatureEnabled": true,
                 "topPEnabled": true,
@@ -1011,7 +1011,7 @@
                 "top_p": 0.3
               },
               "label": "Generate",
-              "name": "tranlate to Chinese"
+              "name": "translate to Chinese"
             },
             "dragging": false,
             "height": 86,
@@ -1276,7 +1276,7 @@
                 ],
                 "presencePenaltyEnabled": true,
                 "presence_penalty": 0.4,
-                "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Tell your friend the weather if there's weather information provided. If your friend did not provide region information, ask about where he/she is.\n\nThe following is the weatcher information:\n{weather}\n",
+                "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Tell your friend the weather if there's weather information provided. If your friend did not provide region information, ask about where he/she is.\n\nThe following is the weather information:\n{weather}\n",
                 "temperature": 0.1,
                 "temperatureEnabled": true,
                 "topPEnabled": true,
