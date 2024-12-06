@@ -224,17 +224,16 @@ class Canvas(ABC):
                     for m in prepare2run([switch_out]):
                         yield {"content": m, "running_status": True}
                 except Exception as e:
-                    yield {"content": "*Exception*: {}".format(e), "running_status": True}
                     logging.exception("Canvas.run got exception")
+                    raise e
                 continue
 
             try:
                 for m in prepare2run(cpn["downstream"]):
                     yield {"content": m, "running_status": True}
             except Exception as e:
-                yield {"content": "*Exception*: {}".format(e), "running_status": True}
                 logging.exception("Canvas.run got exception")
-                ran += 1
+                raise e
 
             if ran >= len(self.path[-1]) and waiting:
                 without_dependent_checking = waiting
