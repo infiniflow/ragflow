@@ -39,6 +39,7 @@
     "@radix-ui/react-switch": "^1.1.1",
     "@radix-ui/react-tabs": "^1.1.1",
     "@radix-ui/react-toast": "^1.2.2",
+    "@radix-ui/react-tooltip": "^1.1.4",
     "@tailwindcss/line-clamp": "^0.4.4",
     "@tanstack/react-query": "^5.40.0",
     "@tanstack/react-query-devtools": "^5.51.5",

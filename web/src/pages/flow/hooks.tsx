@@ -12,14 +12,16 @@ import React, {
 import { Connection, Edge, Node, Position, ReactFlowInstance } from 'reactflow';
 // import { shallow } from 'zustand/shallow';
 import { variableEnabledFieldMap } from '@/constants/chat';
+import { FileMimeType } from '@/constants/common';
 import {
   ModelVariableType,
   settledModelVariableMap,
 } from '@/constants/knowledge';
 import { useFetchModelId } from '@/hooks/logic-hooks';
 import { Variable } from '@/interfaces/database/chat';
+import { downloadJsonFile } from '@/utils/file-util';
 import { useDebounceEffect } from 'ahooks';
-import { FormInstance, message } from 'antd';
+import { FormInstance, UploadFile, message } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
 import dayjs from 'dayjs';
 import { humanId } from 'human-id';
@@ -261,30 +263,45 @@ export const useShowFormDrawer = () => {
   };
 };
 
-export const useSaveGraph = () => {
+export const useBuildDslData = () => {
   const { data } = useFetchFlow();
-  const { setFlow, loading } = useSetFlow();
-  const { id } = useParams();
   const { nodes, edges } = useGraphStore((state) => state);
-  useEffect(() => {}, [nodes]);
-  const saveGraph = useCallback(
-    async (currentNodes?: Node[]) => {
+
+  const buildDslData = useCallback(
+    (currentNodes?: Node[]) => {
       const dslComponents = buildDslComponentsByGraph(
         currentNodes ?? nodes,
         edges,
         data.dsl.components,
       );
+
+      return {
+        ...data.dsl,
+        graph: { nodes: currentNodes ?? nodes, edges },
+        components: dslComponents,
+      };
+    },
+    [data.dsl, edges, nodes],
+  );
+
+  return { buildDslData };
+};
+
+export const useSaveGraph = () => {
+  const { data } = useFetchFlow();
+  const { setFlow, loading } = useSetFlow();
+  const { id } = useParams();
+  const { buildDslData } = useBuildDslData();
+
+  const saveGraph = useCallback(
+    async (currentNodes?: Node[]) => {
       return setFlow({
         id,
         title: data.title,
-        dsl: {
-          ...data.dsl,
-          graph: { nodes: currentNodes ?? nodes, edges },
-          components: dslComponents,
-        },
+        dsl: buildDslData(currentNodes),
       });
     },
-    [nodes, edges, setFlow, id, data],
+    [setFlow, id, data.title, buildDslData],
   );
 
   return { saveGraph, loading };
@@ -773,4 +790,55 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   );
 
   return time;
+};
+
+export const useHandleExportOrImportJsonFile = () => {
+  const { buildDslData } = useBuildDslData();
+  const {
+    visible: fileUploadVisible,
+    hideModal: hideFileUploadModal,
+    showModal: showFileUploadModal,
+  } = useSetModalState();
+  const setGraphInfo = useSetGraphInfo();
+  const { data } = useFetchFlow();
+  const { t } = useTranslation();
+
+  const onFileUploadOk = useCallback(
+    async (fileList: UploadFile[]) => {
+      if (fileList.length > 0) {
+        const file: File = fileList[0] as unknown as File;
+        if (file.type !== FileMimeType.Json) {
+          message.error(t('flow.jsonUploadTypeErrorMessage'));
+          return;
+        }
+
+        const graphStr = await file.text();
+        const errorMessage = t('flow.jsonUploadContentErrorMessage');
+        try {
+          const graph = JSON.parse(graphStr);
+          if (graphStr && !isEmpty(graph) && Array.isArray(graph?.nodes)) {
+            setGraphInfo(graph ?? ({} as IGraph));
+            hideFileUploadModal();
+          } else {
+            message.error(errorMessage);
+          }
+        } catch (error) {
+          message.error(errorMessage);
+        }
+      }
+    },
+    [hideFileUploadModal, setGraphInfo, t],
+  );
+
+  const handleExportJson = useCallback(() => {
+    downloadJsonFile(buildDslData().graph, `${data.title}.json`);
+  }, [buildDslData, data.title]);
+
+  return {
+    fileUploadVisible,
+    handleExportJson,
+    handleImportJson: showFileUploadModal,
+    hideFileUploadModal,
+    onFileUploadOk,
+  };
 };
