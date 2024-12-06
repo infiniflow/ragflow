@@ -216,7 +216,7 @@ def add_llm():
             base_url=llm["api_base"])
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
-            if len(arr[0]) == 0 or tc == 0:
+            if len(arr[0]) == 0:
                 raise Exception("Fail")
         except Exception as e:
             msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
@@ -242,7 +242,7 @@ def add_llm():
         )
         try:
             arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!", "Ohh, my friend!"])
-            if len(arr) == 0 or tc == 0:
+            if len(arr) == 0:
                 raise Exception("Not known.")
         except Exception as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(
