@@ -157,7 +157,7 @@ export default {
       delimiterTip:
         '支持多字符作为分隔符，多字符分隔符用`包裹。如配置成这样：\n`##`;那么就会用换行，两个#以及分号先对文本进行分割，然后按照“ token number”大小进行拼装。',
       html4excel: '表格转HTML',
-      html4excelTip: `Excel 是否将被解析为 HTML 表。如果为 FALSE，Excel 中的每一行都将形成一个块。`,
+      html4excelTip: `开启后电子表格会被解析为 HTML 表格，每张表格最多 256 行，否则会按行解析为键值对。`,
       autoKeywords: '自动关键词',
       autoKeywordsTip: `在查询此类关键词时，为每个块提取 N 个关键词以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。`,
       autoQuestions: '自动问题',
@@ -1055,6 +1055,8 @@ export default {
       ccEmailTip: 'cc_email: 抄送邮箱(可选)',
       subjectTip: 'subject: 邮件主题(可选)',
       contentTip: 'content: 邮件内容(可选)',
+      jsonUploadTypeErrorMessage: '请上传json文件',
+      jsonUploadContentErrorMessage: 'json 文件错误',
     },
     footer: {
       profile: 'All rights reserved @ React',
