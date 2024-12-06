@@ -87,7 +87,7 @@ jobs:
         push: true
         tags: infiniflow/ragflow:${{ env.RELEASE_TAG }}
         file: Dockerfile
-        platforms: linux/amd64 linux/arm64
+        platforms: linux/amd64,linux/arm64
 
     # https://github.com/marketplace/actions/build-and-push-docker-images
     - name: Build and push slim image
@@ -98,7 +98,7 @@ jobs:
         tags: infiniflow/ragflow:${{ env.RELEASE_TAG }}-slim
         file: Dockerfile
         build-args: LIGHTEN=1
-        platforms: linux/amd64 linux/arm64
+        platforms: linux/amd64,linux/arm64
 
     - name: Build ragflow-sdk
       if: startsWith(github.ref, 'refs/tags/v')
