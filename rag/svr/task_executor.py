@@ -23,18 +23,12 @@ import os
 
 from api.utils.log_utils import initRootLogger
 
-CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
-CONSUMER_NAME = "task_executor_" + CONSUMER_NO
-LOG_LEVELS = os.environ.get("LOG_LEVELS", "")
-initRootLogger(CONSUMER_NAME, LOG_LEVELS)
 
 from datetime import datetime
 import json
-import os
 import hashlib
 import copy
 import re
-import sys
 import time
 import threading
 from functools import partial
@@ -62,6 +56,11 @@ from rag.settings import DOC_MAXIMUM_SIZE, SVR_QUEUE_NAME, print_rag_settings
 from rag.utils import rmSpace, num_tokens_from_string
 from rag.utils.redis_conn import REDIS_CONN, Payload
 from rag.utils.storage_factory import STORAGE_IMPL
+
+CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
+CONSUMER_NAME = "task_executor_" + CONSUMER_NO
+LOG_LEVELS = os.environ.get("LOG_LEVELS", "")
+initRootLogger(CONSUMER_NAME, LOG_LEVELS)
 
 BATCH_SIZE = 64
 
@@ -201,7 +200,8 @@ def build_chunks(task, progress_callback):
         "doc_id": task["doc_id"],
         "kb_id": str(task["kb_id"])
     }
-    if task["pagerank"]: doc["pagerank_fea"] = int(task["pagerank"])
+    if task["pagerank"]:
+        doc["pagerank_fea"] = int(task["pagerank"])
     el = 0
     for ck in cks:
         d = copy.deepcopy(doc)
@@ -342,7 +342,8 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         "docnm_kwd": row["name"],
         "title_tks": rag_tokenizer.tokenize(row["name"])
     }
-    if row["pagerank"]: doc["pagerank_fea"] = int(row["pagerank"])
+    if row["pagerank"]:
+        doc["pagerank_fea"] = int(row["pagerank"])
     res = []
     tk_count = 0
     for content, vctr in chunks[original_length:]:

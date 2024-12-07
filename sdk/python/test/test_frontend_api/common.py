@@ -39,7 +39,6 @@ def update_dataset(auth, json_req):
 def upload_file(auth, dataset_id, path):
     authorization = {"Authorization": auth}
     url = f"{HOST_ADDRESS}/v1/document/upload"
-    base_name = os.path.basename(path)
     json_req = {
         "kb_id": dataset_id,
     }

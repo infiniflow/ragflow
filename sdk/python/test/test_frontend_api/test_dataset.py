@@ -1,6 +1,5 @@
-from common import HOST_ADDRESS, create_dataset, list_dataset, rm_dataset, update_dataset, DATASET_NAME_LIMIT
+from common import create_dataset, list_dataset, rm_dataset, update_dataset, DATASET_NAME_LIMIT
 import re
-import pytest
 import random
 import string
 
@@ -33,8 +32,6 @@ def test_dataset(get_auth):
 
 def test_dataset_1k_dataset(get_auth):
     # create dataset
-    authorization = {"Authorization": get_auth}
-    url = f"{HOST_ADDRESS}/v1/kb/create"
     for i in range(1000):
         res = create_dataset(get_auth, f"test_create_dataset_{i}")
         assert res.get("code") == 0, f"{res.get('message')}"
@@ -76,7 +73,7 @@ def test_duplicated_name_dataset(get_auth):
         dataset_id = item.get("id")
         dataset_list.append(dataset_id)
         match = re.match(pattern, dataset_name)
-        assert match != None
+        assert match is not None
 
     for dataset_id in dataset_list:
         res = rm_dataset(get_auth, dataset_id)

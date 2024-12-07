@@ -36,7 +36,7 @@ class RAGFlowAzureSpnBlob(object):
         self.conn = None
 
     def health(self):
-        bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
+        _bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
         f = self.conn.create_file(fnm)
         f.append_data(binary, offset=0, length=len(binary))
         return f.flush_data(len(binary))
