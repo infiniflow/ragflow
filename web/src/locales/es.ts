@@ -277,6 +277,7 @@ export default {
       multiTurn: 'Optimización de múltiples turnos',
       multiTurnTip:
         'En conversaciones de múltiples rondas, la consulta a la base de conocimiento se optimiza. El gran modelo se llamará para consumir tokens adicionales.',
+      description: 'Description of assistant',
     },
     setting: {
       profile: 'Perfil',

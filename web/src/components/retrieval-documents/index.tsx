@@ -35,7 +35,7 @@ const RetrievalDocuments = ({
             >
               <Space>
                 <span>
-                  {selectedDocumentIds.length ?? 0}/{documents.length}
+                  {selectedDocumentIds?.length ?? 0}/{documents?.length ?? 0}
                 </span>
                 {t('knowledgeDetails.filesSelected')}
               </Space>

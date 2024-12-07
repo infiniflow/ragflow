@@ -6,10 +6,6 @@
   .messageItemSectionLeft {
     width: 80%;
   }
-  .messageItemSectionRight {
-    // width: 80%;
-    // max-width: 50vw;
-  }
   .messageItemContent {
     display: inline-flex;
     gap: 20px;
@@ -36,10 +32,17 @@
     background-color: #e6f4ff;
     word-break: break-all;
   }
+  .messageTextDark {
+    .chunkText();
+    .messageTextBase();
+    background-color: #1668dc;
+    word-break: break-all;
+  }
+
   .messageUserText {
     .chunkText();
     .messageTextBase();
-    background-color: rgb(248, 247, 247);
+    background-color: rgba(255, 255, 255, 0.3);
     word-break: break-all;
     text-align: justify;
   }

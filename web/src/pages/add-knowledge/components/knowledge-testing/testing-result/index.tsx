@@ -82,7 +82,7 @@ const TestingResult = ({ handleTesting }: IProps) => {
               >
                 <Space>
                   <span>
-                    {selectedDocumentIds?.length ?? 0}/{documents.length}
+                    {selectedDocumentIds?.length ?? 0}/{documents?.length ?? 0}
                   </span>
                   {t('filesSelected')}
                 </Space>
@@ -105,7 +105,7 @@ const TestingResult = ({ handleTesting }: IProps) => {
         flex={1}
         className={styles.selectFilesCollapse}
       >
-        {chunks.map((x) => (
+        {chunks?.map((x) => (
           <Card key={x.chunk_id} title={<ChunkTitle item={x}></ChunkTitle>}>
             <Flex gap={'middle'}>
               {x.img_id && (

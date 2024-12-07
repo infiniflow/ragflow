@@ -4,6 +4,7 @@ import { Handle, NodeProps, Position } from 'reactflow';
 import { NodeData } from '../../interface';
 import { RightHandleStyle } from './handle-icon';
 
+import { useTheme } from '@/components/theme-provider';
 import { get } from 'lodash';
 import { useReplaceIdWithName } from '../../hooks';
 import styles from './index.less';
@@ -13,12 +14,16 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
   const yes = get(data, 'form.yes');
   const no = get(data, 'form.no');
   const replaceIdWithName = useReplaceIdWithName();
-
+  const { theme } = useTheme();
   return (
     <section
-      className={classNames(styles.logicNode, {
-        [styles.selectedNode]: selected,
-      })}
+      className={classNames(
+        styles.logicNode,
+        theme === 'dark' ? styles.dark : '',
+        {
+          [styles.selectedNode]: selected,
+        },
+      )}
     >
       <Handle
         type="target"
