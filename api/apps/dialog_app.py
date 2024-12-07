@@ -32,7 +32,7 @@ def set_dialog():
     req = request.json
     dialog_id = req.get("dialog_id")
     name = req.get("name", "New Dialog")
-    description = req.get("description", "A helpful Dialog")
+    description = req.get("description", "A helpful dialog")
     icon = req.get("icon", "")
     top_n = req.get("top_n", 6)
     top_k = req.get("top_k", 1024)

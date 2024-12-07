@@ -266,7 +266,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                     del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
-            answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
+            answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
         done_tm = timer()
         prompt += "\n\n### Elapsed\n  - Refine Question: %.1f ms\n  - Keywords: %.1f ms\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms" % (
             (refineQ_tm - st) * 1000, (keyword_tm - refineQ_tm) * 1000, (retrieval_tm - keyword_tm) * 1000,
@@ -649,7 +649,7 @@ def ask(question, kb_ids, tenant_id):
                 del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
-            answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
+            answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
         return {"answer": answer, "reference": refs}
 
     answer = ""
