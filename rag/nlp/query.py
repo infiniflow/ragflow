@@ -121,7 +121,8 @@ class FulltextQueryer:
             keywords.append(tt)
             twts = self.tw.weights([tt])
             syns = self.syn.lookup(tt)
-            if syns and len(keywords) < 32: keywords.extend(syns)
+            if syns and len(keywords) < 32:
+                keywords.extend(syns)
             logging.debug(json.dumps(twts, ensure_ascii=False))
             tms = []
             for tk, w in sorted(twts, key=lambda x: x[1] * -1):
@@ -147,7 +148,8 @@ class FulltextQueryer:
 
                 tk_syns = self.syn.lookup(tk)
                 tk_syns = [FulltextQueryer.subSpecialChar(s) for s in tk_syns]
-                if len(keywords) < 32: keywords.extend([s for s in tk_syns if s])
+                if len(keywords) < 32:
+                    keywords.extend([s for s in tk_syns if s])
                 tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
                 tk_syns = [f"\"{s}\"" if s.find(" ")>0 else s for s in tk_syns]
 

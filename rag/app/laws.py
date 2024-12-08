@@ -48,7 +48,7 @@ class Docx(DocxParser):
                     continue
                 if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
-        return [l for l in lines if l]
+        return [line for line in lines if line]
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000):
         self.doc = Document(
@@ -60,7 +60,8 @@ class Docx(DocxParser):
             if pn > to_page:
                 break
             question_level, p_text = docx_question_level(p, bull)
-            if not p_text.strip("\n"):continue
+            if not p_text.strip("\n"):
+                continue
             lines.append((question_level, p_text))
 
             for run in p.runs:
@@ -78,19 +79,21 @@ class Docx(DocxParser):
                 if lines[e][0] <= lines[s][0]:
                     break
                 e += 1
-            if e - s == 1 and visit[s]: continue
+            if e - s == 1 and visit[s]:
+                continue
             sec = []
             next_level = lines[s][0] + 1
             while not sec and next_level < 22:
                 for i in range(s+1, e):
-                    if lines[i][0] != next_level: continue
+                    if lines[i][0] != next_level:
+                        continue
                     sec.append(lines[i][1])
                     visit[i] = True
                 next_level += 1
             sec.insert(0, lines[s][1])
 
             sections.append("\n".join(sec))
-        return [l for l in sections if l]
+        return [s for s in sections if s]
 
     def __str__(self) -> str:
         return f'''
@@ -168,13 +171,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         sections = txt.split("\n")
-        sections = [l for l in sections if l]
+        sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = HtmlParser()(filename, binary)
-        sections = [l for l in sections if l]
+        sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
@@ -182,7 +185,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         binary = BytesIO(binary)
         doc_parsed = parser.from_buffer(binary)
         sections = doc_parsed['content'].split('\n')
-        sections = [l for l in sections if l]
+        sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
     else:

@@ -15,13 +15,14 @@
 #
 import pathlib
 import re
-from .user_service import UserService
+from .user_service import UserService as UserService
 
 
 def duplicate_name(query_func, **kwargs):
     fnm = kwargs["name"]
     objs = query_func(**kwargs)
-    if not objs: return fnm
+    if not objs:
+        return fnm
     ext = pathlib.Path(fnm).suffix #.jpg
     nm = re.sub(r"%s$"%ext, "", fnm)
     r = re.search(r"\(([0-9]+)\)$", nm)
@@ -31,8 +32,8 @@ def duplicate_name(query_func, **kwargs):
         nm = re.sub(r"\([0-9]+\)$", "", nm)
     c += 1
     nm = f"{nm}({c})"
-    if ext: nm += f"{ext}"
+    if ext:
+        nm += f"{ext}"
 
     kwargs["name"] = nm
     return duplicate_name(query_func, **kwargs)
-

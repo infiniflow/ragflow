@@ -36,7 +36,6 @@ from werkzeug.http import HTTP_STATUS_CODES
 from api.db.db_models import APIToken
 from api import settings
 
-from api import settings
 from api.utils import CustomJSONEncoder, get_uuid
 from api.utils import json_dumps
 from api.constants import REQUEST_WAIT_SEC, REQUEST_MAX_WAIT_SEC

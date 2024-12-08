@@ -134,7 +134,8 @@ def build_knowledge_graph_chunks(tenant_id: str, chunks: list[str], callback, en
     callback(0.75, "Extracting mind graph.")
     mindmap = MindMapExtractor(llm_bdl)
     mg = mindmap(_chunks).output
-    if not len(mg.keys()): return chunks
+    if not len(mg.keys()):
+        return chunks
 
     logging.debug(json.dumps(mg, ensure_ascii=False, indent=2))
     chunks.append(

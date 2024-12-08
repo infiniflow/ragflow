@@ -42,7 +42,7 @@ class LayoutRecognizer(Recognizer):
                     get_project_base_directory(),
                     "rag/res/deepdoc")
             super().__init__(self.labels, domain, model_dir)
-        except Exception as e:
+        except Exception:
             model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
                                           local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
                                           local_dir_use_symlinks=False)
@@ -77,7 +77,7 @@ class LayoutRecognizer(Recognizer):
                     "page_number": pn,
                     } for b in lts if float(b["score"]) >= 0.8 or b["type"] not in self.garbage_layouts]
             lts = self.sort_Y_firstly(lts, np.mean(
-                [l["bottom"] - l["top"] for l in lts]) / 2)
+                [lt["bottom"] - lt["top"] for lt in lts]) / 2)
             lts = self.layouts_cleanup(bxs, lts)
             page_layout.append(lts)
 

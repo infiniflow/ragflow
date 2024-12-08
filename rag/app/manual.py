@@ -190,7 +190,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         if sections and len(sections[0]) < 3:
-            sections = [(t, l, [[0] * 5]) for t, l in sections]
+            sections = [(t, lvl, [[0] * 5]) for t, lvl in sections]
         # set pivot using the most frequent type of title,
         # then merge between 2 pivot
         if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.1:
@@ -211,7 +211,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         else:
             bull = bullets_category([txt for txt, _, _ in sections])
             most_level, levels = title_frequency(
-                bull, [(txt, l) for txt, l, poss in sections])
+                bull, [(txt, lvl) for txt, lvl, _ in sections])
 
         assert len(sections) == len(levels)
         sec_ids = []
@@ -225,7 +225,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         sections = [(txt, sec_ids[i], poss)
                     for i, (txt, _, poss) in enumerate(sections)]
         for (img, rows), poss in tbls:
-            if not rows: continue
+            if not rows:
+                continue
             sections.append((rows if isinstance(rows, str) else rows[0], -1,
                             [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
 

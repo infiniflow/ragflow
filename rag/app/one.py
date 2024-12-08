@@ -54,7 +54,8 @@ class Pdf(PdfParser):
         sections = [(b["text"], self.get_position(b, zoomin))
                     for i, b in enumerate(self.boxes)]
         for (img, rows), poss in tbls:
-            if not rows:continue
+            if not rows:
+                continue
             sections.append((rows if isinstance(rows, str) else rows[0],
                              [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
         return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (
@@ -109,7 +110,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         binary = BytesIO(binary)
         doc_parsed = parser.from_buffer(binary)
         sections = doc_parsed['content'].split('\n')
-        sections = [l for l in sections if l]
+        sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
     else:

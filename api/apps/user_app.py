@@ -330,7 +330,7 @@ def user_info_from_github(access_token):
         headers=headers,
     ).json()
     user_info["email"] = next(
-        (email for email in email_info if email["primary"] == True), None
+        (email for email in email_info if email["primary"]), None
     )["email"]
     return user_info
 

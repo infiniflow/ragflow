@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
-import json
 import os.path
 import pathlib
 import re
@@ -90,7 +89,8 @@ def web_crawl():
         raise LookupError("Can't find this knowledgebase!")
 
     blob = html2pdf(url)
-    if not blob: return server_error_response(ValueError("Download failure."))
+    if not blob:
+        return server_error_response(ValueError("Download failure."))
 
     root_folder = FileService.get_root_folder(current_user.id)
     pf_id = root_folder["id"]
@@ -290,7 +290,8 @@ def change_status():
 def rm():
     req = request.json
     doc_ids = req["doc_id"]
-    if isinstance(doc_ids, str): doc_ids = [doc_ids]
+    if isinstance(doc_ids, str):
+        doc_ids = [doc_ids]
 
     for doc_id in doc_ids:
         if not DocumentService.accessible4deletion(doc_id, current_user.id):

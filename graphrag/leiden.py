@@ -78,7 +78,8 @@ def _compute_leiden_communities(
 ) -> dict[int, dict[str, int]]:
     """Return Leiden root communities."""
     results: dict[int, dict[str, int]] = {}
-    if is_empty(graph): return results
+    if is_empty(graph):
+        return results
     if use_lcc:
         graph = stable_largest_connected_component(graph)
 
@@ -100,7 +101,8 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
         logging.debug(
             "Running leiden with max_cluster_size=%s, lcc=%s", max_cluster_size, use_lcc
         )
-    if not graph.nodes(): return {}
+    if not graph.nodes():
+        return {}
 
     node_id_to_community_map = _compute_leiden_communities(
         graph=graph,
@@ -125,9 +127,11 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
             result[community_id]["nodes"].append(node_id)
             result[community_id]["weight"] += graph.nodes[node_id].get("rank", 0) * graph.nodes[node_id].get("weight", 1)
         weights = [comm["weight"] for _, comm in result.items()]
-        if not weights:continue
+        if not weights:
+            continue
         max_weight = max(weights)
-        for _, comm in result.items(): comm["weight"] /= max_weight
+        for _, comm in result.items():
+            comm["weight"] /= max_weight
 
     return results_by_level
 

@@ -142,7 +142,6 @@ def set_conversation():
     if not objs:
         return get_json_result(
             data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
-    req = request.json
     try:
         if objs[0].source == "agent":
             e, cvs = UserCanvasService.get_by_id(objs[0].dialog_id)
@@ -188,7 +187,8 @@ def completion():
     e, conv = API4ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
-    if "quote" not in req: req["quote"] = False
+    if "quote" not in req:
+        req["quote"] = False
 
     msg = []
     for m in req["messages"]:
@@ -197,7 +197,8 @@ def completion():
         if m["role"] == "assistant" and not msg:
             continue
         msg.append(m)
-    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
 
     def fillin_conv(ans):
@@ -674,11 +675,13 @@ def completion_faq():
     e, conv = API4ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
-    if "quote" not in req: req["quote"] = True
+    if "quote" not in req:
+        req["quote"] = True
 
     msg = []
     msg.append({"role": "user", "content": req["word"]})
-    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
 
     def fillin_conv(ans):

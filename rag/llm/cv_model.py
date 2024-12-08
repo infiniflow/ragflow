@@ -25,6 +25,7 @@ import base64
 from io import BytesIO
 import json
 import requests
+from transformers import GenerationConfig
 
 from rag.nlp import is_english
 from api.utils import get_uuid
@@ -77,14 +78,16 @@ class Base(ABC):
                 stream=True
             )
             for resp in response:
-                if not resp.choices[0].delta.content: continue
+                if not resp.choices[0].delta.content:
+                    continue
                 delta = resp.choices[0].delta.content
                 ans += delta
                 if resp.choices[0].finish_reason == "length":
                     ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                         [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
                     tk_count = resp.usage.total_tokens
-                if resp.choices[0].finish_reason == "stop": tk_count = resp.usage.total_tokens
+                if resp.choices[0].finish_reason == "stop":
+                    tk_count = resp.usage.total_tokens
                 yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
@@ -99,7 +102,7 @@ class Base(ABC):
         buffered = BytesIO()
         try:
             image.save(buffered, format="JPEG")
-        except Exception as e:
+        except Exception:
             image.save(buffered, format="PNG")
         return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
@@ -139,7 +142,8 @@ class Base(ABC):
 
 class GptV4(Base):
     def __init__(self, key, model_name="gpt-4-vision-preview", lang="Chinese", base_url="https://api.openai.com/v1"):
-        if not base_url: base_url="https://api.openai.com/v1"
+        if not base_url:
+            base_url="https://api.openai.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
@@ -149,7 +153,8 @@ class GptV4(Base):
         prompt = self.prompt(b64)
         for i in range(len(prompt)):
             for c in prompt[i]["content"]:
-                if "text" in c: c["type"] = "text"
+                if "text" in c:
+                    c["type"] = "text"
 
         res = self.client.chat.completions.create(
             model=self.model_name,
@@ -171,7 +176,8 @@ class AzureGptV4(Base):
         prompt = self.prompt(b64)
         for i in range(len(prompt)):
             for c in prompt[i]["content"]:
-                if "text" in c: c["type"] = "text"
+                if "text" in c:
+                    c["type"] = "text"
 
         res = self.client.chat.completions.create(
             model=self.model_name,
@@ -344,14 +350,16 @@ class Zhipu4V(Base):
                 stream=True
             )
             for resp in response:
-                if not resp.choices[0].delta.content: continue
+                if not resp.choices[0].delta.content:
+                    continue
                 delta = resp.choices[0].delta.content
                 ans += delta
                 if resp.choices[0].finish_reason == "length":
                     ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
                         [ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
                     tk_count = resp.usage.total_tokens
-                if resp.choices[0].finish_reason == "stop": tk_count = resp.usage.total_tokens
+                if resp.choices[0].finish_reason == "stop":
+                    tk_count = resp.usage.total_tokens
                 yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
@@ -389,11 +397,16 @@ class OllamaCV(Base):
                 if his["role"] == "user":
                     his["images"] = [image]
             options = {}
-            if "temperature" in gen_conf: options["temperature"] = gen_conf["temperature"]
-            if "max_tokens" in gen_conf: options["num_predict"] = gen_conf["max_tokens"]
-            if "top_p" in gen_conf: options["top_k"] = gen_conf["top_p"]
-            if "presence_penalty" in gen_conf: options["presence_penalty"] = gen_conf["presence_penalty"]
-            if "frequency_penalty" in gen_conf: options["frequency_penalty"] = gen_conf["frequency_penalty"]
+            if "temperature" in gen_conf:
+                options["temperature"] = gen_conf["temperature"]
+            if "max_tokens" in gen_conf:
+                options["num_predict"] = gen_conf["max_tokens"]
+            if "top_p" in gen_conf:
+                options["top_k"] = gen_conf["top_p"]
+            if "presence_penalty" in gen_conf:
+                options["presence_penalty"] = gen_conf["presence_penalty"]
+            if "frequency_penalty" in gen_conf:
+                options["frequency_penalty"] = gen_conf["frequency_penalty"]
             response = self.client.chat(
                 model=self.model_name,
                 messages=history,
@@ -414,11 +427,16 @@ class OllamaCV(Base):
             if his["role"] == "user":
                 his["images"] = [image]
         options = {}
-        if "temperature" in gen_conf: options["temperature"] = gen_conf["temperature"]
-        if "max_tokens" in gen_conf: options["num_predict"] = gen_conf["max_tokens"]
-        if "top_p" in gen_conf: options["top_k"] = gen_conf["top_p"]
-        if "presence_penalty" in gen_conf: options["presence_penalty"] = gen_conf["presence_penalty"]
-        if "frequency_penalty" in gen_conf: options["frequency_penalty"] = gen_conf["frequency_penalty"]
+        if "temperature" in gen_conf:
+            options["temperature"] = gen_conf["temperature"]
+        if "max_tokens" in gen_conf:
+            options["num_predict"] = gen_conf["max_tokens"]
+        if "top_p" in gen_conf:
+            options["top_k"] = gen_conf["top_p"]
+        if "presence_penalty" in gen_conf:
+            options["presence_penalty"] = gen_conf["presence_penalty"]
+        if "frequency_penalty" in gen_conf:
+            options["frequency_penalty"] = gen_conf["frequency_penalty"]
         ans = ""
         try:
             response = self.client.chat(
@@ -469,7 +487,7 @@ class XinferenceCV(Base):
 
 class GeminiCV(Base):
     def __init__(self, key, model_name="gemini-1.0-pro-vision-latest", lang="Chinese", **kwargs):
-        from google.generativeai import client, GenerativeModel, GenerationConfig
+        from google.generativeai import client, GenerativeModel
         client.configure(api_key=key)
         _client = client.get_default_generative_client()
         self.model_name = model_name
@@ -503,7 +521,7 @@ class GeminiCV(Base):
                 if his["role"] == "user":
                     his["parts"] = [his["content"]]
                     his.pop("content")
-            history[-1]["parts"].append(f"data:image/jpeg;base64," + image)
+            history[-1]["parts"].append("data:image/jpeg;base64," + image)
 
             response = self.model.generate_content(history, generation_config=GenerationConfig(
                 max_output_tokens=gen_conf.get("max_tokens", 1000), temperature=gen_conf.get("temperature", 0.3),
@@ -519,7 +537,6 @@ class GeminiCV(Base):
             history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
 
         ans = ""
-        tk_count = 0
         try:
             for his in history:
                 if his["role"] == "assistant":
@@ -529,14 +546,15 @@ class GeminiCV(Base):
                 if his["role"] == "user":
                     his["parts"] = [his["content"]]
                     his.pop("content")
-            history[-1]["parts"].append(f"data:image/jpeg;base64," + image)
+            history[-1]["parts"].append("data:image/jpeg;base64," + image)
 
             response = self.model.generate_content(history, generation_config=GenerationConfig(
                 max_output_tokens=gen_conf.get("max_tokens", 1000), temperature=gen_conf.get("temperature", 0.3),
                 top_p=gen_conf.get("top_p", 0.7)), stream=True)
 
             for resp in response:
-                if not resp.text: continue
+                if not resp.text:
+                    continue
                 ans += resp.text
                 yield ans
         except Exception as e:
@@ -632,7 +650,8 @@ class NvidiaCV(Base):
 
 class StepFunCV(GptV4):
     def __init__(self, key, model_name="step-1v-8k", lang="Chinese", base_url="https://api.stepfun.com/v1"):
-        if not base_url: base_url="https://api.stepfun.com/v1"
+        if not base_url:
+            base_url="https://api.stepfun.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang

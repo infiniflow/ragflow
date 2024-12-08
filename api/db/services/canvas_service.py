@@ -13,9 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from datetime import datetime
-import peewee
-from api.db.db_models import DB, API4Conversation, APIToken, Dialog, CanvasTemplate, UserCanvas
+from api.db.db_models import DB, CanvasTemplate, UserCanvas
 from api.db.services.common_service import CommonService
 
 

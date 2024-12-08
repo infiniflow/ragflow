@@ -13,10 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
 import json
 import traceback
-from functools import partial
 from flask import request, Response
 from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
@@ -60,7 +58,8 @@ def rm():
 def save():
     req = request.json
     req["user_id"] = current_user.id
-    if not isinstance(req["dsl"], str): req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
+    if not isinstance(req["dsl"], str):
+        req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
 
     req["dsl"] = json.loads(req["dsl"])
     if "id" not in req:
@@ -153,7 +152,8 @@ def run():
         return resp
 
     for answer in canvas.run(stream=False):
-        if answer.get("running_status"): continue
+        if answer.get("running_status"):
+            continue
         final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
         canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
         if final_ans.get("reference"):

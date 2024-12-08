@@ -29,7 +29,7 @@ class Session(Base):
                 raise Exception(json_data["message"])
             if line.startswith("data:"):
                 json_data = json.loads(line[5:])
-                if json_data["data"] != True:
+                if not json_data["data"]:
                     answer = json_data["data"]["answer"]
                     reference = json_data["data"]["reference"]
                     temp_dict = {

@@ -107,7 +107,8 @@ class TenantLLMService(CommonService):
 
         model_config = cls.get_api_key(tenant_id, mdlnm)
         mdlnm, fid = TenantLLMService.split_model_name_and_factory(mdlnm)
-        if model_config: model_config = model_config.to_dict()
+        if model_config:
+            model_config = model_config.to_dict()
         if not model_config:
             if llm_type in [LLMType.EMBEDDING, LLMType.RERANK]:
                 llm = LLMService.query(llm_name=mdlnm) if not fid else LLMService.query(llm_name=mdlnm, fid=fid)

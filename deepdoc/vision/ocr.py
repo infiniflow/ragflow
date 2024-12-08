@@ -19,7 +19,9 @@ from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
 from .operators import *
+import math
 import numpy as np
+import cv2
 import onnxruntime as ort
 
 from .postprocess import build_post_process
@@ -484,7 +486,7 @@ class OCR(object):
                         "rag/res/deepdoc")
                 self.text_detector = TextDetector(model_dir)
                 self.text_recognizer = TextRecognizer(model_dir)
-            except Exception as e:
+            except Exception:
                 model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
                                               local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
                                               local_dir_use_symlinks=False)

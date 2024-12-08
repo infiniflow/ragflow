@@ -13,14 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from common import HOST_ADDRESS, create_dataset, list_dataset, rm_dataset, update_dataset, upload_file, DATASET_NAME_LIMIT
+from common import create_dataset, list_dataset, rm_dataset, upload_file
 from common import list_document, get_docs_info, parse_docs
 from time import sleep
 from timeit import default_timer as timer
-import re
-import pytest
-import random
-import string
 
 
 def test_parse_txt_document(get_auth):

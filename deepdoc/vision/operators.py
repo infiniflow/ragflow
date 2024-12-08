@@ -232,7 +232,7 @@ class LinearResize(object):
         """
         assert len(self.target_size) == 2
         assert self.target_size[0] > 0 and self.target_size[1] > 0
-        im_channel = im.shape[2]
+        _im_channel = im.shape[2]
         im_scale_y, im_scale_x = self.generate_scale(im)
         im = cv2.resize(
             im,
@@ -255,7 +255,7 @@ class LinearResize(object):
             im_scale_y: the resize ratio of Y
         """
         origin_shape = im.shape[:2]
-        im_c = im.shape[2]
+        _im_c = im.shape[2]
         if self.keep_ratio:
             im_size_min = np.min(origin_shape)
             im_size_max = np.max(origin_shape)
@@ -581,7 +581,7 @@ class SRResize(object):
             return data
 
         images_HR = data["image_hr"]
-        label_strs = data["label"]
+        _label_strs = data["label"]
         transform = ResizeNormalize((imgW, imgH))
         images_HR = transform(images_HR)
         data["img_hr"] = images_HR

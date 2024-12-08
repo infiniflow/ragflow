@@ -94,7 +94,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         sections = txt.split("\n")
-        sections = [(l, "") for l in sections if l]
+        sections = [(line, "") for line in sections if line]
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
         callback(0.8, "Finish parsing.")
@@ -102,7 +102,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = HtmlParser()(filename, binary)
-        sections = [(l, "") for l in sections if l]
+        sections = [(line, "") for line in sections if line]
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
         callback(0.8, "Finish parsing.")
@@ -112,7 +112,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         binary = BytesIO(binary)
         doc_parsed = parser.from_buffer(binary)
         sections = doc_parsed['content'].split('\n')
-        sections = [(l, "") for l in sections if l]
+        sections = [(line, "") for line in sections if line]
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
         callback(0.8, "Finish parsing.")

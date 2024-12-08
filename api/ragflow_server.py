@@ -21,10 +21,7 @@
 import logging
 import os
 from api.utils.log_utils import initRootLogger
-LOG_LEVELS = os.environ.get("LOG_LEVELS", "")
-initRootLogger("ragflow_server", LOG_LEVELS)
 
-import os
 import signal
 import sys
 import time
@@ -43,6 +40,9 @@ from api.db.init_data import init_web_data
 from api.versions import get_ragflow_version
 from api.utils import show_configs
 from rag.settings import print_rag_settings
+
+LOG_LEVELS = os.environ.get("LOG_LEVELS", "")
+initRootLogger("ragflow_server", LOG_LEVELS)
 
 
 def update_progress():

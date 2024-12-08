@@ -115,7 +115,7 @@ class CommonService:
         try:
             obj = cls.model.query(id=pid)[0]
             return True, obj
-        except Exception as e:
+        except Exception:
             return False, None
 
     @classmethod

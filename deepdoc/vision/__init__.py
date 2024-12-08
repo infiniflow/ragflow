@@ -18,7 +18,6 @@ from .recognizer import Recognizer
 from .layout_recognizer import LayoutRecognizer
 from .table_structure_recognizer import TableStructureRecognizer
 
-
 def init_in_out(args):
     from PIL import Image
     import os
@@ -47,7 +46,7 @@ def init_in_out(args):
         try:
             images.append(Image.open(fnm))
             outputs.append(os.path.split(fnm)[-1])
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
 
     if os.path.isdir(args.inputs):
@@ -56,6 +55,16 @@ def init_in_out(args):
     else:
         images_and_outputs(args.inputs)
 
-    for i in range(len(outputs)): outputs[i] = os.path.join(args.output_dir, outputs[i])
+    for i in range(len(outputs)):
+        outputs[i] = os.path.join(args.output_dir, outputs[i])
 
     return images, outputs
+
+
+__all__ = [
+    "OCR",
+    "Recognizer",
+    "LayoutRecognizer",
+    "TableStructureRecognizer",
+    "init_in_out",
+]

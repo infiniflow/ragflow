@@ -47,7 +47,8 @@ class Template(ComponentBase):
 
         self._param.inputs = []
         for para in self._param.parameters:
-            if not para.get("component_id"): continue
+            if not para.get("component_id"):
+                continue
             component_id = para["component_id"].split("@")[0]
             if para["component_id"].lower().find("@") >= 0:
                 cpn_id, key = para["component_id"].split("@")
