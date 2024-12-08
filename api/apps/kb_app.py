@@ -32,7 +32,7 @@ from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 
 
-@manager.route('/create', methods=['post'])
+@manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("name")
 def create():
@@ -67,7 +67,7 @@ def create():
         return server_error_response(e)
 
 
-@manager.route('/update', methods=['post'])
+@manager.route('/update', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("kb_id", "name", "description", "permission", "parser_id")
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
@@ -120,7 +120,7 @@ def update():
         return server_error_response(e)
 
 
-@manager.route('/detail', methods=['GET'])
+@manager.route('/detail', methods=['GET'])  # noqa: F821
 @login_required
 def detail():
     kb_id = request.args["kb_id"]
@@ -143,7 +143,7 @@ def detail():
         return server_error_response(e)
 
 
-@manager.route('/list', methods=['GET'])
+@manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_kbs():
     keywords = request.args.get("keywords", "")
@@ -160,7 +160,7 @@ def list_kbs():
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['post'])
+@manager.route('/rm', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("kb_id")
 def rm():

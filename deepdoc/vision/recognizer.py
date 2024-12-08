@@ -23,7 +23,8 @@ import onnxruntime as ort
 from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
-from .operators import *
+from .operators import *  # noqa: F403
+from .operators import preprocess
 
 class Recognizer(object):
     def __init__(self, label_list, task_name, model_dir=None):

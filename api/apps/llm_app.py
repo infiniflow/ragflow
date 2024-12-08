@@ -28,7 +28,7 @@ from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 import requests
 
 
-@manager.route('/factories', methods=['GET'])
+@manager.route('/factories', methods=['GET'])  # noqa: F821
 @login_required
 def factories():
     try:
@@ -50,7 +50,7 @@ def factories():
         return server_error_response(e)
 
 
-@manager.route('/set_api_key', methods=['POST'])
+@manager.route('/set_api_key', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("llm_factory", "api_key")
 def set_api_key():
@@ -129,7 +129,7 @@ def set_api_key():
     return get_json_result(data=True)
 
 
-@manager.route('/add_llm', methods=['POST'])
+@manager.route('/add_llm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("llm_factory")
 def add_llm():
@@ -292,7 +292,7 @@ def add_llm():
     return get_json_result(data=True)
 
 
-@manager.route('/delete_llm', methods=['POST'])
+@manager.route('/delete_llm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("llm_factory", "llm_name")
 def delete_llm():
@@ -303,7 +303,7 @@ def delete_llm():
     return get_json_result(data=True)
 
 
-@manager.route('/delete_factory', methods=['POST'])
+@manager.route('/delete_factory', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("llm_factory")
 def delete_factory():
@@ -313,7 +313,7 @@ def delete_factory():
     return get_json_result(data=True)
 
 
-@manager.route('/my_llms', methods=['GET'])
+@manager.route('/my_llms', methods=['GET'])  # noqa: F821
 @login_required
 def my_llms():
     try:
@@ -334,7 +334,7 @@ def my_llms():
         return server_error_response(e)
 
 
-@manager.route('/list', methods=['GET'])
+@manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_app():
     self_deploied = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]

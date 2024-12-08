@@ -49,6 +49,12 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      # https://github.com/astral-sh/ruff-action
+      - name: Static check with Ruff
+        uses: astral-sh/ruff-action@v2
+        with:
+          version: ">=0.8.2"
+
       - name: Build ragflow:dev-slim
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}

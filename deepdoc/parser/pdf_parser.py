@@ -21,7 +21,6 @@ import re
 import pdfplumber
 from PIL import Image
 import numpy as np
-from timeit import default_timer as timer
 from pypdf import PdfReader as pdf2_read
 
 from api import settings
@@ -949,7 +948,6 @@ class RAGFlowPdfParser:
         self.page_cum_height = [0]
         self.page_layout = []
         self.page_from = page_from
-        st = timer()
         try:
             self.pdf = pdfplumber.open(fnm) if isinstance(
                 fnm, str) else pdfplumber.open(BytesIO(fnm))
