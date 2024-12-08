@@ -41,15 +41,15 @@ def findMaxDt(fnm):
     try:
         with open(fnm, "r") as f:
             while True:
-                l = f.readline()
-                if not l:
+                line = f.readline()
+                if not line:
                     break
-                l = l.strip("\n")
-                if l == 'nan':
+                line = line.strip("\n")
+                if line == 'nan':
                     continue
-                if l > m:
-                    m = l
-    except Exception as e:
+                if line > m:
+                    m = line
+    except Exception:
         pass
     return m
 
@@ -59,15 +59,15 @@ def findMaxTm(fnm):
     try:
         with open(fnm, "r") as f:
             while True:
-                l = f.readline()
-                if not l:
+                line = f.readline()
+                if not line:
                     break
-                l = l.strip("\n")
-                if l == 'nan':
+                line = line.strip("\n")
+                if line == 'nan':
                     continue
-                if int(l) > m:
-                    m = int(l)
-    except Exception as e:
+                if int(line) > m:
+                    m = int(line)
+    except Exception:
         pass
     return m
 

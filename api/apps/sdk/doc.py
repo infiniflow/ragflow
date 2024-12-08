@@ -41,7 +41,6 @@ from api.utils.api_utils import construct_json_result, get_parser_config
 from rag.nlp import search
 from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
-import os
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 
@@ -976,12 +975,12 @@ def add_chunk(tenant_id, dataset_id, document_id):
     if not req.get("content"):
         return get_error_data_result(message="`content` is required")
     if "important_keywords" in req:
-        if type(req["important_keywords"]) != list:
+        if not isinstance(req["important_keywords"], list):
             return get_error_data_result(
                 "`important_keywords` is required to be a list"
             )
     if "questions" in req:
-        if type(req["questions"]) != list:
+        if not isinstance(req["questions"], list):
             return get_error_data_result(
                 "`questions` is required to be a list"
             )

@@ -32,7 +32,7 @@ class RAGFlowAzureSasBlob(object):
         self.conn = None
 
     def health(self):
-        bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
+        _bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
         return self.conn.upload_blob(name=fnm, data=BytesIO(binary), length=len(binary))
 
     def put(self, bucket, fnm, binary):

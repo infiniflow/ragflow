@@ -37,10 +37,12 @@ def set_dialog():
     top_n = req.get("top_n", 6)
     top_k = req.get("top_k", 1024)
     rerank_id = req.get("rerank_id", "")
-    if not rerank_id: req["rerank_id"] = ""
+    if not rerank_id:
+        req["rerank_id"] = ""
     similarity_threshold = req.get("similarity_threshold", 0.1)
     vector_similarity_weight = req.get("vector_similarity_weight", 0.3)
-    if vector_similarity_weight is None: vector_similarity_weight = 0.3
+    if vector_similarity_weight is None:
+        vector_similarity_weight = 0.3
     llm_setting = req.get("llm_setting", {})
     default_prompt = {
         "system": """你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。

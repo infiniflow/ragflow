@@ -143,8 +143,10 @@ def completion(tenant_id, chat_id):
     }
     conv.message.append(question)
     for m in conv.message:
-        if m["role"] == "system": continue
-        if m["role"] == "assistant" and not msg: continue
+        if m["role"] == "system":
+            continue
+        if m["role"] == "assistant" and not msg:
+            continue
         msg.append(m)
     message_id = msg[-1].get("id")
     e, dia = DialogService.get_by_id(conv.dialog_id)
@@ -267,7 +269,8 @@ def agent_completion(tenant_id, agent_id):
         if m["role"] == "assistant" and not msg:
             continue
         msg.append(m)
-    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
 
     stream = req.get("stream", True)
@@ -361,7 +364,8 @@ def agent_completion(tenant_id, agent_id):
         return resp
 
     for answer in canvas.run(stream=False):
-        if answer.get("running_status"): continue
+        if answer.get("running_status"):
+            continue
         final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
         canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
         if final_ans.get("reference"):
