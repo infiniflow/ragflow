@@ -45,7 +45,7 @@ from rag.utils.storage_factory import STORAGE_IMPL
 MAXIMUM_OF_UPLOADING_FILES = 256
 
 
-@manager.route("/datasets/<dataset_id>/documents", methods=["POST"])
+@manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
 @token_required
 def upload(dataset_id, tenant_id):
     """
@@ -153,7 +153,7 @@ def upload(dataset_id, tenant_id):
     return get_result(data=renamed_doc_list)
 
 
-@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"])
+@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"])  # noqa: F821
 @token_required
 def update_doc(tenant_id, dataset_id, document_id):
     """
@@ -296,7 +296,7 @@ def update_doc(tenant_id, dataset_id, document_id):
     return get_result()
 
 
-@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])
+@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required
 def download(tenant_id, dataset_id, document_id):
     """
@@ -360,7 +360,7 @@ def download(tenant_id, dataset_id, document_id):
     )
 
 
-@manager.route("/datasets/<dataset_id>/documents", methods=["GET"])
+@manager.route("/datasets/<dataset_id>/documents", methods=["GET"])  # noqa: F821
 @token_required
 def list_docs(dataset_id, tenant_id):
     """
@@ -494,7 +494,7 @@ def list_docs(dataset_id, tenant_id):
     return get_result(data={"total": tol, "docs": renamed_doc_list})
 
 
-@manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])
+@manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @token_required
 def delete(tenant_id, dataset_id):
     """
@@ -586,7 +586,7 @@ def delete(tenant_id, dataset_id):
     return get_result()
 
 
-@manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])
+@manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
 def parse(tenant_id, dataset_id):
     """
@@ -653,7 +653,7 @@ def parse(tenant_id, dataset_id):
     return get_result()
 
 
-@manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])
+@manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821
 @token_required
 def stop_parsing(tenant_id, dataset_id):
     """
@@ -711,7 +711,7 @@ def stop_parsing(tenant_id, dataset_id):
     return get_result()
 
 
-@manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["GET"])
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["GET"])  # noqa: F821
 @token_required
 def list_chunks(tenant_id, dataset_id, document_id):
     """
@@ -895,7 +895,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
     return get_result(data=res)
 
 
-@manager.route(
+@manager.route(  # noqa: F821
     "/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["POST"]
 )
 @token_required
@@ -1038,7 +1038,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
     # return get_result(data={"chunk_id": chunk_id})
 
 
-@manager.route(
+@manager.route(  # noqa: F821
     "datasets/<dataset_id>/documents/<document_id>/chunks", methods=["DELETE"]
 )
 @token_required
@@ -1098,7 +1098,7 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     return get_result(message=f"deleted {chunk_number} chunks")
 
 
-@manager.route(
+@manager.route(  # noqa: F821
     "/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>", methods=["PUT"]
 )
 @token_required
@@ -1208,7 +1208,7 @@ def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     return get_result()
 
 
-@manager.route("/retrieval", methods=["POST"])
+@manager.route("/retrieval", methods=["POST"])  # noqa: F821
 @token_required
 def retrieval_test(tenant_id):
     """

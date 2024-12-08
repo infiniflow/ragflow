@@ -33,7 +33,7 @@ from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=['POST'])
+@manager.route('/chats/<chat_id>/sessions', methods=['POST'])  # noqa: F821
 @token_required
 def create(tenant_id, chat_id):
     req = request.json
@@ -60,7 +60,7 @@ def create(tenant_id, chat_id):
     return get_result(data=conv)
 
 
-@manager.route('/agents/<agent_id>/sessions', methods=['POST'])
+@manager.route('/agents/<agent_id>/sessions', methods=['POST'])  # noqa: F821
 @token_required
 def create_agent_session(tenant_id, agent_id):
     e, cvs = UserCanvasService.get_by_id(agent_id)
@@ -86,7 +86,7 @@ def create_agent_session(tenant_id, agent_id):
     return get_result(data=conv)
 
 
-@manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT'])
+@manager.route('/chats/<chat_id>/sessions/<session_id>', methods=['PUT'])  # noqa: F821
 @token_required
 def update(tenant_id, chat_id, session_id):
     req = request.json
@@ -108,7 +108,7 @@ def update(tenant_id, chat_id, session_id):
     return get_result()
 
 
-@manager.route('/chats/<chat_id>/completions', methods=['POST'])
+@manager.route('/chats/<chat_id>/completions', methods=['POST'])  # noqa: F821
 @token_required
 def completion(tenant_id, chat_id):
     dia = DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
@@ -219,7 +219,7 @@ def completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
-@manager.route('/agents/<agent_id>/completions', methods=['POST'])
+@manager.route('/agents/<agent_id>/completions', methods=['POST'])  # noqa: F821
 @token_required
 def agent_completion(tenant_id, agent_id):
     req = request.json
@@ -379,7 +379,7 @@ def agent_completion(tenant_id, agent_id):
         return get_result(data=result)
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=['GET'])
+@manager.route('/chats/<chat_id>/sessions', methods=['GET'])  # noqa: F821
 @token_required
 def list_session(tenant_id, chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
@@ -433,7 +433,7 @@ def list_session(tenant_id, chat_id):
     return get_result(data=convs)
 
 
-@manager.route('/agents/<agent_id>/sessions', methods=['GET'])
+@manager.route('/agents/<agent_id>/sessions', methods=['GET'])  # noqa: F821
 @token_required
 def list_agent_session(tenant_id, agent_id):
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
@@ -488,7 +488,7 @@ def list_agent_session(tenant_id, agent_id):
     return get_result(data=convs)
 
 
-@manager.route('/chats/<chat_id>/sessions', methods=["DELETE"])
+@manager.route('/chats/<chat_id>/sessions', methods=["DELETE"])  # noqa: F821
 @token_required
 def delete(tenant_id, chat_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
@@ -514,7 +514,7 @@ def delete(tenant_id, chat_id):
     return get_result()
 
 
-@manager.route('/sessions/ask', methods=['POST'])
+@manager.route('/sessions/ask', methods=['POST'])  # noqa: F821
 @token_required
 def ask_about(tenant_id):
     req = request.json
@@ -553,7 +553,7 @@ def ask_about(tenant_id):
     return resp
 
 
-@manager.route('/sessions/related_questions', methods=['POST'])
+@manager.route('/sessions/related_questions', methods=['POST'])  # noqa: F821
 @token_required
 def related_questions(tenant_id):
     req = request.json
