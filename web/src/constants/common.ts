@@ -46,6 +46,7 @@ export const LanguageList = [
   'Indonesia',
   'Spanish',
   'Vietnamese',
+  'Japanese',
 ];
 
 export const LanguageMap = {
@@ -55,6 +56,7 @@ export const LanguageMap = {
   Indonesia: 'Indonesia',
   Spanish: 'Español',
   Vietnamese: 'Tiếng việt',
+  Japanese: '日本語',
 };
 
 export const LanguageTranslationMap = {
@@ -64,6 +66,7 @@ export const LanguageTranslationMap = {
   Indonesia: 'id',
   Spanish: 'es',
   Vietnamese: 'vi',
+  Japanese: 'ja',
 };
 
 export enum FileMimeType {
