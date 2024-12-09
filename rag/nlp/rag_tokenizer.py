@@ -104,7 +104,6 @@ class RagTokenizer:
         return HanziConv.toSimplified(line)
 
     def dfs_(self, chars, s, preTks, tkslist):
-        MAX_L = 10
         res = s
         # if s > MAX_L or s>= len(chars):
         if s >= len(chars):
@@ -184,12 +183,6 @@ class RagTokenizer:
         return sorted(res, key=lambda x: x[1], reverse=True)
 
     def merge_(self, tks):
-        patts = [
-            (r"[ ]+", " "),
-            (r"([0-9\+\.,%\*=-]) ([0-9\+\.,%\*=-])", r"\1\2"),
-        ]
-        # for p,s in patts: tks = re.sub(p, s, tks)
-
         # if split chars is part of token
         res = []
         tks = re.sub(r"[ ]+", " ", tks).split()
@@ -284,7 +277,8 @@ class RagTokenizer:
             same = 0
             while i + same < len(tks1) and j + same < len(tks) and tks1[i + same] == tks[j + same]:
                 same += 1
-            if same > 0: res.append(" ".join(tks[j: j + same]))
+            if same > 0:
+                res.append(" ".join(tks[j: j + same]))
             _i = i + same
             _j = j + same
             j = _j + 1

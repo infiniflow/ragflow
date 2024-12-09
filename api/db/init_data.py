@@ -170,7 +170,7 @@ def add_graph_templates():
             cnvs = json.load(open(os.path.join(dir, fnm), "r"))
             try:
                 CanvasTemplateService.save(**cnvs)
-            except:
+            except Exception:
                 CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
         except Exception:
             logging.exception("Add graph templates error: ")

@@ -22,7 +22,7 @@ from api.db import UserTenantRole
 from api.db.db_models import DB, UserTenant
 from api.db.db_models import User, Tenant
 from api.db.services.common_service import CommonService
-from api.utils import get_uuid, get_format_time, current_timestamp, datetime_format
+from api.utils import get_uuid, current_timestamp, datetime_format
 from api.db import StatusEnum
 
 

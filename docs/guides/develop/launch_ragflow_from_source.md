@@ -38,7 +38,7 @@ cd ragflow/
 1. Install Poetry:
    
    ```bash
-   curl -sSL https://install.python-poetry.org | python3 -
+   pipx install poetry
    ```
 
 2. Configure Poetry:

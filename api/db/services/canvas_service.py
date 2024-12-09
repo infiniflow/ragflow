@@ -14,10 +14,9 @@
 #  limitations under the License.
 #
 import json
-from copy import deepcopy
 from uuid import uuid4
 from agent.canvas import Canvas
-from api.db.db_models import DB, API4Conversation, CanvasTemplate, UserCanvas
+from api.db.db_models import DB, CanvasTemplate, UserCanvas
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.conversation_service import structure_answer

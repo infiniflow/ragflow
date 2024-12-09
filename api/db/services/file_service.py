@@ -85,7 +85,8 @@ class FileService(CommonService):
                .join(Document, on=(File2Document.document_id == Document.id))
                .join(Knowledgebase, on=(Knowledgebase.id == Document.kb_id))
                .where(cls.model.id == file_id))
-        if not kbs: return []
+        if not kbs:
+            return []
         kbs_info_list = []
         for kb in list(kbs.dicts()):
             kbs_info_list.append({"kb_id": kb['id'], "kb_name": kb['name']})
@@ -304,7 +305,8 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def add_file_from_kb(cls, doc, kb_folder_id, tenant_id):
-        for _ in File2DocumentService.get_by_document_id(doc["id"]): return
+        for _ in File2DocumentService.get_by_document_id(doc["id"]):
+            return
         file = {
             "id": get_uuid(),
             "parent_id": kb_folder_id,

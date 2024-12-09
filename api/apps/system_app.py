@@ -38,7 +38,7 @@ from timeit import default_timer as timer
 from rag.utils.redis_conn import REDIS_CONN
 
 
-@manager.route("/version", methods=["GET"])
+@manager.route("/version", methods=["GET"])  # noqa: F821
 @login_required
 def version():
     """
@@ -61,7 +61,7 @@ def version():
     return get_json_result(data=get_ragflow_version())
 
 
-@manager.route("/status", methods=["GET"])
+@manager.route("/status", methods=["GET"])  # noqa: F821
 @login_required
 def status():
     """
@@ -170,7 +170,7 @@ def status():
     return get_json_result(data=res)
 
 
-@manager.route("/new_token", methods=["POST"])
+@manager.route("/new_token", methods=["POST"])  # noqa: F821
 @login_required
 def new_token():
     """
@@ -220,7 +220,7 @@ def new_token():
         return server_error_response(e)
 
 
-@manager.route("/token_list", methods=["GET"])
+@manager.route("/token_list", methods=["GET"])  # noqa: F821
 @login_required
 def token_list():
     """
@@ -262,7 +262,7 @@ def token_list():
         return server_error_response(e)
 
 
-@manager.route("/token/<token>", methods=["DELETE"])
+@manager.route("/token/<token>", methods=["DELETE"])  # noqa: F821
 @login_required
 def rm(token):
     """
