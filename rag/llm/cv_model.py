@@ -533,6 +533,7 @@ class GeminiCV(Base):
             return "**ERROR**: " + str(e), 0
 
     def chat_streamly(self, system, history, gen_conf, image=""):
+        from transformers import GenerationConfig
         if system:
             history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
 
