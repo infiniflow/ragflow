@@ -167,7 +167,7 @@ releases! 🌟
 
 3. Build the pre-built Docker images and start up the server:
 
-   > The command below downloads the dev version Docker image for RAGFlow slim (`dev-slim`). Note that RAGFlow slim
+   > The command below downloads the nightly version Docker image for RAGFlow slim (`v0.14.1-slim`). Note that RAGFlow slim
    Docker images do not include embedding models or Python libraries and hence are approximately 1GB in size.
 
    ```bash
@@ -175,19 +175,12 @@ releases! 🌟
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > - To download a RAGFlow slim Docker image of a specific version, update the `RAGFLOW_IMAGE` variable in *
-       *docker/.env** to your desired version. For example, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1-slim`. After
-       making this change, rerun the command above to initiate the download.
-   > - To download the dev version of RAGFlow Docker image *including* embedding models and Python libraries, update the
-       `RAGFLOW_IMAGE` variable in **docker/.env** to `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. After making this change,
-       rerun the command above to initiate the download.
-   > - To download a specific version of RAGFlow Docker image *including* embedding models and Python libraries, update
-       the `RAGFLOW_IMAGE` variable in **docker/.env** to your desired version. For example,
-       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1`. After making this change, rerun the command above to initiate the
-       download.
-
-   > **NOTE:** A RAGFlow Docker image that includes embedding models and Python libraries is approximately 9GB in size
-   and may take significantly longer time to load.
+   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | Release schedule               | stable? |
+   | -------------------------------- | ----- | ------------------------------------------------------- | ------------------------------ | ------- |
+   | v0.14.1                          | ~9 GB | YES                                                     | official release every 3 weeks | YES     |
+   | v0.14.1-slim                     | ~2 GB | NO                                                      | official release every 3 weeks | YES     |
+   | nightly                          | ~9 GB | YES                                                     | Every night at 21:00:00+08:00  | NO      |
+   | nightly-slim                     | ~2 GB | NO                                                      | Every night at 21:00:00+08:00  | NO      |
 
 4. Check the server status after having the server up and running:
 
@@ -267,12 +260,12 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
 
 ## 🔧 Build a Docker image without embedding models
 
-This image is approximately 1 GB in size and relies on external LLM and embedding services.
+This image is approximately 2 GB in size and relies on external LLM and embedding services.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 Build a Docker image including embedding models
@@ -282,7 +275,7 @@ This image is approximately 9 GB in size. As it includes embedding models, it re
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 Launch service from source for development

@@ -145,18 +145,21 @@
 
 3. 미리 빌드된 Docker 이미지를 생성하고 서버를 시작하세요:
 
-   > 아래의 명령은 RAGFlow slim(dev-slim)의 개발 버전 Docker 이미지를 다운로드합니다. RAGFlow slim Docker 이미지에는 임베딩 모델이나 Python 라이브러리가 포함되어 있지 않으므로 크기는 약 1GB입니다.
+   > 아래의 명령은 RAGFlow slim(v0.14.1-slim)의 개발 버전 Docker 이미지를 다운로드합니다. RAGFlow slim Docker 이미지에는 임베딩 모델이나 Python 라이브러리가 포함되어 있지 않으므로 크기는 약 1GB입니다.
 
    ```bash
    $ cd ragflow/docker
    $ docker compose -f docker-compose.yml up -d
    ```
    
-   > - 특정 버전의 RAGFlow slim Docker 이미지를 다운로드하려면, **docker/.env**에서 `RAGFlow_IMAGE` 변수를 원하는 버전으로 업데이트하세요. 예를 들어, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1-slim`으로 설정합니다. 이 변경을 완료한 후, 위의 명령을 다시 실행하여 다운로드를 시작하세요.
-   > - RAGFlow의 임베딩 모델과 Python 라이브러리를 포함한 개발 버전 Docker 이미지를 다운로드하려면, **docker/.env**에서 `RAGFlow_IMAGE` 변수를 `RAGFLOW_IMAGE=infiniflow/ragflow:dev`로 업데이트하세요. 이 변경을 완료한 후, 위의 명령을 다시 실행하여 다운로드를 시작하세요.
-   > - 특정 버전의 RAGFlow Docker 이미지를 임베딩 모델과 Python 라이브러리를 포함하여 다운로드하려면, **docker/.env**에서 `RAGFlow_IMAGE` 변수를 원하는 버전으로 업데이트하세요. 예를 들어, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1` 로 설정합니다. 이 변경을 완료한 후, 위의 명령을 다시 실행하여 다운로드를 시작하세요.  
-   
-   > **NOTE:** 임베딩 모델과 Python 라이브러리를 포함한 RAGFlow Docker 이미지의 크기는 약 9GB이며, 로드하는 데 상당히 오랜 시간이 걸릴 수 있습니다.
+
+   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | Release schedule               | stable? |
+   | -------------------------------- | ----- | ------------------------------------------------------- | ------------------------------ | ------- |
+   | v0.14.1                          | ~9 GB | YES                                                     | official release every 3 weeks | YES     |
+   | v0.14.1-slim                     | ~2 GB | NO                                                      | official release every 3 weeks | YES     |
+   | nightly                          | ~9 GB | YES                                                     | Every night at 21:00:00+08:00  | NO      |
+   | nightly-slim                     | ~2 GB | NO                                                      | Every night at 21:00:00+08:00  | NO      |
+
 
 
 4. 서버가 시작된 후 서버 상태를 확인하세요:
@@ -230,7 +233,7 @@ RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
@@ -240,7 +243,7 @@ docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 소스 코드로 서비스를 시작합니다.

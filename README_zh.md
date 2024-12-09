@@ -142,18 +142,21 @@
 
 3. 进入 **docker** 文件夹，利用提前编译好的 Docker 镜像启动服务器：
 
-   > 运行以下命令会自动下载 dev 版的 RAGFlow slim Docker 镜像（`dev-slim`），该镜像并不包含 embedding 模型以及一些 Python 库，因此镜像大小约 1GB。
+   > 运行以下命令会自动下载 v0.14.1 版的 RAGFlow slim Docker 镜像（`v0.14.1-slim`），该镜像并不包含 embedding 模型以及一些 Python 库，因此镜像大小约 1GB。
 
    ```bash
    $ cd ragflow/docker
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > - 如果你想下载并运行特定版本的 RAGFlow slim Docker 镜像，请在 **docker/.env** 文件中找到 `RAGFLOW_IMAGE` 变量，将其改为对应版本。例如 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1-slim`，然后再运行上述命令。
-   > - 如果您想安装内置 embedding 模型和 Python 库的 dev 版本的 Docker 镜像，需要将 **docker/.env** 文件中的 `RAGFLOW_IMAGE` 变量修改为： `RAGFLOW_IMAGE=infiniflow/ragflow:dev`。
-   > - 如果您想安装内置 embedding 模型和 Python 库的指定版本的 RAGFlow Docker 镜像，需要将 **docker/.env** 文件中的 `RAGFLOW_IMAGE` 变量修改为： `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1`。修改后，再运行上面的命令。
-   > **注意：** 安装内置 embedding 模型和 Python 库的指定版本的 RAGFlow Docker 镜像大小约 9 GB，可能需要更长时间下载，请耐心等待。
-   
+   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | Release schedule               | stable? |
+   | -------------------------------- | ----- | ------------------------------------------------------- | ------------------------------ | ------- |
+   | v0.14.1                          | ~9 GB | YES                                                     | official release every 3 weeks | YES     |
+   | v0.14.1-slim                     | ~2 GB | NO                                                      | official release every 3 weeks | YES     |
+   | nightly                          | ~9 GB | YES                                                     | Every night at 21:00:00+08:00  | NO      |
+   | nightly-slim                     | ~2 GB | NO                                                      | Every night at 21:00:00+08:00  | NO      |
+
+
 4. 服务器启动成功后再次确认服务器状态：
 
    ```bash
@@ -230,12 +233,12 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
 
 ## 🔧 源码编译 Docker 镜像（不含 embedding 模型）
 
-本 Docker 镜像大小约 1 GB 左右并且依赖外部的大模型和 embedding 服务。
+本 Docker 镜像大小约 2 GB 左右并且依赖外部的大模型和 embedding 服务。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 源码编译 Docker 镜像（包含 embedding 模型）
@@ -245,7 +248,7 @@ docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t in
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:dev .
+docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 以源代码启动服务

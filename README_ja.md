@@ -141,18 +141,20 @@
 
 3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
 
-   > 以下のコマンドは、RAGFlow slim（`dev-slim`）の開発版Dockerイメージをダウンロードします。RAGFlow slimのDockerイメージには、埋め込みモデルやPythonライブラリが含まれていないため、サイズは約1GBです。
+   > 以下のコマンドは、RAGFlow slim（`v0.14.1-slim`）の開発版Dockerイメージをダウンロードします。RAGFlow slimのDockerイメージには、埋め込みモデルやPythonライブラリが含まれていないため、サイズは約1GBです。
 
    ```bash
    $ cd ragflow/docker
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > - 特定のバージョンのRAGFlow slim Dockerイメージをダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1`とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
-   > - RAGFlowの埋め込みモデルとPythonライブラリを含む開発版Dockerイメージをダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を`RAGFLOW_IMAGE=infiniflow/ragflow:dev`に更新します。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。
-   > - 特定のバージョンのRAGFlow Dockerイメージ（埋め込みモデルとPythonライブラリを含む）をダウンロードするには、**docker/.env**内の`RAGFlow_IMAGE`変数を希望のバージョンに更新します。例えば、`RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1`とします。この変更を行った後、上記のコマンドを再実行してダウンロードを開始してください。  
-   
-   > **NOTE:** 埋め込みモデルとPythonライブラリを含むRAGFlow Dockerイメージのサイズは約9GBであり、読み込みにかなりの時間がかかる場合があります。
+   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | Release schedule               | stable? |
+   | -------------------------------- | ----- | ------------------------------------------------------- | ------------------------------ | ------- |
+   | v0.14.1                          | ~9 GB | YES                                                     | official release every 3 weeks | YES     |
+   | v0.14.1-slim                     | ~2 GB | NO                                                      | official release every 3 weeks | YES     |
+   | nightly                          | ~9 GB | YES                                                     | Every night at 21:00:00+08:00  | NO      |
+   | nightly-slim                     | ~2 GB | NO                                                      | Every night at 21:00:00+08:00  | NO      |
+
 
 4. サーバーを立ち上げた後、サーバーの状態を確認する:
 
@@ -228,7 +230,7 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
@@ -238,7 +240,7 @@ docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 ソースコードからサービスを起動する方法
