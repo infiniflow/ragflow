@@ -5,7 +5,7 @@ slug: /release_notes
 
 # Release notes
 
-Key features and improvements in the latest releases.
+Key features, improvements and bug fixes in the latest releases.
 
 ## v0.14.1
 
