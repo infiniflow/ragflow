@@ -189,7 +189,8 @@ def iframe_completion(dialog_id, question, session_id=None, stream=True, **kwarg
         if m["role"] == "assistant" and not msg:
             continue
         msg.append(m)
-    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
 
     if not conv.reference:

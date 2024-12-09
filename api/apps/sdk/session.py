@@ -370,7 +370,8 @@ def chatbot_completions(dialog_id):
     if not objs:
         return get_error_data_result(message='Token is not valid!"')
 
-    if "quote" not in req: req["quote"] = False
+    if "quote" not in req:
+        req["quote"] = False
 
     if req.get("stream", True):
         resp = Response(iframe_completion(objs[0].tenant_id, dialog_id, **req), mimetype="text/event-stream")
@@ -396,7 +397,8 @@ def agent_bot_completions(agent_id):
     if not objs:
         return get_error_data_result(message='Token is not valid!"')
 
-    if "quote" not in req: req["quote"] = False
+    if "quote" not in req:
+        req["quote"] = False
 
     if req.get("stream", True):
         resp = Response(agent_completion(objs[0].tenant_id, agent_id, **req), mimetype="text/event-stream")
