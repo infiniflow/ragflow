@@ -63,7 +63,8 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
             "dialog_id": cvs.id,
             "user_id": kwargs.get("user_id", ""),
             "source": "agent",
-            "dsl": json.loads(cvs.dsl)
+            "dsl": json.loads(cvs.dsl),
+            "message":[{"role": "assistant", "content": canvas.get_prologue()}]
         }
         API4ConversationService.save(**conv)
         if canvas.get_preset_param():
