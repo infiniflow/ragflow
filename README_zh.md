@@ -194,7 +194,7 @@
 系统配置涉及以下三份文件：
 
 - [.env](./docker/.env)：存放一些基本的系统环境变量，比如 `SVR_HTTP_PORT`、`MYSQL_PASSWORD`、`MINIO_PASSWORD` 等。
-- [service_conf.yaml](./docker/service_conf.yaml)：配置各类后台服务。
+- [service_conf.yaml.template](./docker/service_conf.yaml.template)：配置各类后台服务。
 - [docker-compose.yml](./docker/docker-compose.yml): 系统依赖该文件完成启动。
 
 请务必确保 [.env](./docker/.env) 文件中的变量设置与 [service_conf.yaml](./docker/service_conf.yaml) 文件中的配置保持一致！

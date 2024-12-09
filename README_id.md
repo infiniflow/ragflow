@@ -219,7 +219,7 @@ Untuk konfigurasi sistem, Anda perlu mengelola file-file berikut:
 
 - [.env](./docker/.env): Menyimpan pengaturan dasar sistem, seperti `SVR_HTTP_PORT`, `MYSQL_PASSWORD`, dan
   `MINIO_PASSWORD`.
-- [service_conf.yaml](./docker/service_conf.yaml): Mengonfigurasi aplikasi backend.
+- [service_conf.yaml.template](./docker/service_conf.yaml.template): Mengonfigurasi aplikasi backend.
 - [docker-compose.yml](./docker/docker-compose.yml): Sistem ini bergantung pada [docker-compose.yml](./docker/docker-compose.yml) untuk memulai.
 
 Anda harus memastikan bahwa perubahan pada file [.env](./docker/.env) sesuai dengan yang ada di file [service_conf.yaml](./docker/service_conf.yaml).

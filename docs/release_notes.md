@@ -7,6 +7,24 @@ slug: /release_notes
 
 Key features and improvements in the latest releases.
 
+## v0.14.1
+
+Released on November 29, 2024.
+
+### Improvements
+
+Adds [Infinity's configuration file](https://github.com/infiniflow/ragflow/blob/main/docker/infinity_conf.toml) to facilitate customization of Infinity as a document engine. From this release onwards, updates to Infinity's configuration will take effect after you restart RAGFlow using `docker compose`. [#3715](https://github.com/infiniflow/ragflow/pull/3715)
+
+### Fixed issues
+
+This release fixes the following issues:
+
+- Unable to display or edit content of a chunk after clicking it.
+- A `'Not found'` error in Elasticsearch.
+- Chinese text becoming garbled during parsing.
+- A compatibility issue with Polars.
+- A compatibility issue between Infinity and GraphRAG.
+
 ## v0.14.0
 
 Released on November 26, 2024.

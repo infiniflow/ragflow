@@ -193,7 +193,7 @@
 システムコンフィグに関しては、以下のファイルを管理する必要がある:
 
 - [.env](./docker/.env): `SVR_HTTP_PORT`、`MYSQL_PASSWORD`、`MINIO_PASSWORD` などのシステムの基本設定を保持する。
-- [service_conf.yaml](./docker/service_conf.yaml): バックエンドのサービスを設定します。
+- [service_conf.yaml.template](./docker/service_conf.yaml.template): バックエンドのサービスを設定します。
 - [docker-compose.yml](./docker/docker-compose.yml): システムの起動は [docker-compose.yml](./docker/docker-compose.yml) に依存している。
 
 [.env](./docker/.env) ファイルの変更が [service_conf.yaml](./docker/service_conf.yaml) ファイルの内容と一致していることを確認する必要があります。
