@@ -3,6 +3,7 @@ FROM ubuntu:22.04 AS base
 USER root
 SHELL ["/bin/bash", "-c"]
 
+ARG NEED_MIRROR=0
 ARG LIGHTEN=0
 ENV LIGHTEN=${LIGHTEN}
 
@@ -16,7 +17,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
         /huggingface.co/InfiniFlow/deepdoc \
         | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
-    if [ "$LIGHTEN" == "0" ]; then \
+    if [ "$LIGHTEN" != "1" ]; then \
         (tar -cf - \
             /huggingface.co/BAAI/bge-large-zh-v1.5 \
             /huggingface.co/BAAI/bge-reranker-v2-m3 \
@@ -35,25 +36,27 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
 ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.0.0.jar"
 
 # Setup apt
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
-    rm -f /etc/apt/apt.conf.d/docker-clean && \
-    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
-    apt update && apt --no-install-recommends install -y ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
 # cv2 requires libGL.so.1
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    apt update && DEBIAN_FRONTEND=noninteractive apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus default-jdk python3-pip pipx \
-    libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget git nginx libgl1 vim less && \
-    rm -rf /var/lib/apt/lists/*
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
+    fi; \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    apt update && \
+    apt --no-install-recommends install -y ca-certificates && \
+    apt update && \
+    DEBIAN_FRONTEND=noninteractive apt install -y curl libpython3-dev nginx libglib2.0-0 libglx-mesa0 pkg-config libicu-dev libgdiplus default-jdk python3-pip pipx \
+    libatk-bridge2.0-0 libgtk-4-1 libnss3 xdg-utils unzip libgbm-dev wget git nginx libgl1 vim less
 
-RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-    pip3 config set global.trusted-host pypi.tuna.tsinghua.edu.cn && \
-    pipx install poetry && \
-    pipx runpip poetry config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-    pipx runpip poetry config set global.trusted-host pypi.tuna.tsinghua.edu.cn && \
-    /root/.local/bin/poetry self add poetry-plugin-pypi-mirror
+RUN if [ "$NEED_MIRROR" == "1" ]; then \
+        pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+        pip3 config set global.trusted-host pypi.tuna.tsinghua.edu.cn; \
+    fi; \
+    pipx install poetry; \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        pipx inject poetry poetry-plugin-pypi-mirror; \
+    fi
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 ENV PATH=/root/.local/bin:$PATH
@@ -62,7 +65,6 @@ ENV POETRY_NO_INTERACTION=1
 ENV POETRY_VIRTUALENVS_IN_PROJECT=true
 ENV POETRY_VIRTUALENVS_CREATE=true
 ENV POETRY_REQUESTS_TIMEOUT=15
-ENV POETRY_PYPI_MIRROR_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # nodejs 12.22 on Ubuntu 22.04 is too old
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
@@ -70,8 +72,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt purge -y nodejs npm && \
     apt autoremove && \
     apt update && \
-    apt install -y nodejs cargo && \
-    rm -rf /var/lib/apt/lists/*
+    apt install -y nodejs cargo
 
 # Add dependencies of selenium
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
@@ -103,6 +104,9 @@ WORKDIR /ragflow
 COPY pyproject.toml poetry.toml poetry.lock ./
 
 RUN --mount=type=cache,id=ragflow_poetry,target=/root/.cache/pypoetry,sharing=locked \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        export POETRY_PYPI_MIRROR_URL=https://pypi.tuna.tsinghua.edu.cn/simple/; \
+    fi; \
     if [ "$LIGHTEN" == "1" ]; then \
         poetry install --no-root; \
     else \
@@ -116,7 +120,7 @@ RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
 
 COPY .git /ragflow/.git
 
-RUN version_info=$(git describe --tags --match=v* --dirty); \
+RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
     if [ "$LIGHTEN" == "1" ]; then \
         version_info="$version_info slim"; \
     else \

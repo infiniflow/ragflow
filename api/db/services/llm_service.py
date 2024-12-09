@@ -107,7 +107,8 @@ class TenantLLMService(CommonService):
 
         model_config = cls.get_api_key(tenant_id, mdlnm)
         mdlnm, fid = TenantLLMService.split_model_name_and_factory(mdlnm)
-        if model_config: model_config = model_config.to_dict()
+        if model_config:
+            model_config = model_config.to_dict()
         if not model_config:
             if llm_type in [LLMType.EMBEDDING, LLMType.RERANK]:
                 llm = LLMService.query(llm_name=mdlnm) if not fid else LLMService.query(llm_name=mdlnm, fid=fid)
@@ -196,8 +197,7 @@ class TenantLLMService(CommonService):
             else:
                 tenant_llms = cls.query(tenant_id=tenant_id, llm_name=llm_name)
             if not tenant_llms:
-                if not llm_factory: llm_factory = mdlnm
-                num = cls.model.create(tenant_id=tenant_id, llm_factory=llm_factory, llm_name=llm_name, used_tokens=used_tokens)
+                return num
             else:
                 tenant_llm = tenant_llms[0]
                 num = cls.model.update(used_tokens=tenant_llm.used_tokens + used_tokens)\

@@ -22,7 +22,7 @@ class RAGFlowJsonParser:
         txt = binary.decode(encoding, errors="ignore")
         json_data = json.loads(txt)
         chunks = self.split_json(json_data, True)   
-        sections = [json.dumps(l, ensure_ascii=False) for l in chunks if l]
+        sections = [json.dumps(line, ensure_ascii=False) for line in chunks if line]
         return sections
 
     @staticmethod

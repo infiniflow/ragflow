@@ -383,6 +383,9 @@ class ComponentBase(ABC):
             "params": {}
         }
         """
+        out = json.loads(str(self._param)).get("output", {})
+        if isinstance(out, dict) and "vector" in out:
+            del out["vector"]
         return """{{
             "component_name": "{}",
             "params": {},
@@ -390,7 +393,7 @@ class ComponentBase(ABC):
             "inputs": {}
         }}""".format(self.component_name,
                      self._param,
-                     json.dumps(json.loads(str(self._param)).get("output", {}), ensure_ascii=False),
+                     json.dumps(out, ensure_ascii=False),
                      json.dumps(json.loads(str(self._param)).get("inputs", []), ensure_ascii=False)
         )
 
@@ -425,7 +428,8 @@ class ComponentBase(ABC):
     def output(self, allow_partial=True) -> Tuple[str, Union[pd.DataFrame, partial]]:
         o = getattr(self._param, self._param.output_var_name)
         if not isinstance(o, partial) and not isinstance(o, pd.DataFrame):
-            if not isinstance(o, list): o = [o]
+            if not isinstance(o, list):
+                o = [o]
             o = pd.DataFrame(o)
 
         if allow_partial or not isinstance(o, partial):
@@ -437,7 +441,8 @@ class ComponentBase(ABC):
         for oo in o():
             if not isinstance(oo, pd.DataFrame):
                 outs = pd.DataFrame(oo if isinstance(oo, list) else [oo])
-            else: outs = oo
+            else:
+                outs = oo
         return self._param.output_var_name, outs
 
     def reset(self):
@@ -479,13 +484,15 @@ class ComponentBase(ABC):
                     outs.append(pd.DataFrame([{"content": q["value"]}]))
             if outs:
                 df = pd.concat(outs, ignore_index=True)
-                if "content" in df: df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
+                if "content" in df:
+                    df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
                 return df
 
         upstream_outs = []
 
         for u in reversed_cpnts[::-1]:
-            if self.get_component_name(u) in ["switch", "concentrator"]: continue
+            if self.get_component_name(u) in ["switch", "concentrator"]:
+                continue
             if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":
                 o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
                 if o is not None:
@@ -529,7 +536,8 @@ class ComponentBase(ABC):
         reversed_cpnts.extend(self._canvas.path[-1])
 
         for u in reversed_cpnts[::-1]:
-            if self.get_component_name(u) in ["switch", "answer"]: continue
+            if self.get_component_name(u) in ["switch", "answer"]:
+                continue
             return self._canvas.get_component(u)["obj"].output()[1]
 
     @staticmethod

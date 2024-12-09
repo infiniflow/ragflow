@@ -1,1 +1,5 @@
-from .ragflow_chat import *
+from .ragflow_chat import RAGFlowChat
+
+__all__ = [
+    "RAGFlowChat"
+]

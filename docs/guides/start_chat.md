@@ -21,7 +21,7 @@ You start an AI conversation by creating an assistant.
    - **Empty response**:
      - If you wish to *confine* RAGFlow's answers to your knowledge bases, leave a response here. Then, when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
      - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your knowledge bases, leave it blank, which may give rise to hallucinations.
-   - **Show Quote**: This is a key feature of RAGFlow and enabled by default. RAGFlow does not work like a black box. instead, it clearly shows the sources of information that its responses are based on.
+   - **Show quote**: This is a key feature of RAGFlow and enabled by default. RAGFlow does not work like a black box. instead, it clearly shows the sources of information that its responses are based on.
    - Select the corresponding knowledge bases. You can select one or multiple knowledge bases, but ensure that they use the same embedding model, otherwise an error would occur.
 
 3. Update **Prompt Engine**:
@@ -35,7 +35,7 @@ You start an AI conversation by creating an assistant.
 4. Update **Model Setting**:
 
    - In **Model**: you select the chat model. Though you have selected the default chat model in **System Model Settings**, RAGFlow allows you to choose an alternative chat model for your dialogue.
-   - **Freedom** refers to the level that the LLM improvises. From **Improvise**, **Precise**, to **Balance**, each freedom level corresponds to a unique combination of **Temperature**, **Top P**, **Presence Penalty**, and **Frequency Penalty**.
+   - **Freedom** refers to the level that the LLM improvises. From **Improvise**, **Precise**, to **Balance**, each freedom level corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.
    - **Temperature**: Level of the prediction randomness of the LLM. The higher the value, the more creative the LLM is.
    - **Top P** is also known as "nucleus sampling". See [here](https://en.wikipedia.org/wiki/Top-p_sampling) for more information.
    - **Max Tokens**: The maximum length of the LLM's responses. Note that the responses may be curtailed if this value is set too low.

@@ -14,12 +14,12 @@
 #  limitations under the License.
 #
 
-from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
+from api.db.services.canvas_service import UserCanvasService
 from api.utils.api_utils import get_error_data_result, token_required
 from api.utils.api_utils import get_result
 from flask import request
 
-@manager.route('/agents', methods=['GET'])
+@manager.route('/agents', methods=['GET'])  # noqa: F821
 @token_required
 def list_agents(tenant_id):
     id = request.args.get("id")
