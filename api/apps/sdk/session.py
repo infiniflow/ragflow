@@ -375,14 +375,14 @@ def chatbot_completions(dialog_id):
         req["quote"] = False
 
     if req.get("stream", True):
-        resp = Response(iframe_completion(objs[0].tenant_id, dialog_id, **req), mimetype="text/event-stream")
+        resp = Response(iframe_completion(dialog_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    for answer in agent_completion(objs[0].tenant_id, dialog_id, **req):
+    for answer in iframe_completion(dialog_id, **req):
         return get_result(data=answer)
 
 
