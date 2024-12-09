@@ -89,6 +89,8 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
         assert e, "Session not found!"
         canvas = Canvas(json.dumps(conv.dsl), tenant_id)
 
+    if not conv.message:
+        conv.message = []
     messages = conv.message
     question = {
         "role": "user",

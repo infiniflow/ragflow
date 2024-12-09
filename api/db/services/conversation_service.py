@@ -176,6 +176,8 @@ def iframe_completion(dialog_id, question, session_id=None, stream=True, **kwarg
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
 
+    if not conv.message:
+        conv.message = []
     messages = conv.message
     question = {
         "role": "user",
