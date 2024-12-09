@@ -18,7 +18,8 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
     chunks = build_knowledge_graph_chunks(tenant_id, sections, callback,
                                           parser_config.get("entity_types", ["organization", "person", "location", "event", "time"])
                                           )
-    for c in chunks: c["docnm_kwd"] = filename
+    for c in chunks:
+        c["docnm_kwd"] = filename
 
     doc = {
         "docnm_kwd": filename,

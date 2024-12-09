@@ -533,7 +533,8 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             try:
                 mind_map = json.dumps(mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]).output,
                                       ensure_ascii=False, indent=2)
-                if len(mind_map) < 32: raise Exception("Few content: " + mind_map)
+                if len(mind_map) < 32:
+                    raise Exception("Few content: " + mind_map)
                 cks.append({
                     "id": get_uuid(),
                     "doc_id": doc_id,

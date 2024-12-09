@@ -133,7 +133,6 @@ def chat_completion(tenant_id, chat_id):
 @token_required
 def agent_completions(tenant_id, agent_id):
     req = request.json
-
     if req.get("stream", True):
         resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")

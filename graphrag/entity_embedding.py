@@ -8,7 +8,9 @@ Reference:
 from typing import Any
 import numpy as np
 import networkx as nx
+from dataclasses import dataclass
 from graphrag.leiden import stable_largest_connected_component
+import graspologic as gc
 
 
 @dataclass
