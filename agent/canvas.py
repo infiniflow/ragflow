@@ -21,6 +21,7 @@ from functools import partial
 from agent.component import component_class
 from agent.component.base import ComponentBase
 
+
 class Canvas(ABC):
     """
     dsl = {
@@ -310,3 +311,12 @@ class Canvas(ABC):
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
+
+    def set_global_param(self, **kwargs):
+        for k, v in kwargs.items():
+            for q in self.components["begin"]["obj"]._param.query:
+                if k != q["key"]: continue
+                q["value"] = v
+
+    def get_preset_param(self):
+        return self.components["begin"]["obj"]._param.query
