@@ -302,19 +302,16 @@ def chat(dialog, messages, stream=True, **kwargs):
                 if delta.isdigit():
                     # 处理总令牌数（如果需要）
                     total_tokens = int(delta)
-                    # logging.info(f"Total tokens used: {total_tokens}")
                     continue
                 # elif delta in [LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN]:
                 #     # 处理长度通知信息
                 #     answer += delta
-                #     # logging.info(f"Length notification: {delta}")
                 #     audio = tts(tts_mdl, delta)
                 #     yield {"answer": answer, "reference": {}, "audio_binary": audio}
                 #     continue
                 elif "\n**ERROR**:" in delta:
                     # 处理错误信息
                     answer += delta
-                    # logging.error(f"Error in response: {delta}")
                     yield {"answer": answer, "reference": {}, "audio_binary": b''}  # 错误时不生成音频
                     continue
 
@@ -344,7 +341,6 @@ def chat(dialog, messages, stream=True, **kwargs):
 
                 # 生成音频
                 audio = tts(tts_mdl, new_text)
-                # logging.info(f"Generated audio for new_text: {new_text}")
                 yield {"answer": answer, "reference": {}, "audio_binary": audio}
 
         # 最终装饰答案
