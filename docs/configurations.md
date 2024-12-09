@@ -93,8 +93,8 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:dev-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:dev`: The RAGFlow Docker image with embedding models including:
+  - `infiniflow/ragflow:v0.14.1-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.14.1`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
       - `BAAI/bge-reranker-v2-m3`
@@ -113,12 +113,12 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 :::tip NOTE  
 If you cannot download the RAGFlow Docker image, try the following mirrors.  
 
-- For the `dev-slim` edition:  
-  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev-slim` or,
-  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev-slim`.
-- For the `dev` edition:  
-  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev` or,
-  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev`.
+- For the `nightly-slim` edition:  
+  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly-slim` or,
+  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly-slim`.
+- For the `nightly` edition:  
+  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
+  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
 :::
 
 ### Timezone
