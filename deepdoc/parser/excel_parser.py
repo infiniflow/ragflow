@@ -29,7 +29,8 @@ class RAGFlowExcelParser:
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             rows = list(ws.rows)
-            if not rows: continue
+            if not rows:
+                continue
 
             tb_rows_0 = "<tr>"
             for t in list(rows[0]):
@@ -40,7 +41,9 @@ class RAGFlowExcelParser:
                 tb = ""
                 tb += f"<table><caption>{sheetname}</caption>"
                 tb += tb_rows_0
-                for r in list(rows[1 + chunk_i * chunk_rows:1 + (chunk_i + 1) * chunk_rows]):
+                for r in list(
+                    rows[1 + chunk_i * chunk_rows : 1 + (chunk_i + 1) * chunk_rows]
+                ):
                     tb += "<tr>"
                     for i, c in enumerate(r):
                         if c.value is None:
@@ -62,20 +65,21 @@ class RAGFlowExcelParser:
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             rows = list(ws.rows)
-            if not rows:continue
+            if not rows:
+                continue
             ti = list(rows[0])
             for r in list(rows[1:]):
-                l = []
+                fields = []
                 for i, c in enumerate(r):
                     if not c.value:
                         continue
                     t = str(ti[i].value) if i < len(ti) else ""
                     t += ("：" if t else "") + str(c.value)
-                    l.append(t)
-                l = "; ".join(l)
+                    fields.append(t)
+                line = "; ".join(fields)
                 if sheetname.lower().find("sheet") < 0:
-                    l += " ——" + sheetname
-                res.append(l)
+                    line += " ——" + sheetname
+                res.append(line)
         return res
 
     @staticmethod

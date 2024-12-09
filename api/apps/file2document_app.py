@@ -28,7 +28,7 @@ from api import settings
 from api.utils.api_utils import get_json_result
 
 
-@manager.route('/convert', methods=['POST'])
+@manager.route('/convert', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_ids", "kb_ids")
 def convert():
@@ -92,7 +92,7 @@ def convert():
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['POST'])
+@manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_ids")
 def rm():

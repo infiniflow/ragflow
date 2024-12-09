@@ -22,7 +22,7 @@ from api import settings
 from api.utils.api_utils import validate_request, build_error_result, apikey_required
 
 
-@manager.route('/dify/retrieval', methods=['POST'])
+@manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
 @validate_request("knowledge_id", "query")
 def retrieval(tenant_id):

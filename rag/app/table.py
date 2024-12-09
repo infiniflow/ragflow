@@ -41,14 +41,16 @@ class Excel(ExcelParser):
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             rows = list(ws.rows)
-            if not rows:continue
+            if not rows:
+                continue
             headers = [cell.value for cell in rows[0]]
             missed = set([i for i, h in enumerate(headers) if h is None])
             headers = [
                 cell.value for i,
                 cell in enumerate(
                     rows[0]) if i not in missed]
-            if not headers:continue
+            if not headers:
+                continue
             data = []
             for i, r in enumerate(rows[1:]):
                 rn += 1
@@ -88,7 +90,6 @@ def trans_bool(s):
 
 def column_data_type(arr):
     arr = list(arr)
-    uni = len(set([a for a in arr if a is not None]))
     counts = {"int": 0, "float": 0, "text": 0, "datetime": 0, "bool": 0}
     trans = {t: f for f, t in
              [(int, "int"), (float, "float"), (trans_datatime, "datetime"), (trans_bool, "bool"), (str, "text")]}
@@ -157,7 +158,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
                 continue
             if i >= to_page:
                 break
-            row = [l for l in line.split(kwargs.get("delimiter", "\t"))]
+            row = [field for field in line.split(kwargs.get("delimiter", "\t"))]
             if len(row) != len(headers):
                 fails.append(str(i))
                 continue

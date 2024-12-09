@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 from abc import ABC
-import re
 from agent.component.base import ComponentBase, ComponentParamBase
 import deepl
 

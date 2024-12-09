@@ -51,6 +51,7 @@ class RAGFlowTxtParser:
         dels = [d for d in dels if d]
         dels = "|".join(dels)
         secs = re.split(r"(%s)" % dels, txt)
-        for sec in secs: add_chunk(sec)
+        for sec in secs:
+            add_chunk(sec)
 
         return [[c, ""] for c in cks]
