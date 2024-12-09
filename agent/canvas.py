@@ -315,7 +315,8 @@ class Canvas(ABC):
     def set_global_param(self, **kwargs):
         for k, v in kwargs.items():
             for q in self.components["begin"]["obj"]._param.query:
-                if k != q["key"]: continue
+                if k != q["key"]:
+                    continue
                 q["value"] = v
 
     def get_preset_param(self):

@@ -14,10 +14,9 @@
 #  limitations under the License.
 #
 import json
-from copy import deepcopy
 from uuid import uuid4
 from agent.canvas import Canvas
-from api.db.db_models import DB, API4Conversation, CanvasTemplate, UserCanvas
+from api.db.db_models import DB, CanvasTemplate, UserCanvas
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.conversation_service import structure_answer
@@ -103,7 +102,8 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
         if m["role"] == "assistant" and not msg:
             continue
         msg.append(m)
-    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
 
     if not conv.reference:
@@ -147,7 +147,8 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
 
     else:
         for answer in canvas.run(stream=False):
-            if answer.get("running_status"): continue
+            if answer.get("running_status"):
+                continue
             final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
             canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
             if final_ans.get("reference"):

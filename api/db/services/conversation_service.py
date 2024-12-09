@@ -15,7 +15,7 @@
 #
 from uuid import uuid4
 from api.db import StatusEnum
-from api.db.db_models import Conversation, DB, API4Conversation
+from api.db.db_models import Conversation, DB
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.dialog_service import DialogService, chat
@@ -112,8 +112,10 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
     }
     conv.message.append(question)
     for m in conv.message:
-        if m["role"] == "system": continue
-        if m["role"] == "assistant" and not msg: continue
+        if m["role"] == "system":
+            continue
+        if m["role"] == "assistant" and not msg:
+            continue
         msg.append(m)
     message_id = msg[-1].get("id")
     e, dia = DialogService.get_by_id(conv.dialog_id)
