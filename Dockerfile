@@ -43,6 +43,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     fi; \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    chmod 1777 /tmp && \
     apt update && \
     apt --no-install-recommends install -y ca-certificates && \
     apt update && \
