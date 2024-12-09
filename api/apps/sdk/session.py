@@ -78,14 +78,10 @@ def create_an_agent_session(tenant_id,agent_id,user_id):
         result_list =  temp_dsl["components"]["begin"]["obj"]["params"]["query"]
         result_list[0]["value"]=language
         result_list[1]["value"]=file_value
-        UserCanvasService.update_by_id(cvs.id,{"dsl":temp_dsl})
-        cvs.dsl = json.dumps(temp_dsl, ensure_ascii=False)
-        canvas = Canvas(cvs.dsl,tenant_id)
+        canvas = Canvas(json.dumps(temp_dsl), tenant_id)
         canvas.reset()
-        dsl = json.loads(str(canvas))
-    else:
-        canvas.reset()
-        dsl = json.loads(cvs.dsl)
+    dsl = json.loads(str(canvas))
+    UserCanvasService.update_by_id(cvs.id, {"dsl": dsl})
     conv = {
         "id": get_uuid(),
         "dialog_id": cvs.id,
@@ -244,6 +240,7 @@ def completion(tenant_id, chat_id):
 @token_required
 def agent_completion(tenant_id, agent_id):
     req = request.json
+    stream = req.get("stream", True)
     user_id = req.get("user_id","")
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
@@ -255,7 +252,8 @@ def agent_completion(tenant_id, agent_id):
         conv = create_an_agent_session(tenant_id,agent_id,user_id)
         if isinstance(conv,str):
             return get_error_data_result(conv)
-        conv = API4Conversation(**conv)
+        conv = API4ConversationService.query(id=conv["id"])
+        conv = conv[0]
         canvas = Canvas(json.dumps(conv.dsl), tenant_id)
     else:
         conv=API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
@@ -264,86 +262,23 @@ def agent_completion(tenant_id, agent_id):
         conv = conv[0]
         canvas = Canvas(json.dumps(conv.dsl), tenant_id)
     session_id =conv.id
-    messages = conv.message
-    question = req.get("question")
-    if canvas.judge_translation():
-        if question:
-            return get_error_data_result("`question` can't be provided")
-    else:
-        if not question:
-            return get_error_data_result("`question` is required")
-        question = {
-            "role": "user",
-            "content": question,
-            "id": str(uuid4())
-        }
-        messages.append(question)
-    msg = []
-    for m in messages:
-        if m["role"] == "system":
-            continue
-        if m["role"] == "assistant" and not msg:
-            continue
-        msg.append(m)
-    if not question:
-        message_id = str(uuid4())
-    else:
-        message_id = question["id"]
-
-    stream = req.get("stream", True)
-
-    def fillin_conv(ans):
-        reference = ans["reference"]
-        temp_reference = deepcopy(ans["reference"])
-        nonlocal conv, message_id
-        if not conv.reference:
-            conv.reference.append(temp_reference)
-        else:
-            conv.reference[-1] = temp_reference
-        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
-        if "chunks" in reference:
-            chunks = reference.get("chunks")
-            chunk_list = []
-            for chunk in chunks:
-                new_chunk = {
-                    "id": chunk["chunk_id"],
-                    "content": chunk["content"],
-                    "document_id": chunk["doc_id"],
-                    "document_name": chunk["docnm_kwd"],
-                    "dataset_id": chunk["kb_id"],
-                    "image_id": chunk["image_id"],
-                    "similarity": chunk["similarity"],
-                    "vector_similarity": chunk["vector_similarity"],
-                    "term_similarity": chunk["term_similarity"],
-                    "positions": chunk["positions"],
-                }
-                chunk_list.append(new_chunk)
-            reference["chunks"] = chunk_list
-        ans["id"] = message_id
-        ans["session_id"] = session_id
-
-    def rename_field(ans):
-        reference = ans['reference']
-        if not isinstance(reference, dict):
-            return
-        for chunk_i in reference.get('chunks', []):
-            if 'docnm_kwd' in chunk_i:
-                chunk_i['doc_name'] = chunk_i['docnm_kwd']
-                chunk_i.pop('docnm_kwd')
-
-    if not conv.reference:
-        conv.reference = []
-    conv.message.append({"role": "assistant", "content": "", "id": message_id})
-    conv.reference.append({"chunks": [], "doc_aggs": []})
-
     final_ans = {"reference": [], "content": ""}
+    message_id = get_uuid()
     if not canvas.judge_translation():
-        canvas.add_user_input(msg[-1]["content"])
+        if req.get("question"):
+            canvas.messages.append({"role": "user", "content": req["question"], "id": message_id})
+            canvas.add_user_input(req["question"])
+        else:
+            return get_error_data_result("`question` is required. ")
+    else:
+        if req.get("question"):
+            return get_error_data_result("`question` can't be provided.")
+
     if stream:
         def sse():
             nonlocal answer, cvs
             try:
-                for ans in canvas.run(stream=stream):
+                for ans in canvas.run(stream=True):
                     if ans.get("running_status"):
                         yield "data:" + json.dumps({"code": 0, "message": "",
                                                     "data": {"answer": ans["content"],
@@ -353,24 +288,25 @@ def agent_completion(tenant_id, agent_id):
                     for k in ans.keys():
                         final_ans[k] = ans[k]
                     ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
-                    fillin_conv(ans)
-                    rename_field(ans)
-                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
-                                               ensure_ascii=False) + "\n\n"
+                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
 
                 canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
                 canvas.history.append(("assistant", final_ans["content"]))
                 if final_ans.get("reference"):
                     canvas.reference.append(final_ans["reference"])
-                conv.dsl = json.loads(str(canvas))
-                API4ConversationService.append_message(conv.id, conv.to_dict())
+                cvs.dsl = json.loads(str(canvas))
+                UserCanvasService.update_by_id(agent_id, cvs.to_dict())
+                conv.dsl = cvs.dsl
+                API4ConversationService.append_message(conv.id,conv.to_dict())
             except Exception as e:
-                conv.dsl = json.loads(str(canvas))
-                API4ConversationService.append_message(conv.id, conv.to_dict())
+                cvs.dsl = json.loads(str(canvas))
+                UserCanvasService.update_by_id(agent_id, cvs.to_dict())
+                conv.dsl = cvs.dsl
+                API4ConversationService.append_message(conv.id,conv.to_dict())
                 yield "data:" + json.dumps({"code": 500, "message": str(e),
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                            ensure_ascii=False) + "\n\n"
-            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 0, "message": "", "data": True,"session_id":session_id}, ensure_ascii=False) + "\n\n"
 
         resp = Response(sse(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -385,13 +321,11 @@ def agent_completion(tenant_id, agent_id):
         canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
         if final_ans.get("reference"):
             canvas.reference.append(final_ans["reference"])
-        conv.dsl = json.loads(str(canvas))
-
-        result = {"answer": final_ans["content"], "reference": final_ans.get("reference", [])}
-        fillin_conv(result)
+        cvs.dsl = json.loads(str(canvas))
+        UserCanvasService.update_by_id(agent_id, cvs.to_dict())
+        conv.dsl = cvs.dsl
         API4ConversationService.append_message(conv.id, conv.to_dict())
-        rename_field(result)
-        return get_result(data=result)
+        return get_result(data={"answer": final_ans["content"], "reference": final_ans.get("reference", []),"session_id":session_id})
 
 
 
