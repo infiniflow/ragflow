@@ -13,7 +13,7 @@ Released on November 29, 2024.
 
 ### Improvements
 
-Adds [Infinity's configuration file](https://github.com/infiniflow/ragflow/blob/main/docker/infinity_conf.toml) to facilitate customization of Infinity as a document engine. From this release onwards, updates to Infinity's configuration will take effect after you restart RAGFlow using `docker compose`. [#3715](https://github.com/infiniflow/ragflow/pull/3715)
+Adds [Infinity's configuration file](https://github.com/infiniflow/ragflow/blob/main/docker/infinity_conf.toml) to facilitate integration and customization of Infinity as a document engine. From this release onwards, updates to Infinity's configuration will take effect after you restart RAGFlow using `docker compose`. [#3715](https://github.com/infiniflow/ragflow/pull/3715)
 
 ### Fixed issues
 
