@@ -322,6 +322,9 @@ export default {
       ellipse: 'Elip',
       graph: 'Biểu đồ kiến thức',
       mind: 'Sơ đồ tư duy',
+      question: 'Câu hỏi',
+      questionTip:
+        'Nếu có những câu hỏi được đưa ra, việc nhúng phần đó sẽ dựa trên những câu hỏi đó.',
     },
     chat: {
       newConversation: 'Cuộc trò chuyện mới',
@@ -1052,6 +1055,20 @@ export default {
       bingTip: `Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.bing.com/. Thông thường, nó hoạt động như một phần bổ sung cho cơ sở tri thức. Top N và khóa đăng ký Bing chỉ định số lượng kết quả tìm kiếm bạn cần điều chỉnh.`,
       gitHubDescription: `Thành phần này được sử dụng để tìm kiếm các kho lưu trữ từ https://github.com/. Top N chỉ định số lượng kết quả tìm kiếm cần điều chỉnh.`,
       flow: `Quy trình làm việc`,
+      emailDescription: 'Gửi email đến địa chỉ đã chỉ định',
+      toEmail: 'Email người nhận',
+      smtpServerRequired: 'Vui lòng nhập địa chỉ máy chủ SMTP',
+      emailContent: 'Nội dung',
+      smtpServer: 'SMTP Server',
+      smtpPort: 'SMTP Port',
+      senderEmailRequired: 'Vui lòng nhập email người gửi',
+      authCodeRequired: 'Vui lòng nhập mã xác thực',
+      toEmailRequired: 'Vui lòng nhập email người nhận',
+      emailContentRequired: 'Vui lòng nhập nội dung email',
+      emailSentSuccess: 'Email đã được gửi thành công',
+      emailSentFailed: 'Không gửi được email',
+      jsonFormatTip:
+        'Thành phần thượng nguồn phải cung cấp chuỗi JSON theo định dạng sau:',
     },
     footer: {
       profile: 'All rights reserved @ React',
