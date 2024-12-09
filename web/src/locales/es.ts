@@ -98,7 +98,7 @@ export default {
       processDuration: 'Duración del proceso',
       progressMsg: 'Mensaje de progreso',
       testingDescription:
-        '¡Último paso! Después del éxito, deja el resto al AI de Infiniflow.',
+        '¡Último paso! Después del éxito, deja el resto al AI de RAGFlow.',
       similarityThreshold: 'Umbral de similitud',
       similarityThresholdTip:
         'Usamos una puntuación de similitud híbrida para evaluar la distancia entre dos líneas de texto. Se pondera la similitud de palabras clave y la similitud coseno de vectores. Si la similitud entre la consulta y el fragmento es menor que este umbral, el fragmento será filtrado.',

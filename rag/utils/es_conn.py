@@ -132,7 +132,8 @@ class ESConnection(DocStoreConnection):
                     bqry.filter.append(
                         Q("bool", must_not=Q("range", available_int={"lt": 1})))
                 continue
-            if not v: continue
+            if not v:
+                continue
             if isinstance(v, list):
                 bqry.filter.append(Q("terms", **{k: v}))
             elif isinstance(v, str) or isinstance(v, int):

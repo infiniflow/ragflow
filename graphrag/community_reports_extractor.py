@@ -88,7 +88,8 @@ class CommunityReportsExtractor:
                                 ("findings", list),
                                 ("rating", float),
                                 ("rating_explanation", str),
-                            ]): continue
+                            ]):
+                        continue
                     response["weight"] = weight
                     response["entities"] = ents
                 except Exception as e:
@@ -100,7 +101,8 @@ class CommunityReportsExtractor:
                 res_str.append(self._get_text_output(response))
                 res_dict.append(response)
                 over += 1
-                if callback: callback(msg=f"Communities: {over}/{total}, elapsed: {timer() - st}s, used tokens: {token_count}")
+                if callback:
+                    callback(msg=f"Communities: {over}/{total}, elapsed: {timer() - st}s, used tokens: {token_count}")
 
         return CommunityReportsResult(
             structured_output=res_dict,
