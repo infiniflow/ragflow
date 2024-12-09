@@ -160,7 +160,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3. Bangun image Docker pre-built dan jalankan server:
 
-   > Perintah di bawah ini akan mengunduh versi dev dari Docker image RAGFlow slim (`dev-slim`). Image RAGFlow slim
+   > Perintah di bawah ini akan mengunduh versi v0.14.1 dari Docker image RAGFlow slim (`v0.14.1-slim`). Image RAGFlow slim
    tidak termasuk model embedding atau library Python dan berukuran sekitar 1GB.
 
    ```bash
@@ -168,18 +168,16 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > - Untuk mengunduh versi tertentu dari image Docker RAGFlow slim, perbarui variabel `RAGFlow_IMAGE` di *
-       *docker/.env** sesuai dengan versi yang diinginkan. Misalnya, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1-slim`.
-       Setelah mengubah ini, jalankan ulang perintah di atas untuk memulai unduhan.
-   > - Untuk mengunduh versi dev dari image Docker RAGFlow *termasuk* model embedding dan library Python, perbarui
-       variabel `RAGFlow_IMAGE` di **docker/.env** menjadi `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. Setelah mengubah ini,
-       jalankan ulang perintah di atas untuk memulai unduhan.
-   > - Untuk mengunduh versi tertentu dari image Docker RAGFlow *termasuk* model embedding dan library Python, perbarui
-       variabel `RAGFlow_IMAGE` di **docker/.env** sesuai dengan versi yang diinginkan. Misalnya,
-       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1`. Setelah mengubah ini, jalankan ulang perintah di atas untuk memulai unduhan.
+   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | comments               |
+   | -------------------------------- | ----- | ------------------------------------------------------- | ---------------------- |
+   | v0.14.1                          | ~9 GB | YES                                                     | stable release         |
+   | v0.14.1-slim                     | ~2 GB | NO                                                      | stable release         |
+   | v0.15.0-dev1                     | ~9 GB | YES                                                     | unstable beta release  |
+   | v0.15.0-dev1-slim                | ~2 GB | NO                                                      | unstable beta release  |
+   | nightly                          | ~9 GB | YES                                                     | unstable nightly build |
+   | nightly-slim                     | ~2 GB | NO                                                      | unstable nightly build |
 
-   > **CATATAN:** Image Docker RAGFlow yang mencakup model embedding dan library Python berukuran sekitar 9GB
-   dan mungkin memerlukan waktu lebih lama untuk dimuat.
+
 
 4. Periksa status server setelah server aktif dan berjalan:
 
@@ -242,12 +240,12 @@ Pembaruan konfigurasi ini memerlukan reboot semua kontainer agar efektif:
 
 ## 🔧 Membangun Docker Image tanpa Model Embedding
 
-Image ini berukuran sekitar 1 GB dan bergantung pada aplikasi LLM eksternal dan embedding.
+Image ini berukuran sekitar 2 GB dan bergantung pada aplikasi LLM eksternal dan embedding.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 Membangun Docker Image Termasuk Model Embedding
@@ -257,7 +255,7 @@ Image ini berukuran sekitar 9 GB. Karena sudah termasuk model embedding, ia hany
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 Menjalankan Aplikasi dari untuk Pengembangan
