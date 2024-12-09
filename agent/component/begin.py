@@ -26,6 +26,7 @@ class BeginParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.prologue = "Hi! I'm your smart assistant. What can I do for you?"
+        self.query = []
 
     def check(self):
         return True

@@ -383,9 +383,6 @@ class ComponentBase(ABC):
             "params": {}
         }
         """
-        out = json.loads(str(self._param)).get("output", {})
-        if isinstance(out, dict) and "vector" in out:
-            del out["vector"]
         return """{{
             "component_name": "{}",
             "params": {},
@@ -393,7 +390,7 @@ class ComponentBase(ABC):
             "inputs": {}
         }}""".format(self.component_name,
                      self._param,
-                     json.dumps(out, ensure_ascii=False),
+                     json.dumps(json.loads(str(self._param)).get("output", {}), ensure_ascii=False),
                      json.dumps(json.loads(str(self._param)).get("inputs", []), ensure_ascii=False)
         )
 
@@ -462,7 +459,7 @@ class ComponentBase(ABC):
             self._param.inputs = []
             outs = []
             for q in self._param.query:
-                if q["component_id"]:
+                if q.get("component_id"):
                     if q["component_id"].split("@")[0].lower().find("begin") >= 0:
                         cpn_id, key = q["component_id"].split("@")
                         for p in self._canvas.get_component(cpn_id)["obj"]._param.query:

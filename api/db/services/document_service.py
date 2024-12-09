@@ -425,11 +425,12 @@ def queue_raptor_tasks(doc):
 
 def doc_upload_and_parse(conversation_id, file_objs, user_id):
     from rag.app import presentation, picture, naive, audio, email
-    from api.db.services.dialog_service import ConversationService, DialogService
+    from api.db.services.dialog_service import DialogService
     from api.db.services.file_service import FileService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.user_service import TenantService
     from api.db.services.api_service import API4ConversationService
+    from api.db.services.conversation_service import ConversationService
 
     e, conv = ConversationService.get_by_id(conversation_id)
     if not e:
