@@ -47,6 +47,8 @@ class ConversationService(CommonService):
 
 def structure_answer(conv, ans, message_id, session_id):
     reference = ans["reference"]
+    if not isinstance(reference, dict):
+        reference = {}
     temp_reference = deepcopy(ans["reference"])
     if not conv.reference:
         conv.reference.append(temp_reference)
