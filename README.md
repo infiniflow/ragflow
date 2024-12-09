@@ -165,10 +165,10 @@ releases! 🌟
    $ git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. Build the pre-built Docker images and start up the server:
+3. Start up the server using the pre-built Docker images:
 
-   > The command below downloads the nightly version Docker image for RAGFlow slim (`v0.14.1-slim`). Note that RAGFlow slim
-   Docker images do not include embedding models or Python libraries and hence are approximately 1GB in size.
+   > The command below downloads the v0.14.1 version Docker image for RAGFlow slim (`v0.14.1-slim`). Note that RAGFlow slim
+   Docker images do not include embedding models or Python libraries and hence are approximately 2 GB in size.
 
    ```bash
    $ cd ragflow/docker
