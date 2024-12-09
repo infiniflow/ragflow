@@ -498,6 +498,9 @@ def change_parser():
 # @login_required
 def get_image(image_id):
     try:
+        arr = image_id.split("-")
+        if len(arr) != 2:
+            return get_data_error_result(message="Image not found.")
         bkt, nm = image_id.split("-")
         response = flask.make_response(STORAGE_IMPL.get(bkt, nm))
         response.headers.set('Content-Type', 'image/JPEG')
