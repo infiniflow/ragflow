@@ -149,7 +149,7 @@
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | comments               |
+   | RAGFLOW_IMAGE tag in docker/.env | 尺寸  | 内置 embedding 模型和相关 Python 库?                    | 描述                   |
    | -------------------------------- | ----- | ------------------------------------------------------- | ---------------------- |
    | v0.14.1                          | ~9 GB | YES                                                     | stable release         |
    | v0.14.1-slim                     | ~2 GB | NO                                                      | stable release         |
