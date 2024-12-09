@@ -106,15 +106,15 @@ def message_fit_in(msg, max_length=4000):
         return c, msg
 
     ll = num_tokens_from_string(msg_[0]["content"])
-    l = num_tokens_from_string(msg_[-1]["content"])
-    if ll / (ll + l) > 0.8:
+    ll2 = num_tokens_from_string(msg_[-1]["content"])
+    if ll / (ll + ll2) > 0.8:
         m = msg_[0]["content"]
-        m = encoder.decode(encoder.encode(m)[:max_length - l])
+        m = encoder.decode(encoder.encode(m)[:max_length - ll2])
         msg[0]["content"] = m
         return max_length, msg
 
     m = msg_[1]["content"]
-    m = encoder.decode(encoder.encode(m)[:max_length - l])
+    m = encoder.decode(encoder.encode(m)[:max_length - ll2])
     msg[1]["content"] = m
     return max_length, msg
 
@@ -257,7 +257,8 @@ def chat(dialog, messages, stream=True, **kwargs):
             idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
             recall_docs = [
                 d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
-            if not recall_docs: recall_docs = kbinfos["doc_aggs"]
+            if not recall_docs:
+                recall_docs = kbinfos["doc_aggs"]
             kbinfos["doc_aggs"] = recall_docs
 
             refs = deepcopy(kbinfos)
@@ -266,7 +267,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                     del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
-            answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
+            answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
         done_tm = timer()
         prompt += "\n\n### Elapsed\n  - Refine Question: %.1f ms\n  - Keywords: %.1f ms\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms" % (
             (refineQ_tm - st) * 1000, (keyword_tm - refineQ_tm) * 1000, (retrieval_tm - keyword_tm) * 1000,
@@ -433,13 +434,15 @@ def relevant(tenant_id, llm_id, question, contents: list):
         Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question.
         No other words needed except 'yes' or 'no'.
     """
-    if not contents:return False
+    if not contents:
+        return False
     contents = "Documents: \n" + "   - ".join(contents)
     contents = f"Question: {question}\n" + contents
     if num_tokens_from_string(contents) >= chat_mdl.max_length - 4:
         contents = encoder.decode(encoder.encode(contents)[:chat_mdl.max_length - 4])
     ans = chat_mdl.chat(prompt, [{"role": "user", "content": contents}], {"temperature": 0.01})
-    if ans.lower().find("yes") >= 0: return True
+    if ans.lower().find("yes") >= 0:
+        return True
     return False
 
 
@@ -481,8 +484,10 @@ Requirements:
     ]
     _, msg = message_fit_in(msg, chat_mdl.max_length)
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
-    if isinstance(kwd, tuple): kwd = kwd[0]
-    if kwd.find("**ERROR**") >=0: return ""
+    if isinstance(kwd, tuple):
+        kwd = kwd[0]
+    if kwd.find("**ERROR**") >=0:
+        return ""
     return kwd
 
 
@@ -508,8 +513,10 @@ Requirements:
     ]
     _, msg = message_fit_in(msg, chat_mdl.max_length)
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
-    if isinstance(kwd, tuple): kwd = kwd[0]
-    if kwd.find("**ERROR**") >= 0: return ""
+    if isinstance(kwd, tuple):
+        kwd = kwd[0]
+    if kwd.find("**ERROR**") >= 0:
+        return ""
     return kwd
 
 
@@ -520,7 +527,8 @@ def full_question(tenant_id, llm_id, messages):
         chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
     conv = []
     for m in messages:
-        if m["role"] not in ["user", "assistant"]: continue
+        if m["role"] not in ["user", "assistant"]:
+            continue
         conv.append("{}: {}".format(m["role"].upper(), m["content"]))
     conv = "\n".join(conv)
     today = datetime.date.today().isoformat()
@@ -581,7 +589,8 @@ Output: What's the weather in Rochester on {tomorrow}?
 
 
 def tts(tts_mdl, text):
-    if not tts_mdl or not text: return
+    if not tts_mdl or not text:
+        return
     bin = b""
     for chunk in tts_mdl.tts(text):
         bin += chunk
@@ -641,7 +650,8 @@ def ask(question, kb_ids, tenant_id):
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [
             d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
-        if not recall_docs: recall_docs = kbinfos["doc_aggs"]
+        if not recall_docs:
+            recall_docs = kbinfos["doc_aggs"]
         kbinfos["doc_aggs"] = recall_docs
         refs = deepcopy(kbinfos)
         for c in refs["chunks"]:
@@ -649,7 +659,7 @@ def ask(question, kb_ids, tenant_id):
                 del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
-            answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
+            answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
         return {"answer": answer, "reference": refs}
 
     answer = ""
