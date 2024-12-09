@@ -29,17 +29,19 @@ import {
   useSelectDerivedConversationList,
 } from './hooks';
 
+import EmbedModal from '@/components/api-service/embed-modal';
+import { useShowEmbedModal } from '@/components/api-service/hooks';
 import SvgIcon from '@/components/svg-icon';
+import { SharedFrom } from '@/constants/chat';
 import {
   useClickConversationCard,
   useClickDialogCard,
   useFetchNextDialogList,
   useGetChatSearchParams,
 } from '@/hooks/chat-hooks';
-import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
+import { useTranslate } from '@/hooks/common-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { IDialog } from '@/interfaces/database/chat';
-import ChatIdModal from './chat-id-modal';
 import styles from './index.less';
 
 const { Text } = Typography;
@@ -80,13 +82,10 @@ const Chat = () => {
     showDialogEditModal,
   } = useEditDialog();
   const { t } = useTranslate('chat');
-  const {
-    visible: overviewVisible,
-    hideModal: hideOverviewModal,
-    showModal: showOverviewModal,
-  } = useSetModalState();
   const { currentRecord, setRecord } = useSetSelectedRecord<IDialog>();
   const [controller, setController] = useState(new AbortController());
+  const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
+    useShowEmbedModal();
 
   const handleAppCardEnter = (id: string) => () => {
     handleItemEnter(id);
@@ -118,7 +117,7 @@ const Chat = () => {
       info?.domEvent?.preventDefault();
       info?.domEvent?.stopPropagation();
       setRecord(dialog);
-      showOverviewModal();
+      showEmbedModal();
     };
 
   const handleRemoveConversation =
@@ -191,7 +190,7 @@ const Chat = () => {
         label: (
           <Space>
             <KeyOutlined />
-            {t('overview')}
+            {t('publish', { keyPrefix: 'flow' })}
           </Space>
         ),
       },
@@ -368,14 +367,16 @@ const Chat = () => {
         initialName={initialConversationName}
         loading={conversationRenameLoading}
       ></RenameModal>
-      {overviewVisible && (
-        <ChatIdModal
-          visible={overviewVisible}
-          hideModal={hideOverviewModal}
-          id={currentRecord.id}
-          name={currentRecord.name}
-          idKey="dialogId"
-        ></ChatIdModal>
+
+      {embedVisible && (
+        <EmbedModal
+          visible={embedVisible}
+          hideModal={hideEmbedModal}
+          token={currentRecord.id}
+          form={SharedFrom.Chat}
+          beta={beta}
+          isAgent={false}
+        ></EmbedModal>
       )}
     </Flex>
   );

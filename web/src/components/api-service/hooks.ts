@@ -6,6 +6,7 @@ import {
 } from '@/hooks/common-hooks';
 import {
   useCreateSystemToken,
+  useFetchManualSystemTokenList,
   useFetchSystemTokenList,
   useRemoveSystemToken,
 } from '@/hooks/user-setting-hooks';
@@ -17,9 +18,7 @@ import { useCallback } from 'react';
 export const useOperateApiKey = (idKey: string, dialogId?: string) => {
   const { removeToken } = useRemoveSystemToken();
   const { createToken, loading: creatingLoading } = useCreateSystemToken();
-  const { data: tokenList, loading: listLoading } = useFetchSystemTokenList({
-    [idKey]: dialogId,
-  });
+  const { data: tokenList, loading: listLoading } = useFetchSystemTokenList();
 
   const showDeleteConfirm = useShowDeleteConfirm();
 
@@ -77,12 +76,11 @@ const getUrlWithToken = (token: string, from: string = 'chat') => {
   return `${protocol}//${host}/chat/share?shared_id=${token}&from=${from}`;
 };
 
-const useFetchTokenListBeforeOtherStep = (idKey: string, dialogId?: string) => {
+const useFetchTokenListBeforeOtherStep = () => {
   const { showTokenEmptyError } = useShowTokenEmptyError();
 
-  const { data: tokenList, refetch } = useFetchSystemTokenList({
-    [idKey]: dialogId,
-  });
+  const { data: tokenList, fetchSystemTokenList } =
+    useFetchManualSystemTokenList();
 
   let token = '',
     beta = '';
@@ -96,15 +94,15 @@ const useFetchTokenListBeforeOtherStep = (idKey: string, dialogId?: string) => {
     Array.isArray(tokenList) && tokenList.length > 0 ? tokenList[0].token : '';
 
   const handleOperate = useCallback(async () => {
-    const ret = await refetch();
-    const list = ret.data;
+    const ret = await fetchSystemTokenList();
+    const list = ret;
     if (Array.isArray(list) && list.length > 0) {
       return list[0]?.token;
     } else {
       showTokenEmptyError();
       return false;
     }
-  }, [showTokenEmptyError, refetch]);
+  }, [fetchSystemTokenList, showTokenEmptyError]);
 
   return {
     token,
@@ -113,17 +111,14 @@ const useFetchTokenListBeforeOtherStep = (idKey: string, dialogId?: string) => {
   };
 };
 
-export const useShowEmbedModal = (idKey: string, dialogId?: string) => {
+export const useShowEmbedModal = () => {
   const {
     visible: embedVisible,
     hideModal: hideEmbedModal,
     showModal: showEmbedModal,
   } = useSetModalState();
 
-  const { handleOperate, token, beta } = useFetchTokenListBeforeOtherStep(
-    idKey,
-    dialogId,
-  );
+  const { handleOperate, token, beta } = useFetchTokenListBeforeOtherStep();
 
   const handleShowEmbedModal = useCallback(async () => {
     const succeed = await handleOperate();
@@ -141,8 +136,8 @@ export const useShowEmbedModal = (idKey: string, dialogId?: string) => {
   };
 };
 
-export const usePreviewChat = (idKey: string, dialogId?: string) => {
-  const { handleOperate } = useFetchTokenListBeforeOtherStep(idKey, dialogId);
+export const usePreviewChat = (idKey: string) => {
+  const { handleOperate } = useFetchTokenListBeforeOtherStep();
 
   const open = useCallback(
     (t: string) => {

@@ -72,8 +72,8 @@ export const useSendSharedMessage = () => {
     async (message: Message, id?: string) => {
       const res = await send({
         conversation_id: id ?? conversationId,
-        quote: false,
-        question: message,
+        quote: true,
+        question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
       });
 

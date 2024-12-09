@@ -3,8 +3,11 @@ import HightLightMarkdown from '@/components/highlight-markdown';
 import { SharedFrom } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { Card, Modal, Tabs, TabsProps } from 'antd';
+import { Card, Modal, Tabs, TabsProps, Typography } from 'antd';
+
 import styles from './index.less';
+
+const { Paragraph, Link } = Typography;
 
 const EmbedModal = ({
   visible,
@@ -12,7 +15,13 @@ const EmbedModal = ({
   token = '',
   form,
   beta = '',
-}: IModalProps<any> & { token: string; form: SharedFrom; beta: string }) => {
+  isAgent,
+}: IModalProps<any> & {
+  token: string;
+  form: SharedFrom;
+  beta: string;
+  isAgent: boolean;
+}) => {
   const { t } = useTranslate('chat');
 
   const text = `
@@ -66,6 +75,23 @@ const EmbedModal = ({
       onCancel={hideModal}
     >
       <Tabs defaultActiveKey="1" items={items} onChange={onChange} />
+      <div className="text-base font-medium mt-4 mb-1">
+        {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
+        <span className="ml-1 inline-block">ID</span>
+      </div>
+      <Paragraph copyable={{ text: token }} className={styles.id}>
+        {token}
+      </Paragraph>
+      <Link
+        href={
+          isAgent
+            ? 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-an-agent'
+            : 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-chat-assistant'
+        }
+        target="_blank"
+      >
+        {t('howUseId')}
+      </Link>
     </Modal>
   );
 };

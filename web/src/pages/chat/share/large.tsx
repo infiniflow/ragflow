@@ -9,12 +9,11 @@ import {
   useSendSharedMessage,
 } from '../shared-hooks';
 import { buildMessageItemReference } from '../utils';
+
 import styles from './index.less';
 
 const ChatContainer = () => {
   const { from, sharedId: conversationId } = useGetSharedChatSearchParams();
-
-  // const { data } = useFetchNextSharedConversation(conversationId);
 
   const {
     handlePressEnter,
