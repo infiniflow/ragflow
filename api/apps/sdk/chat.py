@@ -26,7 +26,7 @@ from api.utils.api_utils import get_result
 
 
 
-@manager.route('/chats', methods=['POST'])
+@manager.route('/chats', methods=['POST'])  # noqa: F821
 @token_required
 def create(tenant_id):
     req=request.json
@@ -150,7 +150,7 @@ def create(tenant_id):
     res["avatar"] = res.pop("icon")
     return get_result(data=res)
 
-@manager.route('/chats/<chat_id>', methods=['PUT'])
+@manager.route('/chats/<chat_id>', methods=['PUT'])  # noqa: F821
 @token_required
 def update(tenant_id,chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
@@ -238,7 +238,7 @@ def update(tenant_id,chat_id):
     return get_result()
 
 
-@manager.route('/chats', methods=['DELETE'])
+@manager.route('/chats', methods=['DELETE'])  # noqa: F821
 @token_required
 def delete(tenant_id):
     req = request.json
@@ -260,7 +260,7 @@ def delete(tenant_id):
         DialogService.update_by_id(id, temp_dict)
     return get_result()
 
-@manager.route('/chats', methods=['GET'])
+@manager.route('/chats', methods=['GET'])  # noqa: F821
 @token_required
 def list_chat(tenant_id):
     id = request.args.get("id")

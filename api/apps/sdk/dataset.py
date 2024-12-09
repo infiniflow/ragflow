@@ -34,7 +34,7 @@ from api.utils.api_utils import (
 )
 
 
-@manager.route("/datasets", methods=["POST"])
+@manager.route("/datasets", methods=["POST"])  # noqa: F821
 @token_required
 def create(tenant_id):
     """
@@ -190,7 +190,7 @@ def create(tenant_id):
     return get_result(data=renamed_data)
 
 
-@manager.route("/datasets", methods=["DELETE"])
+@manager.route("/datasets", methods=["DELETE"])  # noqa: F821
 @token_required
 def delete(tenant_id):
     """
@@ -260,7 +260,7 @@ def delete(tenant_id):
     return get_result(code=settings.RetCode.SUCCESS)
 
 
-@manager.route("/datasets/<dataset_id>", methods=["PUT"])
+@manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821
 @token_required
 def update(tenant_id, dataset_id):
     """
@@ -429,7 +429,7 @@ def update(tenant_id, dataset_id):
     return get_result(code=settings.RetCode.SUCCESS)
 
 
-@manager.route("/datasets", methods=["GET"])
+@manager.route("/datasets", methods=["GET"])  # noqa: F821
 @token_required
 def list(tenant_id):
     """

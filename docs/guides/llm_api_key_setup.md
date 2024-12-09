@@ -20,7 +20,7 @@ If you find your online LLM is not on the list, don't feel disheartened. The lis
 You have two options for configuring your model API key:
 
 - Configure it in **service_conf.yaml.template** before starting RAGFlow.
-- Configure it on the **Model Providers** page after logging into RAGFlow.
+- Configure it on the **Model providers** page after logging into RAGFlow.
 
 ### Configure model API key before starting up RAGFlow
 
@@ -32,7 +32,7 @@ You have two options for configuring your model API key:
 3. Reboot your system for your changes to take effect.
 4. Log into RAGFlow.
    
-   *After logging into RAGFlow, you will find your chosen model appears under **Added models** on the **Model Providers** page.*
+   *After logging into RAGFlow, you will find your chosen model appears under **Added models** on the **Model providers** page.*
 
 ### Configure model API key after logging into RAGFlow
 
@@ -40,9 +40,9 @@ You have two options for configuring your model API key:
 After logging into RAGFlow, configuring your model API key through the **service_conf.yaml.template** file will no longer take effect.
 :::
 
-After logging into RAGFlow, you can *only* configure API Key on the **Model Providers** page:
+After logging into RAGFlow, you can *only* configure API Key on the **Model providers** page:
 
-1. Click on your logo on the top right of the page **>** **Model Providers**.
+1. Click on your logo on the top right of the page **>** **Model providers**.
 2. Find your model card under **Models to be added** and click **Add the model**:
    ![add model](https://github.com/infiniflow/ragflow/assets/93570324/07e43f63-367c-4c9c-8ed3-8a3a24703f4e)
 3. Paste your model API key.

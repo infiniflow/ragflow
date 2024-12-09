@@ -222,7 +222,8 @@ def bullets_category(sections):
 
 def is_english(texts):
     eng = 0
-    if not texts: return False
+    if not texts:
+        return False
     for t in texts:
         if re.match(r"[ `a-zA-Z.,':;/\"?<>!\(\)-]", t.strip()):
             eng += 1
@@ -250,7 +251,8 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
     res = []
     # wrap up as es documents
     for ck in chunks:
-        if len(ck.strip()) == 0:continue
+        if len(ck.strip()) == 0:
+            continue
         logging.debug("-- {}".format(ck))
         d = copy.deepcopy(doc)
         if pdf_parser:
@@ -269,7 +271,8 @@ def tokenize_chunks_docx(chunks, doc, eng, images):
     res = []
     # wrap up as es documents
     for ck, image in zip(chunks, images):
-        if len(ck.strip()) == 0:continue
+        if len(ck.strip()) == 0:
+            continue
         logging.debug("-- {}".format(ck))
         d = copy.deepcopy(doc)
         d["image"] = image
@@ -288,8 +291,10 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             d = copy.deepcopy(doc)
             tokenize(d, rows, eng)
             d["content_with_weight"] = rows
-            if img: d["image"] = img
-            if poss: add_positions(d, poss)
+            if img:
+                d["image"] = img
+            if poss:
+                add_positions(d, poss)
             res.append(d)
             continue
         de = "; " if eng else "； "
@@ -387,9 +392,9 @@ def title_frequency(bull, sections):
             if re.search(r"(title|head)", layout) and not not_title(txt.split("@")[0]):
                 levels[i] = bullets_size
     most_level = bullets_size+1
-    for l, c in sorted(Counter(levels).items(), key=lambda x:x[1]*-1):
-        if l <= bullets_size:
-            most_level = l
+    for level, c in sorted(Counter(levels).items(), key=lambda x:x[1]*-1):
+        if level <= bullets_size:
+            most_level = level
             break
     return most_level, levels
 
@@ -504,7 +509,8 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
     def add_chunk(t, pos):
         nonlocal cks, tk_nums, delimiter
         tnum = num_tokens_from_string(t)
-        if not pos: pos = ""
+        if not pos:
+            pos = ""
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num  

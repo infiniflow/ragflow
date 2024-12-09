@@ -41,7 +41,8 @@ class SwitchParam(ComponentParamBase):
     def check(self):
         self.check_empty(self.conditions, "[Switch] conditions")
         for cond in self.conditions:
-            if not cond["to"]: raise ValueError(f"[Switch] 'To' can not be empty!")
+            if not cond["to"]:
+                raise ValueError("[Switch] 'To' can not be empty!")
 
 
 class Switch(ComponentBase, ABC):
@@ -51,7 +52,8 @@ class Switch(ComponentBase, ABC):
         res = []
         for cond in self._param.conditions:
             for item in cond["items"]:
-                if not item["cpn_id"]: continue
+                if not item["cpn_id"]:
+                    continue
                 if item["cpn_id"].find("begin") >= 0:
                     continue
                 cid = item["cpn_id"].split("@")[0]
@@ -63,7 +65,8 @@ class Switch(ComponentBase, ABC):
         for cond in self._param.conditions:
             res = []
             for item in cond["items"]:
-                if not item["cpn_id"]:continue
+                if not item["cpn_id"]:
+                    continue
                 cid = item["cpn_id"].split("@")[0]
                 if item["cpn_id"].find("@") > 0:
                     cpn_id, key = item["cpn_id"].split("@")
@@ -107,22 +110,22 @@ class Switch(ComponentBase, ABC):
         elif operator == ">":
             try:
                 return True if float(input) > float(value) else False
-            except Exception as e:
+            except Exception:
                 return True if input > value else False
         elif operator == "<":
             try:
                 return True if float(input) < float(value) else False
-            except Exception as e:
+            except Exception:
                 return True if input < value else False
         elif operator == "≥":
             try:
                 return True if float(input) >= float(value) else False
-            except Exception as e:
+            except Exception:
                 return True if input >= value else False
         elif operator == "≤":
             try:
                 return True if float(input) <= float(value) else False
-            except Exception as e:
+            except Exception:
                 return True if input <= value else False
 
         raise ValueError('Not supported operator' + operator)
