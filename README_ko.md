@@ -153,12 +153,15 @@
    ```
    
 
-   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | Release schedule               | stable? |
-   | -------------------------------- | ----- | ------------------------------------------------------- | ------------------------------ | ------- |
-   | v0.14.1                          | ~9 GB | YES                                                     | official release every 3 weeks | YES     |
-   | v0.14.1-slim                     | ~2 GB | NO                                                      | official release every 3 weeks | YES     |
-   | nightly                          | ~9 GB | YES                                                     | Every night at 21:00:00+08:00  | NO      |
-   | nightly-slim                     | ~2 GB | NO                                                      | Every night at 21:00:00+08:00  | NO      |
+   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | comments               |
+   | -------------------------------- | ----- | ------------------------------------------------------- | ---------------------- |
+   | v0.14.1                          | ~9 GB | YES                                                     | stable release         |
+   | v0.14.1-slim                     | ~2 GB | NO                                                      | stable release         |
+   | v0.15.0-dev1                     | ~9 GB | YES                                                     | unstable beta release  |
+   | v0.15.0-dev1-slim                | ~2 GB | NO                                                      | unstable beta release  |
+   | nightly                          | ~9 GB | YES                                                     | unstable nightly build |
+   | nightly-slim                     | ~2 GB | NO                                                      | unstable nightly build |
+
 
 
 
