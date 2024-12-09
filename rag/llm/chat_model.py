@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
 import re
 
 from openai.lib.azure import AzureOpenAI
@@ -58,103 +57,45 @@ class Base(ABC):
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
 
-    # def chat_streamly(self, system, history, gen_conf):
-    #     if system:
-    #         history.insert(0, {"role": "system", "content": system})
-    #     ans = ""
-    #     total_tokens = 0
-    #     try:
-    #         response = self.client.chat.completions.create(
-    #             model=self.model_name,
-    #             messages=history,
-    #             stream=True,
-    #             **gen_conf)
-    #         for resp in response:
-    #             if not resp.choices:
-    #                 continue
-    #             if not resp.choices[0].delta.content:
-    #                 resp.choices[0].delta.content = ""
-    #             ans += resp.choices[0].delta.content
-    #
-    #             if not hasattr(resp, "usage") or not resp.usage:
-    #                 total_tokens = (
-    #                             total_tokens
-    #                             + num_tokens_from_string(resp.choices[0].delta.content)
-    #                     )
-    #             elif isinstance(resp.usage, dict):
-    #                 total_tokens = resp.usage.get("total_tokens", total_tokens)
-    #             else:
-    #                 total_tokens = resp.usage.total_tokens
-    #
-    #             if resp.choices[0].finish_reason == "length":
-    #                 if is_chinese(ans):
-    #                     ans += LENGTH_NOTIFICATION_CN
-    #                 else:
-    #                     ans += LENGTH_NOTIFICATION_EN
-    #             yield ans
-    #
-    #     except openai.APIError as e:
-    #         yield ans + "\n**ERROR**: " + str(e)
-    #
-    #     yield total_tokens
+    def chat_streamly(self, system, history, gen_conf):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        ans = ""
+        total_tokens = 0
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=history,
+                stream=True,
+                **gen_conf)
+            for resp in response:
+                if not resp.choices:
+                    continue
+                if not resp.choices[0].delta.content:
+                    resp.choices[0].delta.content = ""
+                ans += resp.choices[0].delta.content
 
-     def chat_streamly(self, system, history, gen_conf):
-            if system:
-                history.insert(0, {"role": "system", "content": system})
+                if not hasattr(resp, "usage") or not resp.usage:
+                    total_tokens = (
+                                total_tokens
+                                + num_tokens_from_string(resp.choices[0].delta.content)
+                        )
+                elif isinstance(resp.usage, dict):
+                    total_tokens = resp.usage.get("total_tokens", total_tokens)
+                else:
+                    total_tokens = resp.usage.total_tokens
 
-            ans = ""
-            total_tokens = 0
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=history,
-                    stream=True,
-                    **gen_conf
-                )
-                for resp in response:
-                    if not resp.choices:
-                        continue
+                if resp.choices[0].finish_reason == "length":
+                    if is_chinese(ans):
+                        ans += LENGTH_NOTIFICATION_CN
+                    else:
+                        ans += LENGTH_NOTIFICATION_EN
+                yield ans
 
-                    finish_reason = resp.choices[0].finish_reason
-                    delta_content = resp.choices[0].delta.content if resp.choices[0].delta.content else ""
+        except openai.APIError as e:
+            yield ans + "\n**ERROR**: " + str(e)
 
-                    # 如果有新增文本，累积并输出增量
-                    if delta_content:
-                        ans += delta_content
-
-                        # 更新令牌计数
-                        if not hasattr(resp, "usage") or not resp.usage:
-                            total_tokens = (
-                                        total_tokens
-                                        + num_tokens_from_string(resp.choices[0].delta.content)
-                            )
-                        elif isinstance(resp.usage, dict):
-                            total_tokens = resp.usage.get("total_tokens", total_tokens)
-                        else:
-                            total_tokens = resp.usage.total_tokens
-
-                        yield delta_content
-
-                    # 即使delta_content为空，也要检查finish_reason
-                    if finish_reason == "length":
-                        # 长度受限时添加提示信息
-                        if is_chinese(ans):
-                            notification = LENGTH_NOTIFICATION_CN
-                        else:
-                            notification = LENGTH_NOTIFICATION_EN
-                        yield notification
-
-                    # 如果finish_reason为"stop"或其他值，可以在此添加相应逻辑
-                    # (本示例中未对"stop"做额外处理，因为通常这意味着回答正常结束)
-
-            except openai.APIError as e:
-                # 返回错误信息
-                yield ans + "\n**ERROR**: " + str(e)
-
-            # 最终返回总令牌数
-            yield total_tokens
-
-
+        yield total_tokens
 
 
 class GptTurbo(Base):
