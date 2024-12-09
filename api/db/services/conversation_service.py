@@ -45,20 +45,21 @@ class ConversationService(CommonService):
         return list(sessions.dicts())
 
 
-def structure_answer(conv, ans, message_id, session_id):
+def structure_answer(conv, ans, message_id, session_id, sign):
     reference = ans["reference"]
     if not isinstance(reference, dict):
         reference = {}
-    temp_reference = deepcopy(ans["reference"])
+    temp_reference = deepcopy(reference)
     if not conv.reference:
         conv.reference.append(temp_reference)
     else:
         conv.reference[-1] = temp_reference
     conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
-
-    chunk_list = [{
+    chunk_list = []
+    chunks = reference.get("chunks", [])
+    for chunk in chunks:
+        temp_chunk = {
             "id": chunk["chunk_id"],
-            "content": chunk["content"],
             "document_id": chunk["doc_id"],
             "document_name": chunk["docnm_kwd"],
             "dataset_id": chunk["kb_id"],
@@ -67,23 +68,34 @@ def structure_answer(conv, ans, message_id, session_id):
             "vector_similarity": chunk["vector_similarity"],
             "term_similarity": chunk["term_similarity"],
             "positions": chunk["positions"],
-        } for chunk in reference.get("chunks", [])]
-
+        }
+        if sign == 0:
+            temp_chunk["content"] = chunk["content_with_weight"]
+        else:
+            temp_chunk["content"] = chunk["content"]
+        chunk_list.append(temp_chunk)
     reference["chunks"] = chunk_list
     ans["id"] = message_id
     ans["session_id"] = session_id
 
     return ans
 
+def chat_structure_answer(conv,ans,message_id,session_id):
+    ans = structure_answer(conv,ans,message_id,session_id,0)
+    return ans
+
+def agent_structure_answer(conv,ans,message_id,session_id):
+    ans = structure_answer(conv,ans,message_id,session_id,1)
+    return ans
+
 
 def completion(tenant_id, chat_id, question, name="New session", session_id=None, stream=True, **kwargs):
     assert name, "`name` can not be empty."
     dia = DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
-    assert dia, "You do not own the chat."
-
     if not session_id:
+        session_id =get_uuid()
         conv = {
-            "id": get_uuid(),
+            "id": session_id,
             "dialog_id": chat_id,
             "name": name,
             "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}]
@@ -102,9 +114,6 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
         return
 
     conv = ConversationService.query(id=session_id, dialog_id=chat_id)
-    if not conv:
-        raise LookupError("Session does not exist")
-
     conv = conv[0]
     msg = []
     question = {
@@ -130,7 +139,7 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
     if stream:
         try:
             for ans in chat(dia, msg, True, **kwargs):
-                ans = structure_answer(conv, ans, message_id, session_id)
+                ans = chat_structure_answer(conv, ans, message_id, session_id)
                 yield "data:" + json.dumps({"code": 0, "data": ans}, ensure_ascii=False) + "\n\n"
             ConversationService.update_by_id(conv.id, conv.to_dict())
         except Exception as e:
@@ -142,7 +151,7 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
     else:
         answer = None
         for ans in chat(dia, msg, False, **kwargs):
-            answer = structure_answer(conv, ans, message_id, session_id)
+            answer = chat_structure_answer(conv, ans, message_id, session_id)
             ConversationService.update_by_id(conv.id, conv.to_dict())
             break
         yield answer
