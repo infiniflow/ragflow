@@ -58,7 +58,7 @@ def structure_answer(conv, ans, message_id, session_id):
 
     chunk_list = [{
             "id": chunk["chunk_id"],
-            "content": chunk["content"],
+            "content": chunk.get("content",""),
             "document_id": chunk["doc_id"],
             "document_name": chunk["docnm_kwd"],
             "dataset_id": chunk["kb_id"],
