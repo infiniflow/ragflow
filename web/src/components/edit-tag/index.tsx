@@ -37,8 +37,12 @@ const EditTag = ({ tags, setTags }: EditTagsProps) => {
   };
 
   const handleInputConfirm = () => {
-    if (inputValue && tags?.indexOf(inputValue) === -1) {
-      setTags?.([...tags, inputValue]);
+    if (inputValue && tags) {
+      const newTags = inputValue
+        .split(';')
+        .map((tag) => tag.trim())
+        .filter((tag) => tag && !tags.includes(tag)); 
+      setTags?.([...tags, ...newTags]);
     }
     setInputVisible(false);
     setInputValue('');
