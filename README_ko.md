@@ -148,8 +148,8 @@
    > 아래의 명령은 RAGFlow slim(v0.14.1-slim)의 개발 버전 Docker 이미지를 다운로드합니다. RAGFlow slim Docker 이미지에는 임베딩 모델이나 Python 라이브러리가 포함되어 있지 않으므로 크기는 약 1GB입니다.
 
    ```bash
-   $ cd ragflow/docker
-   $ docker compose -f docker-compose.yml up -d
+   $ cd ragflow
+   $ docker compose -f docker/docker-compose.yml up -d
    ```
    
 
@@ -204,7 +204,7 @@
 
 [.env](./docker/.env) 파일의 변경 사항이 [service_conf.yaml.template](./docker/service_conf.yaml.template) 파일의 내용과 일치하도록 해야 합니다.
 
-> [./docker/README](./docker/README.md) 파일에는 환경 설정과 서비스 구성에 대한 자세한 설명이 있으며, [./docker/README](./docker/README.md) 파일에 나열된 모든 환경 설정이 [service_conf.yaml.template](./docker/service_conf.yaml.template) 파일의 해당 구성과 일치하도록 해야 합니다.
+> [./docker/README](./docker/README.md) 파일 ./docker/README은 service_conf.yaml.template 파일에서 ${ENV_VARS}로 사용할 수 있는 환경 설정과 서비스 구성에 대한 자세한 설명을 제공합니다.
 
 기본 HTTP 서비스 포트(80)를 업데이트하려면 [docker-compose.yml](./docker/docker-compose.yml) 파일에서 `80:80`을 `<YOUR_SERVING_PORT>:80`으로 변경하세요.
 
@@ -219,12 +219,12 @@
 RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 벡터를 저장합니다. [Infinity]로 전환(https://github.com/infiniflow/infinity/), 다음 절차를 따르십시오.
 1. 실행 중인 모든 컨테이너를 중지합니다.
    ```bash
-   $docker compose-f docker/docker-compose.yml down-v
+   $docker compose-f docker/docker-compose.yml down -v
    ```
 2. **docker/.env**의 "DOC_ENGINE" 을 "infinity" 로 설정합니다.
 3. 컨테이너 부팅:
    ```bash
-   $docker compose-f docker/docker-compose.yml up-d
+   $docker compose-f docker/docker-compose.yml up -d
    ``` 
 > [!WARNING]
 > Linux/arm64 시스템에서 Infinity로 전환하는 것은 공식적으로 지원되지 않습니다.
