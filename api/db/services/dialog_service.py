@@ -18,6 +18,7 @@ import binascii
 import os
 import json
 import re
+from collections import defaultdict
 from copy import deepcopy
 from timeit import default_timer as timer
 import datetime
@@ -108,6 +109,32 @@ def llm_id2llm_type(llm_id):
                 return llm["model_type"].strip(",")[-1]
 
 
+def kb_prompt(kbinfos, max_tokens):
+    knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
+    used_token_count = 0
+    chunks_num = 0
+    for i, c in enumerate(knowledges):
+        used_token_count += num_tokens_from_string(c)
+        chunks_num += 1
+        if max_tokens * 0.97 < used_token_count:
+            knowledges = knowledges[:i]
+            break
+
+    doc2chunks = defaultdict(list)
+    for i, ck in enumerate(kbinfos["chunks"]):
+        if i >= chunks_num:
+            break
+        doc2chunks["docnm_kwd"].append(ck["content_with_weight"])
+
+    knowledges = []
+    for nm, chunks in doc2chunks.items():
+        txt = f"Document: {nm} \nContains the following relevant fragments:\n"
+        for i, chunk in enumerate(chunks, 1):
+            txt += f"{i}. {chunk}\n"
+        knowledges.append(txt)
+    return knowledges
+
+
 def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     st = timer()
@@ -195,32 +222,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                                         dialog.vector_similarity_weight,
                                         doc_ids=attachments,
                                         top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl)
-
-        # Group chunks by document ID
-        doc_chunks = {}
-        for ck in kbinfos["chunks"]:
-            doc_id = ck["doc_id"]
-            if doc_id not in doc_chunks:
-                doc_chunks[doc_id] = []
-            doc_chunks[doc_id].append(ck["content_with_weight"])
-
-        # Create knowledges list with grouped chunks
-        knowledges = []
-        for doc_id, chunks in doc_chunks.items():
-            # Find the corresponding document name
-            doc_name = next((d["doc_name"] for d in kbinfos.get("doc_aggs", []) if d["doc_id"] == doc_id), doc_id)
-            
-            # Create a header for the document
-            doc_knowledge = f"Document: {doc_name} \nContains the following relevant fragments:\n"
-            
-            # Add numbered fragments
-            for i, chunk in enumerate(chunks, 1):
-                doc_knowledge += f"{i}. {chunk}\n"
-            
-            knowledges.append(doc_knowledge)
-
-
-
+    knowledges = kb_prompt(kbinfos, max_tokens)
     logging.debug(
         "{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
     retrieval_tm = timer()
@@ -603,7 +605,6 @@ def tts(tts_mdl, text):
 
 def ask(question, kb_ids, tenant_id):
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    tenant_ids = [kb.tenant_id for kb in kbs]
     embd_nms = list(set([kb.embd_id for kb in kbs]))
 
     is_kg = all([kb.parser_id == ParserType.KG for kb in kbs])
@@ -612,45 +613,9 @@ def ask(question, kb_ids, tenant_id):
     embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_nms[0])
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
     max_tokens = chat_mdl.max_length
-
+    tenant_ids = list(set([kb.tenant_id for kb in kbs]))
     kbinfos = retr.retrieval(question, embd_mdl, tenant_ids, kb_ids, 1, 12, 0.1, 0.3, aggs=False)
-    knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
-
-    used_token_count = 0
-    chunks_num = 0
-    for i, c in enumerate(knowledges):
-        used_token_count += num_tokens_from_string(c)
-        if max_tokens * 0.97 < used_token_count:
-            knowledges = knowledges[:i]
-            chunks_num = chunks_num + 1
-            break
-
-        # Group chunks by document ID
-    doc_chunks = {}
-    counter_chunks = 0
-    for ck in kbinfos["chunks"]:
-        if counter_chunks < chunks_num:
-            counter_chunks = counter_chunks + 1
-            doc_id = ck["doc_id"]
-            if doc_id not in doc_chunks:
-                doc_chunks[doc_id] = []
-            doc_chunks[doc_id].append(ck["content_with_weight"])
-
-        # Create knowledges list with grouped chunks
-    knowledges = []
-    for doc_id, chunks in doc_chunks.items():
-            # Find the corresponding document name
-        doc_name = next((d["doc_name"] for d in kbinfos.get("doc_aggs", []) if d["doc_id"] == doc_id), doc_id)
-            
-            # Create a header for the document
-        doc_knowledge = f"Document: {doc_name} \nContains the following relevant fragments:\n"
-            
-            # Add numbered fragments
-        for i, chunk in enumerate(chunks, 1):
-            doc_knowledge += f"{i}. {chunk}\n"
-            
-        knowledges.append(doc_knowledge)
-
+    knowledges = kb_prompt(kbinfos, max_tokens)
     prompt = """
     Role: You're a smart assistant. Your name is Miss R.
     Task: Summarize the information from knowledge bases and answer user's question.
@@ -660,30 +625,29 @@ def ask(question, kb_ids, tenant_id):
       - Answer with markdown format text.
       - Answer in language of user's question.
       - DO NOT make things up, especially for numbers.
-      
+
     ### Information from knowledge bases
     %s
-    
+
     The above is information from knowledge bases.
-     
-    """%"\n".join(knowledges)
+
+    """ % "\n".join(knowledges)
     msg = [{"role": "user", "content": question}]
 
     def decorate_answer(answer):
         nonlocal knowledges, kbinfos, prompt
         answer, idx = retr.insert_citations(answer,
-                                           [ck["content_ltks"]
-                                            for ck in kbinfos["chunks"]],
-                                           [ck["vector"]
-                                            for ck in kbinfos["chunks"]],
-                                           embd_mdl,
-                                           tkweight=0.7,
-                                           vtweight=0.3)
+                                            [ck["content_ltks"]
+                                             for ck in kbinfos["chunks"]],
+                                            [ck["vector"]
+                                             for ck in kbinfos["chunks"]],
+                                            embd_mdl,
+                                            tkweight=0.7,
+                                            vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [
             d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
-        if not recall_docs:
-            recall_docs = kbinfos["doc_aggs"]
+        if not recall_docs: recall_docs = kbinfos["doc_aggs"]
         kbinfos["doc_aggs"] = recall_docs
         refs = deepcopy(kbinfos)
         for c in refs["chunks"]:
@@ -691,7 +655,7 @@ def ask(question, kb_ids, tenant_id):
                 del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
-            answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
+            answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
         return {"answer": answer, "reference": refs}
 
     answer = ""
