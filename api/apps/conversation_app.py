@@ -18,7 +18,7 @@ import re
 import traceback
 from copy import deepcopy
 
-from api.db.services.conversation_service import ConversationService
+from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.user_service import UserTenantService
 from flask import request, Response
 from flask_login import login_required, current_user
@@ -90,6 +90,21 @@ def get():
             return get_json_result(
                 data=False, message='Only owner of conversation authorized for this operation.',
                 code=settings.RetCode.OPERATING_ERROR)
+
+        def get_value(d, k1, k2):
+            return d.get(k1, d.get(k2))
+
+        for ref in conv.reference:
+            ref["chunks"] = [{
+                "id": get_value(ck, "chunk_id", "id"),
+                "content": get_value(ck, "content", "content_with_weight"),
+                "document_id": get_value(ck, "doc_id", "document_id"),
+                "document_name": get_value(ck, "docnm_kwd", "document_name"),
+                "dataset_id": get_value(ck, "kb_id", "dataset_id"),
+                "image_id": get_value(ck, "image_id", "img_id"),
+                "positions": get_value(ck, "positions", "position_int"),
+            } for ck in ref.get("chunks", [])]
+
         conv = conv.to_dict()
         return get_json_result(data=conv)
     except Exception as e:
@@ -132,6 +147,7 @@ def list_convsersation():
             dialog_id=dialog_id,
             order_by=ConversationService.model.create_time,
             reverse=True)
+
         convs = [d.to_dict() for d in convs]
         return get_json_result(data=convs)
     except Exception as e:
@@ -164,24 +180,29 @@ def completion():
 
         if not conv.reference:
             conv.reference = []
-        conv.message.append({"role": "assistant", "content": "", "id": message_id})
+        else:
+            def get_value(d, k1, k2):
+                return d.get(k1, d.get(k2))
+
+            for ref in conv.reference:
+                ref["chunks"] = [{
+                    "id": get_value(ck, "chunk_id", "id"),
+                    "content": get_value(ck, "content", "content_with_weight"),
+                    "document_id": get_value(ck, "doc_id", "document_id"),
+                    "document_name": get_value(ck, "docnm_kwd", "document_name"),
+                    "dataset_id": get_value(ck, "kb_id", "dataset_id"),
+                    "image_id": get_value(ck, "image_id", "img_id"),
+                    "positions": get_value(ck, "positions", "position_int"),
+                } for ck in ref.get("chunks", [])]
+
+        if not conv.reference:
+            conv.reference = []
         conv.reference.append({"chunks": [], "doc_aggs": []})
-
-        def fillin_conv(ans):
-            nonlocal conv, message_id
-            if not conv.reference:
-                conv.reference.append(ans["reference"])
-            else:
-                conv.reference[-1] = ans["reference"]
-            conv.message[-1] = {"role": "assistant", "content": ans["answer"],
-                                "id": message_id, "prompt": ans.get("prompt", "")}
-            ans["id"] = message_id
-
         def stream():
             nonlocal dia, msg, req, conv
             try:
                 for ans in chat(dia, msg, True, **req):
-                    fillin_conv(ans)
+                    ans = structure_answer(conv, ans, message_id, conv.id)
                     yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
                 ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as e:
@@ -202,8 +223,7 @@ def completion():
         else:
             answer = None
             for ans in chat(dia, msg, **req):
-                answer = ans
-                fillin_conv(ans)
+                answer = structure_answer(conv, ans, message_id, req["conversation_id"])
                 ConversationService.update_by_id(conv.id, conv.to_dict())
                 break
             return get_json_result(data=answer)

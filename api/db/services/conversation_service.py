@@ -21,7 +21,6 @@ from api.db.services.common_service import CommonService
 from api.db.services.dialog_service import DialogService, chat
 from api.utils import get_uuid
 import json
-from copy import deepcopy
 
 
 class ConversationService(CommonService):
@@ -49,30 +48,35 @@ def structure_answer(conv, ans, message_id, session_id):
     reference = ans["reference"]
     if not isinstance(reference, dict):
         reference = {}
-    temp_reference = deepcopy(ans["reference"])
-    if not conv.reference:
-        conv.reference.append(temp_reference)
-    else:
-        conv.reference[-1] = temp_reference
-    conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
+        ans["reference"] = {}
 
+    def get_value(d, k1, k2):
+        return d.get(k1, d.get(k2))
     chunk_list = [{
-            "id": chunk["chunk_id"],
-            "content": chunk.get("content") if chunk.get("content") else chunk.get("content_with_content"),
-            "document_id": chunk["doc_id"],
-            "document_name": chunk["docnm_kwd"],
-            "dataset_id": chunk["kb_id"],
-            "image_id": chunk["image_id"],
-            "similarity": chunk["similarity"],
-            "vector_similarity": chunk["vector_similarity"],
-            "term_similarity": chunk["term_similarity"],
-            "positions": chunk["positions"],
+            "id": get_value(chunk, "chunk_id", "id"),
+            "content": get_value(chunk, "content", "content_with_weight"),
+            "document_id": get_value(chunk, "doc_id", "document_id"),
+            "document_name": get_value(chunk, "docnm_kwd", "document_name"),
+            "dataset_id": get_value(chunk, "kb_id", "dataset_id"),
+            "image_id": get_value(chunk, "image_id", "img_id"),
+            "positions": get_value(chunk, "positions", "position_int"),
         } for chunk in reference.get("chunks", [])]
 
     reference["chunks"] = chunk_list
     ans["id"] = message_id
     ans["session_id"] = session_id
 
+    if not conv:
+        return ans
+
+    if not conv.message:
+        conv.message = []
+    if not conv.message or conv.message[-1].get("role", "") != "assistant":
+        conv.message.append({"role": "assistant", "content": ans["answer"], "id": message_id})
+    else:
+        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
+    if conv.reference:
+        conv.reference[-1] = reference
     return ans
 
 
@@ -199,7 +203,6 @@ def iframe_completion(dialog_id, question, session_id=None, stream=True, **kwarg
 
     if not conv.reference:
         conv.reference = []
-    conv.message.append({"role": "assistant", "content": "", "id": message_id})
     conv.reference.append({"chunks": [], "doc_aggs": []})
 
     if stream:
