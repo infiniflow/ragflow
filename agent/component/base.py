@@ -476,7 +476,7 @@ class ComponentBase(ABC):
                     self._param.inputs.append({"component_id": q["component_id"],
                                                "content": "\n".join(
                                                    [str(d["content"]) for d in outs[-1].to_dict('records')])})
-                elif q["value"]:
+                elif q.get("value"):
                     self._param.inputs.append({"component_id": None, "content": q["value"]})
                     outs.append(pd.DataFrame([{"content": q["value"]}]))
             if outs:
@@ -525,6 +525,21 @@ class ComponentBase(ABC):
             self._param.inputs.append({"component_id": r["component_id"], "content": r["content"]})
 
         return df
+
+    def get_input_elements(self):
+        assert self._param.query, "Please identify input parameters firstly."
+        eles = []
+        for q in self._param.query:
+            if q.get("component_id"):
+                if q["component_id"].split("@")[0].lower().find("begin") >= 0:
+                    cpn_id, key = q["component_id"].split("@")
+                    eles.extend(self._canvas.get_component(cpn_id)["obj"]._param.query)
+                    continue
+
+                eles.append({"key": q["key"], "component_id": q["component_id"]})
+            else:
+                eles.append({"key": q["key"]})
+        return eles
 
     def get_stream_input(self):
         reversed_cpnts = []

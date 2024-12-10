@@ -186,6 +186,26 @@ def reset():
         return server_error_response(e)
 
 
+@manager.route('/input_elements', methods=['GET'])  # noqa: F821
+@validate_request("id", "component_id")
+@login_required
+def input_elements():
+    req = request.json
+    try:
+        e, user_canvas = UserCanvasService.get_by_id(req["id"])
+        if not e:
+            return get_data_error_result(message="canvas not found.")
+        if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+            return get_json_result(
+                data=False, message='Only owner of canvas authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+
+        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
+        return get_json_result(data=canvas.get_component_input_elements(req["component_id"]))
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route('/test_db_connect', methods=['POST'])  # noqa: F821
 @validate_request("db_type", "database", "username", "host", "port", "password")
 @login_required

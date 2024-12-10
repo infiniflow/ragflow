@@ -39,7 +39,7 @@ const MessageItem = ({
   item,
   reference,
   loading = false,
-  avatar = '',
+  avatar,
   sendLoading = false,
   clickDocumentButton,
   index,
@@ -102,13 +102,7 @@ const MessageItem = ({
           })}
         >
           {item.role === MessageType.User ? (
-            <Avatar
-              size={40}
-              src={
-                avatar ??
-                'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png'
-              }
-            />
+            <Avatar size={40} src={avatar ?? '/logo.svg'} />
           ) : (
             <AssistantIcon></AssistantIcon>
           )}
