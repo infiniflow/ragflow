@@ -37,16 +37,14 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
       {imageList.length > 0 ? (
         <>
           <Title level={5} className={styles.topTitle}>
-            "{item.title}" {t('methodTitle')}
+            {`"${item.title}" ${t('methodTitle')}`}
           </Title>
           <p
             dangerouslySetInnerHTML={{
               __html: DOMPurify.sanitize(item.description),
             }}
           ></p>
-          <Title level={5}>
-            "{item.title}" {t('methodExamples')}
-          </Title>
+          <Title level={5}>{`"${item.title}" ${t('methodExamples')}`}</Title>
           <Text>{t('methodExamplesDescription')}</Text>
           <Row gutter={[10, 10]} className={styles.imageRow}>
             {imageList.map((x) => (
