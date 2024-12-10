@@ -13,7 +13,7 @@ Released on November 29, 2024.
 
 ### Improvements
 
-Adds [Infinity's configuration file](https://github.com/infiniflow/ragflow/blob/main/docker/infinity_conf.toml) to facilitate integration and customization of Infinity as a document engine. From this release onwards, updates to Infinity's configuration can be made directly within RAGFlow and will take effect immediately after restarting RAGFlow using `docker compose`. [#3715](https://github.com/infiniflow/ragflow/pull/3715)
+Adds [Infinity's configuration file](https://github.com/infiniflow/ragflow/blob/main/docker/infinity_conf.toml) to facilitate integration and customization of [Infinity](https://github.com/infiniflow/infinity) as a document engine. From this release onwards, updates to Infinity's configuration can be made directly within RAGFlow and will take effect immediately after restarting RAGFlow using `docker compose`. [#3715](https://github.com/infiniflow/ragflow/pull/3715)
 
 ### Fixed issues
 
@@ -137,7 +137,7 @@ See [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow) for instructi
 
 ## v0.11.0
 
-Released on September 14, 2024
+Released on September 14, 2024.
 
 ### New features
 
@@ -153,3 +153,99 @@ Released on September 14, 2024
     - [ms_marco_v1.1](https://huggingface.co/datasets/microsoft/ms_marco)
     - [trivia_qa](https://huggingface.co/datasets/mandarjoshi/trivia_qa)
     - [miracl](https://huggingface.co/datasets/miracl/miracl)
+
+## v0.10.0
+
+Released on August 26, 2024.
+
+### New features
+
+- Introduces a text-to-SQL template in the Agent UI.
+- Implements Agent APIs.
+- Incorporates monitoring for the task executor.
+- Introduces Agent tools **GitHub**, **DeepL**, **BaiduFanyi**, **QWeather**, and **GoogleScholar**.
+- Supports chunking of EML files.
+- Supports more LLMs or model services: **GPT-4o-mini**, **PerfXCloud**, **TogetherAI**, **Upstage**, **Novita.AI**, **01.AI**, **SiliconFlow**, **XunFei Spark**, **Baidu Yiyan**, and **Tencent Hunyuan**.
+
+## v0.9.0
+
+Released on August 6, 2024.
+
+### New features
+
+- Supports GraphRAG as a chunk method.
+- Introduces Agent component **Keyword** and search tools, including **Baidu**, **DduckDuckGo**, **PubMed**, **Wikipedia**, **Bing**, and **Google**.
+- Supports speech-to-text recognition for audio files.
+- Supports model vendors **Gemini** and **Groq**.
+- Supports inference frameworks, engines, and services including **LM studio**, **OpenRouter**, **LocalAI**, and **Nvidia API**.
+- Supports using reranker models in Xinference.
+
+## v0.8.0
+
+Released on July 8, 2024.
+
+### New features
+
+- Supports Agentic RAG, enabling graph-based workflow construction for RAG and agents.
+- Supports model vendors **Mistral**, **MiniMax**, **Bedrock**, and **Azure OpenAI**.
+- Supports DOCX files in the MANUAL chunk method.
+- Supports DOCX, MD, and PDF files in the Q&A chunk method.
+
+## v0.7.0
+
+Released on May 31, 2024.
+
+### New features
+
+- Supports the use of reranker models.
+- Integrates reranker and embedding models: [BCE](https://github.com/netease-youdao/BCEmbedding), [BGE](https://github.com/FlagOpen/FlagEmbedding), and [Jina](https://jina.ai/embeddings/).
+- Supports LLMs Baichuan and VolcanoArk.
+- Implements [RAPTOR](https://arxiv.org/html/2401.18059v1) for improved text retrieval.
+- Supports HTML files in the GENERAL chunk method.
+- Provides HTTP and Python APIs for deleting documents by ID.
+- Supports ARM64 platforms.
+
+:::danger IMPORTANT
+While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM.
+
+If you are on an ARM platform, following [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
+:::
+
+### Related APIs
+
+#### HTTP API
+
+- [Delete documents](https://ragflow.io/docs/dev/http_api_reference#delete-documents)
+
+#### Python API
+
+- [Delete documents](https://ragflow.io/docs/dev/python_api_reference#delete-documents)
+
+## v0.6.0
+
+Released on May 21, 2024.
+
+### New features
+
+- Supports streaming output.
+- Provides HTTP and Python APIs for retrieving document chunks.
+- Supports monitoring of system components, including Elasticsearch, MySQL, Redis, and MinIO.
+- Supports disabling **Layout Recognition** in the GENERAL chunk method to reduce file chunking time.
+
+### Related APIs
+
+#### HTTP API
+
+- [Retrieve chunks](https://ragflow.io/docs/dev/http_api_reference#retrieve-chunks)
+
+#### Python API
+
+- [Retrieve chunks](https://ragflow.io/docs/dev/python_api_reference#retrieve-chunks)
+
+## v0.5.0
+
+Released on May 8, 2024.
+
+### New features
+
+- Supports LLM DeepSeek.
