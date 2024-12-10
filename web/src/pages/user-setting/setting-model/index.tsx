@@ -1,5 +1,6 @@
 import { ReactComponent as MoreModelIcon } from '@/assets/svg/more-model.svg';
 import { LlmIcon } from '@/components/svg-icon';
+import { useTheme } from '@/components/theme-provider';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { LlmItem, useSelectLlmList } from '@/hooks/llm-hooks';
 import { CloseCircleOutlined, SettingOutlined } from '@ant-design/icons';
@@ -61,6 +62,7 @@ interface IModelCardProps {
 const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
   const { visible, switchVisible } = useSetModalState();
   const { t } = useTranslate('setting');
+  const { theme } = useTheme();
   const { handleDeleteLlm } = useHandleDeleteLlm(item.name);
   const { handleDeleteFactory } = useHandleDeleteFactory(item.name);
 
@@ -74,7 +76,9 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
 
   return (
     <List.Item>
-      <Card className={styles.addedCard}>
+      <Card
+        className={theme === 'dark' ? styles.addedCardDark : styles.addedCard}
+      >
         <Row align={'middle'}>
           <Col span={12}>
             <Flex gap={'middle'} align="center">
@@ -139,6 +143,7 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
 
 const UserSettingModel = () => {
   const { factoryList, myLlmList: llmList, loading } = useSelectLlmList();
+  const { theme } = useTheme();
   const {
     saveApiKeyLoading,
     initialApiKey,
@@ -313,7 +318,13 @@ const UserSettingModel = () => {
           dataSource={factoryList}
           renderItem={(item) => (
             <List.Item>
-              <Card className={styles.toBeAddedCard}>
+              <Card
+                className={
+                  theme === 'dark'
+                    ? styles.toBeAddedCardDark
+                    : styles.toBeAddedCard
+                }
+              >
                 <Flex vertical gap={'middle'}>
                   <LlmIcon name={item.name} />
                   <Flex vertical gap={'middle'}>

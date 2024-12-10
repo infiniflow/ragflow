@@ -34,6 +34,7 @@ export default {
       pleaseInput: 'Vui lòng nhập',
       submit: 'Gửi',
       vietnamese: 'Tiếng  việt',
+      spanish: 'Tiếng Tây Ban Nha',
     },
     login: {
       login: 'Đăng nhập',
@@ -76,6 +77,7 @@ export default {
       namePlaceholder: 'Vui lòng nhập tên!',
       doc: 'Tài liệu',
       searchKnowledgePlaceholder: 'Tìm kiếm',
+      noMoreData: 'Tất cả chỉ có thế, không còn gì nữa',
     },
     knowledgeDetails: {
       dataset: 'Dữ liệu',
@@ -162,6 +164,7 @@ export default {
       autoKeywordsTip: `Trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các từ khóa đó. Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
       autoQuestions: 'Câu hỏi tự động',
       autoQuestionsTip: `Trích xuất N câu hỏi cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các câu hỏi đó. Bạn có thể kiểm tra hoặc cập nhật các câu hỏi đã thêm cho một khối từ danh sách khối. Tính năng này sẽ không làm gián đoạn quá trình phân khối nếu xảy ra lỗi, ngoại trừ việc nó có thể thêm kết quả trống vào khối gốc. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
+      delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token".`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -297,6 +300,9 @@ export default {
       randomSeed: 'Hạt giống ngẫu nhiên',
       randomSeedMessage: 'Hạt giống ngẫu nhiên là bắt buộc',
       entityTypes: 'Loại thực thể',
+      vietnamese: 'Tiếng Việt',
+      pageRank: 'Xếp hạng trang',
+      pageRankTip: `Điều này được sử dụng để tăng điểm liên quan. Điểm liên quan với tất cả các khối được truy xuất sẽ cộng với số này, Khi bạn muốn tìm kiếm cơ sở kiến ​​thức đã cho ở vị trí đầu tiên, hãy đặt điểm "Page Rank" cao hơn những điểm khác.`,
     },
     chunk: {
       chunk: 'Khối',
@@ -316,6 +322,9 @@ export default {
       ellipse: 'Elip',
       graph: 'Biểu đồ kiến thức',
       mind: 'Sơ đồ tư duy',
+      question: 'Câu hỏi',
+      questionTip:
+        'Nếu có những câu hỏi được đưa ra, việc nhúng phần đó sẽ dựa trên những câu hỏi đó.',
     },
     chat: {
       newConversation: 'Cuộc trò chuyện mới',
@@ -593,6 +602,12 @@ export default {
       refuse: 'Từ chối',
       teamMembers: 'Thành viên nhóm',
       joinedTeams: 'Nhóm đã tham gia',
+      bedrockModelNameMessage: `Vui lòng nhập tên model của bạn!`,
+      sureDelete: `Bạn có chắc chắn muốn xóa thành viên này không?`,
+      quit: `Rời khỏi`,
+      sureQuit: `Bạn có chắc chắn muốn rời khỏi nhóm mà bạn đã tham gia không?`,
+      FishAudioAKMessage: `Vui lòng nhập KEY API`,
+      FishAudioRefIDMessage: `Vui lòng nhập ID của model tham chiếu (để trống để sử dụng model mặc định)`,
     },
     message: {
       registered: 'Đã đăng ký!',
@@ -625,8 +640,8 @@ export default {
       requestError: 'Lỗi yêu cầu',
       networkAnomalyDescription:
         'Mạng của bạn có sự bất thường và bạn không thể kết nối với máy chủ.',
-      networkAnomaly: 'bất thường mạng',
-      hint: 'gợi ý',
+      networkAnomaly: 'Bất thường mạng',
+      hint: 'Gợi ý',
     },
     fileManager: {
       name: 'Tên',
@@ -1033,6 +1048,27 @@ export default {
       optional: 'Tùy chọn',
       pasteFileLink: 'Dán liên kết tệp',
       testRun: 'Chạy thử nghiệm',
+      template: 'Mẫu',
+      templateDescription: `Thành phần này được sử dụng để sắp chữ đầu ra của nhiều thành phần khác nhau.`,
+      arXivTip: `Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://arxiv.org/. Thông thường, nó hoạt động như một phần bổ sung cho cơ sở tri thức. Top N chỉ định số lượng kết quả tìm kiếm bạn cần điều chỉnh.`,
+      googleTip: `Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.google.com/. Thông thường, nó hoạt động như một phần bổ sung cho cơ sở tri thức. Top N và khóa API SerpApi chỉ định số lượng kết quả tìm kiếm bạn cần điều chỉnh.`,
+      bingTip: `Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.bing.com/. Thông thường, nó hoạt động như một phần bổ sung cho cơ sở tri thức. Top N và khóa đăng ký Bing chỉ định số lượng kết quả tìm kiếm bạn cần điều chỉnh.`,
+      gitHubDescription: `Thành phần này được sử dụng để tìm kiếm các kho lưu trữ từ https://github.com/. Top N chỉ định số lượng kết quả tìm kiếm cần điều chỉnh.`,
+      flow: `Quy trình làm việc`,
+      emailDescription: 'Gửi email đến địa chỉ đã chỉ định',
+      toEmail: 'Email người nhận',
+      smtpServerRequired: 'Vui lòng nhập địa chỉ máy chủ SMTP',
+      emailContent: 'Nội dung',
+      smtpServer: 'SMTP Server',
+      smtpPort: 'SMTP Port',
+      senderEmailRequired: 'Vui lòng nhập email người gửi',
+      authCodeRequired: 'Vui lòng nhập mã xác thực',
+      toEmailRequired: 'Vui lòng nhập email người nhận',
+      emailContentRequired: 'Vui lòng nhập nội dung email',
+      emailSentSuccess: 'Email đã được gửi thành công',
+      emailSentFailed: 'Không gửi được email',
+      jsonFormatTip:
+        'Thành phần thượng nguồn phải cung cấp chuỗi JSON theo định dạng sau:',
     },
     footer: {
       profile: 'All rights reserved @ React',

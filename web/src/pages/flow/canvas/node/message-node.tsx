@@ -1,3 +1,4 @@
+import { useTheme } from '@/components/theme-provider';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
@@ -14,12 +15,16 @@ export function MessageNode({
   selected,
 }: NodeProps<NodeData>) {
   const messages: string[] = get(data, 'form.messages', []);
-
+  const { theme } = useTheme();
   return (
     <section
-      className={classNames(styles.logicNode, {
-        [styles.selectedNode]: selected,
-      })}
+      className={classNames(
+        styles.logicNode,
+        theme === 'dark' ? styles.dark : '',
+        {
+          [styles.selectedNode]: selected,
+        },
+      )}
     >
       <Handle
         id="c"

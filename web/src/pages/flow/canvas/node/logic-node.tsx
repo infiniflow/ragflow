@@ -1,3 +1,4 @@
+import { useTheme } from '@/components/theme-provider';
 import classNames from 'classnames';
 import { Handle, NodeProps, Position } from 'reactflow';
 import { NodeData } from '../../interface';
@@ -11,11 +12,16 @@ export function LogicNode({
   isConnectable = true,
   selected,
 }: NodeProps<NodeData>) {
+  const { theme } = useTheme();
   return (
     <section
-      className={classNames(styles.logicNode, {
-        [styles.selectedNode]: selected,
-      })}
+      className={classNames(
+        styles.logicNode,
+        theme === 'dark' ? styles.dark : '',
+        {
+          [styles.selectedNode]: selected,
+        },
+      )}
     >
       <Handle
         id="c"

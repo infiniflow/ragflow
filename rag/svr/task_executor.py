@@ -260,7 +260,7 @@ def build_chunks(task, progress_callback):
 
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    return settings.docStoreConn.createIdx(idxnm, row["kb_id"], vector_size)
+    return settings.docStoreConn.createIdx(idxnm, row.get("kb_id",""), vector_size)
 
 
 def embedding(docs, mdl, parser_config=None, callback=None):

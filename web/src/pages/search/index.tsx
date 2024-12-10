@@ -146,9 +146,9 @@ const SearchPage = () => {
                   ></RetrievalDocuments>
                   <Divider></Divider>
                   <Spin spinning={loading}>
-                    {chunks.length > 0 && (
+                    {chunks?.length > 0 && (
                       <List
-                        dataSource={chunks}
+                        dataSource={chunks || []}
                         className={styles.chunks}
                         renderItem={(item) => (
                           <List.Item>

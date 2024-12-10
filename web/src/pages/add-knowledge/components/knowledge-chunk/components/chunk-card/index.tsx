@@ -5,6 +5,7 @@ import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import { useEffect, useState } from 'react';
 
+import { useTheme } from '@/components/theme-provider';
 import { ChunkTextMode } from '../../constant';
 import styles from './index.less';
 
@@ -31,6 +32,7 @@ const ChunkCard = ({
 }: IProps) => {
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(false);
+  const { theme } = useTheme();
 
   const onChange = (checked: boolean) => {
     setEnabled(checked);
@@ -56,7 +58,8 @@ const ChunkCard = ({
   return (
     <Card
       className={classNames(styles.chunkCard, {
-        [styles.cardSelected]: selected,
+        [`${theme === 'dark' ? styles.cardSelectedDark : styles.cardSelected}`]:
+          selected,
       })}
     >
       <Flex gap={'middle'} justify={'space-between'}>
