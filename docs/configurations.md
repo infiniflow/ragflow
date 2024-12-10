@@ -77,7 +77,7 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `MINIO_USER`  
   The username for MinIO.
 - `MINIO_PASSWORD`  
-  The password for MinIO. accordingly.
+  The password for MinIO.
 
 ### Redis
 
