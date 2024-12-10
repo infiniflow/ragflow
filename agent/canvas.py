@@ -331,3 +331,6 @@ class Canvas(ABC):
 
     def get_preset_param(self):
         return self.components["begin"]["obj"]._param.query
+
+    def get_component_input_elements(self, cpnnm):
+        return self.components["begin"]["obj"].get_input_elements()
