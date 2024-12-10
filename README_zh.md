@@ -145,8 +145,8 @@
    > 运行以下命令会自动下载 v0.14.1 版的 RAGFlow slim Docker 镜像（`v0.14.1-slim`），该镜像并不包含 embedding 模型以及一些 Python 库，因此镜像大小约 1GB。
 
    ```bash
-   $ cd ragflow/docker
-   $ docker compose -f docker-compose.yml up -d
+   $ cd ragflow
+   $ docker compose -f docker/docker-compose.yml up -d
    ```
 
    | RAGFLOW_IMAGE tag in docker/.env | 尺寸  | 内置 embedding 模型和相关 Python 库?                    | 描述                   |
@@ -199,16 +199,16 @@
 
 请务必确保 [.env](./docker/.env) 文件中的变量设置与 [service_conf.yaml.template](./docker/service_conf.yaml.template) 文件中的配置保持一致！
 
-如果不能访问镜像站点hub.docker.com或者模型站点huggingface.co，请按照[.env](./docker/.env)注释修改`RAGFLOW_IMAGE`和`HF_ENDPOINT`。
+如果不能访问镜像站点 hub.docker.com 或者模型站点 huggingface.co，请按照 [.env](./docker/.env) 注释修改 `RAGFLOW_IMAGE` 和 `HF_ENDPOINT`。
 
-> [./docker/README](./docker/README.md) 文件提供了环境变量设置和服务配置的详细信息。请**一定要**确保 [./docker/README](./docker/README.md) 文件当中列出来的环境变量的值与 [service_conf.yaml.template](./docker/service_conf.yaml.template) 文件当中的系统配置保持一致。
+> [./docker/README](./docker/README.md) 解释了 [service_conf.yaml.template](./docker/service_conf.yaml.template) 用到的环境变量设置和服务配置。
 
 如需更新默认的 HTTP 服务端口(80), 可以在 [docker-compose.yml](./docker/docker-compose.yml) 文件中将配置 `80:80` 改为 `<YOUR_SERVING_PORT>:80`。
 
 > 所有系统配置都需要通过系统重启生效：
 >
 > ```bash
-> $ docker compose -f docker-compose.yml up -d
+> $ docker compose -f docker/docker-compose.yml up -d
 > ```
 
 ### 把文档引擎从 Elasticsearch 切换成为 Infinity
