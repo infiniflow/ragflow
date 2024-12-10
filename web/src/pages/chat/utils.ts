@@ -41,3 +41,11 @@ export const buildMessageItemReference = (
 
   return reference ?? { doc_aggs: [], chunks: [], total: 0 };
 };
+
+const oldReg = /(#{2}\d+\${2})/g;
+
+export const replaceTextByOldReg = (text: string) => {
+  return text.replace(oldReg, function (substring) {
+    return `${substring.slice(0, -2)}@@`;
+  });
+};

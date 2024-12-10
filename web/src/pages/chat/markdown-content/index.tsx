@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
+import { replaceTextByOldReg } from '../utils';
 import styles from './index.less';
 
 const reg = /(#{2}\d+@{2})/g;
@@ -156,7 +157,9 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, reg, (match, i) => {
+      const nextText = replaceTextByOldReg(text);
+
+      let replacedText = reactStringReplace(nextText, reg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
         return (
           <Popover content={getPopoverContent(chunkIndex)} key={i}>
