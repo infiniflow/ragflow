@@ -305,7 +305,6 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    ```
    127.0.0.1       es01 infinity mysql minio redis
    ```  
-   In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
 

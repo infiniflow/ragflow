@@ -17,13 +17,14 @@
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
-import logging
 import sys
-import os
-
 from api.utils.log_utils import initRootLogger
+CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
+CONSUMER_NAME = "task_executor_" + CONSUMER_NO
+initRootLogger(CONSUMER_NAME)
 
-
+import logging
+import os
 from datetime import datetime
 import json
 import hashlib
@@ -56,11 +57,6 @@ from rag.settings import DOC_MAXIMUM_SIZE, SVR_QUEUE_NAME, print_rag_settings
 from rag.utils import rmSpace, num_tokens_from_string
 from rag.utils.redis_conn import REDIS_CONN, Payload
 from rag.utils.storage_factory import STORAGE_IMPL
-
-CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
-CONSUMER_NAME = "task_executor_" + CONSUMER_NO
-LOG_LEVELS = os.environ.get("LOG_LEVELS", "")
-initRootLogger(CONSUMER_NAME, LOG_LEVELS)
 
 BATCH_SIZE = 64
 
