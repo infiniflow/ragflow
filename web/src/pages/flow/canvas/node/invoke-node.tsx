@@ -1,3 +1,4 @@
+import { useTheme } from '@/components/theme-provider';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
@@ -15,12 +16,17 @@ export function InvokeNode({
   selected,
 }: NodeProps<NodeData>) {
   const { t } = useTranslation();
+  const { theme } = useTheme();
   const url = get(data, 'form.url');
   return (
     <section
-      className={classNames(styles.ragNode, {
-        [styles.selectedNode]: selected,
-      })}
+      className={classNames(
+        styles.ragNode,
+        theme === 'dark' ? styles.dark : '',
+        {
+          [styles.selectedNode]: selected,
+        },
+      )}
     >
       <Handle
         id="c"

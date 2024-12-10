@@ -32,6 +32,7 @@ import {
 import EmbedModal from '@/components/api-service/embed-modal';
 import { useShowEmbedModal } from '@/components/api-service/hooks';
 import SvgIcon from '@/components/svg-icon';
+import { useTheme } from '@/components/theme-provider';
 import { SharedFrom } from '@/constants/chat';
 import {
   useClickConversationCard,
@@ -53,6 +54,7 @@ const Chat = () => {
   const { handleClickDialog } = useClickDialogCard();
   const { handleClickConversation } = useClickConversationCard();
   const { dialogId, conversationId } = useGetChatSearchParams();
+  const { theme } = useTheme();
   const {
     list: conversationList,
     addTemporaryConversation,
@@ -242,7 +244,9 @@ const Chat = () => {
                   key={x.id}
                   hoverable
                   className={classNames(styles.chatAppCard, {
-                    [styles.chatAppCardSelected]: dialogId === x.id,
+                    [theme === 'dark'
+                      ? styles.chatAppCardSelectedDark
+                      : styles.chatAppCardSelected]: dialogId === x.id,
                   })}
                   onMouseEnter={handleAppCardEnter(x.id)}
                   onMouseLeave={handleItemLeave}
@@ -315,7 +319,9 @@ const Chat = () => {
                   onMouseEnter={handleConversationCardEnter(x.id)}
                   onMouseLeave={handleConversationItemLeave}
                   className={classNames(styles.chatTitleCard, {
-                    [styles.chatTitleCardSelected]: x.id === conversationId,
+                    [theme === 'dark'
+                      ? styles.chatTitleCardSelectedDark
+                      : styles.chatTitleCardSelected]: x.id === conversationId,
                   })}
                 >
                   <Flex justify="space-between" align="center">
