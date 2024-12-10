@@ -297,7 +297,7 @@ class InfinityConnection(DocStoreConnection):
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, selectFields)
-        logger.debug("INFINITY search tables: " + str(table_list))
+        logger.debug(f"INFINITY search tables: {str(table_list)}, result: {str(res)}")
         return res
 
     def get(
@@ -307,8 +307,10 @@ class InfinityConnection(DocStoreConnection):
         db_instance = inf_conn.get_database(self.dbName)
         df_list = list()
         assert isinstance(knowledgebaseIds, list)
+        table_list = list()
         for knowledgebaseId in knowledgebaseIds:
             table_name = f"{indexName}_{knowledgebaseId}"
+            table_list.append(table_name)
             table_instance = db_instance.get_table(table_name)
             kb_res = table_instance.output(["*"]).filter(f"id = '{chunkId}'").to_pl()
             if len(kb_res) != 0 and kb_res.shape[0] > 0:
@@ -316,6 +318,7 @@ class InfinityConnection(DocStoreConnection):
 
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, ["id"])
+        logger.debug(f"INFINITY get tables: {str(table_list)}, result: {str(res)}")
         res_fields = self.getFields(res, res.columns)
         return res_fields.get(chunkId, None)
 
@@ -445,11 +448,17 @@ class InfinityConnection(DocStoreConnection):
                     v = v.split()
                 elif fieldnm == "position_int":
                     assert isinstance(v, str)
-                    arr = [int(hex_val, 16) for hex_val in v.split('_')]
-                    v = [arr[i:i + 4] for i in range(0, len(arr), 4)]
+                    if v:
+                        arr = [int(hex_val, 16) for hex_val in v.split('_')]
+                        v = [arr[i:i + 4] for i in range(0, len(arr), 4)]
+                    else:
+                        v = []
                 elif fieldnm in ["page_num_int", "top_int"]:
                     assert isinstance(v, str)
-                    v = [int(hex_val, 16) for hex_val in v.split('_')]
+                    if v:
+                        v = [int(hex_val, 16) for hex_val in v.split('_')]
+                    else:
+                        v = []
                 else:
                     if not isinstance(v, str):
                         v = str(v)
