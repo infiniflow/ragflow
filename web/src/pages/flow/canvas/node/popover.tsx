@@ -5,6 +5,7 @@ import JsonView from 'react18-json-view';
 import 'react18-json-view/src/style.css';
 import { useGetComponentLabelByValue, useReplaceIdWithText } from '../../hooks';
 
+import { useTheme } from '@/components/theme-provider';
 import {
   Popover,
   PopoverContent,
@@ -29,6 +30,7 @@ export function NextNodePopover({ children, nodeId, name }: IProps) {
   const { t } = useTranslate('flow');
 
   const { data } = useFetchFlow();
+  const { theme } = useTheme();
   const component = useMemo(() => {
     return get(data, ['dsl', 'components', nodeId], {});
   }, [nodeId, data]);
@@ -64,7 +66,16 @@ export function NextNodePopover({ children, nodeId, name }: IProps) {
         <div className="flex w-full gap-4 flex-col">
           <div className="flex flex-col space-y-1.5">
             <span className="font-semibold text-[14px]">{t('input')}</span>
-            <div className="bg-gray-100 p-1 rounded">
+            <div
+              style={
+                theme === 'dark'
+                  ? {
+                      backgroundColor: 'rgba(150, 150, 150, 0.2)',
+                    }
+                  : {}
+              }
+              className={`bg-gray-100 p-1 rounded`}
+            >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -85,7 +96,16 @@ export function NextNodePopover({ children, nodeId, name }: IProps) {
           </div>
           <div className="flex flex-col space-y-1.5">
             <span className="font-semibold text-[14px]">{t('output')}</span>
-            <div className="bg-gray-100 p-1 rounded">
+            <div
+              style={
+                theme === 'dark'
+                  ? {
+                      backgroundColor: 'rgba(150, 150, 150, 0.2)',
+                    }
+                  : {}
+              }
+              className="bg-gray-100 p-1 rounded"
+            >
               <JsonView
                 src={replacedOutput}
                 displaySize={30}
