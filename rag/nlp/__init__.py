@@ -22,11 +22,11 @@ from rag.utils import num_tokens_from_string
 from . import rag_tokenizer
 import re
 import copy
+import json
 import roman_numbers as r
 from word2number import w2n
 from cn2an import cn2an
 from PIL import Image
-import json
 
 import chardet
 

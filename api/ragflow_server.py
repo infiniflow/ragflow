@@ -18,10 +18,11 @@
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
+from api.utils.log_utils import initRootLogger
+initRootLogger("ragflow_server")
+
 import logging
 import os
-from api.utils.log_utils import initRootLogger
-
 import signal
 import sys
 import time
@@ -40,9 +41,6 @@ from api.db.init_data import init_web_data
 from api.versions import get_ragflow_version
 from api.utils import show_configs
 from rag.settings import print_rag_settings
-
-LOG_LEVELS = os.environ.get("LOG_LEVELS", "")
-initRootLogger("ragflow_server", LOG_LEVELS)
 
 
 def update_progress():
