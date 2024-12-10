@@ -21,7 +21,6 @@ from api.db.services.common_service import CommonService
 from api.db.services.dialog_service import DialogService, chat
 from api.utils import get_uuid
 import json
-from copy import deepcopy
 
 
 class ConversationService(CommonService):
