@@ -11,7 +11,7 @@
 在这个文件夹下，我们提出了一个测试工具 ./test/client.py，
 它可以测试像文件夹./test/dsl_examples下一样的DSL文件。
 请在启动 RAGFlow 的同一文件夹中使用此客户端。如果它是通过 Docker 运行的，请在运行客户端之前进入容器。
-否则，正确配置 conf/service_conf.yaml 文件是必不可少的。
+否则，正确配置 service_conf.yaml 文件是必不可少的。
 
 ```bash
 PYTHONPATH=path/to/ragflow python graph/test/client.py -h
