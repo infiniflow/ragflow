@@ -33,6 +33,7 @@ export default {
       pleaseSelect: '選択してください',
       pleaseInput: '入力してください',
       submit: '送信',
+      japanese: '日本語',
     },
     login: {
       login: 'ログイン',
@@ -85,8 +86,7 @@ export default {
       name: '名前',
       namePlaceholder: '名前を入力してください',
       doc: 'ドキュメント',
-      datasetDescription:
-        '😉 パースが成功すると、質問と回答が可能になります。',
+      datasetDescription: '😉 パースが成功すると、質問と回答が可能になります。',
       addFile: 'ファイルを追加',
       searchFiles: 'ファイルを検索',
       localFiles: 'ローカルファイル',
@@ -157,8 +157,7 @@ export default {
       topK: 'トップK',
       topKTip: `Kチャンクがリランキングモデルに供給されます。`,
       delimiter: `区切り文字`,
-      delimiterTip:
-        '複数文字の区切り文字をサポートしています。',
+      delimiterTip: '複数文字の区切り文字をサポートしています。',
       html4excel: 'ExcelをHTMLに変換',
       html4excelTip: `有効にすると、スプレッドシートはHTMLテーブルとして解析されます。それ以外の場合、キーと値のペアとして解析されます。`,
       autoKeywords: '自動キーワード',
@@ -182,7 +181,7 @@ export default {
       embeddingModelTip:
         'チャンクを埋め込みに変換するモデルです。一度チャンクが作成されると変更できません。',
       permissionsTip:
-        "「チーム」に設定すると、全てのチームメンバーがナレッジベースを管理できます。",
+        '「チーム」に設定すると、全てのチームメンバーがナレッジベースを管理できます。',
       chunkTokenNumberTip:
         'チャンクのトークンしきい値を設定します。このしきい値を下回る段落は、次の段落と結合され、しきい値を超えた時点でチャンクが作成されます。',
       chunkMethod: 'チャンク方法',
@@ -201,8 +200,7 @@ export default {
       methodExamplesDescription:
         '以下のスクリーンショットは明確な説明のために提供されています。',
       dialogueExamplesTitle: '会話の例',
-      methodEmpty:
-        'ナレッジベースカテゴリの視覚的説明がここに表示されます',
+      methodEmpty: 'ナレッジベースカテゴリの視覚的説明がここに表示されます',
       book: `<p>対応ファイル形式は<b>DOCX</b>, <b>PDF</b>, <b>TXT</b>です。</p><p>
       PDF形式の書籍では、解析時間を短縮するため、<i>ページ範囲</i>を設定してください。</p>`,
       laws: `<p>対応ファイル形式は<b>DOCX</b>, <b>PDF</b>, <b>TXT</b>です。</p><p>
@@ -305,7 +303,7 @@ export default {
       entityTypes: 'エンティティタイプ',
       pageRank: 'ページランク',
       pageRankTip: `これは関連性スコアを高めるために使用されます。すべての取得されたチャンクの関連性スコアにこの数値が加算されます。
-特定のナレッジベースを最初に検索したい場合は、他のものよりも高いページランクスコアを設定してください。`
+特定のナレッジベースを最初に検索したい場合は、他のものよりも高いページランクスコアを設定してください。`,
     },
     chunk: {
       chunk: 'チャンク',
@@ -360,8 +358,7 @@ export default {
       {knowledge}
       上記がナレッジベースです。`,
       systemMessage: '入力してください！',
-      systemTip:
-        'LLMが質問に答える際に従う指示を設定します。',
+      systemTip: 'LLMが質問に答える際に従う指示を設定します。',
       topN: 'トップN',
       topNTip: `類似度スコアがしきい値を超えるチャンクのうち、上位N件のみがLLMに供給されます。`,
       variable: '変数',
@@ -406,7 +403,8 @@ export default {
       quote: '引用を表示',
       quoteTip: '元のテキストの出典を表示しますか？',
       selfRag: 'Self-RAG',
-      selfRagTip: '詳細は次を参照してください：https://huggingface.co/papers/2310.11511',
+      selfRagTip:
+        '詳細は次を参照してください：https://huggingface.co/papers/2310.11511',
       overview: 'チャットID',
       pv: 'メッセージ数',
       uv: 'アクティブユーザー数',
@@ -486,7 +484,7 @@ export default {
       newPassword: '新しいパスワード',
       newPasswordMessage: 'パスワードを入力してください！',
       newPasswordDescription:
-        '新しいパスワードは8文字以上でなければなりません。',    
+        '新しいパスワードは8文字以上でなければなりません。',
       confirmPassword: '新しいパスワードの確認',
       confirmPasswordMessage: 'パスワードを確認してください！',
       confirmPasswordNonMatchMessage:
@@ -568,7 +566,7 @@ export default {
       SparkModelNameMessage: 'Sparkモデルを選択してください',
       addSparkAPIPassword: 'Spark APIパスワード',
       SparkAPIPasswordMessage: 'APIパスワードを入力してください',
-      addSparkAPPID: 'Spark APPID',          
+      addSparkAPPID: 'Spark APPID',
       SparkAPPIDMessage: 'APPIDを入力してください',
       addSparkAPISecret: 'Spark APIシークレット',
       SparkAPISecretMessage: 'APIシークレットを入力してください',
@@ -579,8 +577,7 @@ export default {
       yiyanAKMessage: 'APIキーを入力してください',
       addyiyanSK: 'yiyanシークレットキー',
       yiyanSKMessage: 'シークレットキーを入力してください',
-      FishAudioModelNameMessage:
-        '音声合成モデルに名前を付けてください',
+      FishAudioModelNameMessage: '音声合成モデルに名前を付けてください',
       addFishAudioAK: 'Fish Audio APIキー',
       addFishAudioAKMessage: 'APIキーを入力してください',
       addFishAudioRefID: 'FishAudio参照ID',
@@ -700,7 +697,7 @@ export default {
       relevantDescription: `LLMを使用して、上流の出力がユーザーの最新のクエリに関連しているかどうかを評価するコンポーネント。各判定結果に対して次のコンポーネントを指定してください。`,
       rewriteQuestionDescription: `ナレッジベースから関連情報を取得できなかった場合にユーザーのクエリを修正するコンポーネント。定義されたループの上限に達するまでこのプロセスを繰り返します。上流が「Relevant」、下流が「Retrieval」であることを確認してください。`,
       messageDescription:
-        "静的メッセージを送信するコンポーネント。複数のメッセージが提供されている場合は、その中からランダムに1つを選択して送信します。下流がインターフェースコンポーネント「Answer」であることを確認してください。",
+        '静的メッセージを送信するコンポーネント。複数のメッセージが提供されている場合は、その中からランダムに1つを選択して送信します。下流がインターフェースコンポーネント「Answer」であることを確認してください。',
       keywordDescription: `ユーザーの入力からトップNの検索結果を取得するコンポーネント。使用前にTopNの値が適切に設定されていることを確認してください。`,
       switchDescription: `前のコンポーネントの出力に基づいて条件を評価し、それに応じて実行の流れを指示するコンポーネント。ケースを定義し、各ケースのアクションまたは条件が満たされない場合のデフォルトアクションを指定することで、複雑な分岐ロジックを可能にします。`,
       wikipediaDescription: `wikipedia.orgから検索を行うコンポーネントで、TopNを使用して検索結果の数を指定します。既存のナレッジベースを補完します。`,
@@ -800,7 +797,7 @@ export default {
         news: 'ニュースと情報',
         law: '法律と規制',
         contract: '契約',
-      },      
+      },
       baiduSourceLangOptions: {
         auto: '自動検出',
         zh: '中国語',
