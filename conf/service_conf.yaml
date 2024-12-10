@@ -13,6 +13,7 @@ minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
   host: 'minio:9000'
+  import_bucket: 'bucket'
 es:
   hosts: 'http://es01:1200'
   username: 'elastic'
