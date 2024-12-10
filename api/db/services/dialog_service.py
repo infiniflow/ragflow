@@ -196,7 +196,32 @@ def chat(dialog, messages, stream=True, **kwargs):
                                         dialog.vector_similarity_weight,
                                         doc_ids=attachments,
                                         top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl)
-    knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
+
+        # Group chunks by document ID
+        doc_chunks = {}
+        for ck in kbinfos["chunks"]:
+            doc_id = ck["doc_id"]
+            if doc_id not in doc_chunks:
+                doc_chunks[doc_id] = []
+            doc_chunks[doc_id].append(ck["content_with_weight"])
+
+        # Create knowledges list with grouped chunks
+        knowledges = []
+        for doc_id, chunks in doc_chunks.items():
+            # Find the corresponding document name
+            doc_name = next((d["doc_name"] for d in kbinfos.get("doc_aggs", []) if d["doc_id"] == doc_id), doc_id)
+            
+            # Create a header for the document
+            doc_knowledge = f"Document: {doc_name} \nContains the following relevant fragments:\n"
+            
+            # Add numbered fragments
+            for i, chunk in enumerate(chunks, 1):
+                doc_knowledge += f"{i}. {chunk}\n"
+            
+            knowledges.append(doc_knowledge)
+
+
+
     logging.debug(
         "{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
     retrieval_tm = timer()
@@ -651,11 +676,39 @@ def ask(question, kb_ids, tenant_id):
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
 
     used_token_count = 0
+    chunks_num = 0
     for i, c in enumerate(knowledges):
         used_token_count += num_tokens_from_string(c)
         if max_tokens * 0.97 < used_token_count:
             knowledges = knowledges[:i]
+            chunks_num = chunks_num + 1
             break
+
+        # Group chunks by document ID
+    doc_chunks = {}
+    counter_chunks = 0
+    for ck in kbinfos["chunks"]:
+        if counter_chunks < chunks_num:
+            counter_chunks = counter_chunks + 1
+            doc_id = ck["doc_id"]
+            if doc_id not in doc_chunks:
+                doc_chunks[doc_id] = []
+            doc_chunks[doc_id].append(ck["content_with_weight"])
+
+        # Create knowledges list with grouped chunks
+    knowledges = []
+    for doc_id, chunks in doc_chunks.items():
+            # Find the corresponding document name
+        doc_name = next((d["doc_name"] for d in kbinfos.get("doc_aggs", []) if d["doc_id"] == doc_id), doc_id)
+            
+            # Create a header for the document
+        doc_knowledge = f"Document: {doc_name} \nContains the following relevant fragments:\n"
+            
+            # Add numbered fragments
+        for i, chunk in enumerate(chunks, 1):
+            doc_knowledge += f"{i}. {chunk}\n"
+            
+        knowledges.append(doc_knowledge)
 
     prompt = """
     Role: You're a smart assistant. Your name is Miss R.

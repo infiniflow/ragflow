@@ -47,6 +47,8 @@ class ConversationService(CommonService):
 
 def structure_answer(conv, ans, message_id, session_id):
     reference = ans["reference"]
+    if not isinstance(reference, dict):
+        reference = {}
     temp_reference = deepcopy(ans["reference"])
     if not conv.reference:
         conv.reference.append(temp_reference)
@@ -56,7 +58,7 @@ def structure_answer(conv, ans, message_id, session_id):
 
     chunk_list = [{
             "id": chunk["chunk_id"],
-            "content": chunk["content"],
+            "content": chunk.get("content") if chunk.get("content") else chunk.get("content_with_content"),
             "document_id": chunk["doc_id"],
             "document_name": chunk["docnm_kwd"],
             "dataset_id": chunk["kb_id"],
@@ -174,6 +176,8 @@ def iframe_completion(dialog_id, question, session_id=None, stream=True, **kwarg
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
 
+    if not conv.message:
+        conv.message = []
     messages = conv.message
     question = {
         "role": "user",

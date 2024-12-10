@@ -16,7 +16,7 @@
 import json
 from uuid import uuid4
 from agent.canvas import Canvas
-from api.db.db_models import DB, CanvasTemplate, UserCanvas
+from api.db.db_models import DB, CanvasTemplate, UserCanvas, API4Conversation
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.conversation_service import structure_answer
@@ -65,29 +65,32 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
             "id": session_id,
             "dialog_id": cvs.id,
             "user_id": kwargs.get("user_id", ""),
-            "message": [{"role": "assistant", "content": canvas.get_prologue()}],
             "source": "agent",
             "dsl": json.loads(cvs.dsl)
         }
         API4ConversationService.save(**conv)
-        yield "data:" + json.dumps({"code": 0,
+        if canvas.get_preset_param():
+            yield "data:" + json.dumps({"code": 0,
                                     "message": "",
                                     "data": {
                                         "session_id": session_id,
-                                        "answer": canvas.get_prologue(),
+                                        "answer": "",
                                         "reference": [],
                                         "param": canvas.get_preset_param()
                                       }
                                     },
                                    ensure_ascii=False) + "\n\n"
-        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
-        return
+            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+            return
+        conv = API4Conversation(**conv)
     else:
         session_id = session_id
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
         canvas = Canvas(json.dumps(conv.dsl), tenant_id)
 
+    if not conv.message:
+        conv.message = []
     messages = conv.message
     question = {
         "role": "user",
