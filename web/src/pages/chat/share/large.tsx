@@ -27,6 +27,7 @@ const ChatContainer = () => {
     loading,
     ref,
     derivedMessages,
+    hasError,
   } = useSendSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
 
@@ -71,7 +72,7 @@ const ChatContainer = () => {
         <MessageInput
           isShared
           value={value}
-          disabled={false}
+          disabled={hasError}
           sendDisabled={sendDisabled}
           conversationId={conversationId}
           onInputChange={handleInputChange}

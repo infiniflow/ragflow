@@ -71,6 +71,15 @@ export const useShowTokenEmptyError = () => {
   return { showTokenEmptyError };
 };
 
+export const useShowBetaEmptyError = () => {
+  const { t } = useTranslate('chat');
+
+  const showBetaEmptyError = useCallback(() => {
+    message.error(t('betaError'));
+  }, [t]);
+  return { showBetaEmptyError };
+};
+
 const getUrlWithToken = (token: string, from: string = 'chat') => {
   const { protocol, host } = window.location;
   return `${protocol}//${host}/chat/share?shared_id=${token}&from=${from}`;
@@ -78,6 +87,7 @@ const getUrlWithToken = (token: string, from: string = 'chat') => {
 
 const useFetchTokenListBeforeOtherStep = () => {
   const { showTokenEmptyError } = useShowTokenEmptyError();
+  const { showBetaEmptyError } = useShowBetaEmptyError();
 
   const { data: tokenList, fetchSystemTokenList } =
     useFetchManualSystemTokenList();
@@ -97,12 +107,16 @@ const useFetchTokenListBeforeOtherStep = () => {
     const ret = await fetchSystemTokenList();
     const list = ret;
     if (Array.isArray(list) && list.length > 0) {
+      if (!list[0].beta) {
+        showBetaEmptyError();
+        return false;
+      }
       return list[0]?.token;
     } else {
       showTokenEmptyError();
       return false;
     }
-  }, [fetchSystemTokenList, showTokenEmptyError]);
+  }, [fetchSystemTokenList, showBetaEmptyError, showTokenEmptyError]);
 
   return {
     token,

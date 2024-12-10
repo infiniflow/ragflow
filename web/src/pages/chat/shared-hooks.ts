@@ -5,39 +5,16 @@ import {
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
 import { Message } from '@/interfaces/database/chat';
+import { message } from 'antd';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { useHandleMessageInputChange } from './hooks';
 
-export const useSelectNextSharedMessages = () => {
-  // const { data, loading } = useFetchNextSharedConversation(conversationId);
-
-  const {
-    derivedMessages,
-    ref,
-    setDerivedMessages,
-    addNewestAnswer,
-    addNewestQuestion,
-    removeLatestMessage,
-  } = useSelectDerivedMessages();
-
-  // useEffect(() => {
-  //   setDerivedMessages(data?.data?.message);
-  // }, [setDerivedMessages, data]);
-
-  return {
-    derivedMessages,
-    addNewestAnswer,
-    addNewestQuestion,
-    removeLatestMessage,
-    // loading,
-    ref,
-    setDerivedMessages,
-  };
-};
+const isCompletionError = (res: any) =>
+  res && (res?.response.status !== 200 || res?.data?.code !== 0);
 
 export const useSendButtonDisabled = (value: string) => {
   return trim(value) === '';
@@ -66,7 +43,8 @@ export const useSendSharedMessage = () => {
     removeLatestMessage,
     addNewestAnswer,
     addNewestQuestion,
-  } = useSelectNextSharedMessages();
+  } = useSelectDerivedMessages();
+  const [hasError, setHasError] = useState(false);
 
   const sendMessage = useCallback(
     async (message: Message, id?: string) => {
@@ -77,7 +55,7 @@ export const useSendSharedMessage = () => {
         session_id: get(derivedMessages, '0.session_id'),
       });
 
-      if (res && (res?.response.status !== 200 || res?.data?.code !== 0)) {
+      if (isCompletionError(res)) {
         // cancel loading
         setValue(message.content);
         removeLatestMessage();
@@ -103,7 +81,10 @@ export const useSendSharedMessage = () => {
 
   const fetchSessionId = useCallback(async () => {
     const ret = await send({ question: '' });
-    console.log('🚀 ~ fetchSessionId ~ ret:', ret);
+    if (isCompletionError(ret)) {
+      message.error(ret?.data.message);
+      setHasError(true);
+    }
   }, [send]);
 
   useEffect(() => {
@@ -146,5 +127,6 @@ export const useSendSharedMessage = () => {
     ref,
     loading: false,
     derivedMessages,
+    hasError,
   };
 };
