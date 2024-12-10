@@ -54,29 +54,31 @@ jobs:
         uses: astral-sh/ruff-action@v2
         with:
           version: ">=0.8.2"
+          args: "check --ignore E402"
 
-      - name: Build ragflow:dev-slim
+      - name: Build ragflow:nightly-slim
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
           sudo docker pull ubuntu:22.04
-          sudo docker build --progress=plain --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
+          sudo docker build --progress=plain --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 
-      - name: Build ragflow:dev
+      - name: Build ragflow:nightly
         run: |
-          sudo docker build --progress=plain --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:dev .
+          sudo docker build --progress=plain --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
 
-      - name: Start ragflow:dev-slim
+      - name: Start ragflow:nightly-slim
         run: |
+          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
-      - name: Stop ragflow:dev-slim
+      - name: Stop ragflow:nightly-slim
         if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml down -v
 
-      - name: Start ragflow:dev
+      - name: Start ragflow:nightly
         run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:dev" >> docker/.env
+          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Run sdk tests against Elasticsearch
@@ -100,12 +102,12 @@ jobs:
           cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py 
           
 
-      - name: Stop ragflow:dev
+      - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml down -v
 
-      - name: Start ragflow:dev
+      - name: Start ragflow:nightly
         run: |
           sudo DOC_ENGINE=infinity docker compose -f docker/docker-compose.yml up -d
 
@@ -129,7 +131,7 @@ jobs:
           done
           cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
 
-      - name: Stop ragflow:dev
+      - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
         run: |
           sudo DOC_ENGINE=infinity docker compose -f docker/docker-compose.yml down -v

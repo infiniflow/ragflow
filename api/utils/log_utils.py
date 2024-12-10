@@ -28,7 +28,7 @@ def get_project_base_directory():
     )
     return PROJECT_BASE
 
-def initRootLogger(logfile_basename: str, log_levels: str, log_format: str = "%(asctime)-15s %(levelname)-8s %(process)d %(message)s"):
+def initRootLogger(logfile_basename: str, log_format: str = "%(asctime)-15s %(levelname)-8s %(process)d %(message)s"):
     logger = logging.getLogger()
     if logger.hasHandlers():
         return
@@ -48,8 +48,9 @@ def initRootLogger(logfile_basename: str, log_levels: str, log_format: str = "%(
 
     logging.captureWarnings(True)
 
+    LOG_LEVELS = os.environ.get("LOG_LEVELS", "")
     pkg_levels = {}
-    for pkg_name_level in log_levels.split(","):
+    for pkg_name_level in LOG_LEVELS.split(","):
         terms = pkg_name_level.split("=")
         if len(terms)!= 2:
             continue

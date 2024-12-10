@@ -15,17 +15,19 @@
 #
 import re
 import json
-from copy import deepcopy
-from uuid import uuid4
 from api.db import LLMType
 from flask import request, Response
+
+from api.db.services.conversation_service import ConversationService, iframe_completion
+from api.db.services.conversation_service import completion as rag_completion
+from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.dialog_service import ask
 from agent.canvas import Canvas
 from api.db import StatusEnum
-from api.db.db_models import API4Conversation
+from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
-from api.db.services.dialog_service import DialogService, ConversationService, chat
+from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import get_uuid
 from api.utils.api_utils import get_error_data_result
@@ -66,8 +68,6 @@ def create_agent_session(tenant_id, agent_id):
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
-    if cvs.user_id != tenant_id:
-        return get_error_data_result(message="You do not own the agent.")
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
@@ -110,98 +110,10 @@ def update(tenant_id, chat_id, session_id):
 
 @manager.route('/chats/<chat_id>/completions', methods=['POST'])  # noqa: F821
 @token_required
-def completion(tenant_id, chat_id):
-    dia = DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
-    if not dia:
-        return get_error_data_result(message="You do not own the chat")
+def chat_completion(tenant_id, chat_id):
     req = request.json
-    if not req.get("session_id"):
-        conv = {
-            "id": get_uuid(),
-            "dialog_id": chat_id,
-            "name": req.get("name", "New session"),
-            "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}]
-        }
-        if not conv.get("name"):
-            return get_error_data_result(message="`name` can not be empty.")
-        ConversationService.save(**conv)
-        e, conv = ConversationService.get_by_id(conv["id"])
-        session_id = conv.id
-    else:
-        session_id = req.get("session_id")
-    if not req.get("question"):
-        return get_error_data_result(message="Please input your question.")
-    conv = ConversationService.query(id=session_id, dialog_id=chat_id)
-    if not conv:
-        return get_error_data_result(message="Session does not exist")
-    conv = conv[0]
-    msg = []
-    question = {
-        "content": req.get("question"),
-        "role": "user",
-        "id": str(uuid4())
-    }
-    conv.message.append(question)
-    for m in conv.message:
-        if m["role"] == "system":
-            continue
-        if m["role"] == "assistant" and not msg:
-            continue
-        msg.append(m)
-    message_id = msg[-1].get("id")
-    e, dia = DialogService.get_by_id(conv.dialog_id)
-
-    if not conv.reference:
-        conv.reference = []
-    conv.message.append({"role": "assistant", "content": "", "id": message_id})
-    conv.reference.append({"chunks": [], "doc_aggs": []})
-
-    def fillin_conv(ans):
-        reference = ans["reference"]
-        temp_reference = deepcopy(ans["reference"])
-        nonlocal conv, message_id
-        if not conv.reference:
-            conv.reference.append(temp_reference)
-        else:
-            conv.reference[-1] = temp_reference
-        conv.message[-1] = {"role": "assistant", "content": ans["answer"],
-                            "id": message_id, "prompt": ans.get("prompt", "")}
-        if "chunks" in reference:
-            chunks = reference.get("chunks")
-            chunk_list = []
-            for chunk in chunks:
-                new_chunk = {
-                    "id": chunk["chunk_id"],
-                    "content": chunk["content_with_weight"],
-                    "document_id": chunk["doc_id"],
-                    "document_name": chunk["docnm_kwd"],
-                    "dataset_id": chunk["kb_id"],
-                    "image_id": chunk.get("image_id", ""),
-                    "similarity": chunk["similarity"],
-                    "vector_similarity": chunk["vector_similarity"],
-                    "term_similarity": chunk["term_similarity"],
-                    "positions": chunk.get("positions", []),
-                }
-                chunk_list.append(new_chunk)
-            reference["chunks"] = chunk_list
-        ans["id"] = message_id
-        ans["session_id"] = session_id
-
-    def stream():
-        nonlocal dia, msg, req, conv
-        try:
-            for ans in chat(dia, msg, **req):
-                fillin_conv(ans)
-                yield "data:" + json.dumps({"code": 0, "data": ans}, ensure_ascii=False) + "\n\n"
-            ConversationService.update_by_id(conv.id, conv.to_dict())
-        except Exception as e:
-            yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                        "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                                       ensure_ascii=False) + "\n\n"
-        yield "data:" + json.dumps({"code": 0, "data": True}, ensure_ascii=False) + "\n\n"
-
     if req.get("stream", True):
-        resp = Response(stream(), mimetype="text/event-stream")
+        resp = Response(rag_completion(tenant_id, chat_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
@@ -211,172 +123,26 @@ def completion(tenant_id, chat_id):
 
     else:
         answer = None
-        for ans in chat(dia, msg, **req):
+        for ans in rag_completion(tenant_id, chat_id, **req):
             answer = ans
-            fillin_conv(ans)
-            ConversationService.update_by_id(conv.id, conv.to_dict())
             break
         return get_result(data=answer)
 
 
 @manager.route('/agents/<agent_id>/completions', methods=['POST'])  # noqa: F821
 @token_required
-def agent_completion(tenant_id, agent_id):
+def agent_completions(tenant_id, agent_id):
     req = request.json
-
-    e, cvs = UserCanvasService.get_by_id(agent_id)
-    if not e:
-        return get_error_data_result("Agent not found.")
-    if cvs.user_id != tenant_id:
-        return get_error_data_result(message="You do not own the agent.")
-    if not isinstance(cvs.dsl, str):
-        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
-    canvas = Canvas(cvs.dsl, tenant_id)
-
-    if not req.get("session_id"):
-        session_id = get_uuid()
-        conv = {
-            "id": session_id,
-            "dialog_id": cvs.id,
-            "user_id": req.get("user_id", ""),
-            "message": [{"role": "assistant", "content": canvas.get_prologue()}],
-            "source": "agent",
-            "dsl": json.loads(cvs.dsl)
-        }
-        API4ConversationService.save(**conv)
-        conv = API4Conversation(**conv)
-    else:
-        session_id = req.get("session_id")
-        e, conv = API4ConversationService.get_by_id(req["session_id"])
-        if not e:
-            return get_error_data_result(message="Session not found!")
-        canvas = Canvas(json.dumps(conv.dsl), tenant_id)
-
-    messages = conv.message
-    question = req.get("question")
-    if not question:
-        return get_error_data_result("`question` is required.")
-    question = {
-        "role": "user",
-        "content": question,
-        "id": str(uuid4())
-    }
-    messages.append(question)
-    msg = []
-    for m in messages:
-        if m["role"] == "system":
-            continue
-        if m["role"] == "assistant" and not msg:
-            continue
-        msg.append(m)
-    if not msg[-1].get("id"):
-        msg[-1]["id"] = get_uuid()
-    message_id = msg[-1]["id"]
-
-    stream = req.get("stream", True)
-
-    def fillin_conv(ans):
-        reference = ans["reference"]
-        temp_reference = deepcopy(ans["reference"])
-        nonlocal conv, message_id
-        if not conv.reference:
-            conv.reference.append(temp_reference)
-        else:
-            conv.reference[-1] = temp_reference
-        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
-        if "chunks" in reference:
-            chunks = reference.get("chunks")
-            chunk_list = []
-            for chunk in chunks:
-                new_chunk = {
-                    "id": chunk["chunk_id"],
-                    "content": chunk["content"],
-                    "document_id": chunk["doc_id"],
-                    "document_name": chunk["docnm_kwd"],
-                    "dataset_id": chunk["kb_id"],
-                    "image_id": chunk["image_id"],
-                    "similarity": chunk["similarity"],
-                    "vector_similarity": chunk["vector_similarity"],
-                    "term_similarity": chunk["term_similarity"],
-                    "positions": chunk["positions"],
-                }
-                chunk_list.append(new_chunk)
-            reference["chunks"] = chunk_list
-        ans["id"] = message_id
-        ans["session_id"] = session_id
-
-    def rename_field(ans):
-        reference = ans['reference']
-        if not isinstance(reference, dict):
-            return
-        for chunk_i in reference.get('chunks', []):
-            if 'docnm_kwd' in chunk_i:
-                chunk_i['doc_name'] = chunk_i['docnm_kwd']
-                chunk_i.pop('docnm_kwd')
-
-    if not conv.reference:
-        conv.reference = []
-    conv.message.append({"role": "assistant", "content": "", "id": message_id})
-    conv.reference.append({"chunks": [], "doc_aggs": []})
-
-    final_ans = {"reference": [], "content": ""}
-
-    canvas.add_user_input(msg[-1]["content"])
-
-    if stream:
-        def sse():
-            nonlocal answer, cvs
-            try:
-                for ans in canvas.run(stream=stream):
-                    if ans.get("running_status"):
-                        yield "data:" + json.dumps({"code": 0, "message": "",
-                                                    "data": {"answer": ans["content"],
-                                                             "running_status": True}},
-                                                   ensure_ascii=False) + "\n\n"
-                        continue
-                    for k in ans.keys():
-                        final_ans[k] = ans[k]
-                    ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
-                    fillin_conv(ans)
-                    rename_field(ans)
-                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
-                                               ensure_ascii=False) + "\n\n"
-
-                canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
-                canvas.history.append(("assistant", final_ans["content"]))
-                if final_ans.get("reference"):
-                    canvas.reference.append(final_ans["reference"])
-                conv.dsl = json.loads(str(canvas))
-                API4ConversationService.append_message(conv.id, conv.to_dict())
-            except Exception as e:
-                conv.dsl = json.loads(str(canvas))
-                API4ConversationService.append_message(conv.id, conv.to_dict())
-                yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                            "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                                           ensure_ascii=False) + "\n\n"
-            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
-
-        resp = Response(sse(), mimetype="text/event-stream")
+    if req.get("stream", True):
+        resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    for answer in canvas.run(stream=False):
-        if answer.get("running_status"):
-            continue
-        final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
-        canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
-        if final_ans.get("reference"):
-            canvas.reference.append(final_ans["reference"])
-        conv.dsl = json.loads(str(canvas))
-
-        result = {"answer": final_ans["content"], "reference": final_ans.get("reference", [])}
-        fillin_conv(result)
-        API4ConversationService.append_message(conv.id, conv.to_dict())
-        rename_field(result)
-        return get_result(data=result)
+    for answer in agent_completion(tenant_id, agent_id, **req):
+        return get_result(data=answer)
 
 
 @manager.route('/chats/<chat_id>/sessions', methods=['GET'])  # noqa: F821
@@ -590,3 +356,57 @@ Keywords: {question}
 Related search terms:
     """}], {"temperature": 0.9})
     return get_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
+
+
+@manager.route('/chatbots/<dialog_id>/completions', methods=['POST'])  # noqa: F821
+def chatbot_completions(dialog_id):
+    req = request.json
+
+    token = request.headers.get('Authorization').split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Token is not valid!"')
+
+    if "quote" not in req:
+        req["quote"] = False
+
+    if req.get("stream", True):
+        resp = Response(iframe_completion(dialog_id, **req), mimetype="text/event-stream")
+        resp.headers.add_header("Cache-control", "no-cache")
+        resp.headers.add_header("Connection", "keep-alive")
+        resp.headers.add_header("X-Accel-Buffering", "no")
+        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+        return resp
+
+    for answer in iframe_completion(dialog_id, **req):
+        return get_result(data=answer)
+
+
+@manager.route('/agentbots/<agent_id>/completions', methods=['POST'])  # noqa: F821
+def agent_bot_completions(agent_id):
+    req = request.json
+
+    token = request.headers.get('Authorization').split()
+    if len(token) != 2:
+        return get_error_data_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_error_data_result(message='Token is not valid!"')
+
+    if "quote" not in req:
+        req["quote"] = False
+
+    if req.get("stream", True):
+        resp = Response(agent_completion(objs[0].tenant_id, agent_id, **req), mimetype="text/event-stream")
+        resp.headers.add_header("Cache-control", "no-cache")
+        resp.headers.add_header("Connection", "keep-alive")
+        resp.headers.add_header("X-Accel-Buffering", "no")
+        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+        return resp
+
+    for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
+        return get_result(data=answer)

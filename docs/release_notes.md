@@ -5,7 +5,25 @@ slug: /release_notes
 
 # Release notes
 
-Key features and improvements in the latest releases.
+Key features, improvements and bug fixes in the latest releases.
+
+## v0.14.1
+
+Released on November 29, 2024.
+
+### Improvements
+
+Adds [Infinity's configuration file](https://github.com/infiniflow/ragflow/blob/main/docker/infinity_conf.toml) to facilitate integration and customization of Infinity as a document engine. From this release onwards, updates to Infinity's configuration can be made directly within RAGFlow and will take effect immediately after restarting RAGFlow using `docker compose`. [#3715](https://github.com/infiniflow/ragflow/pull/3715)
+
+### Fixed issues
+
+This release fixes the following issues:
+
+- Unable to display or edit content of a chunk after clicking it.
+- A `'Not found'` error in Elasticsearch.
+- Chinese text becoming garbled during parsing.
+- A compatibility issue with Polars.
+- A compatibility issue between Infinity and GraphRAG.
 
 ## v0.14.0
 
@@ -102,11 +120,11 @@ Released on September 30, 2024.
 
 As of this release, RAGFlow offers slim editions of its Docker images to improve the experience for users with limited Internet access. A slim edition of RAGFlow's Docker image does not include built-in BGE/BCE embedding models and has a size of about 1GB; a full edition of RAGFlow is approximately 9GB and includes both built-in embedding models and embedding models that will be downloaded once you select them in the RAGFlow UI.
 
-The default Docker image edition is `dev-slim`. The following list clarifies the differences between various editions:
+The default Docker image edition is `nightly-slim`. The following list clarifies the differences between various editions:
 
-- `dev-slim`: The slim edition of the most recent tested Docker image.
+- `nightly-slim`: The slim edition of the most recent tested Docker image.
 - `v0.12.0-slim`: The slim edition of the most recent **officially released** Docker image.
-- `dev`: The full edition of the most recent tested Docker image.
+- `nightly`: The full edition of the most recent tested Docker image.
 - `v0.12.0`: The full edition of the most recent **officially released** Docker image.
 
 See [Upgrade RAGFlow](https://ragflow.io/docs/dev/upgrade_ragflow) for instructions on upgrading.

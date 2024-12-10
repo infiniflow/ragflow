@@ -160,7 +160,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3. Bangun image Docker pre-built dan jalankan server:
 
-   > Perintah di bawah ini akan mengunduh versi dev dari Docker image RAGFlow slim (`dev-slim`). Image RAGFlow slim
+   > Perintah di bawah ini akan mengunduh versi v0.14.1 dari Docker image RAGFlow slim (`v0.14.1-slim`). Image RAGFlow slim
    tidak termasuk model embedding atau library Python dan berukuran sekitar 1GB.
 
    ```bash
@@ -168,18 +168,16 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    $ docker compose -f docker-compose.yml up -d
    ```
 
-   > - Untuk mengunduh versi tertentu dari image Docker RAGFlow slim, perbarui variabel `RAGFlow_IMAGE` di *
-       *docker/.env** sesuai dengan versi yang diinginkan. Misalnya, `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1-slim`.
-       Setelah mengubah ini, jalankan ulang perintah di atas untuk memulai unduhan.
-   > - Untuk mengunduh versi dev dari image Docker RAGFlow *termasuk* model embedding dan library Python, perbarui
-       variabel `RAGFlow_IMAGE` di **docker/.env** menjadi `RAGFLOW_IMAGE=infiniflow/ragflow:dev`. Setelah mengubah ini,
-       jalankan ulang perintah di atas untuk memulai unduhan.
-   > - Untuk mengunduh versi tertentu dari image Docker RAGFlow *termasuk* model embedding dan library Python, perbarui
-       variabel `RAGFlow_IMAGE` di **docker/.env** sesuai dengan versi yang diinginkan. Misalnya,
-       `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1`. Setelah mengubah ini, jalankan ulang perintah di atas untuk memulai unduhan.
+   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | comments               |
+   | -------------------------------- | ----- | ------------------------------------------------------- | ---------------------- |
+   | v0.14.1                          | ~9 GB | YES                                                     | stable release         |
+   | v0.14.1-slim                     | ~2 GB | NO                                                      | stable release         |
+   | v0.15.0-dev1                     | ~9 GB | YES                                                     | unstable beta release  |
+   | v0.15.0-dev1-slim                | ~2 GB | NO                                                      | unstable beta release  |
+   | nightly                          | ~9 GB | YES                                                     | unstable nightly build |
+   | nightly-slim                     | ~2 GB | NO                                                      | unstable nightly build |
 
-   > **CATATAN:** Image Docker RAGFlow yang mencakup model embedding dan library Python berukuran sekitar 9GB
-   dan mungkin memerlukan waktu lebih lama untuk dimuat.
+
 
 4. Periksa status server setelah server aktif dan berjalan:
 
@@ -208,7 +206,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 5. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
    > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena 
    port HTTP default `80` bisa dihilangkan saat menggunakan konfigurasi default.
-6. Dalam [service_conf.yaml](./docker/service_conf.yaml), pilih LLM factory yang diinginkan di `user_default_llm` dan perbarui
+6. Dalam [service_conf.yaml.template](./docker/service_conf.yaml.template), pilih LLM factory yang diinginkan di `user_default_llm` dan perbarui
    bidang `API_KEY` dengan kunci API yang sesuai.
 
    > Lihat [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) untuk informasi lebih lanjut.
@@ -221,15 +219,8 @@ Untuk konfigurasi sistem, Anda perlu mengelola file-file berikut:
 
 - [.env](./docker/.env): Menyimpan pengaturan dasar sistem, seperti `SVR_HTTP_PORT`, `MYSQL_PASSWORD`, dan
   `MINIO_PASSWORD`.
-- [service_conf.yaml](./docker/service_conf.yaml): Mengonfigurasi aplikasi backend.
+- [service_conf.yaml.template](./docker/service_conf.yaml.template): Mengonfigurasi aplikasi backend.
 - [docker-compose.yml](./docker/docker-compose.yml): Sistem ini bergantung pada [docker-compose.yml](./docker/docker-compose.yml) untuk memulai.
-
-Anda harus memastikan bahwa perubahan pada file [.env](./docker/.env) sesuai dengan yang ada di file [service_conf.yaml](./docker/service_conf.yaml).
-
-> File [./docker/README](./docker/README.md) menyediakan penjelasan detail tentang pengaturan lingkungan dan konfigurasi aplikasi,
-> dan Anda DIWAJIBKAN memastikan bahwa semua pengaturan lingkungan yang tercantum di
-> [./docker/README](./docker/README.md) selaras dengan konfigurasi yang sesuai di
-> [service_conf.yaml](./docker/service_conf.yaml).
 
 Untuk memperbarui port HTTP default (80), buka [docker-compose.yml](./docker/docker-compose.yml) dan ubah `80:80`
 menjadi `<YOUR_SERVING_PORT>:80`.
@@ -242,12 +233,12 @@ Pembaruan konfigurasi ini memerlukan reboot semua kontainer agar efektif:
 
 ## 🔧 Membangun Docker Image tanpa Model Embedding
 
-Image ini berukuran sekitar 1 GB dan bergantung pada aplikasi LLM eksternal dan embedding.
+Image ini berukuran sekitar 2 GB dan bergantung pada aplikasi LLM eksternal dan embedding.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:dev-slim .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 Membangun Docker Image Termasuk Model Embedding
@@ -257,7 +248,7 @@ Image ini berukuran sekitar 9 GB. Karena sudah termasuk model embedding, ia hany
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 Menjalankan Aplikasi dari untuk Pengembangan
@@ -280,11 +271,10 @@ docker build -f Dockerfile -t infiniflow/ragflow:dev .
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   Tambahkan baris berikut ke `/etc/hosts` untuk memetakan semua host yang ditentukan di **docker/service_conf.yaml** ke `127.0.0.1`:
+   Tambahkan baris berikut ke `/etc/hosts` untuk memetakan semua host yang ditentukan di **conf/service_conf.yaml** ke `127.0.0.1`:
    ```
    127.0.0.1       es01 infinity mysql minio redis
    ```  
-   Di **docker/service_conf.yaml**, perbarui port mysql ke `5455` dan es ke `1200`, sesuai dengan yang ditentukan di **docker/.env**.
 
 4. Jika Anda tidak dapat mengakses HuggingFace, atur variabel lingkungan `HF_ENDPOINT` untuk menggunakan situs mirror:
 
