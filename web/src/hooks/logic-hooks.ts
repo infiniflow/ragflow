@@ -12,6 +12,7 @@ import { PaginationProps, message } from 'antd';
 import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
+import { omit } from 'lodash';
 import {
   ChangeEventHandler,
   useCallback,
@@ -336,6 +337,7 @@ export const useSelectDerivedMessages = () => {
           }),
           prompt: answer.prompt,
           audio_binary: answer.audio_binary,
+          ...omit(answer, 'reference'),
         },
       ];
     });

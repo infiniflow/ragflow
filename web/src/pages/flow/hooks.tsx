@@ -474,6 +474,20 @@ export const useGetBeginNodeDataQuery = () => {
   return getBeginNodeDataQuery;
 };
 
+export const useGetBeginNodeDataQueryIsEmpty = () => {
+  const [isBeginNodeDataQueryEmpty, setIsBeginNodeDataQueryEmpty] =
+    useState(false);
+  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+  const nodes = useGraphStore((state) => state.nodes);
+
+  useEffect(() => {
+    const query: BeginQuery[] = getBeginNodeDataQuery();
+    setIsBeginNodeDataQueryEmpty(query.length === 0);
+  }, [getBeginNodeDataQuery, nodes]);
+
+  return isBeginNodeDataQueryEmpty;
+};
+
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { saveGraph, loading } = useSaveGraph();
   const { resetFlow } = useResetFlow();
