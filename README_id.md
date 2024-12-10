@@ -206,7 +206,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 5. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
    > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena 
    port HTTP default `80` bisa dihilangkan saat menggunakan konfigurasi default.
-6. Dalam [service_conf.yaml](./docker/service_conf.yaml), pilih LLM factory yang diinginkan di `user_default_llm` dan perbarui
+6. Dalam [service_conf.yaml.template](./docker/service_conf.yaml.template), pilih LLM factory yang diinginkan di `user_default_llm` dan perbarui
    bidang `API_KEY` dengan kunci API yang sesuai.
 
    > Lihat [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) untuk informasi lebih lanjut.
@@ -221,13 +221,6 @@ Untuk konfigurasi sistem, Anda perlu mengelola file-file berikut:
   `MINIO_PASSWORD`.
 - [service_conf.yaml.template](./docker/service_conf.yaml.template): Mengonfigurasi aplikasi backend.
 - [docker-compose.yml](./docker/docker-compose.yml): Sistem ini bergantung pada [docker-compose.yml](./docker/docker-compose.yml) untuk memulai.
-
-Anda harus memastikan bahwa perubahan pada file [.env](./docker/.env) sesuai dengan yang ada di file [service_conf.yaml](./docker/service_conf.yaml).
-
-> File [./docker/README](./docker/README.md) menyediakan penjelasan detail tentang pengaturan lingkungan dan konfigurasi aplikasi,
-> dan Anda DIWAJIBKAN memastikan bahwa semua pengaturan lingkungan yang tercantum di
-> [./docker/README](./docker/README.md) selaras dengan konfigurasi yang sesuai di
-> [service_conf.yaml](./docker/service_conf.yaml).
 
 Untuk memperbarui port HTTP default (80), buka [docker-compose.yml](./docker/docker-compose.yml) dan ubah `80:80`
 menjadi `<YOUR_SERVING_PORT>:80`.
@@ -278,11 +271,10 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   Tambahkan baris berikut ke `/etc/hosts` untuk memetakan semua host yang ditentukan di **docker/service_conf.yaml** ke `127.0.0.1`:
+   Tambahkan baris berikut ke `/etc/hosts` untuk memetakan semua host yang ditentukan di **conf/service_conf.yaml** ke `127.0.0.1`:
    ```
    127.0.0.1       es01 infinity mysql minio redis
    ```  
-   Di **docker/service_conf.yaml**, perbarui port mysql ke `5455` dan es ke `1200`, sesuai dengan yang ditentukan di **docker/.env**.
 
 4. Jika Anda tidak dapat mengakses HuggingFace, atur variabel lingkungan `HF_ENDPOINT` untuk menggunakan situs mirror:
 
