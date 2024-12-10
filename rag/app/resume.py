@@ -64,7 +64,7 @@ def remote_call(filename, binary):
             resume = step_two.parse(resume)
             return resume
         except Exception:
-            logging.exception("Resume parser error")
+            logging.exception("Resume parser has not been supported yet!")
     return {}
 
 
