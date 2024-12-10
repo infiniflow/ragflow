@@ -29,7 +29,6 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
 from api import settings
 from rag.app.resume import forbidden_select_fields4resume
-from rag.llm import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN
 from rag.nlp.search import index_name
 from rag.utils import rmSpace, num_tokens_from_string, encoder
 from api.utils.file_utils import get_project_base_directory
@@ -307,12 +306,6 @@ def chat(dialog, messages, stream=True, **kwargs):
                     # 处理总令牌数（如果需要）
                     total_tokens = int(delta)
                     continue
-                # elif delta in [LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN]:
-                #     # 处理长度通知信息
-                #     answer += delta
-                #     audio = tts(tts_mdl, delta)
-                #     yield {"answer": answer, "reference": {}, "audio_binary": audio}
-                #     continue
                 elif "\n**ERROR**:" in delta:
                     # 处理错误信息
                     answer += delta
