@@ -350,8 +350,9 @@ class InfinityConnection(DocStoreConnection):
             assert "_id" not in d
             assert "id" in d
             for k, v in d.items():
-                if k.endswith("_kwd") and isinstance(v, list):
-                    d[k] = " ".join(v)
+                if k in ["important_kwd", "question_kwd", "entities_kwd"]:
+                    assert isinstance(v, list)
+                    d[k] = "###".join(v)
                 elif k == 'kb_id':
                     if isinstance(d[k], list):
                         d[k] = d[k][0] # since d[k] is a list, but we need a str
@@ -443,9 +444,9 @@ class InfinityConnection(DocStoreConnection):
                 v = res[fieldnm][i]
                 if isinstance(v, Series):
                     v = list(v)
-                elif fieldnm.endswith("_kwd"):
+                elif fieldnm in ["important_kwd", "question_kwd", "entities_kwd"]:
                     assert isinstance(v, str)
-                    v = v.split()
+                    v = [kwd for kwd in v.split("###") if kwd]
                 elif fieldnm == "position_int":
                     assert isinstance(v, str)
                     if v:
