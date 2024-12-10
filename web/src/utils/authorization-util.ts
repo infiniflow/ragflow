@@ -47,9 +47,9 @@ const storage = {
 };
 
 export const getAuthorization = () => {
-  const sharedId = getSearchValue('shared_id');
-  const authorization = sharedId
-    ? 'Bearer ' + sharedId
+  const auth = getSearchValue('auth');
+  const authorization = auth
+    ? 'Bearer ' + auth
     : storage.getAuthorization() || '';
 
   return authorization;

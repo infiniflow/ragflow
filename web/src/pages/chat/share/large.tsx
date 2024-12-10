@@ -1,21 +1,23 @@
 import MessageInput from '@/components/message-input';
 import MessageItem from '@/components/message-item';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
-import { useFetchNextSharedConversation } from '@/hooks/chat-hooks';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { Flex, Spin } from 'antd';
 import { forwardRef } from 'react';
 import {
-  useCreateSharedConversationOnMount,
   useGetSharedChatSearchParams,
   useSendSharedMessage,
 } from '../shared-hooks';
 import { buildMessageItemReference } from '../utils';
+
+import PdfDrawer from '@/components/pdf-drawer';
 import styles from './index.less';
 
 const ChatContainer = () => {
-  const { conversationId } = useCreateSharedConversationOnMount();
-  const { data } = useFetchNextSharedConversation(conversationId);
+  const { from, sharedId: conversationId } = useGetSharedChatSearchParams();
+  const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
+    useClickDrawer();
 
   const {
     handlePressEnter,
@@ -25,9 +27,13 @@ const ChatContainer = () => {
     loading,
     ref,
     derivedMessages,
-  } = useSendSharedMessage(conversationId);
+    hasError,
+  } = useSendSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
-  const { from } = useGetSharedChatSearchParams();
+
+  if (!conversationId) {
+    return <div>empty</div>;
+  }
 
   return (
     <>
@@ -44,7 +50,7 @@ const ChatContainer = () => {
                     reference={buildMessageItemReference(
                       {
                         message: derivedMessages,
-                        reference: data?.data?.reference,
+                        reference: [],
                       },
                       message,
                     )}
@@ -54,6 +60,7 @@ const ChatContainer = () => {
                       derivedMessages?.length - 1 === i
                     }
                     index={i}
+                    clickDocumentButton={clickDocumentButton}
                   ></MessageItem>
                 );
               })}
@@ -65,7 +72,7 @@ const ChatContainer = () => {
         <MessageInput
           isShared
           value={value}
-          disabled={false}
+          disabled={hasError}
           sendDisabled={sendDisabled}
           conversationId={conversationId}
           onInputChange={handleInputChange}
@@ -75,6 +82,14 @@ const ChatContainer = () => {
           showUploadIcon={from === SharedFrom.Chat}
         ></MessageInput>
       </Flex>
+      {visible && (
+        <PdfDrawer
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfDrawer>
+      )}
     </>
   );
 };

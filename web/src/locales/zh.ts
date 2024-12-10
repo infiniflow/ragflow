@@ -431,6 +431,7 @@ export default {
       partialTitle: '部分嵌入',
       extensionTitle: 'Chrome 插件',
       tokenError: '请先创建 API Token!',
+      betaError: 'API Token的beta字段不可以为空！',
       searching: '搜索中',
       parsing: '解析中',
       uploading: '上传中',
