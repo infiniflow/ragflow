@@ -58,7 +58,7 @@ class KGSearch(Dealer):
         matchDense = self.get_vector(qst, emb_mdl, 1024, req.get("similarity", 0.1))
         q_vec = matchDense.embedding_data
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
-                                 "doc_id", f"q_{len(q_vec)}_vec", "position_list", "name_kwd",
+                                 "doc_id", f"q_{len(q_vec)}_vec", "position_int", "name_kwd",
                                  "available_int", "content_with_weight",
                                  "weight_int", "weight_flt"
                                  ])

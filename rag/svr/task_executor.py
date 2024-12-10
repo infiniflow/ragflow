@@ -211,9 +211,9 @@ def build_chunks(task, progress_callback):
         if not d.get("image"):
             _ = d.pop("image", None)
             d["img_id"] = ""
-            d["page_num_list"] = json.dumps([])
-            d["position_list"] = json.dumps([])
-            d["top_list"] = json.dumps([])
+            d["page_num_int"] = []
+            d["position_int"] = []
+            d["top_int"] = []
             docs.append(d)
             continue
 
