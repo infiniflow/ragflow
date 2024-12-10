@@ -1,5 +1,6 @@
 import MessageInput from '@/components/message-input';
 import MessageItem from '@/components/message-item';
+import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { Flex, Spin } from 'antd';
@@ -10,10 +11,13 @@ import {
 } from '../shared-hooks';
 import { buildMessageItemReference } from '../utils';
 
+import PdfDrawer from '@/components/pdf-drawer';
 import styles from './index.less';
 
 const ChatContainer = () => {
   const { from, sharedId: conversationId } = useGetSharedChatSearchParams();
+  const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
+    useClickDrawer();
 
   const {
     handlePressEnter,
@@ -55,6 +59,7 @@ const ChatContainer = () => {
                       derivedMessages?.length - 1 === i
                     }
                     index={i}
+                    clickDocumentButton={clickDocumentButton}
                   ></MessageItem>
                 );
               })}
@@ -76,6 +81,14 @@ const ChatContainer = () => {
           showUploadIcon={from === SharedFrom.Chat}
         ></MessageInput>
       </Flex>
+      {visible && (
+        <PdfDrawer
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfDrawer>
+      )}
     </>
   );
 };
