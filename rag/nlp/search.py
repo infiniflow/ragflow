@@ -16,7 +16,6 @@
 
 import logging
 import re
-import json
 from dataclasses import dataclass
 
 from rag.utils import rmSpace
@@ -74,7 +73,7 @@ class Dealer:
         offset, limit = pg * ps, (pg + 1) * ps
 
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
-                                 "doc_id", "position_list", "knowledge_graph_kwd", "question_kwd", "question_tks",
+                                 "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd", "question_kwd", "question_tks",
                                  "available_int", "content_with_weight", "pagerank_fea"])
         kwds = set([])
 
@@ -82,6 +81,8 @@ class Dealer:
         q_vec = []
         if not qst:
             if req.get("sort"):
+                orderBy.asc("page_num_int")
+                orderBy.asc("top_int")
                 orderBy.desc("create_timestamp_flt")
             res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
             total=self.dataStore.getTotal(res)
@@ -340,7 +341,7 @@ class Dealer:
             chunk = sres.field[id]
             dnm = chunk["docnm_kwd"]
             did = chunk["doc_id"]
-            position_list = chunk.get("position_list", "[]")
+            position_int = chunk.get("position_int", [])
             d = {
                 "chunk_id": id,
                 "content_ltks": chunk["content_ltks"],
@@ -354,7 +355,7 @@ class Dealer:
                 "vector_similarity": vsim[i],
                 "term_similarity": tsim[i],
                 "vector": chunk.get(vector_column, zero_vector),
-                "positions": json.loads(position_list)
+                "positions": position_int,
             }
             if highlight and sres.highlight:
                 if id in sres.highlight:

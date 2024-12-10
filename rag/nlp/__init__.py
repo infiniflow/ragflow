@@ -22,7 +22,6 @@ from rag.utils import num_tokens_from_string
 from . import rag_tokenizer
 import re
 import copy
-import json
 import roman_numbers as r
 from word2number import w2n
 from cn2an import cn2an
@@ -311,16 +310,16 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
 def add_positions(d, poss):
     if not poss:
         return
-    page_num_list = []
-    position_list = []
-    top_list = []
+    page_num_int = []
+    position_int = []
+    top_int = []
     for pn, left, right, top, bottom in poss:
-        page_num_list.append(int(pn + 1))
-        top_list.append(int(top))
-        position_list.append((int(pn + 1), int(left), int(right), int(top), int(bottom)))
-    d["page_num_list"] = json.dumps(page_num_list)
-    d["position_list"] = json.dumps(position_list)
-    d["top_list"] = json.dumps(top_list)
+        page_num_int.append(int(pn + 1))
+        top_int.append(int(top))
+        position_int.append((int(pn + 1), int(left), int(right), int(top), int(bottom)))
+    d["page_num_int"] = page_num_int
+    d["position_int"] = position_int
+    d["top_int"] = top_int
 
 
 def remove_contents_table(sections, eng=False):
