@@ -22,7 +22,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import styles from './index.less';
 
-const reg = /(#{2}\d+\${2})/g;
+const reg = /(#{2}\d+@{2})/g;
 const curReg = /(~{2}\d+\${2})/g;
 
 const getChunkIndex = (match: string) => Number(match.slice(2, -2));
