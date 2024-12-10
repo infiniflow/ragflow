@@ -2,3 +2,5 @@
 in-project = true
 create = true
 prefer-active-python = true
+[repositories.tuna]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
