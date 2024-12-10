@@ -164,8 +164,8 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    tidak termasuk model embedding atau library Python dan berukuran sekitar 1GB.
 
    ```bash
-   $ cd ragflow/docker
-   $ docker compose -f docker-compose.yml up -d
+   $ cd ragflow
+   $ docker compose -f docker/docker-compose.yml up -d
    ```
 
    | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | comments               |

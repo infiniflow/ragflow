@@ -171,8 +171,8 @@ releases! 🌟
    Docker images do not include embedding models or Python libraries and hence are approximately 2 GB in size.
 
    ```bash
-   $ cd ragflow/docker
-   $ docker compose -f docker-compose.yml up -d
+   $ cd ragflow
+   $ docker compose -f docker/docker-compose.yml up -d
    ```
 
    | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | comments               |
