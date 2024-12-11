@@ -23,6 +23,7 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
+import pyodbc
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
@@ -218,8 +219,29 @@ def test_db_connect():
         elif req["db_type"] == 'postgresql':
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])
-        db.connect()
-        db.close()
+        elif req["db_type"] == 'mssql':
+            connection_string = (
+                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                f"SERVER={req['host']},{req['port']};"
+                f"DATABASE={req['database']};"
+                f"UID={req['username']};"
+                f"PWD={req['password']};"
+            )
+            db = pyodbc.connect(connection_string)
+        else:
+            return server_error_response("Unsupported database type.")
+        
+        # Test the connection
+        if req["db_type"] == "mssql":
+            cursor = db.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+            db.close()
+        else:
+            db.connect()
+            db.close()
+        
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
         return server_error_response(e)
+
