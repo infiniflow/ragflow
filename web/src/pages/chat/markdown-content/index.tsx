@@ -1,7 +1,6 @@
 import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
-import { IReference } from '@/interfaces/database/chat';
-import { IChunk } from '@/interfaces/database/knowledge';
+import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { Button, Flex, Popover, Space } from 'antd';
@@ -11,6 +10,7 @@ import Markdown from 'react-markdown';
 import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { visitParents } from 'unist-util-visit-parents';
@@ -20,9 +20,10 @@ import { useTranslation } from 'react-i18next';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
+import { replaceTextByOldReg } from '../utils';
 import styles from './index.less';
 
-const reg = /(#{2}\d+\${2})/g;
+const reg = /(#{2}\d+@{2})/g;
 const curReg = /(~{2}\d+\${2})/g;
 
 const getChunkIndex = (match: string) => Number(match.slice(2, -2));
@@ -36,7 +37,7 @@ const MarkdownContent = ({
   content: string;
   loading: boolean;
   reference: IReference;
-  clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
+  clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
 }) => {
   const { t } = useTranslation();
   const { setDocumentIds, data: fileThumbnails } =
@@ -54,7 +55,7 @@ const MarkdownContent = ({
   }, [reference, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
-    (documentId: string, chunk: IChunk, isPdf: boolean) => () => {
+    (documentId: string, chunk: IReferenceChunk, isPdf: boolean) => () => {
       if (!isPdf) {
         return;
       }
@@ -85,15 +86,15 @@ const MarkdownContent = ({
       const chunks = reference?.chunks ?? [];
       const chunkItem = chunks[chunkIndex];
       const document = reference?.doc_aggs?.find(
-        (x) => x?.doc_id === chunkItem?.doc_id,
+        (x) => x?.doc_id === chunkItem?.document_id,
       );
       const documentId = document?.doc_id;
       const fileThumbnail = documentId ? fileThumbnails[documentId] : '';
       const fileExtension = documentId ? getExtension(document?.doc_name) : '';
-      const imageId = chunkItem?.img_id;
+      const imageId = chunkItem?.image_id;
       return (
         <Flex
-          key={chunkItem?.chunk_id}
+          key={chunkItem?.id}
           gap={10}
           className={styles.referencePopoverWrapper}
         >
@@ -116,7 +117,7 @@ const MarkdownContent = ({
           <Space direction={'vertical'}>
             <div
               dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(chunkItem?.content_with_weight),
+                __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
               }}
               className={styles.chunkContentText}
             ></div>
@@ -156,7 +157,9 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, reg, (match, i) => {
+      const nextText = replaceTextByOldReg(text);
+
+      let replacedText = reactStringReplace(nextText, reg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
         return (
           <Popover content={getPopoverContent(chunkIndex)} key={i}>
@@ -176,7 +179,7 @@ const MarkdownContent = ({
 
   return (
     <Markdown
-      rehypePlugins={[rehypeWrapReference, rehypeKatex]}
+      rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
       remarkPlugins={[remarkGfm, remarkMath]}
       components={
         {

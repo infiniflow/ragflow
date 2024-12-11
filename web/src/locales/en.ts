@@ -86,7 +86,7 @@ export default {
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
       datasetDescription:
-        '😉 Questions and answers can only be answered after the parsing is successful.',
+        '😉 Please wait for your file to finish parsing before starting an AI-powered chat.',
       addFile: 'Add file',
       searchFiles: 'Search your files',
       localFiles: 'Local files',
@@ -158,17 +158,17 @@ export default {
       topKTip: `K chunks will be fed into rerank models.`,
       delimiter: `Delimiter`,
       delimiterTip:
-        'Supports multiple characters as separators, and the multiple character separators are wrapped with `. For example, if it is configured like this: \n`##`; then the text will be separated by line breaks, two #s and a semicolon, and then assembled according to the size of the "token number".',
+        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \n`##`;, then your texts will be separated at line breaks, double hash symbols (##), or semicolons.',
       html4excel: 'Excel to HTML',
       html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables, and at most 256 rows for one table. Otherwise, it will be parsed into key-value pairs by row.`,
       autoKeywords: 'Auto-keyword',
-      autoKeywordsTip: `Extract N keywords for each chunk to increase their ranking for queries containing those keywords. You can check or update the added keywords for a chunk from the chunk list. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
+      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. You can check or update the added keywords for a chunk from the chunk list. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
       autoQuestions: 'Auto-question',
-      autoQuestionsTip: `Extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
+      autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
     },
     knowledgeConfiguration: {
       titleDescription:
-        'Update your knowledge base configurations here, particularly the chunk method.',
+        'Update your knowledge base configuration here, particularly the chunk method.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
       description: 'Description',
@@ -180,13 +180,13 @@ export default {
       chunkTokenNumber: 'Chunk token number',
       chunkTokenNumberMessage: 'Chunk token number is required',
       embeddingModelTip:
-        'The model that converts chunks into embeddings. It cannot be changed once the knowledge base has chunks. To switch to a different embedding model, You must delete all chunks in the knowledge base.',
+        'The model that converts chunks into embeddings. It cannot be changed once the knowledge base has chunks. To switch to a different embedding model, you must delete all existing chunks in the knowledge base.',
       permissionsTip:
         "If set to 'Team', all team members will be able to manage the knowledge base.",
       chunkTokenNumberTip:
         'It sets the token threshold for a chunk. A paragraph with fewer tokens than this threshold will be combined with the following paragraph until the token count exceeds the threshold, at which point a chunk is created.',
       chunkMethod: 'Chunk method',
-      chunkMethodTip: 'Tips are on the right.',
+      chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
@@ -279,12 +279,12 @@ export default {
     </p>`,
       knowledgeGraph: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
 
-<p>This approach chunks files using the 'naive'/'General' method. It splits a document into segements and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number', at which point a chunk is created.</p>
+<p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number', at which point a chunk is created.</p>
 <p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:
-        'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information',
+        'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information.',
       prompt: 'Prompt',
       promptTip: 'LLM prompt used for summarization.',
       promptMessage: 'Prompt is required',
@@ -305,7 +305,7 @@ The above is the content you need to summarize.`,
       entityTypes: 'Entity types',
       vietnamese: 'Vietamese',
       pageRank: 'Page rank',
-      pageRankTip: `This is used to boost the relevance score. The relevance score with all the retrieved chunks will plus this number, When you want to search the given knowledge base at first place, set a higher pagerank score than others.`,
+      pageRankTip: `This increases the relevance score of the knowledge base. Its value will be added to the relevance score of all retrieved chunks from this knowledge base. Useful when you are searching within multiple knowledge bases and wanting to assign a higher pagerank score to a specific one.`,
     },
     chunk: {
       chunk: 'Chunk',
@@ -432,6 +432,7 @@ The above is the content you need to summarize.`,
       partialTitle: 'Partial Embed',
       extensionTitle: 'Chrome Extension',
       tokenError: 'Please create API Token first!',
+      betaError: 'The beta field of the API Token cannot be empty!',
       searching: 'searching...',
       parsing: 'Parsing',
       uploading: 'Uploading',

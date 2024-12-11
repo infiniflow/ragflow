@@ -113,6 +113,11 @@ def update(tenant_id, chat_id, session_id):
 @token_required
 def chat_completion(tenant_id, chat_id):
     req = request.json
+    if not DialogService.query(tenant_id=tenant_id,id=chat_id,status=StatusEnum.VALID.value):
+        return get_error_data_result(f"You don't own the chat {chat_id}")
+    if req.get("session_id"):
+        if not ConversationService.query(id=req["session_id"],dialog_id=chat_id):
+            return get_error_data_result(f"You don't own the session {req['session_id']}")
     if req.get("stream", True):
         resp = Response(rag_completion(tenant_id, chat_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -134,6 +139,11 @@ def chat_completion(tenant_id, chat_id):
 @token_required
 def agent_completions(tenant_id, agent_id):
     req = request.json
+    if not UserCanvasService.query(user_id=tenant_id,id=agent_id):
+        return get_error_data_result(f"You don't own the agent {agent_id}")
+    if req.get("session_id"):
+        if not API4ConversationService.query(id=req["session_id"],dialog_id=agent_id):
+            return get_error_data_result(f"You don't own the session {req['session_id']}")
     if req.get("stream", True):
         resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")

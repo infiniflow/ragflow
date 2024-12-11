@@ -297,7 +297,7 @@ class InfinityConnection(DocStoreConnection):
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, selectFields)
-        logger.debug("INFINITY search tables: " + str(table_list))
+        logger.debug(f"INFINITY search tables: {str(table_list)}, result: {str(res)}")
         return res
 
     def get(
@@ -307,8 +307,10 @@ class InfinityConnection(DocStoreConnection):
         db_instance = inf_conn.get_database(self.dbName)
         df_list = list()
         assert isinstance(knowledgebaseIds, list)
+        table_list = list()
         for knowledgebaseId in knowledgebaseIds:
             table_name = f"{indexName}_{knowledgebaseId}"
+            table_list.append(table_name)
             table_instance = db_instance.get_table(table_name)
             kb_res = table_instance.output(["*"]).filter(f"id = '{chunkId}'").to_pl()
             if len(kb_res) != 0 and kb_res.shape[0] > 0:
@@ -316,6 +318,7 @@ class InfinityConnection(DocStoreConnection):
 
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, ["id"])
+        logger.debug(f"INFINITY get tables: {str(table_list)}, result: {str(res)}")
         res_fields = self.getFields(res, res.columns)
         return res_fields.get(chunkId, None)
 
@@ -347,17 +350,25 @@ class InfinityConnection(DocStoreConnection):
             assert "_id" not in d
             assert "id" in d
             for k, v in d.items():
-                if k.endswith("_kwd") and isinstance(v, list):
-                    d[k] = " ".join(v)
-                if k == 'kb_id':
+                if k in ["important_kwd", "question_kwd", "entities_kwd"]:
+                    assert isinstance(v, list)
+                    d[k] = "###".join(v)
+                elif k == 'kb_id':
                     if isinstance(d[k], list):
                         d[k] = d[k][0] # since d[k] is a list, but we need a str
+                elif k == "position_int":
+                    assert isinstance(v, list)
+                    arr = [num for row in v for num in row]
+                    d[k] = "_".join(f"{num:08x}" for num in arr)
+                elif k in ["page_num_int", "top_int", "position_int"]:
+                    assert isinstance(v, list)
+                    d[k] = "_".join(f"{num:08x}" for num in v)
         ids = ["'{}'".format(d["id"]) for d in documents]
         str_ids = ", ".join(ids)
         str_filter = f"id IN ({str_ids})"
         table_instance.delete(str_filter)
         # for doc in documents:
-        #     logger.info(f"insert position_list: {doc['position_list']}")
+        #     logger.info(f"insert position_int: {doc['position_int']}")
         # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
         table_instance.insert(documents)
         self.connPool.release_conn(inf_conn)
@@ -367,8 +378,8 @@ class InfinityConnection(DocStoreConnection):
     def update(
             self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str
     ) -> bool:
-        # if 'position_list' in newValue:
-        #     logger.info(f"upsert position_list: {newValue['position_list']}")
+        # if 'position_int' in newValue:
+        #     logger.info(f"update position_int: {newValue['position_int']}")
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
         table_name = f"{indexName}_{knowledgebaseId}"
@@ -377,6 +388,16 @@ class InfinityConnection(DocStoreConnection):
         for k, v in newValue.items():
             if k.endswith("_kwd") and isinstance(v, list):
                 newValue[k] = " ".join(v)
+            elif k == 'kb_id':
+                if isinstance(newValue[k], list):
+                    newValue[k] = newValue[k][0] # since d[k] is a list, but we need a str
+            elif k == "position_int":
+                assert isinstance(v, list)
+                arr = [num for row in v for num in row]
+                newValue[k] = "_".join(f"{num:08x}" for num in arr)
+            elif k in ["page_num_int", "top_int"]:
+                assert isinstance(v, list)
+                newValue[k] = "_".join(f"{num:08x}" for num in v)
         table_instance.update(filter, newValue)
         self.connPool.release_conn(inf_conn)
         return True
@@ -423,9 +444,22 @@ class InfinityConnection(DocStoreConnection):
                 v = res[fieldnm][i]
                 if isinstance(v, Series):
                     v = list(v)
-                elif fieldnm == "important_kwd":
+                elif fieldnm in ["important_kwd", "question_kwd", "entities_kwd"]:
                     assert isinstance(v, str)
-                    v = v.split()
+                    v = [kwd for kwd in v.split("###") if kwd]
+                elif fieldnm == "position_int":
+                    assert isinstance(v, str)
+                    if v:
+                        arr = [int(hex_val, 16) for hex_val in v.split('_')]
+                        v = [arr[i:i + 4] for i in range(0, len(arr), 4)]
+                    else:
+                        v = []
+                elif fieldnm in ["page_num_int", "top_int"]:
+                    assert isinstance(v, str)
+                    if v:
+                        v = [int(hex_val, 16) for hex_val in v.split('_')]
+                    else:
+                        v = []
                 else:
                     if not isinstance(v, str):
                         v = str(v)

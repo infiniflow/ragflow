@@ -1,8 +1,7 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { IReference } from '@/interfaces/database/chat';
-import { IChunk } from '@/interfaces/database/knowledge';
+import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -31,7 +30,7 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   sendLoading?: boolean;
   nickname?: string;
   avatar?: string;
-  clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
+  clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
   index: number;
   showLikeButton?: boolean;
 }
@@ -40,7 +39,7 @@ const MessageItem = ({
   item,
   reference,
   loading = false,
-  avatar = '',
+  avatar,
   sendLoading = false,
   clickDocumentButton,
   index,
@@ -103,13 +102,7 @@ const MessageItem = ({
           })}
         >
           {item.role === MessageType.User ? (
-            <Avatar
-              size={40}
-              src={
-                avatar ??
-                'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png'
-              }
-            />
+            <Avatar size={40} src={avatar ?? '/logo.svg'} />
           ) : (
             <AssistantIcon></AssistantIcon>
           )}

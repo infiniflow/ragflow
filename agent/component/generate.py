@@ -17,6 +17,7 @@ import re
 from functools import partial
 import pandas as pd
 from api.db import LLMType
+from api.db.services.conversation_service import structure_answer
 from api.db.services.dialog_service import message_fit_in
 from api.db.services.llm_service import LLMBundle
 from api import settings
@@ -104,8 +105,15 @@ class Generate(ComponentBase):
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
         res = {"content": answer, "reference": reference}
+        res = structure_answer(None, res, "", "")
 
         return res
+
+    def get_input_elements(self):
+        if self._param.parameters:
+            return self._param.parameters
+
+        return [{"key": "input"}]
 
     def _run(self, history, **kwargs):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
