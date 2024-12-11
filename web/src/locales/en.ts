@@ -75,7 +75,7 @@ export default {
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
       searchKnowledgePlaceholder: 'Search',
-      noMoreData: 'Thats all. Nothing more.',
+      noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
       dataset: 'Dataset',

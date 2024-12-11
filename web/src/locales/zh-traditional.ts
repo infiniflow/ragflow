@@ -75,7 +75,7 @@ export default {
       namePlaceholder: '請輸入名稱',
       doc: '文件',
       searchKnowledgePlaceholder: '搜索',
-      noMoreData: 'Thats all. Nothing more.',
+      noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
       dataset: '數據集',
