@@ -84,11 +84,12 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt autoremove && \
     apt update && \
     apt install -y nodejs cargo
-
+    
+# Add sql17
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg && \
     install -D -o root -g root -m 644 packages.microsoft.gpg /etc/apt/keyrings/packages.microsoft.gpg && \
-    rm packages-microsoft-prod.deb && \
+    rm -f packages.microsoft.gpg && \
     apt update && \
     apt install msodbcsql17 unixodbc-dev
 
