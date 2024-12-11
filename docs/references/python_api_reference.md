@@ -123,7 +123,7 @@ The parser configuration of the dataset. A `ParserConfig` object's attributes va
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.create_dataset(name="kb_1")
@@ -265,7 +265,7 @@ A dictionary representing the attributes to update, with the following keys:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(name="kb_name")
@@ -374,7 +374,7 @@ A dictionary representing the attributes to update, with the following keys:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(id='id')
@@ -401,7 +401,7 @@ The downloaded document in bytes.
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(id="id")
@@ -509,7 +509,7 @@ A `Document` object contains the following attributes:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.create_dataset(name="kb_1")
@@ -545,7 +545,7 @@ The IDs of the documents to delete. Defaults to `None`. If it is not specified, 
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(name="kb_1")
@@ -678,7 +678,7 @@ A `Chunk` object contains the following attributes:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(id="123")
@@ -724,7 +724,7 @@ The ID of the chunk to retrieve. Default: `None`
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets("123")
@@ -758,7 +758,7 @@ The IDs of the chunks to delete. Defaults to `None`. If it is not specified, all
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(id="123")
@@ -799,7 +799,7 @@ A dictionary representing the attributes to update, with the following keys:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(id="123")
@@ -880,7 +880,7 @@ Specifies whether to enable highlighting of matched terms in the results:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(name="ragflow")
@@ -978,7 +978,7 @@ Instructions for the LLM to follow.  A `Prompt` object contains the following at
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 datasets = rag_object.list_datasets(name="kb_1")
@@ -1036,7 +1036,7 @@ A dictionary representing the attributes to update, with the following keys:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 datasets = rag_object.list_datasets(name="kb_1")
@@ -1069,7 +1069,7 @@ The IDs of the chat assistants to delete. Defaults to `None`. If it is empty or 
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 rag_object.delete_chats(ids=["id_1","id_2"])
@@ -1129,7 +1129,7 @@ The name of the chat assistant to retrieve. Defaults to `None`.
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 for assistant in rag_object.list_chats():
@@ -1170,7 +1170,7 @@ The name of the chat session to create.
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
@@ -1204,7 +1204,7 @@ A dictionary representing the attributes to update, with only one key:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
@@ -1267,7 +1267,7 @@ The name of the chat session to retrieve. Defaults to `None`.
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
@@ -1300,7 +1300,7 @@ The IDs of the sessions to delete. Defaults to `None`. If it is not specified, a
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
@@ -1378,7 +1378,7 @@ A list of `Chunk` objects representing references to the message, each containin
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
