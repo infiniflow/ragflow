@@ -2159,16 +2159,101 @@ Success:
 {
     "code": 0,
     "data": {
-        "agent_id": "2e45b5209c1011efa3e90242ac120006",
-        "id": "7869e9e49c1711ef92840242ac120006",
+        "agent_id": "b4a39922b76611efaa1a0242ac120006",
+        "dsl": {
+            "answer": [],
+            "components": {
+                "Answer:GreenReadersDrum": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Answer",
+                        "inputs": [],
+                        "output": null,
+                        "params": {}
+                    },
+                    "upstream": []
+                },
+                "begin": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Begin",
+                        "inputs": [],
+                        "output": {},
+                        "params": {}
+                    },
+                    "upstream": []
+                }
+            },
+            "embed_id": "",
+            "graph": {
+                "edges": [],
+                "nodes": [
+                    {
+                        "data": {
+                            "label": "Begin",
+                            "name": "begin"
+                        },
+                        "dragging": false,
+                        "height": 44,
+                        "id": "begin",
+                        "position": {
+                            "x": 53.25688640427177,
+                            "y": 198.37155679786412
+                        },
+                        "positionAbsolute": {
+                            "x": 53.25688640427177,
+                            "y": 198.37155679786412
+                        },
+                        "selected": false,
+                        "sourcePosition": "left",
+                        "targetPosition": "right",
+                        "type": "beginNode",
+                        "width": 200
+                    },
+                    {
+                        "data": {
+                            "form": {},
+                            "label": "Answer",
+                            "name": "对话_0"
+                        },
+                        "dragging": false,
+                        "height": 44,
+                        "id": "Answer:GreenReadersDrum",
+                        "position": {
+                            "x": 360.43473114516974,
+                            "y": 207.29298425089348
+                        },
+                        "positionAbsolute": {
+                            "x": 360.43473114516974,
+                            "y": 207.29298425089348
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "logicNode",
+                        "width": 200
+                    }
+                ]
+            },
+            "history": [],
+            "messages": [],
+            "path": [
+                [
+                    "begin"
+                ],
+                []
+            ],
+            "reference": []
+        },
+        "id": "2581031eb7a311efb5200242ac120005",
         "message": [
             {
-                "content": "Hello! I am a recruiter at InfiniFlow. I learned that you are an expert in the field, and took the liberty of reaching out to you. There is an opportunity I would like to share with you. RAGFlow is currently looking for a senior engineer for your position. I was wondering if you might be interested?",
+                "content": "Hi! I'm your smart assistant. What can I do for you?",
                 "role": "assistant"
             }
         ],
         "source": "agent",
-        "user_id": ""
+        "user_id": "69736c5e723611efb51b0242ac120007"
     }
 }
 ```

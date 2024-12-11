@@ -104,7 +104,7 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
     final_ans = {"reference": [], "content": ""}
-
+    canvas.reset()
     if stream:
         try:
             for ans in canvas.run(stream=stream):

@@ -185,6 +185,7 @@ class Canvas(ABC):
             self.path.append(["begin"])
 
         self.path.append([])
+        print(self.path,flush=True)
         ran = -1
         waiting = []
         without_dependent_checking = []

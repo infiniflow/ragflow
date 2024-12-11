@@ -112,11 +112,15 @@ def update(tenant_id, chat_id, session_id):
 @token_required
 def chat_completion(tenant_id, chat_id):
     req = request.json
+    if not req:
+        req = {"question":""}
     if not DialogService.query(tenant_id=tenant_id,id=chat_id,status=StatusEnum.VALID.value):
         return get_error_data_result(f"You don't own the chat {chat_id}")
     if req.get("session_id"):
         if not ConversationService.query(id=req["session_id"],dialog_id=chat_id):
             return get_error_data_result(f"You don't own the session {req['session_id']}")
+    if not req.get("session_id"):
+        req["question"]=""
     if req.get("stream", True):
         resp = Response(rag_completion(tenant_id, chat_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -138,11 +142,34 @@ def chat_completion(tenant_id, chat_id):
 @token_required
 def agent_completions(tenant_id, agent_id):
     req = request.json
-    if not UserCanvasService.query(user_id=tenant_id,id=agent_id):
+    if not req:
+        req = {"question":""}
+    cvs= UserCanvasService.query(user_id=tenant_id,id=agent_id)
+    if not cvs:
         return get_error_data_result(f"You don't own the agent {agent_id}")
     if req.get("session_id"):
-        if not API4ConversationService.query(id=req["session_id"],dialog_id=agent_id):
+        conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
+        if not conv :
             return get_error_data_result(f"You don't own the session {req['session_id']}")
+        try:
+            temp = cvs.dsl["components"]["begin"]["obj"]["params"]["query"]
+            if req.get("question"):
+                return get_error_data_result("`question` can't be provided")
+        except Exception:
+            pass
+    if not req.get("session_id"):
+        req["question"]=""
+        cvs = cvs[0]
+        try:
+            query = cvs.dsl["components"]["begin"]["obj"]["params"]["query"]
+            for ele in query:
+                if not req.get(ele["name"]):
+                    return get_error_data_result(f"`{ele['name']}` is required")
+                ele["value"]=req[ele['name']]
+        except Exception:
+            pass
+        cvs = cvs.to_dict()
+        UserCanvasService.update_by_id(agent_id, cvs)
     if req.get("stream", True):
         resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")

@@ -14,6 +14,13 @@ Dataset Management
 :::
 
 ---
+### Install the RAGFlow SDK
+
+To install the RAGFlow SDK, run the following command in your terminal:
+
+```bash
+pip install ragflow-sdk
+```
 
 ## Create dataset
 
