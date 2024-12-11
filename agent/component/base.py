@@ -565,5 +565,5 @@ class ComponentBase(ABC):
     def get_component_name(self, cpn_id):
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()
 
-    def debug(self, history, **kwargs):
-        return self._run(history, **kwargs)
+    def debug(self, **kwargs):
+        return self._run([], **kwargs)
