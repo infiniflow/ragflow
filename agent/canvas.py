@@ -206,7 +206,12 @@ class Canvas(ABC):
                                 waiting.append(c)
                             continue
                     yield "*'{}'* is running...🕞".format(self.get_compnent_name(c))
-                    ans = cpn.run(self.history, **kwargs)
+                    try:
+                        ans = cpn.run(self.history, **kwargs)
+                    except Exception as e:
+                        logging.exception(f"Canvas.run got exception: {e}")
+                        self.path[-1].append(c)
+                        raise e
                     self.path[-1].append(c)
             ran += 1
 
@@ -228,20 +233,12 @@ class Canvas(ABC):
                 switch_out = cpn["obj"].output()[1].iloc[0, 0]
                 assert switch_out in self.components, \
                     "{}'s output: {} not valid.".format(cpn_id, switch_out)
-                try:
-                    for m in prepare2run([switch_out]):
-                        yield {"content": m, "running_status": True}
-                except Exception as e:
-                    logging.exception("Canvas.run got exception")
-                    raise e
+                for m in prepare2run([switch_out]):
+                    yield {"content": m, "running_status": True}
                 continue
 
-            try:
-                for m in prepare2run(cpn["downstream"]):
-                    yield {"content": m, "running_status": True}
-            except Exception as e:
-                logging.exception("Canvas.run got exception")
-                raise e
+            for m in prepare2run(cpn["downstream"]):
+                yield {"content": m, "running_status": True}
 
             if ran >= len(self.path[-1]) and waiting:
                 without_dependent_checking = waiting

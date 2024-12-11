@@ -64,7 +64,7 @@ class ExeSQL(ComponentBase, ABC):
         self._loop += 1
 
         ans = self.get_input()
-        ans = "".join(ans["content"]) if "content" in ans else ""
+        ans = "".join([str(a) for a in ans["content"]]) if "content" in ans else ""
         ans = re.sub(r'^.*?SELECT ', 'SELECT ', repr(ans), flags=re.IGNORECASE)
         ans = re.sub(r';.*?SELECT ', '; SELECT ', ans, flags=re.IGNORECASE)
         ans = re.sub(r';[^;]*$', r';', ans)
