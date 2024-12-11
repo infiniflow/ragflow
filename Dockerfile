@@ -91,7 +91,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     dpkg -i packages-microsoft-prod.deb && \
     rm packages-microsoft-prod.deb && \
     apt update && \
-    apt install msodbcsql17 unixodbc-dev
+    apt install -y msodbcsql17 unixodbc-dev
 
 
 # Add dependencies of selenium
