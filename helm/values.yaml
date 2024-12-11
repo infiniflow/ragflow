@@ -60,7 +60,7 @@ env:
   # The maximum file size for each uploaded file, in bytes.
   # You can uncomment this line and update the value if you wish to change 128M file size limit
   # MAX_CONTENT_LENGTH: "134217728"
-  # Please also update `client_max_body_size` in nginx/nginx.conf correspondingly.
+  # After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
 
 ragflow:
   deployment:
