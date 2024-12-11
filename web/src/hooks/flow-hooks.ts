@@ -220,3 +220,23 @@ export const useTestDbConnect = () => {
 
   return { data, loading, testDbConnect: mutateAsync };
 };
+
+export const useFetchInputElements = (componentId?: string) => {
+  const { id } = useParams();
+
+  const { data, isPending: loading } = useQuery({
+    queryKey: ['fetchInputElements', id, componentId],
+    initialData: [],
+    enabled: !!id && !!componentId,
+    queryFn: async () => {
+      const { data } = await flowService.getInputElements({
+        id,
+        component_id: componentId,
+      });
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};

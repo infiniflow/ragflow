@@ -7,7 +7,12 @@ import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import { Edge, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
-import { CategorizeAnchorPointPositions, NodeMap, Operator } from './constant';
+import {
+  CategorizeAnchorPointPositions,
+  NoDebugOperatorsList,
+  NodeMap,
+  Operator,
+} from './constant';
 import { ICategorizeItemResult, IPosition, NodeData } from './interface';
 
 const buildEdges = (
@@ -124,7 +129,7 @@ export const buildDslComponentsByGraph = (
   const components: DSLComponents = {};
 
   nodes
-    .filter((x) => x.data.label !== Operator.Note)
+    ?.filter((x) => x.data.label !== Operator.Note)
     .forEach((x) => {
       const id = x.id;
       const operatorName = x.data.label;
@@ -322,4 +327,8 @@ export const duplicateNodeForm = (nodeData?: NodeData) => {
 
 export const getDrawerWidth = () => {
   return window.innerWidth > 1278 ? '40%' : 470;
+};
+
+export const needsSingleStepDebugging = (label: string) => {
+  return !NoDebugOperatorsList.some((x) => (label as Operator) === x);
 };

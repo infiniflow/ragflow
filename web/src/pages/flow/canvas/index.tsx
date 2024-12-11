@@ -24,6 +24,7 @@ import {
   useHandleExportOrImportJsonFile,
   useSelectCanvasData,
   useShowFormDrawer,
+  useShowSingleDebugDrawer,
   useValidateConnection,
   useWatchNodeFormDataChange,
 } from '../hooks';
@@ -95,6 +96,11 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     showModal: showChatModal,
     hideModal: hideChatModal,
   } = useSetModalState();
+  const {
+    singleDebugDrawerVisible,
+    showSingleDebugDrawer,
+    hideSingleDebugDrawer,
+  } = useShowSingleDebugDrawer();
 
   const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
     useShowFormDrawer();
@@ -238,6 +244,9 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           node={clickedNode}
           visible={formDrawerVisible}
           hideModal={hideFormDrawer}
+          singleDebugDrawerVisible={singleDebugDrawerVisible}
+          hideSingleDebugDrawer={hideSingleDebugDrawer}
+          showSingleDebugDrawer={showSingleDebugDrawer}
         ></FormDrawer>
       )}
       {chatVisible && (

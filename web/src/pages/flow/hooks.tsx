@@ -856,3 +856,21 @@ export const useHandleExportOrImportJsonFile = () => {
     onFileUploadOk,
   };
 };
+
+export const useShowSingleDebugDrawer = () => {
+  const { visible, showModal, hideModal } = useSetModalState();
+  const { saveGraph } = useSaveGraph();
+
+  const showSingleDebugDrawer = useCallback(async () => {
+    const saveRet = await saveGraph();
+    if (saveRet?.code === 0) {
+      showModal();
+    }
+  }, [saveGraph, showModal]);
+
+  return {
+    singleDebugDrawerVisible: visible,
+    hideSingleDebugDrawer: hideModal,
+    showSingleDebugDrawer,
+  };
+};

@@ -1,6 +1,9 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
+import { CloseOutlined } from '@ant-design/icons';
 import { Drawer, Flex, Form, Input } from 'antd';
+import { lowerFirst } from 'lodash';
+import { Play } from 'lucide-react';
 import { useEffect } from 'react';
 import { Node } from 'reactflow';
 import { Operator, operatorMap } from '../constant';
@@ -15,6 +18,7 @@ import CategorizeForm from '../form/categorize-form';
 import CrawlerForm from '../form/crawler-form';
 import DeepLForm from '../form/deepl-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
+import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
 import GenerateForm from '../form/generate-form';
 import GithubForm from '../form/github-form';
@@ -30,22 +34,23 @@ import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SwitchForm from '../form/switch-form';
+import TemplateForm from '../form/template-form';
 import TuShareForm from '../form/tushare-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import OperatorIcon from '../operator-icon';
+import { getDrawerWidth, needsSingleStepDebugging } from '../utils';
+import SingleDebugDrawer from './single-debug-drawer';
 
-import { CloseOutlined } from '@ant-design/icons';
-import { lowerFirst } from 'lodash';
-import EmailForm from '../form/email-form';
-import TemplateForm from '../form/template-form';
-import { getDrawerWidth } from '../utils';
 import styles from './index.less';
 
 interface IProps {
   node?: Node;
+  singleDebugDrawerVisible: IModalProps<any>['visible'];
+  hideSingleDebugDrawer: IModalProps<any>['hideModal'];
+  showSingleDebugDrawer: IModalProps<any>['showModal'];
 }
 
 const FormMap = {
@@ -91,6 +96,9 @@ const FormDrawer = ({
   visible,
   hideModal,
   node,
+  singleDebugDrawerVisible,
+  hideSingleDebugDrawer,
+  showSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label;
   const OperatorForm = FormMap[operatorName] ?? EmptyContent;
@@ -99,6 +107,7 @@ const FormDrawer = ({
     id: node?.id,
     data: node?.data,
   });
+
   const { t } = useTranslate('flow');
 
   const { handleValuesChange } = useHandleFormValuesChange(node?.id);
@@ -128,6 +137,12 @@ const FormDrawer = ({
                 onChange={handleNameChange}
               ></Input>
             </Flex>
+            {needsSingleStepDebugging(operatorName) && (
+              <Play
+                className="size-5 cursor-pointer"
+                onClick={showSingleDebugDrawer}
+              />
+            )}
             <CloseOutlined onClick={hideModal} />
           </Flex>
           <span className={styles.operatorDescription}>
@@ -142,6 +157,7 @@ const FormDrawer = ({
       mask={false}
       width={getDrawerWidth()}
       closeIcon={null}
+      rootClassName={styles.formDrawer}
     >
       <section className={styles.formWrapper}>
         {visible && (
@@ -152,6 +168,13 @@ const FormDrawer = ({
           ></OperatorForm>
         )}
       </section>
+      {singleDebugDrawerVisible && (
+        <SingleDebugDrawer
+          visible={singleDebugDrawerVisible}
+          hideModal={hideSingleDebugDrawer}
+          componentId={node?.id}
+        ></SingleDebugDrawer>
+      )}
     </Drawer>
   );
 };
