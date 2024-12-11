@@ -80,10 +80,13 @@ ENV POETRY_REQUESTS_TIMEOUT=15
 # nodejs 12.22 on Ubuntu 22.04 is too old
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    curl -sSL -O https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb && \
+    dpkg -i packages-microsoft-prod.deb && \
+    rm packages-microsoft-prod.deb && \
     apt purge -y nodejs npm && \
     apt autoremove && \
     apt update && \
-    apt install -y nodejs cargo
+    apt install -y nodejs cargo msodbcsql17 unixodbc-dev
 
 # Add dependencies of selenium
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
@@ -170,5 +173,4 @@ RUN chmod +x ./entrypoint.sh
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 
 COPY --from=builder /ragflow/VERSION /ragflow/VERSION
-
 ENTRYPOINT ["./entrypoint.sh"]
