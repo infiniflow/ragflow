@@ -1069,6 +1069,16 @@ export default {
       emailSentFailed: 'Không gửi được email',
       jsonFormatTip:
         'Thành phần thượng nguồn phải cung cấp chuỗi JSON theo định dạng sau:',
+      emailComponent: 'Email',
+      senderEmail: 'Người gửi Email',
+      authCode: 'Mã xác minh',
+      senderName: 'Tên người gửi',
+      jsonUploadContentErrorMessage: 'lỗi tệp json',
+      contentTip: 'content: Nội dung email (Tùy chọn)',
+      subjectTip: 'subject: Tiêu đề email (Tùy chọn)',
+      jsonUploadTypeErrorMessage: 'Vui lòng tải lên tệp json',
+      dynamicParameters: 'Tham số động',
+      emailSubject: 'Tiêu đề email',
     },
     footer: {
       profile: 'All rights reserved @ React',
