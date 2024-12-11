@@ -191,7 +191,6 @@ def reset():
 def input_elements():
     cvs_id = request.args.get("id")
     cpn_id = request.args.get("component_id")
-    req = request.json
     try:
         e, user_canvas = UserCanvasService.get_by_id(cvs_id)
         if not e:
@@ -226,7 +225,7 @@ def debug():
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
         canvas.get_component(req["component_id"])["obj"]._param.debug_inputs = req["params"]
         df = canvas.get_component(req["component_id"])["obj"].debug()
-        return get_json_result(data=df.to_dicts(orient="records"))
+        return get_json_result(data=df.to_dict(orient="records"))
     except Exception as e:
         return server_error_response(e)
 
