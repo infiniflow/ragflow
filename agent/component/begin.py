@@ -43,7 +43,7 @@ class Begin(ComponentBase):
     def stream_output(self):
         res = {"content": self._param.prologue}
         yield res
-        self.set_output(res)
+        self.set_output(self.be_output(res))
 
 
 

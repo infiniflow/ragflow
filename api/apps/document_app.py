@@ -552,7 +552,7 @@ def parse():
         })
         driver = Chrome(options=options)
         driver.get(url)
-        res_headers = [r.response.headers for r in driver.requests]
+        res_headers = [r.response.headers for r in driver.requests if r and r.response]
         if len(res_headers) > 1:
             sections = RAGFlowHtmlParser().parser_txt(driver.page_source)
             driver.quit()
