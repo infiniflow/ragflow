@@ -23,7 +23,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import { replaceTextByOldReg } from '../utils';
 import styles from './index.less';
 
-const reg = /(#{2}\d+@{2})/g;
+const reg = /(~{2}\d+={2})/g;
 const curReg = /(~{2}\d+\${2})/g;
 
 const getChunkIndex = (match: string) => Number(match.slice(2, -2));
@@ -47,7 +47,8 @@ const MarkdownContent = ({
     if (text === '') {
       text = t('chat.searching');
     }
-    return loading ? text?.concat('~~2$$') : text;
+    const nextText = replaceTextByOldReg(text);
+    return loading ? nextText?.concat('~~2$$') : nextText;
   }, [content, loading, t]);
 
   useEffect(() => {
@@ -157,9 +158,7 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      const nextText = replaceTextByOldReg(text);
-
-      let replacedText = reactStringReplace(nextText, reg, (match, i) => {
+      let replacedText = reactStringReplace(text, reg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
         return (
           <Popover content={getPopoverContent(chunkIndex)} key={i}>
