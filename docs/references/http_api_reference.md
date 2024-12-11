@@ -2411,532 +2411,139 @@ Success:
 ```json
 {
     "code": 0,
-    "data": [
-        {
-            "agent_id": "ccd2f856b12311ef94ca0242ac120005",
-            "create_date": "Tue, 03 Dec 2024 18:28:02 GMT",
-            "create_time": 1733221682994,
-            "dsl": {
-                "answer": [],
-                "components": {
-                    "Answer:SilentNeedlesDouble": {
-                        "downstream": [
-                            "Categorize:TameDodosLove"
-                        ],
-                        "obj": {
-                            "component_name": "Answer",
-                            "inputs": [],
-                            "output": null,
-                            "params": {
-                                "inputs": [],
-                                "message_history_window_size": 22,
-                                "output": null,
-                                "output_var_name": "output",
-                                "post_answers": [],
-                                "query": []
-                            }
-                        },
-                        "upstream": [
-                            "Generate:RealCatsJudge"
-                        ]
+    "data": {
+        "agent_id": "e9e2b9c2b2f911ef801d0242ac120006",
+        "dsl": {
+            "answer": [],
+            "components": {
+                "Answer:OrangeTermsBurn": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Answer",
+                        "params": {}
                     },
-                    "Answer:ThickBeesTap": {
-                        "downstream": [
-                            "Categorize:TameDodosLove"
-                        ],
-                        "obj": {
-                            "component_name": "Answer",
-                            "inputs": [],
-                            "output": {
-                                "content": "Hi! I'm your smart assistant. What can I do for you?"
-                            },
-                            "params": {
-                                "inputs": [],
-                                "message_history_window_size": 22,
-                                "output": {
-                                    "content": "Hi! I'm your smart assistant. What can I do for you?"
-                                },
-                                "output_var_name": "output",
-                                "post_answers": [],
-                                "query": []
-                            }
-                        },
-                        "upstream": [
-                            "begin"
-                        ]
+                    "upstream": []
+                },
+                "Generate:SocialYearsRemain": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Generate",
+                        "params": {
+                            "cite": true,
+                            "frequency_penalty": 0.7,
+                            "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
+                            "max_tokens": 256,
+                            "message_history_window_size": 12,
+                            "parameters": [],
+                            "presence_penalty": 0.4,
+                            "prompt": "Please summarize the following paragraph. Pay attention to the numbers and do not make things up. The paragraph is as follows:\n{input}\nThis is what you need to summarize.",
+                            "temperature": 0.1,
+                            "top_p": 0.3
+                        }
                     },
-                    "Baidu:TrueBananasPay": {
-                        "downstream": [],
-                        "obj": {
-                            "component_name": "Baidu",
-                            "inputs": [],
-                            "output": null,
-                            "params": {
-                                "inputs": [],
-                                "message_history_window_size": 22,
-                                "output": null,
-                                "output_var_name": "output",
-                                "query": [],
-                                "top_n": 10
-                            }
-                        },
-                        "upstream": []
+                    "upstream": []
+                },
+                "begin": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Begin",
+                        "params": {}
                     },
-                    "Categorize:TameDodosLove": {
-                        "downstream": [
-                            "Retrieval:KindMammalsBeg"
-                        ],
-                        "obj": {
-                            "component_name": "Categorize",
-                            "inputs": [],
-                            "output": null,
-                            "params": {
-                                "category_description": {
-                                    "百度搜索": {
-                                        "description": "接收用户的问题",
-                                        "examples": "who are you\n今天天气如何",
-                                        "index": 0,
-                                        "to": "Retrieval:KindMammalsBeg"
-                                    }
-                                },
+                    "upstream": []
+                }
+            },
+            "graph": {
+                "edges": [],
+                "nodes": [
+                    {
+                        "data": {
+                            "label": "Begin",
+                            "name": "begin"
+                        },
+                        "height": 44,
+                        "id": "begin",
+                        "position": {
+                            "x": 50,
+                            "y": 200
+                        },
+                        "sourcePosition": "left",
+                        "targetPosition": "right",
+                        "type": "beginNode",
+                        "width": 200
+                    },
+                    {
+                        "data": {
+                            "form": {
                                 "cite": true,
+                                "frequencyPenaltyEnabled": true,
                                 "frequency_penalty": 0.7,
-                                "inputs": [],
                                 "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
-                                "max_tokens": 256,
-                                "message_history_window_size": 1,
-                                "output": null,
-                                "output_var_name": "output",
-                                "parameters": [],
-                                "presence_penalty": 0.4,
-                                "prompt": "",
-                                "query": [],
-                                "temperature": 0.1,
-                                "top_p": 0.3
-                            }
-                        },
-                        "upstream": [
-                            "Answer:ThickBeesTap",
-                            "Answer:SilentNeedlesDouble"
-                        ]
-                    },
-                    "Generate:RealCatsJudge": {
-                        "downstream": [
-                            "Answer:SilentNeedlesDouble"
-                        ],
-                        "obj": {
-                            "component_name": "Generate",
-                            "inputs": [],
-                            "output": null,
-                            "params": {
-                                "cite": true,
-                                "frequency_penalty": 0.7,
-                                "inputs": [],
-                                "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
+                                "maxTokensEnabled": true,
                                 "max_tokens": 256,
                                 "message_history_window_size": 12,
-                                "output": null,
-                                "output_var_name": "output",
-                                "parameters": [
-                                    {
-                                        "component_id": "Retrieval:KindMammalsBeg",
-                                        "id": "1cc92398-2306-42ee-b401-6bfb49e1084e",
-                                        "key": "input"
-                                    }
-                                ],
+                                "parameters": [],
+                                "presencePenaltyEnabled": true,
                                 "presence_penalty": 0.4,
-                                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n        {input}\n  The above is the content you need to summarize.",
-                                "query": [],
+                                "prompt": "Please summarize the following paragraph. Pay attention to the numbers and do not make things up. The paragraph is as follows:\n{input}\nThis is what you need to summarize.",
                                 "temperature": 0.1,
+                                "temperatureEnabled": true,
+                                "topPEnabled": true,
                                 "top_p": 0.3
-                            }
+                            },
+                            "label": "Generate",
+                            "name": "Generate Answer_0"
                         },
-                        "upstream": [
-                            "Retrieval:KindMammalsBeg"
-                        ]
+                        "dragging": false,
+                        "height": 105,
+                        "id": "Generate:SocialYearsRemain",
+                        "position": {
+                            "x": 561.3457829707513,
+                            "y": 178.7211182312641
+                        },
+                        "positionAbsolute": {
+                            "x": 561.3457829707513,
+                            "y": 178.7211182312641
+                        },
+                        "selected": true,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "generateNode",
+                        "width": 200
                     },
-                    "Retrieval:KindMammalsBeg": {
-                        "downstream": [
-                            "Generate:RealCatsJudge"
-                        ],
-                        "obj": {
-                            "component_name": "Retrieval",
-                            "inputs": [],
-                            "output": null,
-                            "params": {
-                                "empty_response": "",
-                                "inputs": [],
-                                "kb_ids": [
-                                    "0f8fe876ab1a11efa22c0242ac120006"
-                                ],
-                                "keywords_similarity_weight": 0.3,
-                                "message_history_window_size": 22,
-                                "output": null,
-                                "output_var_name": "output",
-                                "query": [],
-                                "rerank_id": "",
-                                "similarity_threshold": 0.2,
-                                "top_k": 1024,
-                                "top_n": 8
-                            }
-                        },
-                        "upstream": [
-                            "Categorize:TameDodosLove"
-                        ]
-                    },
-                    "begin": {
-                        "downstream": [
-                            "Answer:ThickBeesTap"
-                        ],
-                        "obj": {
-                            "component_name": "Begin",
-                            "inputs": [],
-                            "output": {
-                                "content": "Hi! I'm your smart assistant. What can I do for you?"
-                            },
-                            "params": {
-                                "inputs": [],
-                                "message_history_window_size": 22,
-                                "output": {
-                                    "content": "Hi! I'm your smart assistant. What can I do for you?"
-                                },
-                                "output_var_name": "output",
-                                "prologue": "Hi! I'm your smart assistant. What can I do for you?",
-                                "query": []
-                            }
-                        },
-                        "upstream": []
-                    }
-                },
-                "embed_id": "",
-                "graph": {
-                    "edges": [
-                        {
-                            "id": "reactflow__edge-begin-Answer:ThickBeesTapc",
-                            "markerEnd": "logo",
-                            "source": "begin",
-                            "sourceHandle": null,
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Answer:ThickBeesTap",
-                            "targetHandle": "c",
-                            "type": "buttonEdge"
-                        },
-                        {
-                            "id": "reactflow__edge-Answer:ThickBeesTapb-Categorize:TameDodosLovea",
-                            "markerEnd": "logo",
-                            "source": "Answer:ThickBeesTap",
-                            "sourceHandle": "b",
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Categorize:TameDodosLove",
-                            "targetHandle": "a",
-                            "type": "buttonEdge"
-                        },
-                        {
-                            "id": "reactflow__edge-Generate:RealCatsJudgec-Answer:SilentNeedlesDoubleb",
-                            "markerEnd": "logo",
-                            "selected": false,
-                            "source": "Generate:RealCatsJudge",
-                            "sourceHandle": "c",
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Answer:SilentNeedlesDouble",
-                            "targetHandle": "b",
-                            "type": "buttonEdge"
-                        },
-                        {
-                            "id": "reactflow__edge-Answer:SilentNeedlesDoublec-Categorize:TameDodosLovea",
-                            "markerEnd": "logo",
-                            "source": "Answer:SilentNeedlesDouble",
-                            "sourceHandle": "c",
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Categorize:TameDodosLove",
-                            "targetHandle": "a",
-                            "type": "buttonEdge"
-                        },
-                        {
-                            "id": "reactflow__edge-Categorize:TameDodosLove百度搜索-Retrieval:KindMammalsBegc",
-                            "markerEnd": "logo",
-                            "source": "Categorize:TameDodosLove",
-                            "sourceHandle": "百度搜索",
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Retrieval:KindMammalsBeg",
-                            "targetHandle": "c",
-                            "type": "buttonEdge"
-                        },
-                        {
-                            "id": "reactflow__edge-Retrieval:KindMammalsBegb-Generate:RealCatsJudgeb",
-                            "markerEnd": "logo",
-                            "source": "Retrieval:KindMammalsBeg",
-                            "sourceHandle": "b",
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Generate:RealCatsJudge",
-                            "targetHandle": "b",
-                            "type": "buttonEdge"
-                        }
-                    ],
-                    "nodes": [
-                        {
-                            "data": {
-                                "label": "Begin",
-                                "name": "begin"
-                            },
-                            "height": 44,
-                            "id": "begin",
-                            "position": {
-                                "x": 50,
-                                "y": 200
-                            },
-                            "sourcePosition": "left",
-                            "targetPosition": "right",
-                            "type": "beginNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {},
-                                "label": "Answer",
-                                "name": "对话_0"
-                            },
-                            "dragging": false,
-                            "height": 44,
-                            "id": "Answer:ThickBeesTap",
-                            "position": {
-                                "x": 297.6576850283112,
-                                "y": 203.86553837720618
-                            },
-                            "positionAbsolute": {
-                                "x": 297.6576850283112,
-                                "y": 203.86553837720618
-                            },
-                            "selected": false,
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "logicNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {
-                                    "category_description": {
-                                        "百度搜索": {
-                                            "description": "接收用户的问题",
-                                            "examples": "who are you\n今天天气如何",
-                                            "index": 0,
-                                            "to": "Retrieval:KindMammalsBeg"
-                                        }
-                                    },
-                                    "frequencyPenaltyEnabled": true,
-                                    "frequency_penalty": 0.7,
-                                    "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
-                                    "maxTokensEnabled": true,
-                                    "max_tokens": 256,
-                                    "message_history_window_size": 1,
-                                    "presencePenaltyEnabled": true,
-                                    "presence_penalty": 0.4,
-                                    "query": [],
-                                    "temperature": 0.1,
-                                    "temperatureEnabled": true,
-                                    "topPEnabled": true,
-                                    "top_p": 0.3
-                                },
-                                "label": "Categorize",
-                                "name": "问题分类_0"
-                            },
-                            "dragging": false,
-                            "height": 136,
-                            "id": "Categorize:TameDodosLove",
-                            "position": {
-                                "x": 621.0820384684355,
-                                "y": 220.11059722579682
-                            },
-                            "positionAbsolute": {
-                                "x": 621.0820384684355,
-                                "y": 220.11059722579682
-                            },
-                            "selected": false,
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "categorizeNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {
-                                    "query": [],
-                                    "top_n": 10
-                                },
-                                "label": "Baidu",
-                                "name": "百度_0"
-                            },
-                            "dragging": false,
-                            "height": 64,
-                            "id": "Baidu:TrueBananasPay",
-                            "position": {
-                                "x": 1090.4399996938341,
-                                "y": -10.899556912399987
-                            },
-                            "positionAbsolute": {
-                                "x": 1090.4399996938341,
-                                "y": -10.899556912399987
-                            },
-                            "selected": false,
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "ragNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {
-                                    "cite": true,
-                                    "frequencyPenaltyEnabled": true,
-                                    "frequency_penalty": 0.7,
-                                    "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
-                                    "maxTokensEnabled": true,
-                                    "max_tokens": 256,
-                                    "message_history_window_size": 12,
-                                    "parameters": [
-                                        {
-                                            "component_id": "Retrieval:KindMammalsBeg",
-                                            "id": "1cc92398-2306-42ee-b401-6bfb49e1084e",
-                                            "key": "input"
-                                        }
-                                    ],
-                                    "presencePenaltyEnabled": true,
-                                    "presence_penalty": 0.4,
-                                    "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n        {input}\n  The above is the content you need to summarize.",
-                                    "temperature": 0.1,
-                                    "temperatureEnabled": true,
-                                    "topPEnabled": true,
-                                    "top_p": 0.3
-                                },
-                                "label": "Generate",
-                                "name": "生成回答_0"
-                            },
-                            "dragging": false,
-                            "height": 147,
-                            "id": "Generate:RealCatsJudge",
-                            "position": {
-                                "x": 816.022744651524,
-                                "y": 585.3018986039125
-                            },
-                            "positionAbsolute": {
-                                "x": 816.022744651524,
-                                "y": 585.3018986039125
-                            },
-                            "selected": true,
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "generateNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {},
-                                "label": "Answer",
-                                "name": "对话_1"
-                            },
-                            "height": 44,
-                            "id": "Answer:SilentNeedlesDouble",
-                            "position": {
-                                "x": 402.5121557783059,
-                                "y": 676.449068518027
-                            },
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "logicNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {
-                                    "kb_ids": [
-                                        "0f8fe876ab1a11efa22c0242ac120006"
-                                    ],
-                                    "keywords_similarity_weight": 0.3,
-                                    "query": [],
-                                    "similarity_threshold": 0.2,
-                                    "top_n": 8
-                                },
-                                "label": "Retrieval",
-                                "name": "知识检索_0"
-                            },
-                            "dragging": false,
-                            "height": 106,
-                            "id": "Retrieval:KindMammalsBeg",
-                            "position": {
-                                "x": 975.4304422274787,
-                                "y": 341.7370543002002
-                            },
-                            "positionAbsolute": {
-                                "x": 975.4304422274787,
-                                "y": 341.7370543002002
-                            },
-                            "selected": false,
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "retrievalNode",
-                            "width": 200
-                        }
-                    ]
-                },
-                "history": [
-                    [
-                        "assistant",
-                        "Hi! I'm your smart assistant. What can I do for you?"
-                    ]
-                ],
-                "messages": [
                     {
-                        "content": "Hi! I'm your smart assistant. What can I do for you?",
-                        "id": "472be0d2b15f11ef92df0242ac120005",
-                        "role": "assistant"
+                        "data": {
+                            "form": {},
+                            "label": "Answer",
+                            "name": "Dialogue_0"
+                        },
+                        "height": 44,
+                        "id": "Answer:OrangeTermsBurn",
+                        "position": {
+                            "x": 317.2368194777658,
+                            "y": 218.30635555445093
+                        },
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "logicNode",
+                        "width": 200
                     }
-                ],
-                "path": [
-                    [
-                        "begin"
-                    ],
-                    [
-                        "Answer:ThickBeesTap"
-                    ]
-                ],
-                "reference": []
+                ]
             },
-            "duration": 0.0,
-            "id": "46d2cbeeb16111efb2c10242ac120005",
-            "messages": [
-                {
-                    "content": "Hi! I'm your smart assistant. What can I do for you?",
-                    "role": "assistant"
-                }
-            ],
-            "round": 0,
-            "source": "agent",
-            "thumb_up": 0,
-            "tokens": 0,
-            "update_date": "Tue, 03 Dec 2024 18:28:02 GMT",
-            "update_time": 1733221682994,
-            "user_id": "69736c5e723611efb51b0242ac120007"
-        }
-    ]
+            "history": [],
+            "messages": [],
+            "path": [],
+            "reference": []
+        },
+        "id": "792dde22b2fa11ef97550242ac120006",
+        "message": [
+            {
+                "content": "Hi! I'm your smart assistant. What can I do for you?",
+                "role": "assistant"
+            }
+        ],
+        "source": "agent",
+        "user_id": ""
+    }
 }
 ```
 
@@ -2998,284 +2605,23 @@ Success:
         {
             "avatar": null,
             "canvas_type": null,
-            "create_date": "Tue, 03 Dec 2024 11:07:59 GMT",
-            "create_time": 1733195279013,
+            "create_date": "Thu, 05 Dec 2024 19:10:36 GMT",
+            "create_time": 1733397036424,
             "description": null,
             "dsl": {
                 "answer": [],
                 "components": {
-                    "Answer:SilentNeedlesDouble": {
-                        "downstream": [
-                            "Categorize:TameDodosLove"
-                        ],
-                        "obj": {
-                            "component_name": "Answer",
-                            "inputs": [],
-                            "output": null,
-                            "params": {
-                                "inputs": [],
-                                "message_history_window_size": 22,
-                                "output": null,
-                                "output_var_name": "output",
-                                "post_answers": [],
-                                "query": []
-                            }
-                        },
-                        "upstream": [
-                            "Generate:RealCatsJudge"
-                        ]
-                    },
-                    "Answer:ThickBeesTap": {
-                        "downstream": [
-                            "Categorize:TameDodosLove"
-                        ],
-                        "obj": {
-                            "component_name": "Answer",
-                            "inputs": [],
-                            "output": {
-                                "content": "Hi! I'm your smart assistant. What can I do for you?"
-                            },
-                            "params": {
-                                "inputs": [],
-                                "message_history_window_size": 22,
-                                "output": {
-                                    "content": "Hi! I'm your smart assistant. What can I do for you?"
-                                },
-                                "output_var_name": "output",
-                                "post_answers": [],
-                                "query": []
-                            }
-                        },
-                        "upstream": [
-                            "begin"
-                        ]
-                    },
-                    "Baidu:TrueBananasPay": {
+                    "begin": {
                         "downstream": [],
                         "obj": {
-                            "component_name": "Baidu",
-                            "inputs": [],
-                            "output": null,
-                            "params": {
-                                "inputs": [],
-                                "message_history_window_size": 22,
-                                "output": null,
-                                "output_var_name": "output",
-                                "query": [],
-                                "top_n": 10
-                            }
-                        },
-                        "upstream": []
-                    },
-                    "Categorize:TameDodosLove": {
-                        "downstream": [
-                            "Retrieval:KindMammalsBeg"
-                        ],
-                        "obj": {
-                            "component_name": "Categorize",
-                            "inputs": [],
-                            "output": null,
-                            "params": {
-                                "category_description": {
-                                    "百度搜索": {
-                                        "description": "接收用户的问题",
-                                        "examples": "who are you\n今天天气如何",
-                                        "index": 0,
-                                        "to": "Retrieval:KindMammalsBeg"
-                                    }
-                                },
-                                "cite": true,
-                                "frequency_penalty": 0.7,
-                                "inputs": [],
-                                "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
-                                "max_tokens": 256,
-                                "message_history_window_size": 1,
-                                "output": null,
-                                "output_var_name": "output",
-                                "parameters": [],
-                                "presence_penalty": 0.4,
-                                "prompt": "",
-                                "query": [],
-                                "temperature": 0.1,
-                                "top_p": 0.3
-                            }
-                        },
-                        "upstream": [
-                            "Answer:ThickBeesTap",
-                            "Answer:SilentNeedlesDouble"
-                        ]
-                    },
-                    "Generate:RealCatsJudge": {
-                        "downstream": [
-                            "Answer:SilentNeedlesDouble"
-                        ],
-                        "obj": {
-                            "component_name": "Generate",
-                            "inputs": [],
-                            "output": null,
-                            "params": {
-                                "cite": true,
-                                "frequency_penalty": 0.7,
-                                "inputs": [],
-                                "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
-                                "max_tokens": 256,
-                                "message_history_window_size": 12,
-                                "output": null,
-                                "output_var_name": "output",
-                                "parameters": [
-                                    {
-                                        "component_id": "Retrieval:KindMammalsBeg",
-                                        "id": "1cc92398-2306-42ee-b401-6bfb49e1084e",
-                                        "key": "input"
-                                    }
-                                ],
-                                "presence_penalty": 0.4,
-                                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n        {input}\n  The above is the content you need to summarize.",
-                                "query": [],
-                                "temperature": 0.1,
-                                "top_p": 0.3
-                            }
-                        },
-                        "upstream": [
-                            "Retrieval:KindMammalsBeg"
-                        ]
-                    },
-                    "Retrieval:KindMammalsBeg": {
-                        "downstream": [
-                            "Generate:RealCatsJudge"
-                        ],
-                        "obj": {
-                            "component_name": "Retrieval",
-                            "inputs": [],
-                            "output": null,
-                            "params": {
-                                "empty_response": "",
-                                "inputs": [],
-                                "kb_ids": [
-                                    "0f8fe876ab1a11efa22c0242ac120006"
-                                ],
-                                "keywords_similarity_weight": 0.3,
-                                "message_history_window_size": 22,
-                                "output": null,
-                                "output_var_name": "output",
-                                "query": [],
-                                "rerank_id": "",
-                                "similarity_threshold": 0.2,
-                                "top_k": 1024,
-                                "top_n": 8
-                            }
-                        },
-                        "upstream": [
-                            "Categorize:TameDodosLove"
-                        ]
-                    },
-                    "begin": {
-                        "downstream": [
-                            "Answer:ThickBeesTap"
-                        ],
-                        "obj": {
                             "component_name": "Begin",
-                            "inputs": [],
-                            "output": {
-                                "content": "Hi! I'm your smart assistant. What can I do for you?"
-                            },
-                            "params": {
-                                "inputs": [],
-                                "message_history_window_size": 22,
-                                "output": {
-                                    "content": "Hi! I'm your smart assistant. What can I do for you?"
-                                },
-                                "output_var_name": "output",
-                                "prologue": "Hi! I'm your smart assistant. What can I do for you?",
-                                "query": []
-                            }
+                            "params": {}
                         },
                         "upstream": []
                     }
                 },
-                "embed_id": "",
                 "graph": {
-                    "edges": [
-                        {
-                            "id": "reactflow__edge-begin-Answer:ThickBeesTapc",
-                            "markerEnd": "logo",
-                            "source": "begin",
-                            "sourceHandle": null,
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Answer:ThickBeesTap",
-                            "targetHandle": "c",
-                            "type": "buttonEdge"
-                        },
-                        {
-                            "id": "reactflow__edge-Answer:ThickBeesTapb-Categorize:TameDodosLovea",
-                            "markerEnd": "logo",
-                            "source": "Answer:ThickBeesTap",
-                            "sourceHandle": "b",
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Categorize:TameDodosLove",
-                            "targetHandle": "a",
-                            "type": "buttonEdge"
-                        },
-                        {
-                            "id": "reactflow__edge-Generate:RealCatsJudgec-Answer:SilentNeedlesDoubleb",
-                            "markerEnd": "logo",
-                            "selected": false,
-                            "source": "Generate:RealCatsJudge",
-                            "sourceHandle": "c",
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Answer:SilentNeedlesDouble",
-                            "targetHandle": "b",
-                            "type": "buttonEdge"
-                        },
-                        {
-                            "id": "reactflow__edge-Answer:SilentNeedlesDoublec-Categorize:TameDodosLovea",
-                            "markerEnd": "logo",
-                            "source": "Answer:SilentNeedlesDouble",
-                            "sourceHandle": "c",
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Categorize:TameDodosLove",
-                            "targetHandle": "a",
-                            "type": "buttonEdge"
-                        },
-                        {
-                            "id": "reactflow__edge-Categorize:TameDodosLove百度搜索-Retrieval:KindMammalsBegc",
-                            "markerEnd": "logo",
-                            "source": "Categorize:TameDodosLove",
-                            "sourceHandle": "百度搜索",
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Retrieval:KindMammalsBeg",
-                            "targetHandle": "c",
-                            "type": "buttonEdge"
-                        },
-                        {
-                            "id": "reactflow__edge-Retrieval:KindMammalsBegb-Generate:RealCatsJudgeb",
-                            "markerEnd": "logo",
-                            "source": "Retrieval:KindMammalsBeg",
-                            "sourceHandle": "b",
-                            "style": {
-                                "stroke": "rgb(202 197 245)",
-                                "strokeWidth": 2
-                            },
-                            "target": "Generate:RealCatsJudge",
-                            "targetHandle": "b",
-                            "type": "buttonEdge"
-                        }
-                    ],
+                    "edges": [],
                     "nodes": [
                         {
                             "data": {
@@ -3292,223 +2638,18 @@ Success:
                             "targetPosition": "right",
                             "type": "beginNode",
                             "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {},
-                                "label": "Answer",
-                                "name": "对话_0"
-                            },
-                            "dragging": false,
-                            "height": 44,
-                            "id": "Answer:ThickBeesTap",
-                            "position": {
-                                "x": 297.6576850283112,
-                                "y": 203.86553837720618
-                            },
-                            "positionAbsolute": {
-                                "x": 297.6576850283112,
-                                "y": 203.86553837720618
-                            },
-                            "selected": false,
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "logicNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {
-                                    "category_description": {
-                                        "百度搜索": {
-                                            "description": "接收用户的问题",
-                                            "examples": "who are you\n今天天气如何",
-                                            "index": 0,
-                                            "to": "Retrieval:KindMammalsBeg"
-                                        }
-                                    },
-                                    "frequencyPenaltyEnabled": true,
-                                    "frequency_penalty": 0.7,
-                                    "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
-                                    "maxTokensEnabled": true,
-                                    "max_tokens": 256,
-                                    "message_history_window_size": 1,
-                                    "presencePenaltyEnabled": true,
-                                    "presence_penalty": 0.4,
-                                    "query": [],
-                                    "temperature": 0.1,
-                                    "temperatureEnabled": true,
-                                    "topPEnabled": true,
-                                    "top_p": 0.3
-                                },
-                                "label": "Categorize",
-                                "name": "问题分类_0"
-                            },
-                            "dragging": false,
-                            "height": 136,
-                            "id": "Categorize:TameDodosLove",
-                            "position": {
-                                "x": 621.0820384684355,
-                                "y": 220.11059722579682
-                            },
-                            "positionAbsolute": {
-                                "x": 621.0820384684355,
-                                "y": 220.11059722579682
-                            },
-                            "selected": false,
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "categorizeNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {
-                                    "query": [],
-                                    "top_n": 10
-                                },
-                                "label": "Baidu",
-                                "name": "百度_0"
-                            },
-                            "dragging": false,
-                            "height": 64,
-                            "id": "Baidu:TrueBananasPay",
-                            "position": {
-                                "x": 1090.4399996938341,
-                                "y": -10.899556912399987
-                            },
-                            "positionAbsolute": {
-                                "x": 1090.4399996938341,
-                                "y": -10.899556912399987
-                            },
-                            "selected": false,
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "ragNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {
-                                    "cite": true,
-                                    "frequencyPenaltyEnabled": true,
-                                    "frequency_penalty": 0.7,
-                                    "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
-                                    "maxTokensEnabled": true,
-                                    "max_tokens": 256,
-                                    "message_history_window_size": 12,
-                                    "parameters": [
-                                        {
-                                            "component_id": "Retrieval:KindMammalsBeg",
-                                            "id": "1cc92398-2306-42ee-b401-6bfb49e1084e",
-                                            "key": "input"
-                                        }
-                                    ],
-                                    "presencePenaltyEnabled": true,
-                                    "presence_penalty": 0.4,
-                                    "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n        {input}\n  The above is the content you need to summarize.",
-                                    "temperature": 0.1,
-                                    "temperatureEnabled": true,
-                                    "topPEnabled": true,
-                                    "top_p": 0.3
-                                },
-                                "label": "Generate",
-                                "name": "生成回答_0"
-                            },
-                            "dragging": false,
-                            "height": 147,
-                            "id": "Generate:RealCatsJudge",
-                            "position": {
-                                "x": 816.022744651524,
-                                "y": 585.3018986039125
-                            },
-                            "positionAbsolute": {
-                                "x": 816.022744651524,
-                                "y": 585.3018986039125
-                            },
-                            "selected": true,
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "generateNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {},
-                                "label": "Answer",
-                                "name": "对话_1"
-                            },
-                            "height": 44,
-                            "id": "Answer:SilentNeedlesDouble",
-                            "position": {
-                                "x": 402.5121557783059,
-                                "y": 676.449068518027
-                            },
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "logicNode",
-                            "width": 200
-                        },
-                        {
-                            "data": {
-                                "form": {
-                                    "kb_ids": [
-                                        "0f8fe876ab1a11efa22c0242ac120006"
-                                    ],
-                                    "keywords_similarity_weight": 0.3,
-                                    "query": [],
-                                    "similarity_threshold": 0.2,
-                                    "top_n": 8
-                                },
-                                "label": "Retrieval",
-                                "name": "知识检索_0"
-                            },
-                            "dragging": false,
-                            "height": 106,
-                            "id": "Retrieval:KindMammalsBeg",
-                            "position": {
-                                "x": 975.4304422274787,
-                                "y": 341.7370543002002
-                            },
-                            "positionAbsolute": {
-                                "x": 975.4304422274787,
-                                "y": 341.7370543002002
-                            },
-                            "selected": false,
-                            "sourcePosition": "right",
-                            "targetPosition": "left",
-                            "type": "retrievalNode",
-                            "width": 200
                         }
                     ]
                 },
-                "history": [
-                    [
-                        "assistant",
-                        "Hi! I'm your smart assistant. What can I do for you?"
-                    ]
-                ],
-                "messages": [
-                    {
-                        "content": "Hi! I'm your smart assistant. What can I do for you?",
-                        "id": "472be0d2b15f11ef92df0242ac120005",
-                        "role": "assistant"
-                    }
-                ],
-                "path": [
-                    [
-                        "begin"
-                    ],
-                    [
-                        "Answer:ThickBeesTap"
-                    ]
-                ],
+                "history": [],
+                "messages": [],
+                "path": [],
                 "reference": []
             },
-            "id": "ccd2f856b12311ef94ca0242ac120005",
-            "title": "test2",
-            "update_date": "Tue, 03 Dec 2024 18:13:44 GMT",
-            "update_time": 1733220824599,
+            "id": "8d9ca0e2b2f911ef9ca20242ac120006",
+            "title": "123465",
+            "update_date": "Thu, 05 Dec 2024 19:10:56 GMT",
+            "update_time": 1733397056801,
             "user_id": "69736c5e723611efb51b0242ac120007"
         }
     ]
