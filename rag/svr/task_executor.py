@@ -269,7 +269,7 @@ def embedding(docs, mdl, parser_config=None, callback=None):
     batch_size = 16
     tts, cnts = [], []
     for d in docs:
-        tts.append(rmSpace(d.get("docnm_kwd", "Title")))
+        tts.append(d.get("docnm_kwd", "Title"))
         c = "\n".join(d.get("question_kwd", []))
         if not c:
             c = d["content_with_weight"]
