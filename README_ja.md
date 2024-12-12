@@ -141,7 +141,7 @@
 
 3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
 
-   > 以下のコマンドは、RAGFlow slim（`v0.14.1-slim`）の開発版Dockerイメージをダウンロードします。RAGFlow slimのDockerイメージには、埋め込みモデルやPythonライブラリが含まれていないため、サイズは約1GBです。
+   > 以下のコマンドは、RAGFlow Dockerイメージの v0.14.1-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.14.1-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.14.1 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1 と設定します。
 
    ```bash
    $ cd ragflow
