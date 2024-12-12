@@ -112,15 +112,13 @@ def update(tenant_id, chat_id, session_id):
 @token_required
 def chat_completion(tenant_id, chat_id):
     req = request.json
-    if not req:
+    if not req or not req.get("session_id"):
         req = {"question":""}
     if not DialogService.query(tenant_id=tenant_id,id=chat_id,status=StatusEnum.VALID.value):
         return get_error_data_result(f"You don't own the chat {chat_id}")
     if req.get("session_id"):
         if not ConversationService.query(id=req["session_id"],dialog_id=chat_id):
             return get_error_data_result(f"You don't own the session {req['session_id']}")
-    if not req.get("session_id"):
-        req["question"]=""
     if req.get("stream", True):
         resp = Response(rag_completion(tenant_id, chat_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -129,7 +127,6 @@ def chat_completion(tenant_id, chat_id):
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
 
         return resp
-
     else:
         answer = None
         for ans in rag_completion(tenant_id, chat_id, **req):
@@ -141,45 +138,26 @@ def chat_completion(tenant_id, chat_id):
 @manager.route('/agents/<agent_id>/completions', methods=['POST'])  # noqa: F821
 @token_required
 def agent_completions(tenant_id, agent_id):
-    req = request.json
-    if not req:
-        req = {"question":""}
-    cvs= UserCanvasService.query(user_id=tenant_id,id=agent_id)
-    if not cvs:
-        return get_error_data_result(f"You don't own the agent {agent_id}")
-    if req.get("session_id"):
-        conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
-        if not conv :
-            return get_error_data_result(f"You don't own the session {req['session_id']}")
+        req = request.json
+        cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
+        if not cvs:
+            return get_error_data_result(f"You don't own the agent {agent_id}")
+        if req.get("session_id"):
+            conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
+            if not conv:
+                return get_error_data_result(f"You don't own the session {req['session_id']}")
+        if req.get("stream", True):
+            resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
+            resp.headers.add_header("Cache-control", "no-cache")
+            resp.headers.add_header("Connection", "keep-alive")
+            resp.headers.add_header("X-Accel-Buffering", "no")
+            resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+            return resp
         try:
-            temp = cvs.dsl["components"]["begin"]["obj"]["params"]["query"]
-            if req.get("question"):
-                return get_error_data_result("`question` can't be provided")
-        except Exception:
-            pass
-    if not req.get("session_id"):
-        req["question"]=""
-        cvs = cvs[0]
-        try:
-            query = cvs.dsl["components"]["begin"]["obj"]["params"]["query"]
-            for ele in query:
-                if not req.get(ele["name"]):
-                    return get_error_data_result(f"`{ele['name']}` is required")
-                ele["value"]=req[ele['name']]
-        except Exception:
-            pass
-        cvs = cvs.to_dict()
-        UserCanvasService.update_by_id(agent_id, cvs)
-    if req.get("stream", True):
-        resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
-        resp.headers.add_header("Cache-control", "no-cache")
-        resp.headers.add_header("Connection", "keep-alive")
-        resp.headers.add_header("X-Accel-Buffering", "no")
-        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-        return resp
-
-    for answer in agent_completion(tenant_id, agent_id, **req):
-        return get_result(data=answer)
+            for answer in agent_completion(tenant_id, agent_id, **req):
+                return get_result(data=answer)
+        except Exception as e:
+            return get_error_data_result(str(e))
 
 
 @manager.route('/chats/<chat_id>/sessions', methods=['GET'])  # noqa: F821
@@ -447,3 +425,5 @@ def agent_bot_completions(agent_id):
 
     for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
         return get_result(data=answer)
+
+
