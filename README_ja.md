@@ -141,22 +141,21 @@
 
 3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
 
-   > 以下のコマンドは、RAGFlow slim（`v0.14.1-slim`）の開発版Dockerイメージをダウンロードします。RAGFlow slimのDockerイメージには、埋め込みモデルやPythonライブラリが含まれていないため、サイズは約1GBです。
+   > 以下のコマンドは、RAGFlow Dockerイメージの v0.14.1-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.14.1-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.14.1 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1 と設定します。
 
    ```bash
    $ cd ragflow
    $ docker compose -f docker/docker-compose.yml up -d
    ```
 
-   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | comments               |
-   | -------------------------------- | ----- | ------------------------------------------------------- | ---------------------- |
-   | v0.14.1                          | ~9 GB | YES                                                     | stable release         |
-   | v0.14.1-slim                     | ~2 GB | NO                                                      | stable release         |
-   | v0.15.0-dev1                     | ~9 GB | YES                                                     | unstable beta release  |
-   | v0.15.0-dev1-slim                | ~2 GB | NO                                                      | unstable beta release  |
-   | nightly                          | ~9 GB | YES                                                     | unstable nightly build |
-   | nightly-slim                     | ~2 GB | NO                                                      | unstable nightly build |
-
+   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+   | ----------------- | --------------- | --------------------- | ------------------------ |
+   | v0.14.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.14.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.15.0-dev1      | &approx;9       | :heavy_check_mark:    | *Unstable* beta release  |
+   | v0.15.0-dev1-slim | &approx;2       | ❌                    | *Unstable* beta release  |
+   | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
+   | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
 
 4. サーバーを立ち上げた後、サーバーの状態を確認する:
 
