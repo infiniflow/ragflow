@@ -21,19 +21,25 @@ import flask
 from flask import request
 from flask_login import login_required, current_user
 
-from api.db.db_models import Task, File
-from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
-from api.db.services.task_service import TaskService, queue_tasks
-from api.db.services.user_service import UserTenantService
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search
+
+from api.db import FileType, TaskStatus, ParserType, FileSource
+from api.db.db_models import File, Task
+from api.db.services.file2document_service import File2DocumentService
+from api.db.services.file_service import FileService
+from api.db.services.task_service import queue_tasks
+from api.db.services.user_service import UserTenantService
 from api.db.services import duplicate_name
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from api.utils import get_uuid
-from api.db import FileType, TaskStatus, ParserType, FileSource
+from api.db.services.task_service import TaskService
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
+from api.utils.api_utils import (
+    server_error_response,
+    get_data_error_result,
+    validate_request,
+)
+from api.utils import get_uuid
 from api import settings
 from api.utils.api_utils import get_json_result
 from rag.utils.storage_factory import STORAGE_IMPL
@@ -316,6 +322,7 @@ def rm():
 
             b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
 
+            TaskService.filter_delete([Task.doc_id == doc_id])
             if not DocumentService.remove_document(doc, tenant_id):
                 return get_data_error_result(
                     message="Database error (Document removal)!")
@@ -361,11 +368,12 @@ def run():
             e, doc = DocumentService.get_by_id(id)
             if not e:
                 return get_data_error_result(message="Document not found!")
-            if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
-                settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
+            if req.get("delete", False):
+                TaskService.filter_delete([Task.doc_id == id])
+                if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                    settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
 
             if str(req["run"]) == TaskStatus.RUNNING.value:
-                TaskService.filter_delete([Task.doc_id == id])
                 e, doc = DocumentService.get_by_id(id)
                 doc = doc.to_dict()
                 doc["tenant_id"] = tenant_id

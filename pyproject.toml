@@ -121,6 +121,7 @@ pyicu = "^2.13.1"
 flasgger = "^0.9.7.1"
 polars = { version = "^1.9.0", markers = "platform_machine == 'x86_64'" }
 polars-lts-cpu = { version = "^1.9.0", markers = "platform_machine == 'arm64'" }
+xxhash = "^3.5.0"
 
 
 [tool.poetry.group.full]
