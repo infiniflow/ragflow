@@ -1408,7 +1408,7 @@ while True:
 ---
 
 ## Create session with agent
-
+*If there are parameters in the `begin` component, the session cannot be created in this way.*
 ```python
 Agent.create_session(id,rag) -> Session
 ```
@@ -1435,7 +1435,7 @@ session = create_session(AGENT_ID,rag_object)
 
 ---
 
-## Converse with agent
+## Converse with agent without `begin` component
 
 ```python
 Session.ask(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
