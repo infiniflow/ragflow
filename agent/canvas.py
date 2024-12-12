@@ -211,6 +211,7 @@ class Canvas(ABC):
                     except Exception as e:
                         logging.exception(f"Canvas.run got exception: {e}")
                         self.path[-1].append(c)
+                        ran += 1
                         raise e
                     self.path[-1].append(c)
             ran += 1
@@ -330,4 +331,4 @@ class Canvas(ABC):
         return self.components["begin"]["obj"]._param.query
 
     def get_component_input_elements(self, cpnnm):
-        return self.components["begin"]["obj"].get_input_elements()
+        return self.components[cpnnm]["obj"].get_input_elements()
