@@ -855,6 +855,8 @@ class Task(DataBaseModel):
         help_text="process message",
         default="")
     retry_count = IntegerField(default=0)
+    digest = TextField(null=True, help_text="task digest", default="")
+    chunk_ids = LongTextField(null=True, help_text="chunk ids", default="")
 
 
 class Dialog(DataBaseModel):
@@ -1090,4 +1092,16 @@ def migrate_db():
             )
         except Exception:
             pass
+        try:
+            migrate(
+                migrator.add_column("task", "digest", TextField(null=True, help_text="task digest", default=""))
+            )
+        except Exception:
+            pass
 
+        try:
+            migrate(
+                migrator.add_column("task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default=""))
+            )
+        except Exception:
+            pass
