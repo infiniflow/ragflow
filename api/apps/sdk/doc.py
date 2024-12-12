@@ -22,7 +22,7 @@ from rag.nlp import rag_tokenizer
 from api.db import LLMType, ParserType
 from api.db.services.llm_service import TenantLLMService
 from api import settings
-import hashlib
+import xxhash
 import re
 from api.utils.api_utils import token_required
 from api.db.db_models import Task
@@ -984,10 +984,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
             return get_error_data_result(
                 "`questions` is required to be a list"
             )
-    md5 = hashlib.md5()
-    md5.update((req["content"] + document_id).encode("utf-8"))
-
-    chunk_id = md5.hexdigest()
+    chunk_id = xxhash.xxh64((req["content"] + document_id).encode("utf-8")).hexdigest()
     d = {
         "id": chunk_id,
         "content_ltks": rag_tokenizer.tokenize(req["content"]),
