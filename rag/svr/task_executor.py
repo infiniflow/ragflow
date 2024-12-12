@@ -39,8 +39,9 @@ from timeit import default_timer as timer
 import tracemalloc
 
 import numpy as np
+from peewee import DoesNotExist
 
-from api.db import LLMType, ParserType
+from api.db import LLMType, ParserType, TaskStatus
 from api.db.services.dialog_service import keyword_extraction, question_proposal
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
@@ -89,12 +90,23 @@ DONE_TASKS = 0
 FAILED_TASKS = 0
 CURRENT_TASK = None
 
+class TaskCanceledException(Exception):
+    def __init__(self, msg):
+        self.msg = msg
 
 def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
     global PAYLOAD
     if prog is not None and prog < 0:
         msg = "[ERROR]" + msg
-    cancel = TaskService.do_cancel(task_id)
+    try:
+        cancel = TaskService.do_cancel(task_id)
+    except DoesNotExist:
+        logging.warning(f"set_progress task {task_id} is unknown")
+        if PAYLOAD:
+            PAYLOAD.ack()
+            PAYLOAD = None
+        return
+
     if cancel:
         msg += " [Canceled]"
         prog = -1
@@ -105,18 +117,22 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
     d = {"progress_msg": msg}
     if prog is not None:
         d["progress"] = prog
-    try:
-        logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
-        TaskService.update_progress(task_id, d)
-    except Exception:
-        logging.exception(f"set_progress({task_id}) got exception")
 
-    close_connection()
-    if cancel:
+    logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
+    try:
+        TaskService.update_progress(task_id, d)
+    except DoesNotExist:
+        logging.warning(f"set_progress task {task_id} is unknown")
         if PAYLOAD:
             PAYLOAD.ack()
             PAYLOAD = None
-        os._exit(0)
+        return
+
+    close_connection()
+    if cancel and PAYLOAD:
+        PAYLOAD.ack()
+        PAYLOAD = None
+        raise TaskCanceledException(msg)
 
 
 def collect():
@@ -136,16 +152,22 @@ def collect():
     if not msg:
         return None
 
-    if TaskService.do_cancel(msg["id"]):
+    task = None
+    canceled = False
+    try:
+        task = TaskService.get_task(msg["id"])
+        if task:
+            _, doc = DocumentService.get_by_id(task["doc_id"])
+            canceled = doc.run == TaskStatus.CANCEL.value or doc.progress < 0
+    except DoesNotExist:
+        pass
+    except Exception:
+        logging.exception("collect get_task exception")
+    if not task or canceled:
+        state = "is unknown" if not task else "has been cancelled"
         with mt_lock:
             DONE_TASKS += 1
-        logging.info("Task {} has been canceled.".format(msg["id"]))
-        return None
-    task = TaskService.get_task(msg["id"])
-    if not task:
-        with mt_lock:
-            DONE_TASKS += 1
-        logging.warning("{} empty task!".format(msg["id"]))
+        logging.info(f"collect task {msg['id']} {state}")
         return None
 
     if msg.get("type", "") == "raptor":
@@ -186,6 +208,8 @@ def build_chunks(task, progress_callback):
                             to_page=task["to_page"], lang=task["language"], callback=progress_callback,
                             kb_id=task["kb_id"], parser_config=task["parser_config"], tenant_id=task["tenant_id"])
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
+    except TaskCanceledException:
+        raise
     except Exception as e:
         progress_callback(-1, "Internal server error while chunking: %s" % str(e).replace("'", ""))
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
@@ -358,6 +382,8 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
     return res, tk_count, vector_size
 
 
+
+
 def do_handle_task(task):
     task_id = task["id"]
     task_from_page = task["from_page"]
@@ -373,6 +399,16 @@ def do_handle_task(task):
 
     # prepare the progress callback function
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
+
+    try:
+        task_canceled = TaskService.do_cancel(task_id)
+    except DoesNotExist:
+        logging.warning(f"task {task_id} is unknown")
+        return
+    if task_canceled:
+        progress_callback(-1, msg="Task has been canceled.")
+        return
+
     try:
         # bind embedding model
         embedding_model = LLMBundle(task_tenant_id, LLMType.EMBEDDING, llm_name=task_embedding_id, lang=task_language)
@@ -390,6 +426,8 @@ def do_handle_task(task):
 
             # run RAPTOR
             chunks, token_count, vector_size = run_raptor(task, chat_model, embedding_model, progress_callback)
+        except TaskCanceledException:
+            raise
         except Exception as e:
             error_message = f'Fail to bind LLM used by RAPTOR: {str(e)}'
             progress_callback(-1, msg=error_message)
@@ -420,6 +458,7 @@ def do_handle_task(task):
         progress_message = "Embedding chunks ({:.2f}s)".format(timer() - start_ts)
         logging.info(progress_message)
         progress_callback(msg=progress_message)
+
     # logging.info(f"task_executor init_kb index {search.index_name(task_tenant_id)} embedding_model {embedding_model.llm_name} vector length {vector_size}")
     init_kb(task, vector_size)
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
@@ -430,23 +469,25 @@ def do_handle_task(task):
         doc_store_result = settings.docStoreConn.insert(chunks[b:b + es_bulk_size], search.index_name(task_tenant_id), task_dataset_id)
         if b % 128 == 0:
             progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
-    logging.info("Indexing {} elapsed: {:.2f}".format(task_document_name, timer() - start_ts))
-    if doc_store_result:
-        error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
-        progress_callback(-1, msg=error_message)
-        settings.docStoreConn.delete({"doc_id": task_doc_id}, search.index_name(task_tenant_id), task_dataset_id)
-        logging.error(error_message)
-        raise Exception(error_message)
-
-    if TaskService.do_cancel(task_id):
-        settings.docStoreConn.delete({"doc_id": task_doc_id}, search.index_name(task_tenant_id), task_dataset_id)
-        return
+        if doc_store_result:
+            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
+            progress_callback(-1, msg=error_message)
+            raise Exception(error_message)
+        chunk_ids = [chunk["id"] for chunk in chunks[:b + es_bulk_size]]
+        chunk_ids_str = " ".join(chunk_ids)
+        try:
+            TaskService.update_chunk_ids(task["id"], chunk_ids_str)
+        except DoesNotExist:
+            logging.warning(f"do_handle_task update_chunk_ids failed since task {task['id']} is unknown.")
+            doc_store_result = settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id)
+            return
+    logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page, task_to_page, len(chunks), timer() - start_ts))
 
     DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
 
     time_cost = timer() - start_ts
     progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(time_cost))
-    logging.info("Chunk doc({}), token({}), chunks({}), elapsed:{:.2f}".format(task_id, token_count, len(chunks), time_cost))
+    logging.info("Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(task_document_name, task_from_page, task_to_page, len(chunks), token_count, time_cost))
 
 
 def handle_task():
@@ -462,6 +503,12 @@ def handle_task():
                 DONE_TASKS += 1
                 CURRENT_TASK = None
             logging.info(f"handle_task done for task {json.dumps(task)}")
+        except TaskCanceledException:
+            with mt_lock:
+                DONE_TASKS += 1
+                CURRENT_TASK = None
+            logging.info(f"handle_task got TaskCanceledException for task {json.dumps(task)}")
+            logging.debug("handle_task got TaskCanceledException", exc_info=True)
         except Exception:
             with mt_lock:
                 FAILED_TASKS += 1
