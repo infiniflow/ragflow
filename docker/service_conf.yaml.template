@@ -13,6 +13,7 @@ minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
   host: '${MINIO_HOST:-minio}:9000'
+  import_bucket: '${MINIO_IMPORT_BUCKET:-bucket}'
 es:
   hosts: 'http://${ES_HOST:-es01}:9200'
   username: '${ES_USER:-elastic}'
@@ -22,7 +23,7 @@ infinity:
   db_name: 'default_db'
 redis:
   db: 1
-  password: '${REDIS_PASSWORD:-infini_rag_flow}' 
+  password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}:6379'
 
 # postgres:

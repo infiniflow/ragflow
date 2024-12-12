@@ -77,6 +77,14 @@ export default {
       searchKnowledgePlaceholder: '搜索',
       noMoreData: `That's all. Nothing more.`,
     },
+    knowledgeImport: {
+      importFile: '导入文件',
+      name: '名稱',
+      size: '大小',
+      etag: 'MD5',
+      owner: '創建者',
+      action: '操作',
+    },
     knowledgeDetails: {
       dataset: '數據集',
       testing: '檢索測試',
