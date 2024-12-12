@@ -4,6 +4,7 @@
 
 import json
 from typing import Any
+
 from rag.nlp import find_codec
 class RAGFlowJsonParser:
     def __init__(
@@ -53,7 +54,7 @@ class RAGFlowJsonParser:
         
     def _json_split(
         self,
-        data: dict[str, Any],
+        data,
         current_path: list[str] | None,
         chunks: list[dict] | None,
     ) -> list[dict]:
@@ -86,13 +87,14 @@ class RAGFlowJsonParser:
 
     def split_json(
         self,
-        json_data: dict[str, Any],
+        json_data,
         convert_lists: bool = False,
     ) -> list[dict]:
         """Splits JSON into a list of JSON chunks"""
 
         if convert_lists:
-            chunks = self._json_split(self._list_to_dict_preprocessing(json_data), None, None)
+            preprocessed_data = self._list_to_dict_preprocessing(json_data)
+            chunks = self._json_split(preprocessed_data, None, None)
         else:
             chunks = self._json_split(json_data, None, None)
 
