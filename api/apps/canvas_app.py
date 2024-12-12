@@ -242,8 +242,26 @@ def test_db_connect():
         elif req["db_type"] == 'postgresql':
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])
-        db.connect()
+        elif req["db_type"] == 'mssql':
+            import pyodbc
+            connection_string = (
+                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                f"SERVER={req['host']},{req['port']};"
+                f"DATABASE={req['database']};"
+                f"UID={req['username']};"
+                f"PWD={req['password']};"
+            )
+            db = pyodbc.connect(connection_string)
+            cursor = db.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+        else:
+            return server_error_response("Unsupported database type.")
+        if req["db_type"] != 'mssql':
+            db.connect()
         db.close()
+        
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
         return server_error_response(e)
+
