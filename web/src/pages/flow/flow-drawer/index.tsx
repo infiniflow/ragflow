@@ -44,6 +44,7 @@ import OperatorIcon from '../operator-icon';
 import { getDrawerWidth, needsSingleStepDebugging } from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
 
+import { RunTooltip } from '../flow-tooltip';
 import styles from './index.less';
 
 interface IProps {
@@ -138,10 +139,12 @@ const FormDrawer = ({
               ></Input>
             </Flex>
             {needsSingleStepDebugging(operatorName) && (
-              <Play
-                className="size-5 cursor-pointer"
-                onClick={showSingleDebugDrawer}
-              />
+              <RunTooltip>
+                <Play
+                  className="size-5 cursor-pointer"
+                  onClick={showSingleDebugDrawer}
+                />
+              </RunTooltip>
             )}
             <CloseOutlined onClick={hideModal} />
           </Flex>

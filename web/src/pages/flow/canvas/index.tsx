@@ -5,6 +5,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useSetModalState } from '@/hooks/common-hooks';
+import { get } from 'lodash';
 import { FolderInput, FolderOutput } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import ReactFlow, {
@@ -122,11 +123,24 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
   const onNodeClick: NodeMouseHandler = useCallback(
     (e, node) => {
       if (node.data.label !== Operator.Note) {
+        hideSingleDebugDrawer();
         hideRunOrChatDrawer();
         showFormDrawer(node);
       }
+      // handle single debug icon click
+      if (
+        get(e.target, 'dataset.play') === 'true' ||
+        get(e.target, 'parentNode.dataset.play') === 'true'
+      ) {
+        showSingleDebugDrawer();
+      }
     },
-    [hideRunOrChatDrawer, showFormDrawer],
+    [
+      hideRunOrChatDrawer,
+      hideSingleDebugDrawer,
+      showFormDrawer,
+      showSingleDebugDrawer,
+    ],
   );
 
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
@@ -199,12 +213,6 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
         onSelectionChange={onSelectionChange}
         nodeOrigin={[0.5, 0]}
         isValidConnection={isValidConnection}
-        onChangeCapture={(...params) => {
-          console.info('onChangeCapture:', ...params);
-        }}
-        onChange={(...params) => {
-          console.info('params:', ...params);
-        }}
         defaultEdgeOptions={{
           type: 'buttonEdge',
           markerEnd: 'logo',

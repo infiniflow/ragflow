@@ -21,21 +21,20 @@ import { Link } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BeginQueryType } from '../constant';
-import { useGetBeginNodeDataQuery } from '../hooks';
 import { BeginQuery } from '../interface';
-import useGraphStore from '../store';
 import { PopoverForm } from './popover-form';
 
 import styles from './index.less';
 
 interface IProps {
   parameters: BeginQuery[];
+  ok(parameters: any[]): void;
+  isNext?: boolean;
 }
 
-const DebugContent = ({ parameters }: IProps) => {
+const DebugContent = ({ parameters, ok, isNext = true }: IProps) => {
   const { t } = useTranslation();
   const [form] = Form.useForm();
-  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
   const {
     visible,
     hideModal: hidePopover,
@@ -53,8 +52,6 @@ const DebugContent = ({ parameters }: IProps) => {
     },
     [setRecord, showPopover],
   );
-
-  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
 
   const normFile = (e: any) => {
     if (Array.isArray(e)) {
@@ -169,17 +166,6 @@ const DebugContent = ({ parameters }: IProps) => {
     [form, handleShowPopover, onChange, switchVisible, t, visible],
   );
 
-  // const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatModal!);
-
-  // const handleRunAgent = useCallback(
-  //   (nextValues: Record<string, any>) => {
-  //     const currentNodes = updateNodeForm('begin', nextValues, ['query']);
-  //     handleRun(currentNodes);
-  //     hideModal?.();
-  //   },
-  //   [handleRun, hideModal, updateNodeForm],
-  // );
-
   const onOk = useCallback(async () => {
     const values = await form.validateFields();
     const nextValues = Object.entries(values).map(([key, value]) => {
@@ -198,10 +184,8 @@ const DebugContent = ({ parameters }: IProps) => {
       return { ...item, value: nextValue };
     });
 
-    console.log('🚀 ~ nextValues ~ nextValues:', nextValues);
-
-    // handleRunAgent(nextValues);
-  }, [form, parameters]);
+    ok(nextValues);
+  }, [form, ok, parameters]);
 
   return (
     <>
@@ -236,7 +220,7 @@ const DebugContent = ({ parameters }: IProps) => {
         onClick={onOk}
         disabled={!submittable || isUploading}
       >
-        {t('common.next')}
+        {t(isNext ? 'common.next' : 'flow.run')}
       </Button>
     </>
   );

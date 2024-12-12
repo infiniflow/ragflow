@@ -1,5 +1,6 @@
 import { ResponseType } from '@/interfaces/database/base';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
+import { IDebugSingleRequestBody } from '@/interfaces/request/flow';
 import i18n from '@/locales/config';
 import flowService from '@/services/flow-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
@@ -239,4 +240,26 @@ export const useFetchInputElements = (componentId?: string) => {
   });
 
   return { data, loading };
+};
+
+export const useDebugSingle = () => {
+  const { id } = useParams();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['debugSingle'],
+    mutationFn: async (params: IDebugSingleRequestBody) => {
+      const ret = await flowService.debugSingle({ id, ...params });
+      if (ret?.data?.code === 0) {
+        message.success(ret?.data?.data);
+      } else {
+        message.error(ret?.data?.data);
+      }
+      return ret?.data?.data;
+    },
+  });
+
+  return { data, loading, debugSingle: mutateAsync };
 };
