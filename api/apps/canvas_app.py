@@ -23,7 +23,6 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
-import pyodbc
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
