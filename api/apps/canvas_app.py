@@ -244,7 +244,6 @@ def test_db_connect():
                                     password=req["password"])
         elif req["db_type"] == 'mssql':
             import pyodbc
-            import pyodbc
             connection_string = (
                 f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                 f"SERVER={req['host']},{req['port']};"
@@ -253,18 +252,14 @@ def test_db_connect():
                 f"PWD={req['password']};"
             )
             db = pyodbc.connect(connection_string)
-        else:
-            return server_error_response("Unsupported database type.")
-        
-        # Test the connection
-        if req["db_type"] == "mssql":
             cursor = db.cursor()
             cursor.execute("SELECT 1")
             cursor.close()
-            db.close()
         else:
+            return server_error_response("Unsupported database type.")
+        if req["db_type"] != 'mssql':
             db.connect()
-            db.close()
+        db.close()
         
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
