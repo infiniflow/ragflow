@@ -243,6 +243,7 @@ def test_db_connect():
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])
         elif req["db_type"] == 'mssql':
+            import pyodbc
             connection_string = (
                 f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                 f"SERVER={req['host']},{req['port']};"
