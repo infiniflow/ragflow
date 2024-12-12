@@ -887,7 +887,7 @@ Failure:
 
 ---
 
-## Add chunks
+## Add chunk
 
 **POST** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 
@@ -913,7 +913,7 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "content": "<SOME_CHUNK_CONTENT_HERE>"
+          "content": "<CHUNK_CONTENT_HERE>"
      }'
 ```
 

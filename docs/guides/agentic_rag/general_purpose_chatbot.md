@@ -37,7 +37,7 @@ RAGFlow's no-code editor spares you the trouble of coding, making agent developm
 Here’s a breakdown of each component and its role and requirements in the chatbot template:
 
 - **Begin**
-  - Function: Sets the opening greeting for the user.
+  - Function: Sets an opening greeting for users.
   - Purpose: Establishes a welcoming atmosphere and prepares the user for interaction.
 
 - **Interact**
