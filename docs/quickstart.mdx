@@ -6,6 +6,7 @@ slug: /
 # Quick start
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import APITable from '@site/src/components/APITable';
 
 RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. When integrated with LLMs, it is capable of providing truthful question-answering capabilities, backed by well-founded citations from various complex formatted data.
 
@@ -19,7 +20,7 @@ This quick start guide describes a general process from:
 :::danger IMPORTANT
 We officially support x86 CPU and Nvidia GPU, and this document offers instructions on deploying RAGFlow using Docker on x86 platforms. While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM.
 
-If you are on an ARM platform, following [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
+If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
 :::
 
 ## Prerequisites
@@ -189,15 +190,22 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    $ docker compose -f docker/docker-compose.yml up -d
    ```
 
-   | RAGFLOW_IMAGE tag in docker/.env | size  | Including embedding models and related Python packages? | comments               |
-   | -------------------------------- | ----- | ------------------------------------------------------- | ---------------------- |
-   | v0.14.1                          | ~9 GB | YES                                                     | stable release         |
-   | v0.14.1-slim                     | ~2 GB | NO                                                      | stable release         |
-   | v0.15.0-dev1                     | ~9 GB | YES                                                     | unstable beta release  |
-   | v0.15.0-dev1-slim                | ~2 GB | NO                                                      | unstable beta release  |
-   | nightly                          | ~9 GB | YES                                                     | unstable nightly build |
-   | nightly-slim                     | ~2 GB | NO                                                      | unstable nightly build |
+```mdx-code-block
+<APITable>
+```
 
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+| ----------------- | --------------- | --------------------- | ------------------------ |
+| v0.14.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
+| v0.14.1-slim      | &approx;2       | ❌                    | Stable release           |
+| v0.15.0-dev1      | &approx;9       | :heavy_check_mark:    | *Unstable* beta release  |
+| v0.15.0-dev1-slim | &approx;2       | ❌                    | *Unstable* beta release  |
+| nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
+| nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
+
+```mdx-code-block
+</APITable>
+```
 
 :::tip NOTE
 A RAGFlow Docker image that includes embedding models and Python libraries is approximately 9GB in size and may take significantly longer time to load.
