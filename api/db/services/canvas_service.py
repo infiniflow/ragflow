@@ -21,7 +21,6 @@ from api.db.db_models import DB, CanvasTemplate, UserCanvas, API4Conversation
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.conversation_service import structure_answer
-from api.db.services.dialog_service import keyword_extraction
 from api.utils import get_uuid
 
 
