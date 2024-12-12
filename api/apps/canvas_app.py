@@ -244,6 +244,7 @@ def test_db_connect():
                                     password=req["password"])
         elif req["db_type"] == 'mssql':
             import pyodbc
+            import pyodbc
             connection_string = (
                 f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                 f"SERVER={req['host']},{req['port']};"
