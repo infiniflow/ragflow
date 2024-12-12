@@ -2936,4 +2936,5 @@ export const NoDebugOperatorsList = [
   Operator.Concentrator,
   Operator.Template,
   Operator.Message,
+  Operator.RewriteQuestion,
 ];
