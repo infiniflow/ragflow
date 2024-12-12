@@ -11,6 +11,8 @@ const {
   runCanvas,
   listTemplates,
   testDbConnect,
+  getInputElements,
+  debug,
 } = api;
 
 const methods = {
@@ -44,6 +46,14 @@ const methods = {
   },
   testDbConnect: {
     url: testDbConnect,
+    method: 'post',
+  },
+  getInputElements: {
+    url: getInputElements,
+    method: 'get',
+  },
+  debugSingle: {
+    url: debug,
     method: 'post',
   },
 } as const;
