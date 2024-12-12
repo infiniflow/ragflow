@@ -85,15 +85,13 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt update && \
     apt install -y nodejs cargo 
     
-# Add sql17
+# Add msssql17
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     curl https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc && \
     curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | tee /etc/apt/sources.list.d/mssql-release.list && \
-    apt update
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    apt install -y unixodbc-dev
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    ACCEPT_EULA=Y apt install -y msodbcsql17 
+    apt update && \
+    ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17 
+
 
 
 # Add dependencies of selenium
