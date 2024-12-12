@@ -208,7 +208,7 @@ Released on May 31, 2024.
 :::danger IMPORTANT
 While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM.
 
-If you are on an ARM platform, following [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
+If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
 :::
 
 ### Related APIs
