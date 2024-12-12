@@ -353,7 +353,8 @@ The above is the content you need to summarize.`,
       setAnOpenerTip: 'Set an opening greeting for users.',
       knowledgeBases: 'Knowledge bases',
       knowledgeBasesMessage: 'Please select',
-      knowledgeBasesTip: 'Select the knowledge bases to associate with this chat assistant.',
+      knowledgeBasesTip:
+        'Select the knowledge bases to associate with this chat assistant.',
       system: 'System',
       systemInitialValue: `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
@@ -455,8 +456,7 @@ The above is the content you need to summarize.`,
       profileDescription: 'Update your photo and personal details here.',
       maxTokens: 'Max Tokens',
       maxTokensMessage: 'Max Tokens is required',
-      maxTokensTip:
-        `This sets the maximum length of the model's output, measured in the number of tokens (words or pieces of words).`,
+      maxTokensTip: `This sets the maximum length of the model's output, measured in the number of tokens (words or pieces of words).`,
       maxTokensInvalidMessage: 'Please enter a valid number for Max Tokens.',
       maxTokensMinMessage: 'Max Tokens cannot be less than 0.',
       password: 'Password',
