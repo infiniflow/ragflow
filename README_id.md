@@ -160,8 +160,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3. Bangun image Docker pre-built dan jalankan server:
 
-   > Perintah di bawah ini akan mengunduh versi v0.14.1 dari Docker image RAGFlow slim (`v0.14.1-slim`). Image RAGFlow slim
-   tidak termasuk model embedding atau library Python dan berukuran sekitar 1GB.
+   > Perintah di bawah ini mengunduh edisi v0.14.1-slim dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.14.1-slim, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server. Misalnya, atur RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1 untuk edisi lengkap v0.14.1.
 
    ```bash
    $ cd ragflow
