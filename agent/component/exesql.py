@@ -19,6 +19,7 @@ import pandas as pd
 import pymysql
 import psycopg2
 from agent.component.base import ComponentBase, ComponentParamBase
+import pyodbc
 
 
 class ExeSQLParam(ComponentParamBase):
@@ -38,7 +39,7 @@ class ExeSQLParam(ComponentParamBase):
         self.top_n = 30
 
     def check(self):
-        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgresql', 'mariadb'])
+        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgresql', 'mariadb', 'mssql'])
         self.check_empty(self.database, "Database name")
         self.check_empty(self.username, "database username")
         self.check_empty(self.host, "IP Address")
@@ -77,7 +78,15 @@ class ExeSQL(ComponentBase, ABC):
         elif self._param.db_type == 'postgresql':
             db = psycopg2.connect(dbname=self._param.database, user=self._param.username, host=self._param.host,
                                   port=self._param.port, password=self._param.password)
-
+        elif self._param.db_type == 'mssql':
+            conn_str = (
+                r'DRIVER={ODBC Driver 17 for SQL Server};'
+                r'SERVER=' + self._param.host + ',' + str(self._param.port) + ';'
+                r'DATABASE=' + self._param.database + ';'
+                r'UID=' + self._param.username + ';'
+                r'PWD=' + self._param.password
+            )
+            db = pyodbc.connect(conn_str)
         try:
             cursor = db.cursor()
         except Exception as e:

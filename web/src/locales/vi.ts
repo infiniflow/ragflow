@@ -35,6 +35,7 @@ export default {
       submit: 'Gửi',
       vietnamese: 'Tiếng  việt',
       spanish: 'Tiếng Tây Ban Nha',
+      japanese: 'Tiếng Nhật',
     },
     login: {
       login: 'Đăng nhập',
@@ -447,6 +448,7 @@ export default {
         'Trong các cuộc trò chuyện nhiều vòng, truy vấn vào cơ sở kiến thức được tối ưu hóa. Mô hình lớn sẽ được gọi để sử dụng thêm các token.',
       howUseId: 'Làm thế nào để sử dụng ID cuộc trò chuyện?',
       description: 'Mô tả về trợ lý',
+      betaError: `"Beta API Token" không được để trống!`,
     },
     setting: {
       profile: 'Hồ sơ',
@@ -841,7 +843,7 @@ export default {
       timePeriod: 'Kỳ hạn',
       qWeatherLangOptions: {
         zh: 'Giản thể Trung Quốc',
-        'zh-hant': '繁體中文',
+        'zh-hant': 'Phồn thể Trung Quốc',
         en: 'Tiếng Anh',
         de: 'Tiếng Đức',
         es: 'Tiếng Tây Ban Nha',
@@ -1079,6 +1081,9 @@ export default {
       jsonUploadTypeErrorMessage: 'Vui lòng tải lên tệp json',
       dynamicParameters: 'Tham số động',
       emailSubject: 'Tiêu đề email',
+      ccEmail: 'Email CC',
+      toEmailTip: 'to_email: Email người nhận (Bắt buộc)',
+      ccEmailTip: 'cc_email: Email CC (Tùy chọn)',
     },
     footer: {
       profile: 'All rights reserved @ React',

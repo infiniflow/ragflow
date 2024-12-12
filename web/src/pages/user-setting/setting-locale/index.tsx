@@ -5,7 +5,14 @@ function UserSettingLocale() {
   return (
     <TranslationTable
       data={translationTable}
-      languages={['English', 'Vietnamese', 'Spanish', 'zh', 'zh-TRADITIONAL']}
+      languages={[
+        'English',
+        'Vietnamese',
+        'Spanish',
+        'zh',
+        'zh-TRADITIONAL',
+        'ja',
+      ]}
     />
   );
 }

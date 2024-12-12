@@ -24,10 +24,18 @@ const enFlattened = flattenObject(translation_en);
 const viFlattened = flattenObject(translation_vi);
 const esFlattened = flattenObject(translation_es);
 const zhFlattened = flattenObject(translation_zh);
+const jaFlattened = flattenObject(translation_ja);
 const zh_traditionalFlattened = flattenObject(translation_zh_traditional);
 export const translationTable = createTranslationTable(
-  [enFlattened, viFlattened, esFlattened, zhFlattened, zh_traditionalFlattened],
-  ['English', 'Vietnamese', 'Spanish', 'zh', 'zh-TRADITIONAL'],
+  [
+    enFlattened,
+    viFlattened,
+    esFlattened,
+    zhFlattened,
+    zh_traditionalFlattened,
+    jaFlattened,
+  ],
+  ['English', 'Vietnamese', 'Spanish', 'zh', 'zh-TRADITIONAL', 'ja'],
 );
 i18n
   .use(initReactI18next)
