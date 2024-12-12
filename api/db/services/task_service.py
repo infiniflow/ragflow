@@ -35,17 +35,13 @@ from api import settings
 from rag.nlp import search
 
 def trim_header_by_lines(text: str, max_length) -> str:
-    if len(text) <= max_length:
+    len_text = len(text)
+    if len_text <= max_length:
         return text
-    lines = text.split("\n")
-    total = 0
-    idx = len(lines) - 1
-    for i in range(len(lines)-1, -1, -1):
-        if total + len(lines[i]) > max_length:
-            break
-        idx = i
-    text2 = "\n".join(lines[idx:])
-    return text2
+    for i in range(len_text):
+        if text[i] == '\n' and len_text - i <= max_length:
+            return text[i+1:]
+    return text
 
 class TaskService(CommonService):
     model = Task
@@ -183,7 +179,7 @@ class TaskService(CommonService):
         if os.environ.get("MACOS"):
             if info["progress_msg"]:
                 task = cls.model.get_by_id(id)
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 10000)
+                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 1000)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
                 cls.model.update(progress=info["progress"]).where(
@@ -194,7 +190,7 @@ class TaskService(CommonService):
         with DB.lock("update_progress", -1):
             if info["progress_msg"]:
                 task = cls.model.get_by_id(id)
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 10000)
+                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 1000)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
                 cls.model.update(progress=info["progress"]).where(

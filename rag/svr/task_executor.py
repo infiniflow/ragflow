@@ -27,7 +27,7 @@ import logging
 import os
 from datetime import datetime
 import json
-import hashlib
+import xxhash
 import copy
 import re
 import time
@@ -226,10 +226,7 @@ def build_chunks(task, progress_callback):
     for ck in cks:
         d = copy.deepcopy(doc)
         d.update(ck)
-        md5 = hashlib.md5()
-        md5.update((ck["content_with_weight"] +
-                    str(d["doc_id"])).encode("utf-8"))
-        d["id"] = md5.hexdigest()
+        d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
         d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
         d["create_timestamp_flt"] = datetime.now().timestamp()
         if not d.get("image"):
@@ -368,9 +365,7 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
     tk_count = 0
     for content, vctr in chunks[original_length:]:
         d = copy.deepcopy(doc)
-        md5 = hashlib.md5()
-        md5.update((content + str(d["doc_id"])).encode("utf-8"))
-        d["id"] = md5.hexdigest()
+        d["id"] = xxhash.xxh64((content + str(d["doc_id"])).encode("utf-8")).hexdigest()
         d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
         d["create_timestamp_flt"] = datetime.now().timestamp()
         d[vctr_nm] = vctr.tolist()

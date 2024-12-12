@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import logging
-import hashlib
+import xxhash
 import json
 import random
 import re
@@ -508,10 +508,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         for ck in th.result():
             d = deepcopy(doc)
             d.update(ck)
-            md5 = hashlib.md5()
-            md5.update((ck["content_with_weight"] +
-                        str(d["doc_id"])).encode("utf-8"))
-            d["id"] = md5.hexdigest()
+            d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
             if not d.get("image"):
