@@ -110,3 +110,4 @@ class RewriteQuestion(Generate, ABC):
         return RewriteQuestion.be_output(ans)
 
 
+
