@@ -184,7 +184,9 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 3. Use the pre-built Docker images and start up the server:
 
-   > The command below downloads the v0.14.1 version Docker image for RAGFlow slim (`v0.14.1-slim`). Note that RAGFlow slim Docker images do not include embedding models or Python libraries and hence are approximately 2 GB in size.
+   :::tip NOTE
+   The command below downloads the `v0.14.1-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download an RAGFlow edition different from `v0.14.1-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1` for the full edition `v0.14.1`.
+   :::
 
    ```bash
    $ docker compose -f docker/docker-compose.yml up -d
@@ -194,22 +196,18 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 <APITable>
 ```
 
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-| ----------------- | --------------- | --------------------- | ------------------------ |
-| v0.14.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
-| v0.14.1-slim      | &approx;2       | ❌                    | Stable release           |
-| v0.15.0-dev1      | &approx;9       | :heavy_check_mark:    | *Unstable* beta release  |
-| v0.15.0-dev1-slim | &approx;2       | ❌                    | *Unstable* beta release  |
-| nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
-| nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
+   | RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
+   | ------------------- | --------------- | ----------------------------------------- | ------------------------ |
+   | `v0.14.1`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
+   | `v0.14.1-slim`      | &approx;2       | ❌                                        | Stable release           |
+   | `v0.15.0-dev1`      | &approx;9       | :heavy_check_mark:                        | *Unstable* beta release  |
+   | `v0.15.0-dev1-slim` | &approx;2       | ❌                                        | *Unstable* beta release  |
+   | `nightly`           | &approx;9       | :heavy_check_mark:                        | *Unstable* nightly build |
+   | `nightly-slim`      | &approx;2       | ❌                                        | *Unstable* nightly build |
 
 ```mdx-code-block
 </APITable>
 ```
-
-:::tip NOTE
-A RAGFlow Docker image that includes embedding models and Python libraries is approximately 9GB in size and may take significantly longer time to load.
-:::
 
 4. Check the server status after having the server up and running:
 

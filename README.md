@@ -167,8 +167,7 @@ releases! 🌟
 
 3. Start up the server using the pre-built Docker images:
 
-   > The command below downloads the v0.14.1 version Docker image for RAGFlow slim (`v0.14.1-slim`). Note that RAGFlow slim
-   Docker images do not include embedding models or Python libraries and hence are approximately 2 GB in size.
+   > The command below downloads the `v0.14.1-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download an RAGFlow edition different from `v0.14.1-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1` for the full edition `v0.14.1`.
 
    ```bash
    $ cd ragflow
