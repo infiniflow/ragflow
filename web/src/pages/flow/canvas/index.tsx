@@ -5,6 +5,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useSetModalState } from '@/hooks/common-hooks';
+import { get } from 'lodash';
 import { FolderInput, FolderOutput } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import ReactFlow, {
@@ -24,6 +25,7 @@ import {
   useHandleExportOrImportJsonFile,
   useSelectCanvasData,
   useShowFormDrawer,
+  useShowSingleDebugDrawer,
   useValidateConnection,
   useWatchNodeFormDataChange,
 } from '../hooks';
@@ -95,6 +97,11 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     showModal: showChatModal,
     hideModal: hideChatModal,
   } = useSetModalState();
+  const {
+    singleDebugDrawerVisible,
+    showSingleDebugDrawer,
+    hideSingleDebugDrawer,
+  } = useShowSingleDebugDrawer();
 
   const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
     useShowFormDrawer();
@@ -116,11 +123,24 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
   const onNodeClick: NodeMouseHandler = useCallback(
     (e, node) => {
       if (node.data.label !== Operator.Note) {
+        hideSingleDebugDrawer();
         hideRunOrChatDrawer();
         showFormDrawer(node);
       }
+      // handle single debug icon click
+      if (
+        get(e.target, 'dataset.play') === 'true' ||
+        get(e.target, 'parentNode.dataset.play') === 'true'
+      ) {
+        showSingleDebugDrawer();
+      }
     },
-    [hideRunOrChatDrawer, showFormDrawer],
+    [
+      hideRunOrChatDrawer,
+      hideSingleDebugDrawer,
+      showFormDrawer,
+      showSingleDebugDrawer,
+    ],
   );
 
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
@@ -193,12 +213,6 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
         onSelectionChange={onSelectionChange}
         nodeOrigin={[0.5, 0]}
         isValidConnection={isValidConnection}
-        onChangeCapture={(...params) => {
-          console.info('onChangeCapture:', ...params);
-        }}
-        onChange={(...params) => {
-          console.info('params:', ...params);
-        }}
         defaultEdgeOptions={{
           type: 'buttonEdge',
           markerEnd: 'logo',
@@ -214,7 +228,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           <ControlButton onClick={handleImportJson}>
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger>
+                <TooltipTrigger asChild>
                   <FolderInput />
                 </TooltipTrigger>
                 <TooltipContent>Import</TooltipContent>
@@ -224,7 +238,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           <ControlButton onClick={handleExportJson}>
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger>
+                <TooltipTrigger asChild>
                   <FolderOutput />
                 </TooltipTrigger>
                 <TooltipContent>Export</TooltipContent>
@@ -238,6 +252,9 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           node={clickedNode}
           visible={formDrawerVisible}
           hideModal={hideFormDrawer}
+          singleDebugDrawerVisible={singleDebugDrawerVisible}
+          hideSingleDebugDrawer={hideSingleDebugDrawer}
+          showSingleDebugDrawer={showSingleDebugDrawer}
         ></FormDrawer>
       )}
       {chatVisible && (
