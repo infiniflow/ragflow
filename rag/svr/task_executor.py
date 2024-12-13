@@ -502,12 +502,19 @@ def handle_task():
             with mt_lock:
                 DONE_TASKS += 1
                 CURRENT_TASK = None
-            logging.info(f"handle_task got TaskCanceledException for task {json.dumps(task)}")
+            try:
+                set_progress(task["id"], prog=-1, msg="handle_task got TaskCanceledException")
+            except Exception:
+                pass
             logging.debug("handle_task got TaskCanceledException", exc_info=True)
         except Exception:
             with mt_lock:
                 FAILED_TASKS += 1
                 CURRENT_TASK = None
+            try:
+                set_progress(task["id"], prog=-1, msg="handle_task got exception, please check log")
+            except Exception:
+                pass
             logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     if PAYLOAD:
         PAYLOAD.ack()
