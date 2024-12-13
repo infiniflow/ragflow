@@ -65,8 +65,16 @@ class ExeSQL(ComponentBase, ABC):
         self._loop += 1
 
         ans = self.get_input()
+      
+
         ans = "".join([str(a) for a in ans["content"]]) if "content" in ans else ""
         if self._param.db_type == 'mssql':
+            match = re.search(r"```sql\s*(.*?)\s*```", ans, re.DOTALL)
+            if match:
+                ans = match.group(1)  # Nội dung câu query
+                print(ans)
+            else:
+                print("no markdown")
             ans = re.sub(r'^.*?SELECT ', 'SELECT ', (ans), flags=re.IGNORECASE)
         else:
             ans = re.sub(r'^.*?SELECT ', 'SELECT ', repr(ans), flags=re.IGNORECASE)
