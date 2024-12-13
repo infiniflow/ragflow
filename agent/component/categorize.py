@@ -87,4 +87,8 @@ class Categorize(Generate, ABC):
 
         return Categorize.be_output(list(self._param.category_description.items())[-1][1]["to"])
 
+    def debug(self, **kwargs):
+        df = self._run([], **kwargs)
+        cpn_id = df.iloc[0, 0]
+        return Categorize.be_output(self._canvas.get_compnent_name(cpn_id))
 
