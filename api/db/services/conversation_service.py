@@ -86,8 +86,9 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
     assert dia, "You do not own the chat."
 
     if not session_id:
+        session_id = get_uuid()
         conv = {
-            "id": get_uuid(),
+            "id":session_id ,
             "dialog_id": chat_id,
             "name": name,
             "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}]
