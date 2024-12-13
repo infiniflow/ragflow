@@ -1,12 +1,14 @@
+import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
+import { Play } from 'lucide-react';
 import { Operator, operatorMap } from '../../constant';
 import OperatorIcon from '../../operator-icon';
+import { needsSingleStepDebugging } from '../../utils';
 import NodeDropdown from './dropdown';
-
-import { useTranslate } from '@/hooks/common-hooks';
-import styles from './index.less';
 import { NextNodePopover } from './popover';
 
+import { RunTooltip } from '../../flow-tooltip';
+import styles from './index.less';
 interface IProps {
   id: string;
   label: string;
@@ -15,12 +17,17 @@ interface IProps {
   className?: string;
 }
 
-export function RunStatus({ id, name }: Omit<IProps, 'label'>) {
+export function RunStatus({ id, name, label }: IProps) {
   const { t } = useTranslate('flow');
   return (
-    <section className="flex justify-end items-center pb-1 ">
+    <section className="flex  justify-end items-center pb-1 gap-2 text-blue-600">
+      {needsSingleStepDebugging(label) && (
+        <RunTooltip>
+          <Play className="size-3 cursor-pointer" data-play />
+        </RunTooltip> // data-play is used to trigger single step debugging
+      )}
       <NextNodePopover nodeId={id} name={name}>
-        <span className="text-blue-600 cursor-pointer text-[10px]">
+        <span className="cursor-pointer text-[10px]">
           {t('operationResults')}
         </span>
       </NextNodePopover>
@@ -30,8 +37,10 @@ export function RunStatus({ id, name }: Omit<IProps, 'label'>) {
 
 const NodeHeader = ({ label, id, name, gap = 4, className }: IProps) => {
   return (
-    <section className="haha">
-      {label !== Operator.Answer && <RunStatus id={id} name={name}></RunStatus>}
+    <section>
+      {label !== Operator.Answer && (
+        <RunStatus id={id} name={name} label={label}></RunStatus>
+      )}
       <Flex
         flex={1}
         align="center"

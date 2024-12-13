@@ -2931,3 +2931,13 @@ export const BeginQueryTypeIconMap = {
   [BeginQueryType.Integer]: ListOrdered,
   [BeginQueryType.Boolean]: ToggleLeft,
 };
+
+export const NoDebugOperatorsList = [
+  Operator.Begin,
+  Operator.Answer,
+  Operator.Concentrator,
+  Operator.Template,
+  Operator.Message,
+  Operator.RewriteQuestion,
+  Operator.Switch,
+];
