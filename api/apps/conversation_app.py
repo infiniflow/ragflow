@@ -95,6 +95,8 @@ def get():
             return d.get(k1, d.get(k2))
 
         for ref in conv.reference:
+            if isinstance(ref, list):
+                continue
             ref["chunks"] = [{
                 "id": get_value(ck, "chunk_id", "id"),
                 "content": get_value(ck, "content", "content_with_weight"),
@@ -185,6 +187,8 @@ def completion():
                 return d.get(k1, d.get(k2))
 
             for ref in conv.reference:
+                if isinstance(ref, list):
+                    continue
                 ref["chunks"] = [{
                     "id": get_value(ck, "chunk_id", "id"),
                     "content": get_value(ck, "content", "content_with_weight"),

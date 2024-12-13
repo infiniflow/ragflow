@@ -466,7 +466,7 @@ def hierarchical_merge(bull, sections, depth):
                 jj = binary_search(levels[ii], j)
                 if jj < 0:
                     continue
-                if jj > cks[-1][-1]:
+                if levels[ii][jj] > cks[-1][-1]:
                     cks[-1].pop(-1)
                 cks[-1].append(levels[ii][jj])
             for ii in cks[-1]:

@@ -111,9 +111,9 @@ class Generate(ComponentBase):
 
     def get_input_elements(self):
         if self._param.parameters:
-            return self._param.parameters
+            return [{"key": "user", "name": "User"}, *self._param.parameters]
 
-        return [{"key": "input"}]
+        return [{"key": "user", "name": "User"}]
 
     def _run(self, history, **kwargs):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
@@ -218,4 +218,17 @@ class Generate(ComponentBase):
             res = self.set_cite(retrieval_res, answer)
             yield res
 
-        self.set_output(res)
+        self.set_output(Generate.be_output(res))
+
+    def debug(self, **kwargs):
+        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
+        prompt = self._param.prompt
+
+        for para in self._param.debug_inputs:
+            kwargs[para["key"]] = para.get("value", "")
+
+        for n, v in kwargs.items():
+            prompt = re.sub(r"\{%s\}" % re.escape(n), str(v).replace("\\", " "), prompt)
+
+        ans = chat_mdl.chat(prompt, [{"role": "user", "content": kwargs.get("user", "")}], self._param.gen_conf())
+        return pd.DataFrame([ans])

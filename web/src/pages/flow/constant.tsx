@@ -2855,10 +2855,12 @@ export const QWeatherTimePeriodOptions = [
   '30d',
 ];
 
-export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb'].map((x) => ({
-  label: upperFirst(x),
-  value: x,
-}));
+export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb', 'mssql'].map(
+  (x) => ({
+    label: upperFirst(x),
+    value: x,
+  }),
+);
 
 export const SwitchElseTo = 'end_cpn_id';
 
@@ -2929,3 +2931,13 @@ export const BeginQueryTypeIconMap = {
   [BeginQueryType.Integer]: ListOrdered,
   [BeginQueryType.Boolean]: ToggleLeft,
 };
+
+export const NoDebugOperatorsList = [
+  Operator.Begin,
+  Operator.Answer,
+  Operator.Concentrator,
+  Operator.Template,
+  Operator.Message,
+  Operator.RewriteQuestion,
+  Operator.Switch,
+];

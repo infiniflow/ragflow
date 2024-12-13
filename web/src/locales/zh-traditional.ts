@@ -75,7 +75,7 @@ export default {
       namePlaceholder: '請輸入名稱',
       doc: '文件',
       searchKnowledgePlaceholder: '搜索',
-      noMoreData: 'It is all, nothing more',
+      noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
       dataset: '數據集',
@@ -161,6 +161,7 @@ export default {
       autoKeywordsTip: `在查詢此類關鍵字時，為每個區塊提取 N 個關鍵字以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。 `,
       autoQuestions: '自動問題',
       autoQuestionsTip: `在查詢此類問題時，為每個區塊提取 N 個問題以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。如果發生錯誤，此功能不會破壞整個分塊過程，除了將空結果新增至原始區塊。 `,
+      redo: '是否清空已有 {{chunkNum}}個 chunk？',
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
@@ -414,7 +415,7 @@ export default {
       partialTitle: '部分嵌入',
       extensionTitle: 'Chrome 插件',
       tokenError: '請先創建 API Token!',
-      betaError: 'API Token的beta欄位不可以為空！',
+      betaError: '請先在系統設定中申請API密鑰。',
       searching: '搜索中',
       parsing: '解析中',
       uploading: '上傳中',

@@ -187,10 +187,32 @@ def reset():
 
 
 @manager.route('/input_elements', methods=['GET'])  # noqa: F821
-@validate_request("id", "component_id")
 @login_required
 def input_elements():
+    cvs_id = request.args.get("id")
+    cpn_id = request.args.get("component_id")
+    try:
+        e, user_canvas = UserCanvasService.get_by_id(cvs_id)
+        if not e:
+            return get_data_error_result(message="canvas not found.")
+        if not UserCanvasService.query(user_id=current_user.id, id=cvs_id):
+            return get_json_result(
+                data=False, message='Only owner of canvas authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+
+        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
+        return get_json_result(data=canvas.get_component_input_elements(cpn_id))
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route('/debug', methods=['POST'])  # noqa: F821
+@validate_request("id", "component_id", "params")
+@login_required
+def debug():
     req = request.json
+    for p in req["params"]:
+        assert p.get("key")
     try:
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
         if not e:
@@ -201,7 +223,9 @@ def input_elements():
                 code=RetCode.OPERATING_ERROR)
 
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
-        return get_json_result(data=canvas.get_component_input_elements(req["component_id"]))
+        canvas.get_component(req["component_id"])["obj"]._param.debug_inputs = req["params"]
+        df = canvas.get_component(req["component_id"])["obj"].debug()
+        return get_json_result(data=df.to_dict(orient="records"))
     except Exception as e:
         return server_error_response(e)
 
@@ -218,8 +242,26 @@ def test_db_connect():
         elif req["db_type"] == 'postgresql':
             db = PostgresqlDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
                                     password=req["password"])
-        db.connect()
+        elif req["db_type"] == 'mssql':
+            import pyodbc
+            connection_string = (
+                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                f"SERVER={req['host']},{req['port']};"
+                f"DATABASE={req['database']};"
+                f"UID={req['username']};"
+                f"PWD={req['password']};"
+            )
+            db = pyodbc.connect(connection_string)
+            cursor = db.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+        else:
+            return server_error_response("Unsupported database type.")
+        if req["db_type"] != 'mssql':
+            db.connect()
         db.close()
+        
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
         return server_error_response(e)
+

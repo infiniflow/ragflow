@@ -142,22 +142,21 @@
 
 3. 进入 **docker** 文件夹，利用提前编译好的 Docker 镜像启动服务器：
 
-   > 运行以下命令会自动下载 v0.14.1 版的 RAGFlow slim Docker 镜像（`v0.14.1-slim`），该镜像并不包含 embedding 模型以及一些 Python 库，因此镜像大小约 1GB。
+   > 运行以下命令会自动下载 RAGFlow slim Docker 镜像 `v0.14.1-slim`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.14.0-slim` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。比如，你可以通过设置 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1` 来下载 RAGFlow 镜像的 `v0.14.1` 完整发行版。
 
    ```bash
    $ cd ragflow
    $ docker compose -f docker/docker-compose.yml up -d
    ```
 
-   | RAGFLOW_IMAGE tag in docker/.env | 尺寸  | 内置 embedding 模型和相关 Python 库?                    | 描述                   |
-   | -------------------------------- | ----- | ------------------------------------------------------- | ---------------------- |
-   | v0.14.1                          | ~9 GB | YES                                                     | stable release         |
-   | v0.14.1-slim                     | ~2 GB | NO                                                      | stable release         |
-   | v0.15.0-dev1                     | ~9 GB | YES                                                     | unstable beta release  |
-   | v0.15.0-dev1-slim                | ~2 GB | NO                                                      | unstable beta release  |
-   | nightly                          | ~9 GB | YES                                                     | unstable nightly build |
-   | nightly-slim                     | ~2 GB | NO                                                      | unstable nightly build |
-
+   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+   | ----------------- | --------------- | --------------------- | ------------------------ |
+   | v0.14.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.14.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.15.0-dev1      | &approx;9       | :heavy_check_mark:    | *Unstable* beta release  |
+   | v0.15.0-dev1-slim | &approx;2       | ❌                    | *Unstable* beta release  |
+   | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
+   | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
 
 4. 服务器启动成功后再次确认服务器状态：
 

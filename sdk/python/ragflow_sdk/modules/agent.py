@@ -1,7 +1,8 @@
 from .base import Base
-from .session import Session
+from .session import Session,Message
 import requests
-from typing import List
+import json
+
 
 class Agent(Base):
     def __init__(self,rag,res_dict):
@@ -60,7 +61,7 @@ class Agent(Base):
 
     @staticmethod
     def list_sessions(agent_id,rag,page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
-                      id: str = None) -> List[Session]:
+                      id: str = None) -> list[Session]:
         url = f"{rag.api_url}/agents/{agent_id}/sessions"
         headers = {"Authorization": f"Bearer {rag.user_key}"}
         params = {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id}
@@ -73,3 +74,30 @@ class Agent(Base):
                 result_list.append(temp_agent)
             return result_list
         raise Exception(res.get("message"))
+
+    @staticmethod
+    def ask(agent_id,rag,stream=True,**kwargs):
+        url = f"{rag.api_url}/agents/{agent_id}/completions"
+        headers = {"Authorization": f"Bearer {rag.user_key}"}
+        res = requests.post(url=url, headers=headers, json=kwargs,stream=stream)
+        for line in res.iter_lines():
+            line = line.decode("utf-8")
+            if line.startswith("{"):
+                json_data = json.loads(line)
+                raise Exception(json_data["message"])
+            if line.startswith("data:"):
+                json_data = json.loads(line[5:])
+                if json_data["data"] is not True:
+                    if json_data["data"].get("running_status"):
+                        continue
+                    answer = json_data["data"]["answer"]
+                    reference = json_data["data"]["reference"]
+                    temp_dict = {
+                        "content": answer,
+                        "role": "assistant"
+                    }
+                    if "chunks" in reference:
+                        chunks = reference["chunks"]
+                        temp_dict["reference"] = chunks
+                    message = Message(rag, temp_dict)
+                    yield message

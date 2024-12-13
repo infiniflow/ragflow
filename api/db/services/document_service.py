@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import logging
-import hashlib
+import xxhash
 import json
 import random
 import re
@@ -284,6 +284,31 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_chunking_config(cls, doc_id):
+        configs = (
+            cls.model.select(
+                cls.model.id,
+                cls.model.kb_id,
+                cls.model.parser_id,
+                cls.model.parser_config,
+                Knowledgebase.language,
+                Knowledgebase.embd_id,
+                Tenant.id.alias("tenant_id"),
+                Tenant.img2txt_id,
+                Tenant.asr_id,
+                Tenant.llm_id,
+            )
+            .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id))
+            .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
+            .where(cls.model.id == doc_id)
+        )
+        configs = configs.dicts()
+        if not configs:
+            return None
+        return configs[0]
+
+    @classmethod
+    @DB.connection_context()
     def get_doc_id_by_doc_name(cls, doc_name):
         fields = [cls.model.id]
         doc_id = cls.model.select(*fields) \
@@ -483,10 +508,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         for ck in th.result():
             d = deepcopy(doc)
             d.update(ck)
-            md5 = hashlib.md5()
-            md5.update((ck["content_with_weight"] +
-                        str(d["doc_id"])).encode("utf-8"))
-            d["id"] = md5.hexdigest()
+            d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
             if not d.get("image"):

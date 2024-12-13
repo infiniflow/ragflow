@@ -14,6 +14,13 @@ Dataset Management
 :::
 
 ---
+### Install the RAGFlow SDK
+
+To install the RAGFlow SDK, run the following command in your terminal:
+
+```bash
+pip install ragflow-sdk
+```
 
 ## Create dataset
 
@@ -123,7 +130,7 @@ The parser configuration of the dataset. A `ParserConfig` object's attributes va
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.create_dataset(name="kb_1")
@@ -265,7 +272,7 @@ A dictionary representing the attributes to update, with the following keys:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(name="kb_name")
@@ -374,7 +381,7 @@ A dictionary representing the attributes to update, with the following keys:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(id='id')
@@ -401,7 +408,7 @@ The downloaded document in bytes.
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(id="id")
@@ -509,7 +516,7 @@ A `Document` object contains the following attributes:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.create_dataset(name="kb_1")
@@ -545,7 +552,7 @@ The IDs of the documents to delete. Defaults to `None`. If it is not specified, 
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(name="kb_1")
@@ -678,7 +685,7 @@ A `Chunk` object contains the following attributes:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(id="123")
@@ -724,7 +731,7 @@ The ID of the chunk to retrieve. Default: `None`
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets("123")
@@ -758,7 +765,7 @@ The IDs of the chunks to delete. Defaults to `None`. If it is not specified, all
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(id="123")
@@ -799,7 +806,7 @@ A dictionary representing the attributes to update, with the following keys:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(id="123")
@@ -880,7 +887,7 @@ Specifies whether to enable highlighting of matched terms in the results:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(name="ragflow")
@@ -951,7 +958,7 @@ The LLM settings for the chat assistant to create. Defaults to `None`. When the 
 - `frequency penalty`: `float`  
   Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
 - `max_token`: `int`  
-  The maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.
+  The maximum length of the model's output, measured in the number of tokens (words or pieces of words). If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses. Defaults to `512`.
 
 #### prompt: `Chat.Prompt`
 
@@ -978,7 +985,7 @@ Instructions for the LLM to follow.  A `Prompt` object contains the following at
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 datasets = rag_object.list_datasets(name="kb_1")
@@ -1013,7 +1020,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
   - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have appeared in the conversation.
   - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model’s tendency to repeat the same words.
-  - `"max_token"`, `int` The maximum length of the model’s output, measured in the number of tokens (words or pieces of words).
+  - `"max_token"`, `int` The maximum length of the model's output, measured in the number of tokens (words or pieces of words). If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses. Defaults to `512`.
 - `"prompt"` : Instructions for the LLM to follow.
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
@@ -1036,7 +1043,7 @@ A dictionary representing the attributes to update, with the following keys:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 datasets = rag_object.list_datasets(name="kb_1")
@@ -1069,7 +1076,7 @@ The IDs of the chat assistants to delete. Defaults to `None`. If it is empty or 
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 rag_object.delete_chats(ids=["id_1","id_2"])
@@ -1129,7 +1136,7 @@ The name of the chat assistant to retrieve. Defaults to `None`.
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 for assistant in rag_object.list_chats():
@@ -1170,7 +1177,7 @@ The name of the chat session to create.
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
@@ -1204,7 +1211,7 @@ A dictionary representing the attributes to update, with only one key:
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
@@ -1267,7 +1274,7 @@ The name of the chat session to retrieve. Defaults to `None`.
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
@@ -1300,7 +1307,7 @@ The IDs of the sessions to delete. Defaults to `None`. If it is not specified, a
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
@@ -1378,7 +1385,7 @@ A list of `Chunk` objects representing references to the message, each containin
 ### Examples
 
 ```python
-from ragflow import RAGFlow
+from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
@@ -1401,7 +1408,7 @@ while True:
 ---
 
 ## Create session with agent
-
+*If there are parameters in the `begin` component, the session cannot be created in this way.*
 ```python
 Agent.create_session(id,rag) -> Session
 ```
@@ -1428,7 +1435,7 @@ session = create_session(AGENT_ID,rag_object)
 
 ---
 
-## Converse with agent
+## Converse with agent without `begin` component
 
 ```python
 Session.ask(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
