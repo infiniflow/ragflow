@@ -69,6 +69,7 @@ class ExeSQL(ComponentBase, ABC):
 
         ans = "".join([str(a) for a in ans["content"]]) if "content" in ans else ""
         if self._param.db_type == 'mssql':
+            # improve the information extraction, most llm return results in markdown format ```sql query ```
             match = re.search(r"```sql\s*(.*?)\s*```", ans, re.DOTALL)
             if match:
                 ans = match.group(1)  # Query content
