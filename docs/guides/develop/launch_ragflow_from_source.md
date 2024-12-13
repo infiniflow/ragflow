@@ -48,9 +48,13 @@ cd ragflow/
    ```
 
 3. Install Python dependencies:
-
+   - slim:
    ```bash
    ~/.local/bin/poetry install --sync --no-root
+   ```
+   - full:
+   ```bash
+   ~/.local/bin/poetry install --sync --no-root --with full
    ```
    *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 
