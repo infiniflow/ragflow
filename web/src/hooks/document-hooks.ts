@@ -313,13 +313,16 @@ export const useRunNextDocument = () => {
     mutationFn: async ({
       documentIds,
       run,
+      shouldDelete,
     }: {
       documentIds: string[];
       run: number;
+      shouldDelete: boolean;
     }) => {
       const ret = await kbService.document_run({
         doc_ids: documentIds,
         run,
+        delete: shouldDelete,
       });
       const code = get(ret, 'data.code');
       if (code === 0) {
