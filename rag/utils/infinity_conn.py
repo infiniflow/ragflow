@@ -29,7 +29,7 @@ def equivalent_condition_to_str(condition: dict) -> str:
     assert "_id" not in condition
     cond = list()
     for k, v in condition.items():
-        if not isinstance(k, str) or not v:
+        if not isinstance(k, str) or k in ["kb_id"] or not v:
             continue
         if isinstance(v, list):
             inCond = list()
@@ -235,7 +235,7 @@ class InfinityConnection(DocStoreConnection):
             limit: int,
             indexNames: str | list[str],
             knowledgebaseIds: list[str],
-    ) -> list[dict] | pl.DataFrame:
+    ) -> tuple[pl.DataFrame, int]:
         """
         TODO: Infinity doesn't provide highlight
         """
@@ -264,7 +264,6 @@ class InfinityConnection(DocStoreConnection):
                 )
                 if len(filter_cond) != 0:
                     filter_fulltext = f"({filter_cond}) AND {filter_fulltext}"
-                logger.debug(f"filter_fulltext: {filter_fulltext}")
                 minimum_should_match = matchExpr.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
                     str_minimum_should_match = str(int(minimum_should_match * 100)) + "%"
@@ -272,12 +271,16 @@ class InfinityConnection(DocStoreConnection):
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
+                logger.debug(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, MatchDenseExpr):
                 if len(filter_cond) != 0 and "filter" not in matchExpr.extra_options:
                     matchExpr.extra_options.update({"filter": filter_fulltext})
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
+                logger.debug(f"INFINITY search MatchDenseExpr: {json.dumps(matchExpr.__dict__)}")
+            elif isinstance(matchExpr, FusionExpr):
+                logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
         if orderBy.fields:
@@ -287,6 +290,7 @@ class InfinityConnection(DocStoreConnection):
                 else:
                     order_by_expr_list.append((order_field[0], SortType.Desc))
 
+        total_hits_count = 0
         # Scatter search tables and gather the results
         for indexName in indexNames:
             for knowledgebaseId in knowledgebaseIds:
@@ -326,12 +330,14 @@ class InfinityConnection(DocStoreConnection):
                 if orderBy.fields:
                     builder.sort(order_by_expr_list)
                 builder.offset(offset).limit(limit)
-                kb_res = builder.to_pl()
+                kb_res, extra_result = builder.option({"total_hits_count": True}).to_pl()
+                if extra_result:
+                    total_hits_count += int(extra_result["total_hits_count"])
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, selectFields)
         logger.debug(f"INFINITY search tables: {str(table_list)}, result: {str(res)}")
-        return res
+        return res, total_hits_count
 
     def get(
             self, chunkId: str, indexName: str, knowledgebaseIds: list[str]
@@ -345,7 +351,7 @@ class InfinityConnection(DocStoreConnection):
             table_name = f"{indexName}_{knowledgebaseId}"
             table_list.append(table_name)
             table_instance = db_instance.get_table(table_name)
-            kb_res = table_instance.output(["*"]).filter(f"id = '{chunkId}'").to_pl()
+            kb_res, _ = table_instance.output(["*"]).filter(f"id = '{chunkId}'").to_pl()
             if len(kb_res) != 0 and kb_res.shape[0] > 0:
                 df_list.append(kb_res)
 
@@ -455,13 +461,19 @@ class InfinityConnection(DocStoreConnection):
     Helper functions for search result
     """
 
-    def getTotal(self, res):
+    def getTotal(self, res: tuple[pl.DataFrame, int] | pl.DataFrame) -> int:
+        if isinstance(res, tuple):
+            return res[1]
         return len(res)
 
-    def getChunkIds(self, res):
+    def getChunkIds(self, res: tuple[pl.DataFrame, int] | pl.DataFrame) -> list[str]:
+        if isinstance(res, tuple):
+            res = res[0]
         return list(res["id"])
 
-    def getFields(self, res, fields: list[str]) -> list[str, dict]:
+    def getFields(self, res: tuple[pl.DataFrame, int] | pl.DataFrame, fields: list[str]) -> list[str, dict]:
+        if isinstance(res, tuple):
+            res = res[0]
         res_fields = {}
         if not fields:
             return {}
@@ -502,7 +514,9 @@ class InfinityConnection(DocStoreConnection):
             res_fields[id] = m
         return res_fields
 
-    def getHighlight(self, res, keywords: list[str], fieldnm: str):
+    def getHighlight(self, res: tuple[pl.DataFrame, int] | pl.DataFrame, keywords: list[str], fieldnm: str):
+        if isinstance(res, tuple):
+            res = res[0]
         ans = {}
         num_rows = len(res)
         column_id = res["id"]
@@ -528,7 +542,7 @@ class InfinityConnection(DocStoreConnection):
             ans[id] = "...".join(txts)
         return ans
 
-    def getAggregation(self, res, fieldnm: str):
+    def getAggregation(self, res: tuple[pl.DataFrame, int] | pl.DataFrame, fieldnm: str):
         """
         TODO: Infinity doesn't provide aggregation
         """
