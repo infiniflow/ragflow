@@ -2015,11 +2015,20 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-          "question": "What is RAGFlow?",
-          "stream": true
      }'
 ```
-
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chats/{chat_id}/completions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data-binary '
+     {
+          "question": "Who are you",
+          "stream": true,
+          "session_id":"9fa7691cb85c11ef9c5f0242ac120005"
+     }'
+```
 #### Request Parameters
 
 - `chat_id`: (*Path parameter*)  
@@ -2034,10 +2043,29 @@ curl --request POST \
   The ID of session. If it is not provided, a new session will be generated.
 
 ### Response
+Success without `session_id`:
+```text
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hi! I'm your assistant, what can I do for you?",
+        "reference": {},
+        "audio_binary": null,
+        "id": null,
+        "session_id": "b01eed84b85611efa0e90242ac120005"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": true
+}
+```
 
-Success:
+Success with `session_id`:
 
-```json
+```text
 data:{
     "code": 0,
     "data": {
@@ -2121,6 +2149,7 @@ Failure:
 ---
 
 ## Create session with agent
+*If there are parameters in the `begin` component, the session cannot be created in this way.*
 
 **POST** `/api/v1/agents/{agent_id}/sessions`
 
@@ -2159,16 +2188,101 @@ Success:
 {
     "code": 0,
     "data": {
-        "agent_id": "2e45b5209c1011efa3e90242ac120006",
-        "id": "7869e9e49c1711ef92840242ac120006",
+        "agent_id": "b4a39922b76611efaa1a0242ac120006",
+        "dsl": {
+            "answer": [],
+            "components": {
+                "Answer:GreenReadersDrum": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Answer",
+                        "inputs": [],
+                        "output": null,
+                        "params": {}
+                    },
+                    "upstream": []
+                },
+                "begin": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Begin",
+                        "inputs": [],
+                        "output": {},
+                        "params": {}
+                    },
+                    "upstream": []
+                }
+            },
+            "embed_id": "",
+            "graph": {
+                "edges": [],
+                "nodes": [
+                    {
+                        "data": {
+                            "label": "Begin",
+                            "name": "begin"
+                        },
+                        "dragging": false,
+                        "height": 44,
+                        "id": "begin",
+                        "position": {
+                            "x": 53.25688640427177,
+                            "y": 198.37155679786412
+                        },
+                        "positionAbsolute": {
+                            "x": 53.25688640427177,
+                            "y": 198.37155679786412
+                        },
+                        "selected": false,
+                        "sourcePosition": "left",
+                        "targetPosition": "right",
+                        "type": "beginNode",
+                        "width": 200
+                    },
+                    {
+                        "data": {
+                            "form": {},
+                            "label": "Answer",
+                            "name": "对话_0"
+                        },
+                        "dragging": false,
+                        "height": 44,
+                        "id": "Answer:GreenReadersDrum",
+                        "position": {
+                            "x": 360.43473114516974,
+                            "y": 207.29298425089348
+                        },
+                        "positionAbsolute": {
+                            "x": 360.43473114516974,
+                            "y": 207.29298425089348
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "logicNode",
+                        "width": 200
+                    }
+                ]
+            },
+            "history": [],
+            "messages": [],
+            "path": [
+                [
+                    "begin"
+                ],
+                []
+            ],
+            "reference": []
+        },
+        "id": "2581031eb7a311efb5200242ac120005",
         "message": [
             {
-                "content": "Hello! I am a recruiter at InfiniFlow. I learned that you are an expert in the field, and took the liberty of reaching out to you. There is an opportunity I would like to share with you. RAGFlow is currently looking for a senior engineer for your position. I was wondering if you might be interested?",
+                "content": "Hi! I'm your smart assistant. What can I do for you?",
                 "role": "assistant"
             }
         ],
         "source": "agent",
-        "user_id": ""
+        "user_id": "69736c5e723611efb51b0242ac120007"
     }
 }
 ```
@@ -2216,7 +2330,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"question"`: `string`
   - `"stream"`: `boolean`
   - `"session_id"`: `string`
-
+  - other parameters: `string`
 #### Request example
 
 ```bash
@@ -2226,10 +2340,32 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-          "question": "What is RAGFlow?",
-          "stream": true
      }'
 ```
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/{agent_id}/completions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data-binary '
+     {
+          "question": "Hello",
+          "stream": true,
+          "session_id": "cb2f385cb86211efa36e0242ac120005"
+     }'
+```
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/{agent_id}/completions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data-binary '
+     {
+          "lang":"English"
+          "file":"明天天气如何"
+     }'
+```
+
 
 #### Request Parameters
 
@@ -2243,10 +2379,28 @@ curl --request POST \
   - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
   The ID of the session. If it is not provided, a new session will be generated.
-
+- Other parameters: (*Body Parameter*)  
+  The parameters in the begin component.
 ### Response
-
-Success:
+success without `session_id` provided and with no parameters in the `begin` component:
+```text
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hi! I'm your smart assistant. What can I do for you?",
+        "reference": {},
+        "id": "31e6091d-88d4-441b-ac65-eae1c055be7b",
+        "session_id": "2987ad3eb85f11efb2a70242ac120005"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": true
+}
+```
+Success with `session_id` provided and with no parameters in the `begin` component:
 
 ```text
 data:{
@@ -2354,6 +2508,85 @@ data:{
     "data": true
 }
 ```
+Success with parameters in the `begin` component:
+```text
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "How",
+        "reference": {},
+        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
+        "session_id": "4399c7d0b86311efac5b0242ac120005"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "How is",
+        "reference": {},
+        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
+        "session_id": "4399c7d0b86311efac5b0242ac120005"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "How is the",
+        "reference": {},
+        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
+        "session_id": "4399c7d0b86311efac5b0242ac120005"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "How is the weather",
+        "reference": {},
+        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
+        "session_id": "4399c7d0b86311efac5b0242ac120005"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "How is the weather tomorrow",
+        "reference": {},
+        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
+        "session_id": "4399c7d0b86311efac5b0242ac120005"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "How is the weather tomorrow?",
+        "reference": {},
+        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
+        "session_id": "4399c7d0b86311efac5b0242ac120005"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "How is the weather tomorrow?",
+        "reference": {},
+        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
+        "session_id": "4399c7d0b86311efac5b0242ac120005"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": true
+}
+```
+
 
 Failure:
 
