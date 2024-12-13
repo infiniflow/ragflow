@@ -107,31 +107,25 @@ request.interceptors.response.use(async (response: any, options) => {
     return response;
   }
 
-  const data: ResponseType = await response.clone().json();
-
-  if (data.code === 401 || data.code === 401) {
+  const data: ResponseType = await response?.clone()?.json();
+  if (data?.code === 100) {
+    message.error(data?.message);
+  } else if (data?.code === 401) {
     notification.error({
-      message: data.message,
-      description: data.message,
+      message: data?.message,
+      description: data?.message,
       duration: 3,
     });
     authorizationUtil.removeAll();
     history.push('/login'); // Will not jump to the login page
-  } else if (data.code !== 0) {
-    if (data.code === 100) {
-      message.error(data.message);
-    } else {
-      notification.error({
-        message: `${i18n.t('message.hint')} : ${data.code}`,
-        description: data.message,
-        duration: 3,
-      });
-    }
-
-    return response;
-  } else {
-    return response;
+  } else if (data?.code !== 0) {
+    notification.error({
+      message: `${i18n.t('message.hint')} : ${data?.code}`,
+      description: data?.message,
+      duration: 3,
+    });
   }
+  return response;
 });
 
 export default request;

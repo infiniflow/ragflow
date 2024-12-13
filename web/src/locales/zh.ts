@@ -431,7 +431,7 @@ export default {
       partialTitle: '部分嵌入',
       extensionTitle: 'Chrome 插件',
       tokenError: '请先创建 API Token!',
-      betaError: 'API Token的beta字段不可以为空！',
+      betaError: '请先在系统设置中申请API密钥。',
       searching: '搜索中',
       parsing: '解析中',
       uploading: '上传中',
@@ -760,7 +760,7 @@ export default {
       sourceLang: '源语言',
       targetLang: '目标语言',
       gitHub: 'GitHub',
-      githubDescription:
+      gitHubDescription:
         '该组件用于从 https://github.com/ 搜索仓库。Top N 指定需要调整的搜索结果数量。',
       baiduFanyi: '百度翻译',
       baiduFanyiDescription:
