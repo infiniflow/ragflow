@@ -71,7 +71,7 @@ class ExeSQL(ComponentBase, ABC):
         if self._param.db_type == 'mssql':
             match = re.search(r"```sql\s*(.*?)\s*```", ans, re.DOTALL)
             if match:
-                ans = match.group(1)  # Nội dung câu query
+                ans = match.group(1)  # Query content
                 print(ans)
             else:
                 print("no markdown")
