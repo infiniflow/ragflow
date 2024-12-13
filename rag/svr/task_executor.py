@@ -529,8 +529,8 @@ def report_status():
             now = datetime.now()
             group_info = REDIS_CONN.queue_info(SVR_QUEUE_NAME, "rag_flow_svr_task_broker")
             if group_info is not None:
-                PENDING_TASKS = int(group_info["pending"])
-                LAG_TASKS = int(group_info["lag"])
+                PENDING_TASKS = int(group_info.get("pending", 0))
+                LAG_TASKS = int(group_info.get("lag", 0))
 
             with mt_lock:
                 heartbeat = json.dumps({
