@@ -22,7 +22,9 @@ const RunDrawer = ({
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
   const query: BeginQuery[] = getBeginNodeDataQuery();
 
-  const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatModal!);
+  const { handleRun, loading } = useSaveGraphBeforeOpeningDebugDrawer(
+    showChatModal!,
+  );
 
   const handleRunAgent = useCallback(
     (nextValues: Record<string, any>) => {
@@ -50,7 +52,11 @@ const RunDrawer = ({
       width={getDrawerWidth()}
       mask={false}
     >
-      <DebugContent ok={onOk} parameters={query}></DebugContent>
+      <DebugContent
+        ok={onOk}
+        parameters={query}
+        loading={loading}
+      ></DebugContent>
     </Drawer>
   );
 };

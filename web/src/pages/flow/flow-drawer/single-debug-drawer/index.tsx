@@ -2,15 +2,13 @@ import CopyToClipboard from '@/components/copy-to-clipboard';
 import { useDebugSingle, useFetchInputElements } from '@/hooks/flow-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { CloseOutlined } from '@ant-design/icons';
-import { loader } from '@monaco-editor/react';
 import { Drawer } from 'antd';
+import { isEmpty } from 'lodash';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import JsonView from 'react18-json-view';
 import 'react18-json-view/src/style.css';
 import DebugContent from '../../debug-content';
-
-loader.config({ paths: { vs: '/vs' } });
 
 interface IProps {
   componentId?: string;
@@ -23,7 +21,7 @@ const SingleDebugDrawer = ({
 }: IModalProps<any> & IProps) => {
   const { t } = useTranslation();
   const { data: list } = useFetchInputElements(componentId);
-  const { debugSingle, data } = useDebugSingle();
+  const { debugSingle, data, loading } = useDebugSingle();
 
   const onOk = useCallback(
     (nextValues: any[]) => {
@@ -53,8 +51,14 @@ const SingleDebugDrawer = ({
       height={'95%'}
       closeIcon={null}
     >
-      <DebugContent parameters={list} ok={onOk} isNext={false}></DebugContent>
-      {data && (
+      <DebugContent
+        parameters={list}
+        ok={onOk}
+        isNext={false}
+        loading={loading}
+        submitButtonDisabled={list.length === 0}
+      ></DebugContent>
+      {!isEmpty(data) ? (
         <div className="mt-4 rounded-md bg-slate-200 border border-neutral-200">
           <div className="flex justify-between p-2">
             <span>JSON</span>
@@ -63,10 +67,10 @@ const SingleDebugDrawer = ({
           <JsonView
             src={data}
             displaySize={30}
-            className="w-full max-h-[300px] break-words overflow-auto p-2 bg-slate-100"
+            className="w-full h-[300px] max-h-[400px] break-words overflow-auto p-2 bg-slate-100"
           />
         </div>
-      )}
+      ) : null}
     </Drawer>
   );
 };

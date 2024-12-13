@@ -2,12 +2,12 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
 import { Play } from 'lucide-react';
 import { Operator, operatorMap } from '../../constant';
-import { RunTooltip } from '../../flow-tooltip';
 import OperatorIcon from '../../operator-icon';
 import { needsSingleStepDebugging } from '../../utils';
 import NodeDropdown from './dropdown';
 import { NextNodePopover } from './popover';
 
+import { RunTooltip } from '../../flow-tooltip';
 import styles from './index.less';
 interface IProps {
   id: string;

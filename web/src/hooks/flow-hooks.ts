@@ -229,13 +229,20 @@ export const useFetchInputElements = (componentId?: string) => {
     queryKey: ['fetchInputElements', id, componentId],
     initialData: [],
     enabled: !!id && !!componentId,
+    retryOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    gcTime: 0,
     queryFn: async () => {
-      const { data } = await flowService.getInputElements({
-        id,
-        component_id: componentId,
-      });
-
-      return data?.data ?? [];
+      try {
+        const { data } = await flowService.getInputElements({
+          id,
+          component_id: componentId,
+        });
+        return data?.data ?? [];
+      } catch (error) {
+        console.log('🚀 ~ queryFn: ~ error:', error);
+      }
     },
   });
 
@@ -252,10 +259,8 @@ export const useDebugSingle = () => {
     mutationKey: ['debugSingle'],
     mutationFn: async (params: IDebugSingleRequestBody) => {
       const ret = await flowService.debugSingle({ id, ...params });
-      if (ret?.data?.code === 0) {
-        message.success(ret?.data?.data);
-      } else {
-        message.error(ret?.data?.data);
+      if (ret?.data?.code !== 0) {
+        message.error(ret?.data?.message);
       }
       return ret?.data?.data;
     },

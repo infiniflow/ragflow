@@ -115,6 +115,7 @@ const FormDrawer = ({
 
   useEffect(() => {
     if (visible) {
+      form.resetFields();
       form.setFieldsValue(node?.data?.form);
     }
   }, [visible, form, node?.data?.form]);

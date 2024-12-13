@@ -620,7 +620,6 @@ export const useWatchNodeFormDataChange = () => {
   );
 
   useEffect(() => {
-    console.info('xxx');
     nodes.forEach((node) => {
       const currentNode = getNode(node.id);
       const form = currentNode?.data.form ?? {};

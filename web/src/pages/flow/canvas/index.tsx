@@ -228,7 +228,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           <ControlButton onClick={handleImportJson}>
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger>
+                <TooltipTrigger asChild>
                   <FolderInput />
                 </TooltipTrigger>
                 <TooltipContent>Import</TooltipContent>
@@ -238,7 +238,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           <ControlButton onClick={handleExportJson}>
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger>
+                <TooltipTrigger asChild>
                   <FolderOutput />
                 </TooltipTrigger>
                 <TooltipContent>Export</TooltipContent>

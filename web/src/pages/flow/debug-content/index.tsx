@@ -30,9 +30,17 @@ interface IProps {
   parameters: BeginQuery[];
   ok(parameters: any[]): void;
   isNext?: boolean;
+  loading?: boolean;
+  submitButtonDisabled?: boolean;
 }
 
-const DebugContent = ({ parameters, ok, isNext = true }: IProps) => {
+const DebugContent = ({
+  parameters,
+  ok,
+  isNext = true,
+  loading = false,
+  submitButtonDisabled = false,
+}: IProps) => {
   const { t } = useTranslation();
   const [form] = Form.useForm();
   const {
@@ -74,7 +82,7 @@ const DebugContent = ({ parameters, ok, isNext = true }: IProps) => {
     (q: BeginQuery, idx: number) => {
       const props: FormItemProps & { key: number } = {
         key: idx,
-        label: q.name,
+        label: q.name ?? q.key,
         name: idx,
       };
       if (q.optional === false) {
@@ -92,7 +100,7 @@ const DebugContent = ({ parameters, ok, isNext = true }: IProps) => {
         ),
         [BeginQueryType.Paragraph]: (
           <Form.Item {...props}>
-            <Input.TextArea rows={4}></Input.TextArea>
+            <Input.TextArea rows={1}></Input.TextArea>
           </Form.Item>
         ),
         [BeginQueryType.Options]: (
@@ -105,7 +113,7 @@ const DebugContent = ({ parameters, ok, isNext = true }: IProps) => {
         ),
         [BeginQueryType.File]: (
           <React.Fragment key={idx}>
-            <Form.Item label={q.name} required={!q.optional}>
+            <Form.Item label={q.name ?? q.key} required={!q.optional}>
               <div className="relative">
                 <Form.Item
                   {...props}
@@ -160,7 +168,7 @@ const DebugContent = ({ parameters, ok, isNext = true }: IProps) => {
 
       return (
         BeginQueryTypeMap[q.type as BeginQueryType] ??
-        BeginQueryTypeMap[BeginQueryType.Line]
+        BeginQueryTypeMap[BeginQueryType.Paragraph]
       );
     },
     [form, handleShowPopover, onChange, switchVisible, t, visible],
@@ -218,7 +226,8 @@ const DebugContent = ({ parameters, ok, isNext = true }: IProps) => {
         type={'primary'}
         block
         onClick={onOk}
-        disabled={!submittable || isUploading}
+        loading={loading}
+        disabled={!submittable || isUploading || submitButtonDisabled}
       >
         {t(isNext ? 'common.next' : 'flow.run')}
       </Button>
