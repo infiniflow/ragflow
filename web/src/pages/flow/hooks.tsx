@@ -620,7 +620,6 @@ export const useWatchNodeFormDataChange = () => {
   );
 
   useEffect(() => {
-    console.info('xxx');
     nodes.forEach((node) => {
       const currentNode = getNode(node.id);
       const form = currentNode?.data.form ?? {};
@@ -854,5 +853,23 @@ export const useHandleExportOrImportJsonFile = () => {
     handleImportJson: showFileUploadModal,
     hideFileUploadModal,
     onFileUploadOk,
+  };
+};
+
+export const useShowSingleDebugDrawer = () => {
+  const { visible, showModal, hideModal } = useSetModalState();
+  const { saveGraph } = useSaveGraph();
+
+  const showSingleDebugDrawer = useCallback(async () => {
+    const saveRet = await saveGraph();
+    if (saveRet?.code === 0) {
+      showModal();
+    }
+  }, [saveGraph, showModal]);
+
+  return {
+    singleDebugDrawerVisible: visible,
+    hideSingleDebugDrawer: hideModal,
+    showSingleDebugDrawer,
   };
 };
