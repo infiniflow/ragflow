@@ -213,6 +213,7 @@ export const useHandleRunDocumentByIds = (id: string) => {
   const handleRunDocumentByIds = async (
     documentId: string,
     isRunning: boolean,
+    shouldDelete: boolean = false,
   ) => {
     if (isLoading) {
       return;
@@ -222,6 +223,7 @@ export const useHandleRunDocumentByIds = (id: string) => {
       await runDocumentByIds({
         documentIds: [documentId],
         run: isRunning ? 2 : 1,
+        shouldDelete,
       });
       setCurrentId('');
     } catch (error) {
