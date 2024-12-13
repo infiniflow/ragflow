@@ -25,7 +25,7 @@ from rag.utils.doc_store_conn import (
 
 logger = logging.getLogger('ragflow.infinity_conn')
 
-def equivalent_condition_to_str(condition: dict) -> str:
+def equivalent_condition_to_str(condition: dict) -> str|None:
     assert "_id" not in condition
     cond = list()
     for k, v in condition.items():
@@ -46,7 +46,7 @@ def equivalent_condition_to_str(condition: dict) -> str:
             cond.append(f"{k}='{v}'")
         else:
             cond.append(f"{k}={str(v)}")
-    return " AND ".join(cond)
+    return " AND ".join(cond) if cond else None
 
 
 def concat_dataframes(df_list: list[pl.DataFrame], selectFields: list[str]) -> pl.DataFrame:
@@ -250,19 +250,17 @@ class InfinityConnection(DocStoreConnection):
             selectFields.append("id")
 
         # Prepare expressions common to all tables
-        filter_cond = ""
+        filter_cond = None
         filter_fulltext = ""
         if condition:
             filter_cond = equivalent_condition_to_str(condition)
         for matchExpr in matchExprs:
             if isinstance(matchExpr, MatchTextExpr):
-                if len(filter_cond) != 0 and "filter" not in matchExpr.extra_options:
+                if filter_cond and "filter" not in matchExpr.extra_options:
                     matchExpr.extra_options.update({"filter": filter_cond})
                 fields = ",".join(matchExpr.fields)
-                filter_fulltext = (
-                    f"filter_fulltext('{fields}', '{matchExpr.matching_text}')"
-                )
-                if len(filter_cond) != 0:
+                filter_fulltext = f"filter_fulltext('{fields}', '{matchExpr.matching_text}')"
+                if filter_cond:
                     filter_fulltext = f"({filter_cond}) AND {filter_fulltext}"
                 minimum_should_match = matchExpr.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
@@ -273,7 +271,7 @@ class InfinityConnection(DocStoreConnection):
                         matchExpr.extra_options[k] = str(v)
                 logger.debug(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, MatchDenseExpr):
-                if len(filter_cond) != 0 and "filter" not in matchExpr.extra_options:
+                if filter_cond and "filter" not in matchExpr.extra_options:
                     matchExpr.extra_options.update({"filter": filter_fulltext})
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
@@ -411,7 +409,7 @@ class InfinityConnection(DocStoreConnection):
         # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
         table_instance.insert(documents)
         self.connPool.release_conn(inf_conn)
-        logger.debug(f"inserted into {table_name} {str_ids}.")
+        logger.debug(f"INFINITY inserted into {table_name} {str_ids}.")
         return []
 
     def update(
@@ -437,6 +435,7 @@ class InfinityConnection(DocStoreConnection):
             elif k in ["page_num_int", "top_int"]:
                 assert isinstance(v, list)
                 newValue[k] = "_".join(f"{num:08x}" for num in v)
+        logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {newValue}.")
         table_instance.update(filter, newValue)
         self.connPool.release_conn(inf_conn)
         return True
@@ -453,6 +452,7 @@ class InfinityConnection(DocStoreConnection):
                 f"Skipped deleting `{filter}` from table {table_name} since the table doesn't exist."
             )
             return 0
+        logger.debug(f"INFINITY delete table {table_name}, filter {filter}.")
         res = table_instance.delete(filter)
         self.connPool.release_conn(inf_conn)
         return res.deleted_rows
