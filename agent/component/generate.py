@@ -111,9 +111,9 @@ class Generate(ComponentBase):
 
     def get_input_elements(self):
         if self._param.parameters:
-            return [{"key": "user"}, *self._param.parameters]
+            return [{"key": "user", "name": "User"}, *self._param.parameters]
 
-        return [{"key": "user"}]
+        return [{"key": "user", "name": "User"}]
 
     def _run(self, history, **kwargs):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
@@ -220,14 +220,15 @@ class Generate(ComponentBase):
 
         self.set_output(Generate.be_output(res))
 
-    def debug(self, history, **kwargs):
+    def debug(self, **kwargs):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         prompt = self._param.prompt
 
         for para in self._param.debug_inputs:
-            kwargs[para["key"]] = para["value"]
+            kwargs[para["key"]] = para.get("value", "")
 
         for n, v in kwargs.items():
             prompt = re.sub(r"\{%s\}" % re.escape(n), str(v).replace("\\", " "), prompt)
 
-        return chat_mdl.chat(prompt, [{"role": "user", "content": kwargs.get("user", "")}], self._param.gen_conf())
+        ans = chat_mdl.chat(prompt, [{"role": "user", "content": kwargs.get("user", "")}], self._param.gen_conf())
+        return pd.DataFrame([ans])
