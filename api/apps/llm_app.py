@@ -255,9 +255,7 @@ def add_llm():
         )
         try:
             img_url = (
-                "https://upload.wikimedia.org/wikipedia/comm"
-                "ons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/256"
-                "0px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+                "https://www.8848seo.cn/zb_users/upload/2022/07/20220705101240_99378.jpg"
             )
             res = requests.get(img_url)
             if res.status_code == 200:
