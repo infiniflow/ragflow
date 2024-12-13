@@ -51,26 +51,28 @@ const SingleDebugDrawer = ({
       height={'95%'}
       closeIcon={null}
     >
-      <DebugContent
-        parameters={list}
-        ok={onOk}
-        isNext={false}
-        loading={loading}
-        submitButtonDisabled={list.length === 0}
-      ></DebugContent>
-      {!isEmpty(data) ? (
-        <div className="mt-4 rounded-md bg-slate-200 border border-neutral-200">
-          <div className="flex justify-between p-2">
-            <span>JSON</span>
-            <CopyToClipboard text={content}></CopyToClipboard>
+      <section className="overflow-y-auto">
+        <DebugContent
+          parameters={list}
+          ok={onOk}
+          isNext={false}
+          loading={loading}
+          submitButtonDisabled={list.length === 0}
+        ></DebugContent>
+        {!isEmpty(data) ? (
+          <div className="mt-4 rounded-md bg-slate-200 border border-neutral-200">
+            <div className="flex justify-between p-2">
+              <span>JSON</span>
+              <CopyToClipboard text={content}></CopyToClipboard>
+            </div>
+            <JsonView
+              src={data}
+              displaySize={30}
+              className="w-full h-[300px] max-h-[400px] break-words overflow-auto p-2 bg-slate-100"
+            />
           </div>
-          <JsonView
-            src={data}
-            displaySize={30}
-            className="w-full h-[300px] max-h-[400px] break-words overflow-auto p-2 bg-slate-100"
-          />
-        </div>
-      ) : null}
+        ) : null}
+      </section>
     </Drawer>
   );
 };
