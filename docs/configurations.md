@@ -34,6 +34,10 @@ docker compose -f docker/docker-compose.yml up -d
 - **docker-compose-base.yml**  
   Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
 
+:::danger IMPORTANT
+**docker-compose-CN-oc9.yml**, **docker-compose-gpu-CN-oc9.yml**, **docker-compose-gpu.yml** have been contributed by our community. We do not actively maintain these files, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
+:::
+
 ## Docker environment variables
 
 The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file contains important environment variables for Docker.
@@ -45,7 +49,7 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `ES_PORT`  
   The port used to expose the Elasticsearch service to the host machine, allowing **external** access to the service running inside the Docker container.  Defaults to `1200`.
 - `ELASTIC_PASSWORD`  
-  The password for Elasticsearch. 
+  The password for Elasticsearch.
 
 ### Kibana
 

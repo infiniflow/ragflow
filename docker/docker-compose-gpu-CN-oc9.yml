@@ -1,3 +1,5 @@
+# docker-compose-gpu-CN-oc9.yml is contributed by our community. The RAGFlow team does not actively maintain these files, so use them at your own risk. 
+# However, you are welcome to file a pull request to improve it.
 include:
   - ./docker-compose-base.yml
 
