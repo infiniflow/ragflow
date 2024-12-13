@@ -60,3 +60,6 @@ class KeywordExtract(Generate, ABC):
         ans = re.sub(r".*keyword:", "", ans).strip()
         logging.debug(f"ans: {ans}")
         return KeywordExtract.be_output(ans)
+
+    def debug(self, **kwargs):
+        return self._run([], **kwargs)

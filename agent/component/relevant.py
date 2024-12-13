@@ -78,4 +78,6 @@ class Relevant(Generate, ABC):
             return Relevant.be_output(self._param.no)
         assert False, f"Relevant component got: {ans}"
 
+    def debug(self, **kwargs):
+        return self._run([], **kwargs)
 
