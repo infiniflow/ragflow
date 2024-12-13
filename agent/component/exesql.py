@@ -20,7 +20,7 @@ import pymysql
 import psycopg2
 from agent.component.base import ComponentBase, ComponentParamBase
 import pyodbc
-
+import logging
 
 class ExeSQLParam(ComponentParamBase):
     """
@@ -66,12 +66,16 @@ class ExeSQL(ComponentBase, ABC):
 
         ans = self.get_input()
         ans = "".join([str(a) for a in ans["content"]]) if "content" in ans else ""
-        ans = re.sub(r'^.*?SELECT ', 'SELECT ', repr(ans), flags=re.IGNORECASE)
+        if self._param.db_type == 'mssql':
+            ans = re.sub(r'^.*?SELECT ', 'SELECT ', (ans), flags=re.IGNORECASE)
+        else:
+            ans = re.sub(r'^.*?SELECT ', 'SELECT ', repr(ans), flags=re.IGNORECASE)
         ans = re.sub(r';.*?SELECT ', '; SELECT ', ans, flags=re.IGNORECASE)
         ans = re.sub(r';[^;]*$', r';', ans)
         if not ans:
             raise Exception("SQL statement not found!")
 
+        logging.info("db_type: ",self._param.db_type)
         if self._param.db_type in ["mysql", "mariadb"]:
             db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
                                  port=self._param.port, password=self._param.password)
@@ -96,11 +100,12 @@ class ExeSQL(ComponentBase, ABC):
             if not single_sql:
                 continue
             try:
+                logging.info("single_sql: ",single_sql)
                 cursor.execute(single_sql)
                 if cursor.rowcount == 0:
                     sql_res.append({"content": "\nTotal: 0\n No record in the database!"})
                     continue
-                single_res = pd.DataFrame([i for i in cursor.fetchmany(size=self._param.top_n)])
+                single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.top_n)])
                 single_res.columns = [i[0] for i in cursor.description]
                 sql_res.append({"content": "\nTotal: " + str(cursor.rowcount) + "\n" + single_res.to_markdown()})
             except Exception as e:
