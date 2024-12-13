@@ -31,7 +31,7 @@ from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from graphrag.mind_map_extractor import MindMapExtractor
-
+import logging
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @login_required
@@ -79,13 +79,22 @@ def set_conversation():
 def get():
     conv_id = request.args["conversation_id"]
     try:
+        
         e, conv = ConversationService.get_by_id(conv_id)
         if not e:
             return get_data_error_result(message="Conversation not found!")
         tenants = UserTenantService.query(user_id=current_user.id)
+        icondialog =None
         for tenant in tenants:
-            if DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id):
-                break
+            dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
+            if dialog:
+                if isinstance(dialog, list):
+                    dialog = dialog[0] if dialog else None
+                    if dialog:
+                        dialog= dialog.to_dict()
+                        icondialog =dialog["icon"]
+            break
+              
         else:
             return get_json_result(
                 data=False, message='Only owner of conversation authorized for this operation.',
@@ -108,6 +117,7 @@ def get():
             } for ck in ref.get("chunks", [])]
 
         conv = conv.to_dict()
+        conv["icondialog"]=icondialog
         return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)

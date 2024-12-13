@@ -547,7 +547,7 @@ export const useFetchMindMap = () => {
       try {
         const ret = await chatService.getMindMap(params);
         return ret?.data?.data ?? {};
-      } catch (error) {
+      } catch (error: any) {
         if (has(error, 'message')) {
           message.error(error.message);
         }
