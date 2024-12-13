@@ -17,7 +17,7 @@
   Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
 
 > [!CAUTION]
-> **docker-compose-CN-oc9.yml**, **docker-compose-gpu-CN-oc9.yml**, **docker-compose-gpu.yml** have been contributed by our community. We do not actively maintain these files, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
+> We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-gpu-CN-oc9.yml**, or **docker-compose-gpu.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
 
 ## 🐬 Docker environment variables
 
