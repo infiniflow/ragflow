@@ -1,7 +1,6 @@
 from .base import Base
 from .session import Session,Message
 import requests
-from typing import List
 import json
 
 
@@ -62,7 +61,7 @@ class Agent(Base):
 
     @staticmethod
     def list_sessions(agent_id,rag,page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
-                      id: str = None) -> List[Session]:
+                      id: str = None) -> list[Session]:
         url = f"{rag.api_url}/agents/{agent_id}/sessions"
         headers = {"Authorization": f"Bearer {rag.user_key}"}
         params = {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id}
