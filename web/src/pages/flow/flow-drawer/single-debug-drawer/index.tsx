@@ -67,8 +67,9 @@ const SingleDebugDrawer = ({
             </div>
             <JsonView
               src={data}
-              displaySize={30}
-              className="w-full h-[300px] max-h-[400px] break-words overflow-auto p-2 bg-slate-100"
+              displaySize
+              collapseStringsAfterLength={100000000000}
+              className="w-full h-[800px] break-words overflow-auto p-2 bg-slate-100"
             />
           </div>
         ) : null}
