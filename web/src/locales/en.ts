@@ -772,7 +772,7 @@ The above is the content you need to summarize.`,
       sourceLang: 'Source language',
       targetLang: 'Target language',
       gitHub: 'GitHub',
-      githubDescription:
+      gitHubDescription:
         'A component that searches for repositories from https://github.com/. You can use Top N to specify the number of search results.',
       baiduFanyi: 'BaiduFanyi',
       baiduFanyiDescription:
