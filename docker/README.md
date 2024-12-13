@@ -16,6 +16,9 @@
 - **docker-compose-base.yml**  
   Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
 
+> [!CAUTION]
+> We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-gpu-CN-oc9.yml**, or **docker-compose-gpu.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
+
 ## 🐬 Docker environment variables
 
 The [.env](./.env) file contains important environment variables for Docker.
@@ -27,7 +30,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `ES_PORT`  
   The port used to expose the Elasticsearch service to the host machine, allowing **external** access to the service running inside the Docker container.  Defaults to `1200`.
 - `ELASTIC_PASSWORD`  
-  The password for Elasticsearch. 
+  The password for Elasticsearch.
 
 ### Kibana
 
@@ -46,7 +49,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### MySQL
 
 - `MYSQL_PASSWORD`  
-  The password for MySQL. 
+  The password for MySQL.
 - `MYSQL_PORT`  
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
 
@@ -59,7 +62,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MINIO_USER`  
   The username for MinIO.
 - `MINIO_PASSWORD`  
-  The password for MinIO. 
+  The password for MinIO.
 
 ### Redis
 
