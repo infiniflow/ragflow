@@ -55,9 +55,7 @@ const ChatContainer = () => {
                 return (
                   <MessageItem
                     key={message.id}
-                    avatardialog={
-                      SharedFrom.Agent === from ? InforForm?.avatar : undefined
-                    }
+                    avatardialog={InforForm?.avatar}
                     item={message}
                     nickname="You"
                     reference={buildMessageItemReference(

@@ -292,14 +292,10 @@ export const useFetchNextConversationSSE = () => {
     refetchOnWindowFocus: false,
     queryFn: async () => {
       if (isNew !== 'true' && isConversationIdExist(sharedId || '')) {
-        const { data } = await chatService.getConversationSSE({
-          conversationId: sharedId,
-        });
-
+        if (!sharedId) return {};
+        const { data } = await chatService.getConversationSSE({}, sharedId);
         const conversation = data?.data ?? {};
-
         const messageList = buildMessageListWithUuid(conversation?.message);
-
         return { ...conversation, message: messageList };
       }
       return { message: [] };
