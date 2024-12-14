@@ -4,7 +4,7 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { Flex, Spin } from 'antd';
-import { forwardRef } from 'react';
+import { forwardRef, useMemo } from 'react';
 import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
@@ -12,6 +12,8 @@ import {
 import { buildMessageItemReference } from '../utils';
 
 import PdfDrawer from '@/components/pdf-drawer';
+import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
+import { useFetchFlowSSE } from '@/hooks/flow-hooks';
 import styles from './index.less';
 
 const ChatContainer = () => {
@@ -30,6 +32,14 @@ const ChatContainer = () => {
     hasError,
   } = useSendSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
+  const useData = (from: SharedFrom) =>
+    useMemo(() => {
+      return from === SharedFrom.Agent
+        ? useFetchFlowSSE
+        : useFetchNextConversationSSE;
+    }, [from]);
+
+  const { data: InforForm } = useData(from)();
 
   if (!conversationId) {
     return <div>empty</div>;
@@ -45,6 +55,9 @@ const ChatContainer = () => {
                 return (
                   <MessageItem
                     key={message.id}
+                    avatardialog={
+                      SharedFrom.Agent === from ? InforForm?.avatar : undefined
+                    }
                     item={message}
                     nickname="You"
                     reference={buildMessageItemReference(

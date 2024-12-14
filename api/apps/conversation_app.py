@@ -17,6 +17,7 @@ import json
 import re
 import traceback
 from copy import deepcopy
+from api.db.db_models import APIToken
 
 from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.user_service import UserTenantService
@@ -84,7 +85,7 @@ def get():
         if not e:
             return get_data_error_result(message="Conversation not found!")
         tenants = UserTenantService.query(user_id=current_user.id)
-        icondialog =None
+        avatardialog =None
         for tenant in tenants:
             dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
             if dialog:
@@ -92,7 +93,7 @@ def get():
                     dialog = dialog[0] if dialog else None
                     if dialog:
                         dialog= dialog.to_dict()
-                        icondialog =dialog["icon"]
+                        avatardialog =dialog["icon"]
             break
               
         else:
@@ -117,11 +118,65 @@ def get():
             } for ck in ref.get("chunks", [])]
 
         conv = conv.to_dict()
-        conv["icondialog"]=icondialog
+        conv["avatardialog"]=avatardialog
         return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
 
+@manager.route('/getsse', methods=['GET'])  # type: ignore # noqa: F821
+def getsse():
+    conv_id = request.args["conversation_id"]
+    
+    token = request.headers.get('Authorization').split()
+    if len(token) != 2:
+        return get_data_error_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_data_error_result(message='Token is not valid!"')
+    try:
+        
+        e, conv = ConversationService.get_by_id(conv_id)
+        if not e:
+            return get_data_error_result(message="Conversation not found!")
+        tenants = UserTenantService.query(user_id=current_user.id)
+        avatardialog =None
+        for tenant in tenants:
+            dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
+            if dialog:
+                if isinstance(dialog, list):
+                    dialog = dialog[0] if dialog else None
+                    if dialog:
+                        dialog= dialog.to_dict()
+                        avatardialog =dialog["icon"]
+            break
+              
+        else:
+            return get_json_result(
+                data=False, message='Only owner of conversation authorized for this operation.',
+                code=settings.RetCode.OPERATING_ERROR)
+
+        def get_value(d, k1, k2):
+            return d.get(k1, d.get(k2))
+
+        for ref in conv.reference:
+            if isinstance(ref, list):
+                continue
+            ref["chunks"] = [{
+                "id": get_value(ck, "chunk_id", "id"),
+                "content": get_value(ck, "content", "content_with_weight"),
+                "document_id": get_value(ck, "doc_id", "document_id"),
+                "document_name": get_value(ck, "docnm_kwd", "document_name"),
+                "dataset_id": get_value(ck, "kb_id", "dataset_id"),
+                "image_id": get_value(ck, "image_id", "img_id"),
+                "positions": get_value(ck, "positions", "position_int"),
+            } for ck in ref.get("chunks", [])]
+
+        conv = conv.to_dict()
+        conv["avatardialog"]=avatardialog
+        return get_json_result(data=conv)
+    except Exception as e:
+        return server_error_response(e)
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required

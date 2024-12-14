@@ -57,7 +57,7 @@ export interface IConversation {
   create_time: number;
   dialog_id: string;
   id: string;
-  icondialog: string;
+  avatar: string;
   message: Message[];
   reference: IReference[];
   name: string;

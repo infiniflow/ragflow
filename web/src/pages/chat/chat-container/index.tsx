@@ -68,7 +68,7 @@ const ChatContainer = ({ controller }: IProps) => {
                     item={message}
                     nickname={userInfo.nickname}
                     avatar={userInfo.avatar}
-                    icondialog={conversation.icondialog}
+                    avatardialog={conversation.avatar}
                     reference={buildMessageItemReference(
                       {
                         message: derivedMessages,
