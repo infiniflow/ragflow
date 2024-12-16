@@ -356,12 +356,11 @@ def run():
     try:
         for id in req["doc_ids"]:
             info = {"run": str(req["run"]), "progress": 0}
-            if str(req["run"]) == TaskStatus.RUNNING.value:
+            if str(req["run"]) == TaskStatus.RUNNING.value and req.get("delete", False):
                 info["progress_msg"] = ""
                 info["chunk_num"] = 0
                 info["token_num"] = 0
             DocumentService.update_by_id(id, info)
-            # if str(req["run"]) == TaskStatus.CANCEL.value:
             tenant_id = DocumentService.get_tenant_id(id)
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
