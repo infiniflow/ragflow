@@ -45,9 +45,8 @@ export const useFetchNextChunkList = (): ResponseGetType<{
       debouncedSearchString,
       available,
     ],
-
-    initialData: { data: [], total: 0, documentInfo: {} },
-    // placeholderData: keepPreviousData,
+    placeholderData: (previousData) =>
+      previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.chunk_list({
