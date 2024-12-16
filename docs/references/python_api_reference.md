@@ -950,7 +950,7 @@ The LLM settings for the chat assistant to create. Defaults to `None`. When the 
 - `model_name`: `str`  
   The chat model name. If it is `None`, the user's default chat model will be used.  
 - `temperature`: `float`  
-  Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
+  Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
 - `top_p`: `float`  
   Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
 - `presence_penalty`: `float`  
@@ -1016,7 +1016,7 @@ A dictionary representing the attributes to update, with the following keys:
 - `"dataset_ids"`: `list[str]` The datasets to update.
 - `"llm"`: `dict` The LLM settings:
   - `"model_name"`, `str` The chat model name.
-  - `"temperature"`, `float` Controls the randomness of the model's predictions.  
+  - `"temperature"`, `float` Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses.  
   - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
   - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have appeared in the conversation.
   - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model’s tendency to repeat the same words.

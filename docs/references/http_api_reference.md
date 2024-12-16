@@ -1372,7 +1372,7 @@ curl --request POST \
   - `"model_name"`, `string`  
     The chat model name. If not set, the user's default chat model will be used.  
   - `"temperature"`: `float`  
-    Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
+    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
     Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
   - `"presence_penalty"`: `float`  
@@ -1507,7 +1507,7 @@ curl --request PUT \
   - `"model_name"`, `string`  
     The chat model name. If not set, the user's default chat model will be used.  
   - `"temperature"`: `float`  
-    Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
+    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
     Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
   - `"presence_penalty"`: `float`  
@@ -2149,6 +2149,7 @@ Failure:
 ---
 
 ## Create session with agent
+
 *If there are parameters in the `begin` component, the session cannot be created in this way.*
 
 **POST** `/api/v1/agents/{agent_id}/sessions`

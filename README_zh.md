@@ -158,7 +158,7 @@
    | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
    | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
 
-   > [!TIP]  
+   > [!TIP] 
    > 如果你遇到 Docker 镜像拉不下来的问题，可以在 **docker/.env** 文件内根据变量 `RAGFLOW_IMAGE` 的注释提示选择华为云或者阿里云的相应镜像。
    > - 华为云镜像名：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow`
    > - 阿里云镜像名：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow`
