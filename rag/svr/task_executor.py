@@ -502,12 +502,19 @@ def handle_task():
             with mt_lock:
                 DONE_TASKS += 1
                 CURRENT_TASK = None
-            logging.info(f"handle_task got TaskCanceledException for task {json.dumps(task)}")
+            try:
+                set_progress(task["id"], prog=-1, msg="handle_task got TaskCanceledException")
+            except Exception:
+                pass
             logging.debug("handle_task got TaskCanceledException", exc_info=True)
         except Exception:
             with mt_lock:
                 FAILED_TASKS += 1
                 CURRENT_TASK = None
+            try:
+                set_progress(task["id"], prog=-1, msg="handle_task got exception, please check log")
+            except Exception:
+                pass
             logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     if PAYLOAD:
         PAYLOAD.ack()
@@ -522,8 +529,8 @@ def report_status():
             now = datetime.now()
             group_info = REDIS_CONN.queue_info(SVR_QUEUE_NAME, "rag_flow_svr_task_broker")
             if group_info is not None:
-                PENDING_TASKS = int(group_info["pending"])
-                LAG_TASKS = int(group_info["lag"])
+                PENDING_TASKS = int(group_info.get("pending", 0))
+                LAG_TASKS = int(group_info.get("lag", 0))
 
             with mt_lock:
                 heartbeat = json.dumps({
