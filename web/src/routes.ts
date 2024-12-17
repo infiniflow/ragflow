@@ -8,6 +8,8 @@ export enum Routes {
   Search = '/next-search',
   Chat = '/next-chat',
   ProfileSetting = '/profile-setting',
+  DatasetTesting = '/testing',
+  DatasetSetting = '/setting',
 }
 
 const routes = [
@@ -207,12 +209,12 @@ const routes = [
             component: `@/pages${Routes.Dataset}`,
           },
           {
-            path: `${Routes.DatasetBase}/configuration`,
-            component: `@/pages${Routes.DatasetBase}/settings`,
+            path: `${Routes.DatasetBase}${Routes.DatasetSetting}`,
+            component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
           },
           {
-            path: `${Routes.DatasetBase}/testing`,
-            component: `@/pages${Routes.DatasetBase}/testing`,
+            path: `${Routes.DatasetBase}${Routes.DatasetTesting}`,
+            component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
           },
         ],
       },
