@@ -82,7 +82,8 @@ def create(tenant_id):
     req["top_k"] = req.get("top_k", 1024)
     req["rerank_id"] = req.get("rerank_id", "")
     if req.get("rerank_id"):
-        if not TenantLLMService.query(tenant_id=tenant_id,llm_name=req.get("rerank_id"),model_type="rerank"):
+        value_rerank_model = ["BAAI/bge-reranker-v2-m3","maidalun1020/bce-reranker-base_v1"]
+        if req["rerank_id"] not in value_rerank_model and not TenantLLMService.query(tenant_id=tenant_id,llm_name=req.get("rerank_id"),model_type="rerank"):
             return get_error_data_result(f"`rerank_model` {req.get('rerank_id')} doesn't exist")
     if not req.get("llm_id"):
         req["llm_id"] = tenant.llm_id
@@ -161,7 +162,7 @@ def update(tenant_id,chat_id):
         req["do_refer"]=req.pop("show_quotation")
     if "dataset_ids" in req:
         if not ids:
-            return get_error_data_result("`datasets` can't be empty")
+            return get_error_data_result("`dataset_ids` can't be empty")
         if ids:
             for kb_id in ids:
                 kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
@@ -188,9 +189,6 @@ def update(tenant_id,chat_id):
     e, tenant = TenantService.get_by_id(tenant_id)
     if not e:
         return get_error_data_result(message="Tenant not found!")
-    if req.get("rerank_model"):
-        if not TenantLLMService.query(tenant_id=tenant_id,llm_name=req.get("rerank_model"),model_type="rerank"):
-            return get_error_data_result(f"`rerank_model` {req.get('rerank_model')} doesn't exist")
     # prompt
     prompt = req.get("prompt")
     key_mapping = {"parameters": "variables",
@@ -210,6 +208,10 @@ def update(tenant_id,chat_id):
         req["prompt_config"] = req.pop("prompt")
     e, res = DialogService.get_by_id(chat_id)
     res = res.to_json()
+    if req.get("rerank_id"):
+        value_rerank_model = ["BAAI/bge-reranker-v2-m3","maidalun1020/bce-reranker-base_v1"]
+        if req["rerank_id"] not in value_rerank_model and not TenantLLMService.query(tenant_id=tenant_id,llm_name=req.get("rerank_id"),model_type="rerank"):
+            return get_error_data_result(f"`rerank_model` {req.get('rerank_id')} doesn't exist")
     if "name" in req:
         if not req.get("name"):
             return get_error_data_result(message="`name` is not empty.")
