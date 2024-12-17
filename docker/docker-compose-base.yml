@@ -17,6 +17,9 @@ services:
       - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=false
       - xpack.security.transport.ssl.enabled=false
+      - cluster.routing.allocation.disk.watermark.low=5gb
+      - cluster.routing.allocation.disk.watermark.high=3gb
+      - cluster.routing.allocation.disk.watermark.flood_stage=2gb
       - TZ=${TIMEZONE}
     mem_limit: ${MEM_LIMIT}
     ulimits:
