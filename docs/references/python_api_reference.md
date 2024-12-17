@@ -1435,7 +1435,7 @@ session = create_session(AGENT_ID,rag_object)
 
 ---
 
-## Converse with agent without `begin` component
+## Converse with agent
 
 ```python
 Session.ask(question: str, stream: bool = False) -> Optional[Message, iter[Message]]

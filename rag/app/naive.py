@@ -169,11 +169,13 @@ class Markdown(MarkdownParser):
         sections = []
         tbls = []
         for sec in remainder.split("\n"):
-            if num_tokens_from_string(sec) > 10 * self.chunk_token_num:
+            if num_tokens_from_string(sec) > 3 * self.chunk_token_num:
                 sections.append((sec[:int(len(sec) / 2)], ""))
                 sections.append((sec[int(len(sec) / 2):], ""))
             else:
-                if sections and sections[-1][0].strip().find("#") == 0:
+                if sec.strip().find("#") == 0:
+                    sections.append((sec, ""))
+                elif sections and sections[-1][0].strip().find("#") == 0:
                     sec_, _ = sections.pop(-1)
                     sections.append((sec_ + "\n" + sec, ""))
                 else:
