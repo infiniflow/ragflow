@@ -4,7 +4,7 @@ import { CloseOutlined } from '@ant-design/icons';
 import { Drawer, Flex, Form, Input } from 'antd';
 import { lowerFirst } from 'lodash';
 import { Play } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Node } from 'reactflow';
 import { Operator, operatorMap } from '../constant';
 import AkShareForm from '../form/akshare-form';
@@ -108,6 +108,7 @@ const FormDrawer = ({
     id: node?.id,
     data: node?.data,
   });
+  const previousId = useRef<string | undefined>(node?.id);
 
   const { t } = useTranslate('flow');
 
@@ -115,10 +116,13 @@ const FormDrawer = ({
 
   useEffect(() => {
     if (visible) {
-      form.resetFields();
+      if (node?.id !== previousId.current) {
+        form.resetFields();
+      }
       form.setFieldsValue(node?.data?.form);
+      previousId.current = node?.id;
     }
-  }, [visible, form, node?.data?.form]);
+  }, [visible, form, node?.data?.form, node?.id]);
 
   return (
     <Drawer

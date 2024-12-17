@@ -16,6 +16,8 @@
 	"content_with_weight": {"type": "varchar", "default": ""},
 	"content_ltks": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"content_sm_ltks": {"type": "varchar", "default": "", "analyzer": "whitespace"},
+	"authors_tks": {"type": "varchar", "default": "", "analyzer": "whitespace"},
+	"authors_sm_tks": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"page_num_int": {"type": "varchar", "default": ""},
 	"top_int": {"type": "varchar", "default": ""},
 	"position_int": {"type": "varchar", "default": ""},

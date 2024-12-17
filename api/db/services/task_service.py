@@ -34,14 +34,16 @@ from rag.utils.redis_conn import REDIS_CONN
 from api import settings
 from rag.nlp import search
 
+
 def trim_header_by_lines(text: str, max_length) -> str:
     len_text = len(text)
     if len_text <= max_length:
         return text
     for i in range(len_text):
         if text[i] == '\n' and len_text - i <= max_length:
-            return text[i+1:]
+            return text[i + 1:]
     return text
+
 
 class TaskService(CommonService):
     model = Task
@@ -73,10 +75,10 @@ class TaskService(CommonService):
         ]
         docs = (
             cls.model.select(*fields)
-            .join(Document, on=(cls.model.doc_id == Document.id))
-            .join(Knowledgebase, on=(Document.kb_id == Knowledgebase.id))
-            .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
-            .where(cls.model.id == task_id)
+                .join(Document, on=(cls.model.doc_id == Document.id))
+                .join(Knowledgebase, on=(Document.kb_id == Knowledgebase.id))
+                .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
+                .where(cls.model.id == task_id)
         )
         docs = list(docs.dicts())
         if not docs:
@@ -111,7 +113,7 @@ class TaskService(CommonService):
         ]
         tasks = (
             cls.model.select(*fields).order_by(cls.model.from_page.asc(), cls.model.create_time.desc())
-            .where(cls.model.doc_id == doc_id)
+                .where(cls.model.doc_id == doc_id)
         )
         tasks = list(tasks.dicts())
         if not tasks:
@@ -131,18 +133,18 @@ class TaskService(CommonService):
                 cls.model.select(
                     *[Document.id, Document.kb_id, Document.location, File.parent_id]
                 )
-                .join(Document, on=(cls.model.doc_id == Document.id))
-                .join(
+                    .join(Document, on=(cls.model.doc_id == Document.id))
+                    .join(
                     File2Document,
                     on=(File2Document.document_id == Document.id),
                     join_type=JOIN.LEFT_OUTER,
                 )
-                .join(
+                    .join(
                     File,
                     on=(File2Document.file_id == File.id),
                     join_type=JOIN.LEFT_OUTER,
                 )
-                .where(
+                    .where(
                     Document.status == StatusEnum.VALID.value,
                     Document.run == TaskStatus.RUNNING.value,
                     ~(Document.type == FileType.VIRTUAL.value),
@@ -212,8 +214,8 @@ def queue_tasks(doc: dict, bucket: str, name: str):
         if doc["parser_id"] == "paper":
             page_size = doc["parser_config"].get("task_page_size", 22)
         if doc["parser_id"] in ["one", "knowledge_graph"] or not do_layout:
-            page_size = 10**9
-        page_ranges = doc["parser_config"].get("pages") or [(1, 10**5)]
+            page_size = 10 ** 9
+        page_ranges = doc["parser_config"].get("pages") or [(1, 10 ** 5)]
         for s, e in page_ranges:
             s -= 1
             s = max(0, s)
@@ -247,16 +249,19 @@ def queue_tasks(doc: dict, bucket: str, name: str):
         task["progress"] = 0.0
 
     prev_tasks = TaskService.get_tasks(doc["id"])
+    ck_num = 0
     if prev_tasks:
         for task in tsks:
-            reuse_prev_task_chunks(task, prev_tasks, chunking_config)
+            ck_num += reuse_prev_task_chunks(task, prev_tasks, chunking_config)
         TaskService.filter_delete([Task.doc_id == doc["id"]])
         chunk_ids = []
         for task in prev_tasks:
             if task["chunk_ids"]:
                 chunk_ids.extend(task["chunk_ids"].split())
         if chunk_ids:
-            settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(chunking_config["tenant_id"]), chunking_config["kb_id"])
+            settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(chunking_config["tenant_id"]),
+                                         chunking_config["kb_id"])
+    DocumentService.update_by_id(doc["id"], {"chunk_num": ck_num})
 
     bulk_insert_into_db(Task, tsks, True)
     DocumentService.begin2parse(doc["id"])
@@ -267,14 +272,22 @@ def queue_tasks(doc: dict, bucket: str, name: str):
             SVR_QUEUE_NAME, message=t
         ), "Can't access Redis. Please check the Redis' status."
 
+
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):
-    idx = bisect.bisect_left(prev_tasks, task["from_page"], key=lambda x: x["from_page"])
+    idx = bisect.bisect_left(prev_tasks, (task.get("from_page", 0), task.get("digest", "")),
+                             key=lambda x: (x.get("from_page", 0), x.get("digest", "")))
     if idx >= len(prev_tasks):
-        return
+        return 0
     prev_task = prev_tasks[idx]
     if prev_task["progress"] < 1.0 or prev_task["digest"] != task["digest"] or not prev_task["chunk_ids"]:
-        return
+        return 0
     task["chunk_ids"] = prev_task["chunk_ids"]
     task["progress"] = 1.0
-    task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): reused previous task's chunks"
+    if "from_page" in task and "to_page" in task:
+        task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
+    else:
+        task["progress_msg"] = ""
+    task["progress_msg"] += "reused previous task's chunks."
     prev_task["chunk_ids"] = ""
+
+    return len(task["chunk_ids"].split())

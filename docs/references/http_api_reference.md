@@ -2244,7 +2244,7 @@ Success:
                         "data": {
                             "form": {},
                             "label": "Answer",
-                            "name": "对话_0"
+                            "name": "dialog_0"
                         },
                         "dragging": false,
                         "height": 44,
@@ -2363,7 +2363,7 @@ curl --request POST \
      --data-binary '
      {
           "lang":"English"
-          "file":"明天天气如何"
+          "file":"How is the weather tomorrow?"
      }'
 ```
 

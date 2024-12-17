@@ -1,10 +1,10 @@
 import MessageInput from '@/components/message-input';
 import MessageItem from '@/components/message-item';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
-import { MessageType, SharedFrom } from '@/constants/chat';
+import { MessageType } from '@/constants/chat';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { Flex, Spin } from 'antd';
-import { forwardRef } from 'react';
+import { forwardRef, useMemo } from 'react';
 import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
@@ -12,10 +12,12 @@ import {
 import { buildMessageItemReference } from '../utils';
 
 import PdfDrawer from '@/components/pdf-drawer';
+import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
+import { useFetchFlowSSE } from '@/hooks/flow-hooks';
 import styles from './index.less';
 
 const ChatContainer = () => {
-  const { from, sharedId: conversationId } = useGetSharedChatSearchParams();
+  const { sharedId: conversationId } = useGetSharedChatSearchParams();
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -30,6 +32,14 @@ const ChatContainer = () => {
     hasError,
   } = useSendSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
+  const useData = (from: SharedFrom) =>
+    useMemo(() => {
+      return from === SharedFrom.Agent
+        ? useFetchFlowSSE
+        : useFetchNextConversationSSE;
+    }, [from]);
+
+  const { data: InforForm } = useData(from)();
 
   if (!conversationId) {
     return <div>empty</div>;
@@ -45,6 +55,7 @@ const ChatContainer = () => {
                 return (
                   <MessageItem
                     key={message.id}
+                    avatardialog={InforForm?.avatar}
                     item={message}
                     nickname="You"
                     reference={buildMessageItemReference(
@@ -79,7 +90,7 @@ const ChatContainer = () => {
           onPressEnter={handlePressEnter}
           sendLoading={sendLoading}
           uploadMethod="external_upload_and_parse"
-          showUploadIcon={from === SharedFrom.Chat}
+          showUploadIcon={false}
         ></MessageInput>
       </Flex>
       {visible && (
