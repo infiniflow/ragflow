@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import networkx as nx
+
+from graphrag.extractor import Extractor
 from rag.nlp import is_english
 import editdistance
 from graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
@@ -39,10 +41,9 @@ class EntityResolutionResult:
     output: nx.Graph
 
 
-class EntityResolution:
+class EntityResolution(Extractor):
     """Entity resolution class definition."""
 
-    _llm: CompletionLLM
     _resolution_prompt: str
     _output_formatter_prompt: str
     _on_error: ErrorHandlerFn
@@ -117,7 +118,7 @@ class EntityResolution:
                     }
                     text = perform_variable_replacements(self._resolution_prompt, variables=variables)
 
-                    response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
+                    response = self._chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
                     result = self._process_results(len(candidate_resolution_i[1]), response,
                                                    prompt_variables.get(self._record_delimiter_key,
                                                                         DEFAULT_RECORD_DELIMITER),
