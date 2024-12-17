@@ -344,6 +344,8 @@ class DocumentService(CommonService):
                     old[k] = v
 
         dfs_update(d.parser_config, config)
+        if not config.get("raptor") and d.parser_config.get("raptor"):
+            del d.parser_config["raptor"]
         cls.update_by_id(id, {"parser_config": d.parser_config})
 
     @classmethod
@@ -432,6 +434,11 @@ class DocumentService(CommonService):
 
 
 def queue_raptor_tasks(doc):
+    chunking_config = DocumentService.get_chunking_config(doc["id"])
+    hasher = xxhash.xxh64()
+    for field in sorted(chunking_config.keys()):
+        hasher.update(str(chunking_config[field]).encode("utf-8"))
+
     def new_task():
         nonlocal doc
         return {
@@ -443,6 +450,9 @@ def queue_raptor_tasks(doc):
         }
 
     task = new_task()
+    for field in ["doc_id", "from_page", "to_page"]:
+        hasher.update(str(task.get(field, "")).encode("utf-8"))
+    task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
     task["type"] = "raptor"
     assert REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=task), "Can't access Redis. Please check the Redis' status."

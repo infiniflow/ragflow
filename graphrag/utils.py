@@ -78,7 +78,7 @@ def get_llm_cache(llmnm, txt, history, genconf):
     bin = REDIS_CONN.get(k)
     if not bin:
         return
-    return bin.decode("utf-8")
+    return bin
 
 
 def set_llm_cache(llmnm, txt, v: str, history, genconf):
