@@ -173,7 +173,9 @@ class Markdown(MarkdownParser):
                 sections.append((sec[:int(len(sec) / 2)], ""))
                 sections.append((sec[int(len(sec) / 2):], ""))
             else:
-                if sections and sections[-1][0].strip().find("#") == 0:
+                if sec.strip().find("#") == 0:
+                    sections.append((sec, ""))
+                elif sections and sections[-1][0].strip().find("#") == 0:
                     sec_, _ = sections.pop(-1)
                     sections.append((sec_ + "\n" + sec, ""))
                 else:
