@@ -887,7 +887,7 @@ Failure:
 
 ---
 
-## Add chunks
+## Add chunk
 
 **POST** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
 
@@ -913,7 +913,7 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "content": "<SOME_CHUNK_CONTENT_HERE>"
+          "content": "<CHUNK_CONTENT_HERE>"
      }'
 ```
 
@@ -1380,7 +1380,7 @@ curl --request POST \
   - `"frequency penalty"`: `float`  
     Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
   - `"max_token"`: `integer`  
-    The maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.  
+    The maximum length of the model's output, measured in the number of tokens (words or pieces of words). If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses. Defaults to `512`. 
 - `"prompt"`: (*Body parameter*), `object`  
   Instructions for the LLM to follow. If it is not explicitly set, a JSON object with the following values will be generated as the default. A `prompt` JSON object contains the following attributes:  
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
@@ -1515,7 +1515,7 @@ curl --request PUT \
   - `"frequency penalty"`: `float`  
     Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
   - `"max_token"`: `integer`  
-    The maximum length of the model’s output, measured in the number of tokens (words or pieces of words). Defaults to `512`.  
+    The maximum length of the model's output, measured in the number of tokens (words or pieces of words). If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses. Defaults to `512`.  
 - `"prompt"`: (*Body parameter*), `object`  
   Instructions for the LLM to follow.  A `prompt` object contains the following attributes:  
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
