@@ -33,6 +33,7 @@ export default {
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',
       submit: 'Submit',
+      embedIntoSite: 'Embed Into Site',
     },
     login: {
       login: 'Sign in',
@@ -1026,8 +1027,7 @@ The above is the content you need to summarize.`,
       noteDescription: 'Note',
       notePlaceholder: 'Please enter a note',
       invoke: 'Invoke',
-      invokeDescription:
-        `A component capable of calling remote services, using other components' outputs or constants as inputs.`,
+      invokeDescription: `A component capable of calling remote services, using other components' outputs or constants as inputs.`,
       url: 'Url',
       method: 'Method',
       timeout: 'Timeout',
