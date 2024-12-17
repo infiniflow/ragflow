@@ -107,6 +107,7 @@ def update():
                 settings.docStoreConn.update({"kb_id": kb.id}, {"pagerank_fea": req["pagerank"]},
                                          search.index_name(kb.tenant_id), kb.id)
             else:
+                # Elasticsearch requires pagerank_fea be non-zero!
                 settings.docStoreConn.update({"exist": "pagerank_fea"}, {"remove": "pagerank_fea"},
                                          search.index_name(kb.tenant_id), kb.id)
 
