@@ -1,14 +1,17 @@
 import { Button } from '@/components/ui/button';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { ArrowLeft } from 'lucide-react';
 import { Outlet } from 'umi';
 import { SideBar } from './sidebar';
 
 export default function ProfileSetting() {
+  const { navigateToHome } = useNavigatePage();
+
   return (
     <div className="flex flex-col w-full h-screen bg-background text-foreground">
       <header className="flex items-center border-b">
         <div className="flex items-center border-r p-1.5">
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" onClick={navigateToHome}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
         </div>
