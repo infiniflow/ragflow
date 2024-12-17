@@ -5,6 +5,8 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Card, Modal, Tabs, TabsProps, Typography } from 'antd';
 
+import { useIsDarkTheme } from '@/components/theme-provider';
+import { cn } from '@/lib/utils';
 import styles from './index.less';
 
 const { Paragraph, Link } = Typography;
@@ -23,6 +25,7 @@ const EmbedModal = ({
   isAgent: boolean;
 }) => {
   const { t } = useTranslate('chat');
+  const isDarkTheme = useIsDarkTheme();
 
   const text = `
   ~~~ html
@@ -67,7 +70,7 @@ const EmbedModal = ({
 
   return (
     <Modal
-      title={t('embedModalTitle')}
+      title={t('embedIntoSite', { keyPrefix: 'common' })}
       open={visible}
       style={{ top: 300 }}
       width={'50vw'}
@@ -79,18 +82,23 @@ const EmbedModal = ({
         {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
         <span className="ml-1 inline-block">ID</span>
       </div>
-      <Paragraph copyable={{ text: token }} className={styles.id}>
+      <Paragraph
+        copyable={{ text: token }}
+        className={cn(styles.id, {
+          [styles.darkId]: isDarkTheme,
+        })}
+      >
         {token}
       </Paragraph>
       <Link
         href={
           isAgent
-            ? 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-an-agent'
+            ? 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-agent'
             : 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-chat-assistant'
         }
         target="_blank"
       >
-        {t('howUseId')}
+        {t('howUseId', { keyPrefix: isAgent ? 'flow' : 'chat' })}
       </Link>
     </Modal>
   );

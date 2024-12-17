@@ -33,6 +33,7 @@ export default {
       pleaseSelect: '請選擇',
       pleaseInput: '請輸入',
       submit: '提交',
+      embedIntoSite: '嵌入網站',
     },
     login: {
       login: '登入',
