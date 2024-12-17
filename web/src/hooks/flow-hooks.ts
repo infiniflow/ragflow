@@ -2,6 +2,7 @@ import { ResponseType } from '@/interfaces/database/base';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import { IDebugSingleRequestBody } from '@/interfaces/request/flow';
 import i18n from '@/locales/config';
+import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
 import flowService from '@/services/flow-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -91,6 +92,8 @@ export const useFetchFlow = (): {
   refetch: () => void;
 } => {
   const { id } = useParams();
+  const { sharedId } = useGetSharedChatSearchParams();
+
   const {
     data,
     isFetching: loading,
@@ -103,7 +106,41 @@ export const useFetchFlow = (): {
     refetchOnWindowFocus: false,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await flowService.getCanvas({}, id);
+      const { data } = await flowService.getCanvas({}, sharedId || id);
+
+      const messageList = buildMessageListWithUuid(
+        get(data, 'data.dsl.messages', []),
+      );
+      set(data, 'data.dsl.messages', messageList);
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useFetchFlowSSE = (): {
+  data: IFlow;
+  loading: boolean;
+  refetch: () => void;
+} => {
+  const { sharedId } = useGetSharedChatSearchParams();
+
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ['flowDetailSSE'],
+    initialData: {} as IFlow,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: 0,
+    queryFn: async () => {
+      if (!sharedId) return {};
+      const { data } = await flowService.getCanvasSSE({}, sharedId);
 
       const messageList = buildMessageListWithUuid(
         get(data, 'data.dsl.messages', []),
