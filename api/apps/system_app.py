@@ -257,7 +257,11 @@ def token_list():
             return get_data_error_result(message="Tenant not found!")
 
         objs = APITokenService.query(tenant_id=tenants[0].tenant_id)
-        return get_json_result(data=[o.to_dict() for o in objs])
+        objs = [o.to_dict() for o in objs]
+        for o in objs:
+            if not o["beta"]:
+                o["beta"] = generate_confirmation_token(generate_confirmation_token(tenants[0].tenant_id)).replace("ragflow-", "")[:32],
+        return get_json_result(data=objs)
     except Exception as e:
         return server_error_response(e)
 
