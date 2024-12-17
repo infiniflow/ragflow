@@ -256,11 +256,13 @@ def token_list():
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
 
-        objs = APITokenService.query(tenant_id=tenants[0].tenant_id)
+        tenant_id = tenants[0].tenant_id
+        objs = APITokenService.query(tenant_id=tenant_id)
         objs = [o.to_dict() for o in objs]
         for o in objs:
             if not o["beta"]:
-                o["beta"] = generate_confirmation_token(generate_confirmation_token(tenants[0].tenant_id)).replace("ragflow-", "")[:32],
+                o["beta"] = generate_confirmation_token(generate_confirmation_token(tenants[0].tenant_id)).replace("ragflow-", "")[:32]
+                APITokenService.filter_update([APIToken.tenant_id == tenant_id, APIToken.token == o["token"]], o)
         return get_json_result(data=objs)
     except Exception as e:
         return server_error_response(e)
