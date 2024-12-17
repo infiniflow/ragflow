@@ -58,3 +58,9 @@ export const useTheme = () => {
 
   return context;
 };
+
+export const useIsDarkTheme = () => {
+  const { theme } = useTheme();
+
+  return theme === 'dark';
+};
