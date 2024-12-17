@@ -247,6 +247,7 @@ def queue_tasks(doc: dict, bucket: str, name: str):
         task["progress"] = 0.0
 
     prev_tasks = TaskService.get_tasks(doc["id"])
+    ck_num = 0
     if prev_tasks:
         ck_num = 0
         for task in tsks:
@@ -258,7 +259,7 @@ def queue_tasks(doc: dict, bucket: str, name: str):
                 chunk_ids.extend(task["chunk_ids"].split())
         if chunk_ids:
             settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(chunking_config["tenant_id"]), chunking_config["kb_id"])
-        DocumentService.update_by_id(doc["id"], {"chunk_num": ck_num})
+    DocumentService.update_by_id(doc["id"], {"chunk_num": ck_num})
 
     bulk_insert_into_db(Task, tsks, True)
     DocumentService.begin2parse(doc["id"])
@@ -271,7 +272,7 @@ def queue_tasks(doc: dict, bucket: str, name: str):
 
 
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):
-    idx = bisect.bisect_left(prev_tasks, task["from_page"], key=lambda x: x["from_page"])
+    idx = bisect.bisect_left(prev_tasks, task.get("from_page", 0), key=lambda x: x.get("from_page",0))
     if idx >= len(prev_tasks):
         return 0
     prev_task = prev_tasks[idx]
@@ -279,7 +280,11 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
         return 0
     task["chunk_ids"] = prev_task["chunk_ids"]
     task["progress"] = 1.0
-    task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): reused previous task's chunks"
+    if "from_page" in task and "to_page" in task:
+        task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
+    else:
+        task["progress_msg"] = ""
+    task["progress_msg"] += "reused previous task's chunks."
     prev_task["chunk_ids"] = ""
 
     return len(task["chunk_ids"].split())

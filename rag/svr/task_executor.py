@@ -19,6 +19,8 @@
 
 import sys
 from api.utils.log_utils import initRootLogger
+from graphrag.utils import get_llm_cache, set_llm_cache
+
 CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
 CONSUMER_NAME = "task_executor_" + CONSUMER_NO
 initRootLogger(CONSUMER_NAME)
@@ -232,9 +234,6 @@ def build_chunks(task, progress_callback):
         if not d.get("image"):
             _ = d.pop("image", None)
             d["img_id"] = ""
-            d["page_num_int"] = []
-            d["position_int"] = []
-            d["top_int"] = []
             docs.append(d)
             continue
 
@@ -262,8 +261,16 @@ def build_chunks(task, progress_callback):
         progress_callback(msg="Start to generate keywords for every chunk ...")
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
         for d in docs:
-            d["important_kwd"] = keyword_extraction(chat_mdl, d["content_with_weight"],
-                                                    task["parser_config"]["auto_keywords"]).split(",")
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords",
+                                   {"topn": task["parser_config"]["auto_keywords"]})
+            if not cached:
+                cached = keyword_extraction(chat_mdl, d["content_with_weight"],
+                                            task["parser_config"]["auto_keywords"])
+                if cached:
+                    set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords",
+                                  {"topn": task["parser_config"]["auto_keywords"]})
+
+            d["important_kwd"] = cached.split(",")
             d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
         progress_callback(msg="Keywords generation completed in {:.2f}s".format(timer() - st))
 
@@ -272,7 +279,15 @@ def build_chunks(task, progress_callback):
         progress_callback(msg="Start to generate questions for every chunk ...")
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
         for d in docs:
-            d["question_kwd"] = question_proposal(chat_mdl, d["content_with_weight"], task["parser_config"]["auto_questions"]).split("\n")
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question",
+                                   {"topn": task["parser_config"]["auto_questions"]})
+            if not cached:
+                cached = question_proposal(chat_mdl, d["content_with_weight"], task["parser_config"]["auto_questions"])
+                if cached:
+                    set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "question",
+                                  {"topn": task["parser_config"]["auto_questions"]})
+
+            d["question_kwd"] = cached.split("\n")
             d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
         progress_callback(msg="Question generation completed in {:.2f}s".format(timer() - st))
 
