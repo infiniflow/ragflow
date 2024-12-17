@@ -1,6 +1,6 @@
 import { ReactComponent as ChatAppCube } from '@/assets/svg/chat-app-cube.svg';
 import RenameModal from '@/components/rename-modal';
-import { DeleteOutlined, EditOutlined, KeyOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import {
   Avatar,
   Button,
@@ -43,6 +43,7 @@ import {
 import { useTranslate } from '@/hooks/common-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { IDialog } from '@/interfaces/database/chat';
+import { PictureInPicture2 } from 'lucide-react';
 import styles from './index.less';
 
 const { Text } = Typography;
@@ -191,8 +192,9 @@ const Chat = () => {
         onClick: handleShowOverviewModal(dialog),
         label: (
           <Space>
-            <KeyOutlined />
-            {t('publish', { keyPrefix: 'flow' })}
+            {/* <KeyOutlined /> */}
+            <PictureInPicture2 className="size-4" />
+            {t('embedIntoSite', { keyPrefix: 'common' })}
           </Space>
         ),
       },

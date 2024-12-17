@@ -67,7 +67,7 @@ const EmbedModal = ({
 
   return (
     <Modal
-      title={t('embedModalTitle')}
+      title={t('embedIntoSite', { keyPrefix: 'common' })}
       open={visible}
       style={{ top: 300 }}
       width={'50vw'}
