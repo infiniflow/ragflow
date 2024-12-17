@@ -249,7 +249,6 @@ def queue_tasks(doc: dict, bucket: str, name: str):
     prev_tasks = TaskService.get_tasks(doc["id"])
     ck_num = 0
     if prev_tasks:
-        ck_num = 0
         for task in tsks:
             ck_num += reuse_prev_task_chunks(task, prev_tasks, chunking_config)
         TaskService.filter_delete([Task.doc_id == doc["id"]])
