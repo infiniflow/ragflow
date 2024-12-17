@@ -5,6 +5,8 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Card, Modal, Tabs, TabsProps, Typography } from 'antd';
 
+import { useIsDarkTheme } from '@/components/theme-provider';
+import { cn } from '@/lib/utils';
 import styles from './index.less';
 
 const { Paragraph, Link } = Typography;
@@ -23,6 +25,7 @@ const EmbedModal = ({
   isAgent: boolean;
 }) => {
   const { t } = useTranslate('chat');
+  const isDarkTheme = useIsDarkTheme();
 
   const text = `
   ~~~ html
@@ -79,7 +82,12 @@ const EmbedModal = ({
         {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
         <span className="ml-1 inline-block">ID</span>
       </div>
-      <Paragraph copyable={{ text: token }} className={styles.id}>
+      <Paragraph
+        copyable={{ text: token }}
+        className={cn(styles.id, {
+          [styles.darkId]: isDarkTheme,
+        })}
+      >
         {token}
       </Paragraph>
       <Link
