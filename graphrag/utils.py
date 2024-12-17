@@ -98,7 +98,8 @@ def get_embed_cache(llmnm, txt):
 
     k = hasher.hexdigest()
     bin = REDIS_CONN.get(k)
-    if not bin: return
+    if not bin:
+        return
     return np.array(json.loads(bin.decode("utf-8")))
 
 

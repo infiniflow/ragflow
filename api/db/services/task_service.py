@@ -283,7 +283,7 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
         task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
     else:
         task["progress_msg"] = ""
-    task["progress_msg"] += f"reused previous task's chunks."
+    task["progress_msg"] += "reused previous task's chunks."
     prev_task["chunk_ids"] = ""
 
     return len(task["chunk_ids"].split())
