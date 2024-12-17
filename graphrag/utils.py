@@ -6,8 +6,14 @@ Reference:
 """
 
 import html
+import json
 import re
 from typing import Any, Callable
+
+import numpy as np
+import xxhash
+
+from rag.utils.redis_conn import REDIS_CONN
 
 ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
@@ -60,3 +66,47 @@ def dict_has_keys_with_types(
             return False
     return True
 
+
+def get_llm_cache(llmnm, txt, history, genconf):
+    hasher = xxhash.xxh64()
+    hasher.update(str(llmnm).encode("utf-8"))
+    hasher.update(str(txt).encode("utf-8"))
+    hasher.update(str(history).encode("utf-8"))
+    hasher.update(str(genconf).encode("utf-8"))
+
+    k = hasher.hexdigest()
+    bin = REDIS_CONN.get(k)
+    if not bin: return
+    return bin.decode("utf-8")
+
+
+def set_llm_cache(llmnm, txt, v: str, history, genconf):
+    hasher = xxhash.xxh64()
+    hasher.update(str(llmnm).encode("utf-8"))
+    hasher.update(str(txt).encode("utf-8"))
+    hasher.update(str(history).encode("utf-8"))
+    hasher.update(str(genconf).encode("utf-8"))
+
+    k = hasher.hexdigest()
+    REDIS_CONN.set(k, v.encode("utf-8"), 24*3600)
+
+
+def get_embed_cache(llmnm, txt):
+    hasher = xxhash.xxh64()
+    hasher.update(str(llmnm).encode("utf-8"))
+    hasher.update(str(txt).encode("utf-8"))
+
+    k = hasher.hexdigest()
+    bin = REDIS_CONN.get(k)
+    if not bin: return
+    return np.array(json.loads(bin.decode("utf-8")))
+
+
+def set_embed_cache(llmnm, txt, arr):
+    hasher = xxhash.xxh64()
+    hasher.update(str(llmnm).encode("utf-8"))
+    hasher.update(str(txt).encode("utf-8"))
+
+    k = hasher.hexdigest()
+    arr = json.dumps(arr.tolist() if isinstance(arr, np.ndarray) else arr)
+    REDIS_CONN.set(k, arr.encode("utf-8"), 24*3600)

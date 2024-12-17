@@ -23,6 +23,7 @@ from typing import Any
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+from graphrag.extractor import Extractor
 from graphrag.mind_map_prompt import MIND_MAP_EXTRACTION_PROMPT
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
 from rag.llm.chat_model import Base as CompletionLLM
@@ -37,8 +38,7 @@ class MindMapResult:
     output: dict
 
 
-class MindMapExtractor:
-    _llm: CompletionLLM
+class MindMapExtractor(Extractor):
     _input_text_key: str
     _mind_map_prompt: str
     _on_error: ErrorHandlerFn
@@ -190,7 +190,7 @@ class MindMapExtractor:
         }
         text = perform_variable_replacements(self._mind_map_prompt, variables=variables)
         gen_conf = {"temperature": 0.5}
-        response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
+        response = self._chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         response = re.sub(r"```[^\n]*", "", response)
         logging.debug(response)
         logging.debug(self._todict(markdown_to_json.dictify(response)))

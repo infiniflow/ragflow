@@ -271,7 +271,7 @@ def queue_tasks(doc: dict, bucket: str, name: str):
 
 
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):
-    idx = bisect.bisect_left(prev_tasks, task["from_page"], key=lambda x: x["from_page"])
+    idx = bisect.bisect_left(prev_tasks, task.get("from_page", 0), key=lambda x: x.get("from_page",0))
     if idx >= len(prev_tasks):
         return 0
     prev_task = prev_tasks[idx]
@@ -279,7 +279,11 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
         return 0
     task["chunk_ids"] = prev_task["chunk_ids"]
     task["progress"] = 1.0
-    task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): reused previous task's chunks"
+    if "from_page" in task and "to_page" in task:
+        task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
+    else:
+        task["progress_msg"] = ""
+    task["progress_msg"] += f"reused previous task's chunks."
     prev_task["chunk_ids"] = ""
 
     return len(task["chunk_ids"].split())
