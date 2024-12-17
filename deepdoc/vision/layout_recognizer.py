@@ -14,11 +14,14 @@ import os
 import re
 from collections import Counter
 from copy import deepcopy
+
+import cv2
 import numpy as np
 from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import Recognizer
+from deepdoc.vision.operators import nms
 
 
 class LayoutRecognizer(Recognizer):
@@ -207,7 +210,8 @@ class LayoutRecognizer4YOLOv10(LayoutRecognizer):
         scores = boxes[:, 4]
         boxes = boxes[scores > thr, :]
         scores = scores[scores > thr]
-        if len(boxes) == 0: return []
+        if len(boxes) == 0:
+            return []
         class_ids = boxes[:, -1].astype(int)
         boxes = boxes[:, :4]
         boxes[:, 0] -= inputs["scale_factor"][2]
