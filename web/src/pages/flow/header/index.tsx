@@ -78,7 +78,7 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
             onClick={handleShowEmbedModal}
             disabled={!isBeginNodeDataQueryEmpty}
           >
-            <b>{t('publish')}</b>
+            <b>{t('embedIntoSite', { keyPrefix: 'common' })}</b>
           </Button>
         </Space>
       </Flex>

@@ -33,6 +33,7 @@ export default {
       pleaseSelect: '请选择',
       pleaseInput: '请输入',
       submit: '提交',
+      embedIntoSite: '嵌入网站',
     },
     login: {
       login: '登录',
