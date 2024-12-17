@@ -23,6 +23,7 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
+from api.db.db_models import APIToken
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
@@ -80,6 +81,20 @@ def save():
 @manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
 def get(canvas_id):
+    e, c = UserCanvasService.get_by_id(canvas_id)
+    if not e:
+        return get_data_error_result(message="canvas not found.")
+    return get_json_result(data=c.to_dict())
+
+@manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
+def getsse(canvas_id):
+    token = request.headers.get('Authorization').split()
+    if len(token) != 2:
+        return get_data_error_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_data_error_result(message='Token is not valid!"')
     e, c = UserCanvasService.get_by_id(canvas_id)
     if not e:
         return get_data_error_result(message="canvas not found.")

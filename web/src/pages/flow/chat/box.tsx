@@ -9,6 +9,7 @@ import { useSendNextMessage } from './hooks';
 
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { useFetchFlow } from '@/hooks/flow-hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
 
@@ -29,6 +30,7 @@ const FlowChatBox = () => {
   useGetFileIcon();
   const { t } = useTranslate('chat');
   const { data: userInfo } = useFetchUserInfo();
+  const { data: cavasInfo } = useFetchFlow();
 
   return (
     <>
@@ -47,6 +49,7 @@ const FlowChatBox = () => {
                     key={message.id}
                     nickname={userInfo.nickname}
                     avatar={userInfo.avatar}
+                    avatardialog={cavasInfo.avatar}
                     item={message}
                     reference={buildMessageItemReference(
                       { message: derivedMessages, reference },

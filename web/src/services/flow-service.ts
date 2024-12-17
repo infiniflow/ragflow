@@ -4,6 +4,7 @@ import request from '@/utils/request';
 
 const {
   getCanvas,
+  getCanvasSSE,
   setCanvas,
   listCanvas,
   resetCanvas,
@@ -18,6 +19,10 @@ const {
 const methods = {
   getCanvas: {
     url: getCanvas,
+    method: 'get',
+  },
+  getCanvasSSE: {
+    url: getCanvasSSE,
     method: 'get',
   },
   setCanvas: {
