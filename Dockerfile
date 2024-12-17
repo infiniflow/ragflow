@@ -85,12 +85,22 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt update && \
     apt install -y nodejs cargo 
     
-# Add msssql17
+
+# Add msssql ODBC driver
+# macOS ARM64 environment, install msodbcsql18.
+# general x86_64 environment, install msodbcsql17.
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    curl https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc && \
-    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | tee /etc/apt/sources.list.d/mssql-release.list && \
+    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
     apt update && \
-    ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17 
+    if [ -n "$ARCH" ] && [ "$ARCH" = "arm64" ]; then \
+        # MacOS ARM64 
+        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; \
+    else \
+        # (x86_64)
+        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
+    fi || \
+    { echo "Failed to install ODBC driver"; exit 1; }
 
 
 

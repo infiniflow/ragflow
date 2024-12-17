@@ -25,8 +25,7 @@ export function Header() {
   const { t } = useTranslate('header');
   const { pathname } = useLocation();
   const navigate = useNavigateWithFromState();
-  // const [currentPath, setCurrentPath] = useState(Routes.Home);
-  const { navigateToHome } = useNavigatePage();
+  const { navigateToHome, navigateToProfile } = useNavigatePage();
 
   const tagsData = useMemo(
     () => [
@@ -65,7 +64,6 @@ export function Header() {
 
   const handleChange = (path: SegmentedValue) => {
     navigate(path as Routes);
-    // setCurrentPath(path as Routes);
   };
 
   const handleLogoClick = useCallback(() => {
@@ -121,7 +119,10 @@ export function Header() {
           </Button>
         </Container>
         <Container className="px-3 py-2 bg-colors-background-inverse-standard">
-          <Avatar className="w-[30px] h-[30px]">
+          <Avatar
+            className="w-[30px] h-[30px] cursor-pointer"
+            onClick={navigateToProfile}
+          >
             <AvatarImage src="https://github.com/shadcn.png" />
             <AvatarFallback>CN</AvatarFallback>
           </Avatar>
