@@ -32,7 +32,6 @@ from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from graphrag.mind_map_extractor import MindMapExtractor
-import logging
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @login_required
