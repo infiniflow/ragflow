@@ -72,7 +72,7 @@ class Dealer:
         ps = int(req.get("size", topk))
         offset, limit = pg * ps, (pg + 1) * ps
 
-        src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd",
+        src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                                  "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd", "question_kwd", "question_tks",
                                  "available_int", "content_with_weight", "pagerank_fea"])
         kwds = set([])
