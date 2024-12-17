@@ -169,7 +169,7 @@ class Markdown(MarkdownParser):
         sections = []
         tbls = []
         for sec in remainder.split("\n"):
-            if num_tokens_from_string(sec) > 10 * self.chunk_token_num:
+            if num_tokens_from_string(sec) > 3 * self.chunk_token_num:
                 sections.append((sec[:int(len(sec) / 2)], ""))
                 sections.append((sec[int(len(sec) / 2):], ""))
             else:
