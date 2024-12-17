@@ -88,14 +88,9 @@ def get():
         avatar =None
         for tenant in tenants:
             dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
-            if dialog:
-                if isinstance(dialog, list):
-                    dialog = dialog[0] if dialog else None
-                    if dialog:
-                        dialog= dialog.to_dict()
-                        avatar =dialog["icon"]
-            break
-              
+            if dialog and len(dialog)>0:
+                avatar = dialog[0].icon
+                break
         else:
             return get_json_result(
                 data=False, message='Only owner of conversation authorized for this operation.',
