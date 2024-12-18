@@ -280,7 +280,7 @@ dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "chunk_method":"manual"})
 
 ---
 
-FILE MANAGEMENT WITHIN DATASET
+## FILE MANAGEMENT WITHIN DATASET
 
 ---
 
@@ -1406,10 +1406,6 @@ Agent.create_session(id,rag) -> Session
 ```
 
 Creates a session with the current agent.
-
-:::danger IMPORTANT
-If the **Begin** component in your agent is configured to take parameters, you should not create sessions for that agent. In this case, your agent operates as a one-off workflow, making a context-specific session unnecessary. You can run the **Interpreter** template for further clarification.
-:::
 
 #### Returns
 
