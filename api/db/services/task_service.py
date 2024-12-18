@@ -202,7 +202,7 @@ class TaskService(CommonService):
 
 def queue_tasks(doc: dict, bucket: str, name: str):
     def new_task():
-        return {"id": get_uuid(), "doc_id": doc["id"], "progress": 0.0}
+        return {"id": get_uuid(), "doc_id": doc["id"], "progress": 0.0, "from_page": 0, "to_page": 100000000}
 
     tsks = []
 
