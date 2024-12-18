@@ -156,8 +156,6 @@
    | ----------------- | --------------- | --------------------- | ------------------------ |
    | v0.15.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
    | v0.15.0-slim      | &approx;2       | ❌                    | Stable release           |
-   | v0.15.0-dev1      | &approx;9       | :heavy_check_mark:    | *Unstable* beta release  |
-   | v0.15.0-dev1-slim | &approx;2       | ❌                    | *Unstable* beta release  |
    | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
    | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
 
