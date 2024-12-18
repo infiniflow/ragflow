@@ -72,11 +72,12 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2024-12-18 Meningkatkan model Analisis Tata Letak Dokumen di Deepdoc.
 - 2024-12-04 Mendukung skor pagerank ke basis pengetahuan.
 - 2024-11-22 Peningkatan definisi dan penggunaan variabel di Agen.
-- 2024-11-01: Penambahan ekstraksi kata kunci dan pembuatan pertanyaan terkait untuk meningkatkan akurasi pengambilan.
-- 2024-08-22: Dukungan untuk teks ke pernyataan SQL melalui RAG.
-- 2024-08-02: Dukungan GraphRAG yang terinspirasi oleh [graphrag](https://github.com/microsoft/graphrag) dan mind map.
+- 2024-11-01 Penambahan ekstraksi kata kunci dan pembuatan pertanyaan terkait untuk meningkatkan akurasi pengambilan.
+- 2024-08-22 Dukungan untuk teks ke pernyataan SQL melalui RAG.
+- 2024-08-02 Dukungan GraphRAG yang terinspirasi oleh [graphrag](https://github.com/microsoft/graphrag) dan mind map.
 
 ## 🎉 Tetap Terkini
 
