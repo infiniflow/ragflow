@@ -1,4 +1,4 @@
-import { useTheme } from '@/components/theme-provider';
+import { useIsDarkTheme, useTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -52,6 +52,7 @@ export function SideBar() {
   const pathName = useSecondPathName();
   const { handleMenuClick } = useHandleMenuClick();
   const { setTheme } = useTheme();
+  const isDarkTheme = useIsDarkTheme();
 
   const handleThemeChange = useCallback(
     (checked: boolean) => {
@@ -89,7 +90,11 @@ export function SideBar() {
 
       <div className="p-6 mt-auto border-t">
         <div className="flex items-center gap-2 mb-6">
-          <Switch id="dark-mode" onCheckedChange={handleThemeChange} />
+          <Switch
+            id="dark-mode"
+            onCheckedChange={handleThemeChange}
+            checked={isDarkTheme}
+          />
           <Label htmlFor="dark-mode" className="text-sm">
             Dark
           </Label>
