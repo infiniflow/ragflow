@@ -119,6 +119,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/
+          packages-dir: sdk/python/dist/
           password: ${{ secrets.PYPI_API_TOKEN }}
           verbose: true
