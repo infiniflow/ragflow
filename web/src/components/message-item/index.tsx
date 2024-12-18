@@ -34,6 +34,7 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
   index: number;
   showLikeButton?: boolean;
+  showLoudspeaker?: boolean;
 }
 
 const MessageItem = ({
@@ -48,6 +49,7 @@ const MessageItem = ({
   removeMessageById,
   regenerateMessage,
   showLikeButton = true,
+  showLoudspeaker = true,
 }: IProps) => {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -120,6 +122,7 @@ const MessageItem = ({
                     prompt={item.prompt}
                     showLikeButton={showLikeButton}
                     audioBinary={item.audio_binary}
+                    showLoudspeaker={showLoudspeaker}
                   ></AssistantGroupButton>
                 )
               ) : (
