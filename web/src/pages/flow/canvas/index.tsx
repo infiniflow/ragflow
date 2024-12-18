@@ -103,6 +103,8 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideSingleDebugDrawer,
   } = useShowSingleDebugDrawer();
 
+  const controlIconClassname = 'text-black';
+
   const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
     useShowFormDrawer();
 
@@ -229,7 +231,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <FolderInput />
+                  <FolderInput className={controlIconClassname} />
                 </TooltipTrigger>
                 <TooltipContent>Import</TooltipContent>
               </Tooltip>
@@ -239,7 +241,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <FolderOutput />
+                  <FolderOutput className={controlIconClassname} />
                 </TooltipTrigger>
                 <TooltipContent>Export</TooltipContent>
               </Tooltip>

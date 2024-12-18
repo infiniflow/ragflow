@@ -50,13 +50,17 @@ docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-s
 This image is approximately 9 GB in size. As it includes embedding models, it relies on external LLM services only.  
 
 :::tip NOTE
-While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
+While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine.
 :::
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
+pip3 install huggingface_hub nltk
+python3 download_deps.py
+docker build -f Dockerfile.deps -t infiniflow/ragflow_deps .
 docker build -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
   </TabItem>

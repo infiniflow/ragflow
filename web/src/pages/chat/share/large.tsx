@@ -4,7 +4,7 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { Flex, Spin } from 'antd';
-import { forwardRef } from 'react';
+import { forwardRef, useMemo } from 'react';
 import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
@@ -12,10 +12,12 @@ import {
 import { buildMessageItemReference } from '../utils';
 
 import PdfDrawer from '@/components/pdf-drawer';
+import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
+import { useFetchFlowSSE } from '@/hooks/flow-hooks';
 import styles from './index.less';
 
 const ChatContainer = () => {
-  const { from, sharedId: conversationId } = useGetSharedChatSearchParams();
+  const { sharedId: conversationId, from } = useGetSharedChatSearchParams();
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -31,6 +33,14 @@ const ChatContainer = () => {
   } = useSendSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
 
+  const useFetchAvatar = useMemo(() => {
+    return from === SharedFrom.Agent
+      ? useFetchFlowSSE
+      : useFetchNextConversationSSE;
+  }, [from]);
+
+  const { data: avatarData } = useFetchAvatar();
+
   if (!conversationId) {
     return <div>empty</div>;
   }
@@ -45,6 +55,7 @@ const ChatContainer = () => {
                 return (
                   <MessageItem
                     key={message.id}
+                    avatardialog={avatarData?.avatar}
                     item={message}
                     nickname="You"
                     reference={buildMessageItemReference(
@@ -61,6 +72,8 @@ const ChatContainer = () => {
                     }
                     index={i}
                     clickDocumentButton={clickDocumentButton}
+                    showLikeButton={false}
+                    showLoudspeaker={false}
                   ></MessageItem>
                 );
               })}
@@ -79,7 +92,7 @@ const ChatContainer = () => {
           onPressEnter={handlePressEnter}
           sendLoading={sendLoading}
           uploadMethod="external_upload_and_parse"
-          showUploadIcon={from === SharedFrom.Chat}
+          showUploadIcon={false}
         ></MessageInput>
       </Flex>
       {visible && (

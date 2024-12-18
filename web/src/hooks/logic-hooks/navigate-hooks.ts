@@ -17,5 +17,14 @@ export const useNavigatePage = () => {
     navigate(Routes.Home);
   }, [navigate]);
 
-  return { navigateToDatasetList, navigateToDataset, navigateToHome };
+  const navigateToProfile = useCallback(() => {
+    navigate(Routes.ProfileSetting);
+  }, [navigate]);
+
+  return {
+    navigateToDatasetList,
+    navigateToDataset,
+    navigateToHome,
+    navigateToProfile,
+  };
 };

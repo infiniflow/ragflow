@@ -8,6 +8,7 @@ Reference:
 import json
 from dataclasses import dataclass
 
+from graphrag.extractor import Extractor
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
 from rag.llm.chat_model import Base as CompletionLLM
 
@@ -42,10 +43,9 @@ class SummarizationResult:
     description: str
 
 
-class SummarizeExtractor:
+class SummarizeExtractor(Extractor):
     """Unipartite graph extractor class definition."""
 
-    _llm: CompletionLLM
     _entity_name_key: str
     _input_descriptions_key: str
     _summarization_prompt: str
@@ -143,4 +143,4 @@ class SummarizeExtractor:
                         self._input_descriptions_key: json.dumps(sorted(descriptions)),
                     }
         text = perform_variable_replacements(self._summarization_prompt, variables=variables)
-        return self._llm.chat("", [{"role": "user", "content": text}])
+        return self._chat("", [{"role": "user", "content": text}])

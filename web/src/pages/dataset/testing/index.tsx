@@ -8,7 +8,7 @@ const list = new Array(15).fill({
 
 export default function RetrievalTesting() {
   return (
-    <section className="flex divide-x border-l h-full">
+    <section className="flex divide-x h-full">
       <div className="p-4">
         <TestingForm></TestingForm>
       </div>

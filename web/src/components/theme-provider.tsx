@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
-type Theme = 'dark' | 'light';
+type Theme = 'dark' | 'light' | 'system';
 
 type ThemeProviderProps = {
   children: React.ReactNode;
@@ -57,4 +57,10 @@ export const useTheme = () => {
     throw new Error('useTheme must be used within a ThemeProvider');
 
   return context;
+};
+
+export const useIsDarkTheme = () => {
+  const { theme } = useTheme();
+
+  return theme === 'dark';
 };

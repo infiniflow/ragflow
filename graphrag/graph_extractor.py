@@ -12,6 +12,8 @@ import traceback
 from typing import Any, Callable, Mapping
 from dataclasses import dataclass
 import tiktoken
+
+from graphrag.extractor import Extractor
 from graphrag.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, clean_str
 from rag.llm.chat_model import Base as CompletionLLM
@@ -34,10 +36,9 @@ class GraphExtractionResult:
     source_docs: dict[Any, Any]
 
 
-class GraphExtractor:
+class GraphExtractor(Extractor):
     """Unipartite graph extractor class definition."""
 
-    _llm: CompletionLLM
     _join_descriptions: bool
     _tuple_delimiter_key: str
     _record_delimiter_key: str
@@ -165,9 +166,7 @@ class GraphExtractor:
         token_count = 0
         text = perform_variable_replacements(self._extraction_prompt, variables=variables)
         gen_conf = {"temperature": 0.3}
-        response = self._llm.chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
-        if response.find("**ERROR**") >= 0:
-            raise Exception(response)
+        response = self._chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
         token_count = num_tokens_from_string(text + response)
 
         results = response or ""
@@ -177,9 +176,7 @@ class GraphExtractor:
         for i in range(self._max_gleanings):
             text = perform_variable_replacements(CONTINUE_PROMPT, history=history, variables=variables)
             history.append({"role": "user", "content": text})
-            response = self._llm.chat("", history, gen_conf)
-            if response.find("**ERROR**") >=0:
-                raise Exception(response)
+            response = self._chat("", history, gen_conf)
             results += response or ""
 
             # if this is the final glean, don't bother updating the continuation flag
@@ -187,7 +184,7 @@ class GraphExtractor:
                 break
             history.append({"role": "assistant", "content": response})
             history.append({"role": "user", "content": LOOP_PROMPT})
-            continuation = self._llm.chat("", history, self._loop_args)
+            continuation = self._chat("", history, self._loop_args)
             if continuation != "YES":
                 break
 
