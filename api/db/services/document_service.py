@@ -444,8 +444,8 @@ def queue_raptor_tasks(doc):
         return {
             "id": get_uuid(),
             "doc_id": doc["id"],
-            "from_page": 0,
-            "to_page": -1,
+            "from_page": 100000000,
+            "to_page": 100000000,
             "progress_msg": "Start to do RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval)."
         }
 
