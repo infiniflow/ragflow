@@ -1372,7 +1372,7 @@ curl --request POST \
   - `"model_name"`, `string`  
     The chat model name. If not set, the user's default chat model will be used.  
   - `"temperature"`: `float`  
-    Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
+    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
     Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
   - `"presence_penalty"`: `float`  
@@ -1380,7 +1380,7 @@ curl --request POST \
   - `"frequency penalty"`: `float`  
     Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
   - `"max_token"`: `integer`  
-    The maximum length of the model's output, measured in the number of tokens (words or pieces of words). If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses. Defaults to `512`. 
+    The maximum length of the model's output, measured in the number of tokens (words or pieces of words). Defaults to `512`. If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.  
 - `"prompt"`: (*Body parameter*), `object`  
   Instructions for the LLM to follow. If it is not explicitly set, a JSON object with the following values will be generated as the default. A `prompt` JSON object contains the following attributes:  
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
@@ -1507,7 +1507,7 @@ curl --request PUT \
   - `"model_name"`, `string`  
     The chat model name. If not set, the user's default chat model will be used.  
   - `"temperature"`: `float`  
-    Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
+    Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
     Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
   - `"presence_penalty"`: `float`  
@@ -1515,7 +1515,7 @@ curl --request PUT \
   - `"frequency penalty"`: `float`  
     Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
   - `"max_token"`: `integer`  
-    The maximum length of the model's output, measured in the number of tokens (words or pieces of words). If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses. Defaults to `512`.  
+    The maximum length of the model's output, measured in the number of tokens (words or pieces of words). Defaults to `512`. If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.  
 - `"prompt"`: (*Body parameter*), `object`  
   Instructions for the LLM to follow.  A `prompt` object contains the following attributes:  
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
@@ -2149,6 +2149,7 @@ Failure:
 ---
 
 ## Create session with agent
+
 *If there are parameters in the `begin` component, the session cannot be created in this way.*
 
 **POST** `/api/v1/agents/{agent_id}/sessions`
