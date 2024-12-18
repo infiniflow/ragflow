@@ -7,6 +7,8 @@ slug: /run_health_check
 
 Double-check the health status of RAGFlow's dependencies.
 
+---
+
 The operation of RAGFlow depends on four services:
 
 - **Elasticsearch** (default) or [Infinity](https://github.com/infiniflow/infinity) as the document engine
