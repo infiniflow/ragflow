@@ -944,7 +944,7 @@ The LLM settings for the chat assistant to create. Defaults to `None`. When the 
 - `model_name`: `str`  
   The chat model name. If it is `None`, the user's default chat model will be used.  
 - `temperature`: `float`  
-  Controls the randomness of the model's predictions. A lower temperature increases the model's confidence in its responses; a higher temperature increases creativity and diversity. Defaults to `0.1`.  
+  Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
 - `top_p`: `float`  
   Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
 - `presence_penalty`: `float`  
@@ -952,7 +952,7 @@ The LLM settings for the chat assistant to create. Defaults to `None`. When the 
 - `frequency penalty`: `float`  
   Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
 - `max_token`: `int`  
-  The maximum length of the model's output, measured in the number of tokens (words or pieces of words). If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses. Defaults to `512`.
+  The maximum length of the model's output, measured in the number of tokens (words or pieces of words). Defaults to `512`. If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.
 
 ##### prompt: `Chat.Prompt`
 
@@ -1010,11 +1010,11 @@ A dictionary representing the attributes to update, with the following keys:
 - `"dataset_ids"`: `list[str]` The datasets to update.
 - `"llm"`: `dict` The LLM settings:
   - `"model_name"`, `str` The chat model name.
-  - `"temperature"`, `float` Controls the randomness of the model's predictions.  
+  - `"temperature"`, `float` Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses.  
   - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
   - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have appeared in the conversation.
   - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model’s tendency to repeat the same words.
-  - `"max_token"`, `int` The maximum length of the model's output, measured in the number of tokens (words or pieces of words). If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses. Defaults to `512`.
+  - `"max_token"`, `int` The maximum length of the model's output, measured in the number of tokens (words or pieces of words). Defaults to `512`. If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.
 - `"prompt"` : Instructions for the LLM to follow.
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.

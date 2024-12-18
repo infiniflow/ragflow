@@ -20,7 +20,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.14.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.14.1">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.15.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.15.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -75,6 +75,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2024-12-18 Upgrades Document Layout Analysis model in Deepdoc.
 - 2024-12-04 Adds support for pagerank score in knowledge base.
 - 2024-11-22 Adds more variables to Agent.
 - 2024-11-01 Adds keyword extraction and related question generation to the parsed chunks to improve the accuracy of retrieval.
@@ -167,7 +168,7 @@ releases! 🌟
 
 3. Start up the server using the pre-built Docker images:
 
-   > The command below downloads the `v0.14.1-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download an RAGFlow edition different from `v0.14.1-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1` for the full edition `v0.14.1`.
+   > The command below downloads the `v0.15.0-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download an RAGFlow edition different from `v0.14.1-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1` for the full edition `v0.14.1`.
 
    ```bash
    $ cd ragflow
@@ -176,10 +177,8 @@ releases! 🌟
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.14.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.14.1-slim      | &approx;2       | ❌                    | Stable release           |
-   | v0.15.0-dev1      | &approx;9       | :heavy_check_mark:    | *Unstable* beta release  |
-   | v0.15.0-dev1-slim | &approx;2       | ❌                    | *Unstable* beta release  |
+   | v0.15.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.15.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
    | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
 

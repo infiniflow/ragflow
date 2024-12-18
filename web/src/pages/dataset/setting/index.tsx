@@ -14,9 +14,7 @@ export default function DatasetSettings() {
 
       <div className="text-3xl font-bold mb-6">Advanced settings</div>
       <Card className="border-0 p-6 mb-8 bg-colors-background-inverse-weak">
-        <div className="w-2/5">
-          <AdvancedSettingForm></AdvancedSettingForm>
-        </div>
+        <AdvancedSettingForm></AdvancedSettingForm>
       </Card>
     </section>
   );
