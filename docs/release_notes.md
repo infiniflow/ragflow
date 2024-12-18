@@ -26,7 +26,7 @@ Released on December 18, 2024.
 
 ### Improvements
 
-- Upgrades the document layout recognition model in Deepdoc.
+- Upgrades the Document Layout Analysis model in Deepdoc.
 - Significantly enhances the retrieval performance when using [Infinity](https://github.com/infiniflow/infinity) as document engine.
 
 ### Related APIs
