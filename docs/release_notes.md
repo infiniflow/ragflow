@@ -18,15 +18,15 @@ Released on December 18, 2024.
 - Offers an iframe in Chat and Agent to facilitate the integration of RAGFlow into your webpage.
 - Adds a Helm chart for deploying RAGFlow on Kubernetes.
 - Supports importing or exporting an agent in JSON format.
-- Supports stepping for Agent components/tools.
-- Adds a new UI language (*contributed by the community*): Japanese.
+- Supports step run for Agent components/tools.
+- Adds a new UI language: Japanese.
 - Supports resuming GraphRAG and RAPTOR from a failure, enhancing task management resilience.
 - Adds more Mistral models.
 - Adds a dark mode to the UI, allowing users to toggle between light and dark themes.
 
 ### Improvements
 
-- Upgrades document layout recognition models for Deepdoc.
+- Upgrades the document layout recognition model in Deepdoc.
 - Significantly enhances the retrieval performance when using [Infinity](https://github.com/infiniflow/infinity) as document engine.
 
 ### Related APIs
