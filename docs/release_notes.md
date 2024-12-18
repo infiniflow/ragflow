@@ -7,7 +7,7 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
-## v0.15.0
+## v0.14.1
 
 Released on November 29, 2024.
 
