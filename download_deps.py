@@ -22,6 +22,7 @@ urls = [
 repos = [
     "InfiniFlow/text_concat_xgb_v1.0",
     "InfiniFlow/deepdoc",
+    "InfiniFlow/huqie",
     "BAAI/bge-large-zh-v1.5",
     "BAAI/bge-reranker-v2-m3",
     "maidalun1020/bce-embedding-base_v1",
