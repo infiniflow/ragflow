@@ -30,6 +30,8 @@ class Session(Base):
             if line.startswith("data:"):
                 json_data = json.loads(line[5:])
                 if json_data["data"] is not True:
+                    if json_data["data"].get("running_status"):
+                        continue
                     answer = json_data["data"]["answer"]
                     reference = json_data["data"]["reference"]
                     temp_dict = {
