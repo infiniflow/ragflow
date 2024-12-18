@@ -12,10 +12,11 @@ WORKDIR /ragflow
 # Copy models downloaded via download_deps.py
 RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+    cp /huggingface.co/InfiniFlow/huqie/huqie.txt.trie /ragflow/rag/res/ && \
     tar --exclude='.*' -cf - \
         /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
+        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc 
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     if [ "$LIGHTEN" != "1" ]; then \
         (tar -cf - \
@@ -85,12 +86,22 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt update && \
     apt install -y nodejs cargo 
     
-# Add msssql17
+
+# Add msssql ODBC driver
+# macOS ARM64 environment, install msodbcsql18.
+# general x86_64 environment, install msodbcsql17.
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    curl https://packages.microsoft.com/keys/microsoft.asc | tee /etc/apt/trusted.gpg.d/microsoft.asc && \
-    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | tee /etc/apt/sources.list.d/mssql-release.list && \
+    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
     apt update && \
-    ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17 
+    if [ -n "$ARCH" ] && [ "$ARCH" = "arm64" ]; then \
+        # MacOS ARM64 
+        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; \
+    else \
+        # (x86_64)
+        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
+    fi || \
+    { echo "Failed to install ODBC driver"; exit 1; }
 
 
 

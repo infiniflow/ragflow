@@ -1,18 +1,18 @@
 import { Button } from '@/components/ui/button';
-import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { cn } from '@/lib/utils';
+import { Routes } from '@/routes';
 import { Banknote, LayoutGrid, Trash2, User } from 'lucide-react';
 import { useHandleMenuClick } from './hooks';
 
 const items = [
-  { icon: User, label: 'Dataset', key: KnowledgeRouteKey.Dataset },
+  { icon: User, label: 'Dataset', key: Routes.DatasetBase },
   {
     icon: LayoutGrid,
     label: 'Retrieval testing',
-    key: KnowledgeRouteKey.Testing,
+    key: Routes.DatasetTesting,
   },
-  { icon: Banknote, label: 'Settings', key: KnowledgeRouteKey.Configuration },
+  { icon: Banknote, label: 'Settings', key: Routes.DatasetSetting },
 ];
 
 const dataset = {
@@ -29,7 +29,7 @@ export function SideBar() {
   const { handleMenuClick } = useHandleMenuClick();
 
   return (
-    <aside className="w-[303px] relative">
+    <aside className="w-[303px] relative border-r ">
       <div className="p-6 space-y-2 border-b">
         <div
           className="w-[70px] h-[70px] rounded-xl bg-cover"
@@ -44,7 +44,7 @@ export function SideBar() {
       </div>
       <div className="mt-4">
         {items.map((item, itemIdx) => {
-          const active = pathName === item.key;
+          const active = '/' + pathName === item.key;
           return (
             <Button
               key={itemIdx}

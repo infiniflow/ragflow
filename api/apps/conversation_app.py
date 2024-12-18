@@ -17,6 +17,7 @@ import json
 import re
 import traceback
 from copy import deepcopy
+from api.db.db_models import APIToken
 
 from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.user_service import UserTenantService
@@ -31,7 +32,6 @@ from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from graphrag.mind_map_extractor import MindMapExtractor
-
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @login_required
@@ -79,12 +79,16 @@ def set_conversation():
 def get():
     conv_id = request.args["conversation_id"]
     try:
+        
         e, conv = ConversationService.get_by_id(conv_id)
         if not e:
             return get_data_error_result(message="Conversation not found!")
         tenants = UserTenantService.query(user_id=current_user.id)
+        avatar =None
         for tenant in tenants:
-            if DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id):
+            dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
+            if dialog and len(dialog)>0:
+                avatar = dialog[0].icon
                 break
         else:
             return get_json_result(
@@ -108,10 +112,31 @@ def get():
             } for ck in ref.get("chunks", [])]
 
         conv = conv.to_dict()
+        conv["avatar"]=avatar
         return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
 
+@manager.route('/getsse/<dialog_id>', methods=['GET'])  # type: ignore # noqa: F821
+def getsse(dialog_id):
+    
+    token = request.headers.get('Authorization').split()
+    if len(token) != 2:
+        return get_data_error_result(message='Authorization is not valid!"')
+    token = token[1]
+    objs = APIToken.query(beta=token)
+    if not objs:
+        return get_data_error_result(message='Token is not valid!"')
+    try:
+        e, conv = DialogService.get_by_id(dialog_id)
+        if not e:
+            return get_data_error_result(message="Dialog not found!")
+        conv = conv.to_dict()
+        conv["avatar"]= conv["icon"]
+        del conv["icon"]
+        return get_json_result(data=conv)
+    except Exception as e:
+        return server_error_response(e)
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
