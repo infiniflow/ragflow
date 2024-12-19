@@ -77,6 +77,7 @@ def create_agent_session(tenant_id, agent_id):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
     canvas = Canvas(cvs.dsl, tenant_id)
+    canvas.reset()
     query = canvas.get_preset_param()
     if query:
         for ele in query:
@@ -161,6 +162,12 @@ def agent_completions(tenant_id, agent_id):
         if not cvs:
             return get_error_data_result(f"You don't own the agent {agent_id}")
         if req.get("session_id"):
+            dsl = cvs[0].dsl
+            if not isinstance(dsl,str):
+                dsl = json.dumps(dsl)
+            canvas=Canvas(dsl,tenant_id)
+            if canvas.get_preset_param():
+                req["question"]=""
             conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
             if not conv:
                 return get_error_data_result(f"You don't own the session {req['session_id']}")
