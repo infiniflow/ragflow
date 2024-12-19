@@ -309,10 +309,9 @@ def chat(dialog, messages, stream=True, **kwargs):
         bind_reranker_time_cost = (bind_reranker_ts - refine_question_ts) * 1000
         generate_keyword_time_cost = (generate_keyword_ts - bind_reranker_ts) * 1000
         retrieval_time_cost = (retrieval_ts - generate_keyword_ts) * 1000
-        before_generate_time_cost = (retrieval_ts - before_chat_ts) * 1000
         generate_result_time_cost = (finish_chat_ts - retrieval_ts) * 1000
 
-        prompt = f"{prompt} ### Elapsed\n  - Total: {total_time_cost:.1f}ms\n  - Check LLM: {check_llm_time_cost:.1f}ms\n  - Create retriever: {create_retriever_time_cost:.1f}ms\n  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n  - Bind LLM: {bind_llm_time_cost:.1f}ms\n  - Tune question: {refine_question_time_cost:.1f}ms\n  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n  - Retrieval: {retrieval_time_cost:.1f}ms\n  - Prepare generating answer: {before_generate_time_cost:.1f}ms - Generate answer: {generate_result_time_cost:.1f}ms"
+        prompt = f"{prompt} ### Elapsed\n  - Total: {total_time_cost:.1f}ms\n  - Check LLM: {check_llm_time_cost:.1f}ms\n  - Create retriever: {create_retriever_time_cost:.1f}ms\n  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n  - Bind LLM: {bind_llm_time_cost:.1f}ms\n  - Tune question: {refine_question_time_cost:.1f}ms\n  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n  - Retrieval: {retrieval_time_cost:.1f}ms\n  - Generate answer: {generate_result_time_cost:.1f}ms"
         return {"answer": answer, "reference": refs, "prompt": prompt}
 
     if stream:
