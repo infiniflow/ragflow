@@ -953,6 +953,12 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "gemini-2.0-flash-exp",
+                    "tags": "LLM,CHAT,1024K",
+                    "max_tokens": 1048576,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "gemini-1.0-pro-vision-latest",
                     "tags": "LLM,IMAGE2TEXT,12K",
                     "max_tokens": 12288,
