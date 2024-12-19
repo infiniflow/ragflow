@@ -90,7 +90,7 @@ class RAGFlowExcelParser:
             for sheetname in wb.sheetnames:
                 ws = wb[sheetname]
                 total += len(list(ws.rows))
-                return total
+            return total
 
         if fnm.split(".")[-1].lower() in ["csv", "txt"]:
             encoding = find_codec(binary)
