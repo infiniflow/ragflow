@@ -1412,7 +1412,7 @@ Creates a session with the current agent.
 - Success: A `Session` object containing the following attributes:
   - `id`: `str` The auto-generated unique identifier of the created session.
   - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]`
-  - `agent_id`: `str` The ID of the associated agent assistant.
+  - `agent_id`: `str` The ID of the associated agent.
 - Failure: `Exception`
 
 #### Examples

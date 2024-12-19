@@ -143,7 +143,7 @@
 
 3. 进入 **docker** 文件夹，利用提前编译好的 Docker 镜像启动服务器：
 
-   > 运行以下命令会自动下载 RAGFlow slim Docker 镜像 `v0.15.0-slim`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.15.0-slim` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。比如，你可以通过设置 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1` 来下载 RAGFlow 镜像的 `v0.14.1` 完整发行版。
+   > 运行以下命令会自动下载 RAGFlow slim Docker 镜像 `v0.15.0-slim`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.15.0-slim` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。比如，你可以通过设置 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.0` 来下载 RAGFlow 镜像的 `v0.15.0` 完整发行版。
 
    ```bash
    $ cd ragflow

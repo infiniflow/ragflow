@@ -161,7 +161,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3. Bangun image Docker pre-built dan jalankan server:
 
-   > Perintah di bawah ini mengunduh edisi v0.15.0-slim dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.14.1-slim, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server. Misalnya, atur RAGFLOW_IMAGE=infiniflow/ragflow:v0.14.1 untuk edisi lengkap v0.14.1.
+   > Perintah di bawah ini mengunduh edisi v0.15.0-slim dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.15.0-slim, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server. Misalnya, atur RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.0 untuk edisi lengkap v0.15.0.
 
    ```bash
    $ cd ragflow

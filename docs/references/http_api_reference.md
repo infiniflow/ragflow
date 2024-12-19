@@ -2175,7 +2175,7 @@ curl --request POST \
 ##### Request parameters
 
 - `agent_id`: (*Path parameter*)  
-  The ID of the associated agent assistant.
+  The ID of the associated agent.
 
 #### Response
 
@@ -2364,7 +2364,7 @@ curl --request POST \
 ##### Request Parameters
 
 - `agent_id`: (*Path parameter*), `string`  
-  The ID of the associated agent assistant.
+  The ID of the associated agent.
 - `"question"`: (*Body Parameter*), `string`, *Required*  
   The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`  
