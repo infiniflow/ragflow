@@ -40,6 +40,7 @@ import { CategorizeNode } from './node/categorize-node';
 import { EmailNode } from './node/email-node';
 import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
+import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
 import { LogicNode } from './node/logic-node';
 import { MessageNode } from './node/message-node';
@@ -66,6 +67,8 @@ const nodeTypes = {
   invokeNode: InvokeNode,
   templateNode: TemplateNode,
   emailNode: EmailNode,
+  group: IterationNode,
+  iterationStartNode: IterationStartNode,
 };
 
 const edgeTypes = {

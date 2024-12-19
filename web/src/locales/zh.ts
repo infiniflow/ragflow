@@ -1060,6 +1060,7 @@ export default {
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传json文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
+      iteration: '循环',
     },
     footer: {
       profile: 'All rights reserved @ React',

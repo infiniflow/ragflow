@@ -50,7 +50,9 @@ import {
 } from '@ant-design/icons';
 import upperFirst from 'lodash/upperFirst';
 import {
+  CirclePower,
   CloudUpload,
+  IterationCcw,
   ListOrdered,
   OptionIcon,
   TextCursorInput,
@@ -93,6 +95,8 @@ export enum Operator {
   Invoke = 'Invoke',
   Template = 'Template',
   Email = 'Email',
+  Iteration = 'Iteration',
+  IterationStart = 'IterationStart',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -134,6 +138,8 @@ export const operatorIconMap = {
   [Operator.Invoke]: InvokeIcon,
   [Operator.Template]: TemplateIcon,
   [Operator.Email]: EmailIcon,
+  [Operator.Iteration]: IterationCcw,
+  [Operator.IterationStart]: CirclePower,
 };
 
 export const operatorMap: Record<
@@ -270,6 +276,8 @@ export const operatorMap: Record<
     backgroundColor: '#dee0e2',
   },
   [Operator.Email]: { backgroundColor: '#e6f7ff' },
+  [Operator.Iteration]: { backgroundColor: '#e6f7ff' },
+  [Operator.IterationStart]: { backgroundColor: '#e6f7ff' },
 };
 
 export const componentMenuList = [
@@ -305,6 +313,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Template,
+  },
+  {
+    name: Operator.Iteration,
   },
   {
     name: Operator.Note,
@@ -606,6 +617,9 @@ export const initialEmailValues = {
   content: '',
 };
 
+export const initialIterationValues = {};
+export const initialIterationStartValues = {};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -687,6 +701,8 @@ export const RestrictedUpstreamMap = {
   [Operator.Invoke]: [Operator.Begin],
   [Operator.Template]: [Operator.Begin, Operator.Relevant],
   [Operator.Email]: [Operator.Begin],
+  [Operator.Iteration]: [Operator.Begin],
+  [Operator.IterationStart]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -724,6 +740,8 @@ export const NodeMap = {
   [Operator.Invoke]: 'invokeNode',
   [Operator.Template]: 'templateNode',
   [Operator.Email]: 'emailNode',
+  [Operator.Iteration]: 'group',
+  [Operator.IterationStart]: 'iterationStartNode',
 };
 
 export const LanguageOptions = [

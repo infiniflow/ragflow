@@ -53,6 +53,7 @@ import {
   initialGoogleScholarValues,
   initialGoogleValues,
   initialInvokeValues,
+  initialIterationValues,
   initialJin10Values,
   initialKeywordExtractValues,
   initialMessageValues,
@@ -145,6 +146,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.Invoke]: initialInvokeValues,
       [Operator.Template]: initialTemplateValues,
       [Operator.Email]: initialEmailValues,
+      [Operator.Iteration]: initialIterationValues,
+      [Operator.IterationStart]: initialIterationValues,
     };
   }, [llmId]);
 
@@ -210,7 +213,7 @@ export const useHandleDrop = () => {
         x: event.clientX,
         y: event.clientY,
       });
-      const newNode = {
+      const newNode: Node<any> = {
         id: `${type}:${humanId()}`,
         type: NodeMap[type as Operator] || 'ragNode',
         position: position || {
@@ -227,7 +230,25 @@ export const useHandleDrop = () => {
         dragHandle: getNodeDragHandle(type),
       };
 
-      addNode(newNode);
+      if (type === Operator.Iteration) {
+        newNode.style = {
+          backgroundColor: 'rgba(255, 0, 0, 0.2)',
+          width: 400,
+          height: 300,
+        };
+        const iterationStartNode: Node<any> = {
+          id: `${Operator.IterationStart}:${humanId()}`,
+          type: 'iterationStartNode',
+          position: { x: 50, y: 50 },
+          draggable: false,
+          data: {},
+          parentId: newNode.id,
+        };
+        addNode(newNode);
+        addNode(iterationStartNode);
+      } else {
+        addNode(newNode);
+      }
     },
     [reactFlowInstance, getNodeName, nodes, initializeOperatorParams, addNode],
   );

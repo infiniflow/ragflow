@@ -17,6 +17,8 @@ interface IProps {
   className?: string;
 }
 
+const ExcludedRunStateOperators = [Operator.Answer, Operator.Iteration];
+
 export function RunStatus({ id, name, label }: IProps) {
   const { t } = useTranslate('flow');
   return (
@@ -38,7 +40,7 @@ export function RunStatus({ id, name, label }: IProps) {
 const NodeHeader = ({ label, id, name, gap = 4, className }: IProps) => {
   return (
     <section>
-      {label !== Operator.Answer && (
+      {!ExcludedRunStateOperators.includes(label as Operator) && (
         <RunStatus id={id} name={name} label={label}></RunStatus>
       )}
       <Flex
