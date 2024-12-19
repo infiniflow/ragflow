@@ -267,7 +267,6 @@ class FastEmbed(Base):
         if not settings.LIGHTEN and not FastEmbed._model:
             with FastEmbed._model_lock:
                 from fastembed import TextEmbedding
-                import torch
                 if not FastEmbed._model or model_name != FastEmbed._model_name:
                     try:
                         FastEmbed._model = TextEmbedding(model_name, cache_dir, threads, **kwargs)
