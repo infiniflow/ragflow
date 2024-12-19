@@ -220,7 +220,7 @@ def build_chunks(task, progress_callback):
     docs = []
     doc = {
         "doc_id": task["doc_id"],
-        "kb_id": str(task["kb_id"])
+        "kb_id": [str(task["kb_id"])]
     }
     if task["pagerank"]:
         doc["pagerank_fea"] = int(task["pagerank"])
