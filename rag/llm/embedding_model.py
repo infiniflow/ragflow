@@ -278,7 +278,7 @@ class FastEmbed(Base):
                                                                              re.sub(r"^[a-zA-Z0-9]+/", "", model_name)),
                                                       local_dir_use_symlinks=False)
                         FastEmbed._model = TextEmbedding(model_name, cache_dir, threads, **kwargs)
-        self._model = DefaultEmbedding._model
+        self._model = FastEmbed._model
         self._model_name = model_name
 
     def encode(self, texts: list):
