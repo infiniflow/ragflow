@@ -419,7 +419,7 @@ Uploads documents to a specified dataset.
 curl --request POST \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents \
      --header 'Content-Type: multipart/form-data' \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' \     
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --form 'file=@./test1.txt' \
      --form 'file=@./test2.pdf'
 ```
