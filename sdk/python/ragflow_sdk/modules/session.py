@@ -17,7 +17,7 @@ class Session(Base):
                 self.__session_type = "agent"
         super().__init__(rag, res_dict)
 
-    def ask(self, question,stream=True,**kwargs):
+    def ask(self, question="",stream=True,**kwargs):
         if self.__session_type == "agent":
             res=self._ask_agent(question,stream)
         elif self.__session_type == "chat":

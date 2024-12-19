@@ -1,4 +1,4 @@
----
+from scipy.special import kwargs---
 sidebar_position: 2
 slug: /python_api_reference
 ---
@@ -1312,7 +1312,7 @@ assistant.delete_sessions(ids=["id_1","id_2"])
 ### Converse with chat assistant
 
 ```python
-Session.ask(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
+Session.ask(question: str = "", stream: bool = False, **kwargs) -> Optional[Message, iter[Message]]
 ```
 
 Asks a specified chat assistant a question to start an AI-powered conversation.
@@ -1325,7 +1325,7 @@ In streaming mode, not all responses include a reference, as this depends on the
 
 ##### question: `str`, *Required*
 
-The question to start an AI-powered conversation.
+The question to start an AI-powered conversation. Defalut to `""`
 
 ##### stream: `bool`
 
@@ -1333,6 +1333,10 @@ Indicates whether to output responses in a streaming way:
 
 - `True`: Enable streaming (default).
 - `False`: Disable streaming.
+
+##### **kwargs
+
+The parameters in prompt(system).
 
 #### Returns
 
@@ -1402,10 +1406,24 @@ while True:
 ### Create session with agent
 
 ```python
-Agent.create_session(id,rag) -> Session
+Agent.create_session(id,rag, **kwargs) -> Session
 ```
 
 Creates a session with the current agent.
+
+#### Parameters
+
+##### id: `str`, *Required*
+
+The id of agent
+
+##### rag:`RAGFlow object`
+
+The RAGFlow object
+
+##### **kwargs
+
+The parameters in `begin` component.
 
 #### Returns
 
@@ -1430,7 +1448,7 @@ session = create_session(AGENT_ID,rag_object)
 ### Converse with agent
 
 ```python
-Session.ask(question: str, stream: bool = False) -> Optional[Message, iter[Message]]
+Session.ask(question: str="", stream: bool = False) -> Optional[Message, iter[Message]]
 ```
 
 Asks a specified agent a question to start an AI-powered conversation.
@@ -1441,9 +1459,9 @@ In streaming mode, not all responses include a reference, as this depends on the
 
 #### Parameters
 
-##### question: `str`, *Required*
+##### question: `str`
 
-The question to start an AI-powered conversation.
+The question to start an AI-powered conversation. If `begin` component has parameters, question is not required.
 
 ##### stream: `bool`
 
