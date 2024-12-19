@@ -600,7 +600,7 @@ curl --request GET \
 
 Success:
 
-```text
+```json
 This is a test to verify the file download feature.
 ```
 
@@ -1702,7 +1702,7 @@ Failure:
 
 ---
 
-## CHAT SESSIONS
+## SESSION MANAGEMENT
 
 ---
 
@@ -1772,13 +1772,13 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Name can not be empty."
+    "message": "Name cannot be empty."
 }
 ```
 
 ---
 
-### Update session
+### Update chat assistant's session
 
 **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`
 
@@ -1813,7 +1813,7 @@ curl --request PUT \
   The ID of the associated chat assistant.
 - `session_id`: (*Path parameter*)  
   The ID of the session to update.
-- `"name"`: (*Body Parameter), `string`  
+- `"name"`: (*Body Parameter*), `string`  
   The revised name of the session.
 
 #### Response
@@ -1837,7 +1837,7 @@ Failure:
 
 ---
 
-### List sessions
+### List chat assistant's sessions
 
 **GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
 
@@ -1915,7 +1915,7 @@ Failure:
 
 ---
 
-### Delete sessions
+### Delete chat assistant's sessions
 
 **DELETE** `/api/v1/chats/{chat_id}/sessions`
 
@@ -1979,18 +1979,15 @@ Failure:
 Asks a specified chat assistant a question to start an AI-powered conversation.
 
 :::tip NOTE
-
 - In streaming mode, not all responses include a reference, as this depends on the system's judgement.
 - In streaming mode, the last message is an empty message:
-
-  ```text
+  ```json
   data:
   {
     "code": 0,
     "data": true
   }
   ```
-
 :::
 
 #### Request
@@ -2045,7 +2042,7 @@ curl --request POST \
 #### Response
 
 Success without `session_id`:
-```text
+```json
 data:{
     "code": 0,
     "message": "",
@@ -2066,7 +2063,7 @@ data:{
 
 Success with `session_id`:
 
-```text
+```json
 data:{
     "code": 0,
     "data": {
@@ -2305,18 +2302,15 @@ Failure:
 Asks a specified agent a question to start an AI-powered conversation.
 
 :::tip NOTE
-
 - In streaming mode, not all responses include a reference, as this depends on the system's judgement.
 - In streaming mode, the last message is an empty message:
-
-  ```text
+  ```json
   data:
   {
     "code": 0,
     "data": true
   }
   ```
-
 :::
 
 #### Request
@@ -2383,7 +2377,7 @@ curl --request POST \
   The parameters in the begin component.
 #### Response
 success without `session_id` provided and with no parameters in the `begin` component:
-```text
+```json
 data:{
     "code": 0,
     "message": "",
@@ -2402,7 +2396,7 @@ data:{
 ```
 Success with `session_id` provided and with no parameters in the `begin` component:
 
-```text
+```json
 data:{
     "code": 0,
     "message": "",
@@ -2509,7 +2503,7 @@ data:{
 }
 ```
 Success with parameters in the `begin` component:
-```text
+```json
 data:{
     "code": 0,
     "message": "",
@@ -2788,6 +2782,10 @@ Failure:
     "message": "You don't own the agent ccd2f856b12311ef94ca0242ac1200052."
 }
 ```
+
+---
+
+## AGENT MANAGEMENT
 
 ---
 
