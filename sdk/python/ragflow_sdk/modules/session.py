@@ -17,11 +17,11 @@ class Session(Base):
                 self.__session_type = "agent"
         super().__init__(rag, res_dict)
 
-    def ask(self, question,stream=True):
+    def ask(self, question,stream=True,**kwargs):
         if self.__session_type == "agent":
             res=self._ask_agent(question,stream)
         elif self.__session_type == "chat":
-            res=self._ask_chat(question,stream)
+            res=self._ask_chat(question,stream,**kwargs)
         for line in res.iter_lines():
             line = line.decode("utf-8")
             if line.startswith("{"):
@@ -45,9 +45,11 @@ class Session(Base):
                     yield message
 
 
-    def _ask_chat(self, question: str, stream: bool):
+    def _ask_chat(self, question: str, stream: bool,**kwargs):
+        json_data={"question": question, "stream": True,"session_id":self.id}
+        json_data.update(kwargs)
         res = self.post(f"/chats/{self.chat_id}/completions",
-                        {"question": question, "stream": True,"session_id":self.id}, stream=stream)
+                        json_data, stream=stream)
         return res
     def _ask_agent(self,question:str,stream:bool):
         res = self.post(f"/agents/{self.agent_id}/completions",
