@@ -66,6 +66,8 @@ class Excel(ExcelParser):
                     continue
                 data.append(row)
                 done += 1
+            if np.array(data).size == 0:
+                continue
             res.append(pd.DataFrame(np.array(data), columns=headers))
 
         callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (
