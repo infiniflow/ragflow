@@ -247,8 +247,11 @@ class InfinityConnection(DocStoreConnection):
         db_instance = inf_conn.get_database(self.dbName)
         df_list = list()
         table_list = list()
-        for essential_field in ["id", "score()", "pagerank_fea"]:
+        for essential_field in ["id"]:
             if essential_field not in selectFields:
+                selectFields.append(essential_field)
+        if matchExprs:
+            for essential_field in ["score()", "pagerank_fea"]:
                 selectFields.append(essential_field)
 
         # Prepare expressions common to all tables
@@ -337,7 +340,8 @@ class InfinityConnection(DocStoreConnection):
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, selectFields)
-        res = res.sort(pl.col("SCORE") + pl.col("pagerank_fea"), descending=True, maintain_order=True)
+        if matchExprs:
+            res = res.sort(pl.col("SCORE") + pl.col("pagerank_fea"), descending=True, maintain_order=True)
         res = res.limit(limit)
         logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
