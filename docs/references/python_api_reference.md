@@ -1139,7 +1139,7 @@ for assistant in rag_object.list_chats():
 
 ---
 
-## CHAT SESSIONS
+## SESSION MANAGEMENT
 
 ---
 
@@ -1573,6 +1573,10 @@ sessions=Agent.list_sessions(agent_id,rag_object)
 for session in sessions:
     print(session)
 ```
+
+---
+
+## AGENT MANAGEMENT
 
 ---
 
