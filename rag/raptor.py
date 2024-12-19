@@ -87,7 +87,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 cnt = re.sub("(······\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?)", "",
                              cnt)
                 logging.debug(f"SUM: {cnt}")
-                embds, _ = self._embd_model.encode([cnt])
                 with lock:
                     chunks.append((cnt, self._embedding_encode(cnt)))
             except Exception as e:
