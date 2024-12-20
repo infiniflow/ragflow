@@ -77,15 +77,28 @@ def create_agent_session(tenant_id, agent_id):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
     canvas = Canvas(cvs.dsl, tenant_id)
-    if canvas.get_preset_param():
-        return get_error_data_result("The agent cannot create a session directly")
+    canvas.reset()
+    query = canvas.get_preset_param()
+    if query:
+        for ele in query:
+            if not ele["optional"]:
+                if not req.get(ele["key"]):
+                    return get_error_data_result(f"`{ele['key']}` is required")
+                ele["value"] = req[ele["key"]]
+            if ele["optional"]:
+                if req.get(ele["key"]):
+                    ele["value"] = req[ele['key']]
+                else:
+                    if "value" in ele:
+                        ele.pop("value")
+    cvs.dsl = json.loads(str(canvas))
     conv = {
         "id": get_uuid(),
         "dialog_id": cvs.id,
         "user_id": req.get("usr_id","") if isinstance(req, dict) else "",
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent",
-        "dsl": json.loads(cvs.dsl)
+        "dsl": cvs.dsl
     }
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
@@ -149,6 +162,12 @@ def agent_completions(tenant_id, agent_id):
         if not cvs:
             return get_error_data_result(f"You don't own the agent {agent_id}")
         if req.get("session_id"):
+            dsl = cvs[0].dsl
+            if not isinstance(dsl,str):
+                dsl = json.dumps(dsl)
+            canvas=Canvas(dsl,tenant_id)
+            if canvas.get_preset_param():
+                req["question"]=""
             conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
             if not conv:
                 return get_error_data_result(f"You don't own the session {req['session_id']}")
