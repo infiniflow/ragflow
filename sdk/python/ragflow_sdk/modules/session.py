@@ -38,7 +38,7 @@ class Session(Base):
                 "content": answer,
                 "role": "assistant"
             }
-            if "chunks" in reference:
+            if reference and "chunks" in reference:
                 chunks = reference["chunks"]
                 temp_dict["reference"] = chunks
             message = Message(self.rag, temp_dict)
