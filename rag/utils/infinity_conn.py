@@ -3,6 +3,7 @@ import os
 import re
 import json
 import time
+import copy
 import infinity
 from infinity.common import ConflictType, InfinityException, SortType
 from infinity.index import IndexInfo, IndexType
@@ -390,7 +391,8 @@ class InfinityConnection(DocStoreConnection):
             self.createIdx(indexName, knowledgebaseId, vector_size)
             table_instance = db_instance.get_table(table_name)
 
-        for d in documents:
+        docs = copy.deepcopy(documents)
+        for d in docs:
             assert "_id" not in d
             assert "id" in d
             for k, v in d.items():
@@ -407,14 +409,14 @@ class InfinityConnection(DocStoreConnection):
                 elif k in ["page_num_int", "top_int"]:
                     assert isinstance(v, list)
                     d[k] = "_".join(f"{num:08x}" for num in v)
-        ids = ["'{}'".format(d["id"]) for d in documents]
+        ids = ["'{}'".format(d["id"]) for d in docs]
         str_ids = ", ".join(ids)
         str_filter = f"id IN ({str_ids})"
         table_instance.delete(str_filter)
         # for doc in documents:
         #     logger.info(f"insert position_int: {doc['position_int']}")
         # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
-        table_instance.insert(documents)
+        table_instance.insert(docs)
         self.connPool.release_conn(inf_conn)
         logger.debug(f"INFINITY inserted into {table_name} {str_ids}.")
         return []

@@ -42,8 +42,29 @@ from rag.nlp import search
 from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
 
+from pydantic import BaseModel, Field, validator
+
 MAXIMUM_OF_UPLOADING_FILES = 256
 
+
+class Chunk(BaseModel):
+    id: str = ""
+    content: str = ""
+    document_id: str = ""
+    docnm_kwd: str = ""
+    important_keywords: list = Field(default_factory=list)
+    questions: list = Field(default_factory=list)
+    question_tks: str = ""
+    image_id: str = ""
+    available: bool = True
+    positions: list[list[int]] = Field(default_factory=list)
+
+    @validator('positions')
+    def validate_positions(cls, value):
+        for sublist in value:
+            if len(sublist) != 5:
+                raise ValueError("Each sublist in positions must have a length of 5")
+        return value
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
 @token_required
@@ -848,20 +869,6 @@ def list_chunks(tenant_id, dataset_id, document_id):
                 "available_int": sres.field[id].get("available_int", 1),
                 "positions": sres.field[id].get("position_int", []),
             }
-            if len(d["positions"]) % 5 == 0:
-                poss = []
-                for i in range(0, len(d["positions"]), 5):
-                    poss.append(
-                        [
-                            float(d["positions"][i]),
-                            float(d["positions"][i + 1]),
-                            float(d["positions"][i + 2]),
-                            float(d["positions"][i + 3]),
-                            float(d["positions"][i + 4]),
-                        ]
-                    )
-                d["positions"] = poss
-
             origin_chunks.append(d)
             if req.get("id"):
                 if req.get("id") == id:
@@ -892,6 +899,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         if renamed_chunk["available"] == 1:
             renamed_chunk["available"] = True
         res["chunks"].append(renamed_chunk)
+        _ = Chunk(**renamed_chunk) # validate the chunk
     return get_result(data=res)
 
 
@@ -1031,6 +1039,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
         if key in key_mapping:
             new_key = key_mapping.get(key, key)
             renamed_chunk[new_key] = value
+    _ = Chunk(**renamed_chunk)  # validate the chunk
     return get_result(data={"chunk": renamed_chunk})
     # return get_result(data={"chunk_id": chunk_id})
 
