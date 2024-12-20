@@ -78,6 +78,14 @@ export default {
       searchKnowledgePlaceholder: 'Search',
       noMoreData: `That's all. Nothing more.`,
     },
+    knowledgeImport: {
+      importFile: 'Import file',
+      name: 'Name',
+      size: 'Size',
+      etag: 'Etag',
+      owner: 'Owner',
+      action: 'Action',
+    },
     knowledgeDetails: {
       dataset: 'Dataset',
       testing: 'Retrieval testing',
