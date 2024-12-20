@@ -2,15 +2,12 @@ import { IModalProps } from '@/interfaces/common';
 import { Drawer } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  useGetBeginNodeDataQuery,
-  useSaveGraphBeforeOpeningDebugDrawer,
-} from '../hooks';
+import DebugContent from '../debug-content';
+import { useGetBeginNodeDataQuery } from '../hooks/use-get-begin-query';
+import { useSaveGraphBeforeOpeningDebugDrawer } from '../hooks/use-save-graph';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { getDrawerWidth } from '../utils';
-
-import DebugContent from '../debug-content';
 
 const RunDrawer = ({
   hideModal,

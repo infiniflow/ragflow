@@ -4,32 +4,24 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useSetModalState } from '@/hooks/common-hooks';
-import { get } from 'lodash';
 import { FolderInput, FolderOutput } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
 import ReactFlow, {
   Background,
   ConnectionMode,
   ControlButton,
   Controls,
-  NodeMouseHandler,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import ChatDrawer from '../chat/drawer';
-import { Operator } from '../constant';
 import FormDrawer from '../flow-drawer';
 import {
-  useGetBeginNodeDataQuery,
   useHandleDrop,
-  useHandleExportOrImportJsonFile,
   useSelectCanvasData,
-  useShowFormDrawer,
-  useShowSingleDebugDrawer,
   useValidateConnection,
   useWatchNodeFormDataChange,
 } from '../hooks';
-import { BeginQuery } from '../interface';
+import { useHandleExportOrImportJsonFile } from '../hooks/use-export-json';
+import { useShowDrawer } from '../hooks/use-show-drawer';
 import JsonUploadModal from '../json-upload-modal';
 import RunDrawer from '../run-drawer';
 import { ButtonEdge } from './edge';
@@ -90,65 +82,10 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     onSelectionChange,
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
-  const {
-    visible: runVisible,
-    showModal: showRunModal,
-    hideModal: hideRunModal,
-  } = useSetModalState();
-  const {
-    visible: chatVisible,
-    showModal: showChatModal,
-    hideModal: hideChatModal,
-  } = useSetModalState();
-  const {
-    singleDebugDrawerVisible,
-    showSingleDebugDrawer,
-    hideSingleDebugDrawer,
-  } = useShowSingleDebugDrawer();
 
   const controlIconClassname = 'text-black';
 
-  const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
-    useShowFormDrawer();
-
-  const onPaneClick = useCallback(() => {
-    hideFormDrawer();
-  }, [hideFormDrawer]);
-
   const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
-
-  useWatchNodeFormDataChange();
-
-  const hideRunOrChatDrawer = useCallback(() => {
-    hideChatModal();
-    hideRunModal();
-    hideDrawer();
-  }, [hideChatModal, hideDrawer, hideRunModal]);
-
-  const onNodeClick: NodeMouseHandler = useCallback(
-    (e, node) => {
-      if (node.data.label !== Operator.Note) {
-        hideSingleDebugDrawer();
-        hideRunOrChatDrawer();
-        showFormDrawer(node);
-      }
-      // handle single debug icon click
-      if (
-        get(e.target, 'dataset.play') === 'true' ||
-        get(e.target, 'parentNode.dataset.play') === 'true'
-      ) {
-        showSingleDebugDrawer();
-      }
-    },
-    [
-      hideRunOrChatDrawer,
-      hideSingleDebugDrawer,
-      showFormDrawer,
-      showSingleDebugDrawer,
-    ],
-  );
-
-  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
 
   const {
     handleExportJson,
@@ -158,25 +95,25 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideFileUploadModal,
   } = useHandleExportOrImportJsonFile();
 
-  useEffect(() => {
-    if (drawerVisible) {
-      const query: BeginQuery[] = getBeginNodeDataQuery();
-      if (query.length > 0) {
-        showRunModal();
-        hideChatModal();
-      } else {
-        showChatModal();
-        hideRunModal();
-      }
-    }
-  }, [
-    hideChatModal,
-    hideRunModal,
+  const {
+    onNodeClick,
+    onPaneClick,
+    clickedNode,
+    formDrawerVisible,
+    hideFormDrawer,
+    singleDebugDrawerVisible,
+    hideSingleDebugDrawer,
+    showSingleDebugDrawer,
+    chatVisible,
+    runVisible,
+    hideRunOrChatDrawer,
     showChatModal,
-    showRunModal,
+  } = useShowDrawer({
     drawerVisible,
-    getBeginNodeDataQuery,
-  ]);
+    hideDrawer,
+  });
+
+  useWatchNodeFormDataChange();
 
   return (
     <div className={styles.canvasWrapper}>

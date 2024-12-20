@@ -89,6 +89,8 @@ const FormMap = {
   [Operator.Note]: () => <></>,
   [Operator.Template]: TemplateForm,
   [Operator.Email]: EmailForm,
+  [Operator.Iteration]: () => <></>,
+  [Operator.IterationStart]: () => <></>,
 };
 
 const EmptyContent = () => <div></div>;

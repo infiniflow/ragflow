@@ -1,9 +1,9 @@
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Collapse, Flex, Form, Input, Select } from 'antd';
-
 import { PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useBuildComponentIdSelectOptions } from '../../hooks';
+import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
+
 import styles from './index.less';
 
 interface IProps {

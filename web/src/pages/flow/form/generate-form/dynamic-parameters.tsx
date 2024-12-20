@@ -2,12 +2,11 @@ import { EditableCell, EditableRow } from '@/components/editable-cell';
 import { useTranslate } from '@/hooks/common-hooks';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Flex, Select, Table, TableProps } from 'antd';
+import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
 import { IGenerateParameter } from '../../interface';
-
-import { useBuildComponentIdSelectOptions } from '../../hooks';
 import { useHandleOperateParameters } from './hooks';
-import styles from './index.less';
 
+import styles from './index.less';
 interface IProps {
   nodeId?: string;
 }
