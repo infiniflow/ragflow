@@ -404,7 +404,7 @@ class InfinityConnection(DocStoreConnection):
                     assert isinstance(v, list)
                     arr = [num for row in v for num in row]
                     d[k] = "_".join(f"{num:08x}" for num in arr)
-                elif k in ["page_num_int", "top_int", "position_int"]:
+                elif k in ["page_num_int", "top_int"]:
                     assert isinstance(v, list)
                     d[k] = "_".join(f"{num:08x}" for num in v)
         ids = ["'{}'".format(d["id"]) for d in documents]
@@ -508,7 +508,7 @@ class InfinityConnection(DocStoreConnection):
                     assert isinstance(v, str)
                     if v:
                         arr = [int(hex_val, 16) for hex_val in v.split('_')]
-                        v = [arr[i:i + 4] for i in range(0, len(arr), 4)]
+                        v = [arr[i:i + 5] for i in range(0, len(arr), 5)]
                     else:
                         v = []
                 elif fieldnm in ["page_num_int", "top_int"]:
