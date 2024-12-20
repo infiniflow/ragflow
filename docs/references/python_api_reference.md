@@ -1461,7 +1461,7 @@ In streaming mode, not all responses include a reference, as this depends on the
 
 ##### question: `str`
 
-The question to start an AI-powered conversation. If `begin` component has parameters, question is not required.
+The question to start an AI-powered conversation. If the `begin` component takes parameters, a question is not required.
 
 ##### stream: `bool`
 
