@@ -1,5 +1,5 @@
 from .base import Base
-from .session import Session,Message
+from .session import Session
 import requests
 
 
