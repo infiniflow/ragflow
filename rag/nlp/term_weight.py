@@ -84,10 +84,11 @@ class Dealer:
             self.ne = json.load(open(os.path.join(fnm, "ner.json"), "r"))
         except Exception:
             logging.warning("Load ner.json FAIL!")
-        try:
-            self.df = load_dict(os.path.join(fnm, "term.freq"))
-        except Exception:
-            logging.warning("Load term.freq FAIL!")
+        #Chuqing: no such file
+        # try:
+        #     self.df = load_dict(os.path.join(fnm, "term.freq"))
+        # except Exception:
+        #     logging.warning("Load term.freq FAIL!")
 
     def pretoken(self, txt, num=False, stpwd=True):
         patt = [

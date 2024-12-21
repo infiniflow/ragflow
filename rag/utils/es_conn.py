@@ -105,6 +105,7 @@ class ESConnection(DocStoreConnection):
     def search(self, selectFields: list[str], highlightFields: list[str], condition: dict, matchExprs: list[MatchExpr],
                orderBy: OrderByExpr, offset: int, limit: int, indexNames: str | list[str],
                knowledgebaseIds: list[str]) -> list[dict] | pl.DataFrame:
+        # matchExprs = [matchText, matchDense, fusionExpr]
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
         """

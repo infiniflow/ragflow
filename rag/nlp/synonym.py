@@ -19,6 +19,7 @@ import json
 import os
 import time
 import re
+import nltk
 from nltk.corpus import wordnet
 from api.utils.file_utils import get_project_base_directory
 
@@ -46,37 +47,47 @@ class Dealer:
         self.load()
 
     def load(self):
-        if not self.redis:
-            return
+        # if not self.redis:
+        #     return
 
-        if self.lookup_num < 100:
-            return
-        tm = time.time()
-        if tm - self.load_tm < 3600:
-            return
+        # if self.lookup_num < 100:
+        #     return
+        # tm = time.time()
+        # if tm - self.load_tm < 3600:
+        #     return
 
-        self.load_tm = time.time()
-        self.lookup_num = 0
-        d = self.redis.get("kevin_synonyms")
-        if not d:
-            return
-        try:
-            d = json.loads(d)
-            self.dictionary = d
-        except Exception as e:
-            logging.error("Fail to load synonym!" + str(e))
+        # self.load_tm = time.time()
+        # self.lookup_num = 0
+        # d = self.redis.get("kevin_synonyms")
+        # if not d:
+        #     return
+        # try:
+        #     d = json.loads(d)
+        #     self.dictionary = d
+        # except Exception as e:
+        #     logging.error("Fail to load synonym!" + str(e))
+        
+        nltk.download('wordnet')
 
     def lookup(self, tk):
-        if re.match(r"[a-z]+$", tk):
-            res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets("love")]) - set([tk]))
-            return [t for t in res if t]
+        # FIXME(chuqing): don't know what is this
+        # if re.match(r"[a-z]+$", tk):
+        #     res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets("love")]) - set([tk]))
+        #     return [t for t in res if t]
 
-        self.lookup_num += 1
-        self.load()
-        res = self.dictionary.get(re.sub(r"[ \t]+", " ", tk.lower()), [])
-        if isinstance(res, str):
-            res = [res]
-        return res
+        # self.lookup_num += 1
+        # self.load()
+        # res = self.dictionary.get(re.sub(r"[ \t]+", " ", tk.lower()), [])
+        # if isinstance(res, str):
+        #     res = [res]
+        # return res
+        synonyms = []
+        for syn in wordnet.synsets(tk):
+            for lemma in syn.lemmas():
+                synonyms.append(lemma.name())
+        syns = list(set(synonyms))
+        return [s for s in syns if s]
+        
 
 
 if __name__ == '__main__':
