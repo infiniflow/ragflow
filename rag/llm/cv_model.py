@@ -29,6 +29,7 @@ import requests
 from rag.nlp import is_english
 from api.utils import get_uuid
 from api.utils.file_utils import get_project_base_directory
+from google.generativeai import client, GenerativeModel, GenerationConfig
 
 
 class Base(ABC):
@@ -56,6 +57,7 @@ class Base(ABC):
             return response.choices[0].message.content.strip(), response.usage.total_tokens
         except Exception as e:
             return "**ERROR**: " + str(e), 0
+
 
     def chat_streamly(self, system, history, gen_conf, image=""):
         if system:
@@ -92,7 +94,8 @@ class Base(ABC):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield tk_count
-        
+
+
     def image2base64(self, image):
         if isinstance(image, bytes):
             return base64.b64encode(image).decode("utf-8")
