@@ -65,23 +65,40 @@ def create(tenant_id, chat_id):
 @manager.route('/agents/<agent_id>/sessions', methods=['POST'])  # noqa: F821
 @token_required
 def create_agent_session(tenant_id, agent_id):
+    req = request.json
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
+
+    if not UserCanvasService.query(user_id=tenant_id,id=agent_id):
+        return  get_error_data_result("You cannot access the agent.")
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
     canvas = Canvas(cvs.dsl, tenant_id)
-    if canvas.get_preset_param():
-        return get_error_data_result("The agent can't create a session directly")
+    canvas.reset()
+    query = canvas.get_preset_param()
+    if query:
+        for ele in query:
+            if not ele["optional"]:
+                if not req.get(ele["key"]):
+                    return get_error_data_result(f"`{ele['key']}` is required")
+                ele["value"] = req[ele["key"]]
+            if ele["optional"]:
+                if req.get(ele["key"]):
+                    ele["value"] = req[ele['key']]
+                else:
+                    if "value" in ele:
+                        ele.pop("value")
+    cvs.dsl = json.loads(str(canvas))
     conv = {
         "id": get_uuid(),
         "dialog_id": cvs.id,
-        "user_id": tenant_id,
+        "user_id": req.get("usr_id","") if isinstance(req, dict) else "",
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent",
-        "dsl": json.loads(cvs.dsl)
+        "dsl": cvs.dsl
     }
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
@@ -145,6 +162,12 @@ def agent_completions(tenant_id, agent_id):
         if not cvs:
             return get_error_data_result(f"You don't own the agent {agent_id}")
         if req.get("session_id"):
+            dsl = cvs[0].dsl
+            if not isinstance(dsl,str):
+                dsl = json.dumps(dsl)
+            canvas=Canvas(dsl,tenant_id)
+            if canvas.get_preset_param():
+                req["question"]=""
             conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
             if not conv:
                 return get_error_data_result(f"You don't own the session {req['session_id']}")
@@ -199,17 +222,15 @@ def list_session(tenant_id, chat_id):
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
                             new_chunk = {
-                                "id": chunk["chunk_id"],
-                                "content": chunk["content_with_weight"],
-                                "document_id": chunk["doc_id"],
-                                "document_name": chunk["docnm_kwd"],
-                                "dataset_id": chunk["kb_id"],
-                                "image_id": chunk.get("image_id", ""),
-                                "similarity": chunk["similarity"],
-                                "vector_similarity": chunk["vector_similarity"],
-                                "term_similarity": chunk["term_similarity"],
-                                "positions": chunk["positions"],
+                                "id": chunk.get("chunk_id", chunk.get("id")),
+                                "content": chunk.get("content_with_weight", chunk.get("content")),
+                                "document_id": chunk.get("doc_id", chunk.get("document_id")),
+                                "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
+                                "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
+                                "image_id": chunk.get("image_id", chunk.get("img_id")),
+                                "positions": chunk.get("positions", chunk.get("position_int")),
                             }
+
                             chunk_list.append(new_chunk)
                     chunk_num += 1
                     messages[message_num]["reference"] = chunk_list
@@ -254,16 +275,13 @@ def list_agent_session(tenant_id, agent_id):
                         chunks = conv["reference"][chunk_num]["chunks"]
                         for chunk in chunks:
                             new_chunk = {
-                                "id": chunk["chunk_id"],
-                                "content": chunk["content"],
-                                "document_id": chunk["doc_id"],
-                                "document_name": chunk["docnm_kwd"],
-                                "dataset_id": chunk["kb_id"],
-                                "image_id": chunk.get("image_id", ""),
-                                "similarity": chunk["similarity"],
-                                "vector_similarity": chunk["vector_similarity"],
-                                "term_similarity": chunk["term_similarity"],
-                                "positions": chunk["positions"],
+                                "id": chunk.get("chunk_id", chunk.get("id")),
+                                "content": chunk.get("content_with_weight", chunk.get("content")),
+                                "document_id": chunk.get("doc_id", chunk.get("document_id")),
+                                "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
+                                "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
+                                "image_id": chunk.get("image_id", chunk.get("img_id")),
+                                "positions": chunk.get("positions", chunk.get("position_int")),
                             }
                             chunk_list.append(new_chunk)
                     chunk_num += 1

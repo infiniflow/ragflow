@@ -267,9 +267,10 @@ def delete(tenant_id):
 def list_chat(tenant_id):
     id = request.args.get("id")
     name = request.args.get("name")
-    chat = DialogService.query(id=id,name=name,status=StatusEnum.VALID.value,tenant_id=tenant_id)
-    if not chat:
-        return get_error_data_result(message="The chat doesn't exist")
+    if id or name:
+        chat = DialogService.query(id=id, name=name, status=StatusEnum.VALID.value, tenant_id=tenant_id)
+        if not chat:
+            return get_error_data_result(message="The chat doesn't exist")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "create_time")
