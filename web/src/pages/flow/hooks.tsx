@@ -227,8 +227,8 @@ export const useHandleDrop = () => {
           position: { x: 50, y: 50 },
           // draggable: false,
           data: {
-            label: 'iterationStartNode',
-            name: 'iterationStartNode',
+            label: Operator.IterationStart,
+            name: Operator.IterationStart,
             form: {},
           },
           parentId: newNode.id,
