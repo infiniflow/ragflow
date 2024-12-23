@@ -141,3 +141,4 @@ def add_community_info2graph(graph: nx.Graph, nodes: list[str], community_title)
         if "communities" not in graph.nodes[n]:
             graph.nodes[n]["communities"] = []
         graph.nodes[n]["communities"].append(community_title)
+        graph.nodes[n]["communities"] = list(set(graph.nodes[n]["communities"]))
