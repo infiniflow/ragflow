@@ -1344,7 +1344,7 @@ Creates a chat assistant.
 curl --request POST \
      --url http://{address}/api/v1/chats \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
     "dataset_ids": ["0b2cbc8c877f11ef89070242ac120005"],
     "name":"new_chat_1"
@@ -2158,15 +2158,28 @@ Creates a session with an agent.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
+  - the required parameters:`str`
+  - the optional parameters:`str`
 
 ##### Request example
-
+If `begin` component in the agent doesn't have required parameters:
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/sessions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
+     }'
+```
+If `begin` component in the agent has required parameters:
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+            "lang":"Japanese",
+            "file":"Who are you"
      }'
 ```
 
@@ -2324,8 +2337,8 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"session_id"`: `string`
   - other parameters: `string`
 ##### Request example
-
-```bash
+If the `begin` component doesn't have parameters, the following code will create a session.
+```bash 
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
      --header 'Content-Type: application/json' \
@@ -2334,6 +2347,19 @@ curl --request POST \
      {
      }'
 ```
+If the `begin` component have parameters, the following code will create a session.
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/{agent_id}/completions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data-binary '
+     {
+          "lang":"English",
+          "file":"How is the weather tomorrow?"
+     }'
+```
+The following code will execute the completion process
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2344,17 +2370,6 @@ curl --request POST \
           "question": "Hello",
           "stream": true,
           "session_id": "cb2f385cb86211efa36e0242ac120005"
-     }'
-```
-```bash
-curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/completions \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' \
-     --data-binary '
-     {
-          "lang":"English"
-          "file":"How is the weather tomorrow?"
      }'
 ```
 
@@ -2392,113 +2407,41 @@ data:{
     "data": true
 }
 ```
-Success with `session_id` provided and with no parameters in the `begin` component:
+Success without `session_id` provided and with parameters in the `begin` component:
 
 ```json
 data:{
     "code": 0,
     "message": "",
     "data": {
+        "session_id": "eacb36a0bdff11ef97120242ac120006",
         "answer": "",
         "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
+        "param": [
+            {
+                "key": "lang",
+                "name": "Target Language",
+                "optional": false,
+                "type": "line",
+                "value": "English"
+            },
+            {
+                "key": "file",
+                "name": "Files",
+                "optional": false,
+                "type": "file",
+                "value": "How is the weather tomorrow?"
+            },
+            {
+                "key": "hhyt",
+                "name": "hhty",
+                "optional": true,
+                "type": "line"
+            }
+        ]
     }
 }
-data:{
-    "code": 0,
-    "data": {
-        "answer": "Hello",
-        "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "Hello!",
-        "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "Hello! How",
-        "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "Hello! How can",
-        "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "Hello! How can I",
-        "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "Hello! How can I assist",
-        "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "Hello! How can I assist you",
-        "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "Hello! How can I assist you today",
-        "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "Hello! How can I assist you today?",
-        "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "Hello! How can I assist you today?",
-        "reference": [],
-        "id": "7ed5c2e4-aa28-4397-bbed-59664a332aa0",
-        "session_id": "ce1b4fa89c1811ef85720242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": true
-}
+data:
 ```
 Success with parameters in the `begin` component:
 ```json
