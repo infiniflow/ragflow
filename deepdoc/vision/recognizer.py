@@ -26,6 +26,7 @@ from api.utils.file_utils import get_project_base_directory
 from .operators import *  # noqa: F403
 from .operators import preprocess
 
+
 class Recognizer(object):
     def __init__(self, label_list, task_name, model_dir=None):
         """
@@ -144,11 +145,11 @@ class Recognizer(object):
             return 0
         x0_ = max(b["x0"], x0)
         x1_ = min(b["x1"], x1)
-        assert x0_ <= x1_, "Fuckedup! T:{},B:{},X0:{},X1:{} ==> {}".format(
+        assert x0_ <= x1_, "Bbox mismatch! T:{},B:{},X0:{},X1:{} ==> {}".format(
             tp, btm, x0, x1, b)
         tp_ = max(b["top"], tp)
         btm_ = min(b["bottom"], btm)
-        assert tp_ <= btm_, "Fuckedup! T:{},B:{},X0:{},X1:{} => {}".format(
+        assert tp_ <= btm_, "Bbox mismatch! T:{},B:{},X0:{},X1:{} => {}".format(
             tp, btm, x0, x1, b)
         ov = (btm_ - tp_) * (x1_ - x0_) if x1 - \
                                            x0 != 0 and btm - tp != 0 else 0

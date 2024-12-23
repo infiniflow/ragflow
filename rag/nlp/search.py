@@ -70,7 +70,7 @@ class Dealer:
         pg = int(req.get("page", 1)) - 1
         topk = int(req.get("topk", 1024))
         ps = int(req.get("size", topk))
-        offset, limit = pg * ps, (pg + 1) * ps
+        offset, limit = pg * ps, ps
 
         src = req.get("fields", ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                                  "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd", "question_kwd", "question_tks",
@@ -380,6 +380,13 @@ class Dealer:
 
     def chunk_list(self, doc_id: str, tenant_id: str, kb_ids: list[str], max_count=1024, fields=["docnm_kwd", "content_with_weight", "img_id"]):
         condition = {"doc_id": doc_id}
-        res = self.dataStore.search(fields, [], condition, [], OrderByExpr(), 0, max_count, index_name(tenant_id), kb_ids)
-        dict_chunks = self.dataStore.getFields(res, fields)
-        return dict_chunks.values()
+        res = []
+        bs = 128
+        for p in range(0, max_count, bs):
+            res = self.dataStore.search(fields, [], condition, [], OrderByExpr(), p, bs, index_name(tenant_id), kb_ids)
+            dict_chunks = self.dataStore.getFields(res, fields)
+            if dict_chunks:
+                res.extend(dict_chunks.values())
+            if len(dict_chunks.values()) < bs:
+                break
+        return res
