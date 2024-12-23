@@ -65,7 +65,7 @@ class DefaultEmbedding(Base):
             with DefaultEmbedding._model_lock:
                 from FlagEmbedding import FlagModel
                 import torch
-                if not DefaultEmbedding._model:
+                if not DefaultEmbedding._model or model_name != DefaultEmbedding._model_name:
                     try:
                         DefaultEmbedding._model = FlagModel(os.path.join(get_home_cache_dir(), re.sub(r"^[a-zA-Z0-9]+/", "", model_name)),
                                                             query_instruction_for_retrieval="为这个句子生成表示以用于检索相关文章：",
