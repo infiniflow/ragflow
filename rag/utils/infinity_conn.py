@@ -58,8 +58,11 @@ def concat_dataframes(df_list: list[pl.DataFrame], selectFields: list[str]) -> p
     if df_list:
         return pl.concat(df_list)
     schema = dict()
-    for fieldnm in selectFields:
-        schema[fieldnm] = str
+    for field_name in selectFields:
+        if field_name == 'score()': # Workaround: fix schema is changed to score()
+            schema['SCORE'] = str
+        else:
+            schema[field_name] = str
     return pl.DataFrame(schema=schema)
 
 @singleton
@@ -342,7 +345,7 @@ class InfinityConnection(DocStoreConnection):
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, selectFields)
         if matchExprs:
-            res = res.sort(pl.col("score()") + pl.col("pagerank_fea"), descending=True, maintain_order=True)
+            res = res.sort(pl.col("SCORE") + pl.col("pagerank_fea"), descending=True, maintain_order=True)
         res = res.limit(limit)
         logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
