@@ -283,7 +283,10 @@ def construct_error_response(e):
 def token_required(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
-        authorization_list=flask_request.headers.get('Authorization').split()
+        authorization_str=flask_request.headers.get('Authorization')
+        if not authorization_str:
+            return get_json_result(data=False,message="`Authorization` can't be empty")
+        authorization_list=authorization_str.split()
         if len(authorization_list) < 2:
             return get_json_result(data=False,message="Please check your authorization format.")
         token = authorization_list[1]

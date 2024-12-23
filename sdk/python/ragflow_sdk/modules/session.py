@@ -17,7 +17,7 @@ class Session(Base):
                 self.__session_type = "agent"
         super().__init__(rag, res_dict)
 
-    def ask(self, question,stream=True,**kwargs):
+    def ask(self, question="",stream=True,**kwargs):
         if self.__session_type == "agent":
             res=self._ask_agent(question,stream)
         elif self.__session_type == "chat":
@@ -27,23 +27,22 @@ class Session(Base):
             if line.startswith("{"):
                 json_data = json.loads(line)
                 raise Exception(json_data["message"])
-            if line.startswith("data:"):
-                json_data = json.loads(line[5:])
-                if json_data["data"] is not True:
-                    if json_data["data"].get("running_status"):
-                        continue
-                    answer = json_data["data"]["answer"]
-                    reference = json_data["data"]["reference"]
-                    temp_dict = {
-                        "content": answer,
-                        "role": "assistant"
-                    }
-                    if "chunks" in reference:
-                        chunks = reference["chunks"]
-                        temp_dict["reference"] = chunks
-                    message = Message(self.rag, temp_dict)
-                    yield message
-
+            if not line.startswith("data:"):
+                continue
+            json_data = json.loads(line[5:])
+            if json_data["data"] is True or json_data["data"].get("running_status"):
+                continue
+            answer = json_data["data"]["answer"]
+            reference = json_data["data"].get("reference", {})
+            temp_dict = {
+                "content": answer,
+                "role": "assistant"
+            }
+            if reference and "chunks" in reference:
+                chunks = reference["chunks"]
+                temp_dict["reference"] = chunks
+            message = Message(self.rag, temp_dict)
+            yield message
 
     def _ask_chat(self, question: str, stream: bool,**kwargs):
         json_data={"question": question, "stream": True,"session_id":self.id}
@@ -51,6 +50,7 @@ class Session(Base):
         res = self.post(f"/chats/{self.chat_id}/completions",
                         json_data, stream=stream)
         return res
+
     def _ask_agent(self,question:str,stream:bool):
         res = self.post(f"/agents/{self.agent_id}/completions",
                         {"question": question, "stream": True,"session_id":self.id}, stream=stream)

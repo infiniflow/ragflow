@@ -74,21 +74,32 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
                     else:
                         if "value" in ele:
                             ele.pop("value")
-            cvs.dsl = json.loads(str(canvas))
-            temp_dsl = cvs.dsl
-            UserCanvasService.update_by_id(agent_id, cvs.to_dict())
-        else:
-            temp_dsl = json.loads(cvs.dsl)
-        session_id = get_uuid()
+        cvs.dsl = json.loads(str(canvas))
+        session_id=get_uuid()
         conv = {
             "id": session_id,
             "dialog_id": cvs.id,
-            "user_id": kwargs.get("user_id", ""),
+            "user_id": kwargs.get("usr_id", "") if isinstance(kwargs, dict) else "",
+            "message": [{"role": "assistant", "content": canvas.get_prologue()}],
             "source": "agent",
-            "dsl": temp_dsl
+            "dsl": cvs.dsl
         }
         API4ConversationService.save(**conv)
-        conv = API4Conversation(**conv)
+        if query:
+            yield "data:" + json.dumps({"code": 0,
+                                        "message": "",
+                                        "data": {
+                                            "session_id": session_id,
+                                            "answer": canvas.get_prologue(),
+                                            "reference": [],
+                                            "param": canvas.get_preset_param()
+                                        }
+                                        },
+                                       ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+            return
+        else:
+            conv = API4Conversation(**conv)
     else:
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
