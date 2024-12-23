@@ -235,7 +235,6 @@ export const useHandleDrop = () => {
           extent: 'parent',
         };
         addNode(newNode);
-        console.log('🚀 ~ useHandleDrop ~ newNode:', newNode);
         addNode(iterationStartNode);
       } else {
         const subNodeOfIteration = getRelativePositionToIterationNode(

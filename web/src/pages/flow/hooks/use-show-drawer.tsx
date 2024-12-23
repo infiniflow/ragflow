@@ -54,6 +54,12 @@ export const useShowSingleDebugDrawer = () => {
   };
 };
 
+const ExcludedNodes = [
+  Operator.Iteration,
+  Operator.IterationStart,
+  Operator.Note,
+];
+
 export function useShowDrawer({
   drawerVisible,
   hideDrawer,
@@ -112,7 +118,7 @@ export function useShowDrawer({
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (e, node) => {
-      if (node.data.label !== Operator.Note) {
+      if (!ExcludedNodes.some((x) => x === node.data.label)) {
         hideSingleDebugDrawer();
         hideRunOrChatDrawer();
         showFormDrawer(node);
