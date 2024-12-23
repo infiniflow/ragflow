@@ -383,8 +383,8 @@ class Dealer:
         res = []
         bs = 128
         for p in range(0, max_count, bs):
-            res = self.dataStore.search(fields, [], condition, [], OrderByExpr(), p, bs, index_name(tenant_id), kb_ids)
-            dict_chunks = self.dataStore.getFields(res, fields)
+            es_res = self.dataStore.search(fields, [], condition, [], OrderByExpr(), p, bs, index_name(tenant_id), kb_ids)
+            dict_chunks = self.dataStore.getFields(es_res, fields)
             if dict_chunks:
                 res.extend(dict_chunks.values())
             if len(dict_chunks.values()) < bs:
