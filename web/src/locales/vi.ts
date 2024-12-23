@@ -36,6 +36,7 @@ export default {
       vietnamese: 'Tiếng  việt',
       spanish: 'Tiếng Tây Ban Nha',
       japanese: 'Tiếng Nhật',
+      embedIntoSite: 'Nhúng vào trang web',
     },
     login: {
       login: 'Đăng nhập',

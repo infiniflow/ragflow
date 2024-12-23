@@ -3,6 +3,7 @@ import os
 import re
 import json
 import time
+import copy
 import infinity
 from infinity.common import ConflictType, InfinityException, SortType
 from infinity.index import IndexInfo, IndexType
@@ -247,8 +248,11 @@ class InfinityConnection(DocStoreConnection):
         db_instance = inf_conn.get_database(self.dbName)
         df_list = list()
         table_list = list()
-        for essential_field in ["id", "score()", "pagerank_fea"]:
+        for essential_field in ["id"]:
             if essential_field not in selectFields:
+                selectFields.append(essential_field)
+        if matchExprs:
+            for essential_field in ["score()", "pagerank_fea"]:
                 selectFields.append(essential_field)
 
         # Prepare expressions common to all tables
@@ -337,7 +341,8 @@ class InfinityConnection(DocStoreConnection):
                 df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, selectFields)
-        res = res.sort(pl.col("SCORE") + pl.col("pagerank_fea"), descending=True, maintain_order=True)
+        if matchExprs:
+            res = res.sort(pl.col("SCORE") + pl.col("pagerank_fea"), descending=True, maintain_order=True)
         res = res.limit(limit)
         logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
@@ -386,7 +391,8 @@ class InfinityConnection(DocStoreConnection):
             self.createIdx(indexName, knowledgebaseId, vector_size)
             table_instance = db_instance.get_table(table_name)
 
-        for d in documents:
+        docs = copy.deepcopy(documents)
+        for d in docs:
             assert "_id" not in d
             assert "id" in d
             for k, v in d.items():
@@ -400,17 +406,17 @@ class InfinityConnection(DocStoreConnection):
                     assert isinstance(v, list)
                     arr = [num for row in v for num in row]
                     d[k] = "_".join(f"{num:08x}" for num in arr)
-                elif k in ["page_num_int", "top_int", "position_int"]:
+                elif k in ["page_num_int", "top_int"]:
                     assert isinstance(v, list)
                     d[k] = "_".join(f"{num:08x}" for num in v)
-        ids = ["'{}'".format(d["id"]) for d in documents]
+        ids = ["'{}'".format(d["id"]) for d in docs]
         str_ids = ", ".join(ids)
         str_filter = f"id IN ({str_ids})"
         table_instance.delete(str_filter)
         # for doc in documents:
         #     logger.info(f"insert position_int: {doc['position_int']}")
         # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
-        table_instance.insert(documents)
+        table_instance.insert(docs)
         self.connPool.release_conn(inf_conn)
         logger.debug(f"INFINITY inserted into {table_name} {str_ids}.")
         return []
@@ -504,7 +510,7 @@ class InfinityConnection(DocStoreConnection):
                     assert isinstance(v, str)
                     if v:
                         arr = [int(hex_val, 16) for hex_val in v.split('_')]
-                        v = [arr[i:i + 4] for i in range(0, len(arr), 4)]
+                        v = [arr[i:i + 5] for i in range(0, len(arr), 5)]
                     else:
                         v = []
                 elif fieldnm in ["page_num_int", "top_int"]:
