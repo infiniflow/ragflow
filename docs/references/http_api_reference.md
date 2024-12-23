@@ -936,9 +936,7 @@ Success:
             "content": "ragflow content",
             "create_time": "2024-10-16 08:05:04",
             "create_timestamp": 1729065904.581025,
-            "dataset_id": [
-                "c7ee74067a2c11efb21c0242ac120006"
-            ],
+            "dataset_id": "c7ee74067a2c11efb21c0242ac120006",
             "document_id": "5c5999ec7be811ef9cab0242ac120005",
             "id": "d78435d142bd5cf6704da62c778795c5",
             "important_keywords": []
