@@ -17,6 +17,7 @@ import os
 import random
 import xxhash
 import bisect
+from datetime import datetime
 
 from api.db.db_utils import bulk_insert_into_db
 from deepdoc.parser import PdfParser
@@ -84,7 +85,7 @@ class TaskService(CommonService):
         if not docs:
             return None
 
-        msg = "\nTask has been received."
+        msg = f"\n{datetime.now().strftime('%H:%M:%S.%f')} Task has been received."
         prog = random.random() / 10.0
         if docs[0]["retry_count"] >= 3:
             msg = "\nERROR: Task is abandoned after 3 times attempts."
