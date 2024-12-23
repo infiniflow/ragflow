@@ -1017,7 +1017,7 @@
                 {
                     "llm_name": "llama-3.3-70b-versatile",
                     "tags": "LLM,CHAT,128k",
-                    "max_tokens": 131072,
+                    "max_tokens": 128000,
                     "model_type": "chat"
                 },
                 {
