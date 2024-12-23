@@ -196,7 +196,7 @@ class ESConnection(DocStoreConnection):
             s = s.sort(*orders)
 
         if limit > 0:
-            s = s[offset:limit]
+            s = s[offset:offset+limit]
         q = s.to_dict()
         logger.debug(f"ESConnection.search {str(indexNames)} query: " + json.dumps(q))
 

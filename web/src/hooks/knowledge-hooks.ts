@@ -248,4 +248,14 @@ export const useSelectTestingResult = (): ITestingResult => {
     total: 0,
   }) as ITestingResult;
 };
+
+export const useSelectIsTestingSuccess = () => {
+  const status = useMutationState({
+    filters: { mutationKey: ['testChunk'] },
+    select: (mutation) => {
+      return mutation.state.status;
+    },
+  });
+  return status.at(-1) === 'success';
+};
 //#endregion
