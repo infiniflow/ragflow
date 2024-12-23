@@ -124,7 +124,7 @@ def kb_prompt(kbinfos, max_tokens):
     for i, ck in enumerate(kbinfos["chunks"]):
         if i >= chunks_num:
             break
-        doc2chunks["docnm_kwd"].append(ck["content_with_weight"])
+        doc2chunks[ck["docnm_kwd"]].append(ck["content_with_weight"])
 
     knowledges = []
     for nm, chunks in doc2chunks.items():
