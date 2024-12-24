@@ -2174,7 +2174,7 @@ Creates a session with an agent.
   - the required parameters:`str`
   - the optional parameters:`str`
     - `"user_id"`: `string`  
-      The user ID of third-party upstream system which invokes the API. It's optional.
+      The optional user-defined ID.
 
 ##### Request example
 If `begin` component in the agent doesn't have required parameters:
