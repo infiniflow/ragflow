@@ -10,7 +10,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import logging
 from io import BytesIO
 from pptx import Presentation
 
@@ -53,9 +53,12 @@ class RAGFlowPptParser(object):
             texts = []
             for shape in sorted(
                     slide.shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left)):
-                txt = self.__extract(shape)
-                if txt:
-                    texts.append(txt)
+                try:
+                    txt = self.__extract(shape)
+                    if txt:
+                        texts.append(txt)
+                except Exception as e:
+                    logging.exception(e)
             txts.append("\n".join(texts))
 
         return txts
