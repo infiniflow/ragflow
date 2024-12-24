@@ -1743,7 +1743,7 @@ curl --request POST \
 - `"name"`: (*Body parameter*), `string`  
   The name of the chat session to create.
 - `"user_id"`: (*Body parameter*), `string`  
-  The user ID of third-party upstream system which invokes the API. It's optional.
+  Optional user-defined ID.
 
 #### Response
 
