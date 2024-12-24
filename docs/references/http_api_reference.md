@@ -1820,7 +1820,7 @@ curl --request PUT \
 - `"name"`: (*Body Parameter*), `string`  
   The revised name of the session.
 - `"user_id"`: (*Body parameter*), `string`  
-  The user ID of third-party upstream system which invokes the API. It's optional.
+  Optional user-defined ID.
 
 #### Response
 
