@@ -31,7 +31,6 @@ from peewee import (
 )
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 
-
 from api.db import SerializedType, ParserType
 from api import settings
 from api import utils
@@ -926,6 +925,7 @@ class Conversation(DataBaseModel):
     name = CharField(max_length=255, null=True, help_text="converastion name", index=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
+    user_id = CharField(max_length=255, null=True, help_text="user_id", index=True)
 
     class Meta:
         db_table = "conversation"
@@ -1070,13 +1070,13 @@ def migrate_db():
             pass
         try:
             migrate(
-                migrator.add_column("tenant_llm","max_tokens",IntegerField(default=8192,index=True))
+                migrator.add_column("tenant_llm", "max_tokens", IntegerField(default=8192, index=True))
             )
         except Exception:
             pass
         try:
             migrate(
-                migrator.add_column("api_4_conversation","dsl",JSONField(null=True, default={}))
+                migrator.add_column("api_4_conversation", "dsl", JSONField(null=True, default={}))
             )
         except Exception:
             pass
@@ -1102,6 +1102,13 @@ def migrate_db():
         try:
             migrate(
                 migrator.add_column("task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default=""))
+            )
+        except Exception:
+            pass
+        try:
+            migrate(
+                migrator.add_column("conversation", "user_id",
+                                    CharField(max_length=255, null=True, help_text="user_id", index=True))
             )
         except Exception:
             pass

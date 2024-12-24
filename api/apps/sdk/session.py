@@ -47,7 +47,8 @@ def create(tenant_id, chat_id):
         "id": get_uuid(),
         "dialog_id": req["dialog_id"],
         "name": req.get("name", "New session"),
-        "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}]
+        "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}],
+        "user_id": req.get("user_id", "")
     }
     if not conv.get("name"):
         return get_error_data_result(message="`name` can not be empty.")
@@ -71,7 +72,7 @@ def create_agent_session(tenant_id, agent_id):
         return get_error_data_result("Agent not found.")
 
     if not UserCanvasService.query(user_id=tenant_id,id=agent_id):
-        return  get_error_data_result("You cannot access the agent.")
+        return get_error_data_result("You cannot access the agent.")
 
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
@@ -197,11 +198,12 @@ def list_session(tenant_id, chat_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "create_time")
+    user_id = request.args.get("user_id")
     if request.args.get("desc") == "False" or request.args.get("desc") == "false":
         desc = False
     else:
         desc = True
-    convs = ConversationService.get_list(chat_id, page_number, items_per_page, orderby, desc, id, name)
+    convs = ConversationService.get_list(chat_id, page_number, items_per_page, orderby, desc, id, name, user_id)
     if not convs:
         return get_result(data=[])
     for conv in convs:
