@@ -45,7 +45,7 @@ export function IterationNode({
 
   return (
     <section
-      className={cn('w-full h-full', {
+      className={cn('w-full h-full', styles.iterationNode, {
         [styles.dark]: theme === 'dark',
         [styles.selectedNode]: selected,
       })}
@@ -73,7 +73,7 @@ export function IterationNode({
         id={id}
         name={data.name}
         label={data.label}
-        className={styles.iterationNodeHeader}
+        wrapperClassName="p-2 bg-white rounded-t-[10px]"
       ></NodeHeader>
     </section>
   );
@@ -87,7 +87,7 @@ export function IterationStartNode({
 
   return (
     <section
-      className={cn('bg-white ', {
+      className={cn('bg-white p-2 rounded-xl', {
         [styles.dark]: theme === 'dark',
         [styles.selectedNode]: selected,
       })}
@@ -100,7 +100,7 @@ export function IterationStartNode({
         style={RightHandleStyle}
       ></Handle>
       <div>
-        <CirclePower />
+        <CirclePower className="size-7" />
       </div>
     </section>
   );

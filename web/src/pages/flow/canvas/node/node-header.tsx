@@ -8,16 +8,16 @@ import NodeDropdown from './dropdown';
 import { NextNodePopover } from './popover';
 
 import { RunTooltip } from '../../flow-tooltip';
-import styles from './index.less';
 interface IProps {
   id: string;
   label: string;
   name: string;
   gap?: number;
   className?: string;
+  wrapperClassName?: string;
 }
 
-const ExcludedRunStateOperators = [Operator.Answer, Operator.Iteration];
+const ExcludedRunStateOperators = [Operator.Answer];
 
 export function RunStatus({ id, name, label }: IProps) {
   const { t } = useTranslate('flow');
@@ -37,9 +37,16 @@ export function RunStatus({ id, name, label }: IProps) {
   );
 }
 
-const NodeHeader = ({ label, id, name, gap = 4, className }: IProps) => {
+const NodeHeader = ({
+  label,
+  id,
+  name,
+  gap = 4,
+  className,
+  wrapperClassName,
+}: IProps) => {
   return (
-    <section>
+    <section className={wrapperClassName}>
       {!ExcludedRunStateOperators.includes(label as Operator) && (
         <RunStatus id={id} name={name} label={label}></RunStatus>
       )}
@@ -54,7 +61,9 @@ const NodeHeader = ({ label, id, name, gap = 4, className }: IProps) => {
           name={label as Operator}
           color={operatorMap[label as Operator].color}
         ></OperatorIcon>
-        <span className={styles.nodeTitle}>{name}</span>
+        <span className="truncate text-center font-semibold text-sm">
+          {name}
+        </span>
         <NodeDropdown id={id} label={label}></NodeDropdown>
       </Flex>
     </section>
