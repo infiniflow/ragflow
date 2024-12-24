@@ -477,7 +477,7 @@ class ComponentBase(ABC):
                             assert False, f"Can't find parameter '{key}' for {cpn_id}"
                         continue
 
-                    if q["component_id"].lower().find("answer") >= 0:
+                    if q["component_id"].lower().find("answer") == 0:
                         for r, c in self._canvas.history[::-1]:
                             if r == "user":
                                 self._param.inputs.append(pd.DataFrame([{"content": c, "component_id": q["component_id"]}]))
