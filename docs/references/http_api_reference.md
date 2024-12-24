@@ -2048,7 +2048,7 @@ curl --request POST \
 - `"session_id"`: (*Body Parameter*)  
   The ID of session. If it is not provided, a new session will be generated.
 - `"user_id"`: (*Body parameter*), `string`  
-  The user ID of third-party upstream system which invokes the API. It's optional and only needed when no session_id provided.
+  The optional user-defined ID. Valid *only* when no `session_id` is provided.
 
 #### Response
 
