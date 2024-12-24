@@ -54,11 +54,7 @@ export const useShowSingleDebugDrawer = () => {
   };
 };
 
-const ExcludedNodes = [
-  Operator.Iteration,
-  Operator.IterationStart,
-  Operator.Note,
-];
+const ExcludedNodes = [Operator.IterationStart, Operator.Note];
 
 export function useShowDrawer({
   drawerVisible,

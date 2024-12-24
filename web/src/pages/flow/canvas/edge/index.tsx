@@ -90,7 +90,7 @@ export function ButtonEdge({
             // everything inside EdgeLabelRenderer has no pointer events by default
             // if you have an interactive element, set pointer-events: all
             pointerEvents: 'all',
-            zIndex: 1, // https://github.com/xyflow/xyflow/discussions/3498
+            zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
           }}
           className="nodrag nopan"
         >

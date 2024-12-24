@@ -162,6 +162,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
             strokeWidth: 2,
             stroke: 'rgb(202 197 245)',
           },
+          zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
         }}
         deleteKeyCode={['Delete', 'Backspace']}
       >

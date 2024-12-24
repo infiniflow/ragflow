@@ -217,14 +217,13 @@ export const useHandleDrop = () => {
 
       if (type === Operator.Iteration) {
         newNode.style = {
-          backgroundColor: 'rgba(255, 0, 0, 0.2)',
-          width: 400,
-          height: 300,
+          width: 500,
+          height: 250,
         };
         const iterationStartNode: Node<any> = {
           id: `${Operator.IterationStart}:${humanId()}`,
           type: 'iterationStartNode',
-          position: { x: 50, y: 50 },
+          position: { x: 50, y: 100 },
           // draggable: false,
           data: {
             label: Operator.IterationStart,

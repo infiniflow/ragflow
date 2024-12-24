@@ -31,6 +31,22 @@
   border: 1.5px solid rgb(59, 118, 244);
 }
 
+.selectedIterationNode {
+  border-bottom: 1.5px solid rgb(59, 118, 244);
+  border-left: 1.5px solid rgb(59, 118, 244);
+  border-right: 1.5px solid rgb(59, 118, 244);
+}
+
+.iterationHeader {
+  .commonNodeShadow();
+}
+
+.selectedHeader {
+  border-top: 1.9px solid rgb(59, 118, 244);
+  border-left: 1.9px solid rgb(59, 118, 244);
+  border-right: 1.9px solid rgb(59, 118, 244);
+}
+
 .handle {
   display: inline-flex;
   align-items: center;
@@ -123,7 +139,8 @@
 
 .iterationNode {
   .commonNodeShadow();
-  .commonNodeRadius();
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
 }
 
 .nodeText {

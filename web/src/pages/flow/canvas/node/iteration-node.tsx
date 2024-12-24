@@ -15,7 +15,7 @@ function ResizeIcon() {
       height="20"
       viewBox="0 0 24 24"
       strokeWidth="2"
-      stroke="#ff0071"
+      stroke="#5025f9"
       fill="none"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -45,9 +45,9 @@ export function IterationNode({
 
   return (
     <section
-      className={cn('w-full h-full', styles.iterationNode, {
-        [styles.dark]: theme === 'dark',
-        [styles.selectedNode]: selected,
+      className={cn('w-full h-full bg-zinc-200', styles.iterationNode, {
+        ['bg-gray-800']: theme === 'dark',
+        [styles.selectedIterationNode]: selected,
       })}
     >
       <NodeResizeControl style={controlStyle} minWidth={100} minHeight={50}>
@@ -73,7 +73,14 @@ export function IterationNode({
         id={id}
         name={data.name}
         label={data.label}
-        wrapperClassName="p-2 bg-white rounded-t-[10px]"
+        wrapperClassName={cn(
+          'p-2 bg-white rounded-t-[10px] absolute w-full top-[-60px] left-[-0.3px]',
+          styles.iterationHeader,
+          {
+            [`${styles.dark} text-white`]: theme === 'dark',
+            [styles.selectedHeader]: selected,
+          },
+        )}
       ></NodeHeader>
     </section>
   );
