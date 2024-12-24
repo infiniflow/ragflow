@@ -142,7 +142,6 @@ class InfinityConnection(DocStoreConnection):
     def health(self) -> dict:
         """
         Return the health status of the database.
-        TODO: Infinity-sdk provides health() to wrap `show global variables` and `show tables`
         """
         inf_conn = self.connPool.get_conn()
         res = inf_conn.show_current_node()
