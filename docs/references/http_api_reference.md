@@ -2590,7 +2590,7 @@ curl --request GET \
 - `id`: (*Filter parameter*), `string`  
   The ID of the agent session to retrieve.
 - `user_id`: (*Filter parameter*), `string`  
-  The user ID of third-party upstream system which updates this field by creating session.
+  The optional user-defined ID passed in when creating session.
   
 #### Response
 
