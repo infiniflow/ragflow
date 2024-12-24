@@ -366,3 +366,21 @@ export function getRelativePositionToIterationNode(
     }
   }
 }
+
+export const generateDuplicateNode = (
+  position?: XYPosition,
+  label?: string,
+) => {
+  const nextPosition = {
+    x: (position?.x || 0) + 50,
+    y: (position?.y || 0) + 50,
+  };
+
+  return {
+    selected: false,
+    dragging: false,
+    id: `${label}:${humanId()}`,
+    position: nextPosition,
+    dragHandle: getNodeDragHandle(label),
+  };
+};

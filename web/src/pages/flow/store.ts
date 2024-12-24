@@ -1,5 +1,5 @@
 import type {} from '@redux-devtools/extension';
-import { humanId } from 'human-id';
+import { omit } from 'lodash';
 import differenceWith from 'lodash/differenceWith';
 import intersectionWith from 'lodash/intersectionWith';
 import lodashSet from 'lodash/set';
@@ -25,8 +25,8 @@ import { Operator, SwitchElseTo } from './constant';
 import { NodeData } from './interface';
 import {
   duplicateNodeForm,
+  generateDuplicateNode,
   generateNodeNamesWithIncreasingIndex,
-  getNodeDragHandle,
   getOperatorIndex,
   isEdgeEqual,
 } from './utils';
@@ -61,6 +61,7 @@ export type RFState = {
   ) => void;
   deletePreviousEdgeOfClassificationNode: (connection: Connection) => void;
   duplicateNode: (id: string, name: string) => void;
+  duplicateIterationNode: (id: string, name: string) => void;
   deleteEdge: () => void;
   deleteEdgeById: (id: string) => void;
   deleteNodeById: (id: string) => void;
@@ -235,12 +236,14 @@ const useGraphStore = create<RFState>()(
         }
       },
       duplicateNode: (id: string, name: string) => {
-        const { getNode, addNode, generateNodeName } = get();
+        const { getNode, addNode, generateNodeName, duplicateIterationNode } =
+          get();
         const node = getNode(id);
-        const position = {
-          x: (node?.position?.x || 0) + 50,
-          y: (node?.position?.y || 0) + 50,
-        };
+
+        if (node?.data.label === Operator.Iteration) {
+          duplicateIterationNode(id, name);
+          return;
+        }
 
         addNode({
           ...(node || {}),
@@ -248,12 +251,37 @@ const useGraphStore = create<RFState>()(
             ...duplicateNodeForm(node?.data),
             name: generateNodeName(name),
           },
-          selected: false,
-          dragging: false,
-          id: `${node?.data?.label}:${humanId()}`,
-          position,
-          dragHandle: getNodeDragHandle(node?.data?.label),
+          ...generateDuplicateNode(node?.position, node?.data?.label),
         });
+      },
+      duplicateIterationNode: (id: string, name: string) => {
+        const { getNode, generateNodeName, nodes } = get();
+        const node = getNode(id);
+
+        const iterationNode: Node<NodeData> = {
+          ...(node || {}),
+          data: {
+            ...(node?.data || { label: Operator.Iteration, form: {} }),
+            name: generateNodeName(name),
+          },
+          ...generateDuplicateNode(node?.position, node?.data?.label),
+        };
+
+        const children = nodes
+          .filter((x) => x.parentId === node?.id)
+          .map((x) => ({
+            ...(x || {}),
+            data: {
+              ...duplicateNodeForm(x?.data),
+              name: generateNodeName(x.data.name),
+            },
+            ...omit(generateDuplicateNode(x?.position, x?.data?.label), [
+              'position',
+            ]),
+            parentId: iterationNode.id,
+          }));
+
+        set({ nodes: nodes.concat(iterationNode, ...children) });
       },
       deleteEdge: () => {
         const { edges, selectedEdgeIds } = get();

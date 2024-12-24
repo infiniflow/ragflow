@@ -90,7 +90,7 @@ export interface ISwitchForm {
 export type NodeData = {
   label: string; // operator type
   name: string; // operator name
-  color: string;
+  color?: string;
   form:
     | IBeginForm
     | IRetrievalForm

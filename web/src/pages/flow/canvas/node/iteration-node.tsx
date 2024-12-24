@@ -3,7 +3,6 @@ import { cn } from '@/lib/utils';
 import { CirclePower } from 'lucide-react';
 import { Handle, NodeProps, NodeResizeControl, Position } from 'reactflow';
 import { NodeData } from '../../interface';
-import useGraphStore from '../../store';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -43,9 +42,7 @@ export function IterationNode({
   selected,
 }: NodeProps<NodeData>) {
   const { theme } = useTheme();
-  const subNodes = useGraphStore((store) =>
-    store.nodes.filter((n) => n.parentId === id),
-  );
+
   return (
     <section
       className={cn('w-full h-full', {
@@ -78,21 +75,11 @@ export function IterationNode({
         label={data.label}
         className={styles.iterationNodeHeader}
       ></NodeHeader>
-      <div>xxx</div>
-      {subNodes.map((subNode) => {
-        return (
-          <div key={subNode.id} className="bg-amber-100">
-            {subNode.data.label}
-          </div>
-        );
-      })}
     </section>
   );
 }
 
 export function IterationStartNode({
-  id,
-  data,
   isConnectable = true,
   selected,
 }: NodeProps<NodeData>) {
