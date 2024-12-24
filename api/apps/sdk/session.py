@@ -247,8 +247,6 @@ def list_agent_session(tenant_id, agent_id):
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_error_data_result(message=f"You don't own the agent {agent_id}.")
     id = request.args.get("id")
-    if not API4ConversationService.query(id=id, user_id=tenant_id):
-        return get_error_data_result(f"You don't own the session {id}")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "update_time")
