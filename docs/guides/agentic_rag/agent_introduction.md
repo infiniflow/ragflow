@@ -5,6 +5,12 @@ slug: /agent_introduction
 
 # Introduction to agents
 
+Key concepts, basic operations, a quick view of the agent editor.
+
+---
+
+## Key concepts
+
 Agents and RAG are complementary techniques, each enhancing the other’s capabilities in business applications. RAGFlow v0.8.0 introduces an agent mechanism, featuring a no-code workflow editor on the front end and a comprehensive graph-based task orchestration framework on the back end. This mechanism is built on top of RAGFlow's existing RAG solutions and aims to orchestrate search technologies such as query intent classification, conversation leading, and query rewriting to:
 
 - Provide higher retrievals and,
@@ -23,7 +29,7 @@ Before proceeding, ensure that:
 
 Click the **Agent** tab in the middle top of the page to show the **Agent** page. As shown in the screenshot below, the cards on this page represent the created agents, which you can continue to edit.
 
-![agents](https://github.com/user-attachments/assets/5e10758b-ec43-49ae-bf91-ff7d04c56e9d)
+![agent_mainpage](https://github.com/user-attachments/assets/5c0bb123-8f4e-42ea-b250-43f640dc6814)
 
 We also provide templates catered to different business scenarios. You can either generate your agent from one of our agent templates or create one from scratch:
 
@@ -35,7 +41,7 @@ We also provide templates catered to different business scenarios. You can eithe
 
    *You are now taken to the **no-code workflow editor** page. The left panel lists the components (operators): Above the dividing line are the RAG-specific components; below the line are tools. We are still working to expand the component list.*
 
-   ![workflow_editor](https://github.com/user-attachments/assets/9fc6891c-7784-43b8-ab4a-3b08a9e551c4)
+   ![workflow_editor](https://github.com/user-attachments/assets/47b4d5ce-b35a-4d6b-b483-ba495a75a65d)
 
 4. General speaking, now you can do the following:
    - Drag and drop a desired component to your workflow,
@@ -58,7 +64,7 @@ Please review the flowing description of the RAG-specific components before you 
 | **Message**    | A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is **Interact**, the interface component. |
 | **Relevant**   | A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result. |
 | **Rewrite**    | A component that refines a user query if it fails to retrieve relevant information from the knowledge base. It repeats this process until the predefined looping upper limit is reached. Ensure its upstream is **Relevant** and downstream is **Retrieval**. |
-| **Keyword**    | A component that retrieves top N search results from wikipedia.org. Ensure the TopN value is set properly before use. |
+| **Keyword**    | A component that extracts keywords from a user query, with TopN specifying the number of keywords to extract. |
 
 :::caution NOTE
 
