@@ -1,4 +1,4 @@
-from scipy.special import kwargs---
+---
 sidebar_position: 2
 slug: /python_api_reference
 ---
@@ -638,6 +638,10 @@ print("Async bulk parsing initiated.")
 dataset.async_cancel_parse_documents(ids)
 print("Async bulk parsing cancelled.")
 ```
+
+---
+
+## CHUNK MANAGEMENT WITHIN DATASET
 
 ---
 
@@ -1436,11 +1440,11 @@ The parameters in `begin` component.
 #### Examples
 
 ```python
-from ragflow_sdk import RAGFlow
+from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_ID = "AGENT_ID"
-session = create_session(AGENT_ID,rag_object)
+session = Agent.create_session(AGENT_ID, rag_object)
 ```
 
 ---
@@ -1513,11 +1517,11 @@ A list of `Chunk` objects representing references to the message, each containin
 #### Examples
 
 ```python
-from ragflow_sdk import RAGFlow,Agent
+from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-session = Agent.create_session(AGENT_id,rag_object)    
+session = Agent.create_session(AGENT_id, rag_object)    
 
 print("\n===== Miss R ====\n")
 print("Hello. What can I do for you?")

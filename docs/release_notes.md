@@ -7,6 +7,39 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.15.1
+
+Released on December 25, 2024.
+
+### Upgrades
+
+- Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.5.2.
+- Enhances the log display of document parsing status.
+
+### Fixed issues
+
+This release fixes the following issues:
+
+- The `SCORE not found` and `position_int` errors returned by [Infinity](https://github.com/infiniflow/infinity).
+- Slow response in question-answering and AI search due to repetitive loading of the embedding model.
+- Fails to parse documents with RAPTOR.
+- Using the **Table** parsing method results in information loss.
+- Miscellaneous API issues.
+
+### Related APIs
+
+#### HTTP APIs
+
+Adds an optional parameter `"user_id"` to the following APIs:
+
+- [Create session with chat assistant](https://ragflow.io/docs/dev/http_api_reference#create-session-with-chat-assistant)
+- [Update chat assistant's session](https://ragflow.io/docs/dev/http_api_reference#update-chat-assistants-session)
+- [List chat assistant's sessions](https://ragflow.io/docs/dev/http_api_reference#list-chat-assistants-sessions)
+- [Create session with agent](https://ragflow.io/docs/dev/http_api_reference#create-session-with-agent)
+- [Converse with chat assistant](https://ragflow.io/docs/dev/http_api_reference#converse-with-chat-assistant)
+- [Converse with agent](https://ragflow.io/docs/dev/http_api_reference#converse-with-agent)
+- [List agent sessions](https://ragflow.io/docs/dev/http_api_reference#list-agent-sessions)
+
 ## v0.15.0
 
 Released on December 18, 2024.
