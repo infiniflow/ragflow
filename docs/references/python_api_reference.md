@@ -1440,11 +1440,11 @@ The parameters in `begin` component.
 #### Examples
 
 ```python
-from ragflow_sdk import RAGFlow,Agent
+from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_ID = "AGENT_ID"
-session = Agent.create_session(AGENT_ID,rag_object)
+session = Agent.create_session(AGENT_ID, rag_object)
 ```
 
 ---
@@ -1517,11 +1517,11 @@ A list of `Chunk` objects representing references to the message, each containin
 #### Examples
 
 ```python
-from ragflow_sdk import RAGFlow,Agent
+from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-session = Agent.create_session(AGENT_id,rag_object)    
+session = Agent.create_session(AGENT_id, rag_object)    
 
 print("\n===== Miss R ====\n")
 print("Hello. What can I do for you?")
