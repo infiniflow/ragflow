@@ -144,6 +144,7 @@ export const buildDslComponentsByGraph = (
         },
         downstream: buildComponentDownstreamOrUpstream(edges, id, true),
         upstream: buildComponentDownstreamOrUpstream(edges, id, false),
+        parent_id: x?.parentId,
       };
     });
 

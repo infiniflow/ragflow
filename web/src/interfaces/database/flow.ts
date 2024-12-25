@@ -17,6 +17,7 @@ export interface IOperator {
   obj: IOperatorNode;
   downstream: string[];
   upstream: string[];
+  parent_id?: string;
 }
 
 export interface IOperatorNode {
