@@ -340,6 +340,7 @@ export const useUpdateNextConversation = () => {
       });
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchConversationList'] });
+        message.success(i18n.t(`message.modified`));
       }
       return data;
     },
