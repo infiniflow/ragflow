@@ -1,8 +1,8 @@
 {
-  "label": "Agent Component Reference",
+  "label": "Agents",
   "position": 3,
   "link": {
     "type": "generated-index",
-    "description": "A complete reference for RAGFlow's agent components."
+    "description": "RAGFlow v0.8.0 introduces an agent mechanism, featuring a no-code workflow editor on the front end and a comprehensive graph-based task orchestration framework on the backend."
   }
 }
