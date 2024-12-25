@@ -58,8 +58,11 @@ def concat_dataframes(df_list: list[pl.DataFrame], selectFields: list[str]) -> p
     if df_list:
         return pl.concat(df_list)
     schema = dict()
-    for fieldnm in selectFields:
-        schema[fieldnm] = str
+    for field_name in selectFields:
+        if field_name == 'score()': # Workaround: fix schema is changed to score()
+            schema['SCORE'] = str
+        else:
+            schema[field_name] = str
     return pl.DataFrame(schema=schema)
 
 @singleton
@@ -139,7 +142,6 @@ class InfinityConnection(DocStoreConnection):
     def health(self) -> dict:
         """
         Return the health status of the database.
-        TODO: Infinity-sdk provides health() to wrap `show global variables` and `show tables`
         """
         inf_conn = self.connPool.get_conn()
         res = inf_conn.show_current_node()

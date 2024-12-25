@@ -1719,6 +1719,7 @@ Creates a session with a chat assistant.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
+  - `"user_id"`: `string`(optional)
 
 ##### Request example
 
@@ -1739,6 +1740,8 @@ curl --request POST \
   The ID of the associated chat assistant.
 - `"name"`: (*Body parameter*), `string`  
   The name of the chat session to create.
+- `"user_id"`: (*Body parameter*), `string`  
+  Optional user-defined ID.
 
 #### Response
 
@@ -1791,6 +1794,7 @@ Updates a session of a specified chat assistant.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name`: `string`
+  - `"user_id`: `string`(optional)
 
 ##### Request example
 
@@ -1813,6 +1817,8 @@ curl --request PUT \
   The ID of the session to update.
 - `"name"`: (*Body Parameter*), `string`  
   The revised name of the session.
+- `"user_id"`: (*Body parameter*), `string`  
+  Optional user-defined ID.
 
 #### Response
 
@@ -1844,7 +1850,7 @@ Lists sessions associated with a specified chat assistant.
 #### Request
 
 - Method: GET
-- URL: `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}`
+- URL: `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -1874,6 +1880,8 @@ curl --request GET \
   The name of the chat session to retrieve.
 - `id`: (*Filter parameter*), `string`  
   The ID of the chat session to retrieve.
+- `user_id`: (*Filter parameter*), `string`  
+  The optional user-defined ID passed in when creating session.
 
 #### Response
 
@@ -1998,7 +2006,8 @@ Asks a specified chat assistant a question to start an AI-powered conversation.
 - Body:
   - `"question"`: `string`
   - `"stream"`: `boolean`
-  - `"session_id"`: `string`
+  - `"session_id"`: `string`(optional)
+  - `"user_id`: `string`(optional)
 
 ##### Request example
 
@@ -2036,6 +2045,8 @@ curl --request POST \
   - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
   The ID of session. If it is not provided, a new session will be generated.
+- `"user_id"`: (*Body parameter*), `string`  
+  The optional user-defined ID. Valid *only* when no `session_id` is provided.
 
 #### Response
 
@@ -2160,6 +2171,8 @@ Creates a session with an agent.
 - Body:
   - the required parameters:`str`
   - the optional parameters:`str`
+    - `"user_id"`: `string`  
+      The optional user-defined ID.
 
 ##### Request example
 If `begin` component in the agent doesn't have required parameters:
@@ -2335,6 +2348,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"question"`: `string`
   - `"stream"`: `boolean`
   - `"session_id"`: `string`
+  - `"user_id"`: `string`(optional)
   - other parameters: `string`
 ##### Request example
 If the `begin` component doesn't have parameters, the following code will create a session.
@@ -2386,6 +2400,8 @@ curl --request POST \
   - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
   The ID of the session. If it is not provided, a new session will be generated.
+- `"user_id"`: (*Body parameter*), `string`  
+  The optional user-defined ID. Valid *only* when no `session_id` is provided.
 - Other parameters: (*Body Parameter*)  
   The parameters in the begin component.
 #### Response
@@ -2536,7 +2552,7 @@ Failure:
 
 ### List agent sessions
 
-**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}`
+**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}`
 
 Lists sessions associated with a specified agent.
 
@@ -2551,7 +2567,7 @@ Lists sessions associated with a specified agent.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id} \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -2571,7 +2587,9 @@ curl --request GET \
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
 - `id`: (*Filter parameter*), `string`  
   The ID of the agent session to retrieve.
-
+- `user_id`: (*Filter parameter*), `string`  
+  The optional user-defined ID passed in when creating session.
+  
 #### Response
 
 Success:

@@ -124,7 +124,7 @@ def kb_prompt(kbinfos, max_tokens):
     for i, ck in enumerate(kbinfos["chunks"]):
         if i >= chunks_num:
             break
-        doc2chunks["docnm_kwd"].append(ck["content_with_weight"])
+        doc2chunks[ck["docnm_kwd"]].append(ck["content_with_weight"])
 
     knowledges = []
     for nm, chunks in doc2chunks.items():
@@ -311,7 +311,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         retrieval_time_cost = (retrieval_ts - generate_keyword_ts) * 1000
         generate_result_time_cost = (finish_chat_ts - retrieval_ts) * 1000
 
-        prompt = f"{prompt} ### Elapsed\n  - Total: {total_time_cost:.1f}ms\n  - Check LLM: {check_llm_time_cost:.1f}ms\n  - Create retriever: {create_retriever_time_cost:.1f}ms\n  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n  - Bind LLM: {bind_llm_time_cost:.1f}ms\n  - Tune question: {refine_question_time_cost:.1f}ms\n  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n  - Retrieval: {retrieval_time_cost:.1f}ms\n  - Generate answer: {generate_result_time_cost:.1f}ms"
+        prompt = f"{prompt}\n\n - Total: {total_time_cost:.1f}ms\n  - Check LLM: {check_llm_time_cost:.1f}ms\n  - Create retriever: {create_retriever_time_cost:.1f}ms\n  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n  - Bind LLM: {bind_llm_time_cost:.1f}ms\n  - Tune question: {refine_question_time_cost:.1f}ms\n  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n  - Retrieval: {retrieval_time_cost:.1f}ms\n  - Generate answer: {generate_result_time_cost:.1f}ms"
         return {"answer": answer, "reference": refs, "prompt": prompt}
 
     if stream:
