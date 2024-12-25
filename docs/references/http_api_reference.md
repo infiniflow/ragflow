@@ -883,6 +883,10 @@ Failure:
 
 ---
 
+## CHUNK MANAGEMENT WITHIN DATASET
+
+---
+
 ### Add chunk
 
 **POST** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks`
