@@ -71,7 +71,7 @@ def create_agent_session(tenant_id, agent_id):
     if not e:
         return get_error_data_result("Agent not found.")
 
-    if not UserCanvasService.query(user_id=tenant_id,id=agent_id):
+    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_error_data_result("You cannot access the agent.")
 
     if not isinstance(cvs.dsl, str):
@@ -96,7 +96,7 @@ def create_agent_session(tenant_id, agent_id):
     conv = {
         "id": get_uuid(),
         "dialog_id": cvs.id,
-        "user_id": req.get("usr_id","") if isinstance(req, dict) else "",
+        "user_id": req.get("user_id", "") if isinstance(req, dict) else "",
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent",
         "dsl": cvs.dsl
@@ -133,11 +133,11 @@ def update(tenant_id, chat_id, session_id):
 def chat_completion(tenant_id, chat_id):
     req = request.json
     if not req or not req.get("session_id"):
-        req = {"question":""}
-    if not DialogService.query(tenant_id=tenant_id,id=chat_id,status=StatusEnum.VALID.value):
+        req = {"question": ""}
+    if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(f"You don't own the chat {chat_id}")
     if req.get("session_id"):
-        if not ConversationService.query(id=req["session_id"],dialog_id=chat_id):
+        if not ConversationService.query(id=req["session_id"], dialog_id=chat_id):
             return get_error_data_result(f"You don't own the session {req['session_id']}")
     if req.get("stream", True):
         resp = Response(rag_completion(tenant_id, chat_id, **req), mimetype="text/event-stream")
@@ -158,34 +158,34 @@ def chat_completion(tenant_id, chat_id):
 @manager.route('/agents/<agent_id>/completions', methods=['POST'])  # noqa: F821
 @token_required
 def agent_completions(tenant_id, agent_id):
-        req = request.json
-        cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
-        if not cvs:
-            return get_error_data_result(f"You don't own the agent {agent_id}")
-        if req.get("session_id"):
-            dsl = cvs[0].dsl
-            if not isinstance(dsl,str):
-                dsl = json.dumps(dsl)
-            canvas=Canvas(dsl,tenant_id)
-            if canvas.get_preset_param():
-                req["question"]=""
-            conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
-            if not conv:
-                return get_error_data_result(f"You don't own the session {req['session_id']}")
-        else:
-            req["question"]=""
-        if req.get("stream", True):
-            resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
-            resp.headers.add_header("Cache-control", "no-cache")
-            resp.headers.add_header("Connection", "keep-alive")
-            resp.headers.add_header("X-Accel-Buffering", "no")
-            resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-            return resp
-        try:
-            for answer in agent_completion(tenant_id, agent_id, **req):
-                return get_result(data=answer)
-        except Exception as e:
-            return get_error_data_result(str(e))
+    req = request.json
+    cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
+    if not cvs:
+        return get_error_data_result(f"You don't own the agent {agent_id}")
+    if req.get("session_id"):
+        dsl = cvs[0].dsl
+        if not isinstance(dsl, str):
+            dsl = json.dumps(dsl)
+        canvas = Canvas(dsl, tenant_id)
+        if canvas.get_preset_param():
+            req["question"] = ""
+        conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
+        if not conv:
+            return get_error_data_result(f"You don't own the session {req['session_id']}")
+    else:
+        req["question"] = ""
+    if req.get("stream", True):
+        resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
+        resp.headers.add_header("Cache-control", "no-cache")
+        resp.headers.add_header("Connection", "keep-alive")
+        resp.headers.add_header("X-Accel-Buffering", "no")
+        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+        return resp
+    try:
+        for answer in agent_completion(tenant_id, agent_id, **req):
+            return get_result(data=answer)
+    except Exception as e:
+        return get_error_data_result(str(e))
 
 
 @manager.route('/chats/<chat_id>/sessions', methods=['GET'])  # noqa: F821
@@ -447,5 +447,3 @@ def agent_bot_completions(agent_id):
 
     for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
         return get_result(data=answer)
-
-
