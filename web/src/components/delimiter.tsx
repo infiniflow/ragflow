@@ -6,7 +6,7 @@ interface IProps {
   onChange?: (val: string | undefined) => void;
 }
 
-const DelimiterInput = ({ value, onChange }: IProps) => {
+export const DelimiterInput = ({ value, onChange }: IProps) => {
   const nextValue = value?.replaceAll('\n', '\\n');
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;

@@ -617,7 +617,9 @@ export const initialEmailValues = {
   content: '',
 };
 
-export const initialIterationValues = {};
+export const initialIterationValues = {
+  delimiter: ',',
+};
 export const initialIterationStartValues = {};
 
 export const CategorizeAnchorPointPositions = [

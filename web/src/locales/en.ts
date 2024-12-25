@@ -1078,6 +1078,10 @@ The above is the content you need to summarize.`,
       jsonUploadTypeErrorMessage: 'Please upload json file',
       jsonUploadContentErrorMessage: 'json file error',
       iteration: 'Iteration',
+      iterationDescription: `This component firstly split the input into array by "delimiter".
+Perform the same operation steps on the elements in the array in sequence until all results are output, which can be understood as a task batch processor.
+
+For example, within the long text translation iteration node, if all content is input to the LLM node, the single conversation limit may be reached. The upstream node can first split the long text into multiple fragments, and cooperate with the iterative node to perform batch translation on each fragment to avoid reaching the LLM message limit for a single conversation.`,
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -45,6 +45,7 @@ import { getDrawerWidth, needsSingleStepDebugging } from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
 
 import { RunTooltip } from '../flow-tooltip';
+import IterationForm from '../form/iteration-from';
 import styles from './index.less';
 
 interface IProps {
@@ -89,7 +90,7 @@ const FormMap = {
   [Operator.Note]: () => <></>,
   [Operator.Template]: TemplateForm,
   [Operator.Email]: EmailForm,
-  [Operator.Iteration]: () => <></>,
+  [Operator.Iteration]: IterationForm,
   [Operator.IterationStart]: () => <></>,
 };
 
