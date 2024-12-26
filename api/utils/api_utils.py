@@ -293,7 +293,7 @@ def token_required(func):
         objs = APIToken.query(token=token)
         if not objs:
             return get_json_result(
-                data=False, message='Token is not valid!', code=settings.RetCode.AUTHENTICATION_ERROR
+                data=False, message='Authentication error: API key is invalid!', code=settings.RetCode.AUTHENTICATION_ERROR
             )
         kwargs['tenant_id'] = objs[0].tenant_id
         return func(*args, **kwargs)

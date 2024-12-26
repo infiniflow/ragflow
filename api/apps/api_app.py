@@ -141,7 +141,7 @@ def set_conversation():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
     try:
         if objs[0].source == "agent":
             e, cvs = UserCanvasService.get_by_id(objs[0].dialog_id)
@@ -182,7 +182,7 @@ def completion():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
     req = request.json
     e, conv = API4ConversationService.get_by_id(req["conversation_id"])
     if not e:
@@ -348,7 +348,7 @@ def get(conversation_id):
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     try:
         e, conv = API4ConversationService.get_by_id(conversation_id)
@@ -357,7 +357,7 @@ def get(conversation_id):
 
         conv = conv.to_dict()
         if token != APIToken.query(dialog_id=conv['dialog_id'])[0].token:
-            return get_json_result(data=False, message='Token is not valid for this conversation_id!"',
+            return get_json_result(data=False, message='Authentication error: API key is invalid for this conversation_id!"',
                                    code=settings.RetCode.AUTHENTICATION_ERROR)
 
         for referenct_i in conv['reference']:
@@ -379,7 +379,7 @@ def upload():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     kb_name = request.form.get("kb_name").strip()
     tenant_id = objs[0].tenant_id
@@ -491,7 +491,7 @@ def upload_parse():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     if 'file' not in request.files:
         return get_json_result(
@@ -514,7 +514,7 @@ def list_chunks():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     req = request.json
 
@@ -554,7 +554,7 @@ def list_kb_docs():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     req = request.json
     tenant_id = objs[0].tenant_id
@@ -594,7 +594,7 @@ def docinfos():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
     req = request.json
     doc_ids = req["doc_ids"]
     docs = DocumentService.get_by_ids(doc_ids)
@@ -608,7 +608,7 @@ def document_rm():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     tenant_id = objs[0].tenant_id
     req = request.json
@@ -670,7 +670,7 @@ def completion_faq():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     e, conv = API4ConversationService.get_by_id(req["conversation_id"])
     if not e:
@@ -809,7 +809,7 @@ def retrieval():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     req = request.json
     kb_ids = req.get("kb_id", [])
