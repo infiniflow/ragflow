@@ -70,6 +70,7 @@ export type RFState = {
   findNodeByName: (operatorName: Operator) => Node | undefined;
   updateMutableNodeFormItem: (id: string, field: string, value: any) => void;
   getOperatorTypeFromId: (id?: string | null) => string | undefined;
+  getParentIdById: (id?: string | null) => string | undefined;
   updateNodeName: (id: string, name: string) => void;
   generateNodeName: (name: string) => string;
   setClickedNodeId: (id?: string) => void;
@@ -171,6 +172,9 @@ const useGraphStore = create<RFState>()(
       },
       getOperatorTypeFromId: (id?: string | null) => {
         return get().getNode(id)?.data?.label;
+      },
+      getParentIdById: (id?: string | null) => {
+        return get().getNode(id)?.parentId;
       },
       addEdge: (connection: Connection) => {
         set({

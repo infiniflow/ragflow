@@ -315,7 +315,22 @@ export const useSetLlmSetting = (
 };
 
 export const useValidateConnection = () => {
-  const { edges, getOperatorTypeFromId } = useGraphStore((state) => state);
+  const { edges, getOperatorTypeFromId, getParentIdById } = useGraphStore(
+    (state) => state,
+  );
+
+  const isSameNodeChild = useCallback(
+    (connection: Connection) => {
+      const sourceParentId = getParentIdById(connection.source);
+      const targetParentId = getParentIdById(connection.target);
+      if (sourceParentId || targetParentId) {
+        return sourceParentId === targetParentId;
+      }
+      return true;
+    },
+    [getParentIdById],
+  );
+
   // restricted lines cannot be connected successfully.
   const isValidConnection = useCallback(
     (connection: Connection) => {
@@ -332,10 +347,11 @@ export const useValidateConnection = () => {
         !hasLine &&
         RestrictedUpstreamMap[
           getOperatorTypeFromId(connection.source) as Operator
-        ]?.every((x) => x !== getOperatorTypeFromId(connection.target));
+        ]?.every((x) => x !== getOperatorTypeFromId(connection.target)) &&
+        isSameNodeChild(connection);
       return ret;
     },
-    [edges, getOperatorTypeFromId],
+    [edges, getOperatorTypeFromId, isSameNodeChild],
   );
 
   return isValidConnection;

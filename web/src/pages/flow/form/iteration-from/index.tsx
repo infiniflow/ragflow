@@ -23,7 +23,7 @@ const IterationForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         rules={[{ required: true }]}
         tooltip={t('knowledgeDetails.delimiterTip')}
       >
-        <DelimiterInput />
+        <DelimiterInput maxLength={1} />
       </Form.Item>
     </Form>
   );
