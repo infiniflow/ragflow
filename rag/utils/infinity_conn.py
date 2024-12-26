@@ -26,7 +26,8 @@ from rag.utils.doc_store_conn import (
 
 logger = logging.getLogger('ragflow.infinity_conn')
 
-def equivalent_condition_to_str(condition: dict) -> str|None:
+
+def equivalent_condition_to_str(condition: dict) -> str | None:
     assert "_id" not in condition
     cond = list()
     for k, v in condition.items():
@@ -59,11 +60,12 @@ def concat_dataframes(df_list: list[pl.DataFrame], selectFields: list[str]) -> p
         return pl.concat(df_list)
     schema = dict()
     for field_name in selectFields:
-        if field_name == 'score()': # Workaround: fix schema is changed to score()
+        if field_name == 'score()':  # Workaround: fix schema is changed to score()
             schema['SCORE'] = str
         else:
             schema[field_name] = str
     return pl.DataFrame(schema=schema)
+
 
 @singleton
 class InfinityConnection(DocStoreConnection):
@@ -80,7 +82,7 @@ class InfinityConnection(DocStoreConnection):
                 connPool = ConnectionPool(infinity_uri)
                 inf_conn = connPool.get_conn()
                 res = inf_conn.show_current_node()
-                if res.error_code == ErrorCode.OK and res.server_status=="started":
+                if res.error_code == ErrorCode.OK and res.server_status == "started":
                     self._migrate_db(inf_conn)
                     self.connPool = connPool
                     connPool.release_conn(inf_conn)
@@ -142,7 +144,6 @@ class InfinityConnection(DocStoreConnection):
     def health(self) -> dict:
         """
         Return the health status of the database.
-        TODO: Infinity-sdk provides health() to wrap `show global variables` and `show tables`
         """
         inf_conn = self.connPool.get_conn()
         res = inf_conn.show_current_node()
@@ -361,7 +362,13 @@ class InfinityConnection(DocStoreConnection):
         for knowledgebaseId in knowledgebaseIds:
             table_name = f"{indexName}_{knowledgebaseId}"
             table_list.append(table_name)
-            table_instance = db_instance.get_table(table_name)
+            table_instance = None
+            try:
+                table_instance = db_instance.get_table(table_name)
+            except Exception:
+                logger.warning(
+                    f"Table not found: {table_name}, this knowledge base isn't created in Infinity. Maybe it is created in other document engine.")
+                continue
             kb_res, _ = table_instance.output(["*"]).filter(f"id = '{chunkId}'").to_pl()
             logger.debug(f"INFINITY get table: {str(table_list)}, result: {str(kb_res)}")
             df_list.append(kb_res)
@@ -404,7 +411,7 @@ class InfinityConnection(DocStoreConnection):
                     d[k] = "###".join(v)
                 elif k == 'kb_id':
                     if isinstance(d[k], list):
-                        d[k] = d[k][0] # since d[k] is a list, but we need a str
+                        d[k] = d[k][0]  # since d[k] is a list, but we need a str
                 elif k == "position_int":
                     assert isinstance(v, list)
                     arr = [num for row in v for num in row]
@@ -441,7 +448,7 @@ class InfinityConnection(DocStoreConnection):
                 newValue[k] = " ".join(v)
             elif k == 'kb_id':
                 if isinstance(newValue[k], list):
-                    newValue[k] = newValue[k][0] # since d[k] is a list, but we need a str
+                    newValue[k] = newValue[k][0]  # since d[k] is a list, but we need a str
             elif k == "position_int":
                 assert isinstance(v, list)
                 arr = [num for row in v for num in row]

@@ -94,7 +94,7 @@ def getsse(canvas_id):
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
-        return get_data_error_result(message='Token is not valid!"')
+        return get_data_error_result(message='Authentication error: API key is invalid!"')
     e, c = UserCanvasService.get_by_id(canvas_id)
     if not e:
         return get_data_error_result(message="canvas not found.")

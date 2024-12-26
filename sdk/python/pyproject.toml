@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ragflow-sdk"
-version = "0.15.0"
+version = "0.15.1"
 description = "Python client sdk of [RAGFlow](https://github.com/infiniflow/ragflow). RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding."
 authors = ["Zhichang Yu <yuzhichang@gmail.com>"]
 license = "Apache License, Version 2.0"
