@@ -1,6 +1,6 @@
 import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
-import { CirclePower } from 'lucide-react';
+import { ListRestart } from 'lucide-react';
 import { Handle, NodeProps, NodeResizeControl, Position } from 'reactflow';
 import { NodeData } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
@@ -45,10 +45,14 @@ export function IterationNode({
 
   return (
     <section
-      className={cn('w-full h-full bg-zinc-200', styles.iterationNode, {
-        ['bg-gray-800']: theme === 'dark',
-        [styles.selectedIterationNode]: selected,
-      })}
+      className={cn(
+        'w-full h-full bg-zinc-200 opacity-80',
+        styles.iterationNode,
+        {
+          ['bg-gray-800']: theme === 'dark',
+          [styles.selectedIterationNode]: selected,
+        },
+      )}
     >
       <NodeResizeControl style={controlStyle} minWidth={100} minHeight={50}>
         <ResizeIcon />
@@ -107,7 +111,7 @@ export function IterationStartNode({
         style={RightHandleStyle}
       ></Handle>
       <div>
-        <CirclePower className="size-7" />
+        <ListRestart className="size-7" />
       </div>
     </section>
   );

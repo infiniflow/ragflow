@@ -96,7 +96,7 @@ export enum Operator {
   Template = 'Template',
   Email = 'Email',
   Iteration = 'Iteration',
-  IterationStart = 'IterationStart',
+  IterationStart = 'IterationItem',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -2960,4 +2960,5 @@ export const NoDebugOperatorsList = [
   Operator.Message,
   Operator.RewriteQuestion,
   Operator.Switch,
+  Operator.Iteration,
 ];
