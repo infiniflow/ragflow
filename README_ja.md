@@ -33,7 +33,7 @@
 
 <h4 align="center">
   <a href="https://ragflow.io/docs/dev/">Document</a> |
-  <a href="https://github.com/infiniflow/ragflow/issues/162">Roadmap</a> |
+  <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
   <a href="https://discord.gg/4XxujFgUN7">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
@@ -304,7 +304,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 
 ## 📜 ロードマップ
 
-[RAGFlow ロードマップ 2024](https://github.com/infiniflow/ragflow/issues/162) を参照
+[RAGFlow ロードマップ 2025](https://github.com/infiniflow/ragflow/issues/4214) を参照
 
 ## 🏄 コミュニティ
 
