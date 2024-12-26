@@ -57,7 +57,7 @@ class Invoke(ComponentBase, ABC):
                 _, out = cpn.output(allow_partial=False)
                 args[para["key"]] = "\n".join(out["content"])
             else:
-                args[para["key"]] = "\n".join(para["value"])
+                args[para["key"]] = para["value"]
 
         url = self._param.url.strip()
         if url.find("http") != 0:
