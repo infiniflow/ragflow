@@ -43,7 +43,10 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
     }));
   }, [t]);
 
-  const componentIdOptions = useBuildComponentIdSelectOptions(node?.id);
+  const componentIdOptions = useBuildComponentIdSelectOptions(
+    node?.id,
+    node?.parentId,
+  );
 
   return (
     <Form

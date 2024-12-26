@@ -1,8 +1,9 @@
 import { DefaultOptionType } from 'antd/es/select';
 import get from 'lodash/get';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Node } from 'reactflow';
 import { BeginId, Operator } from '../constant';
-import { BeginQuery } from '../interface';
+import { BeginQuery, NodeData } from '../interface';
 import useGraphStore from '../store';
 
 export const useGetBeginNodeDataQuery = () => {
@@ -37,19 +38,40 @@ const ExcludedNodes = [
   Operator.Note,
 ];
 
-export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
+export const useBuildComponentIdSelectOptions = (
+  nodeId?: string,
+  parentId?: string,
+) => {
   const nodes = useGraphStore((state) => state.nodes);
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
   const query: BeginQuery[] = getBeginNodeDataQuery();
+
+  // Limit the nodes inside iteration to only reference peer nodes with the same parentId and other external nodes other than their parent nodes
+  const filterChildNodesToSameParentOrExternal = useCallback(
+    (node: Node<NodeData>) => {
+      // Node inside iteration
+      if (parentId) {
+        return (
+          (node.parentId === parentId || node.parentId === undefined) &&
+          node.id !== parentId
+        );
+      }
+
+      return node.parentId === undefined; // The outermost node
+    },
+    [parentId],
+  );
 
   const componentIdOptions = useMemo(() => {
     return nodes
       .filter(
         (x) =>
-          x.id !== nodeId && !ExcludedNodes.some((y) => y === x.data.label),
+          x.id !== nodeId &&
+          !ExcludedNodes.some((y) => y === x.data.label) &&
+          filterChildNodesToSameParentOrExternal(x),
       )
       .map((x) => ({ label: x.data.name, value: x.id }));
-  }, [nodes, nodeId]);
+  }, [nodes, nodeId, filterChildNodesToSameParentOrExternal]);
 
   const groupedOptions = [
     {
