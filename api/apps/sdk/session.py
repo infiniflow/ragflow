@@ -405,7 +405,7 @@ def chatbot_completions(dialog_id):
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
-        return get_error_data_result(message='Token is not valid!"')
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
 
     if "quote" not in req:
         req["quote"] = False
@@ -432,7 +432,7 @@ def agent_bot_completions(agent_id):
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
-        return get_error_data_result(message='Token is not valid!"')
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
 
     if "quote" not in req:
         req["quote"] = False
