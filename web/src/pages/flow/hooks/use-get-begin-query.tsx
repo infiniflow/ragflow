@@ -1,7 +1,7 @@
 import { DefaultOptionType } from 'antd/es/select';
 import get from 'lodash/get';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Operator } from '../constant';
+import { BeginId, Operator } from '../constant';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 
@@ -9,7 +9,7 @@ export const useGetBeginNodeDataQuery = () => {
   const getNode = useGraphStore((state) => state.getNode);
 
   const getBeginNodeDataQuery = useCallback(() => {
-    return get(getNode('begin'), 'data.form.query', []);
+    return get(getNode(BeginId), 'data.form.query', []);
   }, [getNode]);
 
   return getBeginNodeDataQuery;

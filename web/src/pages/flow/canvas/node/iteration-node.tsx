@@ -46,7 +46,7 @@ export function IterationNode({
   return (
     <section
       className={cn(
-        'w-full h-full bg-zinc-200 opacity-80',
+        'w-full h-full bg-zinc-200 opacity-70',
         styles.iterationNode,
         {
           ['bg-gray-800']: theme === 'dark',

@@ -60,6 +60,8 @@ import {
   WrapText,
 } from 'lucide-react';
 
+export const BeginId = 'begin';
+
 export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
