@@ -1,8 +1,8 @@
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { Node } from '@xyflow/react';
 import { Button, Collapse, Flex, Form, Input, Select } from 'antd';
 import { PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Node } from 'reactflow';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
 import { NodeData } from '../../interface';
 

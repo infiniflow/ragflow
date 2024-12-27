@@ -1,8 +1,8 @@
 import { useFetchFlow, useResetFlow, useSetFlow } from '@/hooks/flow-hooks';
+import { Node } from '@xyflow/react';
 import { useDebounceEffect } from 'ahooks';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
-import { Node } from 'reactflow';
 import { useParams } from 'umi';
 import useGraphStore from '../store';
 import { useBuildDslData } from './use-build-dsl';

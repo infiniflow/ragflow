@@ -1,5 +1,6 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { CloseOutlined, PlusOutlined } from '@ant-design/icons';
+import { useUpdateNodeInternals } from '@xyflow/react';
 import {
   Button,
   Card,
@@ -19,7 +20,6 @@ import {
   useEffect,
   useState,
 } from 'react';
-import { useUpdateNodeInternals } from 'reactflow';
 import { Operator } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
 

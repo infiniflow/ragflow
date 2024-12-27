@@ -1,11 +1,11 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { CloseOutlined } from '@ant-design/icons';
+import { Node } from '@xyflow/react';
 import { Drawer, Flex, Form, Input } from 'antd';
 import { lowerFirst } from 'lodash';
 import { Play } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { Node } from 'reactflow';
 import { BeginId, Operator, operatorMap } from '../constant';
 import AkShareForm from '../form/akshare-form';
 import AnswerForm from '../form/answer-form';

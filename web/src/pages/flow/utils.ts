@@ -1,11 +1,11 @@
 import { DSLComponents } from '@/interfaces/database/flow';
 import { removeUselessFieldsFromValues } from '@/utils/form';
+import { Edge, Node, Position, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
 import { curry, get, intersectionWith, isEqual, sample } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
-import { Edge, Node, Position, XYPosition } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 import {
   CategorizeAnchorPointPositions,
@@ -13,7 +13,12 @@ import {
   NodeMap,
   Operator,
 } from './constant';
-import { ICategorizeItemResult, IPosition, NodeData } from './interface';
+import {
+  ICategorizeItemResult,
+  IPosition,
+  NodeData,
+  RAGFlowNodeType,
+} from './interface';
 
 const buildEdges = (
   operatorIds: string[],
@@ -298,7 +303,7 @@ export const generateNodeNamesWithIncreasingIndex = (
   return `${name}_${index}`;
 };
 
-export const duplicateNodeForm = (nodeData?: NodeData) => {
+export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
   const form: Record<string, any> = { ...(nodeData?.form ?? {}) };
 
   // Delete the downstream node corresponding to the to field of the Categorize operator

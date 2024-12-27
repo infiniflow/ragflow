@@ -1,6 +1,6 @@
+import { useUpdateNodeInternals } from '@xyflow/react';
 import get from 'lodash/get';
 import { useEffect, useMemo } from 'react';
-import { useUpdateNodeInternals } from 'reactflow';
 import { SwitchElseTo } from '../../constant';
 import {
   ICategorizeItemResult,

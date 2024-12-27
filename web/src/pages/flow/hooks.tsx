@@ -1,3 +1,10 @@
+import {
+  Connection,
+  Edge,
+  Node,
+  Position,
+  ReactFlowInstance,
+} from '@xyflow/react';
 import React, {
   ChangeEvent,
   useCallback,
@@ -5,7 +12,6 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { Connection, Edge, Node, Position, ReactFlowInstance } from 'reactflow';
 // import { shallow } from 'zustand/shallow';
 import { variableEnabledFieldMap } from '@/constants/chat';
 import {
@@ -149,7 +155,7 @@ export const useInitializeOperatorParams = () => {
 export const useHandleDrag = () => {
   const handleDragStart = useCallback(
     (operatorId: string) => (ev: React.DragEvent<HTMLDivElement>) => {
-      ev.dataTransfer.setData('application/reactflow', operatorId);
+      ev.dataTransfer.setData('application/@xyflow/react', operatorId);
       ev.dataTransfer.effectAllowed = 'move';
     },
     [],
@@ -184,7 +190,7 @@ export const useHandleDrop = () => {
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
 
-      const type = event.dataTransfer.getData('application/reactflow');
+      const type = event.dataTransfer.getData('application/@xyflow/react');
 
       // check if the dropped element is valid
       if (typeof type === 'undefined' || !type) {
@@ -193,7 +199,7 @@ export const useHandleDrop = () => {
 
       // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
       // and you don't need to subtract the reactFlowBounds.left/top anymore
-      // details: https://reactflow.dev/whats-new/2023-11-10
+      // details: https://@xyflow/react.dev/whats-new/2023-11-10
       const position = reactFlowInstance?.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
@@ -216,10 +222,8 @@ export const useHandleDrop = () => {
       };
 
       if (type === Operator.Iteration) {
-        newNode.style = {
-          width: 500,
-          height: 250,
-        };
+        newNode.width = 500;
+        newNode.height = 250;
         const iterationStartNode: Node<any> = {
           id: `${Operator.IterationStart}:${humanId()}`,
           type: 'iterationStartNode',
@@ -320,7 +324,7 @@ export const useValidateConnection = () => {
   );
 
   const isSameNodeChild = useCallback(
-    (connection: Connection) => {
+    (connection: Connection | Edge) => {
       const sourceParentId = getParentIdById(connection.source);
       const targetParentId = getParentIdById(connection.target);
       if (sourceParentId || targetParentId) {
@@ -333,7 +337,7 @@ export const useValidateConnection = () => {
 
   // restricted lines cannot be connected successfully.
   const isValidConnection = useCallback(
-    (connection: Connection) => {
+    (connection: Connection | Edge) => {
       // node cannot connect to itself
       const isSelfConnected = connection.target === connection.source;
 

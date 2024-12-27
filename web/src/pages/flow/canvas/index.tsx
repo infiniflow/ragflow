@@ -4,14 +4,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { FolderInput, FolderOutput } from 'lucide-react';
-import ReactFlow, {
+import {
   Background,
   ConnectionMode,
   ControlButton,
   Controls,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+  NodeTypes,
+  ReactFlow,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { FolderInput, FolderOutput } from 'lucide-react';
 import ChatDrawer from '../chat/drawer';
 import FormDrawer from '../flow-drawer';
 import {
@@ -43,7 +45,7 @@ import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
 
-const nodeTypes = {
+const nodeTypes: NodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,

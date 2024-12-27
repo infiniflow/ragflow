@@ -1,4 +1,4 @@
-import { Edge, Node } from 'reactflow';
+import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
 
 export type DSLComponents = Record<string, IOperator>;

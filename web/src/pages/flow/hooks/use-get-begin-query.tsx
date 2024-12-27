@@ -1,7 +1,7 @@
+import { Node } from '@xyflow/react';
 import { DefaultOptionType } from 'antd/es/select';
 import get from 'lodash/get';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Node } from 'reactflow';
 import { BeginId, Operator } from '../constant';
 import { BeginQuery, NodeData } from '../interface';
 import useGraphStore from '../store';

@@ -1,6 +1,6 @@
 import { useFetchFlow } from '@/hooks/flow-hooks';
+import { Node } from '@xyflow/react';
 import { useCallback } from 'react';
-import { Node } from 'reactflow';
 import useGraphStore from '../store';
 import { buildDslComponentsByGraph } from '../utils';
 

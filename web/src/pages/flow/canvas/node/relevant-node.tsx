@@ -1,16 +1,16 @@
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { NodeData } from '../../interface';
 import { RightHandleStyle } from './handle-icon';
 
 import { useTheme } from '@/components/theme-provider';
 import { get } from 'lodash';
 import { useReplaceIdWithName } from '../../hooks';
+import { IRelevantNode } from '../../interface';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
+export function RelevantNode({ id, data, selected }: NodeProps<IRelevantNode>) {
   const yes = get(data, 'form.yes');
   const no = get(data, 'form.no');
   const replaceIdWithName = useReplaceIdWithName();

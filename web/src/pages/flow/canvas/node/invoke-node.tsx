@@ -1,10 +1,10 @@
 import { useTheme } from '@/components/theme-provider';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
 import { useTranslation } from 'react-i18next';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { NodeData } from '../../interface';
+import { IInvokeNode } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -14,7 +14,7 @@ export function InvokeNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<NodeData>) {
+}: NodeProps<IInvokeNode>) {
   const { t } = useTranslation();
   const { theme } = useTheme();
   const url = get(data, 'form.url');

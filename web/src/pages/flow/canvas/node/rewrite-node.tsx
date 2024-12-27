@@ -1,9 +1,9 @@
 import LLMLabel from '@/components/llm-select/llm-label';
 import { useTheme } from '@/components/theme-provider';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
 import { get } from 'lodash';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { NodeData } from '../../interface';
+import { IRewriteNode } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -13,7 +13,7 @@ export function RewriteNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<NodeData>) {
+}: NodeProps<IRewriteNode>) {
   const { theme } = useTheme();
   return (
     <section

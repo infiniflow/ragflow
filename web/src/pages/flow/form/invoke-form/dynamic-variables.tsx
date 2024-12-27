@@ -7,7 +7,7 @@ import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-quer
 import { IInvokeVariable, NodeData } from '../../interface';
 import { useHandleOperateParameters } from './hooks';
 
-import { Node } from 'reactflow';
+import { Node } from '@xyflow/react';
 import styles from './index.less';
 
 interface IProps {

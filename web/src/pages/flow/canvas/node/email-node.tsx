@@ -1,8 +1,8 @@
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { useState } from 'react';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { NodeData } from '../../interface';
+import { IEmailNode } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -12,7 +12,7 @@ export function EmailNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<NodeData>) {
+}: NodeProps<IEmailNode>) {
   const [showDetails, setShowDetails] = useState(false);
 
   return (

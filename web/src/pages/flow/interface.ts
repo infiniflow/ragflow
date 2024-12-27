@@ -1,5 +1,5 @@
+import { BuiltInNode, Node } from '@xyflow/react';
 import { FormInstance } from 'antd';
-import { Node } from 'reactflow';
 
 export interface DSLComponentList {
   id: string;
@@ -86,6 +86,40 @@ export interface ISwitchForm {
   end_cpn_id: string;
   no: string;
 }
+
+export type BaseNodeData = {
+  label: string; // operator type
+  name: string; // operator name
+  color?: string;
+};
+
+export type BaseNode<T = any> = Node<{ form: T } & BaseNodeData>;
+
+export type IBeginNode = BaseNode<IBeginForm>;
+export type IRetrievalNode = BaseNode<IRetrievalForm>;
+export type IGenerateNode = BaseNode<IGenerateForm>;
+export type ICategorizeNode = BaseNode<ICategorizeForm>;
+export type ISwitchNode = BaseNode<ISwitchForm>;
+export type IRagNode = BaseNode;
+export type IRelevantNode = BaseNode;
+export type ILogicNode = BaseNode;
+export type INoteNode = BaseNode;
+export type IMessageNode = BaseNode;
+export type IRewriteNode = BaseNode;
+export type IInvokeNode = BaseNode;
+export type ITemplateNode = BaseNode;
+export type IEmailNode = BaseNode;
+export type IIterationNode = BaseNode;
+export type IIterationStartNode = BaseNode;
+export type IKeywordNode = BaseNode;
+
+export type RAGFlowNodeType =
+  | BuiltInNode
+  | IBeginNode
+  | IRetrievalNode
+  | IGenerateNode
+  | ICategorizeNode
+  | ISwitchNode;
 
 export type NodeData = {
   label: string; // operator type

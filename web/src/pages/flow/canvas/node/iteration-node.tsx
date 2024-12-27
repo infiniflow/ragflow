@@ -1,8 +1,8 @@
 import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
+import { Handle, NodeProps, NodeResizeControl, Position } from '@xyflow/react';
 import { ListRestart } from 'lucide-react';
-import { Handle, NodeProps, NodeResizeControl, Position } from 'reactflow';
-import { NodeData } from '../../interface';
+import { IIterationNode, IIterationStartNode } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -19,7 +19,11 @@ function ResizeIcon() {
       fill="none"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ position: 'absolute', right: 5, bottom: 5 }}
+      style={{
+        position: 'absolute',
+        right: 5,
+        bottom: 5,
+      }}
     >
       <path stroke="none" d="M0 0h24v24H0z" fill="none" />
       <polyline points="16 20 20 20 20 16" />
@@ -33,6 +37,7 @@ function ResizeIcon() {
 const controlStyle = {
   background: 'transparent',
   border: 'none',
+  cursor: 'nwse-resize',
 };
 
 export function IterationNode({
@@ -40,7 +45,7 @@ export function IterationNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<NodeData>) {
+}: NodeProps<IIterationNode>) {
   const { theme } = useTheme();
 
   return (
@@ -93,7 +98,7 @@ export function IterationNode({
 export function IterationStartNode({
   isConnectable = true,
   selected,
-}: NodeProps<NodeData>) {
+}: NodeProps<IIterationStartNode>) {
   const { theme } = useTheme();
 
   return (
