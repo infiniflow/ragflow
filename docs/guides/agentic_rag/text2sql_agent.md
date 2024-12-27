@@ -1,3 +1,8 @@
+---
+sidebar_position: 3
+slug: /text2sql_agent
+---
+
 # Create a Text2SQL agent
 Build a Text2SQL agent leverging RAGFlow's RAG capabilities. Contributed by @TeslaZY.
 ## Scenario
