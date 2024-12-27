@@ -91,7 +91,7 @@ const DynamicVariableForm = ({ node }: IProps) => {
               icon={<PlusOutlined />}
               className={styles.addButton}
             >
-              {t('flow.addItem')}
+              {t('flow.addVariable')}
             </Button>
           </Form.Item>
         </>
