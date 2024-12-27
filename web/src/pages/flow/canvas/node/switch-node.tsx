@@ -2,7 +2,7 @@ import { useTheme } from '@/components/theme-provider';
 import { Divider, Flex } from 'antd';
 import classNames from 'classnames';
 import { Handle, NodeProps, Position } from 'reactflow';
-import { useGetComponentLabelByValue } from '../../hooks';
+import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
 import { ISwitchCondition, NodeData } from '../../interface';
 import { RightHandleStyle } from './handle-icon';
 import { useBuildSwitchHandlePositions } from './hooks';

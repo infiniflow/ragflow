@@ -1,13 +1,13 @@
+import { useTheme } from '@/components/theme-provider';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
 import { Handle, NodeProps, Position } from 'reactflow';
-import { useGetComponentLabelByValue } from '../../hooks';
+import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
 import { IGenerateParameter, NodeData } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 
-import { useTheme } from '@/components/theme-provider';
 import styles from './index.less';
 
 export function TemplateNode({

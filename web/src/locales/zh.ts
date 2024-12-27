@@ -1060,6 +1060,20 @@ export default {
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传json文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
+      iteration: '循环',
+      iterationDescription: `该组件首先将输入以“分隔符”分割成数组，然后依次对数组中的元素执行相同的操作步骤，直到输出所有结果，可以理解为一个任务批处理器。
+
+例如在长文本翻译迭代节点中，如果所有内容都输入到LLM节点，可能会达到单次对话的限制，上游节点可以先将长文本分割成多个片段，配合迭代节点对每个片段进行批量翻译，避免达到单次对话的LLM消息限制。`,
+      delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,
+      delimiterOptions: {
+        comma: '逗号',
+        lineBreak: '换行',
+        tab: '制表符',
+        underline: '下划线',
+        diagonal: '斜线',
+        minus: '减号',
+        semicolon: '分号',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',
