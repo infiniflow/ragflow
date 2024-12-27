@@ -1,4 +1,6 @@
-# Scenario
+# Create a Text2SQL agent
+Build a Text2SQL agent leverging RAGFlow's RAG capabilities. Contributed by @TeslaZY.
+## Scenario
 The Text2SQL agent is designed to bridge the gap between Natural Language Processing (NLP) and Structured Query Language (SQL). Its key advantages are as follows:
 
 - **Assisting non-technical users with SQL**: Not all users have a background in SQL or understand the structure of the tables involved in queries. With a Text2SQL agent, users can pose questions or request data in natural language without needing an in-depth knowledge of the database structure or SQL syntax.
@@ -17,7 +19,7 @@ In summary, the Text2SQL agent seeks to make database queries more intuitive and
 
 However, traditional Text2SQL solutions often require model fine-tuning, which can substantially escalate deployment and maintenance costs when implemented in enterprise environments alongside RAG or Agent components. RAGFlow’s RAG-based Text2SQL utilizes an existing (connected) large language model (LLM), allowing for seamless integration with other RAG/Agent components without the necessity for additional fine-tuned models.
 
-# Recipe
+## Recipe
 
 A list of components required:
 
@@ -27,13 +29,13 @@ A list of components required:
 - Generate
 - ExeSQL
 
-# Procedure
-## Preparation of Data
+## Procedure
+### Preparation of Data
 
-### Database Environment
+#### Database Environment
 Mysql-8.0.39
 
-### Database Table Creation Statements
+#### Database Table Creation Statements
 
 ```sql
 SET NAMES utf8mb4;
@@ -93,7 +95,7 @@ CREATE TABLE `OrderDetails` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-### Generate Test Data
+#### Generate Test Data
 
 ```sql
 START TRANSACTION;
@@ -196,7 +198,7 @@ SET o.TotalPrice = od.order_total;
 COMMIT;
 
 ```
-## Configure Knowledge Base
+### Configure Knowledge Base
 
 For RAGFlow’s RAG-based Text2SQL, the following knowledge bases are typically required:
 
@@ -208,7 +210,7 @@ However, in specialized query scenarios, user queries might include abbreviation
 
 - **TextSQL_Thesaurus**: A thesaurus covering domain-specific terms and their synonyms.
 
-### Configure DDL Knowledge Base
+#### Configure DDL Knowledge Base
 
 1. The content of the DDL text is as follows:
 ```sql
@@ -253,7 +255,7 @@ CREATE TABLE OrderDetails (
 2. Set the chunk data for the DLL knowledge base
 ![DDL knowledge base](https://github.com/user-attachments/assets/2c073e1b-8fdd-443e-98ca-4fd36f9d93e0)
 
-### Configure DB_Description Knowledge Base
+#### Configure DB_Description Knowledge Base
 1. the content of the DB_Description text is as follows:
 ```markdown
 ### Customers (Customer Information Table)
@@ -289,12 +291,12 @@ The OrderDetails table provides detailed information about each item in an order
 ```
 2. set the chunk data for the DB_Description knowledge base
 ![DB_Description knowledge base](https://github.com/user-attachments/assets/0e3f1cad-dd67-4d7c-ae2d-b31ca3be664d)
-### Configure Q->SQL Knowledge Base
+#### Configure Q->SQL Knowledge Base
 1. Q->SQL Excel Document
 [QA.xlsx](https://github.com/user-attachments/files/18258416/QA.xlsx)
 2. Upload the Q->SQL Excel document to the Q->SQL knowledge base and set the chunk data as follows via parsing:
 ![Q->SQL knowledge base](https://github.com/user-attachments/assets/391f4395-1458-4f5b-8b55-517ec3a7b1dc)
-### Configure TextSQL_Thesaurus Knowledge Base
+#### Configure TextSQL_Thesaurus Knowledge Base
 1. the content of the TextSQL_Thesaurus text is as follows:
 ```txt
 ###
@@ -322,7 +324,7 @@ Synonyms: laptop computer,laptop pc
 2. set the chunk data for the TextSQL_Thesaurus knowledge base
 ![TextSQL_Thesaurus knowledge base](https://github.com/user-attachments/assets/76e6f802-1381-4bbc-951f-50992fbeecd8)
 
-## Build the Agent
+### Build the Agent
 1. Create an Agent using the Text2SQL Agent template.
 2. Enter the configuration page of the Agent to start the setup process.
 3. Create a Retrieval node and name it Thesaurus; create an ExeSQL node.
@@ -342,7 +344,7 @@ Synonyms: laptop computer,laptop pc
    ```plaintext
    Hi! I'm your electronic products online store business data analysis assistant. What can I do for you?
 
-## Run and Test the Agent
+### Run and Test the Agent
 1. click the Run button to start the agent.
 2. input the question:
 ```
@@ -381,12 +383,12 @@ Find all customers who has bought a mobile phone
 
 With this, you maybe appreciate the capabilities of Step Run. It undoubtedly assists in constructing more effective agents.
 
-# Troubleshooting
-## Total: 0 No record in the database!
+## Troubleshooting
+### Total: 0 No record in the database!
 1. Confirm if the sql is correct. If so, check the connection information of the database. 
 2. If the connection information is correct, maybe there is actually no data matching your query in the database.
 
-# Considerations
+## Considerations
 
 In real production scenarios within vertical domains, several considerations are essential for effective Text2SQL implementation:
 
