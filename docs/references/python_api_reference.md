@@ -736,8 +736,8 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets("123")
 dataset = dataset[0]
-dataset.async_parse_documents(["wdfxb5t547d"])
-for chunk in doc.list_chunks(keywords="rag", page=0, page_size=12):
+docs = dataset.list_documents(keywords="test", page=1, page_size=12)
+for chunk in docs[0].list_chunks(keywords="rag", page=0, page_size=12):
     print(chunk)
 ```
 
