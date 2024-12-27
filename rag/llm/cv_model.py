@@ -29,7 +29,6 @@ import requests
 from rag.nlp import is_english
 from api.utils import get_uuid
 from api.utils.file_utils import get_project_base_directory
-from google.generativeai import client, GenerativeModel, GenerationConfig
 
 
 class Base(ABC):
@@ -38,7 +37,7 @@ class Base(ABC):
 
     def describe(self, image, max_tokens=300):
         raise NotImplementedError("Please implement encode method!")
-        
+
     def chat(self, system, history, gen_conf, image=""):
         if system:
             history[-1]["content"] = system + history[-1]["content"] + "user query: " + history[-1]["content"]
@@ -57,7 +56,6 @@ class Base(ABC):
             return response.choices[0].message.content.strip(), response.usage.total_tokens
         except Exception as e:
             return "**ERROR**: " + str(e), 0
-
 
     def chat_streamly(self, system, history, gen_conf, image=""):
         if system:
@@ -94,7 +92,6 @@ class Base(ABC):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield tk_count
-
 
     def image2base64(self, image):
         if isinstance(image, bytes):
@@ -145,7 +142,7 @@ class Base(ABC):
 class GptV4(Base):
     def __init__(self, key, model_name="gpt-4-vision-preview", lang="Chinese", base_url="https://api.openai.com/v1"):
         if not base_url:
-            base_url="https://api.openai.com/v1"
+            base_url = "https://api.openai.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
@@ -164,6 +161,7 @@ class GptV4(Base):
             max_tokens=max_tokens,
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
+
 
 class AzureGptV4(Base):
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
@@ -223,7 +221,7 @@ class QWenCV(Base):
             {"image": f"{b64}"},
             {"text": text},
         ]
-    
+
     def describe(self, image, max_tokens=300):
         from http import HTTPStatus
         from dashscope import MultiModalConversation
@@ -305,7 +303,7 @@ class Zhipu4V(Base):
 
         prompt = self.prompt(b64)
         prompt[0]["content"][1]["type"] = "text"
-        
+
         res = self.client.chat.completions.create(
             model=self.model_name,
             messages=prompt,
@@ -344,7 +342,7 @@ class Zhipu4V(Base):
                     his["content"] = self.chat_prompt(his["content"], image)
 
             response = self.client.chat.completions.create(
-                model=self.model_name, 
+                model=self.model_name,
                 messages=history,
                 max_tokens=gen_conf.get("max_tokens", 1000),
                 temperature=gen_conf.get("temperature", 0.3),
@@ -487,6 +485,7 @@ class XinferenceCV(Base):
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
+
 class GeminiCV(Base):
     def __init__(self, key, model_name="gemini-1.0-pro-vision-latest", lang="Chinese", **kwargs):
         from google.generativeai import client, GenerativeModel
@@ -495,21 +494,21 @@ class GeminiCV(Base):
         self.model_name = model_name
         self.model = GenerativeModel(model_name=self.model_name)
         self.model._client = _client
-        self.lang = lang 
+        self.lang = lang
 
     def describe(self, image, max_tokens=2048):
         from PIL.Image import open
-        gen_config = {'max_output_tokens':max_tokens}
+        gen_config = {'max_output_tokens': max_tokens}
         prompt = "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。" if self.lang.lower() == "chinese" else \
             "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
-        b64 = self.image2base64(image) 
-        img = open(BytesIO(base64.b64decode(b64))) 
-        input = [prompt,img]
+        b64 = self.image2base64(image)
+        img = open(BytesIO(base64.b64decode(b64)))
+        input = [prompt, img]
         res = self.model.generate_content(
             input,
             generation_config=gen_config,
         )
-        return res.text,res.usage_metadata.total_token_count
+        return res.text, res.usage_metadata.total_token_count
 
     def chat(self, system, history, gen_conf, image=""):
         from transformers import GenerationConfig
@@ -569,11 +568,11 @@ class GeminiCV(Base):
 
 class OpenRouterCV(GptV4):
     def __init__(
-        self,
-        key,
-        model_name,
-        lang="Chinese",
-        base_url="https://openrouter.ai/api/v1",
+            self,
+            key,
+            model_name,
+            lang="Chinese",
+            base_url="https://openrouter.ai/api/v1",
     ):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
@@ -592,11 +591,11 @@ class LocalCV(Base):
 
 class NvidiaCV(Base):
     def __init__(
-        self,
-        key,
-        model_name,
-        lang="Chinese",
-        base_url="https://ai.api.nvidia.com/v1/vlm",
+            self,
+            key,
+            model_name,
+            lang="Chinese",
+            base_url="https://ai.api.nvidia.com/v1/vlm",
     ):
         if not base_url:
             base_url = ("https://ai.api.nvidia.com/v1/vlm",)
@@ -635,11 +634,11 @@ class NvidiaCV(Base):
             {
                 "role": "user",
                 "content": (
-                    "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。"
-                    if self.lang.lower() == "chinese"
-                    else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
-                )
-                + f' <img src="data:image/jpeg;base64,{b64}"/>',
+                               "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。"
+                               if self.lang.lower() == "chinese"
+                               else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
+                           )
+                           + f' <img src="data:image/jpeg;base64,{b64}"/>',
             }
         ]
 
@@ -655,7 +654,7 @@ class NvidiaCV(Base):
 class StepFunCV(GptV4):
     def __init__(self, key, model_name="step-1v-8k", lang="Chinese", base_url="https://api.stepfun.com/v1"):
         if not base_url:
-            base_url="https://api.stepfun.com/v1"
+            base_url = "https://api.stepfun.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
@@ -687,18 +686,18 @@ class TogetherAICV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="https://api.together.xyz/v1"):
         if not base_url:
             base_url = "https://api.together.xyz/v1"
-        super().__init__(key, model_name,lang,base_url)
+        super().__init__(key, model_name, lang, base_url)
 
 
 class YiCV(GptV4):
-    def __init__(self, key, model_name, lang="Chinese",base_url="https://api.lingyiwanwu.com/v1",):
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://api.lingyiwanwu.com/v1", ):
         if not base_url:
             base_url = "https://api.lingyiwanwu.com/v1"
-        super().__init__(key, model_name,lang,base_url)
+        super().__init__(key, model_name, lang, base_url)
 
 
 class HunyuanCV(Base):
-    def __init__(self, key, model_name, lang="Chinese",base_url=None):
+    def __init__(self, key, model_name, lang="Chinese", base_url=None):
         from tencentcloud.common import credential
         from tencentcloud.hunyuan.v20230901 import hunyuan_client
 
@@ -715,7 +714,7 @@ class HunyuanCV(Base):
         from tencentcloud.common.exception.tencent_cloud_sdk_exception import (
             TencentCloudSDKException,
         )
-        
+
         b64 = self.image2base64(image)
         req = models.ChatCompletionsRequest()
         params = {"Model": self.model_name, "Messages": self.prompt(b64)}
@@ -727,7 +726,7 @@ class HunyuanCV(Base):
             return ans, response.Usage.TotalTokens
         except TencentCloudSDKException as e:
             return ans + "\n**ERROR**: " + str(e), 0
-        
+
     def prompt(self, b64):
         return [
             {
