@@ -4,8 +4,11 @@ slug: /text2sql_agent
 ---
 
 # Create a Text2SQL agent
+
 Build a Text2SQL agent leverging RAGFlow's RAG capabilities. Contributed by @TeslaZY.
+
 ## Scenario
+
 The Text2SQL agent is designed to bridge the gap between Natural Language Processing (NLP) and Structured Query Language (SQL). Its key advantages are as follows:
 
 - **Assisting non-technical users with SQL**: Not all users have a background in SQL or understand the structure of the tables involved in queries. With a Text2SQL agent, users can pose questions or request data in natural language without needing an in-depth knowledge of the database structure or SQL syntax.
@@ -35,9 +38,11 @@ A list of components required:
 - ExeSQL
 
 ## Procedure
+
 ### Preparation of Data
 
 #### Database Environment
+
 Mysql-8.0.39
 
 #### Database Table Creation Statements
@@ -261,7 +266,9 @@ CREATE TABLE OrderDetails (
 ![DDL knowledge base](https://github.com/user-attachments/assets/2c073e1b-8fdd-443e-98ca-4fd36f9d93e0)
 
 #### Configure DB_Description Knowledge Base
+
 1. the content of the DB_Description text is as follows:
+2. 
 ```markdown
 ### Customers (Customer Information Table)
 The Customers table records detailed information about different customers in the online store. Here is the meaning of each field within this table:
@@ -294,6 +301,7 @@ The OrderDetails table provides detailed information about each item in an order
 - Quantity: The number of units of the product ordered.
 - TotalPrice: The total price for this particular item in the order, calculated as UnitPrice * Quantity.
 ```
+
 2. set the chunk data for the DB_Description knowledge base
 ![DB_Description knowledge base](https://github.com/user-attachments/assets/0e3f1cad-dd67-4d7c-ae2d-b31ca3be664d)
 #### Configure Q->SQL Knowledge Base

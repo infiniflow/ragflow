@@ -55,7 +55,7 @@ const BeginDynamicOptions = () => {
               icon={<PlusOutlined />}
               block
             >
-              Add field
+              Add option
             </Button>
             <Form.ErrorList errors={errors} />
           </Form.Item>
