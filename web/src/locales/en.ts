@@ -1093,6 +1093,9 @@ This delimiter is used to split the input text into several text pieces echo of 
         minus: 'Minus',
         semicolon: 'Semicolon',
       },
+      addVariable: 'Add variable',
+      variableSettings: 'Variable settings',
+      globalVariables: 'Global variables',
     },
     footer: {
       profile: 'All rights reserved @ React',

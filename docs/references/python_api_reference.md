@@ -736,8 +736,8 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets("123")
 dataset = dataset[0]
-dataset.async_parse_documents(["wdfxb5t547d"])
-for chunk in doc.list_chunks(keywords="rag", page=0, page_size=12):
+docs = dataset.list_documents(keywords="test", page=1, page_size=12)
+for chunk in docs[0].list_chunks(keywords="rag", page=0, page_size=12):
     print(chunk)
 ```
 
@@ -894,17 +894,12 @@ dataset = rag_object.list_datasets(name="ragflow")
 dataset = dataset[0]
 name = 'ragflow_test.txt'
 path = './test_data/ragflow_test.txt'
-rag_object.create_document(dataset, name=name, blob=open(path, "rb").read())
-doc = dataset.list_documents(name=name)
-doc = doc[0]
-dataset.async_parse_documents([doc.id])
-for c in rag_object.retrieve(question="What's ragflow?", 
-             dataset_ids=[dataset.id], document_ids=[doc.id], 
-             page=1, page_size=30, similarity_threshold=0.2, 
-             vector_similarity_weight=0.3,
-             top_k=1024
-             ):
-    print(c)
+documents =[{"displayed_name":"test_retrieve_chunks.txt","blob":open(path, "rb").read()}]
+docs = dataset.upload_documents(documents)
+doc = docs[0]
+doc.add_chunk(content="This is a chunk addition test")
+for c in rag_object.retrieve(dataset_ids=[dataset.id],document_ids=[doc.id]):
+  print(c)
 ```
 
 ---
