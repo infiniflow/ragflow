@@ -2,15 +2,13 @@ import { IModalProps } from '@/interfaces/common';
 import { Drawer } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  useGetBeginNodeDataQuery,
-  useSaveGraphBeforeOpeningDebugDrawer,
-} from '../hooks';
+import { BeginId } from '../constant';
+import DebugContent from '../debug-content';
+import { useGetBeginNodeDataQuery } from '../hooks/use-get-begin-query';
+import { useSaveGraphBeforeOpeningDebugDrawer } from '../hooks/use-save-graph';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { getDrawerWidth } from '../utils';
-
-import DebugContent from '../debug-content';
 
 const RunDrawer = ({
   hideModal,
@@ -28,7 +26,7 @@ const RunDrawer = ({
 
   const handleRunAgent = useCallback(
     (nextValues: Record<string, any>) => {
-      const currentNodes = updateNodeForm('begin', nextValues, ['query']);
+      const currentNodes = updateNodeForm(BeginId, nextValues, ['query']);
       handleRun(currentNodes);
       hideModal?.();
     },

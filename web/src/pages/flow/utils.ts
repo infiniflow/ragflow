@@ -5,7 +5,7 @@ import { humanId } from 'human-id';
 import { curry, get, intersectionWith, isEqual, sample } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
-import { Edge, Node, Position } from 'reactflow';
+import { Edge, Node, Position, XYPosition } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 import {
   CategorizeAnchorPointPositions,
@@ -144,6 +144,7 @@ export const buildDslComponentsByGraph = (
         },
         downstream: buildComponentDownstreamOrUpstream(edges, id, true),
         upstream: buildComponentDownstreamOrUpstream(edges, id, false),
+        parent_id: x?.parentId,
       };
     });
 
@@ -331,4 +332,56 @@ export const getDrawerWidth = () => {
 
 export const needsSingleStepDebugging = (label: string) => {
   return !NoDebugOperatorsList.some((x) => (label as Operator) === x);
+};
+
+// Get the coordinates of the node relative to the Iteration node
+export function getRelativePositionToIterationNode(
+  nodes: Node<NodeData>[],
+  position?: XYPosition, // relative position
+) {
+  if (!position) {
+    return;
+  }
+
+  const iterationNodes = nodes.filter(
+    (node) => node.data.label === Operator.Iteration,
+  );
+
+  for (const iterationNode of iterationNodes) {
+    const {
+      position: { x, y },
+      width,
+      height,
+    } = iterationNode;
+    const halfWidth = (width || 0) / 2;
+    if (
+      position.x >= x - halfWidth &&
+      position.x <= x + halfWidth &&
+      position.y >= y &&
+      position.y <= y + (height || 0)
+    ) {
+      return {
+        parentId: iterationNode.id,
+        position: { x: position.x - x + halfWidth, y: position.y - y },
+      };
+    }
+  }
+}
+
+export const generateDuplicateNode = (
+  position?: XYPosition,
+  label?: string,
+) => {
+  const nextPosition = {
+    x: (position?.x || 0) + 50,
+    y: (position?.y || 0) + 50,
+  };
+
+  return {
+    selected: false,
+    dragging: false,
+    id: `${label}:${humanId()}`,
+    position: nextPosition,
+    dragHandle: getNodeDragHandle(label),
+  };
 };

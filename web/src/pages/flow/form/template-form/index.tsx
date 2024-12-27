@@ -18,7 +18,7 @@ const TemplateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         <Input.TextArea rows={8} placeholder={t('flow.blank')} />
       </Form.Item>
 
-      <DynamicParameters nodeId={node?.id}></DynamicParameters>
+      <DynamicParameters node={node}></DynamicParameters>
     </Form>
   );
 };

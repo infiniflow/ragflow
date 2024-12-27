@@ -32,7 +32,7 @@ const RetrievalForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       form={form}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <SimilaritySlider
         isTooltipShown
         vectorSimilarityWeightName="keywords_similarity_weight"

@@ -3,7 +3,7 @@ import get from 'lodash/get';
 import React, { MouseEventHandler, useCallback, useMemo } from 'react';
 import JsonView from 'react18-json-view';
 import 'react18-json-view/src/style.css';
-import { useGetComponentLabelByValue, useReplaceIdWithText } from '../../hooks';
+import { useReplaceIdWithText } from '../../hooks';
 
 import { useTheme } from '@/components/theme-provider';
 import {
@@ -20,6 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
 
 interface IProps extends React.PropsWithChildren {
   nodeId: string;

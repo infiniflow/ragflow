@@ -14,7 +14,7 @@ const EmailForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
 
       {/* SMTP服务器配置 */}
       <Form.Item label={t('smtpServer')} name={'smtp_server'}>

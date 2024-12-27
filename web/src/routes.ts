@@ -246,6 +246,11 @@ const routes = [
       },
     ],
   },
+  {
+    path: '/workflow',
+    component: '@/pages/workflow',
+    layout: false,
+  },
 ];
 
 export default routes;

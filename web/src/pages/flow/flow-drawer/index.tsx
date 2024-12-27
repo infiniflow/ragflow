@@ -6,7 +6,7 @@ import { lowerFirst } from 'lodash';
 import { Play } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Node } from 'reactflow';
-import { Operator, operatorMap } from '../constant';
+import { BeginId, Operator, operatorMap } from '../constant';
 import AkShareForm from '../form/akshare-form';
 import AnswerForm from '../form/answer-form';
 import ArXivForm from '../form/arxiv-form';
@@ -45,6 +45,7 @@ import { getDrawerWidth, needsSingleStepDebugging } from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
 
 import { RunTooltip } from '../flow-tooltip';
+import IterationForm from '../form/iteration-from';
 import styles from './index.less';
 
 interface IProps {
@@ -89,6 +90,8 @@ const FormMap = {
   [Operator.Note]: () => <></>,
   [Operator.Template]: TemplateForm,
   [Operator.Email]: EmailForm,
+  [Operator.Iteration]: IterationForm,
+  [Operator.IterationStart]: () => <></>,
 };
 
 const EmptyContent = () => <div></div>;
@@ -137,11 +140,15 @@ const FormDrawer = ({
               <label htmlFor="" className={styles.title}>
                 {t('title')}
               </label>
-              <Input
-                value={name}
-                onBlur={handleNameBlur}
-                onChange={handleNameChange}
-              ></Input>
+              {node?.id === BeginId ? (
+                <span>{t(BeginId)}</span>
+              ) : (
+                <Input
+                  value={name}
+                  onBlur={handleNameBlur}
+                  onChange={handleNameChange}
+                ></Input>
+              )}
             </Flex>
             {needsSingleStepDebugging(operatorName) && (
               <RunTooltip>

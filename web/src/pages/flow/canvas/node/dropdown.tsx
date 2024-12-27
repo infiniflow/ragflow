@@ -3,6 +3,7 @@ import { CopyOutlined } from '@ant-design/icons';
 import { Flex, MenuProps } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Operator } from '../../constant';
 import { useDuplicateNode } from '../../hooks';
 import useGraphStore from '../../store';
 
@@ -15,10 +16,17 @@ interface IProps {
 const NodeDropdown = ({ id, iconFontColor, label }: IProps) => {
   const { t } = useTranslation();
   const deleteNodeById = useGraphStore((store) => store.deleteNodeById);
+  const deleteIterationNodeById = useGraphStore(
+    (store) => store.deleteIterationNodeById,
+  );
 
   const deleteNode = useCallback(() => {
-    deleteNodeById(id);
-  }, [id, deleteNodeById]);
+    if (label === Operator.Iteration) {
+      deleteIterationNodeById(id);
+    } else {
+      deleteNodeById(id);
+    }
+  }, [label, deleteIterationNodeById, id, deleteNodeById]);
 
   const duplicateNode = useDuplicateNode();
 

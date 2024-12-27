@@ -14,7 +14,7 @@ const YahooFinanceForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <Form.Item label={t('info')} name={'info'}>
         <Switch></Switch>
       </Form.Item>

@@ -9,7 +9,7 @@ import {
   SwitchOperatorOptions,
 } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
-import { useBuildComponentIdSelectOptions } from '../../hooks';
+import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
 import { IOperatorForm, ISwitchForm } from '../../interface';
 import { getOtherFieldValues } from '../../utils';
 
@@ -43,7 +43,10 @@ const SwitchForm = ({ onValuesChange, node, form }: IOperatorForm) => {
     }));
   }, [t]);
 
-  const componentIdOptions = useBuildComponentIdSelectOptions(node?.id);
+  const componentIdOptions = useBuildComponentIdSelectOptions(
+    node?.id,
+    node?.parentId,
+  );
 
   return (
     <Form

@@ -39,7 +39,7 @@ const BaiduFanyiForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <Form.Item label={t('appid')} name={'appid'}>
         <Input></Input>
       </Form.Item>

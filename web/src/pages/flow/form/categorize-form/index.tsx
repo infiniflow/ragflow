@@ -24,7 +24,7 @@ const CategorizeForm = ({ form, onValuesChange, node }: IOperatorForm) => {
       initialValues={{ items: [{}] }}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <Form.Item
         name={'llm_id'}
         label={t('model', { keyPrefix: 'chat' })}

@@ -69,7 +69,7 @@ const InvokeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         >
           <Switch />
         </Form.Item>
-        <DynamicVariablesForm nodeId={node?.id}></DynamicVariablesForm>
+        <DynamicVariablesForm node={node}></DynamicVariablesForm>
       </Form>
     </>
   );

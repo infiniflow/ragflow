@@ -44,7 +44,9 @@ export function BeginNode({ selected, data }: NodeProps<NodeData>) {
           fontSize={24}
           color={operatorMap[data.label as Operator].color}
         ></OperatorIcon>
-        <div className={styles.nodeTitle}>{t(`flow.begin`)}</div>
+        <div className="truncate text-center font-semibold text-sm">
+          {t(`flow.begin`)}
+        </div>
       </Flex>
       <Flex gap={8} vertical className={styles.generateParameters}>
         {query.map((x, idx) => {

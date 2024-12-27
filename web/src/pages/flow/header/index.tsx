@@ -10,11 +10,14 @@ import { Link, useParams } from 'umi';
 import {
   useGetBeginNodeDataQuery,
   useGetBeginNodeDataQueryIsEmpty,
+} from '../hooks/use-get-begin-query';
+import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
   useWatchAgentChange,
-} from '../hooks';
+} from '../hooks/use-save-graph';
 import { BeginQuery } from '../interface';
+
 import styles from './index.less';
 
 interface IProps {
