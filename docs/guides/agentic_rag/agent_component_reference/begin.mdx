@@ -29,26 +29,42 @@ An opening greeting is the agent's first message to the user. It can be a welcom
 
 ### Global variables
 
-You can set global variables within the **Begin** component, which can be either required or optional. Once established, users will need to provide values for these variables when interacting with the agent. Click **+ Add variable** to add a global variable, each with the following attributes:
+You can set global variables within the **Begin** component, which can be either required or optional. Once established, users will need to provide values for these variables when interacting or with the agent. Click **+ Add variable** to add a global variable, each with the following attributes:
 
 - **Key**: *Required*  
   The unique variable name.
 - **Name**: *Required*  
-  An expanded variable name providing additional details about the variable.  
-  For example, if **Key** is set to `lang`, you can set its **Name** to `Target language`
+  A descriptive name providing additional details about the variable.  
+  For example, if **Key** is set to `lang`, you can set its **Name** to `Target language`.
 - **Type**: *Required*  
   The type of the variable:  
-  - **line**: Accepts a text line without line break.
-  - **paragraph**: Accepts multiple text lines including line breaks.
-  - **options**: The user must select a value for this variable from the dropdown menu. And you are required to set *at least* one option for the dropdown menu.
-  - **file**: Accepts file upload
-- **Optional**: A toggle that sets whether the corresponding variable is optional. 
+  - **line**: Accepts a single line of text without line breaks.
+  - **paragraph**: Accepts multiple lines of text, including line breaks.
+  - **options**: Requires the user to select a value for this variable from a dropdown menu. And you are required to set *at least* one option for the dropdown menu.
+  - **file**: Requires the user to upload a file from their device.
+  - **integer**: Accepts an integer as input.
+  - **boolean**: Requires the user to toggle between on and off.
+- **Optional**: A toggle indicating whether the variable is optional. 
 
 ## Examples
 
-As mentioned earlier, the **Begin** component is indispensable for an agent. Still, you can take a look at our 3-step interpreter agent, where the **Begin** component takes global variables.
+As mentioned earlier, the **Begin** component is indispensable for an agent. Still, you can take a look at our three-step interpreter agent, where the **Begin** component takes two global variables:
+
+1. Click the **Agent** tab in the middle top of the page to show the **Agent** page.
+2. Click **+ Create agent** on the top right of the page to show the **agent template** page.
+3. On the **agent template** page, hover over the card on **Interperter** and click **Use this template**.
+4. Name the new agent and click **OK** to enter the workflow editor.
+5. Click the **Begin** component to display its **Configuration** window.
 
 ## Frequently asked questions
 
+### Is the uploaded file in a knowledge base?
+
+No. Files uploaded to an agent as input are not stored in a knowledge base and will not be chunked using RAGFlow's built-in chunk methods. However, RAGFlow's built-in OSR, DLR, and TSR models will still be applied to process the document.
+
 ### File size limit for uploaded file
+
+The maximum file size for each uploaded file is determined by the variable `MAX_CONTENT_LENGTH` in `/docker/.env`. It defaults to 128 MB. If you change the default file size, ensure you also update the value of `client_max_body_size` in `/docker/nginx/nginx.conf` accordingly.
+
+
 
