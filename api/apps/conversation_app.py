@@ -126,7 +126,7 @@ def getsse(dialog_id):
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
-        return get_data_error_result(message='Token is not valid!"')
+        return get_data_error_result(message='Authentication error: API key is invalid!"')
     try:
         e, conv = DialogService.get_by_id(dialog_id)
         if not e:
