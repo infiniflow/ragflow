@@ -1077,6 +1077,22 @@ The above is the content you need to summarize.`,
       contentTip: 'content: Email content (Optional)',
       jsonUploadTypeErrorMessage: 'Please upload json file',
       jsonUploadContentErrorMessage: 'json file error',
+      iteration: 'Iteration',
+      iterationDescription: `This component firstly split the input into array by "delimiter".
+Perform the same operation steps on the elements in the array in sequence until all results are output, which can be understood as a task batch processor.
+
+For example, within the long text translation iteration node, if all content is input to the LLM node, the single conversation limit may be reached. The upstream node can first split the long text into multiple fragments, and cooperate with the iterative node to perform batch translation on each fragment to avoid reaching the LLM message limit for a single conversation.`,
+      delimiterTip: `
+This delimiter is used to split the input text into several text pieces echo of which will be performed as input item of each iteration.`,
+      delimiterOptions: {
+        comma: 'Comma',
+        lineBreak: 'Line break',
+        tab: 'Tab',
+        underline: 'Underline',
+        diagonal: 'Diagonal',
+        minus: 'Minus',
+        semicolon: 'Semicolon',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',

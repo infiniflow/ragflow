@@ -4,16 +4,23 @@ import { useTranslation } from 'react-i18next';
 interface IProps {
   value?: string | undefined;
   onChange?: (val: string | undefined) => void;
+  maxLength?: number;
 }
 
-const DelimiterInput = ({ value, onChange }: IProps) => {
+export const DelimiterInput = ({ value, onChange, maxLength }: IProps) => {
   const nextValue = value?.replaceAll('\n', '\\n');
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     const nextValue = val.replaceAll('\\n', '\n');
     onChange?.(nextValue);
   };
-  return <Input value={nextValue} onChange={handleInputChange}></Input>;
+  return (
+    <Input
+      value={nextValue}
+      onChange={handleInputChange}
+      maxLength={maxLength}
+    ></Input>
+  );
 };
 
 const Delimiter = () => {

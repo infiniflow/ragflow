@@ -1,13 +1,15 @@
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Collapse, Flex, Form, Input, Select } from 'antd';
-
 import { PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useBuildComponentIdSelectOptions } from '../../hooks';
+import { Node } from 'reactflow';
+import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
+import { NodeData } from '../../interface';
+
 import styles from './index.less';
 
 interface IProps {
-  nodeId?: string;
+  node?: Node<NodeData>;
 }
 
 enum VariableType {
@@ -18,9 +20,12 @@ enum VariableType {
 const getVariableName = (type: string) =>
   type === VariableType.Reference ? 'component_id' : 'value';
 
-const DynamicVariableForm = ({ nodeId }: IProps) => {
+const DynamicVariableForm = ({ node }: IProps) => {
   const { t } = useTranslation();
-  const valueOptions = useBuildComponentIdSelectOptions(nodeId);
+  const valueOptions = useBuildComponentIdSelectOptions(
+    node?.id,
+    node?.parentId,
+  );
   const form = Form.useFormInstance();
 
   const options = [
@@ -114,11 +119,11 @@ export function FormCollapse({
   );
 }
 
-const DynamicInputVariable = ({ nodeId }: IProps) => {
+const DynamicInputVariable = ({ node }: IProps) => {
   const { t } = useTranslation();
   return (
     <FormCollapse title={t('flow.input')}>
-      <DynamicVariableForm nodeId={nodeId}></DynamicVariableForm>
+      <DynamicVariableForm node={node}></DynamicVariableForm>
     </FormCollapse>
   );
 };

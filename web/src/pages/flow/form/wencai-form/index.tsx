@@ -24,7 +24,7 @@ const WenCaiForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <TopNItem initialValue={20} max={99}></TopNItem>
       <Form.Item label={t('queryType')} name={'query_type'}>
         <Select options={wenCaiQueryTypeOptions}></Select>
