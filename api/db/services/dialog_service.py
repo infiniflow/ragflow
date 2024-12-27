@@ -339,8 +339,8 @@ def chat(dialog, messages, stream=True, **kwargs):
             # 检查是否为总令牌数或通知信息
             if isinstance(delta, str):
                 if delta.isdigit():
-                    # 处理总令牌数（如果需要）
-                    total_tokens = int(delta)
+                    # 理总令牌数（如果需要）
+                    # total_tokens = int(delta)
                     continue
                 elif "\n**ERROR**:" in delta:
                     # 处理错误信息
