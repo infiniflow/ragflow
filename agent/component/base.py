@@ -426,10 +426,14 @@ class ComponentBase(ABC):
 
     def output(self, allow_partial=True) -> Tuple[str, Union[pd.DataFrame, partial]]:
         o = getattr(self._param, self._param.output_var_name)
-        if not isinstance(o, partial) and not isinstance(o, pd.DataFrame):
-            if not isinstance(o, list):
-                o = [o]
-            o = pd.DataFrame(o)
+        if not isinstance(o, partial):
+            if not isinstance(o, pd.DataFrame):
+                if isinstance(o, list):
+                    return self._param.output_var_name, pd.DataFrame(o)
+                if o is None:
+                    return self._param.output_var_name, pd.DataFrame()
+                return self._param.output_var_name, pd.DataFrame([{"content": str(o)}])
+            return self._param.output_var_name, o
 
         if allow_partial or not isinstance(o, partial):
             if not isinstance(o, partial) and not isinstance(o, pd.DataFrame):
@@ -575,3 +579,7 @@ class ComponentBase(ABC):
 
     def debug(self, **kwargs):
         return self._run([], **kwargs)
+
+    def get_parent(self):
+        pid = self._canvas.get_component(self._id)["parent_id"]
+        return self._canvas.get_component(pid)["obj"]

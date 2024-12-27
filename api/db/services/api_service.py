@@ -53,7 +53,6 @@ class API4ConversationService(CommonService):
             sessions = sessions.order_by(cls.model.getter_by(orderby).desc())
         else:
             sessions = sessions.order_by(cls.model.getter_by(orderby).asc())
-        sessions = sessions.where(cls.model.user_id == tenant_id)
         sessions = sessions.paginate(page_number, items_per_page)
 
         return list(sessions.dicts())
