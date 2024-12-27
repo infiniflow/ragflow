@@ -109,6 +109,7 @@ export function IterationStartNode({
         isConnectable={isConnectable}
         className={styles.handle}
         style={RightHandleStyle}
+        isConnectableEnd={false}
       ></Handle>
       <div>
         <ListRestart className="size-7" />

@@ -1030,6 +1030,8 @@ export default {
         minus: '減號',
         semicolon: '分號',
       },
+      addVariable: '新增變數',
+      variableSettings: '變數設定',
     },
     footer: {
       profile: '“保留所有權利 @ react”',
