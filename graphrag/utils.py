@@ -101,7 +101,7 @@ def get_embed_cache(llmnm, txt):
     bin = REDIS_CONN.get(k)
     if not bin:
         return
-    return np.array(json.loads(bin.decode("utf-8")))
+    return np.array(json.loads(bin))
 
 
 def set_embed_cache(llmnm, txt, arr):

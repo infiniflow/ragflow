@@ -36,6 +36,7 @@ export default {
       vietnamese: 'Tiếng  việt',
       spanish: 'Tiếng Tây Ban Nha',
       japanese: 'Tiếng Nhật',
+      embedIntoSite: 'Nhúng vào trang web',
     },
     login: {
       login: 'Đăng nhập',
@@ -123,8 +124,8 @@ export default {
       view: 'Xem',
       filesSelected: 'Các tệp được chọn',
       upload: 'Tải lên',
-      run: 'Chạy',
-      runningStatus0: 'UNSTART',
+      run: 'Phân tích cú pháp',
+      runningStatus0: 'Chưa được giải quyết',
       runningStatus1: 'Parsing',
       runningStatus2: 'CANCEL',
       runningStatus3: 'SUCCESS',

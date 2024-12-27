@@ -23,6 +23,7 @@ interface IProps {
   prompt?: string;
   showLikeButton: boolean;
   audioBinary?: string;
+  showLoudspeaker?: boolean;
 }
 
 export const AssistantGroupButton = ({
@@ -31,6 +32,7 @@ export const AssistantGroupButton = ({
   prompt,
   audioBinary,
   showLikeButton,
+  showLoudspeaker = true,
 }: IProps) => {
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
     useSendFeedback(messageId);
@@ -52,12 +54,14 @@ export const AssistantGroupButton = ({
         <Radio.Button value="a">
           <CopyToClipboard text={content}></CopyToClipboard>
         </Radio.Button>
-        <Radio.Button value="b" onClick={handleRead}>
-          <Tooltip title={t('chat.read')}>
-            {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
-          </Tooltip>
-          <audio src="" ref={ref}></audio>
-        </Radio.Button>
+        {showLoudspeaker && (
+          <Radio.Button value="b" onClick={handleRead}>
+            <Tooltip title={t('chat.read')}>
+              {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
+            </Tooltip>
+            <audio src="" ref={ref}></audio>
+          </Radio.Button>
+        )}
         {showLikeButton && (
           <>
             <Radio.Button value="c" onClick={handleLike}>

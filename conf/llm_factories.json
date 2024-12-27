@@ -953,6 +953,12 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "gemini-2.0-flash-exp",
+                    "tags": "LLM,CHAT,1024K",
+                    "max_tokens": 1048576,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "gemini-1.0-pro-vision-latest",
                     "tags": "LLM,IMAGE2TEXT,12K",
                     "max_tokens": 12288,
@@ -1006,6 +1012,18 @@
                     "llm_name": "llama-3.1-8b-instant",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama-3.3-70b-versatile",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama-3.3-70b-specdec",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
                     "model_type": "chat"
                 },
                 {

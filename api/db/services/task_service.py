@@ -17,6 +17,7 @@ import os
 import random
 import xxhash
 import bisect
+from datetime import datetime
 
 from api.db.db_utils import bulk_insert_into_db
 from deepdoc.parser import PdfParser
@@ -84,7 +85,7 @@ class TaskService(CommonService):
         if not docs:
             return None
 
-        msg = "\nTask has been received."
+        msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task has been received."
         prog = random.random() / 10.0
         if docs[0]["retry_count"] >= 3:
             msg = "\nERROR: Task is abandoned after 3 times attempts."
@@ -202,9 +203,9 @@ class TaskService(CommonService):
 
 def queue_tasks(doc: dict, bucket: str, name: str):
     def new_task():
-        return {"id": get_uuid(), "doc_id": doc["id"], "progress": 0.0}
+        return {"id": get_uuid(), "doc_id": doc["id"], "progress": 0.0, "from_page": 0, "to_page": 100000000}
 
-    tsks = []
+    parse_task_array = []
 
     if doc["type"] == FileType.PDF.value:
         file_bin = STORAGE_IMPL.get(bucket, name)
@@ -224,7 +225,7 @@ def queue_tasks(doc: dict, bucket: str, name: str):
                 task = new_task()
                 task["from_page"] = p
                 task["to_page"] = min(p + page_size, e)
-                tsks.append(task)
+                parse_task_array.append(task)
 
     elif doc["parser_id"] == "table":
         file_bin = STORAGE_IMPL.get(bucket, name)
@@ -233,12 +234,12 @@ def queue_tasks(doc: dict, bucket: str, name: str):
             task = new_task()
             task["from_page"] = i
             task["to_page"] = min(i + 3000, rn)
-            tsks.append(task)
+            parse_task_array.append(task)
     else:
-        tsks.append(new_task())
+        parse_task_array.append(new_task())
 
     chunking_config = DocumentService.get_chunking_config(doc["id"])
-    for task in tsks:
+    for task in parse_task_array:
         hasher = xxhash.xxh64()
         for field in sorted(chunking_config.keys()):
             hasher.update(str(chunking_config[field]).encode("utf-8"))
@@ -251,7 +252,7 @@ def queue_tasks(doc: dict, bucket: str, name: str):
     prev_tasks = TaskService.get_tasks(doc["id"])
     ck_num = 0
     if prev_tasks:
-        for task in tsks:
+        for task in parse_task_array:
             ck_num += reuse_prev_task_chunks(task, prev_tasks, chunking_config)
         TaskService.filter_delete([Task.doc_id == doc["id"]])
         chunk_ids = []
@@ -263,13 +264,13 @@ def queue_tasks(doc: dict, bucket: str, name: str):
                                          chunking_config["kb_id"])
     DocumentService.update_by_id(doc["id"], {"chunk_num": ck_num})
 
-    bulk_insert_into_db(Task, tsks, True)
+    bulk_insert_into_db(Task, parse_task_array, True)
     DocumentService.begin2parse(doc["id"])
 
-    tsks = [task for task in tsks if task["progress"] < 1.0]
-    for t in tsks:
+    unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
+    for unfinished_task in unfinished_task_array:
         assert REDIS_CONN.queue_product(
-            SVR_QUEUE_NAME, message=t
+            SVR_QUEUE_NAME, message=unfinished_task
         ), "Can't access Redis. Please check the Redis' status."
 
 

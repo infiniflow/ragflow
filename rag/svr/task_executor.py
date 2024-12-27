@@ -83,7 +83,7 @@ FACTORY = {
 
 CONSUMER_NAME = "task_consumer_" + CONSUMER_NO
 PAYLOAD: Payload | None = None
-BOOT_AT = datetime.now().isoformat()
+BOOT_AT = datetime.now().astimezone().isoformat(timespec="milliseconds")
 PENDING_TASKS = 0
 LAG_TASKS = 0
 
@@ -116,6 +116,8 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
     if to_page > 0:
         if msg:
             msg = f"Page({from_page + 1}~{to_page + 1}): " + msg
+    if msg:
+        msg = datetime.now().strftime("%H:%M:%S") + " " + msg
     d = {"progress_msg": msg}
     if prog is not None:
         d["progress"] = prog
@@ -550,7 +552,7 @@ def report_status():
             with mt_lock:
                 heartbeat = json.dumps({
                     "name": CONSUMER_NAME,
-                    "now": now.isoformat(),
+                    "now": now.astimezone().isoformat(timespec="milliseconds"),
                     "boot_at": BOOT_AT,
                     "pending": PENDING_TASKS,
                     "lag": LAG_TASKS,

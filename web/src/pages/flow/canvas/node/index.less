@@ -1,15 +1,3 @@
-.commonNode() {
-  box-shadow:
-    -6px 0 12px 0 rgba(179, 177, 177, 0.08),
-    -3px 0 6px -4px rgba(0, 0, 0, 0.12),
-    -6px 0 16px 6px rgba(0, 0, 0, 0.05);
-
-  padding: 10px;
-  border-radius: 10px;
-  background: white;
-  width: 200px;
-}
-
 .dark {
   background: rgb(63, 63, 63) !important;
 }
@@ -41,6 +29,22 @@
 
 .selectedNode {
   border: 1.5px solid rgb(59, 118, 244);
+}
+
+.selectedIterationNode {
+  border-bottom: 1.5px solid rgb(59, 118, 244);
+  border-left: 1.5px solid rgb(59, 118, 244);
+  border-right: 1.5px solid rgb(59, 118, 244);
+}
+
+.iterationHeader {
+  .commonNodeShadow();
+}
+
+.selectedHeader {
+  border-top: 1.9px solid rgb(59, 118, 244);
+  border-left: 1.9px solid rgb(59, 118, 244);
+  border-right: 1.9px solid rgb(59, 118, 244);
 }
 
 .handle {
@@ -133,18 +137,18 @@
   }
 }
 
+.iterationNode {
+  .commonNodeShadow();
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
 .nodeText {
   padding-inline: 0.4em;
   padding-block: 0.2em 0.1em;
   background: @lightBackgroundColor;
   border-radius: 3px;
   min-height: 22px;
-  .textEllipsis();
-}
-
-.nodeTitle {
-  font-weight: 600;
-  text-align: center;
   .textEllipsis();
 }
 

@@ -535,7 +535,6 @@ export const useRenameConversation = () => {
   const onConversationRenameOk = useCallback(
     async (name: string) => {
       const ret = await updateConversation({
-        ...conversation,
         conversation_id: conversation.id,
         name,
         is_new: false,

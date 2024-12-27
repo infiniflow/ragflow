@@ -49,7 +49,7 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       <MessageHistoryWindowSizeItem
         initialValue={12}
       ></MessageHistoryWindowSizeItem>
-      <DynamicParameters nodeId={node?.id}></DynamicParameters>
+      <DynamicParameters node={node}></DynamicParameters>
     </Form>
   );
 };

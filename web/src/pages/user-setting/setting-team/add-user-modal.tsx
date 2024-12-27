@@ -40,7 +40,7 @@ const AddingUserModal = ({
         <Form.Item<FieldType>
           label={t('setting.email')}
           name="email"
-          rules={[{ required: true, message: t('namePlaceholder') }]}
+          rules={[{ required: true }]}
         >
           <Input />
         </Form.Item>

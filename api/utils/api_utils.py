@@ -98,14 +98,9 @@ def get_exponential_backoff_interval(retries, full_jitter=False):
 
 def get_data_error_result(code=settings.RetCode.DATA_ERROR,
                           message='Sorry! Data missing!'):
-    import re
     result_dict = {
         "code": code,
-        "message": re.sub(
-            r"rag",
-            "seceum",
-            message,
-            flags=re.IGNORECASE)}
+        "message": message}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
@@ -250,8 +245,7 @@ def construct_response(code=settings.RetCode.SUCCESS,
 
 
 def construct_result(code=settings.RetCode.DATA_ERROR, message='data is missing'):
-    import re
-    result_dict = {"code": code, "message": re.sub(r"rag", "seceum", message, flags=re.IGNORECASE)}
+    result_dict = {"code": code, "message": message}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
@@ -283,14 +277,17 @@ def construct_error_response(e):
 def token_required(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
-        authorization_list=flask_request.headers.get('Authorization').split()
+        authorization_str=flask_request.headers.get('Authorization')
+        if not authorization_str:
+            return get_json_result(data=False,message="`Authorization` can't be empty")
+        authorization_list=authorization_str.split()
         if len(authorization_list) < 2:
             return get_json_result(data=False,message="Please check your authorization format.")
         token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
             return get_json_result(
-                data=False, message='Token is not valid!', code=settings.RetCode.AUTHENTICATION_ERROR
+                data=False, message='Authentication error: API key is invalid!', code=settings.RetCode.AUTHENTICATION_ERROR
             )
         kwargs['tenant_id'] = objs[0].tenant_id
         return func(*args, **kwargs)
@@ -311,14 +308,9 @@ def get_result(code=settings.RetCode.SUCCESS, message="", data=None):
 
 def get_error_data_result(message='Sorry! Data missing!', code=settings.RetCode.DATA_ERROR,
                           ):
-    import re
     result_dict = {
         "code": code,
-        "message": re.sub(
-            r"rag",
-            "seceum",
-            message,
-            flags=re.IGNORECASE)}
+        "message": message}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
