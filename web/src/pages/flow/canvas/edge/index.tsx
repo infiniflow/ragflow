@@ -44,8 +44,6 @@ export function ButtonEdge({
   };
 
   // highlight the nodes that the workflow passes through
-  // const queryClient = useQueryClient();
-  // const flowDetail = queryClient.getQueryData<IFlow>(['flowDetail']);
   const { data: flowDetail } = useFetchFlow();
 
   const graphPath = useMemo(() => {

@@ -1074,6 +1074,9 @@ export default {
         minus: '减号',
         semicolon: '分号',
       },
+      addVariable: '新增变量',
+      variableSettings: '变量设置',
+      systemPrompt: '系统提示词',
     },
     footer: {
       profile: 'All rights reserved @ React',

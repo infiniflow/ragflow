@@ -1,0 +1,70 @@
+---
+sidebar_position: 1
+slug: /begin_component
+---
+
+# Begin component
+
+The starting component in a workflow.
+
+---
+
+The **Begin** component sets an opening greeting or accepts inputs from the user. It is automatically populated onto the canvas when you create an agent, whether from a template or from scratch (from a blank template). There should be only one **Begin** component in the workflow.
+
+## Scenarios
+
+A **Begin** component is essential in all cases. Every agent includes a **Begin** component, which cannot be deleted.
+
+## Configurations
+
+Click the component to display its **Configuration** window. Here, you can set an opening greeting and the input parameters (global variables) for the agent.
+
+### ID
+
+The ID is the unique identifier for the component within the workflow. Unlike the IDs of other components, the ID of the **Begin** component *cannot* be changed.
+
+### Opening greeting
+
+An opening greeting is the agent's first message to the user. It can be a welcoming remark or an instruction to guide the user forward.
+
+### Global variables
+
+You can set global variables within the **Begin** component, which can be either required or optional. Once established, users will need to provide values for these variables when interacting or with the agent. Click **+ Add variable** to add a global variable, each with the following attributes:
+
+- **Key**: *Required*  
+  The unique variable name.
+- **Name**: *Required*  
+  A descriptive name providing additional details about the variable.  
+  For example, if **Key** is set to `lang`, you can set its **Name** to `Target language`.
+- **Type**: *Required*  
+  The type of the variable:  
+  - **line**: Accepts a single line of text without line breaks.
+  - **paragraph**: Accepts multiple lines of text, including line breaks.
+  - **options**: Requires the user to select a value for this variable from a dropdown menu. And you are required to set *at least* one option for the dropdown menu.
+  - **file**: Requires the user to upload a file from their device.
+  - **integer**: Accepts an integer as input.
+  - **boolean**: Requires the user to toggle between on and off.
+- **Optional**: A toggle indicating whether the variable is optional. 
+
+## Examples
+
+As mentioned earlier, the **Begin** component is indispensable for an agent. Still, you can take a look at our three-step interpreter agent, where the **Begin** component takes two global variables:
+
+1. Click the **Agent** tab in the middle top of the page to show the **Agent** page.
+2. Click **+ Create agent** on the top right of the page to show the **agent template** page.
+3. On the **agent template** page, hover over the card on **Interperter** and click **Use this template**.
+4. Name the new agent and click **OK** to enter the workflow editor.
+5. Click the **Begin** component to display its **Configuration** window.
+
+## Frequently asked questions
+
+### Is the uploaded file in a knowledge base?
+
+No. Files uploaded to an agent as input are not stored in a knowledge base and will not be chunked using RAGFlow's built-in chunk methods. However, RAGFlow's built-in OSR, DLR, and TSR models will still be applied to process the document.
+
+### File size limit for uploaded file
+
+The maximum file size for each uploaded file is determined by the variable `MAX_CONTENT_LENGTH` in `/docker/.env`. It defaults to 128 MB. If you change the default file size, ensure you also update the value of `client_max_body_size` in `/docker/nginx/nginx.conf` accordingly.
+
+
+
