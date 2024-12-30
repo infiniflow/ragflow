@@ -94,5 +94,3 @@ class BaiduFanyi(ComponentBase, ABC):
         except Exception as e:
             BaiduFanyi.be_output("**Error**:" + str(e))
     
-    def debug(self, **kwargs):
-        return self._run([], **kwargs)
