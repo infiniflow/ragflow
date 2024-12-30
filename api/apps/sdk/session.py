@@ -247,6 +247,7 @@ def list_agent_session(tenant_id, agent_id):
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
         return get_error_data_result(message=f"You don't own the agent {agent_id}.")
     id = request.args.get("id")
+    user_id = request.args.get("user_id")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "update_time")
@@ -254,7 +255,7 @@ def list_agent_session(tenant_id, agent_id):
         desc = False
     else:
         desc = True
-    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id)
+    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id)
     if not convs:
         return get_result(data=[])
     for conv in convs:
