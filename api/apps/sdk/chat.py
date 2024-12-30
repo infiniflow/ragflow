@@ -65,7 +65,7 @@ def create(tenant_id):
                    "system": "prompt",
                    "rerank_id": "rerank_model",
                    "vector_similarity_weight": "keywords_similarity_weight"}
-    key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id"]
+    key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id","top_k"]
     if prompt:
         for new_key, old_key in key_mapping.items():
             if old_key in prompt:
@@ -200,7 +200,7 @@ def update(tenant_id, chat_id):
                    "system": "prompt",
                    "rerank_id": "rerank_model",
                    "vector_similarity_weight": "keywords_similarity_weight"}
-    key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id"]
+    key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id","top_k"]
     if prompt:
         for new_key, old_key in key_mapping.items():
             if old_key in prompt:
