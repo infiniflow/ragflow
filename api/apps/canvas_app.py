@@ -146,12 +146,16 @@ def run():
 
                 canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
                 canvas.history.append(("assistant", final_ans["content"]))
+                if not canvas.path[-1]:
+                    canvas.path.pop(-1)
                 if final_ans.get("reference"):
                     canvas.reference.append(final_ans["reference"])
                 cvs.dsl = json.loads(str(canvas))
                 UserCanvasService.update_by_id(req["id"], cvs.to_dict())
             except Exception as e:
                 cvs.dsl = json.loads(str(canvas))
+                if not canvas.path[-1]:
+                    canvas.path.pop(-1)
                 UserCanvasService.update_by_id(req["id"], cvs.to_dict())
                 traceback.print_exc()
                 yield "data:" + json.dumps({"code": 500, "message": str(e),
