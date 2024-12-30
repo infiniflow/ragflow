@@ -46,7 +46,7 @@
     "@tanstack/react-query-devtools": "^5.51.5",
     "@tanstack/react-table": "^8.20.5",
     "@uiw/react-markdown-preview": "^5.1.3",
-    "@xyflow/react": "^11.11.2",
+    "@xyflow/react": "^12.3.6",
     "ahooks": "^3.7.10",
     "antd": "^5.12.7",
     "axios": "^1.6.3",

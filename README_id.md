@@ -288,7 +288,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 6. Instal dependensi frontend:
    ```bash
    cd web
-   npm install --force
+   npm install
    ```
 7. Jalankan aplikasi frontend:
    ```bash

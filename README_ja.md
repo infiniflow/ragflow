@@ -284,7 +284,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 6. フロントエンドの依存関係をインストールする:  
    ```bash
    cd web
-   npm install --force
+   npm install
    ```  
 7. フロントエンドサービスを起動する:  
    ```bash

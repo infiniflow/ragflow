@@ -286,7 +286,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 6. 프론트엔드 의존성을 설치합니다:  
    ```bash
    cd web
-   npm install --force
+   npm install
    ```  
 7. 프론트엔드 서비스를 시작합니다:  
    ```bash
