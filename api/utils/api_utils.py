@@ -120,6 +120,10 @@ def server_error_response(e):
     if len(e.args) > 1:
         return get_json_result(
             code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+    if repr(e).find("index_not_found_exception") >= 0:
+        return get_json_result(code=settings.RetCode.EXCEPTION_ERROR,
+                               message="No chunk found, please upload file and parse it.")
+
     return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
 
 

@@ -81,7 +81,7 @@ def get_llm_cache(llmnm, txt, history, genconf):
     return bin
 
 
-def set_llm_cache(llmnm, txt, v: str, history, genconf):
+def set_llm_cache(llmnm, txt, v, history, genconf):
     hasher = xxhash.xxh64()
     hasher.update(str(llmnm).encode("utf-8"))
     hasher.update(str(txt).encode("utf-8"))
