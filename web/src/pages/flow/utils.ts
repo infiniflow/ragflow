@@ -1,11 +1,15 @@
-import { DSLComponents } from '@/interfaces/database/flow';
+import {
+  DSLComponents,
+  ICategorizeItemResult,
+  RAGFlowNodeType,
+} from '@/interfaces/database/flow';
 import { removeUselessFieldsFromValues } from '@/utils/form';
+import { Edge, Node, Position, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
 import { curry, get, intersectionWith, isEqual, sample } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
-import { Edge, Node, Position, XYPosition } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 import {
   CategorizeAnchorPointPositions,
@@ -13,7 +17,7 @@ import {
   NodeMap,
   Operator,
 } from './constant';
-import { ICategorizeItemResult, IPosition, NodeData } from './interface';
+import { IPosition } from './interface';
 
 const buildEdges = (
   operatorIds: string[],
@@ -122,7 +126,7 @@ const buildOperatorParams = (operatorName: string) =>
 
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
-  nodes: Node<NodeData>[],
+  nodes: RAGFlowNodeType[],
   edges: Edge[],
   oldDslComponents: DSLComponents,
 ): DSLComponents => {
@@ -260,7 +264,7 @@ const splitName = (name: string) => {
 
 export const generateNodeNamesWithIncreasingIndex = (
   name: string,
-  nodes: Node[],
+  nodes: RAGFlowNodeType[],
 ) => {
   const templateNameList = nodes
     .filter((x) => {
@@ -298,7 +302,7 @@ export const generateNodeNamesWithIncreasingIndex = (
   return `${name}_${index}`;
 };
 
-export const duplicateNodeForm = (nodeData?: NodeData) => {
+export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
   const form: Record<string, any> = { ...(nodeData?.form ?? {}) };
 
   // Delete the downstream node corresponding to the to field of the Categorize operator
@@ -321,7 +325,7 @@ export const duplicateNodeForm = (nodeData?: NodeData) => {
   }
 
   return {
-    ...(nodeData ?? {}),
+    ...(nodeData ?? { label: '' }),
     form,
   };
 };
@@ -336,7 +340,7 @@ export const needsSingleStepDebugging = (label: string) => {
 
 // Get the coordinates of the node relative to the Iteration node
 export function getRelativePositionToIterationNode(
-  nodes: Node<NodeData>[],
+  nodes: RAGFlowNodeType[],
   position?: XYPosition, // relative position
 ) {
   if (!position) {

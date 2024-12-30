@@ -1,4 +1,4 @@
-import { Position } from 'reactflow';
+import { Position } from '@xyflow/react';
 
 export const initialNodes = [
   {

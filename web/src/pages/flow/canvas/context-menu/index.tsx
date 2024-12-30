@@ -1,5 +1,5 @@
+import { NodeMouseHandler, useReactFlow } from '@xyflow/react';
 import { useCallback, useRef, useState } from 'react';
-import { NodeMouseHandler, useReactFlow } from 'reactflow';
 
 import styles from './index.less';
 

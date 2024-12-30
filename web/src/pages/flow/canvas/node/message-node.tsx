@@ -1,9 +1,9 @@
 import { useTheme } from '@/components/theme-provider';
+import { IMessageNode } from '@/interfaces/database/flow';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { NodeData } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -13,7 +13,7 @@ export function MessageNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<NodeData>) {
+}: NodeProps<IMessageNode>) {
   const messages: string[] = get(data, 'form.messages', []);
   const { theme } = useTheme();
   return (

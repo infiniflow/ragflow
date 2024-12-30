@@ -4,14 +4,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { FolderInput, FolderOutput } from 'lucide-react';
-import ReactFlow, {
+import {
   Background,
   ConnectionMode,
   ControlButton,
   Controls,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+  NodeTypes,
+  ReactFlow,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { FolderInput, FolderOutput } from 'lucide-react';
 import ChatDrawer from '../chat/drawer';
 import FormDrawer from '../flow-drawer';
 import {
@@ -20,6 +22,7 @@ import {
   useValidateConnection,
   useWatchNodeFormDataChange,
 } from '../hooks';
+import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useHandleExportOrImportJsonFile } from '../hooks/use-export-json';
 import { useShowDrawer } from '../hooks/use-show-drawer';
 import JsonUploadModal from '../json-upload-modal';
@@ -43,7 +46,7 @@ import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
 
-const nodeTypes = {
+const nodeTypes: NodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
@@ -113,6 +116,8 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideDrawer,
   });
 
+  const { handleBeforeDelete } = useBeforeDelete();
+
   useWatchNodeFormDataChange();
 
   return (
@@ -165,6 +170,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
         }}
         deleteKeyCode={['Delete', 'Backspace']}
+        onBeforeDelete={handleBeforeDelete}
       >
         <Background />
         <Controls>

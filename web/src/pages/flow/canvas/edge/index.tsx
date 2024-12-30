@@ -3,7 +3,7 @@ import {
   EdgeLabelRenderer,
   EdgeProps,
   getBezierPath,
-} from 'reactflow';
+} from '@xyflow/react';
 import useGraphStore from '../../store';
 
 import { useTheme } from '@/components/theme-provider';

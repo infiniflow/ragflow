@@ -1,6 +1,6 @@
+import { Edge } from '@xyflow/react';
 import pick from 'lodash/pick';
 import { useCallback, useEffect } from 'react';
-import { Edge } from 'reactflow';
 import { IOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 

@@ -1,7 +1,7 @@
 import { useTheme } from '@/components/theme-provider';
+import { ILogicNode } from '@/interfaces/database/flow';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { NodeData } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -11,7 +11,7 @@ export function LogicNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<NodeData>) {
+}: NodeProps<ILogicNode>) {
   const { theme } = useTheme();
   return (
     <section

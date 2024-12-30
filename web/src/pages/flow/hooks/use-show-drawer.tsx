@@ -1,7 +1,7 @@
 import { useSetModalState } from '@/hooks/common-hooks';
+import { Node, NodeMouseHandler } from '@xyflow/react';
 import get from 'lodash/get';
 import { useCallback, useEffect } from 'react';
-import { Node, NodeMouseHandler } from 'reactflow';
 import { Operator } from '../constant';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
