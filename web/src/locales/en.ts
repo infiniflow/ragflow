@@ -1096,6 +1096,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       addVariable: 'Add variable',
       variableSettings: 'Variable settings',
       globalVariables: 'Global variables',
+      systemPrompt: 'System prompt',
     },
     footer: {
       profile: 'All rights reserved @ React',
