@@ -28,6 +28,7 @@ class Chat(Base):
             self.similarity_threshold = 0.2
             self.keywords_similarity_weight = 0.7
             self.top_n = 8
+            self.top_k = 1024
             self.variables = [{"key": "knowledge", "optional": True}]
             self.rerank_model = None
             self.empty_response = None
