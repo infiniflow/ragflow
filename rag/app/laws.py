@@ -153,11 +153,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        for txt in Docx()(filename, binary):
-            sections.append(txt)
-        callback(0.8, "Finish parsing.")
-        chunks = sections
-        return tokenize_chunks(chunks, doc, eng, pdf_parser)
+        chunks = Docx()(filename, binary)
+        callback(0.7, "Finish parsing.")
+        return tokenize_chunks(chunks, doc, eng, None)
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         pdf_parser = Pdf() if kwargs.get(

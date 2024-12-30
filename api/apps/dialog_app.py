@@ -103,10 +103,7 @@ def set_dialog():
             }
             if not DialogService.save(**dia):
                 return get_data_error_result(message="Fail to new a dialog!")
-            e, dia = DialogService.get_by_id(dia["id"])
-            if not e:
-                return get_data_error_result(message="Fail to new a dialog!")
-            return get_json_result(data=dia.to_json())
+            return get_json_result(data=dia)
         else:
             del req["dialog_id"]
             if "kb_names" in req:
@@ -117,6 +114,7 @@ def set_dialog():
             if not e:
                 return get_data_error_result(message="Fail to update a dialog!")
             dia = dia.to_dict()
+            dia.update(req)
             dia["kb_ids"], dia["kb_names"] = get_kb_names(dia["kb_ids"])
             return get_json_result(data=dia)
     except Exception as e:
