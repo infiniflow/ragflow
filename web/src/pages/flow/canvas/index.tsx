@@ -22,6 +22,7 @@ import {
   useValidateConnection,
   useWatchNodeFormDataChange,
 } from '../hooks';
+import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useHandleExportOrImportJsonFile } from '../hooks/use-export-json';
 import { useShowDrawer } from '../hooks/use-show-drawer';
 import JsonUploadModal from '../json-upload-modal';
@@ -115,6 +116,8 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideDrawer,
   });
 
+  const { handleBeforeDelete } = useBeforeDelete();
+
   useWatchNodeFormDataChange();
 
   return (
@@ -167,6 +170,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
         }}
         deleteKeyCode={['Delete', 'Backspace']}
+        onBeforeDelete={handleBeforeDelete}
       >
         <Background />
         <Controls>

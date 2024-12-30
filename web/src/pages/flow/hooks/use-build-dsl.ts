@@ -1,6 +1,6 @@
 import { useFetchFlow } from '@/hooks/flow-hooks';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { useCallback } from 'react';
-import { RAGFlowNodeType } from '../interface';
 import useGraphStore from '../store';
 import { buildDslComponentsByGraph } from '../utils';
 
