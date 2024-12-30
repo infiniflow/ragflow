@@ -147,7 +147,7 @@ RUN --mount=type=cache,id=ragflow_poetry,target=/root/.cache/pypoetry,sharing=lo
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
-    cd web && npm install --force && npm run build
+    cd web && npm install && npm run build
 
 COPY .git /ragflow/.git
 
