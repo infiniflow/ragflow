@@ -46,7 +46,7 @@ class RAGFlow:
         res = requests.put(url=self.api_url + path, json= json,headers=self.authorization_header)
         return res
 
-    def create_dataset(self, name: str, avatar: str = "", description: str = "", embedding_model:str = "BAAI/bge-zh-v1.5",
+    def create_dataset(self, name: str, avatar: str = "", description: str = "", embedding_model:str = "BAAI/bge-large-zh-v1.5",
                        language: str = "English",
                        permission: str = "me",chunk_method: str = "naive",
                        parser_config: DataSet.ParserConfig = None) -> DataSet:
