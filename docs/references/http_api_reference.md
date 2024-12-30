@@ -927,7 +927,8 @@ curl --request POST \
   The text content of the chunk.
 - `"important_keywords`(*Body parameter*), `list[string]`  
   The key terms or phrases to tag with the chunk.
-
+- `"questions"`(*Body parameter*), `list[string]`
+  If there is a given question, the embedded chunks will be based on them
 #### Response
 
 Success:
@@ -937,13 +938,14 @@ Success:
     "code": 0,
     "data": {
         "chunk": {
-            "content": "ragflow content",
-            "create_time": "2024-10-16 08:05:04",
-            "create_timestamp": 1729065904.581025,
-            "dataset_id": "c7ee74067a2c11efb21c0242ac120006",
-            "document_id": "5c5999ec7be811ef9cab0242ac120005",
-            "id": "d78435d142bd5cf6704da62c778795c5",
-            "important_keywords": []
+            "content": "who are you",
+            "create_time": "2024-12-30 16:59:55",
+            "create_timestamp": 1735549195.969164,
+            "dataset_id": "72f36e1ebdf411efb7250242ac120006",
+            "document_id": "61d68474be0111ef98dd0242ac120006",
+            "id": "12ccdc56e59837e5",
+            "important_keywords": [],
+            "questions": []
         }
     }
 }
