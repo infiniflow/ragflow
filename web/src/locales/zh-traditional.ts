@@ -1032,6 +1032,7 @@ export default {
       },
       addVariable: '新增變數',
       variableSettings: '變數設定',
+      systemPrompt: '系統提示詞',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

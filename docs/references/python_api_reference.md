@@ -28,7 +28,7 @@ RAGFlow.create_dataset(
     name: str,
     avatar: str = "",
     description: str = "",
-    embedding_model: str = "BAAI/bge-zh-v1.5",
+    embedding_model: str = "BAAI/bge-large-zh-v1.5",
     language: str = "English",
     permission: str = "me", 
     chunk_method: str = "naive",
