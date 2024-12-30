@@ -4,9 +4,9 @@ import classNames from 'classnames';
 import { RightHandleStyle } from './handle-icon';
 
 import { useTheme } from '@/components/theme-provider';
+import { IRelevantNode } from '@/interfaces/database/flow';
 import { get } from 'lodash';
 import { useReplaceIdWithName } from '../../hooks';
-import { IRelevantNode } from '../../interface';
 import styles from './index.less';
 import NodeHeader from './node-header';
 

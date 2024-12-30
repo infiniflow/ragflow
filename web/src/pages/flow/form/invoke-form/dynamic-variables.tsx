@@ -4,14 +4,13 @@ import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Collapse, Flex, Input, Select, Table, TableProps } from 'antd';
 import { trim } from 'lodash';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
-import { IInvokeVariable, NodeData } from '../../interface';
+import { IInvokeVariable, RAGFlowNodeType } from '../../interface';
 import { useHandleOperateParameters } from './hooks';
 
-import { Node } from '@xyflow/react';
 import styles from './index.less';
 
 interface IProps {
-  node?: Node<NodeData>;
+  node?: RAGFlowNodeType;
 }
 
 const components = {

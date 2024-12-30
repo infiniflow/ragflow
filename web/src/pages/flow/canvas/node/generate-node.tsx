@@ -1,11 +1,12 @@
 import LLMLabel from '@/components/llm-select/llm-label';
 import { useTheme } from '@/components/theme-provider';
+import { IGenerateNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
 import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
-import { IGenerateNode, IGenerateParameter } from '../../interface';
+import { IGenerateParameter } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';

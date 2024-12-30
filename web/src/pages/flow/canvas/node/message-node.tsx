@@ -1,9 +1,9 @@
 import { useTheme } from '@/components/theme-provider';
+import { IMessageNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
-import { IMessageNode } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';

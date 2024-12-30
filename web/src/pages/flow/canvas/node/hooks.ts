@@ -2,11 +2,12 @@ import { useUpdateNodeInternals } from '@xyflow/react';
 import get from 'lodash/get';
 import { useEffect, useMemo } from 'react';
 import { SwitchElseTo } from '../../constant';
+
 import {
   ICategorizeItemResult,
   ISwitchCondition,
-  NodeData,
-} from '../../interface';
+  RAGFlowNodeType,
+} from '@/interfaces/database/flow';
 import { generateSwitchHandleText } from '../../utils';
 
 export const useBuildCategorizeHandlePositions = ({
@@ -14,7 +15,7 @@ export const useBuildCategorizeHandlePositions = ({
   id,
 }: {
   id: string;
-  data: NodeData;
+  data: RAGFlowNodeType['data'];
 }) => {
   const updateNodeInternals = useUpdateNodeInternals();
 
@@ -54,7 +55,7 @@ export const useBuildSwitchHandlePositions = ({
   id,
 }: {
   id: string;
-  data: NodeData;
+  data: RAGFlowNodeType['data'];
 }) => {
   const updateNodeInternals = useUpdateNodeInternals();
 

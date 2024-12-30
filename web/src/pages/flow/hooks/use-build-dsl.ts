@@ -1,6 +1,6 @@
 import { useFetchFlow } from '@/hooks/flow-hooks';
-import { Node } from '@xyflow/react';
 import { useCallback } from 'react';
+import { RAGFlowNodeType } from '../interface';
 import useGraphStore from '../store';
 import { buildDslComponentsByGraph } from '../utils';
 
@@ -9,7 +9,7 @@ export const useBuildDslData = () => {
   const { nodes, edges } = useGraphStore((state) => state);
 
   const buildDslData = useCallback(
-    (currentNodes?: Node[]) => {
+    (currentNodes?: RAGFlowNodeType[]) => {
       const dslComponents = buildDslComponentsByGraph(
         currentNodes ?? nodes,
         edges,

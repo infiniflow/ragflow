@@ -1,4 +1,8 @@
-import { DSLComponents } from '@/interfaces/database/flow';
+import {
+  DSLComponents,
+  ICategorizeItemResult,
+  RAGFlowNodeType,
+} from '@/interfaces/database/flow';
 import { removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, Position, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
@@ -13,12 +17,7 @@ import {
   NodeMap,
   Operator,
 } from './constant';
-import {
-  ICategorizeItemResult,
-  IPosition,
-  NodeData,
-  RAGFlowNodeType,
-} from './interface';
+import { IPosition } from './interface';
 
 const buildEdges = (
   operatorIds: string[],
@@ -127,7 +126,7 @@ const buildOperatorParams = (operatorName: string) =>
 
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
-  nodes: Node<NodeData>[],
+  nodes: RAGFlowNodeType[],
   edges: Edge[],
   oldDslComponents: DSLComponents,
 ): DSLComponents => {
@@ -265,7 +264,7 @@ const splitName = (name: string) => {
 
 export const generateNodeNamesWithIncreasingIndex = (
   name: string,
-  nodes: Node[],
+  nodes: RAGFlowNodeType[],
 ) => {
   const templateNameList = nodes
     .filter((x) => {
@@ -326,7 +325,7 @@ export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
   }
 
   return {
-    ...(nodeData ?? {}),
+    ...(nodeData ?? { label: '' }),
     form,
   };
 };
@@ -341,7 +340,7 @@ export const needsSingleStepDebugging = (label: string) => {
 
 // Get the coordinates of the node relative to the Iteration node
 export function getRelativePositionToIterationNode(
-  nodes: Node<NodeData>[],
+  nodes: RAGFlowNodeType[],
   position?: XYPosition, // relative position
 ) {
   if (!position) {

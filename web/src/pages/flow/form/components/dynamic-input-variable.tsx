@@ -1,15 +1,14 @@
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
-import { Node } from '@xyflow/react';
 import { Button, Collapse, Flex, Form, Input, Select } from 'antd';
 import { PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
-import { NodeData } from '../../interface';
 
+import { RAGFlowNodeType } from '../../interface';
 import styles from './index.less';
 
 interface IProps {
-  node?: Node<NodeData>;
+  node?: RAGFlowNodeType;
 }
 
 enum VariableType {

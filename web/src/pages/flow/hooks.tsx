@@ -20,6 +20,12 @@ import {
 } from '@/constants/knowledge';
 import { useFetchModelId } from '@/hooks/logic-hooks';
 import { Variable } from '@/interfaces/database/chat';
+import {
+  ICategorizeForm,
+  IRelevantForm,
+  ISwitchForm,
+  RAGFlowNodeType,
+} from '@/interfaces/database/flow';
 import { FormInstance, message } from 'antd';
 import { humanId } from 'human-id';
 import { get, isEmpty, lowerFirst, pick } from 'lodash';
@@ -66,7 +72,6 @@ import {
   initialWikipediaValues,
   initialYahooFinanceValues,
 } from './constant';
-import { ICategorizeForm, IRelevantForm, ISwitchForm } from './interface';
 import useGraphStore, { RFState } from './store';
 import {
   generateNodeNamesWithIncreasingIndex,
@@ -571,7 +576,7 @@ export const useCopyPaste = () => {
     (event: ClipboardEvent) => {
       const nodes = JSON.parse(
         event.clipboardData?.getData('agent:nodes') || '[]',
-      ) as Node[] | undefined;
+      ) as RAGFlowNodeType[] | undefined;
 
       if (Array.isArray(nodes) && nodes.length) {
         event.preventDefault();

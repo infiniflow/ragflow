@@ -1,3 +1,4 @@
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import type {} from '@redux-devtools/extension';
 import {
   Connection,
@@ -20,7 +21,6 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { Operator, SwitchElseTo } from './constant';
-import { RAGFlowNodeType } from './interface';
 import {
   duplicateNodeForm,
   generateDuplicateNode,

@@ -1,9 +1,9 @@
 import { useTheme } from '@/components/theme-provider';
+import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Divider, Flex } from 'antd';
 import classNames from 'classnames';
 import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
-import { ISwitchCondition, ISwitchNode } from '../../interface';
 import { RightHandleStyle } from './handle-icon';
 import { useBuildSwitchHandlePositions } from './hooks';
 import styles from './index.less';

@@ -1,7 +1,7 @@
 import { useTheme } from '@/components/theme-provider';
+import { IRagNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
-import { IRagNode } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';

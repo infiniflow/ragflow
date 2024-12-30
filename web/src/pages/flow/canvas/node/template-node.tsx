@@ -4,10 +4,11 @@ import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
 import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
-import { IGenerateParameter, ITemplateNode } from '../../interface';
+import { IGenerateParameter } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 
+import { ITemplateNode } from '@/interfaces/database/flow';
 import styles from './index.less';
 
 export function TemplateNode({

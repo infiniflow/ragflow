@@ -1,8 +1,11 @@
 import { useTheme } from '@/components/theme-provider';
+import {
+  IIterationNode,
+  IIterationStartNode,
+} from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
 import { Handle, NodeProps, NodeResizeControl, Position } from '@xyflow/react';
 import { ListRestart } from 'lucide-react';
-import { IIterationNode, IIterationStartNode } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';

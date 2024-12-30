@@ -1,4 +1,5 @@
 import { useTheme } from '@/components/theme-provider';
+import { IBeginNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
@@ -10,7 +11,7 @@ import {
   Operator,
   operatorMap,
 } from '../../constant';
-import { BeginQuery, IBeginNode } from '../../interface';
+import { BeginQuery } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import { RightHandleStyle } from './handle-icon';
 import styles from './index.less';

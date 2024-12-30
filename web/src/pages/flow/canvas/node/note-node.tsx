@@ -1,11 +1,11 @@
 import { NodeProps, NodeResizeControl } from '@xyflow/react';
 import { Flex, Form, Input } from 'antd';
 import classNames from 'classnames';
-import { INoteNode } from '../../interface';
 import NodeDropdown from './dropdown';
 
 import SvgIcon from '@/components/svg-icon';
 import { useTheme } from '@/components/theme-provider';
+import { INoteNode } from '@/interfaces/database/flow';
 import { memo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {

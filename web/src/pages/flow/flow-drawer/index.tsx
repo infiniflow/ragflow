@@ -1,7 +1,6 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { CloseOutlined } from '@ant-design/icons';
-import { Node } from '@xyflow/react';
 import { Drawer, Flex, Form, Input } from 'antd';
 import { lowerFirst } from 'lodash';
 import { Play } from 'lucide-react';
@@ -44,12 +43,13 @@ import OperatorIcon from '../operator-icon';
 import { getDrawerWidth, needsSingleStepDebugging } from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
 
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { RunTooltip } from '../flow-tooltip';
 import IterationForm from '../form/iteration-from';
 import styles from './index.less';
 
 interface IProps {
-  node?: Node;
+  node?: RAGFlowNodeType;
   singleDebugDrawerVisible: IModalProps<any>['visible'];
   hideSingleDebugDrawer: IModalProps<any>['hideModal'];
   showSingleDebugDrawer: IModalProps<any>['showModal'];
@@ -104,7 +104,7 @@ const FormDrawer = ({
   hideSingleDebugDrawer,
   showSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
-  const operatorName: Operator = node?.data.label;
+  const operatorName: Operator = node?.data.label as Operator;
   const OperatorForm = FormMap[operatorName] ?? EmptyContent;
   const [form] = Form.useForm();
   const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
