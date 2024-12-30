@@ -849,28 +849,31 @@ def list_chunks(tenant_id, dataset_id, document_id):
     res = {"total": 0, "chunks": [], "doc": renamed_doc}
     if req.get("id"):
         chunk = settings.docStoreConn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
+        k = []
+        for n in chunk.keys():
+            if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
+                k.append(n)
+        for n in k:
+            del chunk[n]
         if not chunk:
             return get_error_data_result(f"Chunk `{req.get('id')}` not found.")
         res['total'] = 1
-        chunk = {
+        final_chunk = {
             "id":chunk.get("id",chunk.get("chunk_id")),
             "content":chunk["content_with_weight"],
             "document_id":chunk.get("doc_id",chunk.get("document_id")),
             "docnm_kwd":chunk["docnm_kwd"],
             "important_keywords":chunk.get("important_kwd",[]),
-            "questions":chunk["question_kwd"],
+            "questions":chunk.get("question_kwd",[]),
             "dataset_id":chunk.get("kb_id",chunk.get("dataset_id")),
             "image_id":chunk["img_id"],
-            "available":bool(chunk["available_int"]),
-            "positions":chunk["position_int"],
-            "top_int":chunk["top_int"],
-            "page_num_int":chunk["page_num_int"]
+            "available":bool(chunk.get("available_int",1)),
+            "positions":chunk.get("position_int",[]),
         }
-        res["chunks"].append(chunk)
-        _ = Chunk(**chunk)
-        return get_result(data=res)
+        res["chunks"].append(final_chunk)
+        _ = Chunk(**final_chunk)
 
-    if settings.docStoreConn.indexExist(search.index_name(tenant_id), dataset_id):
+    elif settings.docStoreConn.indexExist(search.index_name(tenant_id), dataset_id):
         sres = settings.retrievaler.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None,
                                            highlight=True)
         res["total"] = sres.total
@@ -886,12 +889,13 @@ def list_chunks(tenant_id, dataset_id, document_id):
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
                 "important_keywords": sres.field[id].get("important_kwd", []),
                 "questions": sres.field[id].get("question_kwd", []),
+                "dataset_id": sres.field[id].get("kb_id", sres.field[id].get("dataset_id")),
                 "image_id": sres.field[id].get("img_id", ""),
                 "available": bool(sres.field[id].get("available_int", 1)),
-                "positions": sres.field[id].get("position_int", []),
+                "positions": sres.field[id].get("position_int",[]),
             }
-        res["chunks"].append(d)
-        _ = Chunk(**d) # validate the chunk
+            res["chunks"].append(d)
+            _ = Chunk(**d) # validate the chunk
     return get_result(data=res)
 
 
