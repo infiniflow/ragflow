@@ -78,7 +78,8 @@ class Answer(ComponentBase, ABC):
         self.exception = e
 
     def output(self, allow_partial=True) -> Tuple[str, Union[pd.DataFrame, partial]]:
-        if allow_partial: return super.output()
+        if allow_partial:
+            return super.output()
 
         for r, c in self._canvas.history[::-1]:
             if r == "user":
