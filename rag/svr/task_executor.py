@@ -92,9 +92,11 @@ DONE_TASKS = 0
 FAILED_TASKS = 0
 CURRENT_TASK = None
 
+
 class TaskCanceledException(Exception):
     def __init__(self, msg):
         self.msg = msg
+
 
 def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
     global PAYLOAD
@@ -250,7 +252,7 @@ def build_chunks(task, progress_callback):
             STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue())
             el += timer() - st
         except Exception:
-            logging.exception("Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["_id"]))
+            logging.exception("Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
             raise
 
         d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
@@ -312,6 +314,8 @@ def embedding(docs, mdl, parser_config=None, callback=None):
         if not c:
             c = d["content_with_weight"]
         c = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", c)
+        if not c:
+            c = "None"
         cnts.append(c)
 
     tk_count = 0
@@ -392,8 +396,6 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         res.append(d)
         tk_count += num_tokens_from_string(content)
     return res, tk_count, vector_size
-
-
 
 
 def do_handle_task(task):

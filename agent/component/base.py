@@ -457,7 +457,7 @@ class ComponentBase(ABC):
 
     def get_input(self):
         if self._param.debug_inputs:
-            return pd.DataFrame([{"content": v["value"]} for v in self._param.debug_inputs])
+            return pd.DataFrame([{"content": v["value"]} for v in self._param.debug_inputs if v.get("value")])
 
         reversed_cpnts = []
         if len(self._canvas.path) > 1:
