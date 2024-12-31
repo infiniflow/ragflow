@@ -10,8 +10,8 @@ def test_upload_document_with_success(get_api_key_fixture):
     with open("test_data/ragflow.txt", "rb") as file:
         blob_2=file.read()
     document_infos = []
-    document_infos.append({"displayed_name": "test_1.txt","blob": blob})
-    document_infos.append({"displayed_name": "test_2.txt","blob": blob_2})
+    document_infos.append({"display_name": "test_1.txt","blob": blob})
+    document_infos.append({"display_name": "test_2.txt","blob": blob_2})
     ds.upload_documents(document_infos)
 
 
@@ -20,7 +20,7 @@ def test_update_document_with_success(get_api_key_fixture):
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_update_document")
     blob = b"Sample document content for test."
-    document_infos=[{"displayed_name":"test.txt","blob":blob}]
+    document_infos=[{"display_name":"test.txt","blob":blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     doc.update({"chunk_method": "manual", "name": "manual.txt"})
@@ -31,7 +31,7 @@ def test_download_document_with_success(get_api_key_fixture):
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_download_document")
     blob = b"Sample document content for test."
-    document_infos=[{"displayed_name": "test_1.txt","blob": blob}]
+    document_infos=[{"display_name": "test_1.txt","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     with open("test_download.txt","wb+") as file:
@@ -43,7 +43,7 @@ def test_list_documents_in_dataset_with_success(get_api_key_fixture):
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     ds = rag.create_dataset(name="test_list_documents")
     blob = b"Sample document content for test."
-    document_infos = [{"displayed_name": "test.txt","blob":blob}]
+    document_infos = [{"display_name": "test.txt","blob":blob}]
     ds.upload_documents(document_infos)
     ds.list_documents(keywords="test", page=1, page_size=12)
 
@@ -54,7 +54,7 @@ def test_delete_documents_in_dataset_with_success(get_api_key_fixture):
     ds = rag.create_dataset(name="test_delete_documents")
     name = "test_delete_documents.txt"
     blob = b"Sample document content for test."
-    document_infos=[{"displayed_name": name, "blob": blob}]
+    document_infos=[{"display_name": name, "blob": blob}]
     docs = ds.upload_documents(document_infos)
     ds.delete_documents([docs[0].id])
 
@@ -65,7 +65,7 @@ def test_upload_and_parse_pdf_documents_with_general_parse_method(get_api_key_fi
     ds = rag.create_dataset(name="test_pdf_document")
     with open("test_data/test.pdf", "rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.pdf","blob": blob}]
+    document_infos = [{"display_name": "test.pdf","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
@@ -76,7 +76,7 @@ def test_upload_and_parse_docx_documents_with_general_parse_method(get_api_key_f
     ds = rag.create_dataset(name="test_docx_document")
     with open("test_data/test.docx", "rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.docx","blob": blob}]
+    document_infos = [{"display_name": "test.docx","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
@@ -86,7 +86,7 @@ def test_upload_and_parse_excel_documents_with_general_parse_method(get_api_key_
     ds = rag.create_dataset(name="test_excel_document")
     with open("test_data/test.xlsx", "rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.xlsx","blob": blob}]
+    document_infos = [{"display_name": "test.xlsx","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
@@ -96,7 +96,7 @@ def test_upload_and_parse_ppt_documents_with_general_parse_method(get_api_key_fi
     ds = rag.create_dataset(name="test_ppt_document")
     with open("test_data/test.ppt", "rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.ppt","blob": blob}]
+    document_infos = [{"display_name": "test.ppt","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
@@ -106,7 +106,7 @@ def test_upload_and_parse_image_documents_with_general_parse_method(get_api_key_
     ds = rag.create_dataset(name="test_image_document")
     with open("test_data/test.jpg", "rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.jpg","blob": blob}]
+    document_infos = [{"display_name": "test.jpg","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
@@ -116,7 +116,7 @@ def test_upload_and_parse_txt_documents_with_general_parse_method(get_api_key_fi
     ds = rag.create_dataset(name="test_txt_document")
     with open("test_data/test.txt", "rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.txt","blob": blob}]
+    document_infos = [{"display_name": "test.txt","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
@@ -126,7 +126,7 @@ def test_upload_and_parse_md_documents_with_general_parse_method(get_api_key_fix
     ds = rag.create_dataset(name="test_md_document")
     with open("test_data/test.md", "rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.md","blob": blob}]
+    document_infos = [{"display_name": "test.md","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
@@ -137,7 +137,7 @@ def test_upload_and_parse_json_documents_with_general_parse_method(get_api_key_f
     ds = rag.create_dataset(name="test_json_document")
     with open("test_data/test.json", "rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.json","blob": blob}]
+    document_infos = [{"display_name": "test.json","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
@@ -149,7 +149,7 @@ def test_upload_and_parse_eml_documents_with_general_parse_method(get_api_key_fi
     ds = rag.create_dataset(name="test_eml_document")
     with open("test_data/test.eml", "rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.eml","blob": blob}]
+    document_infos = [{"display_name": "test.eml","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
@@ -160,7 +160,7 @@ def test_upload_and_parse_html_documents_with_general_parse_method(get_api_key_f
     ds = rag.create_dataset(name="test_html_document")
     with open("test_data/test.html", "rb") as file:
         blob=file.read()
-    document_infos = [{"displayed_name": "test.html","blob": blob}]
+    document_infos = [{"display_name": "test.html","blob": blob}]
     docs=ds.upload_documents(document_infos)
     doc = docs[0]
     ds.async_parse_documents([doc.id])
