@@ -526,12 +526,12 @@ def handle_task():
             except Exception:
                 pass
             logging.debug("handle_task got TaskCanceledException", exc_info=True)
-        except Exception:
+        except Exception as e:
             with mt_lock:
                 FAILED_TASKS += 1
                 CURRENT_TASK = None
             try:
-                set_progress(task["id"], prog=-1, msg="handle_task got exception, please check log")
+                set_progress(task["id"], prog=-1, msg=f"[Exception]: {e}")
             except Exception:
                 pass
             logging.exception(f"handle_task got exception for task {json.dumps(task)}")
