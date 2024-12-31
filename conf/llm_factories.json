@@ -73,9 +73,15 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "gpt-4-vision-preview",
+                    "llm_name": "gpt-4o-2024-08-06",
                     "tags": "LLM,CHAT,IMAGE2TEXT",
-                    "max_tokens": 765,
+                    "max_tokens": 128000,
+                    "model_type": "image2text"
+                },
+                 {
+                    "llm_name": "gpt-4o-mini-2024-07-18",
+                    "tags": "LLM,CHAT,IMAGE2TEXT",
+                    "max_tokens": 128000,
                     "model_type": "image2text"
                 },
                 {
