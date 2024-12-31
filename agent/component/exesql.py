@@ -57,15 +57,11 @@ class ExeSQLParam(GenerateParam):
 class ExeSQL(Generate, ABC):
     component_name = "ExeSQL"
 
-    def _run(self, history, **kwargs):
-        ans = self.get_input()
-        ans = "".join([str(a) for a in ans["content"]]) if "content" in ans else ""
-
-        # improve the information extraction, most llm return results in markdown format ```sql query ```
+    def _refactor(self,ans):
         match = re.search(r"```sql\s*(.*?)\s*```", ans, re.DOTALL)
         if match:
             ans = match.group(1)  # Query content
-            print(ans)
+            return ans
         else:
             print("no markdown")
         ans = re.sub(r'^.*?SELECT ', 'SELECT ', (ans), flags=re.IGNORECASE)
@@ -73,7 +69,12 @@ class ExeSQL(Generate, ABC):
         ans = re.sub(r';[^;]*$', r';', ans)
         if not ans:
             raise Exception("SQL statement not found!")
+        return ans
 
+    def _run(self, history, **kwargs):
+        ans = self.get_input()
+        ans = "".join([str(a) for a in ans["content"]]) if "content" in ans else ""
+        ans = self._refactor(ans)
         logging.info("db_type: ",self._param.db_type)
         if self._param.db_type in ["mysql", "mariadb"]:
             db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
@@ -116,7 +117,8 @@ class ExeSQL(Generate, ABC):
                     sql_res.append({"content": "\nTotal: " + str(cursor.rowcount) + "\n" + single_res.to_markdown()})
                     break
                 except Exception as e:
-                    single_sql = self._regenerate_sql(single_sql,str(e),**kwargs)
+                    single_sql = self._regenerate_sql(single_sql, str(e), **kwargs)
+                    single_sql = self._refactor(single_sql)
                     if self._loop > self._param.loop:
                         raise Exception("Maximum loop time exceeds. Can't query the correct data via SQL statement.")
         db.close()
@@ -134,8 +136,11 @@ class ExeSQL(Generate, ABC):
         self._param.prompt=prompt
         response = Generate._run(self, [], **kwargs)
         try:
-            regenerated_sql = response["content"].strip()
+            regenerated_sql = response.loc[0,"content"]
             return regenerated_sql
         except Exception as e:
             logging.error(f"Failed to regenerate SQL: {e}")
             return None
+
+    def debug(self, **kwargs):
+        return self._run([], **kwargs)
