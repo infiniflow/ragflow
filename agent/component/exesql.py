@@ -96,6 +96,7 @@ class ExeSQL(Generate, ABC):
             raise Exception("Database Connection Failed! \n" + str(e))
         if not hasattr(self, "_loop"):
             setattr(self, "_loop", 0)
+            self._loop += 1
         input_list=re.split(r';', ans.replace(r"\n", " "))
         sql_res = []
         for i in range(len(input_list)):
@@ -117,14 +118,19 @@ class ExeSQL(Generate, ABC):
                 except Exception as e:
                     single_sql = self._regenerate_sql(single_sql,str(e),**kwargs)
                     if self._loop > self._param.loop:
-                        sql_res.append({"content": "**Error**:" + str(e) + "\nError SQL Statement:" + single_sql})
+                        raise Exception("Maximum loop time exceeds. Can't query the correct data via SQL statement.")
         db.close()
         if not sql_res:
             return ExeSQL.be_output("")
         return pd.DataFrame(sql_res)
 
     def _regenerate_sql(self, failed_sql, error_message,**kwargs):
-        prompt = f"Original SQL query: {failed_sql}\nError Message: {error_message}\nPlease suggest a corrected version of the SQL query."
+        prompt = f'''
+        ## You are the Repair SQL Statement Helper, please modify the original SQL statement based on the SQL query error report.
+        ## The original SQL statement is as follows:{failed_sql}.
+        ## The contents of the SQL query error report is as follows:{error_message}.
+        ## Answer only the modified SQL statement. Please do not give any explanation, just answer the code.
+'''
         self._param.prompt=prompt
         response = Generate._run(self, [], **kwargs)
         try:
