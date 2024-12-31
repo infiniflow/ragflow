@@ -18,11 +18,11 @@ import re
 import pandas as pd
 import pymysql
 import psycopg2
-from agent.component.base import ComponentBase, ComponentParamBase
+from agent.component import GenerateParam, Generate
 import pyodbc
 import logging
 
-class ExeSQLParam(ComponentParamBase):
+class ExeSQLParam(GenerateParam):
     """
     Define the ExeSQL component parameters.
     """
@@ -39,6 +39,7 @@ class ExeSQLParam(ComponentParamBase):
         self.top_n = 30
 
     def check(self):
+        super().check()
         self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgresql', 'mariadb', 'mssql'])
         self.check_empty(self.database, "Database name")
         self.check_empty(self.username, "database username")
@@ -53,17 +54,10 @@ class ExeSQLParam(ComponentParamBase):
                 raise ValueError("The host is not accessible.")
 
 
-class ExeSQL(ComponentBase, ABC):
+class ExeSQL(Generate, ABC):
     component_name = "ExeSQL"
 
     def _run(self, history, **kwargs):
-        if not hasattr(self, "_loop"):
-            setattr(self, "_loop", 0)
-        if self._loop >= self._param.loop:
-            self._loop = 0
-            raise Exception("Maximum loop time exceeds. Can't query the correct data via SQL statement.")
-        self._loop += 1
-
         ans = self.get_input()
         ans = "".join([str(a) for a in ans["content"]]) if "content" in ans else ""
 
@@ -100,25 +94,42 @@ class ExeSQL(ComponentBase, ABC):
             cursor = db.cursor()
         except Exception as e:
             raise Exception("Database Connection Failed! \n" + str(e))
+        if not hasattr(self, "_loop"):
+            setattr(self, "_loop", 0)
+        input_list=re.split(r';', ans.replace(r"\n", " "))
         sql_res = []
-        for single_sql in re.split(r';', ans.replace(r"\n", " ")):
-            if not single_sql:
-                continue
-            try:
-                logging.info("single_sql: ",single_sql)
-                cursor.execute(single_sql)
-                if cursor.rowcount == 0:
-                    sql_res.append({"content": "\nTotal: 0\n No record in the database!"})
-                    continue
-                single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.top_n)])
-                single_res.columns = [i[0] for i in cursor.description]
-                sql_res.append({"content": "\nTotal: " + str(cursor.rowcount) + "\n" + single_res.to_markdown()})
-            except Exception as e:
-                sql_res.append({"content": "**Error**:" + str(e) + "\nError SQL Statement:" + single_sql})
-                pass
+        for i in range(len(input_list)):
+            single_sql=input_list[i]
+            while self._loop <= self._param.loop:
+                self._loop+=1
+                if not single_sql:
+                    break
+                try:
+                    logging.info("single_sql: ", single_sql)
+                    cursor.execute(single_sql)
+                    if cursor.rowcount == 0:
+                        sql_res.append({"content": "\nTotal: 0\n No record in the database!"})
+                        break
+                    single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.top_n)])
+                    single_res.columns = [i[0] for i in cursor.description]
+                    sql_res.append({"content": "\nTotal: " + str(cursor.rowcount) + "\n" + single_res.to_markdown()})
+                    break
+                except Exception as e:
+                    single_sql = self._regenerate_sql(single_sql,str(e),**kwargs)
+                    if self._loop > self._param.loop:
+                        sql_res.append({"content": "**Error**:" + str(e) + "\nError SQL Statement:" + single_sql})
         db.close()
-
         if not sql_res:
             return ExeSQL.be_output("")
-
         return pd.DataFrame(sql_res)
+
+    def _regenerate_sql(self, failed_sql, error_message,**kwargs):
+        prompt = f"Original SQL query: {failed_sql}\nError Message: {error_message}\nPlease suggest a corrected version of the SQL query."
+        self._param.prompt=prompt
+        response = Generate._run(self, [], **kwargs)
+        try:
+            regenerated_sql = response["content"].strip()
+            return regenerated_sql
+        except Exception as e:
+            logging.error(f"Failed to regenerate SQL: {e}")
+            return None
