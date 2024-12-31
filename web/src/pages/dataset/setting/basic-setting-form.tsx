@@ -78,10 +78,7 @@ export default function BasicSettingForm() {
             <FormItem>
               <FormLabel>{t('name')}</FormLabel>
               <FormControl>
-                <Input
-                  {...field}
-                  className="bg-colors-background-inverse-weak"
-                ></Input>
+                <Input {...field}></Input>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -94,10 +91,7 @@ export default function BasicSettingForm() {
             <FormItem>
               <FormLabel>Username</FormLabel>
               <FormControl>
-                <Input
-                  {...field}
-                  className="bg-colors-background-inverse-weak"
-                ></Input>
+                <Input {...field}></Input>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -111,7 +105,7 @@ export default function BasicSettingForm() {
               <FormLabel>{t('language')}</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
-                  <SelectTrigger className="bg-colors-background-inverse-weak">
+                  <SelectTrigger>
                     <SelectValue placeholder="Select a verified email to display" />
                   </SelectTrigger>
                 </FormControl>
