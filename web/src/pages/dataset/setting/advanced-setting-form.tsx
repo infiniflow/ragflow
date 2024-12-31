@@ -99,7 +99,7 @@ export default function AdvancedSettingForm() {
               <FormLabel>Username</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
-                  <SelectTrigger className="bg-colors-background-inverse-weak">
+                  <SelectTrigger>
                     <SelectValue placeholder="Select a verified email to display" />
                   </SelectTrigger>
                 </FormControl>
@@ -139,10 +139,7 @@ export default function AdvancedSettingForm() {
             <FormItem className="w-2/5">
               <FormLabel>Username</FormLabel>
               <FormControl>
-                <Textarea
-                  {...field}
-                  className="bg-colors-background-inverse-weak"
-                ></Textarea>
+                <Textarea {...field}></Textarea>
               </FormControl>
               <FormDescription>
                 This is your public display name.
