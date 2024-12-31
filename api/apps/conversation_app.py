@@ -65,10 +65,6 @@ def set_conversation():
             "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
         }
         ConversationService.save(**conv)
-        e, conv = ConversationService.get_by_id(conv["id"])
-        if not e:
-            return get_data_error_result(message="Fail to new a conversation!")
-        conv = conv.to_dict()
         return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
