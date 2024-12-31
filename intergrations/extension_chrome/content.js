@@ -56,9 +56,13 @@
     getIframeInputValues
   );
 
-  return `## inputValues\n\`\`\`json\n${JSON.stringify(
-    inputValues
-  )}\n\`\`\`\n## iframeInputValues\n\`\`\`json\n${JSON.stringify(
-    iframeInputValues
-  )}\n\`\`\``;
+  return `
+  ## input values\n
+  \`\`\`json\n
+  ${JSON.stringify(inputValues)}\n
+  \`\`\`\n
+  ## iframe input values\n
+  \`\`\`json\n
+  ${JSON.stringify(iframeInputValues)}\n
+  \`\`\``;
 })();
