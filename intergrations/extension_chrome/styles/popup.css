@@ -5,84 +5,16 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100vh;
+  width: 320px;
 }
 
 #ragflow .window {
-  width: 320px;
-  background-color: #fff;
-  box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  max-height: 600px;
+  flex: 1;
   overflow: hidden;
 }
-
-#ragflow .header {
-  background-color: #fff;
-  padding: 4px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-direction: row;
-}
-
-#ragflow .header .title {
-  font-size: 16px;
-}
-
-#ragflow .header .close-button {
-  background: none;
-  border: none;
-  font-size: 20px;
-  cursor: pointer;
-  color: black;
-}
-#ragflow .header .logo {
-  width: 100px; /* Adjust size as needed */
-  height: auto;
-  margin-right: 10px;
-}
-
-#ragflow .content {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
-
-#ragflow label {
-  font-weight: bold;
-  margin-bottom: 5px;
-}
-
-#ragflow input {
-  width: 100%;
-  padding: 8px;
-  margin-bottom: 15px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  box-sizing: border-box;
-}
-
-#ragflow button {
-  background-color: #0078d4;
-  color: #fff;
-  padding: 10px;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-#ragflow button:hover {
-  background-color: #005bb5;
-}
-
-#ragflow iframe {
-  border: none;
-  border-radius: 5px;
-  width: 100%;
-  height: calc(100% - 100px); /* Adjusting for header and button */
+#ragflow #output {
+  position: absolute;
 }
