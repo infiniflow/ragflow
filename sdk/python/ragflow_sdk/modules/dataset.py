@@ -36,7 +36,7 @@ class DataSet(Base):
 
     def upload_documents(self,document_list: list[dict]):
         url = f"/datasets/{self.id}/documents"
-        files = [("file",(ele["displayed_name"],ele["blob"])) for ele in document_list]
+        files = [("file",(ele["display_name"],ele["blob"])) for ele in document_list]
         res = self.post(path=url,json=None,files=files)
         res = res.json()
         if res.get("code") == 0:
