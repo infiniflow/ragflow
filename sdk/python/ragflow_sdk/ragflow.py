@@ -46,13 +46,15 @@ class RAGFlow:
         res = requests.put(url=self.api_url + path, json= json,headers=self.authorization_header)
         return res
 
-    def create_dataset(self, name: str, avatar: str = "", description: str = "", language: str = "English",
+    def create_dataset(self, name: str, avatar: str = "", description: str = "", embedding_model:str = "BAAI/bge-large-zh-v1.5",
+                       language: str = "English",
                        permission: str = "me",chunk_method: str = "naive",
                        parser_config: DataSet.ParserConfig = None) -> DataSet:
         if parser_config:
             parser_config = parser_config.to_json()
         res = self.post("/datasets",
-                        {"name": name, "avatar": avatar, "description": description, "language": language,
+                        {"name": name, "avatar": avatar, "description": description,"embedding_model":embedding_model,
+                         "language": language,
                          "permission": permission, "chunk_method": chunk_method,
                          "parser_config": parser_config
                          }
@@ -106,6 +108,7 @@ class RAGFlow:
             prompt = Chat.Prompt(self, {"similarity_threshold": 0.2,
                                              "keywords_similarity_weight": 0.7,
                                              "top_n": 8,
+                                             "top_k": 1024,
                                              "variables": [{
                                                  "key": "knowledge",
                                                  "optional": True

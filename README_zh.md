@@ -299,7 +299,7 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
 6. 安装前端依赖：  
    ```bash
    cd web
-   npm install --force
+   npm install
    ```  
 7. 启动前端服务：  
    ```bash

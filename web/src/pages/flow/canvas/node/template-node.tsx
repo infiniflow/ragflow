@@ -1,13 +1,14 @@
 import { useTheme } from '@/components/theme-provider';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
-import { Handle, NodeProps, Position } from 'reactflow';
 import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
-import { IGenerateParameter, NodeData } from '../../interface';
+import { IGenerateParameter } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 
+import { ITemplateNode } from '@/interfaces/database/flow';
 import styles from './index.less';
 
 export function TemplateNode({
@@ -15,7 +16,7 @@ export function TemplateNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<NodeData>) {
+}: NodeProps<ITemplateNode>) {
   const parameters: IGenerateParameter[] = get(data, 'form.parameters', []);
   const getLabel = useGetComponentLabelByValue(id);
   const { theme } = useTheme();

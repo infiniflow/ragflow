@@ -2,14 +2,13 @@ import { EditableCell, EditableRow } from '@/components/editable-cell';
 import { useTranslate } from '@/hooks/common-hooks';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Flex, Select, Table, TableProps } from 'antd';
-import { Node } from 'reactflow';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
-import { IGenerateParameter, NodeData } from '../../interface';
+import { IGenerateParameter, RAGFlowNodeType } from '../../interface';
 import { useHandleOperateParameters } from './hooks';
 
 import styles from './index.less';
 interface IProps {
-  node?: Node<NodeData>;
+  node?: RAGFlowNodeType;
 }
 
 const components = {
