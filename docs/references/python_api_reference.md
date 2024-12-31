@@ -894,7 +894,7 @@ dataset = rag_object.list_datasets(name="ragflow")
 dataset = dataset[0]
 name = 'ragflow_test.txt'
 path = './test_data/ragflow_test.txt'
-documents =[{"displayed_name":"test_retrieve_chunks.txt","blob":open(path, "rb").read()}]
+documents =[{"display_name":"test_retrieve_chunks.txt","blob":open(path, "rb").read()}]
 docs = dataset.upload_documents(documents)
 doc = docs[0]
 doc.add_chunk(content="This is a chunk addition test")
