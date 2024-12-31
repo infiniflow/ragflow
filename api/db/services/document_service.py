@@ -96,14 +96,11 @@ class DocumentService(CommonService):
     def insert(cls, doc):
         if not cls.save(**doc):
             raise RuntimeError("Database error (Document)!")
-        e, doc = cls.get_by_id(doc["id"])
-        if not e:
-            raise RuntimeError("Database error (Document retrieval)!")
-        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+        e, kb = KnowledgebaseService.get_by_id(doc["kb_id"])
         if not KnowledgebaseService.update_by_id(
                 kb.id, {"doc_num": kb.doc_num + 1}):
             raise RuntimeError("Database error (Knowledgebase)!")
-        return doc
+        return Document(**doc)
 
     @classmethod
     @DB.connection_context()
