@@ -50,6 +50,9 @@ const ForceGraph = ({ data, show }: IProps) => {
           enterable: true,
           getContent: (e: IElementEvent, items: ElementDatum) => {
             if (Array.isArray(items)) {
+              if (items.some((x) => x?.isCombo)) {
+                return `<p style="font-weight:600;color:red">${items?.[0]?.data?.label}</p>`;
+              }
               let result = ``;
               items.forEach((item) => {
                 result += `<section style="color:${TooltipColorMap[e['targetType'] as keyof typeof TooltipColorMap]};"><h3>${item?.id}</h3>`;
