@@ -185,7 +185,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
         "datetime": "_dt",
         "bool": "_kwd"}
     for df in dfs:
-        for n in ["id", "index", "idx"]:
+        for n in ["id", "_id", "index", "idx"]:
             if n in df.columns:
                 del df[n]
         clmns = df.columns.values

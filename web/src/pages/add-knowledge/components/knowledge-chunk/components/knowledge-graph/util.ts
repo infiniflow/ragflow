@@ -1,4 +1,5 @@
 import { isEmpty } from 'lodash';
+import { v4 as uuid } from 'uuid';
 
 class KeyGenerator {
   idx = 0;
@@ -62,18 +63,30 @@ export const isDataExist = (data: any) => {
   );
 };
 
+const findCombo = (communities: string[]) => {
+  const combo = Array.isArray(communities) ? communities[0] : undefined;
+  return combo;
+};
+
 export const buildNodesAndCombos = (nodes: any[]) => {
   const combos: any[] = [];
-  const nextNodes = nodes.map((x) => {
-    const combo = Array.isArray(x?.communities) ? x.communities[0] : undefined;
-    if (combo && combos.every((y) => y.id !== combo)) {
+  nodes.forEach((x) => {
+    const combo = findCombo(x?.communities);
+    if (combo && combos.every((y) => y.data.label !== combo)) {
       combos.push({
-        id: combo,
+        isCombo: true,
+        id: uuid(),
+        data: {
+          label: combo,
+        },
       });
     }
+  });
+
+  const nextNodes = nodes.map((x) => {
     return {
       ...x,
-      combo,
+      combo: combos.find((y) => y.data.label === findCombo(x?.communities))?.id,
     };
   });
 

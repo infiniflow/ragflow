@@ -25,7 +25,7 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       </Form.Item>
       <Form.Item
         name={['prompt']}
-        label="System"
+        label={t('systemPrompt')}
         initialValue={t('promptText')}
         tooltip={t('promptTip', { keyPrefix: 'knowledgeConfiguration' })}
         rules={[
@@ -49,7 +49,7 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       <MessageHistoryWindowSizeItem
         initialValue={12}
       ></MessageHistoryWindowSizeItem>
-      <DynamicParameters nodeId={node?.id}></DynamicParameters>
+      <DynamicParameters node={node}></DynamicParameters>
     </Form>
   );
 };

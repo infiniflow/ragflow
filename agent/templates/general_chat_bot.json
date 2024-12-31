@@ -85,7 +85,7 @@
                 },
                 "5. chitchatting": {
                   "description": "Regarding the issues of small talk, companionship, sharing, and emotional intimacy.",
-                  "examples": "What's your name?\nAre you female o male.\nWhat a bad day!\nTerrible day.\nHow are you today?\nDo you have boy friend?",
+                  "examples": "What's your name?\nWhat a bad day!\nTerrible day.\nHow are you today?",
                   "to": "Generate:FiveDragonsLay"
                 }
               },
@@ -637,7 +637,7 @@
                   },
                   "5. chitchatting": {
                     "description": "Regarding the issues of small talk, companionship, sharing, and emotional intimacy.",
-                    "examples": "What's your name?\nAre you female o male.\nWhat a bad day!\nTerrible day.\nHow are you today?\nDo you have boy friend?",
+                    "examples": "What's your name?\nWhat a bad day!\nTerrible day.\nHow are you today?",
                     "to": "Generate:FiveDragonsLay"
                   }
                 },

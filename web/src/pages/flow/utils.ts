@@ -1,11 +1,15 @@
-import { DSLComponents } from '@/interfaces/database/flow';
+import {
+  DSLComponents,
+  ICategorizeItemResult,
+  RAGFlowNodeType,
+} from '@/interfaces/database/flow';
 import { removeUselessFieldsFromValues } from '@/utils/form';
+import { Edge, Node, Position, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
 import { curry, get, intersectionWith, isEqual, sample } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
-import { Edge, Node, Position } from 'reactflow';
 import { v4 as uuidv4 } from 'uuid';
 import {
   CategorizeAnchorPointPositions,
@@ -13,7 +17,7 @@ import {
   NodeMap,
   Operator,
 } from './constant';
-import { ICategorizeItemResult, IPosition, NodeData } from './interface';
+import { IPosition } from './interface';
 
 const buildEdges = (
   operatorIds: string[],
@@ -122,7 +126,7 @@ const buildOperatorParams = (operatorName: string) =>
 
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
-  nodes: Node<NodeData>[],
+  nodes: RAGFlowNodeType[],
   edges: Edge[],
   oldDslComponents: DSLComponents,
 ): DSLComponents => {
@@ -144,6 +148,7 @@ export const buildDslComponentsByGraph = (
         },
         downstream: buildComponentDownstreamOrUpstream(edges, id, true),
         upstream: buildComponentDownstreamOrUpstream(edges, id, false),
+        parent_id: x?.parentId,
       };
     });
 
@@ -259,7 +264,7 @@ const splitName = (name: string) => {
 
 export const generateNodeNamesWithIncreasingIndex = (
   name: string,
-  nodes: Node[],
+  nodes: RAGFlowNodeType[],
 ) => {
   const templateNameList = nodes
     .filter((x) => {
@@ -297,7 +302,7 @@ export const generateNodeNamesWithIncreasingIndex = (
   return `${name}_${index}`;
 };
 
-export const duplicateNodeForm = (nodeData?: NodeData) => {
+export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
   const form: Record<string, any> = { ...(nodeData?.form ?? {}) };
 
   // Delete the downstream node corresponding to the to field of the Categorize operator
@@ -320,7 +325,7 @@ export const duplicateNodeForm = (nodeData?: NodeData) => {
   }
 
   return {
-    ...(nodeData ?? {}),
+    ...(nodeData ?? { label: '' }),
     form,
   };
 };
@@ -331,4 +336,56 @@ export const getDrawerWidth = () => {
 
 export const needsSingleStepDebugging = (label: string) => {
   return !NoDebugOperatorsList.some((x) => (label as Operator) === x);
+};
+
+// Get the coordinates of the node relative to the Iteration node
+export function getRelativePositionToIterationNode(
+  nodes: RAGFlowNodeType[],
+  position?: XYPosition, // relative position
+) {
+  if (!position) {
+    return;
+  }
+
+  const iterationNodes = nodes.filter(
+    (node) => node.data.label === Operator.Iteration,
+  );
+
+  for (const iterationNode of iterationNodes) {
+    const {
+      position: { x, y },
+      width,
+      height,
+    } = iterationNode;
+    const halfWidth = (width || 0) / 2;
+    if (
+      position.x >= x - halfWidth &&
+      position.x <= x + halfWidth &&
+      position.y >= y &&
+      position.y <= y + (height || 0)
+    ) {
+      return {
+        parentId: iterationNode.id,
+        position: { x: position.x - x + halfWidth, y: position.y - y },
+      };
+    }
+  }
+}
+
+export const generateDuplicateNode = (
+  position?: XYPosition,
+  label?: string,
+) => {
+  const nextPosition = {
+    x: (position?.x || 0) + 50,
+    y: (position?.y || 0) + 50,
+  };
+
+  return {
+    selected: false,
+    dragging: false,
+    id: `${label}:${humanId()}`,
+    position: nextPosition,
+    dragHandle: getNodeDragHandle(label),
+  };
 };

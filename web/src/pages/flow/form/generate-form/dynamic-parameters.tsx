@@ -2,14 +2,13 @@ import { EditableCell, EditableRow } from '@/components/editable-cell';
 import { useTranslate } from '@/hooks/common-hooks';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Flex, Select, Table, TableProps } from 'antd';
-import { IGenerateParameter } from '../../interface';
-
-import { useBuildComponentIdSelectOptions } from '../../hooks';
+import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
+import { IGenerateParameter, RAGFlowNodeType } from '../../interface';
 import { useHandleOperateParameters } from './hooks';
-import styles from './index.less';
 
+import styles from './index.less';
 interface IProps {
-  nodeId?: string;
+  node?: RAGFlowNodeType;
 }
 
 const components = {
@@ -19,10 +18,11 @@ const components = {
   },
 };
 
-const DynamicParameters = ({ nodeId }: IProps) => {
+const DynamicParameters = ({ node }: IProps) => {
+  const nodeId = node?.id;
   const { t } = useTranslate('flow');
 
-  const options = useBuildComponentIdSelectOptions(nodeId);
+  const options = useBuildComponentIdSelectOptions(nodeId, node?.parentId);
   const {
     dataSource,
     handleAdd,

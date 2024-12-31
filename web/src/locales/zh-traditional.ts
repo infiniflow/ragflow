@@ -1016,6 +1016,23 @@ export default {
       templateDescription: '此元件用於排版各種元件的輸出。 ',
       jsonUploadTypeErrorMessage: '請上傳json檔',
       jsonUploadContentErrorMessage: 'json 檔案錯誤',
+      iterationDescription: `此元件首先透過「分隔符號」將輸入拆分為陣列。
+對數組中的元素依序執行相同的操作步驟，直到輸出所有結果，可以理解為任務批次處理器。
+
+例如，在長文本翻譯迭代節點內，如果所有內容都輸入到LLM節點，則可能會達到單次對話限制。上游節點可以先將長文本拆分為多個分片，並配合迭代節點對每個分片進行批次翻譯，避免達到單次對話的LLM訊息限制。`,
+      delimiterTip: `此分隔符號用於將輸入文字分割成多個文字片段，其中的回顯將作為每次迭代的輸入項執行。`,
+      delimiterOptions: {
+        comma: '逗號',
+        lineBreak: '換行',
+        tab: '製表符',
+        underline: '底線',
+        diagonal: '斜線',
+        minus: '減號',
+        semicolon: '分號',
+      },
+      addVariable: '新增變數',
+      variableSettings: '變數設定',
+      systemPrompt: '系統提示詞',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

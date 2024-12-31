@@ -20,7 +20,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.15.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.15.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.15.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.15.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -33,7 +33,7 @@
 
 <h4 align="center">
   <a href="https://ragflow.io/docs/dev/">Document</a> |
-  <a href="https://github.com/infiniflow/ragflow/issues/162">Roadmap</a> |
+  <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
   <a href="https://discord.gg/4XxujFgUN7">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
@@ -147,7 +147,7 @@
 
 3. 미리 빌드된 Docker 이미지를 생성하고 서버를 시작하세요:
 
-   > 아래 명령어는 RAGFlow Docker 이미지의 v0.15.0-slim 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.15.0-slim과 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오. 예를 들어, 전체 버전인 v0.15.0을 다운로드하려면 RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.0로 설정합니다.
+   > 아래 명령어는 RAGFlow Docker 이미지의 v0.15.1-slim 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.15.1-slim과 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오. 예를 들어, 전체 버전인 v0.15.1을 다운로드하려면 RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1로 설정합니다.
 
    ```bash
    $ cd ragflow
@@ -156,8 +156,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.15.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.15.0-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.15.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
    | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
 
@@ -286,7 +286,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 6. 프론트엔드 의존성을 설치합니다:  
    ```bash
    cd web
-   npm install --force
+   npm install
    ```  
 7. 프론트엔드 서비스를 시작합니다:  
    ```bash
@@ -306,7 +306,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 
 ## 📜 로드맵
 
-[RAGFlow 로드맵 2024](https://github.com/infiniflow/ragflow/issues/162)을 확인하세요.
+[RAGFlow 로드맵 2025](https://github.com/infiniflow/ragflow/issues/4214)을 확인하세요.
 
 ## 🏄 커뮤니티
 
