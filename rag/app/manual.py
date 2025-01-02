@@ -256,7 +256,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
         return res
 
-    elif re.search(r"\.docx$", filename, re.IGNORECASE):
+    elif re.search(r"\.docx?$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary,
                                     from_page=0, to_page=10000, callback=callback)
