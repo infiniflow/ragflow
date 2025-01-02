@@ -94,7 +94,7 @@ def create_agent_session(tenant_id, agent_id):
                     if "value" in ele:
                         ele.pop("value")
     else:
-        for ans in canvas.run(stream=True):
+        for ans in canvas.run(stream=False):
             pass
     cvs.dsl = json.loads(str(canvas))
     conv = {
