@@ -23,8 +23,7 @@ sys.path.insert(
             '../../')))
 
 from deepdoc.vision.seeit import draw_box
-from deepdoc.vision import Recognizer, LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out
-from api.utils.file_utils import get_project_base_directory
+from deepdoc.vision import LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out
 import argparse
 import re
 import numpy as np
@@ -33,13 +32,7 @@ import numpy as np
 def main(args):
     images, outputs = init_in_out(args)
     if args.mode.lower() == "layout":
-        labels = LayoutRecognizer.labels
-        detr = Recognizer(
-            labels,
-            "layout",
-            os.path.join(
-                get_project_base_directory(),
-                "rag/res/deepdoc/"))
+        detr = LayoutRecognizer("layout")
     if args.mode.lower() == "tsr":
         labels = TableStructureRecognizer.labels
         detr = TableStructureRecognizer()
@@ -64,7 +57,7 @@ def main(args):
 
 def get_table_html(img, tb_cpns, ocr):
     boxes = ocr(np.array(img))
-    boxes = Recognizer.sort_Y_firstly(
+    boxes = LayoutRecognizer.sort_Y_firstly(
         [{"x0": b[0][0], "x1": b[1][0],
           "top": b[0][1], "text": t[0],
           "bottom": b[-1][1],
@@ -75,26 +68,26 @@ def get_table_html(img, tb_cpns, ocr):
 
     def gather(kwd, fzy=10, ption=0.6):
         nonlocal boxes
-        eles = Recognizer.sort_Y_firstly(
+        eles = LayoutRecognizer.sort_Y_firstly(
             [r for r in tb_cpns if re.match(kwd, r["label"])], fzy)
-        eles = Recognizer.layouts_cleanup(boxes, eles, 5, ption)
-        return Recognizer.sort_Y_firstly(eles, 0)
+        eles = LayoutRecognizer.layouts_cleanup(boxes, eles, 5, ption)
+        return LayoutRecognizer.sort_Y_firstly(eles, 0)
 
     headers = gather(r".*header$")
     rows = gather(r".* (row|header)")
     spans = gather(r".*spanning")
     clmns = sorted([r for r in tb_cpns if re.match(
         r"table column$", r["label"])], key=lambda x: x["x0"])
-    clmns = Recognizer.layouts_cleanup(boxes, clmns, 5, 0.5)
+    clmns = LayoutRecognizer.layouts_cleanup(boxes, clmns, 5, 0.5)
 
     for b in boxes:
-        ii = Recognizer.find_overlapped_with_threashold(b, rows, thr=0.3)
+        ii = LayoutRecognizer.find_overlapped_with_threashold(b, rows, thr=0.3)
         if ii is not None:
             b["R"] = ii
             b["R_top"] = rows[ii]["top"]
             b["R_bott"] = rows[ii]["bottom"]
 
-        ii = Recognizer.find_overlapped_with_threashold(b, headers, thr=0.3)
+        ii = LayoutRecognizer.find_overlapped_with_threashold(b, headers, thr=0.3)
         if ii is not None:
             b["H_top"] = headers[ii]["top"]
             b["H_bott"] = headers[ii]["bottom"]
@@ -102,13 +95,13 @@ def get_table_html(img, tb_cpns, ocr):
             b["H_right"] = headers[ii]["x1"]
             b["H"] = ii
 
-        ii = Recognizer.find_horizontally_tightest_fit(b, clmns)
+        ii = LayoutRecognizer.find_horizontally_tightest_fit(b, clmns)
         if ii is not None:
             b["C"] = ii
             b["C_left"] = clmns[ii]["x0"]
             b["C_right"] = clmns[ii]["x1"]
 
-        ii = Recognizer.find_overlapped_with_threashold(b, spans, thr=0.3)
+        ii = LayoutRecognizer.find_overlapped_with_threashold(b, spans, thr=0.3)
         if ii is not None:
             b["H_top"] = spans[ii]["top"]
             b["H_bott"] = spans[ii]["bottom"]
