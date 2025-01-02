@@ -110,7 +110,7 @@ module.exports = {
         },
         'colors-background-functional-solid-danger': {
           DEFAULT: 'var(--colors-background-functional-solid-danger)',
-          foreground: 'var(--background-inverse-standard-foreground)',
+          foreground: 'var(--colors-text-inverse-strong)',
         },
         'colors-background-functional-solid-notice': {
           DEFAULT: 'var(--colors-background-functional-solid-notice)',
