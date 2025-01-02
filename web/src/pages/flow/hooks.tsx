@@ -129,7 +129,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.GitHub]: initialGithubValues,
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
-      [Operator.ExeSQL]: initialExeSqlValues,
+      [Operator.ExeSQL]: { ...initialExeSqlValues, llm_id: llmId },
       [Operator.Switch]: initialSwitchValues,
       [Operator.WenCai]: initialWenCaiValues,
       [Operator.AkShare]: initialAkShareValues,
