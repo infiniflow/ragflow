@@ -24,7 +24,6 @@ import openai
 from ollama import Client
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
-from groq import Groq
 import os
 import json
 import requests
@@ -840,6 +839,7 @@ class GeminiChat(Base):
 
 class GroqChat:
     def __init__(self, key, model_name, base_url=''):
+        from groq import Groq
         self.client = Groq(api_key=key)
         self.model_name = model_name
 
