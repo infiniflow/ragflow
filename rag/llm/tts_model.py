@@ -332,7 +332,8 @@ class XinferenceTTS:
 
 class OllamaTTS(Base):
     def __init__(self, key, model_name="ollama-tts", base_url="https://api.ollama.ai/v1"):
-        if not base_url: base_url = "https://api.ollama.ai/v1"
+        if not base_url: 
+            base_url = "https://api.ollama.ai/v1"
         self.model_name = model_name
         self.base_url = base_url
         self.headers = {

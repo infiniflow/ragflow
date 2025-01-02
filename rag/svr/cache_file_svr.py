@@ -42,7 +42,8 @@ def main():
             if REDIS_CONN.is_alive():
                 try:
                     key = "{}/{}".format(kb_id, loc)
-                    if REDIS_CONN.exist(key):continue
+                    if REDIS_CONN.exist(key):
+                        continue
                     file_bin = MINIOs.get(kb_id, loc)
                     REDIS_CONN.transaction(key, file_bin, 12 * 60)
                     logging.info("CACHE: {}".format(loc))
