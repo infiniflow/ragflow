@@ -23,7 +23,7 @@ sys.path.insert(
             '../../')))
 
 from deepdoc.vision.seeit import draw_box
-from deepdoc.vision import Recognizer, LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out
+from deepdoc.vision import LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out
 from api.utils.file_utils import get_project_base_directory
 import argparse
 import re
@@ -33,13 +33,7 @@ import numpy as np
 def main(args):
     images, outputs = init_in_out(args)
     if args.mode.lower() == "layout":
-        labels = LayoutRecognizer.labels
-        detr = Recognizer(
-            labels,
-            "layout",
-            os.path.join(
-                get_project_base_directory(),
-                "rag/res/deepdoc/"))
+        detr = LayoutRecognizer("layout")
     if args.mode.lower() == "tsr":
         labels = TableStructureRecognizer.labels
         detr = TableStructureRecognizer()
