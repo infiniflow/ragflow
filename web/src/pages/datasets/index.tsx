@@ -1,6 +1,7 @@
 import ListFilterBar from '@/components/list-filter-bar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { ChevronRight, MoreHorizontal, Plus } from 'lucide-react';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
 import { useSaveKnowledge } from './hooks';
@@ -88,6 +89,8 @@ export default function Datasets() {
     onCreateOk,
     loading: creatingLoading,
   } = useSaveKnowledge();
+  const { navigateToDataset } = useNavigatePage();
+
   return (
     <section className="p-8 text-foreground">
       <ListFilterBar title="Datasets" showDialog={showModal}>
@@ -122,7 +125,11 @@ export default function Datasets() {
                     Created {dataset.created}
                   </p>
                 </div>
-                <Button variant="secondary" size="icon">
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  onClick={navigateToDataset}
+                >
                   <ChevronRight className="h-6 w-6" />
                 </Button>
               </div>
