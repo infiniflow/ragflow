@@ -41,7 +41,7 @@ class Crawler(ComponentBase, ABC):
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not is_valid_url(ans):
-            return Crawler.be_output("")
+            return Crawler.be_output("URL not valid")
         try:
             result = asyncio.run(self.get_web(ans))
 
