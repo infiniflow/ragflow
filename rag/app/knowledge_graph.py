@@ -9,7 +9,7 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
     parser_config = kwargs.get(
         "parser_config", {
-            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": True})
+            "chunk_token_num": 512, "delimiter": "\n!?;。；！？", "layout_recognize": True})
     eng = lang.lower() == "english"
 
     parser_config["layout_recognize"] = True
