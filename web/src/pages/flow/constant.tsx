@@ -531,6 +531,7 @@ export const initialQWeatherValues = {
 };
 
 export const initialExeSqlValues = {
+  ...initialLlmBaseValues,
   db_type: 'mysql',
   database: '',
   username: '',
