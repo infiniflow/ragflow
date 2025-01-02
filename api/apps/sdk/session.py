@@ -35,6 +35,7 @@ from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
 
 
+
 @manager.route('/chats/<chat_id>/sessions', methods=['POST'])  # noqa: F821
 @token_required
 def create(tenant_id, chat_id):
@@ -92,6 +93,9 @@ def create_agent_session(tenant_id, agent_id):
                 else:
                     if "value" in ele:
                         ele.pop("value")
+    else:
+        for ans in canvas.run(stream=False):
+            pass
     cvs.dsl = json.loads(str(canvas))
     conv = {
         "id": get_uuid(),
