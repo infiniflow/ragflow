@@ -74,7 +74,6 @@
     "react-copy-to-clipboard": "^5.1.0",
     "react-dropzone": "^14.3.5",
     "react-error-boundary": "^4.0.13",
-    "react-force-graph": "^1.44.4",
     "react-hook-form": "^7.53.1",
     "react-i18next": "^14.0.0",
     "react-infinite-scroll-component": "^6.1.0",
