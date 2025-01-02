@@ -33,6 +33,7 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_error_data_result
 from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
+from uuid import uuid4
 
 
 @manager.route('/chats/<chat_id>/sessions', methods=['POST'])  # noqa: F821
@@ -92,6 +93,9 @@ def create_agent_session(tenant_id, agent_id):
                 else:
                     if "value" in ele:
                         ele.pop("value")
+    else:
+        for ans in canvas.run(stream=True):
+            pass
     cvs.dsl = json.loads(str(canvas))
     conv = {
         "id": get_uuid(),
@@ -99,7 +103,8 @@ def create_agent_session(tenant_id, agent_id):
         "user_id": req.get("user_id", "") if isinstance(req, dict) else "",
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent",
-        "dsl": cvs.dsl
+        "dsl": cvs.dsl,
+        "round":1
     }
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
