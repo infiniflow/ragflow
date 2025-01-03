@@ -66,8 +66,8 @@ class DocumentService(CommonService):
         else:
             docs = docs.order_by(cls.model.getter_by(orderby).asc())
 
-        docs = docs.paginate(page_number, items_per_page)
         count = docs.count()
+        docs = docs.paginate(page_number, items_per_page)
         return list(docs.dicts()), count
 
     @classmethod
