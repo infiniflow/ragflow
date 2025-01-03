@@ -26,6 +26,7 @@ from docx import Document
 from PIL import Image
 from markdown import markdown
 
+
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, callback=None):
         if not binary:
@@ -58,11 +59,11 @@ class Excel(ExcelParser):
                 if len(res) % 999 == 0:
                     callback(len(res) *
                              0.6 /
-                             total, ("Extract Q&A: {}".format(len(res)) +
+                             total, ("Extract pairs: {}".format(len(res)) +
                                      (f"{len(fails)} failure, line: %s..." %
                                       (",".join(fails[:3])) if fails else "")))
 
-        callback(0.6, ("Extract Q&A: {}. ".format(len(res)) + (
+        callback(0.6, ("Extract pairs: {}. ".format(len(res)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         self.is_english = is_english(
             [rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q) > 1])

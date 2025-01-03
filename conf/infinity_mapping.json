@@ -10,6 +10,7 @@
 	"title_sm_tks": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"name_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"important_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
+	"tag_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"important_tks": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"question_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"question_tks": {"type": "varchar", "default": "", "analyzer": "whitespace"},

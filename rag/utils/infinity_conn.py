@@ -231,8 +231,7 @@ class InfinityConnection(DocStoreConnection):
     """
 
     def search(
-            self,
-            selectFields: list[str],
+            self, selectFields: list[str],
             highlightFields: list[str],
             condition: dict,
             matchExprs: list[MatchExpr],
@@ -241,7 +240,8 @@ class InfinityConnection(DocStoreConnection):
             limit: int,
             indexNames: str | list[str],
             knowledgebaseIds: list[str],
-    ) -> tuple[pl.DataFrame, int]:
+            aggFields: list[str] = []
+    ) -> list[dict] | pl.DataFrame:
         """
         TODO: Infinity doesn't provide highlight
         """
@@ -378,7 +378,7 @@ class InfinityConnection(DocStoreConnection):
         return res_fields.get(chunkId, None)
 
     def insert(
-            self, documents: list[dict], indexName: str, knowledgebaseId: str
+            self, documents: list[dict], indexName: str, knowledgebaseId: str = None
     ) -> list[str]:
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)

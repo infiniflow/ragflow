@@ -150,12 +150,14 @@ def list_kbs():
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 150))
+    parser_id = request.args.get("parser_id")
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", True)
     try:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
         kbs, total = KnowledgebaseService.get_by_tenant_ids(
-            [m["tenant_id"] for m in tenants], current_user.id, page_number, items_per_page, orderby, desc, keywords)
+            [m["tenant_id"] for m in tenants], current_user.id, page_number,
+            items_per_page, orderby, desc, keywords, parser_id)
         return get_json_result(data={"kbs": kbs, "total": total})
     except Exception as e:
         return server_error_response(e)
@@ -199,3 +201,56 @@ def rm():
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route('/<kb_id>/tags', methods=['GET'])  # noqa: F821
+@login_required
+def list_tags(kb_id):
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+
+    tags = settings.retrievaler.all_tags(current_user.id, [kb_id])
+    return get_json_result(data=tags)
+
+
+@manager.route('/<kb_id>/rm_tags', methods=['POST'])  # noqa: F821
+@login_required
+def rm_tags(kb_id):
+    req = request.json
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    e, kb = KnowledgebaseService.get_by_id(kb_id)
+
+    for t in req["tags"]:
+        settings.docStoreConn.update({"tag_kwd": t, "kb_id": [kb_id]},
+                                     {"remove": {"tag_kwd": t}},
+                                     search.index_name(kb.tenant_id),
+                                     kb_id)
+    return get_json_result(data=True)
+
+
+@manager.route('/<kb_id>/rename_tag', methods=['POST'])  # noqa: F821
+@login_required
+def rm_tags(kb_id):
+    req = request.json
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    e, kb = KnowledgebaseService.get_by_id(kb_id)
+
+    settings.docStoreConn.update({"tag_kwd": req["from_tag"], "kb_id": [kb_id]},
+                                     {"remove": {"tag_kwd": req["from_tag"]}, "add": {"tag_kwd": req["to_tag"]}},
+                                     search.index_name(kb.tenant_id),
+                                     kb_id)
+    return get_json_result(data=True)

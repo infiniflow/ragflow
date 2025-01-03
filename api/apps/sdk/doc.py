@@ -276,6 +276,7 @@ def update_doc(tenant_id, dataset_id, document_id):
             "one",
             "knowledge_graph",
             "email",
+            "tag"
         }
         if req.get("chunk_method") not in valid_chunk_method:
             return get_error_data_result(

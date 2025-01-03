@@ -20,6 +20,7 @@ ATTEMPT_TIME = 2
 
 logger = logging.getLogger('ragflow.es_conn')
 
+
 @singleton
 class ESConnection(DocStoreConnection):
     def __init__(self):
@@ -111,9 +112,18 @@ class ESConnection(DocStoreConnection):
     CRUD operations
     """
 
-    def search(self, selectFields: list[str], highlightFields: list[str], condition: dict, matchExprs: list[MatchExpr],
-               orderBy: OrderByExpr, offset: int, limit: int, indexNames: str | list[str],
-               knowledgebaseIds: list[str]) -> list[dict] | pl.DataFrame:
+    def search(
+            self, selectFields: list[str],
+            highlightFields: list[str],
+            condition: dict,
+            matchExprs: list[MatchExpr],
+            orderBy: OrderByExpr,
+            offset: int,
+            limit: int,
+            indexNames: str | list[str],
+            knowledgebaseIds: list[str],
+            aggFields: list[str] = []
+    ) -> list[dict] | pl.DataFrame:
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
         """
@@ -187,7 +197,7 @@ class ESConnection(DocStoreConnection):
                 order = "asc" if order == 0 else "desc"
                 if field in ["page_num_int", "top_int"]:
                     order_info = {"order": order, "unmapped_type": "float",
-                                "mode": "avg", "numeric_type": "double"}
+                                  "mode": "avg", "numeric_type": "double"}
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
                 else:
@@ -195,8 +205,11 @@ class ESConnection(DocStoreConnection):
                 orders.append({field: order_info})
             s = s.sort(*orders)
 
+        for fld in aggFields:
+            s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
+
         if limit > 0:
-            s = s[offset:offset+limit]
+            s = s[offset:offset + limit]
         q = s.to_dict()
         logger.debug(f"ESConnection.search {str(indexNames)} query: " + json.dumps(q))
 
@@ -240,7 +253,7 @@ class ESConnection(DocStoreConnection):
         logger.error("ESConnection.get timeout for 3 times!")
         raise Exception("ESConnection.get timeout.")
 
-    def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str) -> list[str]:
+    def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
         # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         operations = []
         for d in documents:
@@ -311,7 +324,16 @@ class ESConnection(DocStoreConnection):
             scripts = []
             for k, v in newValue.items():
                 if k == "remove":
-                    scripts.append(f"ctx._source.remove('{v}');")
+                    if isinstance(v, str):
+                        scripts.append(f"ctx._source.remove('{v}');")
+                    if isinstance(v, dict):
+                        for kk, vv in v.items():
+                            scripts.append(f"ctx._source.{kk}.remove(ctx._source.{kk}.indexOf('{vv}'));")
+                    continue
+                if k == "add":
+                    if isinstance(v, dict):
+                        for kk, vv in v.items():
+                            scripts.append(f"ctx._source.{kk}.add('{vv}');")
                     continue
                 if (not isinstance(k, str) or not v) and k != "available_int":
                     continue

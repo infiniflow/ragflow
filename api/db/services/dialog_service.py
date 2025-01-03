@@ -700,3 +700,56 @@ def ask(question, kb_ids, tenant_id):
         answer = ans
         yield {"answer": answer, "reference": {}}
     yield decorate_answer(answer)
+
+
+def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
+    prompt = f"""
+Role: You're a text analyzer. 
+
+Task: Tag (put on some labels) to a given piece of text content based on the examples and the entire tag set.
+
+Steps:: 
+  - Comprehend the tag/label set.
+  - Comprehend examples which all consist of both text content and assigned tags with relevance score in format of JSON.
+  - Summarize the text content, and tag it with top {topn} most relevant tags from the set of tag/label and the corresponding relevance score.
+
+Requirements
+  - The tags MUST be from the tag set.
+  - The output MUST be in JSON format only, the key is tag and the value is its relevance score.
+  - The relevance score must be range from 1 to 10.
+  - Keywords ONLY in output.
+
+# TAG SET
+{", ".join(all_tags)}
+
+"""
+    for i, ex in enumerate(examples):
+        prompt += """
+# Examples {}
+### Text Content
+{}
+
+Output:
+{}
+
+        """.format(i, ex["content"], json.dumps(ex["tag_fea"], indent=2, ensure_ascii=False))
+
+    prompt += f"""
+# Real Data
+### Text Content
+{content}
+
+"""
+    msg = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": "Output: "}
+    ]
+    _, msg = message_fit_in(msg, chat_mdl.max_length)
+    kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.5})
+    if isinstance(kwd, tuple):
+        kwd = kwd[0]
+    if kwd.find("**ERROR**") >= 0:
+        raise Exception(kwd)
+
+    kwd = re.sub(r".*?\{", "{", kwd)
+    return json.loads(kwd)
