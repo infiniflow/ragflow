@@ -1,0 +1,91 @@
+#ragflow {
+  font-family: "Segoe UI", Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 600px;
+}
+
+#ragflow .window {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+  overflow: hidden;
+}
+#ragflow #form-config {
+  background-color: #fff;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+}
+
+#ragflow .header {
+  background-color: #fff;
+  padding: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-direction: row;
+}
+
+#ragflow .header .title {
+  font-size: 16px;
+}
+
+#ragflow .header .logo {
+  width: 100px; /* Adjust size as needed */
+  height: auto;
+  margin-right: 10px;
+}
+
+#ragflow .content {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+#ragflow label {
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+#ragflow input,
+#ragflow select {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 15px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  box-sizing: border-box;
+}
+
+#ragflow button {
+  background-color: #0078d4;
+  color: #fff;
+  padding: 10px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+#ragflow button:hover {
+  background-color: #005bb5;
+}
+
+#ragflow #config-button {
+  display: flex;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 22px;
+}
+#ragflow #config-button:hover {
+  cursor: pointer;
+}

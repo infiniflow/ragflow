@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Ragflow Extension",
+  "description": "Ragflow for Chrome",
+  "version": "1.0",
+  "options_page": "options.html",
+
+  "permissions": ["activeTab", "scripting", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16x16.png",
+      "48": "icons/icon-48x48.png",
+      "128": "icons/icon-128x128.png"
+    }
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles/popup.css"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon-16x16.png",
+    "48": "icons/icon-48x48.png",
+    "128": "icons/icon-128x128.png"
+  }
+}
