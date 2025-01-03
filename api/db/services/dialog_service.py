@@ -314,20 +314,72 @@ def chat(dialog, messages, stream=True, **kwargs):
         prompt = f"{prompt}\n\n - Total: {total_time_cost:.1f}ms\n  - Check LLM: {check_llm_time_cost:.1f}ms\n  - Create retriever: {create_retriever_time_cost:.1f}ms\n  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n  - Bind LLM: {bind_llm_time_cost:.1f}ms\n  - Tune question: {refine_question_time_cost:.1f}ms\n  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n  - Retrieval: {retrieval_time_cost:.1f}ms\n  - Generate answer: {generate_result_time_cost:.1f}ms"
         return {"answer": answer, "reference": refs, "prompt": prompt}
 
+
+    #注释原先流式代码
+    # if stream:
+    #     last_ans = ""
+    #     answer = ""
+    #     for ans in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
+    #         answer = ans
+    #         logging.info("answer_stream : {}".format(ans))
+    #         delta_ans = ans[len(last_ans):]
+    #         if num_tokens_from_string(delta_ans) < 16:
+    #             continue
+    #         last_ans = answer
+    #         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
+    #     delta_ans = answer[len(last_ans):]
+    #     if delta_ans:
+    #         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
+    #     yield decorate_answer(answer)
+
     if stream:
-        last_ans = ""
+        # logging.info("stream_mode : {}".format(msg[1:]))
         answer = ""
-        for ans in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
-            answer = ans
-            delta_ans = ans[len(last_ans):]
-            if num_tokens_from_string(delta_ans) < 16:
-                continue
-            last_ans = answer
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
-        delta_ans = answer[len(last_ans):]
-        if delta_ans:
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
-        yield decorate_answer(answer)
+        for delta in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
+            # 检查是否为总令牌数或通知信息
+            if isinstance(delta, str):
+                if delta.isdigit():
+                    # 理总令牌数（如果需要）
+                    # total_tokens = int(delta)
+                    continue
+                elif "\n**ERROR**:" in delta:
+                    # 处理错误信息
+                    answer += delta
+                    yield {"answer": answer, "reference": {}, "audio_binary": b''}  # 错误时不生成音频
+                    continue
+
+                # 处理增量文本
+                delta_ans = delta
+                # if num_tokens_from_string(delta_ans) < 16:
+                #     continue  # 根据需求调整阈值
+
+                # 更新完整的答案
+                answer += delta_ans
+
+                # 生成音频
+                audio = tts(tts_mdl, delta_ans)
+                # logging.info(f"Generated audio for delta: {delta_ans}")
+                yield {"answer": delta_ans, "reference": {}, "audio_binary": audio}
+            elif isinstance(delta, dict):
+                # 如果 chat_streamly 仍返回字典（不推荐）
+                # 例如: {"new_text": "新增内容", "position": 10}
+                new_text = delta.get("new_text", "")
+                if not new_text:
+                    continue
+                if num_tokens_from_string(new_text) < 16:
+                    continue
+
+                # 更新完整的答案
+                answer += new_text
+
+                # 生成音频
+                audio = tts(tts_mdl, new_text)
+                yield {"answer": answer, "reference": {}, "audio_binary": audio}
+
+        # 最终装饰答案
+        decorated_answer = decorate_answer(answer)
+        # logging.info(f"Final decorated answer: {decorated_answer}")
+        yield decorated_answer
     else:
         answer = chat_mdl.chat(prompt, msg[1:], gen_conf)
         logging.debug("User: {}|Assistant: {}".format(
