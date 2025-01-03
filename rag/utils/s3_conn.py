@@ -1,7 +1,6 @@
 import logging
 import boto3
 from botocore.exceptions import ClientError
-from botocore.client import Config
 import time
 from io import BytesIO
 from rag.utils import singleton
