@@ -24,6 +24,7 @@
     "@hookform/resolvers": "^3.9.1",
     "@js-preview/excel": "^1.7.8",
     "@monaco-editor/react": "^4.6.0",
+    "@radix-ui/react-alert-dialog": "^1.1.4",
     "@radix-ui/react-aspect-ratio": "^1.1.0",
     "@radix-ui/react-avatar": "^1.1.1",
     "@radix-ui/react-checkbox": "^1.1.2",
