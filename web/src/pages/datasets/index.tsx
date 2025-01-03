@@ -1,8 +1,9 @@
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { ChevronRight, MoreHorizontal, Plus } from 'lucide-react';
+import { ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
 import { useSaveKnowledge } from './hooks';
 
@@ -109,9 +110,11 @@ export default function Datasets() {
                   className="w-[70px] h-[70px] rounded-xl bg-cover"
                   style={{ backgroundImage: `url(${dataset.image})` }}
                 />
-                <Button variant="ghost" size="icon">
-                  <MoreHorizontal className="h-6 w-6" />
-                </Button>
+                <ConfirmDeleteDialog>
+                  <Button variant="ghost" size="icon">
+                    <Trash2 />
+                  </Button>
+                </ConfirmDeleteDialog>
               </div>
               <div className="flex justify-between items-end">
                 <div>
