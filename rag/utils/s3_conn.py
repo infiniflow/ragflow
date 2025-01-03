@@ -25,19 +25,11 @@ class RAGFlowS3(object):
             pass
 
         try:
-
-            config = Config(
-                s3={
-                    'addressing_style': 'virtual'
-                }
-            )
-
             self.conn = boto3.client(
                 's3',
                 region_name=self.region,
                 aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key,
-                config=config
+                aws_secret_access_key=self.secret_key
             )
         except Exception:
             logging.exception(f"Fail to connect at region {self.region}")
