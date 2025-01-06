@@ -29,7 +29,7 @@ An opening greeting is the agent's first message to the user. It can be a welcom
 
 ### Global variables
 
-You can set global variables within the **Begin** component, which can be either required or optional. Once established, users will need to provide values for these variables when interacting or chatting with the agent. Click **+ Add variable** to add a global variable, each with the following attributes:
+You can set global variables within the **Begin** component, which can be either required or optional. Once established, users will need to provide values for these variables when interacting or with the agent. Click **+ Add variable** to add a global variable, each with the following attributes:
 
 - **Key**: *Required*  
   The unique variable name.
@@ -41,7 +41,7 @@ You can set global variables within the **Begin** component, which can be either
   - **line**: Accepts a single line of text without line breaks.
   - **paragraph**: Accepts multiple lines of text, including line breaks.
   - **options**: Requires the user to select a value for this variable from a dropdown menu. And you are required to set *at least* one option for the dropdown menu.
-  - **file**: Requires the user to upload one or multiple files from their device.
+  - **file**: Requires the user to upload a file from their device.
   - **integer**: Accepts an integer as input.
   - **boolean**: Requires the user to toggle between on and off.
 - **Optional**: A toggle indicating whether the variable is optional. 
@@ -68,7 +68,7 @@ If you set the type of a variable as **file**, your users will be able to upload
 
 ![upload_file](https://github.com/user-attachments/assets/7ad2a352-0807-4b74-b8d1-d09e5cd37997)
 
-### File size limit for uploaded file
+### File size limit for an uploaded file
 
 The maximum file size for each uploaded file is determined by the variable `MAX_CONTENT_LENGTH` in `/docker/.env`. It defaults to 128 MB. If you change the default file size, ensure you also update the value of `client_max_body_size` in `/docker/nginx/nginx.conf` accordingly.
 
