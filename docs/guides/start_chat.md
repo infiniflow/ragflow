@@ -61,7 +61,7 @@ Click the light bubble logo above the answer to view the expanded system prompt:
    
 ![](https://github.com/user-attachments/assets/515ab187-94e8-412a-82f2-aba52cd79e09)
    
-Scroll down the expanded prompt to view the time allocated to each task:
+Scroll down the expanded prompt to view the time consumed for each task:
    
 ![enlighten](https://github.com/user-attachments/assets/fedfa2ee-21a7-451b-be66-20125619923c)
 :::
