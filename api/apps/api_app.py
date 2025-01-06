@@ -25,7 +25,7 @@ from api.db import FileType, LLMType, ParserType, FileSource
 from api.db.db_models import APIToken, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
-from api.db.services.dialog_service import DialogService, chat, keyword_extraction
+from api.db.services.dialog_service import DialogService, chat, keyword_extraction, lable_question
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -840,7 +840,8 @@ def retrieval():
             question += keyword_extraction(chat_mdl, question)
         ranks = settings.retrievaler.retrieval(question, embd_mdl, kbs[0].tenant_id, kb_ids, page, size,
                                                similarity_threshold, vector_similarity_weight, top,
-                                               doc_ids, rerank_mdl=rerank_mdl)
+                                               doc_ids, rerank_mdl=rerank_mdl,
+                                               rank_feature=lable_question(question, kbs))
         for c in ranks["chunks"]:
             c.pop("vector", None)
         return get_json_result(data=ranks)

@@ -23,7 +23,7 @@ def beAdoc(d, q, a, eng):
     d["content_with_weight"] = q
     d["content_ltks"] = rag_tokenizer.tokenize(q)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["tag_kwd"] = a.split(",")
+    d["tag_kwd"] = [t.strip() for t in a.split(",") if t.strip()]
     return d
 
 
@@ -104,7 +104,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 res.append(beAdoc(deepcopy(doc), content, row[1], eng))
                 content, tags = "", ""
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (
+                callback(len(res) * 0.6 / len(lines), ("Extract Tags: {}".format(len(res)) + (
                     f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         callback(0.6, ("Extract TAG : {}".format(len(res)) + (

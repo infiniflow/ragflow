@@ -185,7 +185,8 @@ class DocStoreConnection(ABC):
             limit: int,
             indexNames: str|list[str],
             knowledgebaseIds: list[str],
-            aggFields: list[str] = []
+            aggFields: list[str] = [],
+            rank_feature: dict | None = None
     ) -> list[dict] | pl.DataFrame:
         """
         Search with given conjunctive equivalent filtering condition and return all fields of matched documents

@@ -240,7 +240,8 @@ class InfinityConnection(DocStoreConnection):
             limit: int,
             indexNames: str | list[str],
             knowledgebaseIds: list[str],
-            aggFields: list[str] = []
+            aggFields: list[str] = [],
+            rank_feature: dict | None = None
     ) -> list[dict] | pl.DataFrame:
         """
         TODO: Infinity doesn't provide highlight

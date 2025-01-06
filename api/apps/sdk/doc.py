@@ -16,7 +16,7 @@
 import pathlib
 import datetime
 
-from api.db.services.dialog_service import keyword_extraction
+from api.db.services.dialog_service import keyword_extraction, lable_question
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import rag_tokenizer
 from api.db import LLMType, ParserType
@@ -1329,9 +1329,7 @@ def retrieval_test(tenant_id):
     else:
         highlight = True
     try:
-        e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
-        if not e:
-            return get_error_data_result(message="Dataset not found!")
+        kb = kbs[0]
         embd_mdl = TenantLLMService.model_instance(
             kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id
         )
@@ -1360,6 +1358,7 @@ def retrieval_test(tenant_id):
             doc_ids,
             rerank_mdl=rerank_mdl,
             highlight=highlight,
+            rank_feature=lable_question(question, kbs)
         )
         for c in ranks["chunks"]:
             c.pop("vector", None)

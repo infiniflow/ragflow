@@ -16,6 +16,7 @@
 from flask import request, jsonify
 
 from api.db import LLMType, ParserType
+from api.db.services.dialog_service import lable_question
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
@@ -54,7 +55,8 @@ def retrieval(tenant_id):
             page_size=top,
             similarity_threshold=similarity_threshold,
             vector_similarity_weight=0.3,
-            top=top
+            top=top,
+            rank_feature=lable_question(question, [kb])
         )
         records = []
         for c in ranks["chunks"]:

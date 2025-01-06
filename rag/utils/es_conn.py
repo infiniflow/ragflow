@@ -122,7 +122,8 @@ class ESConnection(DocStoreConnection):
             limit: int,
             indexNames: str | list[str],
             knowledgebaseIds: list[str],
-            aggFields: list[str] = []
+            aggFields: list[str] = [],
+            rank_feature: dict | None = None
     ) -> list[dict] | pl.DataFrame:
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
@@ -185,8 +186,13 @@ class ESConnection(DocStoreConnection):
                           similarity=similarity,
                           )
 
+        if bqry and rank_feature:
+            for fld, sc in rank_feature.items():
+                if fld != "pagerank_fea":
+                    fld = f"tag_fea.{fld}"
+                bqry.should.append(Q("rank_feature", field=fld, linear={}, boost=sc))
+
         if bqry:
-            bqry.should.append(Q("rank_feature", field="pagerank_fea", linear={}, boost=10))
             s = s.query(bqry)
         for field in highlightFields:
             s = s.highlight(field)

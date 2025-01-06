@@ -28,5 +28,6 @@
 	"available_int": {"type": "integer", "default": 1},
 	"knowledge_graph_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"entities_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
-	"pagerank_fea": {"type": "integer", "default":  0}
+	"pagerank_fea": {"type": "integer", "default":  0},
+	"tag_fea": {"type": "integer", "default":  0}
 }
