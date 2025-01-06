@@ -62,9 +62,13 @@ As mentioned earlier, the **Begin** component is indispensable for an agent. Sti
 
 No. Files uploaded to an agent as input are not stored in a knowledge base and will not be chunked using RAGFlow's built-in chunk methods. However, RAGFlow's built-in OSR, DLR, and TSR models will still be applied to process the document.
 
+### How to upload a webpage or file from an online drive?
+
+If you set the type of a variable as **file**, your users will be able to upload a file either from their local device or from an accessible URL. For example:
+
+![upload_file](https://github.com/user-attachments/assets/7ad2a352-0807-4b74-b8d1-d09e5cd37997)
+
 ### File size limit for uploaded file
 
 The maximum file size for each uploaded file is determined by the variable `MAX_CONTENT_LENGTH` in `/docker/.env`. It defaults to 128 MB. If you change the default file size, ensure you also update the value of `client_max_body_size` in `/docker/nginx/nginx.conf` accordingly.
-
-
 
