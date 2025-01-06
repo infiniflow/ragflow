@@ -38,7 +38,7 @@ def main(args):
         detr = TableStructureRecognizer()
         ocr = OCR()
 
-    layouts = detr(images, float(args.threshold))
+    layouts = detr(images, thr=float(args.threshold))
     for i, lyt in enumerate(layouts):
         if args.mode.lower() == "tsr":
             #lyt = [t for t in lyt if t["type"] == "table column"]
