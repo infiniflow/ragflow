@@ -239,7 +239,7 @@ def rm_tags(kb_id):
 
 @manager.route('/<kb_id>/rename_tag', methods=['POST'])  # noqa: F821
 @login_required
-def rm_tags(kb_id):
+def rename_tags(kb_id):
     req = request.json
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
