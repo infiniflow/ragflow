@@ -3,7 +3,7 @@ sidebar_position: 1
 slug: /http_api_reference
 ---
 
-# HTTP API Reference
+# HTTP API
 
 A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
