@@ -1,7 +1,15 @@
 import { ResponsePostType } from '@/interfaces/database/base';
-import { IKnowledge, ITestingResult } from '@/interfaces/database/knowledge';
+import {
+  IKnowledge,
+  IRenameTag,
+  ITestingResult,
+} from '@/interfaces/database/knowledge';
 import i18n from '@/locales/config';
-import kbService from '@/services/knowledge-service';
+import kbService, {
+  listTag,
+  removeTag,
+  renameTag,
+} from '@/services/knowledge-service';
 import {
   useInfiniteQuery,
   useIsMutating,
@@ -258,4 +266,75 @@ export const useSelectIsTestingSuccess = () => {
   });
   return status.at(-1) === 'success';
 };
+//#endregion
+
+//#region tags
+
+export const useFetchTagList = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<Array<[string, number]>>({
+    queryKey: ['fetchTagList'],
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await listTag(knowledgeBaseId);
+      const list = data?.data || [];
+      return list;
+    },
+  });
+
+  return { list: data, loading };
+};
+
+export const useDeleteTag = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteTag'],
+    mutationFn: async (tags: string[]) => {
+      const { data } = await removeTag(knowledgeBaseId, tags);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchTagList'],
+        });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, deleteTag: mutateAsync };
+};
+
+export const useRenameTag = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteTag'],
+    mutationFn: async (params: IRenameTag) => {
+      const { data } = await renameTag(knowledgeBaseId, params);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.modified`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchTagList'],
+        });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, renameTag: mutateAsync };
+};
+
 //#endregion

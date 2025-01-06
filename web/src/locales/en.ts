@@ -34,6 +34,8 @@ export default {
       pleaseInput: 'Please input',
       submit: 'Submit',
       embedIntoSite: 'Embed into webpage',
+      previousPage: 'Previous',
+      nextPage: 'Next',
     },
     login: {
       login: 'Sign in',
@@ -308,6 +310,9 @@ The above is the content you need to summarize.`,
       vietnamese: 'Vietnamese',
       pageRank: 'Page rank',
       pageRankTip: `This increases the relevance score of the knowledge base. Its value will be added to the relevance score of all retrieved chunks from this knowledge base. Useful when you are searching within multiple knowledge bases and wanting to assign a higher pagerank score to a specific one.`,
+      tag: 'Tag',
+      frequency: 'Frequency',
+      searchTags: 'Search tags',
     },
     chunk: {
       chunk: 'Chunk',

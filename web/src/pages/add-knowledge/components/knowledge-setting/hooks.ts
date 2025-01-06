@@ -1,6 +1,8 @@
 import { LlmModelType } from '@/constants/knowledge';
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useFetchKnowledgeBaseConfiguration,
+  useRenameTag,
   useUpdateKnowledge,
 } from '@/hooks/knowledge-hooks';
 import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
@@ -14,7 +16,7 @@ import { useIsFetching } from '@tanstack/react-query';
 import { Form, UploadFile } from 'antd';
 import { FormInstance } from 'antd/lib';
 import pick from 'lodash/pick';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export const useSubmitKnowledgeConfiguration = (form: FormInstance) => {
   const { saveKnowledgeConfiguration, loading } = useUpdateKnowledge();
@@ -86,4 +88,45 @@ export const useHandleChunkMethodChange = () => {
   }, [chunkMethod]);
 
   return { form, chunkMethod };
+};
+
+export const useRenameKnowledgeTag = () => {
+  const [tag, setTag] = useState<string>('');
+  const {
+    visible: tagRenameVisible,
+    hideModal: hideTagRenameModal,
+    showModal: showFileRenameModal,
+  } = useSetModalState();
+  const { renameTag, loading } = useRenameTag();
+
+  const onTagRenameOk = useCallback(
+    async (name: string) => {
+      const ret = await renameTag({
+        fromTag: tag,
+        toTag: name,
+      });
+
+      if (ret === 0) {
+        hideTagRenameModal();
+      }
+    },
+    [renameTag, tag, hideTagRenameModal],
+  );
+
+  const handleShowTagRenameModal = useCallback(
+    (record: string) => {
+      setTag(record);
+      showFileRenameModal();
+    },
+    [showFileRenameModal],
+  );
+
+  return {
+    renameLoading: loading,
+    initialName: tag,
+    onTagRenameOk,
+    tagRenameVisible,
+    hideTagRenameModal,
+    showTagRenameModal: handleShowTagRenameModal,
+  };
 };

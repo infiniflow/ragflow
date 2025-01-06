@@ -1,6 +1,7 @@
+import { IRenameTag } from '@/interfaces/database/knowledge';
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
-import request from '@/utils/request';
+import request, { post } from '@/utils/request';
 
 const {
   create_kb,
@@ -142,5 +143,16 @@ const methods = {
 };
 
 const kbService = registerServer<keyof typeof methods>(methods, request);
+
+export const listTag = (knowledgeId: string) =>
+  request.get(api.listTag(knowledgeId));
+
+export const removeTag = (knowledgeId: string, tags: string[]) =>
+  post(api.removeTag(knowledgeId), { tags });
+
+export const renameTag = (
+  knowledgeId: string,
+  { fromTag, toTag }: IRenameTag,
+) => post(api.renameTag(knowledgeId), { fromTag, toTag });
 
 export default kbService;
