@@ -119,7 +119,7 @@ export const useFetchParserListOnMount = (
   return { parserList: nextParserList, handleChange, selectedTag };
 };
 
-const hideAutoKeywords = ['qa', 'table', 'resume', 'knowledge_graph'];
+const hideAutoKeywords = ['qa', 'table', 'resume', 'knowledge_graph', 'tag'];
 
 export const useShowAutoKeywords = () => {
   const showAutoKeywords = useCallback((selectedTag: string) => {

@@ -16,11 +16,7 @@ export const AutoKeywordsItem = () => {
             <Slider max={30} style={{ width: '100%' }} />
           </Form.Item>
         </Flex>
-        <Form.Item
-          name={['parser_config', 'auto_keywords']}
-          noStyle
-          initialValue={0}
-        >
+        <Form.Item name={['parser_config', 'auto_keywords']} noStyle>
           <InputNumber max={30} min={0} />
         </Form.Item>
       </Flex>
@@ -43,11 +39,7 @@ export const AutoQuestionsItem = () => {
             <Slider max={10} style={{ width: '100%' }} />
           </Form.Item>
         </Flex>
-        <Form.Item
-          name={['parser_config', 'auto_questions']}
-          noStyle
-          initialValue={0}
-        >
+        <Form.Item name={['parser_config', 'auto_questions']} noStyle>
           <InputNumber max={10} min={0} />
         </Form.Item>
       </Flex>

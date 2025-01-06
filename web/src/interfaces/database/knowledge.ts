@@ -117,3 +117,5 @@ export interface ITestingResult {
   documents: ITestingDocument[];
   total: number;
 }
+
+export type IRenameTag = { fromTag: string; toTag: string };

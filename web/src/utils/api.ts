@@ -37,6 +37,12 @@ export default {
   rm_kb: `${api_host}/kb/rm`,
   get_kb_detail: `${api_host}/kb/detail`,
 
+  // tags
+  listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
+  removeTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/rm_tags`,
+  renameTag: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/rename_tag`,
+
   // chunk
   chunk_list: `${api_host}/chunk/list`,
   create_chunk: `${api_host}/chunk/create`,

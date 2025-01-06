@@ -6,6 +6,7 @@ import DOMPurify from 'dompurify';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
 import styles from './index.less';
+import { TagTable } from './tag-table';
 import { ImageMap } from './utils';
 
 const { Title, Text } = Typography;
@@ -68,6 +69,7 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
           <SvgIcon name={'chunk-method/chunk-empty'} width={'100%'}></SvgIcon>
         </Empty>
       )}
+      {chunkMethod === 'tag' && <TagTable></TagTable>}
     </section>
   );
 };

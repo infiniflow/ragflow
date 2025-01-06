@@ -21,6 +21,7 @@ interface IProps {
 export function ConfirmDeleteDialog({
   children,
   title,
+  onOk,
 }: IProps & PropsWithChildren) {
   const { t } = useTranslation();
 
@@ -39,7 +40,10 @@ export function ConfirmDeleteDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-          <AlertDialogAction className="bg-colors-background-functional-solid-danger text--colors-text-neutral-strong">
+          <AlertDialogAction
+            className="bg-colors-background-functional-solid-danger text--colors-text-neutral-strong"
+            onClick={onOk}
+          >
             <Trash2 />
             {t('common.ok')}
           </AlertDialogAction>
