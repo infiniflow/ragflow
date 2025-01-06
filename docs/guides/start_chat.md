@@ -74,17 +74,15 @@ Hover over an intended chat assistant **>** **Edit** to show the chat configurat
 
 ![chat_config](https://github.com/user-attachments/assets/1a4eaed2-5430-4585-8ab6-930549838c5b)
 
-## Integrate chat capabilities into your application
+## Integrate chat capabilities into your application or webpage
 
-RAGFlow also offers HTTP and Python APIs for you to integrate RAGFlow's capabilities into your applications. Read the following documents for more information:
+RAGFlow offers HTTP and Python APIs for you to integrate RAGFlow's capabilities into your applications. Read the following documents for more information:
 
 - [Acquire a RAGFlow API key](https://ragflow.io/docs/dev/acquire_ragflow_api_key)
 - [HTTP API reference](https://ragflow.io/docs/dev/http_api_reference)
 - [Python API reference](https://ragflow.io/docs/dev/python_api_reference)
 
-## Embed your assistant into a webpage
-
-You can use iframe to embed the created chat assistant into a third-party webpage.
+You can use iframe to embed the created chat assistant into a third-party webpage:
 
 1. Before proceeding, you must [acquire an API key](https://ragflow.io/docs/dev/acquire_ragflow_api_key); otherwise, an error message would appear.
 2. Hover over an intended chat assistant **>** **Edit** to show the **iframe** window:
