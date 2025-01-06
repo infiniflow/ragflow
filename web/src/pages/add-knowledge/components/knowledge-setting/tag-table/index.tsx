@@ -144,18 +144,17 @@ export function TagTable() {
         return (
           <div className="flex gap-1">
             <Tooltip>
-              <TooltipTrigger>
-                <ConfirmDeleteDialog onOk={handleDeleteTag([row.original.tag])}>
+              <ConfirmDeleteDialog onOk={handleDeleteTag([row.original.tag])}>
+                <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon">
                     <Trash2 />
                   </Button>
-                </ConfirmDeleteDialog>
-              </TooltipTrigger>
+                </TooltipTrigger>
+              </ConfirmDeleteDialog>
               <TooltipContent>
                 <p>{t('common.delete')}</p>
               </TooltipContent>
             </Tooltip>
-
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
