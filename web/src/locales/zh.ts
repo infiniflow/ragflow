@@ -34,6 +34,8 @@ export default {
       pleaseInput: '请输入',
       submit: '提交',
       embedIntoSite: '嵌入网站',
+      previousPage: '上一页',
+      nextPage: '下一页',
     },
     login: {
       login: '登录',
@@ -309,6 +311,9 @@ export default {
       pageRank: '页面排名',
       pageRankTip: `这用于提高相关性得分。所有检索到的块的相关性得分将加上此数字。
 当您想首先搜索给定的知识库时，请设置比其他知识库更高的 pagerank 得分。`,
+      tag: '标签',
+      frequency: '频次',
+      searchTags: '搜索标签',
     },
     chunk: {
       chunk: '解析块',
