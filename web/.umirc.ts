@@ -30,7 +30,10 @@ export default defineConfig({
     },
   },
   devtool: 'source-map',
-  copy: ['src/conf.json'],
+  copy: [
+    { from: 'src/conf.json', to: 'dist/conf.json' },
+    { from: 'node_modules/monaco-editor/min/vs/', to: 'dist/vs/' },
+  ],
   proxy: [
     {
       context: ['/api', '/v1'],

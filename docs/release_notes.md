@@ -21,6 +21,7 @@ Released on December 25, 2024.
 This release fixes the following issues:
 
 - The `SCORE not found` and `position_int` errors returned by [Infinity](https://github.com/infiniflow/infinity).
+- Once an embedding model in a specific knowledge base is changed, embedding models in other knowledge bases can no longer be changed.
 - Slow response in question-answering and AI search due to repetitive loading of the embedding model.
 - Fails to parse documents with RAPTOR.
 - Using the **Table** parsing method results in information loss.

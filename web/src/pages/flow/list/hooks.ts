@@ -4,18 +4,8 @@ import {
   useFetchFlowTemplates,
   useSetFlow,
 } from '@/hooks/flow-hooks';
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { useNavigate } from 'umi';
-// import { dsl } from '../mock';
-// import headhunterZhComponents from '../../../../../graph/test/dsl_examples/headhunter_zh.json';
-// import dslJson from '../../../../../dls.json';
-// import customerServiceBase from '../../../../../graph/test/dsl_examples/customer_service.json';
-// import customerService from '../customer_service.json';
-// import interpreterBase from '../../../../../graph/test/dsl_examples/interpreter.json';
-// import interpreter from '../interpreter.json';
-
-// import retrievalRelevantRewriteAndGenerateBase from '../../../../../graph/test/dsl_examples/retrieval_relevant_rewrite_and_generate.json';
-// import retrievalRelevantRewriteAndGenerate from '../retrieval_relevant_rewrite_and_generate.json';
 
 export const useFetchDataOnMount = () => {
   const { data, loading } = useFetchFlowList();
@@ -24,7 +14,6 @@ export const useFetchDataOnMount = () => {
 };
 
 export const useSaveFlow = () => {
-  const [currentFlow, setCurrentFlow] = useState({});
   const {
     visible: flowSettingVisible,
     hideModal: hideFlowSettingModal,
@@ -39,18 +28,10 @@ export const useSaveFlow = () => {
       const templateItem = list.find((x) => x.id === templateId);
 
       let dsl = templateItem?.dsl;
-      // if (dsl) {
-      //   dsl.graph = headhunter_zh;
-      // }
       const ret = await setFlow({
         title,
         dsl,
         avatar: templateItem?.avatar,
-        // dsl: dslJson,
-        // dsl: {
-        //   ...retrievalRelevantRewriteAndGenerateBase,
-        //   graph: retrievalRelevantRewriteAndGenerate,
-        // },
       });
 
       if (ret?.code === 0) {
@@ -61,20 +42,12 @@ export const useSaveFlow = () => {
     [setFlow, hideFlowSettingModal, navigate, list],
   );
 
-  const handleShowFlowSettingModal = useCallback(
-    async (record: any) => {
-      setCurrentFlow(record);
-      showFileRenameModal();
-    },
-    [showFileRenameModal],
-  );
-
   return {
     flowSettingLoading: loading,
     initialFlowName: '',
     onFlowOk,
     flowSettingVisible,
     hideFlowSettingModal,
-    showFlowSettingModal: handleShowFlowSettingModal,
+    showFlowSettingModal: showFileRenameModal,
   };
 };

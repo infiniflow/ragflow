@@ -32,7 +32,7 @@
 
 <h4 align="center">
   <a href="https://ragflow.io/docs/dev/">Document</a> |
-  <a href="https://github.com/infiniflow/ragflow/issues/162">Roadmap</a> |
+  <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
   <a href="https://discord.gg/4XxujFgUN7">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
@@ -319,7 +319,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 6. Install frontend dependencies:
    ```bash
    cd web
-   npm install --force
+   npm install
    ```  
 7. Launch frontend service:
    ```bash
@@ -339,7 +339,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 
 ## 📜 Roadmap
 
-See the [RAGFlow Roadmap 2024](https://github.com/infiniflow/ragflow/issues/162)
+See the [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214)
 
 ## 🏄 Community
 

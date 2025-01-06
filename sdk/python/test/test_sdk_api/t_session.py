@@ -7,10 +7,10 @@ def test_create_session_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     kb = rag.create_dataset(name="test_create_session")
-    displayed_name = "ragflow.txt"
+    display_name = "ragflow.txt"
     with open("test_data/ragflow.txt", "rb") as file:
         blob = file.read()
-    document = {"displayed_name":displayed_name,"blob":blob}
+    document = {"display_name":display_name,"blob":blob}
     documents = []
     documents.append(document)
     docs= kb.upload_documents(documents)
@@ -24,10 +24,10 @@ def test_create_conversation_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     kb = rag.create_dataset(name="test_create_conversation")
-    displayed_name = "ragflow.txt"
+    display_name = "ragflow.txt"
     with open("test_data/ragflow.txt", "rb") as file:
         blob = file.read()
-    document = {"displayed_name": displayed_name, "blob": blob}
+    document = {"display_name": display_name, "blob": blob}
     documents = []
     documents.append(document)
     docs = kb.upload_documents(documents)
@@ -46,10 +46,10 @@ def test_delete_sessions_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     kb = rag.create_dataset(name="test_delete_session")
-    displayed_name = "ragflow.txt"
+    display_name = "ragflow.txt"
     with open("test_data/ragflow.txt", "rb") as file:
         blob = file.read()
-    document = {"displayed_name":displayed_name,"blob":blob}
+    document = {"display_name":display_name,"blob":blob}
     documents = []
     documents.append(document)
     docs= kb.upload_documents(documents)
@@ -64,10 +64,10 @@ def test_update_session_with_name(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     kb = rag.create_dataset(name="test_update_session")
-    displayed_name = "ragflow.txt"
+    display_name = "ragflow.txt"
     with open("test_data/ragflow.txt", "rb") as file:
         blob = file.read()
-    document = {"displayed_name": displayed_name, "blob": blob}
+    document = {"display_name": display_name, "blob": blob}
     documents = []
     documents.append(document)
     docs = kb.upload_documents(documents)
@@ -82,10 +82,10 @@ def test_list_sessions_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     kb = rag.create_dataset(name="test_list_session")
-    displayed_name = "ragflow.txt"
+    display_name = "ragflow.txt"
     with open("test_data/ragflow.txt", "rb") as file:
         blob = file.read()
-    document = {"displayed_name":displayed_name,"blob":blob}
+    document = {"display_name":display_name,"blob":blob}
     documents = []
     documents.append(document)
     docs= kb.upload_documents(documents)

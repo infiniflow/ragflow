@@ -109,7 +109,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 
    ```bash
    cd web
-   npm install --force
+   npm install
    ```
 
 2. Update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:

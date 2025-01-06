@@ -40,6 +40,8 @@
     --colors-background-inverse-standard: rgba(29, 26, 44, 0.1);
     --colors-background-inverse-strong: rgba(11, 10, 18, 0.8);
     --colors-background-inverse-weak: rgba(17, 16, 23, 0.1);
+    --colors-background-neutral-standard: white;
+    --colors-background-functional-solid-danger: rgba(222, 17, 53, 1);
 
     --button-blue-text: rgb(22, 119, 255);
 

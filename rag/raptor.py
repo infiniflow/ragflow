@@ -127,6 +127,9 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     ck_idx = [i + start for i in range(len(lbls)) if lbls[i] == c]
                     threads.append(executor.submit(summarize, ck_idx, lock))
                 wait(threads, return_when=ALL_COMPLETED)
+                for th in threads:
+                    if isinstance(th.result(), Exception):
+                        raise th.result()
                 logging.debug(str([t.result() for t in threads]))
 
             assert len(chunks) - end == n_clusters, "{} vs. {}".format(len(chunks) - end, n_clusters)

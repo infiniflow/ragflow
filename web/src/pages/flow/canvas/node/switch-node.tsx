@@ -1,9 +1,9 @@
 import { useTheme } from '@/components/theme-provider';
+import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/flow';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Divider, Flex } from 'antd';
 import classNames from 'classnames';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { useGetComponentLabelByValue } from '../../hooks';
-import { ISwitchCondition, NodeData } from '../../interface';
+import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
 import { RightHandleStyle } from './handle-icon';
 import { useBuildSwitchHandlePositions } from './hooks';
 import styles from './index.less';
@@ -54,7 +54,7 @@ const ConditionBlock = ({
   );
 };
 
-export function SwitchNode({ id, data, selected }: NodeProps<NodeData>) {
+export function SwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
   const { positions } = useBuildSwitchHandlePositions({ data, id });
   const { theme } = useTheme();
   return (

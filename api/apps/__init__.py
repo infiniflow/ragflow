@@ -152,8 +152,8 @@ def load_user(web_request):
                 return user[0]
             else:
                 return None
-        except Exception:
-            logging.exception("load_user got exception")
+        except Exception as e:
+            logging.warning(f"load_user got exception {e}")
             return None
     else:
         return None
