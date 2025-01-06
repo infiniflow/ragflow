@@ -81,9 +81,13 @@ No, this feature is not supported.
 
 ---
 
-### Do you support multiple rounds of dialogues, i.e., referencing previous dialogues as context for the current dialogue?
+### Do you support multiple rounds of dialogues, referencing previous dialogues as context for the current query?
 
-This feature and the related APIs are still in development. Contributions are welcome.
+Yes, we support enhancing user queries based on existing context of an ongoing conversation:
+
+1. On the **Chat** page, hover over the desired assistant and select **Edit**.
+2. In the **Chat Configuration** popup, click the **Prompt Engine** tab.
+3. Toggle on **Multi-turn optimization** to enable this feature.
 
 ---
 
@@ -385,6 +389,14 @@ The status of a Docker container status does not necessarily reflect the status 
 ### How to run RAGFlow with a locally deployed LLM?
 
 You can use Ollama or Xinference to deploy local LLM. See [here](../guides/deploy_local_llm.mdx) for more information.
+
+---
+
+### Is it possible to add an LLM that is not supported?
+
+If your model is not currently supported but has APIs compatible with those of OpenAI, click **OpenAI-API-Compatible** on the **Model providers** page to configure your model:
+
+![openai-api-compatible](https://github.com/user-attachments/assets/b1e964f2-b86e-41af-8528-fd8a96dc5f6f)
 
 ---
 
