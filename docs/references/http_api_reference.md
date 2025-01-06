@@ -1726,7 +1726,7 @@ Creates a session with a chat assistant.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
-  - `"user_id"`: `string`(optional)
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -1801,7 +1801,7 @@ Updates a session of a specified chat assistant.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name`: `string`
-  - `"user_id`: `string`(optional)
+  - `"user_id`: `string` (optional)
 
 ##### Request example
 
@@ -2013,8 +2013,8 @@ Asks a specified chat assistant a question to start an AI-powered conversation.
 - Body:
   - `"question"`: `string`
   - `"stream"`: `boolean`
-  - `"session_id"`: `string`(optional)
-  - `"user_id`: `string`(optional)
+  - `"session_id"`: `string` (optional)
+  - `"user_id`: `string` (optional)
 
 ##### Request example
 
