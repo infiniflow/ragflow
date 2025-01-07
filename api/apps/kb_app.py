@@ -250,7 +250,7 @@ def rename_tags(kb_id):
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
     settings.docStoreConn.update({"tag_kwd": req["from_tag"], "kb_id": [kb_id]},
-                                     {"remove": {"tag_kwd": req["from_tag"]}, "add": {"tag_kwd": req["to_tag"]}},
+                                     {"remove": {"tag_kwd": req["from_tag"].strip()}, "add": {"tag_kwd": req["to_tag"]}},
                                      search.index_name(kb.tenant_id),
                                      kb_id)
     return get_json_result(data=True)
