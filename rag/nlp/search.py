@@ -371,6 +371,7 @@ class Dealer:
                               "count": v["count"]} for k,
                              v in sorted(ranks["doc_aggs"].items(),
                                          key=lambda x:x[1]["count"] * -1)]
+        ranks["chunks"] = ranks["chunks"][:page_size]
 
         return ranks
 
