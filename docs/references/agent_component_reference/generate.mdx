@@ -96,24 +96,24 @@ This feature is used for multi-turn dialogue *only*.
 ### Key/Variable
 
 :::danger IMPORTANT
-
+A **Generate** component relies on variables (keys) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence.
 :::
 
+![variable_settings](https://github.com/user-attachments/assets/cb024c9e-264a-43ff-9ee7-8649afd571b0)
 
-user input
-another component's output
+Keys in a **Generate** component are used in conjunction with the system prompt to specify data inputs for the LLM. As shown in the above screenshot, the values are categorized into two groups:
 
+- **Component Output**: The value of the key should be a component ID.
+- **Begin Input**: The value of the key should be the name of a global variable defined in the **Begin** component.
 
 ## Examples
 
-You can take a look at our three-step interpreter agent, where the **Generate** component takes two global variables:
+You can explore our three-step interpreter agent template, where a **Generate** component (component ID: **Reflect**) takes three global variables:
 
-1. Click the **Agent** tab in the middle top of the page to show the **Agent** page.
-2. Click **+ Create agent** on the top right of the page to show the **agent template** page.
-3. On the **agent template** page, hover over the card on **Interperter** and click **Use this template**.
-4. Name the new agent and click **OK** to enter the workflow editor.
-5. Click the **Generate** component to display its **Configuration** window.
-
-## Frequently asked questions
-
-### Meaning of `{input}` mean in the prompt of 
+1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
+2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
+3. On the **agent template** page, hover over the **Interpreter** card and click **Use this template**.
+4. Name your new agent and click **OK** to enter the workflow editor.
+5. Click on component **Reflect**, to display its **Configuration** window, where:
+   - `{target_lang}` and `{source_text}` are defined in the **Begin** component and require user input.
+   - `{translation_1}` is the output from the upstream component **Translate directly**.
