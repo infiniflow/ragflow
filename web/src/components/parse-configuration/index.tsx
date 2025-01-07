@@ -18,6 +18,8 @@ export const excludedParseMethods = [
   'one',
   'picture',
   'knowledge_graph',
+  'qa',
+  'tag',
 ];
 
 export const showRaptorParseConfiguration = (parserId: string) => {

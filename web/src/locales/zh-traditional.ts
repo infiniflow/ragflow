@@ -34,6 +34,8 @@ export default {
       pleaseInput: '請輸入',
       submit: '提交',
       embedIntoSite: '嵌入網站',
+      previousPage: '上一頁',
+      nextPage: '下一頁',
     },
     login: {
       login: '登入',
@@ -292,6 +294,9 @@ export default {
       pageRank: '頁面排名',
       pageRankTip: `這用來提高相關性分數。所有檢索到的區塊的相關性得分將加上該數字。
 當您想要先搜尋給定的知識庫時，請設定比其他人更高的 pagerank 分數。`,
+      tag: '標籤',
+      frequency: '頻次',
+      searchTags: '搜尋標籤',
     },
     chunk: {
       chunk: '解析塊',
