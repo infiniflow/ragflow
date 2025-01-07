@@ -23,7 +23,7 @@ sys.path.insert(
             '../../')))
 
 from deepdoc.vision.seeit import draw_box
-from deepdoc.vision import LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out
+from deepdoc.vision import LayoutRecognizer, TableStructureRecognizer, OCR, init_in_out, Recognizer
 import argparse
 import re
 import numpy as np
@@ -33,12 +33,12 @@ def main(args):
     images, outputs = init_in_out(args)
     if args.mode.lower() == "layout":
         detr = LayoutRecognizer("layout")
+        layouts = super(Recognizer, detr)(images, thr=float(args.threshold))
     if args.mode.lower() == "tsr":
         labels = TableStructureRecognizer.labels
         detr = TableStructureRecognizer()
         ocr = OCR()
-
-    layouts = detr(images, thr=float(args.threshold))
+        layouts = detr(images, thr=float(args.threshold))
     for i, lyt in enumerate(layouts):
         if args.mode.lower() == "tsr":
             #lyt = [t for t in lyt if t["type"] == "table column"]
