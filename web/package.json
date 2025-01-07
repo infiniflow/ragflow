@@ -20,6 +20,7 @@
     "@ant-design/icons": "^5.2.6",
     "@ant-design/pro-components": "^2.6.46",
     "@ant-design/pro-layout": "^7.17.16",
+    "@antv/g2": "^5.2.10",
     "@antv/g6": "^5.0.10",
     "@hookform/resolvers": "^3.9.1",
     "@js-preview/excel": "^1.7.8",
@@ -48,7 +49,6 @@
     "@tanstack/react-query": "^5.40.0",
     "@tanstack/react-query-devtools": "^5.51.5",
     "@tanstack/react-table": "^8.20.5",
-    "@types/wordcloud": "^1.2.2",
     "@uiw/react-markdown-preview": "^5.1.3",
     "@xyflow/react": "^12.3.6",
     "ahooks": "^3.7.10",
@@ -96,7 +96,6 @@
     "umi-request": "^1.4.0",
     "unist-util-visit-parents": "^6.0.1",
     "uuid": "^9.0.1",
-    "wordcloud": "^1.2.3",
     "zod": "^3.23.8",
     "zustand": "^4.5.2"
   },

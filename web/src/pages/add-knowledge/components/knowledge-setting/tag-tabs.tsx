@@ -1,6 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TagTable } from './tag-table';
-import { TagWorkCloud } from './tag-word-cloud';
+import { TagWordCloud } from './tag-word-cloud';
 
 export function TagTabs() {
   return (
@@ -10,7 +10,7 @@ export function TagTabs() {
         <TabsTrigger value="password">Table</TabsTrigger>
       </TabsList>
       <TabsContent value="account">
-        <TagWorkCloud></TagWorkCloud>
+        <TagWordCloud></TagWordCloud>
       </TabsContent>
       <TabsContent value="password">
         <TagTable></TagTable>
