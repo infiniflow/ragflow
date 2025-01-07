@@ -286,6 +286,16 @@ export default {
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number', at which point a chunk is created.</p>
 <p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
+      tag: `<p>Knowlege base using 'Tag' as a chunking method is supposed to be used by other knowledge bases to add tags to their chunks, queries to which will also be with tags too.</p>
+<p>Knowlege base using 'Tag' as a chunking method is <b>NOT</b> supposed to be involved in RAG procedure.</p>
+<p>The chunks in this knowledge base are examples of tags, which demonstrate the entire tag set and the relevance between chunk and tags.</p>
+
+<p>This chunk method supports <b>EXCEL</b> and <b>CSV/TXT</b> file formats.</p>
+<p>If a file is in <b>Excel</b> format, it should contain two columns without headers: one for content and the other for tags, with the content column preceding the tags column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
+<p>If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate content and tags.</p>
+<p>In tags column, there're English <b>comma</b> between tags.</p>
+<i>Lines of texts that fail to follow the above rules will be ignored, and each  pair will be considered a distinct chunk.</i>
+`,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information.',
@@ -310,9 +320,11 @@ The above is the content you need to summarize.`,
       vietnamese: 'Vietnamese',
       pageRank: 'Page rank',
       pageRankTip: `This increases the relevance score of the knowledge base. Its value will be added to the relevance score of all retrieved chunks from this knowledge base. Useful when you are searching within multiple knowledge bases and wanting to assign a higher pagerank score to a specific one.`,
-      tag: 'Tag',
+      tagName: 'Tag',
       frequency: 'Frequency',
       searchTags: 'Search tags',
+      tagCloud: 'Cloud',
+      tagTable: 'Table',
     },
     chunk: {
       chunk: 'Chunk',

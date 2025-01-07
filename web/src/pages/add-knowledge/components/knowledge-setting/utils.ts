@@ -16,4 +16,5 @@ export const ImageMap = {
   table: getImageName('table', 2),
   one: getImageName('one', 2),
   knowledge_graph: getImageName('knowledge-graph', 2),
+  tag: getImageName('tag', 2),
 };
