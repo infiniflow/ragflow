@@ -311,53 +311,57 @@ class ESConnection(DocStoreConnection):
                     if str(e).find("Timeout") > 0:
                         continue
             return False
-        else:
-            # update unspecific maybe-multiple documents
-            bqry = Q("bool")
-            for k, v in condition.items():
-                if not isinstance(k, str) or not v:
-                    continue
-                if k == "exist":
-                    bqry.filter.append(Q("exists", field=v))
-                    continue
-                if isinstance(v, list):
-                    bqry.filter.append(Q("terms", **{k: v}))
-                elif isinstance(v, str) or isinstance(v, int):
-                    bqry.filter.append(Q("term", **{k: v}))
-                else:
-                    raise Exception(
-                        f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
-            scripts = []
-            for k, v in newValue.items():
-                if k == "remove":
-                    if isinstance(v, str):
-                        scripts.append(f"ctx._source.remove('{v}');")
-                    if isinstance(v, dict):
-                        for kk, vv in v.items():
-                            scripts.append(f"ctx._source.{kk}.remove(ctx._source.{kk}.indexOf('{vv}'));")
-                    continue
-                if k == "add":
-                    if isinstance(v, dict):
-                        for kk, vv in v.items():
-                            scripts.append(f"ctx._source.{kk}.add('{vv}');")
-                    continue
-                if (not isinstance(k, str) or not v) and k != "available_int":
-                    continue
+
+        # update unspecific maybe-multiple documents
+        bqry = Q("bool")
+        for k, v in condition.items():
+            if not isinstance(k, str) or not v:
+                continue
+            if k == "exist":
+                bqry.filter.append(Q("exists", field=v))
+                continue
+            if isinstance(v, list):
+                bqry.filter.append(Q("terms", **{k: v}))
+            elif isinstance(v, str) or isinstance(v, int):
+                bqry.filter.append(Q("term", **{k: v}))
+            else:
+                raise Exception(
+                    f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+        scripts = []
+        params = {}
+        for k, v in newValue.items():
+            if k == "remove":
                 if isinstance(v, str):
-                    scripts.append(f"ctx._source.{k} = '{v}'")
-                elif isinstance(v, int):
-                    scripts.append(f"ctx._source.{k} = {v}")
-                else:
-                    raise Exception(
-                        f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
+                    scripts.append(f"ctx._source.remove('{v}');")
+                if isinstance(v, dict):
+                    for kk, vv in v.items():
+                        scripts.append(f"int i=ctx._source.{kk}.indexOf(params.p_{kk});ctx._source.{kk}.remove(i);")
+                        params[f"p_{kk}"] = vv
+                continue
+            if k == "add":
+                if isinstance(v, dict):
+                    for kk, vv in v.items():
+                        scripts.append(f"ctx._source.{kk}.add(params.pp_{kk});")
+                        params[f"pp_{kk}"] = vv.strip()
+                continue
+            if (not isinstance(k, str) or not v) and k != "available_int":
+                continue
+            if isinstance(v, str):
+                scripts.append(f"ctx._source.{k} = '{v}'")
+            elif isinstance(v, int):
+                scripts.append(f"ctx._source.{k} = {v}")
+            else:
+                raise Exception(
+                    f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
         ubq = UpdateByQuery(
             index=indexName).using(
             self.es).query(bqry)
-        ubq = ubq.script(source="; ".join(scripts))
+        ubq = ubq.script(source="".join(scripts), params=params)
         ubq = ubq.params(refresh=True)
         ubq = ubq.params(slices=5)
         ubq = ubq.params(conflicts="proceed")
-        for i in range(3):
+
+        for _ in range(ATTEMPT_TIME):
             try:
                 _ = ubq.execute()
                 return True
