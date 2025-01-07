@@ -111,9 +111,9 @@ class Generate(ComponentBase):
 
     def get_input_elements(self):
         if self._param.parameters:
-            return [{"key": "user", "name": "User"}, *self._param.parameters]
+            return [{"key": "user", "name": "Input your question here:"}, *self._param.parameters]
 
-        return [{"key": "user", "name": "User"}]
+        return [{"key": "user", "name": "Input your question here:"}]
 
     def _run(self, history, **kwargs):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
