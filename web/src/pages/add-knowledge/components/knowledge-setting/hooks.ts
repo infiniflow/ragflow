@@ -2,7 +2,6 @@ import { LlmModelType } from '@/constants/knowledge';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useFetchKnowledgeBaseConfiguration,
-  useRenameTag,
   useUpdateKnowledge,
 } from '@/hooks/knowledge-hooks';
 import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
@@ -97,21 +96,6 @@ export const useRenameKnowledgeTag = () => {
     hideModal: hideTagRenameModal,
     showModal: showFileRenameModal,
   } = useSetModalState();
-  const { renameTag, loading } = useRenameTag();
-
-  const onTagRenameOk = useCallback(
-    async (name: string) => {
-      const ret = await renameTag({
-        fromTag: tag,
-        toTag: name,
-      });
-
-      if (ret === 0) {
-        hideTagRenameModal();
-      }
-    },
-    [renameTag, tag, hideTagRenameModal],
-  );
 
   const handleShowTagRenameModal = useCallback(
     (record: string) => {
@@ -122,9 +106,7 @@ export const useRenameKnowledgeTag = () => {
   );
 
   return {
-    renameLoading: loading,
     initialName: tag,
-    onTagRenameOk,
     tagRenameVisible,
     hideTagRenameModal,
     showTagRenameModal: handleShowTagRenameModal,

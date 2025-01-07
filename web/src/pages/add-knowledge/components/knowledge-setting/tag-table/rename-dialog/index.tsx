@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -6,6 +5,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { LoadingButton } from '@/components/ui/loading-button';
+import { useTagIsRenaming } from '@/hooks/knowledge-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { TagRenameId } from '@/pages/add-knowledge/constant';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +17,7 @@ export function RenameDialog({
   initialName,
 }: IModalProps<any> & { initialName: string }) {
   const { t } = useTranslation();
+  const loading = useTagIsRenaming();
 
   return (
     <Dialog open onOpenChange={hideModal}>
@@ -28,9 +30,9 @@ export function RenameDialog({
           hideModal={hideModal}
         ></RenameForm>
         <DialogFooter>
-          <Button type="submit" form={TagRenameId}>
+          <LoadingButton type="submit" form={TagRenameId} loading={loading}>
             {t('common.save')}
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>
