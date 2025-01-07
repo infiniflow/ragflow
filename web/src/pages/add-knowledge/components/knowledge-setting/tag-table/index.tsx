@@ -74,7 +74,6 @@ export function TagTable() {
     showTagRenameModal,
     hideTagRenameModal,
     tagRenameVisible,
-    onTagRenameOk,
     initialName,
   } = useRenameKnowledgeTag();
 
@@ -300,7 +299,6 @@ export function TagTable() {
       {tagRenameVisible && (
         <RenameDialog
           hideModal={hideTagRenameModal}
-          onOk={onTagRenameOk}
           initialName={initialName}
         ></RenameDialog>
       )}
