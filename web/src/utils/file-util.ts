@@ -51,7 +51,6 @@ export const transformBase64ToFile = (
   dataUrl: string,
   filename: string = 'file',
 ) => {
-  console.log('transformBase64ToFile', dataUrl);
   let arr = dataUrl.split(','),
     bstr = atob(arr[1]),
     n = bstr.length,
@@ -67,7 +66,6 @@ export const transformBase64ToFile = (
 };
 
 export const normFile = (e: any) => {
-  console.log('normFile', e);
   if (Array.isArray(e)) {
     return e;
   }
@@ -75,7 +73,6 @@ export const normFile = (e: any) => {
 };
 
 export const getUploadFileListFromBase64 = (avatar: string) => {
-  console.log('getUploadFileListFromBase64', avatar);
   let fileList: UploadFile[] = [];
 
   if (avatar) {
@@ -86,7 +83,6 @@ export const getUploadFileListFromBase64 = (avatar: string) => {
 };
 
 export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
-  console.log('getBase64FromUploadFileList', fileList);
   if (Array.isArray(fileList) && fileList.length > 0) {
     const file = fileList[0];
     const originFileObj = file.originFileObj;
@@ -128,7 +124,6 @@ export const downloadDocument = async ({
 const Units = ['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
 
 export const formatBytes = (x: string | number) => {
-  console.log('formatBytes', x);
   let l = 0,
     n = (typeof x === 'string' ? parseInt(x, 10) : x) || 0;
 
