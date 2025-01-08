@@ -34,7 +34,7 @@ Defaults to 0.2.
 
 This parameter sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.
 
-Defaults to 0.3
+Defaults to 0.7
 
 ### Top N
 
@@ -47,6 +47,10 @@ Defaults to 8.
 
 - If this field is left empty, a combination of weighted keyword similarity and weighted vector cosine similarity will be used for retrieval.
 - If a rerank model is selected, a combination of weighted keyword similarity and weighted reranking score will be used for retrieval.
+
+:::caution WARNING
+Using a rerank model will *significantly* increase the system's response time, worsening user experience.
+:::
 
 
 ### Knowledge bases 
