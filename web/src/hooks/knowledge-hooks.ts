@@ -321,7 +321,7 @@ export const useRenameTag = () => {
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['deleteTag'],
+    mutationKey: ['renameTag'],
     mutationFn: async (params: IRenameTag) => {
       const { data } = await renameTag(knowledgeBaseId, params);
       if (data.code === 0) {
@@ -335,6 +335,10 @@ export const useRenameTag = () => {
   });
 
   return { data, loading, renameTag: mutateAsync };
+};
+
+export const useTagIsRenaming = () => {
+  return useIsMutating({ mutationKey: ['renameTag'] }) > 0;
 };
 
 //#endregion

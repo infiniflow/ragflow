@@ -11,6 +11,7 @@ import MaxTokenNumber from '@/components/max-token-number';
 import PageRank from '@/components/page-rank';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
+  showTagItems,
 } from '@/components/parse-configuration';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useHandleChunkMethodSelectChange } from '@/hooks/logic-hooks';
@@ -23,6 +24,7 @@ import {
   useSubmitKnowledgeConfiguration,
 } from './hooks';
 import styles from './index.less';
+import { TagItems } from './tag-item';
 
 const { Option } = Select;
 
@@ -146,6 +148,8 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
               {showRaptorParseConfiguration(parserId) && (
                 <ParseConfiguration></ParseConfiguration>
               )}
+
+              {showTagItems(parserId) && <TagItems></TagItems>}
             </>
           );
         }}

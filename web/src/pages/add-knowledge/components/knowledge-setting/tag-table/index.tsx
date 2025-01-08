@@ -74,7 +74,6 @@ export function TagTable() {
     showTagRenameModal,
     hideTagRenameModal,
     tagRenameVisible,
-    onTagRenameOk,
     initialName,
   } = useRenameKnowledgeTag();
 
@@ -109,7 +108,7 @@ export function TagTable() {
             variant="ghost"
             onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           >
-            {t('knowledgeConfiguration.tag')}
+            {t('knowledgeConfiguration.tagName')}
             <ArrowUpDown />
           </Button>
         );
@@ -300,7 +299,6 @@ export function TagTable() {
       {tagRenameVisible && (
         <RenameDialog
           hideModal={hideTagRenameModal}
-          onOk={onTagRenameOk}
           initialName={initialName}
         ></RenameDialog>
       )}
