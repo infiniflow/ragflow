@@ -26,6 +26,12 @@ export const showRaptorParseConfiguration = (parserId: string) => {
   return !excludedParseMethods.includes(parserId);
 };
 
+export const excludedTagParseMethods = ['table', 'knowledge_graph', 'tag'];
+
+export const showTagItems = (parserId: string) => {
+  return !excludedTagParseMethods.includes(parserId);
+};
+
 // The three types "table", "resume" and "one" do not display this configuration.
 const ParseConfiguration = () => {
   const form = Form.useFormInstance();
