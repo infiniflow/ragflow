@@ -33,7 +33,7 @@ def main(args):
     images, outputs = init_in_out(args)
     if args.mode.lower() == "layout":
         detr = LayoutRecognizer("layout")
-        layouts = detr.call_recognizer(images, thr=float(args.threshold))
+        layouts = detr.forward(images, thr=float(args.threshold))
     if args.mode.lower() == "tsr":
         labels = TableStructureRecognizer.labels
         detr = TableStructureRecognizer()
