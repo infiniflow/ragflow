@@ -35,7 +35,6 @@ def main(args):
         detr = LayoutRecognizer("layout")
         layouts = detr.forward(images, thr=float(args.threshold))
     if args.mode.lower() == "tsr":
-        labels = TableStructureRecognizer.labels
         detr = TableStructureRecognizer()
         ocr = OCR()
         layouts = detr(images, thr=float(args.threshold))
