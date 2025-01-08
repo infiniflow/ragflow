@@ -1,9 +1,10 @@
 import { EditableCell, EditableRow } from '@/components/editable-cell';
 import { useTranslate } from '@/hooks/common-hooks';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Flex, Select, Table, TableProps } from 'antd';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
-import { IGenerateParameter, RAGFlowNodeType } from '../../interface';
+import { IGenerateParameter } from '../../interface';
 import { useHandleOperateParameters } from './hooks';
 
 import styles from './index.less';
@@ -46,7 +47,7 @@ const DynamicParameters = ({ node }: IProps) => {
       }),
     },
     {
-      title: t('componentId'),
+      title: t('value'),
       dataIndex: 'component_id',
       key: 'component_id',
       align: 'center',
