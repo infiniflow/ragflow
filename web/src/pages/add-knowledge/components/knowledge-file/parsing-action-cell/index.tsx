@@ -79,7 +79,7 @@ const ParsingActionCell = ({
         <Dropdown
           menu={{ items: chunkItems }}
           trigger={['click']}
-          disabled={isRunning}
+          disabled={isRunning || record.parser_id === 'tag'}
         >
           <Button type="text" className={styles.iconButton}>
             <ToolOutlined size={20} />
