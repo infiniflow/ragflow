@@ -23,6 +23,7 @@ from api.db.services.dialog_service import keyword_extraction, lable_question
 from graphrag.utils import get_tags_from_cache, set_tags_to_cache
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import search, rag_tokenizer
+from rag.settings import PAGERANK_FLD
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -128,6 +129,7 @@ def set():
     d["important_kwd"] = req["important_kwd"]
     d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
     d["question_kwd"] = req["question_kwd"]
+    d["tag_kwd"] = req["tag_kwd"]
     d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
     if "available_int" in req:
         d["available_int"] = req["available_int"]
@@ -234,7 +236,7 @@ def create():
         if not e:
             return get_data_error_result(message="Knowledgebase not found!")
         if kb.pagerank:
-            d["pagerank_fea"] = kb.pagerank
+            d[PAGERANK_FLD] = kb.pagerank
 
         embd_id = DocumentService.get_embd_id(req["doc_id"])
         embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING.value, embd_id)

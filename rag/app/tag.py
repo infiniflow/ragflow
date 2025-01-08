@@ -19,11 +19,13 @@ from rag.app.qa import Excel
 from rag.nlp import rag_tokenizer
 
 
-def beAdoc(d, q, a, eng):
+def beAdoc(d, q, a, eng, row_num=-1):
     d["content_with_weight"] = q
     d["content_ltks"] = rag_tokenizer.tokenize(q)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["tag_kwd"] = [t.strip() for t in a.split(",") if t.strip()]
+    if row_num >= 0:
+        d["top_int"] = [row_num]
     return d
 
 
@@ -48,8 +50,8 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        for q, a in excel_parser(filename, binary, callback):
-            res.append(beAdoc(deepcopy(doc), q, a, eng))
+        for ii, (q, a) in enumerate(excel_parser(filename, binary, callback)):
+            res.append(beAdoc(deepcopy(doc), q, a, eng, ii))
         return res
 
     elif re.search(r"\.(txt)$", filename, re.IGNORECASE):
@@ -73,7 +75,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 content += "\n" + lines[i]
             elif len(arr) == 2:
                 content += "\n" + arr[0]
-                res.append(beAdoc(deepcopy(doc), content, arr[1], eng))
+                res.append(beAdoc(deepcopy(doc), content, arr[1], eng, i))
                 content, tags = "", ""
             i += 1
             if len(res) % 999 == 0:
@@ -101,7 +103,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 content += "\n" + lines[i]
             elif len(row) == 2:
                 content += "\n" + row[0]
-                res.append(beAdoc(deepcopy(doc), content, row[1], eng))
+                res.append(beAdoc(deepcopy(doc), content, row[1], eng, i))
                 content, tags = "", ""
             if len(res) % 999 == 0:
                 callback(len(res) * 0.6 / len(lines), ("Extract Tags: {}".format(len(res)) + (

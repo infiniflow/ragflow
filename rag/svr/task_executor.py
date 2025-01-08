@@ -56,7 +56,7 @@ from rag.app import laws, paper, presentation, manual, qa, table, book, resume, 
     knowledge_graph, email, tag
 from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
-from rag.settings import DOC_MAXIMUM_SIZE, SVR_QUEUE_NAME, print_rag_settings
+from rag.settings import DOC_MAXIMUM_SIZE, SVR_QUEUE_NAME, print_rag_settings, TAG_FLD, PAGERANK_FLD
 from rag.utils import num_tokens_from_string
 from rag.utils.redis_conn import REDIS_CONN, Payload
 from rag.utils.storage_factory import STORAGE_IMPL
@@ -229,7 +229,7 @@ def build_chunks(task, progress_callback):
         "kb_id": str(task["kb_id"])
     }
     if task["pagerank"]:
-        doc["pagerank_fea"] = int(task["pagerank"])
+        doc[PAGERANK_FLD] = int(task["pagerank"])
     el = 0
     for ck in cks:
         d = copy.deepcopy(doc)
@@ -298,25 +298,25 @@ def build_chunks(task, progress_callback):
             d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
         progress_callback(msg="Question generation completed in {:.2f}s".format(timer() - st))
 
-    if task["parser_config"].get("tag_kb_ids", []):
+    if task["kb_parser_config"].get("tag_kb_ids", []):
         progress_callback(msg="Start to tag for every chunk ...")
-        kb_ids = task["parser_config"]["kb_ids"]
+        kb_ids = task["kb_parser_config"]["tag_kb_ids"]
         tenant_id = task["tenant_id"]
-        topn_tags = task["parser_config"].get("topn_tags", 3)
+        topn_tags = task["kb_parser_config"].get("topn_tags", 3)
         S = 1000
         st = timer()
-        all_tags = get_tags_from_cache(kb_ids)
         examples = []
+        all_tags = get_tags_from_cache(kb_ids)
         if not all_tags:
-            all_tags = settings.retrievaler.all_tags(tenant_id, kb_ids)
-            total = np.sum([c for _, c in all_tags])
-            all_tags = {t: (c + 1) / (total + S) for t, c in all_tags}
+            all_tags = settings.retrievaler.all_tags_in_portion(tenant_id, kb_ids, S)
             set_tags_to_cache(kb_ids, all_tags)
+        else:
+            all_tags = json.loads(all_tags)
 
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
         for d in docs:
             if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S):
-                examples.append({"content": d["content_with_weight"], "tag_fea": d["tag_fea"]})
+                examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
                 continue
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], all_tags, {"topn": topn_tags})
             if not cached:
@@ -325,7 +325,7 @@ def build_chunks(task, progress_callback):
                                          topn=topn_tags)
                 if cached:
                     set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, all_tags, {"topn": topn_tags})
-            d["tag_fea"] = json.loads(cached)
+            d[TAG_FLD] = json.loads(cached)
 
         progress_callback(msg="Tagging completed in {:.2f}s".format(timer() - st))
 
@@ -415,7 +415,7 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         "title_tks": rag_tokenizer.tokenize(row["name"])
     }
     if row["pagerank"]:
-        doc["pagerank_fea"] = int(row["pagerank"])
+        doc[PAGERANK_FLD] = int(row["pagerank"])
     res = []
     tk_count = 0
     for content, vctr in chunks[original_length:]:

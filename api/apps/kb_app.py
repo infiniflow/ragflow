@@ -30,6 +30,7 @@ from api.utils.api_utils import get_json_result
 from api import settings
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
+from rag.settings import PAGERANK_FLD
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
@@ -104,11 +105,11 @@ def update():
 
         if kb.pagerank != req.get("pagerank", 0):
             if req.get("pagerank", 0) > 0:
-                settings.docStoreConn.update({"kb_id": kb.id}, {"pagerank_fea": req["pagerank"]},
+                settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
                                          search.index_name(kb.tenant_id), kb.id)
             else:
-                # Elasticsearch requires pagerank_fea be non-zero!
-                settings.docStoreConn.update({"exist": "pagerank_fea"}, {"remove": "pagerank_fea"},
+                # Elasticsearch requires PAGERANK_FLD be non-zero!
+                settings.docStoreConn.update({"exist": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
                                          search.index_name(kb.tenant_id), kb.id)
 
         e, kb = KnowledgebaseService.get_by_id(kb.id)

@@ -9,6 +9,7 @@ from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
 from rag import settings
+from rag.settings import TAG_FLD, PAGERANK_FLD
 from rag.utils import singleton
 from api.utils.file_utils import get_project_base_directory
 import polars as pl
@@ -188,8 +189,8 @@ class ESConnection(DocStoreConnection):
 
         if bqry and rank_feature:
             for fld, sc in rank_feature.items():
-                if fld != "pagerank_fea":
-                    fld = f"tag_fea.{fld}"
+                if fld != PAGERANK_FLD:
+                    fld = f"{TAG_FLD}.{fld}"
                 bqry.should.append(Q("rank_feature", field=fld, linear={}, boost=sc))
 
         if bqry:

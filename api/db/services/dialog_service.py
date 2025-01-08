@@ -32,6 +32,7 @@ from api import settings
 from graphrag.utils import get_tags_from_cache, set_tags_to_cache
 from rag.app.resume import forbidden_select_fields4resume
 from rag.nlp.search import index_name
+from rag.settings import TAG_FLD
 from rag.utils import rmSpace, num_tokens_from_string, encoder
 from api.utils.file_utils import get_project_base_directory
 
@@ -145,8 +146,10 @@ def lable_question(question, kbs):
     if tag_kb_ids:
         all_tags = get_tags_from_cache(tag_kb_ids)
         if not all_tags:
-            all_tags = settings.retrievaler.all_tags(kb.tenant_id, tag_kb_ids)
+            all_tags = settings.retrievaler.all_tags_in_portion(kb.tenant_id, tag_kb_ids)
             set_tags_to_cache(all_tags, tag_kb_ids)
+        else:
+            all_tags = json.loads(all_tags)
         tag_kbs = KnowledgebaseService.get_by_ids(tag_kb_ids)
         tags = settings.retrievaler.tag_query(question,
                                               list(set([kb.tenant_id for kb in tag_kbs])),
@@ -760,7 +763,7 @@ Requirements
 Output:
 {}
 
-        """.format(i, ex["content"], json.dumps(ex["tag_fea"], indent=2, ensure_ascii=False))
+        """.format(i, ex["content"], json.dumps(ex[TAG_FLD], indent=2, ensure_ascii=False))
 
     prompt += f"""
 # Real Data

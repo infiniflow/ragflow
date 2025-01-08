@@ -177,8 +177,6 @@ class FulltextQueryer:
 
             if len(twts) > 1:
                 tms += ' ("%s"~2)^1.5' % rag_tokenizer.tokenize(tt)
-            if re.match(r"[0-9a-z ]+$", tt):
-                tms = f'("{tt}" OR "%s")' % rag_tokenizer.tokenize(tt)
 
             syns = " OR ".join(
                 [
@@ -256,4 +254,4 @@ class FulltextQueryer:
                 keywords.append(f"{tk}^{w}")
 
         return MatchTextExpr(self.query_fields, " ".join(keywords), 100,
-                             {"minimum_should_match": min(3, keywords / 10)})
+                             {"minimum_should_match": min(3, len(keywords) / 10)})

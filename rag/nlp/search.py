@@ -13,13 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
 import logging
-import random
 import re
 from dataclasses import dataclass
 
-from rag.utils import rmSpace, truncate
+from rag.settings import TAG_FLD, PAGERANK_FLD
+from rag.utils import rmSpace
 from rag.nlp import rag_tokenizer, query
 import numpy as np
 from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
@@ -83,7 +82,7 @@ class Dealer:
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
                        "question_kwd", "question_tks",
-                       "available_int", "content_with_weight", "pagerank_fea", "tag_fea"])
+                       "available_int", "content_with_weight", PAGERANK_FLD, TAG_FLD])
         kwds = set([])
 
         qst = req.get("question", "")
@@ -245,16 +244,16 @@ class Dealer:
         rank_fea = []
         pageranks = []
         for chunk_id in search_res.ids:
-            pageranks.append(search_res.field[chunk_id].get("pagerank_fea", 0))
+            pageranks.append(search_res.field[chunk_id].get(PAGERANK_FLD, 0))
         pageranks = np.array(pageranks, dtype=float)
 
         if not query_rfea:
             return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
 
-        q_denor = np.sqrt(np.sum([s*s for t,s in query_rfea.items() if t != "pagerank_fea"]))
+        q_denor = np.sqrt(np.sum([s*s for t,s in query_rfea.items() if t != PAGERANK_FLD]))
         for i in search_res.ids:
             nor, denor = 0, 0
-            for t,sc in search_res.field[i].get("tag_fea", {}).items():
+            for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
                 if t in query_rfea:
                     nor += query_rfea[t] * sc
                 denor += sc * sc
@@ -335,7 +334,7 @@ class Dealer:
     def retrieval(self, question, embd_mdl, tenant_ids, kb_ids, page, page_size, similarity_threshold=0.2,
                   vector_similarity_weight=0.3, top=1024, doc_ids=None, aggs=True,
                   rerank_mdl=None, highlight=False,
-                  rank_feature: dict | None = {"pagerank_fea": 10}):
+                  rank_feature: dict | None = {PAGERANK_FLD: 10}):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
@@ -443,9 +442,15 @@ class Dealer:
                 break
         return res
 
-    def all_tags(self, tenant_id: str, kb_ids: list[str]):
+    def all_tags(self, tenant_id: str, kb_ids: list[str], S=1000):
         res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, index_name(tenant_id), kb_ids, ["tag_kwd"])
         return self.dataStore.getAggregation(res, "tag_kwd")
+
+    def all_tags_in_portion(self, tenant_id: str, kb_ids: list[str], S=1000):
+        res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, index_name(tenant_id), kb_ids, ["tag_kwd"])
+        res = self.dataStore.getAggregation(res, "tag_kwd")
+        total = np.sum([c for _, c in res])
+        return {t: (c + 1) / (total + S) for t, c in res}
 
     def tag_content(self, tenant_id: str, kb_ids: list[str], doc, all_tags, topn_tags=3, keywords_topn=30, S=1000):
         idx_nm = index_name(tenant_id)
@@ -455,9 +460,9 @@ class Dealer:
         if not aggs:
             return False
         cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(10. * (c + 1) / (cnt + S) / (all_tags.get(a, 0.0001)))) for a, c in aggs],
+        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / (all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
-        doc["tag_fea"] = {a: c for a, c in tag_fea}
+        doc[TAG_FLD] = {a: c for a, c in tag_fea if c > 0}
         return True
 
     def tag_query(self, question: str, tenant_ids: str | list[str], kb_ids: list[str], all_tags, topn_tags=3, S=1000):
@@ -471,6 +476,6 @@ class Dealer:
         if not aggs:
             return {}
         cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(10. * (c + 1) / (cnt + S) / (all_tags.get(a, 0.0001)))) for a, c in aggs],
+        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / (all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
-        return {a: c for a, c in tag_fea}
+        return {a: c for a, c in tag_fea if c > 0}
