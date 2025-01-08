@@ -94,7 +94,7 @@ class InfinityConnection(DocStoreConnection):
                 logger.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)
         if self.connPool is None:
-            msg = f"Infinity {infinity_uri} didn't become healthy in 120s."
+            msg = f"Infinity {infinity_uri} is unhealthy in 120s."
             logger.error(msg)
             raise Exception(msg)
         logger.info(f"Infinity {infinity_uri} is healthy.")
