@@ -153,7 +153,7 @@ class LayoutRecognizer(Recognizer):
         ocr_res = [b for b in ocr_res if b["text"].strip() not in garbag_set]
         return ocr_res, page_layout
 
-    def call_recognizer(self, image_list, thr=0.7, batch_size=16):
+    def forward(self, image_list, thr=0.7, batch_size=16):
         return super().__call__(image_list, thr, batch_size)
 
 class LayoutRecognizer4YOLOv10(LayoutRecognizer):
