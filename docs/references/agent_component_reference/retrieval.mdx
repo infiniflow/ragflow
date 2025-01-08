@@ -26,15 +26,13 @@ The **Retrieval** component relies on input variables to specify its data inputs
 
 ### Similarity threshold
 
-RAGFlow employs a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks stored in the datasets. Any chunk with a similarity score below this threshold will be excluded from the results.
+RAGFlow employs a combination of weighted keyword similarity and weighted vector cosine similarity during retrieval. This parameter sets the threshold for similarities between the user query and chunks stored in the datasets. Any chunk with a similarity score below this threshold will be excluded from the results.
 
 Defaults to 0.2.
 
 ### Keywords similarity weight
 
-This parameter sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.
-
-Defaults to 0.7
+This parameter sets the weight of keyword similarity in the combined similarity score. The total of the two weights must equal 1.0. Its default value is 0.7, which means the weight of vector similarity in the combined search is 1-0.7=0.3.
 
 ### Top N
 
@@ -45,11 +43,12 @@ Defaults to 8.
 
 ### Rerank model
 
-- If this field is left empty, a combination of weighted keyword similarity and weighted vector cosine similarity will be used for retrieval.
-- If a rerank model is selected, a combination of weighted keyword similarity and weighted reranking score will be used for retrieval.
+*Optional*
+
+If a rerank model is selected, a combination of weighted keyword similarity and weighted reranking score will be used for retrieval.
 
 :::caution WARNING
-Using a rerank model will *significantly* increase the system's response time, worsening user experience.
+Using a rerank model will *significantly* increase the system's response time.
 :::
 
 
