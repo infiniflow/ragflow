@@ -25,7 +25,7 @@ from flask import request, Response
 from flask_login import login_required, current_user
 
 from api.db import LLMType
-from api.db.services.dialog_service import DialogService, chat, ask, lable_question
+from api.db.services.dialog_service import DialogService, chat, ask, label_question
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle, TenantService, TenantLLMService
 from api import settings
@@ -382,7 +382,7 @@ def mindmap():
     question = req["question"]
     ranks = settings.retrievaler.retrieval(question, embd_mdl, kb.tenant_id, kb_ids, 1, 12,
                                            0.3, 0.3, aggs=False,
-                                           rank_feature=lable_question(question, [kb])
+                                           rank_feature=label_question(question, [kb])
                                            )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = mindmap([c["content_with_weight"] for c in ranks["chunks"]]).output

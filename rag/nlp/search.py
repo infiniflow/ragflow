@@ -371,14 +371,11 @@ class Dealer:
             sim = tsim = vsim = [1] * len(sres.ids)
             idx = list(range(len(sres.ids)))
 
-        def floor_sim(score):
-            return (int(score * 100.) % 100) / 100.
-
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
         for i in idx:
-            if floor_sim(sim[i]) < similarity_threshold:
+            if sim[i] < similarity_threshold:
                 break
             if len(ranks["chunks"]) >= page_size:
                 if aggs:
@@ -454,7 +451,7 @@ class Dealer:
 
     def tag_content(self, tenant_id: str, kb_ids: list[str], doc, all_tags, topn_tags=3, keywords_topn=30, S=1000):
         idx_nm = index_name(tenant_id)
-        match_txt = self.qryr.paragraph(doc["content_ltks"], doc.get("important_kwd", []), keywords_topn)
+        match_txt = self.qryr.paragraph(doc["title_tks"] + " " + doc["content_ltks"], doc.get("important_kwd", []), keywords_topn)
         res = self.dataStore.search([], [], {}, [match_txt], OrderByExpr(), 0, 0, idx_nm, kb_ids, ["tag_kwd"])
         aggs = self.dataStore.getAggregation(res, "tag_kwd")
         if not aggs:
@@ -470,7 +467,7 @@ class Dealer:
             idx_nms = index_name(tenant_ids)
         else:
             idx_nms = [index_name(tid) for tid in tenant_ids]
-        match_txt, _ = self.qryr.question(question, min_match=0.3)
+        match_txt, _ = self.qryr.question(question, min_match=0.0)
         res = self.dataStore.search([], [], {}, [match_txt], OrderByExpr(), 0, 0, idx_nms, kb_ids, ["tag_kwd"])
         aggs = self.dataStore.getAggregation(res, "tag_kwd")
         if not aggs:

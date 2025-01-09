@@ -19,7 +19,7 @@ import json
 from flask import request
 from flask_login import login_required, current_user
 
-from api.db.services.dialog_service import keyword_extraction, lable_question
+from api.db.services.dialog_service import keyword_extraction, label_question
 from graphrag.utils import get_tags_from_cache, set_tags_to_cache
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import search, rag_tokenizer
@@ -297,14 +297,16 @@ def retrieval_test():
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
 
+        labels = label_question(question, [kb])
         retr = settings.retrievaler if kb.parser_id != ParserType.KG else settings.kg_retrievaler
         ranks = retr.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
                                similarity_threshold, vector_similarity_weight, top,
                                doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
-                               rank_feature=lable_question(question, [kb])
+                               rank_feature=labels
                                )
         for c in ranks["chunks"]:
             c.pop("vector", None)
+        ranks["labels"] = labels
 
         return get_json_result(data=ranks)
     except Exception as e:

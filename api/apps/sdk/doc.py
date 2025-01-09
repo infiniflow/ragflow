@@ -16,7 +16,7 @@
 import pathlib
 import datetime
 
-from api.db.services.dialog_service import keyword_extraction, lable_question
+from api.db.services.dialog_service import keyword_extraction, label_question
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import rag_tokenizer
 from api.db import LLMType, ParserType
@@ -1358,7 +1358,7 @@ def retrieval_test(tenant_id):
             doc_ids,
             rerank_mdl=rerank_mdl,
             highlight=highlight,
-            rank_feature=lable_question(question, kbs)
+            rank_feature=label_question(question, kbs)
         )
         for c in ranks["chunks"]:
             c.pop("vector", None)

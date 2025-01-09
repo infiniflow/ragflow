@@ -137,7 +137,7 @@ def kb_prompt(kbinfos, max_tokens):
     return knowledges
 
 
-def lable_question(question, kbs):
+def label_question(question, kbs):
     tags = None
     tag_kb_ids = []
     for kb in kbs:
@@ -267,7 +267,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                                       dialog.vector_similarity_weight,
                                       doc_ids=attachments,
                                       top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl,
-                                      rank_feature=lable_question(" ".join(questions), kbs)
+                                      rank_feature=label_question(" ".join(questions), kbs)
                                       )
 
     retrieval_ts = timer()
@@ -680,7 +680,7 @@ def ask(question, kb_ids, tenant_id):
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
     kbinfos = retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids,
                                   1, 12, 0.1, 0.3, aggs=False,
-                                  rank_feature=lable_question(question, kbs)
+                                  rank_feature=label_question(question, kbs)
                                   )
     knowledges = kb_prompt(kbinfos, max_tokens)
     prompt = """

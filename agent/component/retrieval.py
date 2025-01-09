@@ -19,7 +19,7 @@ from abc import ABC
 import pandas as pd
 
 from api.db import LLMType
-from api.db.services.dialog_service import lable_question
+from api.db.services.dialog_service import label_question
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
@@ -72,7 +72,7 @@ class Retrieval(ComponentBase, ABC):
                                         1, self._param.top_n,
                                         self._param.similarity_threshold, 1 - self._param.keywords_similarity_weight,
                                         aggs=False, rerank_mdl=rerank_mdl,
-                                        rank_feature=lable_question(query, kbs))
+                                        rank_feature=label_question(query, kbs))
 
         if not kbinfos["chunks"]:
             df = Retrieval.be_output("")
