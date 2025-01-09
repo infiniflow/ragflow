@@ -67,7 +67,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         delimiter = "\t" if tab >= comma else ","
 
         fails = []
-        content, tags = "", ""
+        content = ""
         i = 0
         while i < len(lines):
             arr = lines[i].split(delimiter)
@@ -76,7 +76,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
             elif len(arr) == 2:
                 content += "\n" + arr[0]
                 res.append(beAdoc(deepcopy(doc), content, arr[1], eng, i))
-                content, tags = "", ""
+                content = ""
             i += 1
             if len(res) % 999 == 0:
                 callback(len(res) * 0.6 / len(lines), ("Extract TAG: {}".format(len(res)) + (
