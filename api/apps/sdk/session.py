@@ -171,8 +171,8 @@ def agent_completions(tenant_id, agent_id):
         if not isinstance(dsl, str):
             dsl = json.dumps(dsl)
         canvas = Canvas(dsl, tenant_id)
-        if canvas.get_preset_param():
-            req["question"] = ""
+        #if canvas.get_preset_param():
+        #    req["question"] = ""
         conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
         if not conv:
             return get_error_data_result(f"You don't own the session {req['session_id']}")
