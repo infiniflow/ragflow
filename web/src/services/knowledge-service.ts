@@ -30,6 +30,7 @@ const {
   knowledge_graph,
   document_infos,
   upload_and_parse,
+  listTagByKnowledgeIds,
 } = api;
 
 const methods = {
@@ -139,6 +140,10 @@ const methods = {
   upload_and_parse: {
     url: upload_and_parse,
     method: 'post',
+  },
+  listTagByKnowledgeIds: {
+    url: listTagByKnowledgeIds,
+    method: 'get',
   },
 };
 

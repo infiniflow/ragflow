@@ -39,6 +39,7 @@ export default {
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
+  listTagByKnowledgeIds: `${api_host}/kb/tags`,
   removeTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/rm_tags`,
   renameTag: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/rename_tag`,

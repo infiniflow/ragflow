@@ -95,21 +95,11 @@ export const useUpdateChunk = () => {
   const { documentId } = useGetKnowledgeSearchParams();
 
   const onChunkUpdatingOk = useCallback(
-    async ({
-      content_with_weight,
-      important_kwd,
-      available_int,
-      question_kwd,
-      tag_kwd,
-    }: IChunk) => {
+    async (params: IChunk) => {
       const code = await createChunk({
-        content_with_weight,
+        ...params,
         doc_id: documentId,
         chunk_id: chunkId,
-        important_kwd, // keywords
-        available_int,
-        question_kwd,
-        tag_kwd,
       });
 
       if (code === 0) {

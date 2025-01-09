@@ -338,6 +338,8 @@ This procedure will improve precision of retrieval by adding more information to
 </ul>
       `,
       topnTags: 'Top-N Tags',
+      tags: 'Tags',
+      addTag: 'Add tag',
     },
     chunk: {
       chunk: 'Chunk',

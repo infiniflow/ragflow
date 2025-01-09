@@ -7,6 +7,11 @@ import { Divider, Form, Input, Modal, Space, Switch } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDeleteChunkByIds } from '../../hooks';
+import {
+  transformTagFeaturesArrayToObject,
+  transformTagFeaturesObjectToArray,
+} from '../../utils';
+import { TagFeatureItem } from './tag-feature-item';
 
 type FieldType = Pick<
   IChunk,
@@ -38,8 +43,11 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
   const handleOk = useCallback(async () => {
     try {
       const values = await form.validateFields();
+      console.log('🚀 ~ handleOk ~ values:', values);
+
       onOk?.({
         ...values,
+        tag_feas: transformTagFeaturesArrayToObject(values.tag_feas),
         available_int: checked ? 1 : 0, // available_int
       });
     } catch (errorInfo) {
@@ -59,8 +67,11 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
 
   useEffect(() => {
     if (data?.code === 0) {
-      const { available_int } = data.data;
-      form.setFieldsValue({ ...(data.data || {}) });
+      const { available_int, tag_feas } = data.data;
+      form.setFieldsValue({
+        ...(data.data || {}),
+        tag_feas: transformTagFeaturesObjectToArray(tag_feas),
+      });
 
       setChecked(available_int !== 0);
     }
@@ -95,10 +106,15 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
           <EditTag></EditTag>
         </Form.Item>
         {isTagParser && (
-          <Form.Item<FieldType> label={t('chunk.tagName')} name="tag_kwd">
+          <Form.Item<FieldType>
+            label={t('knowledgeConfiguration.tagName')}
+            name="tag_kwd"
+          >
             <EditTag></EditTag>
           </Form.Item>
         )}
+
+        {!isTagParser && <TagFeatureItem></TagFeatureItem>}
       </Form>
 
       {chunkId && (
