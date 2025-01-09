@@ -58,7 +58,9 @@ export const TagFeatureItem = () => {
                   <Form.Item
                     {...restField}
                     name={[name, 'tag']}
-                    rules={[{ required: true }]}
+                    rules={[
+                      { required: true, message: t('common.pleaseSelect') },
+                    ]}
                     className="w-2/3"
                   >
                     <Select
@@ -70,7 +72,9 @@ export const TagFeatureItem = () => {
                   <Form.Item
                     {...restField}
                     name={[name, 'frequency']}
-                    rules={[{ required: true }]}
+                    rules={[
+                      { required: true, message: t('common.pleaseInput') },
+                    ]}
                   >
                     <InputNumber
                       placeholder={t('knowledgeConfiguration.frequency')}
