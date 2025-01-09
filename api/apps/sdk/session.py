@@ -170,7 +170,7 @@ def agent_completions(tenant_id, agent_id):
         dsl = cvs[0].dsl
         if not isinstance(dsl, str):
             dsl = json.dumps(dsl)
-        canvas = Canvas(dsl, tenant_id)
+        #canvas = Canvas(dsl, tenant_id)
         #if canvas.get_preset_param():
         #    req["question"] = ""
         conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
