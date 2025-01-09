@@ -35,7 +35,10 @@ class KnowledgebaseService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_tenant_ids(cls, joined_tenant_ids, user_id,
-                          page_number, items_per_page, orderby, desc, keywords):
+                          page_number, items_per_page,
+                          orderby, desc, keywords,
+                          parser_id=None
+                          ):
         fields = [
             cls.model.id,
             cls.model.avatar,
@@ -67,6 +70,8 @@ class KnowledgebaseService(CommonService):
                     cls.model.tenant_id == user_id))
                 & (cls.model.status == StatusEnum.VALID.value)
             )
+        if parser_id:
+            kbs = kbs.where(cls.model.parser_id == parser_id)
         if desc:
             kbs = kbs.order_by(cls.model.getter_by(orderby).desc())
         else:

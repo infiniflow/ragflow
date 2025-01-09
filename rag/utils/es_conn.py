@@ -9,6 +9,7 @@ from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
 from rag import settings
+from rag.settings import TAG_FLD, PAGERANK_FLD
 from rag.utils import singleton
 from api.utils.file_utils import get_project_base_directory
 import polars as pl
@@ -19,6 +20,7 @@ from rag.nlp import is_english, rag_tokenizer
 ATTEMPT_TIME = 2
 
 logger = logging.getLogger('ragflow.es_conn')
+
 
 @singleton
 class ESConnection(DocStoreConnection):
@@ -111,9 +113,19 @@ class ESConnection(DocStoreConnection):
     CRUD operations
     """
 
-    def search(self, selectFields: list[str], highlightFields: list[str], condition: dict, matchExprs: list[MatchExpr],
-               orderBy: OrderByExpr, offset: int, limit: int, indexNames: str | list[str],
-               knowledgebaseIds: list[str]) -> list[dict] | pl.DataFrame:
+    def search(
+            self, selectFields: list[str],
+            highlightFields: list[str],
+            condition: dict,
+            matchExprs: list[MatchExpr],
+            orderBy: OrderByExpr,
+            offset: int,
+            limit: int,
+            indexNames: str | list[str],
+            knowledgebaseIds: list[str],
+            aggFields: list[str] = [],
+            rank_feature: dict | None = None
+    ) -> list[dict] | pl.DataFrame:
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
         """
@@ -175,8 +187,13 @@ class ESConnection(DocStoreConnection):
                           similarity=similarity,
                           )
 
+        if bqry and rank_feature:
+            for fld, sc in rank_feature.items():
+                if fld != PAGERANK_FLD:
+                    fld = f"{TAG_FLD}.{fld}"
+                bqry.should.append(Q("rank_feature", field=fld, linear={}, boost=sc))
+
         if bqry:
-            bqry.should.append(Q("rank_feature", field="pagerank_fea", linear={}, boost=10))
             s = s.query(bqry)
         for field in highlightFields:
             s = s.highlight(field)
@@ -187,7 +204,7 @@ class ESConnection(DocStoreConnection):
                 order = "asc" if order == 0 else "desc"
                 if field in ["page_num_int", "top_int"]:
                     order_info = {"order": order, "unmapped_type": "float",
-                                "mode": "avg", "numeric_type": "double"}
+                                  "mode": "avg", "numeric_type": "double"}
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
                 else:
@@ -195,8 +212,11 @@ class ESConnection(DocStoreConnection):
                 orders.append({field: order_info})
             s = s.sort(*orders)
 
+        for fld in aggFields:
+            s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
+
         if limit > 0:
-            s = s[offset:offset+limit]
+            s = s[offset:offset + limit]
         q = s.to_dict()
         logger.debug(f"ESConnection.search {str(indexNames)} query: " + json.dumps(q))
 
@@ -240,7 +260,7 @@ class ESConnection(DocStoreConnection):
         logger.error("ESConnection.get timeout for 3 times!")
         raise Exception("ESConnection.get timeout.")
 
-    def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str) -> list[str]:
+    def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
         # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         operations = []
         for d in documents:
@@ -292,44 +312,57 @@ class ESConnection(DocStoreConnection):
                     if str(e).find("Timeout") > 0:
                         continue
             return False
-        else:
-            # update unspecific maybe-multiple documents
-            bqry = Q("bool")
-            for k, v in condition.items():
-                if not isinstance(k, str) or not v:
-                    continue
-                if k == "exist":
-                    bqry.filter.append(Q("exists", field=v))
-                    continue
-                if isinstance(v, list):
-                    bqry.filter.append(Q("terms", **{k: v}))
-                elif isinstance(v, str) or isinstance(v, int):
-                    bqry.filter.append(Q("term", **{k: v}))
-                else:
-                    raise Exception(
-                        f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
-            scripts = []
-            for k, v in newValue.items():
-                if k == "remove":
-                    scripts.append(f"ctx._source.remove('{v}');")
-                    continue
-                if (not isinstance(k, str) or not v) and k != "available_int":
-                    continue
+
+        # update unspecific maybe-multiple documents
+        bqry = Q("bool")
+        for k, v in condition.items():
+            if not isinstance(k, str) or not v:
+                continue
+            if k == "exist":
+                bqry.filter.append(Q("exists", field=v))
+                continue
+            if isinstance(v, list):
+                bqry.filter.append(Q("terms", **{k: v}))
+            elif isinstance(v, str) or isinstance(v, int):
+                bqry.filter.append(Q("term", **{k: v}))
+            else:
+                raise Exception(
+                    f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+        scripts = []
+        params = {}
+        for k, v in newValue.items():
+            if k == "remove":
                 if isinstance(v, str):
-                    scripts.append(f"ctx._source.{k} = '{v}'")
-                elif isinstance(v, int):
-                    scripts.append(f"ctx._source.{k} = {v}")
-                else:
-                    raise Exception(
-                        f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
+                    scripts.append(f"ctx._source.remove('{v}');")
+                if isinstance(v, dict):
+                    for kk, vv in v.items():
+                        scripts.append(f"int i=ctx._source.{kk}.indexOf(params.p_{kk});ctx._source.{kk}.remove(i);")
+                        params[f"p_{kk}"] = vv
+                continue
+            if k == "add":
+                if isinstance(v, dict):
+                    for kk, vv in v.items():
+                        scripts.append(f"ctx._source.{kk}.add(params.pp_{kk});")
+                        params[f"pp_{kk}"] = vv.strip()
+                continue
+            if (not isinstance(k, str) or not v) and k != "available_int":
+                continue
+            if isinstance(v, str):
+                scripts.append(f"ctx._source.{k} = '{v}'")
+            elif isinstance(v, int):
+                scripts.append(f"ctx._source.{k} = {v}")
+            else:
+                raise Exception(
+                    f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
         ubq = UpdateByQuery(
             index=indexName).using(
             self.es).query(bqry)
-        ubq = ubq.script(source="; ".join(scripts))
+        ubq = ubq.script(source="".join(scripts), params=params)
         ubq = ubq.params(refresh=True)
         ubq = ubq.params(slices=5)
         ubq = ubq.params(conflicts="proceed")
-        for i in range(3):
+
+        for _ in range(ATTEMPT_TIME):
             try:
                 _ = ubq.execute()
                 return True

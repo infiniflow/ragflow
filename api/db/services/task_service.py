@@ -69,6 +69,7 @@ class TaskService(CommonService):
             Knowledgebase.language,
             Knowledgebase.embd_id,
             Knowledgebase.pagerank,
+            Knowledgebase.parser_config.alias("kb_parser_config"),
             Tenant.img2txt_id,
             Tenant.asr_id,
             Tenant.llm_id,

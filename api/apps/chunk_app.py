@@ -19,9 +19,10 @@ import json
 from flask import request
 from flask_login import login_required, current_user
 
-from api.db.services.dialog_service import keyword_extraction
+from api.db.services.dialog_service import keyword_extraction, label_question
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import search, rag_tokenizer
+from rag.settings import PAGERANK_FLD
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -124,10 +125,14 @@ def set():
         "content_with_weight": req["content_with_weight"]}
     d["content_ltks"] = rag_tokenizer.tokenize(req["content_with_weight"])
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["important_kwd"] = req["important_kwd"]
-    d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
-    d["question_kwd"] = req["question_kwd"]
-    d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
+    if req.get("important_kwd"):
+        d["important_kwd"] = req["important_kwd"]
+        d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
+    if req.get("question_kwd"):
+        d["question_kwd"] = req["question_kwd"]
+        d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
+    if req.get("tag_kwd"):
+        d["tag_kwd"] = req["tag_kwd"]
     if "available_int" in req:
         d["available_int"] = req["available_int"]
 
@@ -220,7 +225,7 @@ def create():
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(message="Document not found!")
-        d["kb_id"] = doc.kb_id
+        d["kb_id"] = [doc.kb_id]
         d["docnm_kwd"] = doc.name
         d["title_tks"] = rag_tokenizer.tokenize(doc.name)
         d["doc_id"] = doc.id
@@ -233,7 +238,7 @@ def create():
         if not e:
             return get_data_error_result(message="Knowledgebase not found!")
         if kb.pagerank:
-            d["pagerank_fea"] = kb.pagerank
+            d[PAGERANK_FLD] = kb.pagerank
 
         embd_id = DocumentService.get_embd_id(req["doc_id"])
         embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING.value, embd_id)
@@ -294,12 +299,16 @@ def retrieval_test():
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
 
+        labels = label_question(question, [kb])
         retr = settings.retrievaler if kb.parser_id != ParserType.KG else settings.kg_retrievaler
         ranks = retr.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
                                similarity_threshold, vector_similarity_weight, top,
-                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"))
+                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
+                               rank_feature=labels
+                               )
         for c in ranks["chunks"]:
             c.pop("vector", None)
+        ranks["labels"] = labels
 
         return get_json_result(data=ranks)
     except Exception as e:

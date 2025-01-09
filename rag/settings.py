@@ -38,6 +38,9 @@ SVR_QUEUE_RETENTION = 60*60
 SVR_QUEUE_MAX_LEN = 1024
 SVR_CONSUMER_NAME = "rag_flow_svr_consumer"
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_consumer_group"
+PAGERANK_FLD = "pagerank_fea"
+TAG_FLD = "tag_feas"
+
 
 def print_rag_settings():
     logging.info(f"MAX_CONTENT_LENGTH: {DOC_MAXIMUM_SIZE}")

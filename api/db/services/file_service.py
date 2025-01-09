@@ -251,10 +251,7 @@ class FileService(CommonService):
     def insert(cls, file):
         if not cls.save(**file):
             raise RuntimeError("Database error (File)!")
-        e, file = cls.get_by_id(file["id"])
-        if not e:
-            raise RuntimeError("Database error (File retrieval)!")
-        return file
+        return File(**file)
 
     @classmethod
     @DB.connection_context()
