@@ -194,6 +194,7 @@ export const useFetchChunk = (chunkId?: string): ResponseType<any> => {
     queryKey: ['fetchChunk'],
     enabled: !!chunkId,
     initialData: {},
+    gcTime: 0,
     queryFn: async () => {
       const data = await kbService.get_chunk({
         chunk_id: chunkId,

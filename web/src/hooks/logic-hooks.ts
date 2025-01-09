@@ -405,30 +405,6 @@ export interface IRemoveMessageById {
   removeMessageById(messageId: string): void;
 }
 
-export const useRemoveMessageById = (
-  setCurrentConversation: (
-    callback: (state: IClientConversation) => IClientConversation,
-  ) => void,
-) => {
-  const removeMessageById = useCallback(
-    (messageId: string) => {
-      setCurrentConversation((pre) => {
-        const nextMessages =
-          pre.message?.filter(
-            (x) => getMessagePureId(x.id) !== getMessagePureId(messageId),
-          ) ?? [];
-        return {
-          ...pre,
-          message: nextMessages,
-        };
-      });
-    },
-    [setCurrentConversation],
-  );
-
-  return { removeMessageById };
-};
-
 export const useRemoveMessagesAfterCurrentMessage = (
   setCurrentConversation: (
     callback: (state: IClientConversation) => IClientConversation,
