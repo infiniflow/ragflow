@@ -33,7 +33,7 @@ A list of components required:
 
 - [Begin](https://ragflow.io/docs/dev/begin_component)
 - [Interact](https://ragflow.io/docs/dev/interact_component)
-- Retrieval
+- [Retrieval](https://ragflow.io/docs/dev/retrieval_component)
 - [Generate](https://ragflow.io/docs/dev/generate_component)
 - ExeSQL
 
