@@ -322,6 +322,8 @@ export default {
  <li>關鍵字由 LLM 生成，既昂貴又耗時。
 </ul>
  `,
+      tags: '標籤',
+      addTag: '增加標籤',
     },
     chunk: {
       chunk: '解析塊',

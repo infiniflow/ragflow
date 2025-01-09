@@ -339,6 +339,8 @@ export default {
       <li>关键字由 LLM 生成，这既昂贵又耗时。 </li>
       </ul>
       `,
+      tags: '标签',
+      addTag: '增加标签',
     },
     chunk: {
       chunk: '解析块',

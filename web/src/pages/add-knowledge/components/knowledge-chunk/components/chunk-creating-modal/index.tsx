@@ -1,15 +1,23 @@
 import EditTag from '@/components/edit-tag';
 import { useFetchChunk } from '@/hooks/chunk-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons';
-import { Divider, Form, Input, Modal, Space, Switch, Tooltip } from 'antd';
-import React, { useEffect, useState } from 'react';
+import { IChunk } from '@/interfaces/database/knowledge';
+import { DeleteOutlined } from '@ant-design/icons';
+import { Divider, Form, Input, Modal, Space, Switch } from 'antd';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDeleteChunkByIds } from '../../hooks';
+import {
+  transformTagFeaturesArrayToObject,
+  transformTagFeaturesObjectToArray,
+} from '../../utils';
+import { TagFeatureItem } from './tag-feature-item';
 
-type FieldType = {
-  content?: string;
-};
+type FieldType = Pick<
+  IChunk,
+  'content_with_weight' | 'tag_kwd' | 'question_kwd' | 'important_kwd'
+>;
+
 interface kFProps {
   doc_id: string;
   chunkId: string | undefined;
@@ -26,62 +34,48 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
 }) => {
   const [form] = Form.useForm();
   const [checked, setChecked] = useState(false);
-  const [keywords, setKeywords] = useState<string[]>([]);
-  const [question, setQuestion] = useState<string[]>([]);
-  const [tagKeyWords, setTagKeyWords] = useState<string[]>([]);
   const { removeChunk } = useDeleteChunkByIds();
   const { data } = useFetchChunk(chunkId);
   const { t } = useTranslation();
 
   const isTagParser = parserId === 'tag';
 
-  useEffect(() => {
-    if (data?.code === 0) {
-      const {
-        content_with_weight,
-        important_kwd = [],
-        available_int,
-        question_kwd = [],
-        tag_kwd = [],
-      } = data.data;
-      form.setFieldsValue({ content: content_with_weight });
-      setKeywords(important_kwd);
-      setQuestion(question_kwd);
-      setTagKeyWords(tag_kwd);
-      setChecked(available_int !== 0);
-    }
-
-    if (!chunkId) {
-      setKeywords([]);
-      setQuestion([]);
-      setTagKeyWords([]);
-      form.setFieldsValue({ content: undefined });
-    }
-  }, [data, form, chunkId]);
-
-  const handleOk = async () => {
+  const handleOk = useCallback(async () => {
     try {
       const values = await form.validateFields();
+      console.log('🚀 ~ handleOk ~ values:', values);
+
       onOk?.({
-        content: values.content,
-        keywords, // keywords
-        question_kwd: question,
-        tag_kwd: tagKeyWords,
+        ...values,
+        tag_feas: transformTagFeaturesArrayToObject(values.tag_feas),
         available_int: checked ? 1 : 0, // available_int
       });
     } catch (errorInfo) {
       console.log('Failed:', errorInfo);
     }
-  };
+  }, [checked, form, onOk]);
 
-  const handleRemove = () => {
+  const handleRemove = useCallback(() => {
     if (chunkId) {
       return removeChunk([chunkId], doc_id);
     }
-  };
-  const handleCheck = () => {
+  }, [chunkId, doc_id, removeChunk]);
+
+  const handleCheck = useCallback(() => {
     setChecked(!checked);
-  };
+  }, [checked]);
+
+  useEffect(() => {
+    if (data?.code === 0) {
+      const { available_int, tag_feas } = data.data;
+      form.setFieldsValue({
+        ...(data.data || {}),
+        tag_feas: transformTagFeaturesObjectToArray(tag_feas),
+      });
+
+      setChecked(available_int !== 0);
+    }
+  }, [data, form, chunkId]);
 
   return (
     <Modal
@@ -95,31 +89,34 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
       <Form form={form} autoComplete="off" layout={'vertical'}>
         <Form.Item<FieldType>
           label={t('chunk.chunk')}
-          name="content"
+          name="content_with_weight"
           rules={[{ required: true, message: t('chunk.chunkMessage') }]}
         >
           <Input.TextArea autoSize={{ minRows: 4, maxRows: 10 }} />
         </Form.Item>
+
+        <Form.Item<FieldType> label={t('chunk.keyword')} name="important_kwd">
+          <EditTag></EditTag>
+        </Form.Item>
+        <Form.Item<FieldType>
+          label={t('chunk.question')}
+          name="question_kwd"
+          tooltip={t('chunk.questionTip')}
+        >
+          <EditTag></EditTag>
+        </Form.Item>
+        {isTagParser && (
+          <Form.Item<FieldType>
+            label={t('knowledgeConfiguration.tagName')}
+            name="tag_kwd"
+          >
+            <EditTag></EditTag>
+          </Form.Item>
+        )}
+
+        {!isTagParser && <TagFeatureItem></TagFeatureItem>}
       </Form>
-      <section>
-        <p className="mb-2">{t('chunk.keyword')} </p>
-        <EditTag tags={keywords} setTags={setKeywords} />
-      </section>
-      <section className="mt-4">
-        <div className="flex items-center gap-2 mb-2">
-          <span>{t('chunk.question')}</span>
-          <Tooltip title={t('chunk.questionTip')}>
-            <QuestionCircleOutlined className="text-xs" />
-          </Tooltip>
-        </div>
-        <EditTag tags={question} setTags={setQuestion} />
-      </section>
-      {isTagParser && (
-        <section className="mt-4">
-          <p className="mb-2">{t('knowledgeConfiguration.tagName')} </p>
-          <EditTag tags={tagKeyWords} setTags={setTagKeyWords} />
-        </section>
-      )}
+
       {chunkId && (
         <section>
           <Divider></Divider>

@@ -20,6 +20,7 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
+import { useState } from 'react';
 import { useSearchParams } from 'umi';
 import { useHandleSearchChange } from './logic-hooks';
 import { useSetPaginationParams } from './route-hook';
@@ -34,9 +35,9 @@ export const useKnowledgeBaseId = (): string => {
 export const useFetchKnowledgeBaseConfiguration = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
 
-  const { data, isFetching: loading } = useQuery({
+  const { data, isFetching: loading } = useQuery<IKnowledge>({
     queryKey: ['fetchKnowledgeDetail'],
-    initialData: {},
+    initialData: {} as IKnowledge,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.get_kb_detail({
@@ -339,6 +340,26 @@ export const useRenameTag = () => {
 
 export const useTagIsRenaming = () => {
   return useIsMutating({ mutationKey: ['renameTag'] }) > 0;
+};
+
+export const useFetchTagListByKnowledgeIds = () => {
+  const [knowledgeIds, setKnowledgeIds] = useState<string[]>([]);
+
+  const { data, isFetching: loading } = useQuery<Array<[string, number]>>({
+    queryKey: ['fetchTagListByKnowledgeIds'],
+    enabled: knowledgeIds.length > 0,
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await kbService.listTagByKnowledgeIds({
+        kb_ids: knowledgeIds.join(','),
+      });
+      const list = data?.data || [];
+      return list;
+    },
+  });
+
+  return { list: data, loading, setKnowledgeIds };
 };
 
 //#endregion
