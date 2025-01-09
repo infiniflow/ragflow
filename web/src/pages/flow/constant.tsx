@@ -298,9 +298,7 @@ export const componentMenuList = [
   {
     name: Operator.Message,
   },
-  {
-    name: Operator.Relevant,
-  },
+
   {
     name: Operator.RewriteQuestion,
   },
@@ -428,7 +426,6 @@ export const initialGenerateValues = {
 
 export const initialRewriteQuestionValues = {
   ...initialLlmBaseValues,
-  loop: 1,
 };
 
 export const initialRelevantValues = {

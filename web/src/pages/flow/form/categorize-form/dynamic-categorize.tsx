@@ -138,7 +138,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                   }
                 >
                   <Form.Item
-                    label={t('name')}
+                    label={t('categoryName')}
                     name={[field.name, 'name']}
                     validateTrigger={['onChange', 'onBlur']}
                     rules={[
@@ -178,7 +178,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                   >
                     <Input.TextArea rows={3} />
                   </Form.Item>
-                  <Form.Item label={t('to')} name={[field.name, 'to']}>
+                  <Form.Item label={t('nextStep')} name={[field.name, 'to']}>
                     <Select
                       allowClear
                       options={buildCategorizeToOptions(
@@ -199,7 +199,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
                 className={styles.addButton}
                 icon={<PlusOutlined />}
               >
-                {t('addItem')}
+                {t('addCategory')}
               </Button>
             </Flex>
           );

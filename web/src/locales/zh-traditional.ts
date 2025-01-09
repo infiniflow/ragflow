@@ -699,7 +699,7 @@ export default {
       generateDescription: `此元件用於呼叫LLM生成文本，請注意提示的設定。`,
       categorizeDescription: `此組件用於對文字進行分類。請指定類別的名稱、描述和範例。每個類別都指向不同的下游組件。`,
       relevantDescription: `此元件用來判斷upstream的輸出是否與使用者最新的問題相關，『是』代表相關，『否』代表不相關。`,
-      rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。只有「檢索」可作為其下游。`,
+      rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。`,
       messageDescription:
         '此元件用於向使用者發送靜態訊息。您可以準備幾條訊息，這些訊息將隨機選擇。',
       keywordDescription: `該組件用於從用戶的問題中提取關鍵字。 Top N指定需要提取的關鍵字數量。`,
@@ -1065,6 +1065,9 @@ export default {
       addVariable: '新增變數',
       variableSettings: '變數設定',
       systemPrompt: '系統提示詞',
+      addCategory: '新增分類',
+      categoryName: '分類名稱',
+      nextStep: '下一步',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

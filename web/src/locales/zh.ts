@@ -719,7 +719,7 @@ export default {
       generateDescription: `此组件用于调用LLM生成文本，请注意提示的设置。`,
       categorizeDescription: `此组件用于对文本进行分类。请指定类别的名称、描述和示例。每个类别都指向不同的下游组件。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
-      rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。只有“检索”可作为其下游。`,
+      rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:
         '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
@@ -1106,9 +1106,9 @@ export default {
         minus: '减号',
         semicolon: '分号',
       },
-      addVariable: '新增变量',
-      variableSettings: '变量设置',
-      systemPrompt: '系统提示词',
+      addCategory: '新增分类',
+      categoryName: '分类名称',
+      nextStep: '下一步',
     },
     footer: {
       profile: 'All rights reserved @ React',
