@@ -193,6 +193,7 @@ const Chunk = () => {
           visible={chunkUpdatingVisible}
           loading={chunkUpdatingLoading}
           onOk={onChunkUpdatingOk}
+          parserId={documentInfo.parser_id}
         />
       )}
       <KnowledgeGraphModal></KnowledgeGraphModal>

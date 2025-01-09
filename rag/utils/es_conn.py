@@ -41,7 +41,7 @@ class ESConnection(DocStoreConnection):
                 logger.warning(f"{str(e)}. Waiting Elasticsearch {settings.ES['hosts']} to be healthy.")
                 time.sleep(5)
         if not self.es.ping():
-            msg = f"Elasticsearch {settings.ES['hosts']} didn't become healthy in 120s."
+            msg = f"Elasticsearch {settings.ES['hosts']} is unhealthy in 120s."
             logger.error(msg)
             raise Exception(msg)
         v = self.info.get("version", {"number": "8.11.3"})
