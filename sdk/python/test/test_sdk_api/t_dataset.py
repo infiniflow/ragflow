@@ -27,7 +27,7 @@ def test_create_dataset_with_invalid_parameter(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     valid_chunk_methods = ["naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one",
-                           "knowledge_graph", "email"]
+                           "knowledge_graph", "email", "tag"]
     chunk_method = "invalid_chunk_method"
     with pytest.raises(Exception) as exc_info:
         rag.create_dataset("test_create_dataset_with_invalid_chunk_method",chunk_method=chunk_method)
