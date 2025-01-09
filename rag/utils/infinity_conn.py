@@ -10,6 +10,7 @@ from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
 from infinity.errors import ErrorCode
 from rag import settings
+from rag.settings import PAGERANK_FLD
 from rag.utils import singleton
 import polars as pl
 from polars.series.series import Series
@@ -231,8 +232,7 @@ class InfinityConnection(DocStoreConnection):
     """
 
     def search(
-            self,
-            selectFields: list[str],
+            self, selectFields: list[str],
             highlightFields: list[str],
             condition: dict,
             matchExprs: list[MatchExpr],
@@ -241,7 +241,9 @@ class InfinityConnection(DocStoreConnection):
             limit: int,
             indexNames: str | list[str],
             knowledgebaseIds: list[str],
-    ) -> tuple[pl.DataFrame, int]:
+            aggFields: list[str] = [],
+            rank_feature: dict | None = None
+    ) -> list[dict] | pl.DataFrame:
         """
         TODO: Infinity doesn't provide highlight
         """
@@ -256,7 +258,7 @@ class InfinityConnection(DocStoreConnection):
             if essential_field not in selectFields:
                 selectFields.append(essential_field)
         if matchExprs:
-            for essential_field in ["score()", "pagerank_fea"]:
+            for essential_field in ["score()", PAGERANK_FLD]:
                 selectFields.append(essential_field)
 
         # Prepare expressions common to all tables
@@ -346,7 +348,7 @@ class InfinityConnection(DocStoreConnection):
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, selectFields)
         if matchExprs:
-            res = res.sort(pl.col("SCORE") + pl.col("pagerank_fea"), descending=True, maintain_order=True)
+            res = res.sort(pl.col("SCORE") + pl.col(PAGERANK_FLD), descending=True, maintain_order=True)
         res = res.limit(limit)
         logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
@@ -378,7 +380,7 @@ class InfinityConnection(DocStoreConnection):
         return res_fields.get(chunkId, None)
 
     def insert(
-            self, documents: list[dict], indexName: str, knowledgebaseId: str
+            self, documents: list[dict], indexName: str, knowledgebaseId: str = None
     ) -> list[str]:
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
@@ -456,7 +458,7 @@ class InfinityConnection(DocStoreConnection):
             elif k in ["page_num_int", "top_int"]:
                 assert isinstance(v, list)
                 newValue[k] = "_".join(f"{num:08x}" for num in v)
-            elif k == "remove" and v in ["pagerank_fea"]:
+            elif k == "remove" and v in [PAGERANK_FLD]:
                 del newValue[k]
                 newValue[v] = 0
         logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {newValue}.")
