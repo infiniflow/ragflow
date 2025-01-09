@@ -31,7 +31,7 @@ env:
   RAGFLOW_IMAGE: infiniflow/ragflow:v0.15.1-slim
   #
   # To download the RAGFlow Docker image with embedding models, uncomment the following line instead:
-  # RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1
+  # RAGFLOW_IMAGE: infiniflow/ragflow:v0.15.1
   #
   # The Docker image of the v0.15.1 edition includes:
   # - Built-in embedding models:
