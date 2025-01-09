@@ -112,8 +112,11 @@ class ExeSQL(Generate, ABC):
                     if cursor.rowcount == 0:
                         sql_res.append({"content": "\nTotal: 0\n No record in the database!"})
                         break
-                    single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.top_n)])
-                    single_res.columns = [i[0] for i in cursor.description]
+                    if self._param.db_type == 'mssql':
+                        single_res  = pd.DataFrame.from_records(cursor.fetchmany(self._param.top_n),columns = [desc[0] for desc in cursor.description])
+                    else:
+                        single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.top_n)])
+                        single_res.columns = [i[0] for i in cursor.description]
                     sql_res.append({"content": "\nTotal: " + str(cursor.rowcount) + "\n" + single_res.to_markdown()})
                     break
                 except Exception as e:
