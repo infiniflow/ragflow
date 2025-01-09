@@ -129,7 +129,8 @@ def set():
     d["important_kwd"] = req["important_kwd"]
     d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
     d["question_kwd"] = req["question_kwd"]
-    d["tag_kwd"] = req["tag_kwd"]
+    if req.get("tag_kwd"):
+        d["tag_kwd"] = req["tag_kwd"]
     d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
     if "available_int" in req:
         d["available_int"] = req["available_int"]
