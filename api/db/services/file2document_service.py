@@ -43,10 +43,7 @@ class File2DocumentService(CommonService):
     def insert(cls, obj):
         if not cls.save(**obj):
             raise RuntimeError("Database error (File)!")
-        e, obj = cls.get_by_id(obj["id"])
-        if not e:
-            raise RuntimeError("Database error (File retrieval)!")
-        return obj
+        return File2Document(**obj)
 
     @classmethod
     @DB.connection_context()
@@ -63,9 +60,8 @@ class File2DocumentService(CommonService):
     def update_by_file_id(cls, file_id, obj):
         obj["update_time"] = current_timestamp()
         obj["update_date"] = datetime_format(datetime.now())
-        # num = cls.model.update(obj).where(cls.model.id == file_id).execute()
-        e, obj = cls.get_by_id(cls.model.id)
-        return obj
+        cls.model.update(obj).where(cls.model.id == file_id).execute()
+        return File2Document(**obj)
 
     @classmethod
     @DB.connection_context()

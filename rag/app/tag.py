@@ -94,7 +94,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         delimiter = "\t" if any("\t" in line for line in lines) else ","
 
         fails = []
-        content, tags = "", ""
+        content = ""
         res = []
         reader = csv.reader(lines, delimiter=delimiter)
 
@@ -104,7 +104,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
             elif len(row) == 2:
                 content += "\n" + row[0]
                 res.append(beAdoc(deepcopy(doc), content, row[1], eng, i))
-                content, tags = "", ""
+                content = ""
             if len(res) % 999 == 0:
                 callback(len(res) * 0.6 / len(lines), ("Extract Tags: {}".format(len(res)) + (
                     f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))

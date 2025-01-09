@@ -218,6 +218,22 @@ def list_tags(kb_id):
     return get_json_result(data=tags)
 
 
+@manager.route('/tags', methods=['GET'])  # noqa: F821
+@login_required
+def list_tags_from_kbs():
+    kb_ids = request.args.get("kb_ids", "").split(",")
+    for kb_id in kb_ids:
+        if not KnowledgebaseService.accessible(kb_id, current_user.id):
+            return get_json_result(
+                data=False,
+                message='No authorization.',
+                code=settings.RetCode.AUTHENTICATION_ERROR
+            )
+
+    tags = settings.retrievaler.all_tags(current_user.id, kb_ids)
+    return get_json_result(data=tags)
+
+
 @manager.route('/<kb_id>/rm_tags', methods=['POST'])  # noqa: F821
 @login_required
 def rm_tags(kb_id):

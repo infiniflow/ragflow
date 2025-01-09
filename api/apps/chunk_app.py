@@ -20,7 +20,6 @@ from flask import request
 from flask_login import login_required, current_user
 
 from api.db.services.dialog_service import keyword_extraction, label_question
-from graphrag.utils import get_tags_from_cache, set_tags_to_cache
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import search, rag_tokenizer
 from rag.settings import PAGERANK_FLD
@@ -126,12 +125,14 @@ def set():
         "content_with_weight": req["content_with_weight"]}
     d["content_ltks"] = rag_tokenizer.tokenize(req["content_with_weight"])
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["important_kwd"] = req["important_kwd"]
-    d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
-    d["question_kwd"] = req["question_kwd"]
+    if req.get("important_kwd"):
+        d["important_kwd"] = req["important_kwd"]
+        d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
+    if req.get("question_kwd"):
+        d["question_kwd"] = req["question_kwd"]
+        d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
     if req.get("tag_kwd"):
         d["tag_kwd"] = req["tag_kwd"]
-    d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
     if "available_int" in req:
         d["available_int"] = req["available_int"]
 
@@ -224,7 +225,7 @@ def create():
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(message="Document not found!")
-        d["kb_id"] = doc.kb_id
+        d["kb_id"] = [doc.kb_id]
         d["docnm_kwd"] = doc.name
         d["title_tks"] = rag_tokenizer.tokenize(doc.name)
         d["doc_id"] = doc.id
