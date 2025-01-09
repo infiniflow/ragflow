@@ -83,7 +83,9 @@ export interface IChunk {
   doc_id: string;
   doc_name: string;
   img_id: string;
-  important_kwd: any[];
+  important_kwd?: string[];
+  question_kwd?: string[]; // keywords
+  tag_kwd?: string[];
   positions: number[][];
 }
 

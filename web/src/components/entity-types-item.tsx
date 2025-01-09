@@ -18,8 +18,6 @@ const EntityTypesItem = () => {
       label={t('entityTypes')}
       rules={[{ required: true }]}
       initialValue={initialEntityTypes}
-      valuePropName="tags"
-      trigger="setTags"
     >
       <EditTag></EditTag>
     </Form.Item>

@@ -96,23 +96,17 @@ export const useUpdateChunk = () => {
 
   const onChunkUpdatingOk = useCallback(
     async ({
-      content,
-      keywords,
+      content_with_weight,
+      important_kwd,
       available_int,
       question_kwd,
       tag_kwd,
-    }: {
-      content: string;
-      keywords: string;
-      available_int: number;
-      question_kwd: string;
-      tag_kwd: string;
-    }) => {
+    }: IChunk) => {
       const code = await createChunk({
-        content_with_weight: content,
+        content_with_weight,
         doc_id: documentId,
         chunk_id: chunkId,
-        important_kwd: keywords, // keywords
+        important_kwd, // keywords
         available_int,
         question_kwd,
         tag_kwd,
