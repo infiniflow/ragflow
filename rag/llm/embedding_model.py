@@ -490,6 +490,7 @@ class BedrockEmbed(Base):
 
         return np.array(embeddings), token_count
 
+
 class GeminiEmbed(Base):
     def __init__(self, key, model_name='models/text-embedding-004',
                  **kwargs):
@@ -505,7 +506,7 @@ class GeminiEmbed(Base):
         for i in range(0, len(texts), batch_size):
             result = genai.embed_content(
                 model=self.model_name,
-                content=texts[i, i + batch_size],
+                content=texts[i: i + batch_size],
                 task_type="retrieval_document",
                 title="Embedding of single string")
             ress.extend(result['embedding'])
@@ -519,7 +520,8 @@ class GeminiEmbed(Base):
             task_type="retrieval_document",
             title="Embedding of single string")
         token_count = num_tokens_from_string(text)
-        return np.array(result['embedding']),token_count
+        return np.array(result['embedding']), token_count
+
 
 class NvidiaEmbed(Base):
     def __init__(

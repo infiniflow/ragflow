@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 10
 slug: /text2sql_agent
 ---
 
@@ -9,7 +9,7 @@ Build a Text2SQL agent leverging RAGFlow's RAG capabilities. Contributed by @Tes
 
 ## Scenario
 
-The Text2SQL agent is designed to bridge the gap between Natural Language Processing (NLP) and Structured Query Language (SQL). Its key advantages are as follows:
+The Text2SQL agent bridges the gap between Natural Language Processing (NLP) and Structured Query Language (SQL). Its key advantages are as follows:
 
 - **Assisting non-technical users with SQL**: Not all users have a background in SQL or understand the structure of the tables involved in queries. With a Text2SQL agent, users can pose questions or request data in natural language without needing an in-depth knowledge of the database structure or SQL syntax.
 
@@ -31,10 +31,10 @@ However, traditional Text2SQL solutions often require model fine-tuning, which c
 
 A list of components required:
 
-- Begin
-- Interface
+- [Begin](https://ragflow.io/docs/dev/begin_component)
+- [Interact](https://ragflow.io/docs/dev/interact_component)
 - Retrieval
-- Generate
+- [Generate](https://ragflow.io/docs/dev/generate_component)
 - ExeSQL
 
 ## Procedure

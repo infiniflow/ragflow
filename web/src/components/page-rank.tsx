@@ -17,12 +17,7 @@ const PageRank = () => {
             <Slider max={100} style={{ width: '100%' }} />
           </Form.Item>
         </Flex>
-        <Form.Item
-          name={['pagerank']}
-          noStyle
-          initialValue={0}
-          rules={[{ required: true }]}
-        >
+        <Form.Item name={['pagerank']} noStyle rules={[{ required: true }]}>
           <InputNumber max={100} min={0} />
         </Form.Item>
       </Flex>

@@ -33,12 +33,11 @@ def main(args):
     images, outputs = init_in_out(args)
     if args.mode.lower() == "layout":
         detr = LayoutRecognizer("layout")
+        layouts = detr.forward(images, thr=float(args.threshold))
     if args.mode.lower() == "tsr":
-        labels = TableStructureRecognizer.labels
         detr = TableStructureRecognizer()
         ocr = OCR()
-
-    layouts = detr(images, float(args.threshold))
+        layouts = detr(images, thr=float(args.threshold))
     for i, lyt in enumerate(layouts):
         if args.mode.lower() == "tsr":
             #lyt = [t for t in lyt if t["type"] == "table column"]
@@ -50,7 +49,7 @@ def main(args):
                 "bbox": [t["x0"], t["top"], t["x1"], t["bottom"]],
                 "score": t["score"]
             } for t in lyt]
-        img = draw_box(images[i], lyt, labels, float(args.threshold))
+        img = draw_box(images[i], lyt, detr.labels, float(args.threshold))
         img.save(outputs[i], quality=95)
         logging.info("save result to: " + outputs[i])
 

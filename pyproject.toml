@@ -31,7 +31,7 @@ dashscope = "1.20.11"
 deepl = "1.18.0"
 demjson3 = "3.0.6"
 discord-py = "2.3.2"
-duckduckgo-search = "6.1.9"
+duckduckgo-search = "~6.3.0"
 editdistance = "0.8.1"
 elastic-transport = "8.12.0"
 elasticsearch = "8.12.1"
@@ -120,8 +120,8 @@ mini-racer = "^0.12.4"
 pyodbc = "^5.2.0"
 pyicu = "^2.13.1"
 flasgger = "^0.9.7.1"
-polars = { version = "^1.9.0", markers = "platform_machine == 'x86_64'" }
-polars-lts-cpu = { version = "^1.9.0", markers = "platform_machine == 'arm64'" }
+#polars = { version = "^1.9.0", markers = "platform_machine == 'x86_64'" }
+polars-lts-cpu = "^1.9.0"
 xxhash = "^3.5.0"
 
 
