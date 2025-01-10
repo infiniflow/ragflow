@@ -37,6 +37,8 @@ export default {
       spanish: 'Tiếng Tây Ban Nha',
       japanese: 'Tiếng Nhật',
       embedIntoSite: 'Nhúng vào trang web',
+      nextPage: 'Tới',
+      previousPage: 'Lùi',
     },
     login: {
       login: 'Đăng nhập',
@@ -167,6 +169,7 @@ export default {
       autoQuestions: 'Câu hỏi tự động',
       autoQuestionsTip: `Trích xuất N câu hỏi cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các câu hỏi đó. Bạn có thể kiểm tra hoặc cập nhật các câu hỏi đã thêm cho một khối từ danh sách khối. Tính năng này sẽ không làm gián đoạn quá trình phân khối nếu xảy ra lỗi, ngoại trừ việc nó có thể thêm kết quả trống vào khối gốc. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
       delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token".`,
+      redo: `Bạn có muốn xóa các đoạn {{chunkNum}} hiện có không?`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -304,7 +307,24 @@ export default {
       entityTypes: 'Loại thực thể',
       vietnamese: 'Tiếng Việt',
       pageRank: 'Xếp hạng trang',
-      pageRankTip: `Điều này được sử dụng để tăng điểm liên quan. Điểm liên quan với tất cả các khối được truy xuất sẽ cộng với số này, Khi bạn muốn tìm kiếm cơ sở kiến ​​thức đã cho ở vị trí đầu tiên, hãy đặt điểm "Page Rank" cao hơn những điểm khác.`,
+      pageRankTip: `Điều này được sử dụng để tăng điểm liên quan. Điểm liên quan với tất cả các khối được truy xuất sẽ cộng với số này, Khi bạn muốn tìm kiếm cơ sở kiến thức đã cho ở vị trí đầu tiên, hãy đặt điểm "Page Rank" cao hơn những điểm khác.`,
+      tag: `<p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn được cho là sẽ được sử dụng bởi các cơ sở kiến thức khác để thêm thẻ vào các đoạn của chúng, các truy vấn tới đó cũng sẽ có thẻ.</p> 
+<p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn <b>KHÔNG</b> được dự định tham gia vào quy trình RAG.</p> 
+<p>Các đoạn trong cơ sở kiến thức này là ví dụ về thẻ, thể hiện toàn bộ tập hợp thẻ và mối quan hệ giữa đoạn và thẻ.</p> 
+<p>Phương pháp phân đoạn này hỗ trợ định dạng tệp <b>EXCEL</b> và <b>CSV/TXT</b>.</p> 
+<p>Nếu tệp ở định dạng <b>Excel</b>, nó phải chứa hai cột không có tiêu đề: một cho nội dung và một cho thẻ, với cột nội dung đứng trước cột thẻ. Nhiều trang tính được chấp nhận, miễn là các cột được cấu trúc đúng.</p> 
+<p>Nếu tệp ở định dạng <b>CSV/TXT</b>, nó phải được mã hóa UTF-8 với TAB làm dấu phân cách để phân tách nội dung và thẻ.</p> 
+<p>Trong cột thẻ, có dấu <b>phẩy</b> tiếng Anh giữa các thẻ.</p> 
+<i>Các dòng văn bản không tuân theo các quy tắc trên sẽ bị bỏ qua và mỗi cặp sẽ được coi là một đoạn riêng biệt.</i>`,
+      tagName: 'Thẻ',
+      frequency: 'Tần số',
+      searchTags: 'Thẻ tìm kiếm',
+      tagTable: 'Bảng',
+      tagSet: 'Thư viện',
+      tagSetTip: `<p>Việc chọn các cơ sở kiến thức 'Tag' giúp gắn thẻ cho từng đoạn.</p> <p>Truy vấn đến các đoạn đó cũng sẽ kèm theo thẻ.</p> Quy trình này sẽ cải thiện độ chính xác của việc truy xuất bằng cách thêm nhiều thông tin hơn vào bộ dữ liệu, đặc biệt là khi có một tập hợp lớn các đoạn. <p>Sự khác biệt giữa thẻ và từ khóa:</p> <ul> <li>Thẻ là một tập hợp khép kín được người dùng định nghĩa và thao tác trong khi từ khóa là một tập hợp mở.</li> <li>Bạn cần tải lên các tập hợp thẻ với các mẫu trước khi sử dụng.</li> <li>Từ khóa được tạo bởi LLM, tốn kém và mất thời gian.</li> </ul>`,
+      topnTags: 'Thẻ Top-N',
+      tags: 'Thẻ',
+      addTag: 'Thêm thẻ',
     },
     chunk: {
       chunk: 'Khối',
@@ -1085,6 +1105,16 @@ export default {
       ccEmail: 'Email CC',
       toEmailTip: 'to_email: Email người nhận (Bắt buộc)',
       ccEmailTip: 'cc_email: Email CC (Tùy chọn)',
+      iteration: 'Khối lặp',
+      iterationDescription: `Thành phần này trước tiên chia đầu vào thành mảng bằng "dấu phân cách". Thực hiện các bước thao tác tương tự trên các phần tử trong mảng theo trình tự cho đến khi tất cả các kết quả được xuất ra, có thể được hiểu là bộ xử lý hàng loạt tác vụ. Ví dụ: trong nút lặp lại bản dịch văn bản dài, nếu tất cả nội dung được nhập vào nút LLM, có thể đạt đến giới hạn hội thoại duy nhất. Trước tiên, nút ngược dòng có thể chia văn bản dài thành nhiều mảnh và hợp tác với nút lặp đi lặp lại để thực hiện dịch hàng loạt trên mỗi phân đoạn để tránh đạt đến giới hạn tin nhắn LLM cho một cuộc hội thoại.`,
+      delimiterTip: `Dấu phân cách này được sử dụng để chia văn bản đầu vào thành nhiều đoạn văn bản, tiếng vang sẽ được thực hiện dưới dạng mục đầu vào của mỗi lần lặp.`,
+      delimiterOptions: {
+        comma: 'Dấu phẩy',
+        lineBreak: 'Ngắt dòng',
+        tab: 'Tab',
+        underline: 'Gạch chân',
+        diagonal: 'Diagonal',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',
