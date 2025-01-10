@@ -448,6 +448,13 @@ def do_handle_task(task):
     # prepare the progress callback function
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
 
+    # FIXME: workaround, Infinity doesn't support table parsing method, this check is to notify user
+    lower_case_doc_engine = settings.DOC_ENGINE.lower()
+    if lower_case_doc_engine == 'infinity' and task['parser_id'].lower() == 'table':
+        error_message = "Table parsing method is not supported by Infinity, please use other parsing methods or use Elasticsearch as the document engine."
+        progress_callback(-1, msg=error_message)
+        raise Exception(error_message)
+
     try:
         task_canceled = TaskService.do_cancel(task_id)
     except DoesNotExist:
