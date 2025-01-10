@@ -122,15 +122,17 @@ def kb_prompt(kbinfos, max_tokens):
             knowledges = knowledges[:i]
             break
 
+    #docs = DocumentService.get_by_ids([ck["doc_id"] for ck in kbinfos["chunks"][:chunks_num]])
+    #docs = {d.id: d.meta_fields for d in docs}
+
     doc2chunks = defaultdict(list)
-    for i, ck in enumerate(kbinfos["chunks"]):
-        if i >= chunks_num:
-            break
+    for ck in kbinfos["chunks"][:chunks_num]:
         doc2chunks[ck["docnm_kwd"]].append(ck["content_with_weight"])
 
     knowledges = []
     for nm, chunks in doc2chunks.items():
-        txt = f"Document: {nm} \nContains the following relevant fragments:\n"
+        txt = f"Document: {nm} \n"
+        txt += "Contains the following relevant fragments:\n"
         for i, chunk in enumerate(chunks, 1):
             txt += f"{i}. {chunk}\n"
         knowledges.append(txt)
