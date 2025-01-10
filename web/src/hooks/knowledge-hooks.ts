@@ -218,9 +218,8 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
       if (data.code === 0) {
         const res = data.data;
         return {
-          chunks: res.chunks,
+          ...res,
           documents: res.doc_aggs,
-          total: res.total,
         };
       }
       return (
