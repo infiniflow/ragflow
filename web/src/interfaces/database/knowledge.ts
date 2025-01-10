@@ -132,6 +132,7 @@ export interface ITestingResult {
   chunks: ITestingChunk[];
   documents: ITestingDocument[];
   total: number;
+  labels?: Record<string, number>;
 }
 
 export type IRenameTag = { fromTag: string; toTag: string };

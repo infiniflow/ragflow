@@ -26,7 +26,7 @@ export function TagWordCloud() {
         type: 'wordCloud',
         autoFit: true,
         layout: {
-          fontSize: [20, 100],
+          fontSize: [10, 50],
           // fontSize: (d: any) => {
           //   if (d.value) {
           //     return (d.value / sumValue) * 100 * (length / 10);
