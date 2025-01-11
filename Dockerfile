@@ -69,6 +69,8 @@ RUN if [ "$NEED_MIRROR" == "1" ]; then \
     if [ "$NEED_MIRROR" == "1" ]; then \
         pipx inject poetry poetry-plugin-pypi-mirror; \
     fi
+# Install Python dependencies
+RUN pip3 install polars-lts-cpu
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 ENV PATH=/root/.local/bin:$PATH
@@ -94,15 +96,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
     curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
     apt update && \
-    if [ -n "$ARCH" ] && [ "$ARCH" = "arm64" ]; then \
-        # MacOS ARM64 
-        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; \
-    else \
-        # (x86_64)
-        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
-    fi || \
-    { echo "Failed to install ODBC driver"; exit 1; }
-
+        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18
 
 
 # Add dependencies of selenium
