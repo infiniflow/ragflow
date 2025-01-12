@@ -1,5 +1,5 @@
 [general]
-version                  = "0.5.0"
+version                  = "0.6.0"
 time_zone                = "utc-8"
 
 [network]
