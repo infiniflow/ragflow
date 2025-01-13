@@ -169,6 +169,28 @@ export default {
       autoQuestions: 'Auto-question',
       autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
+      setMetaData: 'Set Meta Data',
+      pleaseInputJson: 'Please enter JSON',
+      documentMetaTips: `<p>The meta data is in Json format(it's not searchable). It will be added into prompt for LLM if any chunks of this document are included in the prompt.</p>
+<p>Examples:</p>
+<b>The meta data is:</b><br>
+<code>
+  {
+      "Author": "Alex Dowson",
+      "Date": "2024-11-12"
+  }
+</code><br>
+<b>The prompt will be:</b><br>
+<p>Document: the_name_of_document</p>
+<p>Author: Alex Dowson</p>
+<p>Date: 2024-11-12</p>
+<p>Relevant fragments as following:</p>
+<ul>
+<li>  Here is the chunk content....</li>
+<li>  Here is the chunk content....</li>
+</ul>
+`,
+      metaData: 'Meta data',
     },
     knowledgeConfiguration: {
       titleDescription:

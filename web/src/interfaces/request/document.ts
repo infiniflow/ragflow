@@ -10,3 +10,8 @@ export interface IChangeParserRequestBody {
   doc_id: string;
   parser_config: IChangeParserConfigRequestBody;
 }
+
+export interface IDocumentMetaRequestBody {
+  documentId: string;
+  meta: string; // json format string
+}

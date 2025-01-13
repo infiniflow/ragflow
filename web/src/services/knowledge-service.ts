@@ -31,6 +31,7 @@ const {
   document_infos,
   upload_and_parse,
   listTagByKnowledgeIds,
+  setMeta,
 } = api;
 
 const methods = {
@@ -55,7 +56,7 @@ const methods = {
     url: kb_list,
     method: 'get',
   },
-  // 文件管理
+  // document manager
   get_document_list: {
     url: get_document_list,
     method: 'get',
@@ -98,6 +99,10 @@ const methods = {
   },
   document_infos: {
     url: document_infos,
+    method: 'post',
+  },
+  setMeta: {
+    url: setMeta,
     method: 'post',
   },
   // chunk管理
