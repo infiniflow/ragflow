@@ -287,7 +287,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         yield {"answer": empty_res, "reference": kbinfos, "audio_binary": tts(tts_mdl, empty_res)}
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
-    kwargs["knowledge"] = "\n\n------\n\n".join(knowledges)
+    kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
