@@ -14,6 +14,7 @@ import { buildMessageItemReference } from '../utils';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
 import { useFetchFlowSSE } from '@/hooks/flow-hooks';
+import { buildMessageUuidWithRole } from '@/utils/chat';
 import styles from './index.less';
 
 const ChatContainer = () => {
@@ -54,7 +55,7 @@ const ChatContainer = () => {
               {derivedMessages?.map((message, i) => {
                 return (
                   <MessageItem
-                    key={message.id}
+                    key={buildMessageUuidWithRole(message)}
                     avatardialog={avatarData?.avatar}
                     item={message}
                     nickname="You"

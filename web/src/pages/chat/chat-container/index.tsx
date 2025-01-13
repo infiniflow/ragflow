@@ -18,6 +18,7 @@ import {
   useGetChatSearchParams,
 } from '@/hooks/chat-hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { buildMessageUuidWithRole } from '@/utils/chat';
 import { memo } from 'react';
 import styles from './index.less';
 
@@ -64,7 +65,7 @@ const ChatContainer = ({ controller }: IProps) => {
                       sendLoading &&
                       derivedMessages.length - 1 === i
                     }
-                    key={message.id}
+                    key={buildMessageUuidWithRole(message)}
                     item={message}
                     nickname={userInfo.nickname}
                     avatar={userInfo.avatar}

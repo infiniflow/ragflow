@@ -11,6 +11,7 @@ import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useFetchFlow } from '@/hooks/flow-hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { buildMessageUuidWithRole } from '@/utils/chat';
 import styles from './index.less';
 
 const FlowChatBox = () => {
@@ -46,7 +47,7 @@ const FlowChatBox = () => {
                       sendLoading &&
                       derivedMessages.length - 1 === i
                     }
-                    key={message.id}
+                    key={buildMessageUuidWithRole(message)}
                     nickname={userInfo.nickname}
                     avatar={userInfo.avatar}
                     avatardialog={cavasInfo.avatar}
