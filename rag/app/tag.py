@@ -91,14 +91,14 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
-        delimiter = "\t" if any("\t" in line for line in lines) else ","
 
         fails = []
         content = ""
         res = []
-        reader = csv.reader(lines, delimiter=delimiter)
+        reader = csv.reader(lines)
 
         for i, row in enumerate(reader):
+            row = [r.strip() for r in row if r.strip()]
             if len(row) != 2:
                 content += "\n" + lines[i]
             elif len(row) == 2:
