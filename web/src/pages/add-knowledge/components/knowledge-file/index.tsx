@@ -20,6 +20,7 @@ import {
   useHandleWebCrawl,
   useNavigateToOtherPage,
   useRenameDocument,
+  useShowMetaModal,
 } from './hooks';
 import ParsingActionCell from './parsing-action-cell';
 import ParsingStatusCell from './parsing-status-cell';
@@ -30,6 +31,7 @@ import FileUploadModal from '@/components/file-upload-modal';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { formatDate } from '@/utils/date';
 import styles from './index.less';
+import { SetMetaModal } from './set-meta-modal';
 
 const { Text } = Typography;
 
@@ -78,6 +80,14 @@ const KnowledgeFile = () => {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
   });
+
+  const {
+    showSetMetaModal,
+    hideSetMetaModal,
+    setMetaVisible,
+    setMetaLoading,
+    onSetMetaModalOk,
+  } = useShowMetaModal(currentRecord.id);
 
   const rowSelection = useGetRowSelection();
 
@@ -157,6 +167,7 @@ const KnowledgeFile = () => {
           setCurrentRecord={setRecord}
           showRenameModal={showRenameModal}
           showChangeParserModal={showChangeParserModal}
+          showSetMetaModal={showSetMetaModal}
           record={record}
         ></ParsingActionCell>
       ),
@@ -225,6 +236,15 @@ const KnowledgeFile = () => {
         loading={webCrawlUploadLoading}
         onOk={onWebCrawlUploadOk}
       ></WebCrawlModal>
+      {setMetaVisible && (
+        <SetMetaModal
+          visible={setMetaVisible}
+          hideModal={hideSetMetaModal}
+          onOk={onSetMetaModalOk}
+          loading={setMetaLoading}
+          initialMetaData={currentRecord.meta_fields}
+        ></SetMetaModal>
+      )}
     </div>
   );
 };
