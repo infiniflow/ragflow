@@ -26,6 +26,7 @@ from datetime import timedelta
 from api.db import LLMType, ParserType, StatusEnum
 from api.db.db_models import Dialog, DB
 from api.db.services.common_service import CommonService
+from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
 from api import settings
@@ -122,18 +123,21 @@ def kb_prompt(kbinfos, max_tokens):
             knowledges = knowledges[:i]
             break
 
-    #docs = DocumentService.get_by_ids([ck["doc_id"] for ck in kbinfos["chunks"][:chunks_num]])
-    #docs = {d.id: d.meta_fields for d in docs}
+    docs = DocumentService.get_by_ids([ck["doc_id"] for ck in kbinfos["chunks"][:chunks_num]])
+    docs = {d.id: d.meta_fields for d in docs}
 
-    doc2chunks = defaultdict(list)
+    doc2chunks = defaultdict(lambda: {"chunks": [], "meta": []})
     for ck in kbinfos["chunks"][:chunks_num]:
-        doc2chunks[ck["docnm_kwd"]].append(ck["content_with_weight"])
+        doc2chunks[ck["docnm_kwd"]]["chunks"].append(ck["content_with_weight"])
+        doc2chunks[ck["docnm_kwd"]]["meta"] = docs.get(ck["doc_id"], {})
 
     knowledges = []
-    for nm, chunks in doc2chunks.items():
+    for nm, cks_meta in doc2chunks.items():
         txt = f"Document: {nm} \n"
-        txt += "Contains the following relevant fragments:\n"
-        for i, chunk in enumerate(chunks, 1):
+        for k,v in cks_meta["meta"].items():
+            txt += f"{k}: {v}\n"
+        txt += "Relevant fragments as following:\n"
+        for i, chunk in enumerate(cks_meta["chunks"], 1):
             txt += f"{i}. {chunk}\n"
         knowledges.append(txt)
     return knowledges
