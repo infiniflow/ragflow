@@ -1,7 +1,10 @@
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChunk } from '@/interfaces/database/knowledge';
-import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import {
+  IChangeParserConfigRequestBody,
+  IDocumentMetaRequestBody,
+} from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import chatService from '@/services/chat-service';
 import kbService from '@/services/knowledge-service';
@@ -396,7 +399,6 @@ export const useRemoveNextDocument = () => {
 };
 
 export const useDeleteDocument = () => {
-  // const queryClient = useQueryClient();
   const {
     data,
     isPending: loading,
@@ -405,9 +407,7 @@ export const useDeleteDocument = () => {
     mutationKey: ['deleteDocument'],
     mutationFn: async (documentIds: string[]) => {
       const data = await kbService.document_delete({ doc_ids: documentIds });
-      // if (data.code === 0) {
-      //   queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
-      // }
+
       return data;
     },
   });
@@ -441,9 +441,7 @@ export const useUploadAndParseDocument = (uploadMethod: string) => {
         }
         const data = await chatService.uploadAndParseExternal(formData);
         return data?.data;
-      } catch (error) {
-        console.log('🚀 ~ useUploadAndParseDocument ~ error:', error);
-      }
+      } catch (error) {}
     },
   });
 
@@ -465,11 +463,41 @@ export const useParseDocument = () => {
         }
         return data;
       } catch (error) {
-        console.log('🚀 ~ mutationFn: ~ error:', error);
         message.error('error');
       }
     },
   });
 
   return { parseDocument: mutateAsync, data, loading };
+};
+
+export const useSetDocumentMeta = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['setDocumentMeta'],
+    mutationFn: async (params: IDocumentMetaRequestBody) => {
+      try {
+        const { data } = await kbService.setMeta({
+          meta: params.meta,
+          doc_id: params.documentId,
+        });
+
+        if (data?.code === 0) {
+          queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+
+          message.success(i18n.t('message.modified'));
+        }
+        return data?.code;
+      } catch (error) {
+        message.error('error');
+      }
+    },
+  });
+
+  return { setDocumentMeta: mutateAsync, data, loading };
 };
