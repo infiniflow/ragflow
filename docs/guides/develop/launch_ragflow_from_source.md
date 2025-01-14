@@ -35,26 +35,20 @@ cd ragflow/
 
 ### Install Python dependencies
 
-1. Install Poetry:
+1. Install uv:
    
    ```bash
-   pipx install poetry
+   pipx install uv
    ```
 
-2. Configure Poetry:
-
-   ```bash
-   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
-   ```
-
-3. Install Python dependencies:
+2. Install Python dependencies:
    - slim:
    ```bash
-   ~/.local/bin/poetry install --sync --no-root
+   uv sync --python 3.10 # install RAGFlow dependent python modules
    ```
    - full:
    ```bash
-   ~/.local/bin/poetry install --sync --no-root --with full
+   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
    ```
    *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 
