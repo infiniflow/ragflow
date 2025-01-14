@@ -142,7 +142,7 @@ class GraphExtractor(Extractor):
         already_entities = 0
         already_relations = 0
 
-        def _process_single_content(chunk_key_dp: tuple[str, TextChunkSchema]):
+        def _process_single_content(chunk_key_dp: tuple[str, dict]):
             nonlocal already_processed, already_entities, already_relations, entity_extract_prompt
             chunk_key = chunk_key_dp[0]
             chunk_dp = chunk_key_dp[1]
@@ -243,33 +243,6 @@ class GraphExtractor(Extractor):
         if not len(all_relationships_data):
             logging.warning("Didn't extract any relationships")
 
-        if entity_vdb is not None:
-            data_for_vdb = {
-                compute_mdhash_id(dp["entity_name"], prefix="ent-"): {
-                    "content": dp["entity_name"] + dp["description"],
-                    "entity_name": dp["entity_name"],
-                }
-                for dp in all_entities_data
-            }
-            await entity_vdb.upsert(data_for_vdb)
-
-        if relationships_vdb is not None:
-            data_for_vdb = {
-                compute_mdhash_id(dp["src_id"] + dp["tgt_id"], prefix="rel-"): {
-                    "src_id": dp["src_id"],
-                    "tgt_id": dp["tgt_id"],
-                    "content": dp["keywords"]
-                    + dp["src_id"]
-                    + dp["tgt_id"]
-                    + dp["description"],
-                    "metadata": {
-                        "created_at": dp.get("metadata", {}).get("created_at", time.time())
-                    },
-                }
-                for dp in all_relationships_data
-            }
-            await relationships_vdb.upsert(data_for_vdb)
-
         return knowledge_graph_inst
 
     def _handle_single_relationship_extraction(self, record_attributes: list[str], chunk_key: str):
@@ -339,6 +312,72 @@ class GraphExtractor(Extractor):
         node_data["entity_name"] = entity_name
         return node_data
 
+    def _merge_edges(
+            self,
+            src_id: str,
+            tgt_id: str,
+            edges_data: list[dict],
+            knowledge_graph_inst: nx.Graph
+    ):
+        already_weights = []
+        already_source_ids = []
+        already_description = []
+        already_keywords = []
+
+        if await knowledge_graph_inst.has_edge(src_id, tgt_id):
+            already_edge = await knowledge_graph_inst.get_edge(src_id, tgt_id)
+            already_weights.append(already_edge["weight"])
+            already_source_ids.extend(
+                split_string_by_multi_markers(already_edge["source_id"], [GRAPH_FIELD_SEP])
+            )
+            already_description.append(already_edge["description"])
+            already_keywords.extend(
+                split_string_by_multi_markers(already_edge["keywords"], [GRAPH_FIELD_SEP])
+            )
+
+        weight = sum([dp["weight"] for dp in edges_data] + already_weights)
+        description = GRAPH_FIELD_SEP.join(
+            sorted(set([dp["description"] for dp in edges_data] + already_description))
+        )
+        keywords = GRAPH_FIELD_SEP.join(
+            sorted(set([dp["keywords"] for dp in edges_data] + already_keywords))
+        )
+        source_id = GRAPH_FIELD_SEP.join(
+            set([dp["source_id"] for dp in edges_data] + already_source_ids)
+        )
+        for need_insert_id in [src_id, tgt_id]:
+            if not (await knowledge_graph_inst.has_node(need_insert_id)):
+                await knowledge_graph_inst.upsert_node(
+                    need_insert_id,
+                    node_data={
+                        "source_id": source_id,
+                        "description": description,
+                        "entity_type": '"UNKNOWN"',
+                    },
+                )
+        description = self._handle_entity_relation_summary(
+            f"({src_id}, {tgt_id})", description
+        )
+        await knowledge_graph_inst.upsert_edge(
+            src_id,
+            tgt_id,
+            edge_data=dict(
+                weight=weight,
+                description=description,
+                keywords=keywords,
+                source_id=source_id,
+            ),
+        )
+
+        edge_data = dict(
+            src_id=src_id,
+            tgt_id=tgt_id,
+            description=description,
+            keywords=keywords,
+        )
+
+        return edge_data
+
     def _handle_entity_relation_summary(
             self,
             entity_or_relation_name: str,
@@ -362,168 +401,3 @@ class GraphExtractor(Extractor):
         logging.info(f"Trigger summary: {entity_or_relation_name}")
         summary = self._chat(use_prompt, [{"role": "assistanb", "content": "Output: "}], {"temperature": 0.8})
         return summary
-
-    def _process_document(
-        self, text: str, prompt_variables: dict[str, str]
-    ) -> str:
-        variables = {
-            **prompt_variables,
-            self._input_text_key: text,
-        }
-        token_count = 0
-        text = perform_variable_replacements(self._extraction_prompt, variables=variables)
-        gen_conf = {"temperature": 0.3}
-        response = self._chat(text, [{"role": "user", "content": "Output:"}], gen_conf)
-        token_count = num_tokens_from_string(text + response)
-
-        results = response or ""
-        history = [{"role": "system", "content": text}, {"role": "assistant", "content": response}]
-
-        # Repeat to ensure we maximize entity count
-        for i in range(self._max_gleanings):
-            text = perform_variable_replacements(CONTINUE_PROMPT, history=history, variables=variables)
-            history.append({"role": "user", "content": text})
-            response = self._chat("", history, gen_conf)
-            results += response or ""
-
-            # if this is the final glean, don't bother updating the continuation flag
-            if i >= self._max_gleanings - 1:
-                break
-            history.append({"role": "assistant", "content": response})
-            history.append({"role": "user", "content": LOOP_PROMPT})
-            continuation = self._chat("", history, self._loop_args)
-            if continuation != "YES":
-                break
-
-        return results, token_count
-
-    def _process_results(
-        self,
-        results: dict[int, str],
-        tuple_delimiter: str,
-        record_delimiter: str,
-    ) -> nx.Graph:
-        """Parse the result string to create an undirected unipartite graph.
-
-        Args:
-            - results - dict of results from the extraction chain
-            - tuple_delimiter - delimiter between tuples in an output record, default is '<|>'
-            - record_delimiter - delimiter between records, default is '##'
-        Returns:
-            - output - unipartite graph in graphML format
-        """
-        graph = nx.Graph()
-        for source_doc_id, extracted_data in results.items():
-            records = [r.strip() for r in extracted_data.split(record_delimiter)]
-
-            for record in records:
-                record = re.sub(r"^\(|\)$", "", record.strip())
-                record_attributes = record.split(tuple_delimiter)
-
-                if record_attributes[0] == '"entity"' and len(record_attributes) >= 4:
-                    # add this record as a node in the G
-                    entity_name = clean_str(record_attributes[1].upper())
-                    entity_type = clean_str(record_attributes[2].upper())
-                    entity_description = clean_str(record_attributes[3])
-
-                    if entity_name in graph.nodes():
-                        node = graph.nodes[entity_name]
-                        if self._join_descriptions:
-                            node["description"] = "\n".join(
-                                list({
-                                    *_unpack_descriptions(node),
-                                    entity_description,
-                                })
-                            )
-                        else:
-                            if len(entity_description) > len(node["description"]):
-                                node["description"] = entity_description
-                        node["source_id"] = ", ".join(
-                            list({
-                                *_unpack_source_ids(node),
-                                str(source_doc_id),
-                            })
-                        )
-                        node["entity_type"] = (
-                            entity_type if entity_type != "" else node["entity_type"]
-                        )
-                    else:
-                        graph.add_node(
-                            entity_name,
-                            entity_type=entity_type,
-                            description=entity_description,
-                            source_id=str(source_doc_id),
-                            weight=1
-                        )
-
-                if (
-                    record_attributes[0] == '"relationship"'
-                    and len(record_attributes) >= 5
-                ):
-                    # add this record as edge
-                    source = clean_str(record_attributes[1].upper())
-                    target = clean_str(record_attributes[2].upper())
-                    edge_description = clean_str(record_attributes[3])
-                    edge_source_id = clean_str(str(source_doc_id))
-                    weight = (
-                        float(record_attributes[-1])
-                        if isinstance(record_attributes[-1], numbers.Number)
-                        else 1.0
-                    )
-                    if source not in graph.nodes():
-                        graph.add_node(
-                            source,
-                            entity_type="",
-                            description="",
-                            source_id=edge_source_id,
-                            weight=1
-                        )
-                    if target not in graph.nodes():
-                        graph.add_node(
-                            target,
-                            entity_type="",
-                            description="",
-                            source_id=edge_source_id,
-                            weight=1
-                        )
-                    if graph.has_edge(source, target):
-                        edge_data = graph.get_edge_data(source, target)
-                        if edge_data is not None:
-                            weight += edge_data["weight"]
-                            if self._join_descriptions:
-                                edge_description = "\n".join(
-                                    list({
-                                        *_unpack_descriptions(edge_data),
-                                        edge_description,
-                                    })
-                                )
-                            edge_source_id = ", ".join(
-                                list({
-                                    *_unpack_source_ids(edge_data),
-                                    str(source_doc_id),
-                                })
-                            )
-                    graph.add_edge(
-                        source,
-                        target,
-                        weight=weight,
-                        description=edge_description,
-                        source_id=edge_source_id,
-                    )
-
-        for node_degree in graph.degree:
-            graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
-        return graph
-
-
-def _unpack_descriptions(data: Mapping) -> list[str]:
-    value = data.get("description", None)
-    return [] if value is None else value.split("\n")
-
-
-def _unpack_source_ids(data: Mapping) -> list[str]:
-    value = data.get("source_id", None)
-    return [] if value is None else value.split(", ")
-
-
-
