@@ -19,7 +19,7 @@ module.exports = {
     },
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
+        border: 'var(--colors-outline-neutral-strong)',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'var(--background)',
@@ -110,7 +110,7 @@ module.exports = {
         },
         'colors-background-functional-solid-danger': {
           DEFAULT: 'var(--colors-background-functional-solid-danger)',
-          foreground: 'var(--background-inverse-standard-foreground)',
+          foreground: 'var(--colors-text-inverse-strong)',
         },
         'colors-background-functional-solid-notice': {
           DEFAULT: 'var(--colors-background-functional-solid-notice)',

@@ -63,12 +63,18 @@ export const isDataExist = (data: any) => {
   );
 };
 
+const findCombo = (communities: string[]) => {
+  const combo = Array.isArray(communities) ? communities[0] : undefined;
+  return combo;
+};
+
 export const buildNodesAndCombos = (nodes: any[]) => {
   const combos: any[] = [];
   nodes.forEach((x) => {
-    const combo = Array.isArray(x?.communities) ? x.communities[0] : undefined;
+    const combo = findCombo(x?.communities);
     if (combo && combos.every((y) => y.data.label !== combo)) {
       combos.push({
+        isCombo: true,
         id: uuid(),
         data: {
           label: combo,
@@ -80,7 +86,7 @@ export const buildNodesAndCombos = (nodes: any[]) => {
   const nextNodes = nodes.map((x) => {
     return {
       ...x,
-      combo: combos.find((y) => y.data.label === x.id)?.id,
+      combo: combos.find((y) => y.data.label === findCombo(x?.communities))?.id,
     };
   });
 

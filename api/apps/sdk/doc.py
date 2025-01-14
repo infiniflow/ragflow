@@ -16,11 +16,11 @@
 import pathlib
 import datetime
 
-from api.db.services.dialog_service import keyword_extraction
+from api.db.services.dialog_service import keyword_extraction, label_question
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import rag_tokenizer
 from api.db import LLMType, ParserType
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.llm_service import TenantLLMService, LLMBundle
 from api import settings
 import xxhash
 import re
@@ -276,6 +276,7 @@ def update_doc(tenant_id, dataset_id, document_id):
             "one",
             "knowledge_graph",
             "email",
+            "tag"
         }
         if req.get("chunk_method") not in valid_chunk_method:
             return get_error_data_result(
@@ -847,59 +848,55 @@ def list_chunks(tenant_id, dataset_id, document_id):
             renamed_doc["run"] = run_mapping.get(str(value))
 
     res = {"total": 0, "chunks": [], "doc": renamed_doc}
-    origin_chunks = []
-    if settings.docStoreConn.indexExist(search.index_name(tenant_id), dataset_id):
+    if req.get("id"):
+        chunk = settings.docStoreConn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
+        k = []
+        for n in chunk.keys():
+            if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
+                k.append(n)
+        for n in k:
+            del chunk[n]
+        if not chunk:
+            return get_error_data_result(f"Chunk `{req.get('id')}` not found.")
+        res['total'] = 1
+        final_chunk = {
+            "id":chunk.get("id",chunk.get("chunk_id")),
+            "content":chunk["content_with_weight"],
+            "document_id":chunk.get("doc_id",chunk.get("document_id")),
+            "docnm_kwd":chunk["docnm_kwd"],
+            "important_keywords":chunk.get("important_kwd",[]),
+            "questions":chunk.get("question_kwd",[]),
+            "dataset_id":chunk.get("kb_id",chunk.get("dataset_id")),
+            "image_id":chunk["img_id"],
+            "available":bool(chunk.get("available_int",1)),
+            "positions":chunk.get("position_int",[]),
+        }
+        res["chunks"].append(final_chunk)
+        _ = Chunk(**final_chunk)
+
+    elif settings.docStoreConn.indexExist(search.index_name(tenant_id), dataset_id):
         sres = settings.retrievaler.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None,
                                            highlight=True)
         res["total"] = sres.total
-        sign = 0
         for id in sres.ids:
             d = {
                 "id": id,
-                "content_with_weight": (
+                "content": (
                     rmSpace(sres.highlight[id])
                     if question and id in sres.highlight
                     else sres.field[id].get("content_with_weight", "")
                 ),
-                "doc_id": sres.field[id]["doc_id"],
+                "document_id": sres.field[id]["doc_id"],
                 "docnm_kwd": sres.field[id]["docnm_kwd"],
-                "important_kwd": sres.field[id].get("important_kwd", []),
-                "question_kwd": sres.field[id].get("question_kwd", []),
-                "img_id": sres.field[id].get("img_id", ""),
-                "available_int": sres.field[id].get("available_int", 1),
-                "positions": sres.field[id].get("position_int", []),
+                "important_keywords": sres.field[id].get("important_kwd", []),
+                "questions": sres.field[id].get("question_kwd", []),
+                "dataset_id": sres.field[id].get("kb_id", sres.field[id].get("dataset_id")),
+                "image_id": sres.field[id].get("img_id", ""),
+                "available": bool(sres.field[id].get("available_int", 1)),
+                "positions": sres.field[id].get("position_int",[]),
             }
-            origin_chunks.append(d)
-            if req.get("id"):
-                if req.get("id") == id:
-                    origin_chunks.clear()
-                    origin_chunks.append(d)
-                    sign = 1
-                    break
-        if req.get("id"):
-            if sign == 0:
-                return get_error_data_result(f"Can't find this chunk {req.get('id')}")
-
-    for chunk in origin_chunks:
-        key_mapping = {
-            "id": "id",
-            "content_with_weight": "content",
-            "doc_id": "document_id",
-            "important_kwd": "important_keywords",
-            "question_kwd": "questions",
-            "img_id": "image_id",
-            "available_int": "available",
-        }
-        renamed_chunk = {}
-        for key, value in chunk.items():
-            new_key = key_mapping.get(key, key)
-            renamed_chunk[new_key] = value
-        if renamed_chunk["available"] == 0:
-            renamed_chunk["available"] = False
-        if renamed_chunk["available"] == 1:
-            renamed_chunk["available"] = True
-        res["chunks"].append(renamed_chunk)
-        _ = Chunk(**renamed_chunk) # validate the chunk
+            res["chunks"].append(d)
+            _ = Chunk(**d) # validate the chunk
     return get_result(data=res)
 
 
@@ -1335,18 +1332,14 @@ def retrieval_test(tenant_id):
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(message="Dataset not found!")
-        embd_mdl = TenantLLMService.model_instance(
-            kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id
-        )
+        embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id)
 
         rerank_mdl = None
         if req.get("rerank_id"):
-            rerank_mdl = TenantLLMService.model_instance(
-                kb.tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"]
-            )
+            rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
 
         if req.get("keyword", False):
-            chat_mdl = TenantLLMService.model_instance(kb.tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
 
         retr = settings.retrievaler if kb.parser_id != ParserType.KG else settings.kg_retrievaler
@@ -1363,6 +1356,7 @@ def retrieval_test(tenant_id):
             doc_ids,
             rerank_mdl=rerank_mdl,
             highlight=highlight,
+            rank_feature=label_question(question, kbs)
         )
         for c in ranks["chunks"]:
             c.pop("vector", None)
@@ -1377,6 +1371,7 @@ def retrieval_test(tenant_id):
                 "important_kwd": "important_keywords",
                 "question_kwd": "questions",
                 "docnm_kwd": "document_keyword",
+                "kb_id":"dataset_id"
             }
             rename_chunk = {}
             for key, value in chunk.items():

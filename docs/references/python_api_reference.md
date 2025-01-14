@@ -3,7 +3,7 @@ sidebar_position: 2
 slug: /python_api_reference
 ---
 
-# Python API Reference
+# Python API
 
 A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
@@ -28,7 +28,7 @@ RAGFlow.create_dataset(
     name: str,
     avatar: str = "",
     description: str = "",
-    embedding_model: str = "BAAI/bge-zh-v1.5",
+    embedding_model: str = "BAAI/bge-large-zh-v1.5",
     language: str = "English",
     permission: str = "me", 
     chunk_method: str = "naive",
@@ -894,7 +894,7 @@ dataset = rag_object.list_datasets(name="ragflow")
 dataset = dataset[0]
 name = 'ragflow_test.txt'
 path = './test_data/ragflow_test.txt'
-documents =[{"displayed_name":"test_retrieve_chunks.txt","blob":open(path, "rb").read()}]
+documents =[{"display_name":"test_retrieve_chunks.txt","blob":open(path, "rb").read()}]
 docs = dataset.upload_documents(documents)
 doc = docs[0]
 doc.add_chunk(content="This is a chunk addition test")
@@ -965,6 +965,7 @@ Instructions for the LLM to follow.  A `Prompt` object contains the following at
   - All the variables in 'System' should be curly bracketed.
   - The default value is `[{"key": "knowledge", "optional": True}]`.
 - `rerank_model`: `str` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used. Defaults to `""`.
+- `top_k`: `int` Refers to the process of reordering or selecting the top-k items from a list or set based on a specific ranking criterion. Default to 1024.
 - `empty_response`: `str` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank. Defaults to `None`.
 - `opener`: `str` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
 - `show_quote`: `bool` Indicates whether the source of text should be displayed. Defaults to `True`.

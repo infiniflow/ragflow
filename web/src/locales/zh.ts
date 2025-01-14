@@ -34,6 +34,8 @@ export default {
       pleaseInput: '请输入',
       submit: '提交',
       embedIntoSite: '嵌入网站',
+      previousPage: '上一页',
+      nextPage: '下一页',
     },
     login: {
       login: '登录',
@@ -164,6 +166,28 @@ export default {
       autoQuestions: '自动问题',
       autoQuestionsTip: `在查询此类问题时，为每个块提取 N 个问题以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。如果发生错误，此功能不会破坏整个分块过程，除了将空结果添加到原始块。`,
       redo: '是否清空已有 {{chunkNum}}个 chunk？',
+      setMetaData: '设置元数据',
+      pleaseInputJson: '请输入JSON',
+      documentMetaTips: `<p>元数据为 Json 格式（不可搜索）。如果提示中包含此文档的任何块，它将被添加到 LLM 的提示中。</p>
+<p>示例：</p>
+<b>元数据为：</b><br>
+<code>
+{
+“作者”：“Alex Dowson”，
+“日期”：“2024-11-12”
+}
+</code><br>
+<b>提示将为：</b><br>
+<p>文档：the_name_of_document</p>
+<p>作者：Alex Dowson</p>
+<p>日期：2024-11-12</p>
+<p>相关片段如下：</p>
+<ul>
+<li> 这是块内容....</li>
+<li> 这是块内容....</li>
+</ul>
+`,
+      metaData: '元資料',
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',
@@ -286,6 +310,16 @@ export default {
 <p>接下来，将分块传输到 LLM 以提取知识图谱和思维导图的节点和关系。</p>
 
 注意您需要指定的条目类型。</p>`,
+      tag: `<p>使用“标签”作为分块方法的知识库应该被其他知识库使用，以将标签添加到其块中，对这些块的查询也将带有标签。</p>
+<p>使用“标签”作为分块方法的知识库<b>不</b>应该参与 RAG 过程。</p>
+<p>此知识库中的块是标签的示例，它们演示了整个标签集以及块和标签之间的相关性。</p>
+
+<p>此块方法支持<b>EXCEL</b>和<b>CSV/TXT</b>文件格式。</p>
+<p>如果文件为<b>Excel</b>格式，则它应该包含两列无标题：一列用于内容，另一列用于标签，内容列位于标签列之前。可以接受多个工作表，只要列结构正确即可。</p>
+<p>如果文件为 <b>CSV/TXT</b> 格式，则必须使用 UTF-8 编码并以 TAB 作为分隔符来分隔内容和标签。</p>
+<p>在标签列中，标签之间使用英文 <b>逗号</b>。</p>
+<i>不符合上述规则的文本行将被忽略，并且每对文本将被视为一个不同的块。</i>
+`,
       useRaptor: '使用召回增强RAPTOR策略',
       useRaptorTip: '请参考 https://huggingface.co/papers/2401.18059',
       prompt: '提示词',
@@ -309,6 +343,26 @@ export default {
       pageRank: '页面排名',
       pageRankTip: `这用于提高相关性得分。所有检索到的块的相关性得分将加上此数字。
 当您想首先搜索给定的知识库时，请设置比其他知识库更高的 pagerank 得分。`,
+      tagName: '标签',
+      frequency: '频次',
+      searchTags: '搜索标签',
+      tagCloud: '云',
+      tagTable: '表',
+      tagSet: '标签库',
+      topnTags: 'Top-N 标签',
+      tagSetTip: `
+      <p> 选择“标签”知识库有助于标记每个块。 </p>
+      <p>对这些块的查询也将带有标签。 </p>
+      此过程将通过向数据集添加更多信息来提高检索的准确性，尤其是在存在大量块的情况下。
+      <p>标签和关键字之间的区别：</p>
+      <ul>
+      <li>标签是一个由用户定义和操作的封闭集，而关键字是一个开放集。 </li>
+      <li>您需要在使用前上传带有样本的标签集。 </li>
+      <li>关键字由 LLM 生成，这既昂贵又耗时。 </li>
+      </ul>
+      `,
+      tags: '标签',
+      addTag: '增加标签',
     },
     chunk: {
       chunk: '解析块',
@@ -687,7 +741,7 @@ export default {
       generateDescription: `此组件用于调用LLM生成文本，请注意提示的设置。`,
       categorizeDescription: `此组件用于对文本进行分类。请指定类别的名称、描述和示例。每个类别都指向不同的下游组件。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
-      rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。只有“检索”可作为其下游。`,
+      rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:
         '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
@@ -1074,8 +1128,9 @@ export default {
         minus: '减号',
         semicolon: '分号',
       },
-      addVariable: '新增变量',
-      variableSettings: '变量设置',
+      addCategory: '新增分类',
+      categoryName: '分类名称',
+      nextStep: '下一步',
     },
     footer: {
       profile: 'All rights reserved @ React',

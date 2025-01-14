@@ -1,15 +1,14 @@
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Collapse, Flex, Form, Input, Select } from 'antd';
 import { PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Node } from 'reactflow';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
-import { NodeData } from '../../interface';
 
 import styles from './index.less';
 
 interface IProps {
-  node?: Node<NodeData>;
+  node?: RAGFlowNodeType;
 }
 
 enum VariableType {
@@ -30,7 +29,7 @@ const DynamicVariableForm = ({ node }: IProps) => {
 
   const options = [
     { value: VariableType.Reference, label: t('flow.reference') },
-    { value: VariableType.Input, label: t('flow.input') },
+    { value: VariableType.Input, label: t('flow.text') },
   ];
 
   const handleTypeChange = useCallback(

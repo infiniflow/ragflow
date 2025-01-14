@@ -62,7 +62,7 @@ export function SystemModelSetting() {
             </div>
             <div className="flex-1">
               <Select defaultValue="english">
-                <SelectTrigger className="bg-colors-background-inverse-weak">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

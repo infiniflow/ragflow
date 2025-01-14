@@ -249,17 +249,16 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 
 ## 🔨 Menjalankan Aplikasi dari untuk Pengembangan
 
-1. Instal Poetry, atau lewati langkah ini jika sudah terinstal:
+1. Instal uv, atau lewati langkah ini jika sudah terinstal:
    ```bash
-   pipx install poetry
-   export POETRY_VIRTUALENVS_CREATE=true POETRY_VIRTUALENVS_IN_PROJECT=true
+   pipx install uv
    ```
 
 2. Clone kode sumber dan instal dependensi Python:
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   ~/.local/bin/poetry install --sync --no-root # install modul python RAGFlow
+   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
    ```
 
 3. Jalankan aplikasi yang diperlukan (MinIO, Elasticsearch, Redis, dan MySQL) menggunakan Docker Compose:
@@ -288,7 +287,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 6. Instal dependensi frontend:
    ```bash
    cd web
-   npm install --force
+   npm install
    ```
 7. Jalankan aplikasi frontend:
    ```bash

@@ -12,6 +12,7 @@
 #
 import logging
 import re
+import csv
 from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
@@ -58,11 +59,11 @@ class Excel(ExcelParser):
                 if len(res) % 999 == 0:
                     callback(len(res) *
                              0.6 /
-                             total, ("Extract Q&A: {}".format(len(res)) +
+                             total, ("Extract pairs: {}".format(len(res)) +
                                      (f"{len(fails)} failure, line: %s..." %
                                       (",".join(fails[:3])) if fails else "")))
 
-        callback(0.6, ("Extract Q&A: {}. ".format(len(res)) + (
+        callback(0.6, ("Extract pairs: {}. ".format(len(res)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         self.is_english = is_english(
             [rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q) > 1])
@@ -269,7 +270,7 @@ def beAdocPdf(d, q, a, eng, image, poss):
     return d
 
 
-def beAdocDocx(d, q, a, eng, image):
+def beAdocDocx(d, q, a, eng, image, row_num=-1):
     qprefix = "Question: " if eng else "问题："
     aprefix = "Answer: " if eng else "回答："
     d["content_with_weight"] = "\t".join(
@@ -277,16 +278,20 @@ def beAdocDocx(d, q, a, eng, image):
     d["content_ltks"] = rag_tokenizer.tokenize(q)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["image"] = image
+    if row_num >= 0:
+        d["top_int"] = [row_num]
     return d
 
 
-def beAdoc(d, q, a, eng):
+def beAdoc(d, q, a, eng, row_num=-1):
     qprefix = "Question: " if eng else "问题："
     aprefix = "Answer: " if eng else "回答："
     d["content_with_weight"] = "\t".join(
         [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
     d["content_ltks"] = rag_tokenizer.tokenize(q)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+    if row_num >= 0:
+        d["top_int"] = [row_num]
     return d
 
 
@@ -316,11 +321,11 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        for q, a in excel_parser(filename, binary, callback):
-            res.append(beAdoc(deepcopy(doc), q, a, eng))
+        for ii, (q, a) in enumerate(excel_parser(filename, binary, callback)):
+            res.append(beAdoc(deepcopy(doc), q, a, eng, ii))
         return res
 
-    elif re.search(r"\.(txt|csv)$", filename, re.IGNORECASE):
+    elif re.search(r"\.(txt)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
@@ -344,7 +349,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                     fails.append(str(i+1))
             elif len(arr) == 2:
                 if question and answer:
-                    res.append(beAdoc(deepcopy(doc), question, answer, eng))
+                    res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
                 question, answer = arr
             i += 1
             if len(res) % 999 == 0:
@@ -352,11 +357,43 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                     f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
-            res.append(beAdoc(deepcopy(doc), question, answer, eng))
+            res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
 
         callback(0.6, ("Extract Q&A: {}".format(len(res)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
+        return res
+
+    elif re.search(r"\.(csv)$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        txt = get_text(filename, binary)
+        lines = txt.split("\n")
+        delimiter = "\t" if any("\t" in line for line in lines) else ","
+
+        fails = []
+        question, answer = "", ""
+        res = []
+        reader = csv.reader(lines, delimiter=delimiter)
+
+        for i, row in enumerate(reader):
+            if len(row) != 2:
+                if question:
+                    answer += "\n" + lines[i]
+                else:
+                    fails.append(str(i + 1))
+            elif len(row) == 2:
+                if question and answer:
+                    res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
+                question, answer = row
+            if len(res) % 999 == 0:
+                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (
+                    f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+
+        if question:
+            res.append(beAdoc(deepcopy(doc), question, answer, eng, len(reader)))
+
+        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (
+            f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
@@ -388,7 +425,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                 if last_answer.strip():
                     sum_question = '\n'.join(question_stack)
                     if sum_question:
-                        res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=['markdown.extensions.tables']), eng))
+                        res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=['markdown.extensions.tables']), eng, index))
                     last_answer = ''
 
                 i = question_level
@@ -400,7 +437,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         if last_answer.strip():
             sum_question = '\n'.join(question_stack)
             if sum_question:
-                res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=['markdown.extensions.tables']), eng))
+                res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=['markdown.extensions.tables']), eng, index))
         return res
 
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
@@ -408,8 +445,8 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         qai_list, tbls = docx_parser(filename, binary,
                                     from_page=0, to_page=10000, callback=callback)
         res = tokenize_table(tbls, doc, eng)
-        for q, a, image in qai_list:
-            res.append(beAdocDocx(deepcopy(doc), q, a, eng, image))
+        for i, (q, a, image) in enumerate(qai_list):
+            res.append(beAdocDocx(deepcopy(doc), q, a, eng, image, i))
         return res
 
     raise NotImplementedError(

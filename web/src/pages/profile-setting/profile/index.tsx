@@ -26,24 +26,18 @@ export default function Profile() {
       <div className="space-y-6 max-w-[600px]">
         <div className="space-y-2">
           <label className="text-sm text-muted-foreground">User name</label>
-          <Input
-            defaultValue="yifanwu92"
-            className="bg-colors-background-inverse-weak"
-          />
+          <Input defaultValue="yifanwu92" />
         </div>
 
         <div className="space-y-2">
           <label className="text-sm text-muted-foreground">Email</label>
-          <Input
-            defaultValue="yifanwu92@gmail.com"
-            className="bg-colors-background-inverse-weak"
-          />
+          <Input defaultValue="yifanwu92@gmail.com" />
         </div>
 
         <div className="space-y-2">
           <label className="text-sm text-muted-foreground">Language</label>
           <Select defaultValue="english">
-            <SelectTrigger className="bg-colors-background-inverse-weak">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -55,7 +49,7 @@ export default function Profile() {
         <div className="space-y-2">
           <label className="text-sm text-muted-foreground">Timezone</label>
           <Select defaultValue="utc9">
-            <SelectTrigger className="bg-colors-background-inverse-weak">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

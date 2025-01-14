@@ -39,7 +39,7 @@ services:
     container_name: ragflow-infinity
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.5.2
+    image: infiniflow/infinity:v0.6.0-dev1
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml

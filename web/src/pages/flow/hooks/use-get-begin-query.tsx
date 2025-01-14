@@ -1,9 +1,8 @@
 import { DefaultOptionType } from 'antd/es/select';
 import get from 'lodash/get';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Node } from 'reactflow';
 import { BeginId, Operator } from '../constant';
-import { BeginQuery, NodeData } from '../interface';
+import { BeginQuery, RAGFlowNodeType } from '../interface';
 import useGraphStore from '../store';
 
 export const useGetBeginNodeDataQuery = () => {
@@ -48,7 +47,7 @@ export const useBuildComponentIdSelectOptions = (
 
   // Limit the nodes inside iteration to only reference peer nodes with the same parentId and other external nodes other than their parent nodes
   const filterChildNodesToSameParentOrExternal = useCallback(
-    (node: Node<NodeData>) => {
+    (node: RAGFlowNodeType) => {
       // Node inside iteration
       if (parentId) {
         return (

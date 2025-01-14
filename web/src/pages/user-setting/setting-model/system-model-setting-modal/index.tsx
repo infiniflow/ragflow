@@ -58,7 +58,13 @@ const SystemModelSettingModal = ({
           name="llm_id"
           tooltip={t('chatModelTip')}
         >
-          <Select options={allOptions[LlmModelType.Chat]} allowClear />
+          <Select
+            options={[
+              ...allOptions[LlmModelType.Chat],
+              ...allOptions[LlmModelType.Image2text],
+            ]}
+            allowClear
+          />
         </Form.Item>
         <Form.Item
           label={t('embeddingModel')}

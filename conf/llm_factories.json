@@ -73,9 +73,15 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "gpt-4-vision-preview",
+                    "llm_name": "gpt-4o-2024-08-06",
                     "tags": "LLM,CHAT,IMAGE2TEXT",
-                    "max_tokens": 765,
+                    "max_tokens": 128000,
+                    "model_type": "image2text"
+                },
+                 {
+                    "llm_name": "gpt-4o-mini-2024-07-18",
+                    "tags": "LLM,CHAT,IMAGE2TEXT",
+                    "max_tokens": 128000,
                     "model_type": "image2text"
                 },
                 {
@@ -102,6 +108,12 @@
                     "llm_name": "qwen-turbo",
                     "tags": "LLM,CHAT,8K",
                     "max_tokens": 8191,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "qwen-max",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
                     "model_type": "chat"
                 },
                 {
@@ -944,12 +956,6 @@
                     "llm_name": "gemini-1.5-flash-latest",
                     "tags": "LLM,CHAT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "gemini-1.0-pro",
-                    "tags": "LLM,CHAT,30K",
-                    "max_tokens": 30720,
                     "model_type": "chat"
                 },
                 {

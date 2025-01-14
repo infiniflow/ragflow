@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RagFlow option</title>
+    <link rel="stylesheet" href="styles/options.css" />
+</head>
+
+<body id="ragflow">
+    <div id="form-config">
+        <div class="header">
+            <img src="assets/logo-with-text.png" alt="Logo" class="logo" />
+        </div>
+        <div class="content">
+            <label for="base-url">Base URL:</label>
+            <input type="text" id="base-url" placeholder="Enter base URL" />
+
+            <label for="from">From:</label>
+            <select id="from">
+                <option selected value="agent">agent</option>
+                <option value="chat">chat</option>
+            </select>
+
+            <label for="auth">Auth:</label>
+            <input type="text" id="auth" placeholder="Enter auth" />
+
+            <label for="shared-id">Shared ID:</label>
+            <input type="text" id="shared-id" placeholder="Enter shared ID" />
+
+            <button id="save-config">🛖</button>
+
+        </div>
+    </div>
+    <script src="options.js"></script>
+</body>
+
+</html>
