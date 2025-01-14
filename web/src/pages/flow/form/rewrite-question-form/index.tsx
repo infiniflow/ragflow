@@ -1,6 +1,6 @@
 import LLMSelect from '@/components/llm-select';
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form, InputNumber } from 'antd';
+import { Form } from 'antd';
 import { IOperatorForm } from '../../interface';
 
 const RewriteQuestionForm = ({ onValuesChange, form }: IOperatorForm) => {
@@ -21,13 +21,6 @@ const RewriteQuestionForm = ({ onValuesChange, form }: IOperatorForm) => {
         tooltip={t('modelTip', { keyPrefix: 'chat' })}
       >
         <LLMSelect></LLMSelect>
-      </Form.Item>
-      <Form.Item
-        label={t('loop', { keyPrefix: 'flow' })}
-        name="loop"
-        initialValue={1}
-      >
-        <InputNumber />
       </Form.Item>
     </Form>
   );

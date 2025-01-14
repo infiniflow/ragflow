@@ -1,7 +1,15 @@
 import { ResponsePostType } from '@/interfaces/database/base';
-import { IKnowledge, ITestingResult } from '@/interfaces/database/knowledge';
+import {
+  IKnowledge,
+  IRenameTag,
+  ITestingResult,
+} from '@/interfaces/database/knowledge';
 import i18n from '@/locales/config';
-import kbService from '@/services/knowledge-service';
+import kbService, {
+  listTag,
+  removeTag,
+  renameTag,
+} from '@/services/knowledge-service';
 import {
   useInfiniteQuery,
   useIsMutating,
@@ -12,6 +20,7 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
+import { useState } from 'react';
 import { useSearchParams } from 'umi';
 import { useHandleSearchChange } from './logic-hooks';
 import { useSetPaginationParams } from './route-hook';
@@ -26,9 +35,9 @@ export const useKnowledgeBaseId = (): string => {
 export const useFetchKnowledgeBaseConfiguration = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
 
-  const { data, isFetching: loading } = useQuery({
+  const { data, isFetching: loading } = useQuery<IKnowledge>({
     queryKey: ['fetchKnowledgeDetail'],
-    initialData: {},
+    initialData: {} as IKnowledge,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.get_kb_detail({
@@ -209,9 +218,8 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
       if (data.code === 0) {
         const res = data.data;
         return {
-          chunks: res.chunks,
+          ...res,
           documents: res.doc_aggs,
-          total: res.total,
         };
       }
       return (
@@ -258,4 +266,99 @@ export const useSelectIsTestingSuccess = () => {
   });
   return status.at(-1) === 'success';
 };
+//#endregion
+
+//#region tags
+
+export const useFetchTagList = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<Array<[string, number]>>({
+    queryKey: ['fetchTagList'],
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await listTag(knowledgeBaseId);
+      const list = data?.data || [];
+      return list;
+    },
+  });
+
+  return { list: data, loading };
+};
+
+export const useDeleteTag = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteTag'],
+    mutationFn: async (tags: string[]) => {
+      const { data } = await removeTag(knowledgeBaseId, tags);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchTagList'],
+        });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, deleteTag: mutateAsync };
+};
+
+export const useRenameTag = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['renameTag'],
+    mutationFn: async (params: IRenameTag) => {
+      const { data } = await renameTag(knowledgeBaseId, params);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.modified`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchTagList'],
+        });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, renameTag: mutateAsync };
+};
+
+export const useTagIsRenaming = () => {
+  return useIsMutating({ mutationKey: ['renameTag'] }) > 0;
+};
+
+export const useFetchTagListByKnowledgeIds = () => {
+  const [knowledgeIds, setKnowledgeIds] = useState<string[]>([]);
+
+  const { data, isFetching: loading } = useQuery<Array<[string, number]>>({
+    queryKey: ['fetchTagListByKnowledgeIds'],
+    enabled: knowledgeIds.length > 0,
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await kbService.listTagByKnowledgeIds({
+        kb_ids: knowledgeIds.join(','),
+      });
+      const list = data?.data || [];
+      return list;
+    },
+  });
+
+  return { list: data, loading, setKnowledgeIds };
+};
+
 //#endregion

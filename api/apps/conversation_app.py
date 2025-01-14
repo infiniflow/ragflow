@@ -25,13 +25,14 @@ from flask import request, Response
 from flask_login import login_required, current_user
 
 from api.db import LLMType
-from api.db.services.dialog_service import DialogService, chat, ask
+from api.db.services.dialog_service import DialogService, chat, ask, label_question
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMBundle, TenantService, TenantLLMService
+from api.db.services.llm_service import LLMBundle, TenantService
 from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from graphrag.mind_map_extractor import MindMapExtractor
+
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @login_required
@@ -376,11 +377,13 @@ def mindmap():
     if not e:
         return get_data_error_result(message="Knowledgebase not found!")
 
-    embd_mdl = TenantLLMService.model_instance(
-        kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+    embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id)
     chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
-    ranks = settings.retrievaler.retrieval(req["question"], embd_mdl, kb.tenant_id, kb_ids, 1, 12,
-                                           0.3, 0.3, aggs=False)
+    question = req["question"]
+    ranks = settings.retrievaler.retrieval(question, embd_mdl, kb.tenant_id, kb_ids, 1, 12,
+                                           0.3, 0.3, aggs=False,
+                                           rank_feature=label_question(question, [kb])
+                                           )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = mindmap([c["content_with_weight"] for c in ranks["chunks"]]).output
     if "error" in mind_map:

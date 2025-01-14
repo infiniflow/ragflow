@@ -11,6 +11,7 @@ import {
 import { Button, Dropdown, MenuProps, Space, Tooltip } from 'antd';
 import { isParserRunning } from '../utils';
 
+import { useCallback } from 'react';
 import { DocumentType } from '../constant';
 import styles from './index.less';
 
@@ -19,6 +20,7 @@ interface IProps {
   setCurrentRecord: (record: IDocumentInfo) => void;
   showRenameModal: () => void;
   showChangeParserModal: () => void;
+  showSetMetaModal: () => void;
 }
 
 const ParsingActionCell = ({
@@ -26,6 +28,7 @@ const ParsingActionCell = ({
   setCurrentRecord,
   showRenameModal,
   showChangeParserModal,
+  showSetMetaModal,
 }: IProps) => {
   const documentId = record.id;
   const isRunning = isParserRunning(record.run);
@@ -47,9 +50,9 @@ const ParsingActionCell = ({
     });
   };
 
-  const setRecord = () => {
+  const setRecord = useCallback(() => {
     setCurrentRecord(record);
-  };
+  }, [record, setCurrentRecord]);
 
   const onShowRenameModal = () => {
     setRecord();
@@ -60,13 +63,29 @@ const ParsingActionCell = ({
     showChangeParserModal();
   };
 
+  const onShowSetMetaModal = useCallback(() => {
+    setRecord();
+    showSetMetaModal();
+  }, [setRecord, showSetMetaModal]);
+
   const chunkItems: MenuProps['items'] = [
     {
       key: '1',
       label: (
-        <div>
+        <div className="flex flex-col">
           <Button type="link" onClick={onShowChangeParserModal}>
             {t('chunkMethod')}
+          </Button>
+        </div>
+      ),
+    },
+    { type: 'divider' },
+    {
+      key: '2',
+      label: (
+        <div className="flex flex-col">
+          <Button type="link" onClick={onShowSetMetaModal}>
+            {t('setMetaData')}
           </Button>
         </div>
       ),
@@ -79,7 +98,7 @@ const ParsingActionCell = ({
         <Dropdown
           menu={{ items: chunkItems }}
           trigger={['click']}
-          disabled={isRunning}
+          disabled={isRunning || record.parser_id === 'tag'}
         >
           <Button type="text" className={styles.iconButton}>
             <ToolOutlined size={20} />

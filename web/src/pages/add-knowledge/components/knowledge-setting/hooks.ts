@@ -1,4 +1,5 @@
 import { LlmModelType } from '@/constants/knowledge';
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useFetchKnowledgeBaseConfiguration,
   useUpdateKnowledge,
@@ -14,7 +15,7 @@ import { useIsFetching } from '@tanstack/react-query';
 import { Form, UploadFile } from 'antd';
 import { FormInstance } from 'antd/lib';
 import pick from 'lodash/pick';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export const useSubmitKnowledgeConfiguration = (form: FormInstance) => {
   const { saveKnowledgeConfiguration, loading } = useUpdateKnowledge();
@@ -86,4 +87,28 @@ export const useHandleChunkMethodChange = () => {
   }, [chunkMethod]);
 
   return { form, chunkMethod };
+};
+
+export const useRenameKnowledgeTag = () => {
+  const [tag, setTag] = useState<string>('');
+  const {
+    visible: tagRenameVisible,
+    hideModal: hideTagRenameModal,
+    showModal: showFileRenameModal,
+  } = useSetModalState();
+
+  const handleShowTagRenameModal = useCallback(
+    (record: string) => {
+      setTag(record);
+      showFileRenameModal();
+    },
+    [showFileRenameModal],
+  );
+
+  return {
+    initialName: tag,
+    tagRenameVisible,
+    hideTagRenameModal,
+    showTagRenameModal: handleShowTagRenameModal,
+  };
 };

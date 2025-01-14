@@ -70,7 +70,7 @@ class Pdf(PdfParser):
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
 
-        return [(b["text"], b.get("layout_no", ""), self.get_position(b, zoomin))
+        return [(b["text"], b.get("layoutno", ""), self.get_position(b, zoomin))
                 for i, b in enumerate(self.boxes)], tbls
 
 

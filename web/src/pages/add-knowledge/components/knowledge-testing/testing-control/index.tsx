@@ -1,10 +1,11 @@
 import Rerank from '@/components/rerank';
 import SimilaritySlider from '@/components/similarity-slider';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useChunkIsTesting } from '@/hooks/knowledge-hooks';
 import { Button, Card, Divider, Flex, Form, Input } from 'antd';
 import { FormInstance } from 'antd/lib';
+import { LabelWordCloud } from './label-word-cloud';
 
-import { useChunkIsTesting } from '@/hooks/knowledge-hooks';
 import styles from './index.less';
 
 type FieldType = {
@@ -58,6 +59,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
           </Card>
         </Form>
       </section>
+      <LabelWordCloud></LabelWordCloud>
       {/* <section>
         <div className={styles.historyTitle}>
           <Space size={'middle'}>
