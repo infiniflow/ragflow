@@ -16,11 +16,11 @@
 
 import argparse
 import json
-from graphrag import leiden
-from graphrag.community_reports_extractor import CommunityReportsExtractor
-from graphrag.entity_resolution import EntityResolution
-from graphrag.graph_extractor import GraphExtractor
-from graphrag.leiden import add_community_info2graph
+from graphrag.general import leiden
+from graphrag.general.community_reports_extractor import CommunityReportsExtractor
+from graphrag.general.entity_resolution import EntityResolution
+from graphrag.general.graph_extractor import GraphExtractor
+from graphrag.general.leiden import add_community_info2graph
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

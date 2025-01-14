@@ -19,6 +19,7 @@
 import random
 import sys
 from api.utils.log_utils import initRootLogger
+from graphrag.light.index import build_knowledge_graph_with_chunks
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 
 CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
@@ -78,7 +79,7 @@ FACTORY = {
     ParserType.ONE.value: one,
     ParserType.AUDIO.value: audio,
     ParserType.EMAIL.value: email,
-    ParserType.KG.value: knowledge_graph,
+    ParserType.KG.value: naive,
     ParserType.TAG.value: tag
 }
 
@@ -432,6 +433,22 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
     return res, tk_count, vector_size
 
 
+def run_graphrag(row, chat_mdl, embd_mdl, callback=None):
+    vts, _ = embd_mdl.encode(["ok"])
+    vector_size = len(vts[0])
+    vctr_nm = "q_%d_vec" % vector_size
+    chunks = []
+    for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
+                                             fields=["content_with_weight", vctr_nm]):
+        chunks.append((d["id"], d["content_with_weight"]))
+
+    build_knowledge_graph_with_chunks(
+        row["tenant_id"], str(row["kb_id"]), chunks, callback,
+        row["parser_config"]["graphrag"]["language"],
+        row["parser_config"]["graphrag"]["entity_types"]
+    )
+
+
 def do_handle_task(task):
     task_id = task["id"]
     task_from_page = task["from_page"]
@@ -478,9 +495,24 @@ def do_handle_task(task):
         try:
             # bind LLM for raptor
             chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-
             # run RAPTOR
             chunks, token_count, vector_size = run_raptor(task, chat_model, embedding_model, progress_callback)
+        except TaskCanceledException:
+            raise
+        except Exception as e:
+            error_message = f'Fail to bind LLM used by RAPTOR: {str(e)}'
+            progress_callback(-1, msg=error_message)
+            logging.exception(error_message)
+            raise
+    # Either using graphrag or Standard chunking methods
+    elif task.get("task_type", "") == "graphrag":
+        start_ts = timer()
+        try:
+            # bind LLM for graphrag
+            chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+            # run graphrag
+            run_graphrag(task, chat_model, embedding_model, progress_callback)
+            progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(timer() - start_ts))
         except TaskCanceledException:
             raise
         except Exception as e:

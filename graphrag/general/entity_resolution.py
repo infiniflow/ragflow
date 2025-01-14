@@ -22,10 +22,10 @@ from typing import Any
 
 import networkx as nx
 
-from graphrag.extractor import Extractor
+from graphrag.general.extractor import Extractor
 from rag.nlp import is_english
 import editdistance
-from graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
+from graphrag.general.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
 from rag.llm.chat_model import Base as CompletionLLM
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
 

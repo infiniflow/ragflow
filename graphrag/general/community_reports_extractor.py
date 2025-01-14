@@ -13,10 +13,10 @@ from typing import Callable
 from dataclasses import dataclass
 import networkx as nx
 import pandas as pd
-from graphrag import leiden
-from graphrag.community_report_prompt import COMMUNITY_REPORT_PROMPT
-from graphrag.extractor import Extractor
-from graphrag.leiden import add_community_info2graph
+from graphrag.general import leiden
+from graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
+from graphrag.general.extractor import Extractor
+from graphrag.general.leiden import add_community_info2graph
 from rag.llm.chat_model import Base as CompletionLLM
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, dict_has_keys_with_types
 from rag.utils import num_tokens_from_string

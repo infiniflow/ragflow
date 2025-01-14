@@ -28,7 +28,7 @@ from peewee import fn
 from api.db.db_utils import bulk_insert_into_db
 from api import settings
 from api.utils import current_timestamp, get_format_time, get_uuid
-from graphrag.mind_map_extractor import MindMapExtractor
+from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.settings import SVR_QUEUE_NAME
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search, rag_tokenizer
@@ -142,7 +142,7 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def get_unfinished_docs(cls):
         fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg,
-                  cls.model.run]
+                  cls.model.run, cls.model.parser_id]
         docs = cls.model.select(*fields) \
             .where(
             cls.model.status == StatusEnum.VALID.value,
@@ -295,9 +295,9 @@ class DocumentService(CommonService):
                 Tenant.asr_id,
                 Tenant.llm_id,
             )
-            .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id))
-            .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
-            .where(cls.model.id == doc_id)
+                .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id))
+                .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
+                .where(cls.model.id == doc_id)
         )
         configs = configs.dicts()
         if not configs:
@@ -392,9 +392,13 @@ class DocumentService(CommonService):
                 elif finished:
                     if d["parser_config"].get("raptor", {}).get("use_raptor") and d["progress_msg"].lower().find(
                             " raptor") < 0:
-                        queue_raptor_tasks(d)
+                        queue_raptor_o_graphrag_tasks(d, "raptor")
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
                         msg.append("------ RAPTOR -------")
+                    elif d["parser_id"] == "knowledge_graph" and d["progress_msg"].lower().find(" graphrag") < 0:
+                        queue_raptor_o_graphrag_tasks(d, "graphrag")
+                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
+                        msg.append("------ GraphRAG -------")
                     else:
                         status = TaskStatus.DONE.value
 
@@ -430,7 +434,7 @@ class DocumentService(CommonService):
         return False
 
 
-def queue_raptor_tasks(doc):
+def queue_raptor_o_graphrag_tasks(doc, ty="raptor"):
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     hasher = xxhash.xxh64()
     for field in sorted(chunking_config.keys()):
@@ -443,7 +447,8 @@ def queue_raptor_tasks(doc):
             "doc_id": doc["id"],
             "from_page": 100000000,
             "to_page": 100000000,
-            "progress_msg": "Start to do RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval)."
+            "progress_msg": "Start to do RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval)." \
+                if ty == "raptor" else "Start to do GraphRAG"
         }
 
     task = new_task()
@@ -451,7 +456,7 @@ def queue_raptor_tasks(doc):
         hasher.update(str(task.get(field, "")).encode("utf-8"))
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
-    task["type"] = "raptor"
+    task["type"] = ty
     assert REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=task), "Can't access Redis. Please check the Redis' status."
 
 

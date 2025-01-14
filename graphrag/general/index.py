@@ -22,34 +22,13 @@ import networkx as nx
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import TenantService
-from graphrag.community_reports_extractor import CommunityReportsExtractor
-from graphrag.entity_resolution import EntityResolution
-from graphrag.graph_extractor import GraphExtractor, DEFAULT_ENTITY_TYPES
-from graphrag.mind_map_extractor import MindMapExtractor
+from graphrag.general.community_reports_extractor import CommunityReportsExtractor
+from graphrag.general.entity_resolution import EntityResolution
+from graphrag.general.graph_extractor import GraphExtractor, DEFAULT_ENTITY_TYPES
+from graphrag.general.mind_map_extractor import MindMapExtractor
+from graphrag.utils import graph_merge
 from rag.nlp import rag_tokenizer
 from rag.utils import num_tokens_from_string
-
-
-def graph_merge(g1, g2):
-    g = g2.copy()
-    for n, attr in g1.nodes(data=True):
-        if n not in g2.nodes():
-            g.add_node(n, **attr)
-            continue
-
-        g.nodes[n]["weight"] += 1
-        if g.nodes[n]["description"].lower().find(attr["description"][:32].lower()) < 0:
-            g.nodes[n]["description"] += "\n" + attr["description"]
-
-    for source, target, attr in g1.edges(data=True):
-        if g.has_edge(source, target):
-            g[source][target].update({"weight": attr["weight"]+1})
-            continue
-        g.add_edge(source, target, **attr)
-
-    for node_degree in g.degree:
-        g.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
-    return g
 
 
 def build_knowledge_graph_chunks(tenant_id: str, chunks: list[str], callback, entity_types=DEFAULT_ENTITY_TYPES):

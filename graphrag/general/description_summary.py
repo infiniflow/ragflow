@@ -8,7 +8,7 @@ Reference:
 import json
 from dataclasses import dataclass
 
-from graphrag.extractor import Extractor
+from graphrag.general.extractor import Extractor
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
 from rag.llm.chat_model import Base as CompletionLLM
 

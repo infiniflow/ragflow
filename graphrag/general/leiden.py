@@ -10,7 +10,6 @@ import html
 from typing import Any, cast
 from graspologic.partition import hierarchical_leiden
 from graspologic.utils import largest_connected_component
-
 import networkx as nx
 from networkx import is_empty
 

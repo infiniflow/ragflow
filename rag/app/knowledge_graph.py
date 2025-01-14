@@ -1,6 +1,6 @@
 import re
 
-from graphrag.index import build_knowledge_graph_chunks
+from graphrag.general.index import build_knowledge_graph_chunks
 from rag.app import naive
 from rag.nlp import rag_tokenizer, tokenize_chunks
 

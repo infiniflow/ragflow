@@ -13,8 +13,8 @@ from typing import Any, Callable, Mapping
 from dataclasses import dataclass
 import tiktoken
 
-from graphrag.extractor import Extractor
-from graphrag.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
+from graphrag.general.extractor import Extractor
+from graphrag.general.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, clean_str
 from rag.llm.chat_model import Base as CompletionLLM
 import networkx as nx

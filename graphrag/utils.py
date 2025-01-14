@@ -3,11 +3,13 @@
 """
 Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
+ - [LightRag](https://github.com/HKUDS/LightRAG)
 """
 
 import html
 import json
 import re
+from hashlib import md5
 from typing import Any, Callable
 
 import numpy as np
@@ -131,3 +133,69 @@ def set_tags_to_cache(kb_ids, tags):
 
     k = hasher.hexdigest()
     REDIS_CONN.set(k, json.dumps(tags).encode("utf-8"), 600)
+
+
+def graph_merge(g1, g2):
+    g = g2.copy()
+    for n, attr in g1.nodes(data=True):
+        if n not in g2.nodes():
+            g.add_node(n, **attr)
+            continue
+
+        g.nodes[n]["weight"] += 1
+        if g.nodes[n]["description"].lower().find(attr["description"][:32].lower()) < 0:
+            g.nodes[n]["description"] += "\n" + attr["description"]
+
+    for source, target, attr in g1.edges(data=True):
+        if g.has_edge(source, target):
+            g[source][target].update({"weight": attr["weight"]+1})
+            continue
+        g.add_edge(source, target, **attr)
+
+    for node_degree in g.degree:
+        g.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
+    return g
+
+
+def compute_args_hash(*args):
+    return md5(str(args).encode()).hexdigest()
+
+
+def handle_single_entity_extraction(
+    record_attributes: list[str],
+    chunk_key: str,
+):
+    if len(record_attributes) < 4 or record_attributes[0] != '"entity"':
+        return None
+    # add this record as a node in the G
+    entity_name = clean_str(record_attributes[1].upper())
+    if not entity_name.strip():
+        return None
+    entity_type = clean_str(record_attributes[2].upper())
+    entity_description = clean_str(record_attributes[3])
+    entity_source_id = chunk_key
+    return dict(
+        entity_name=entity_name,
+        entity_type=entity_type,
+        description=entity_description,
+        source_id=entity_source_id,
+    )
+
+
+def pack_user_ass_to_openai_messages(*args: str):
+    roles = ["user", "assistant"]
+    return [
+        {"role": roles[i % 2], "content": content} for i, content in enumerate(args)
+    ]
+
+
+def split_string_by_multi_markers(content: str, markers: list[str]) -> list[str]:
+    """Split a string by multiple markers"""
+    if not markers:
+        return [content]
+    results = re.split("|".join(re.escape(marker) for marker in markers), content)
+    return [r.strip() for r in results if r.strip()]
+
+
+def is_float_regex(value):
+    return bool(re.match(r"^[-+]?[0-9]*\.?[0-9]+$", value))

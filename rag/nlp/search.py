@@ -59,7 +59,7 @@ class Dealer:
             if key in req and req[key] is not None:
                 condition[field] = req[key]
         # TODO(yzc): `available_int` is nullable however infinity doesn't support nullable columns.
-        for key in ["knowledge_graph_kwd", "available_int"]:
+        for key in ["knowledge_graph_kwd", "available_int", "entity_kwd", "from_entity_kwd", "to_entity_kwd"]:
             if key in req and req[key] is not None:
                 condition[key] = req[key]
         return condition
@@ -434,6 +434,8 @@ class Dealer:
             es_res = self.dataStore.search(fields, [], condition, [], OrderByExpr(), p, bs, index_name(tenant_id),
                                            kb_ids)
             dict_chunks = self.dataStore.getFields(es_res, fields)
+            for id, doc in dict_chunks.items():
+                doc["id"] = id
             if dict_chunks:
                 res.extend(dict_chunks.values())
             if len(dict_chunks.values()) < bs:
