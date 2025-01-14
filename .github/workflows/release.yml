@@ -113,7 +113,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cd sdk/python && \
-          poetry build
+          uv build
 
       - name: Publish package distributions to PyPI
         if: startsWith(github.ref, 'refs/tags/v')
