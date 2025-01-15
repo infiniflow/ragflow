@@ -46,6 +46,7 @@ import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { getExtension } from '@/utils/document-util';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigateToOtherFolder } from './hooks';
 
@@ -218,6 +219,13 @@ export function FilesTable() {
     },
   ];
 
+  const currentPagination = useMemo(() => {
+    return {
+      pageIndex: (pagination.current || 1) - 1,
+      pageSize: pagination.pageSize || 10,
+    };
+  }, [pagination]);
+
   const table = useReactTable({
     data: data?.files || [],
     columns,
@@ -229,8 +237,19 @@ export function FilesTable() {
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    onPaginationChange: (p: any) => {
-      setPagination({ page: p.pageIndex, pageSize: p.pageSize });
+    onPaginationChange: (updaterOrValue: any) => {
+      if (typeof updaterOrValue === 'function') {
+        const nextPagination = updaterOrValue(currentPagination);
+        setPagination({
+          page: nextPagination.pageIndex + 1,
+          pageSize: nextPagination.pageSize,
+        });
+      } else {
+        setPagination({
+          page: updaterOrValue.pageIndex,
+          pageSize: updaterOrValue.pageSize,
+        });
+      }
     },
     manualPagination: true, //we're doing manual "server-side" pagination
 
@@ -239,12 +258,10 @@ export function FilesTable() {
       columnFilters,
       columnVisibility,
       rowSelection,
-      pagination: {
-        pageIndex: pagination.current || 1,
-        pageSize: pagination.pageSize || 10,
-      },
+      pagination: currentPagination,
     },
     rowCount: data?.total ?? 0,
+    debugTable: true,
   });
 
   return (
@@ -299,8 +316,8 @@ export function FilesTable() {
       </div>
       <div className="flex items-center justify-end space-x-2 py-4">
         <div className="flex-1 text-sm text-muted-foreground">
-          {table.getFilteredSelectedRowModel().rows.length} of{' '}
-          {table.getFilteredRowModel().rows.length} row(s) selected.
+          {table.getFilteredSelectedRowModel().rows.length} of {data?.total}{' '}
+          row(s) selected.
         </div>
         <div className="space-x-2">
           <Button
