@@ -45,7 +45,7 @@ from rag.settings import print_rag_settings
 
 def update_progress():
     while True:
-        time.sleep(3)
+        time.sleep(6)
         try:
             DocumentService.update_progress()
         except Exception:
