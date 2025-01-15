@@ -1052,11 +1052,6 @@ def migrate_db():
         except Exception:
             pass
         try:
-            DB.execute_sql('ALTER TABLE llm DROP PRIMARY KEY;')
-            DB.execute_sql('ALTER TABLE llm ADD PRIMARY KEY (llm_name,fid);')
-        except Exception:
-            pass
-        try:
             migrate(
                 migrator.add_column('task', 'retry_count', IntegerField(default=0))
             )
