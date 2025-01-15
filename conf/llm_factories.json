@@ -2543,6 +2543,13 @@
             "tags": "TEXT EMBEDDING",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "GPUStack",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TTS,SPEECH2TEXT,TEXT RE-RANK",
+            "status": "1",
+            "llm": []
         }
     ]
 }
