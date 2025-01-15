@@ -10,6 +10,7 @@ import { Routes } from '@/routes';
 import {
   ChevronDown,
   Cpu,
+  File,
   Github,
   House,
   Library,
@@ -33,7 +34,7 @@ export function Header() {
       { path: Routes.Chat, name: t('chat'), icon: MessageSquareText },
       { path: Routes.Search, name: t('search'), icon: Search },
       { path: Routes.Agent, name: t('flow'), icon: Cpu },
-      // { path: '/file', name: t('fileManager'), icon: FileIcon },
+      { path: Routes.Files, name: t('fileManager'), icon: File },
     ],
     [t],
   );
