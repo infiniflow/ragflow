@@ -195,6 +195,7 @@ export const useSendMessageWithSse = (
           .pipeThrough(new EventSourceParserStream())
           .getReader();
 
+        let accumulatedText = '';
         while (true) {
           const x = await reader?.read();
           if (x) {
@@ -209,10 +210,13 @@ export const useSendMessageWithSse = (
               const d = val?.data;
               if (typeof d !== 'boolean') {
                 console.info('data:', d);
-                setAnswer({
+                accumulatedText += d.answer || '';
+                const updatedMessage = {
                   ...d,
+                  answer: accumulatedText,
                   conversationId: body?.conversation_id,
-                });
+                };
+                setAnswer(updatedMessage);
               }
             } catch (e) {
               console.warn(e);
