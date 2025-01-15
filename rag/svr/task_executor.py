@@ -354,16 +354,9 @@ def embedding(docs, mdl, parser_config=None, callback=None):
 
     tk_count = 0
     if len(tts) == len(cnts):
-        tts_ = np.array([])
-        for i in range(0, len(tts), batch_size):
-            vts, c = mdl.encode(tts[i: i + batch_size])
-            if len(tts_) == 0:
-                tts_ = vts
-            else:
-                tts_ = np.concatenate((tts_, vts), axis=0)
-            tk_count += c
-            callback(prog=0.6 + 0.1 * (i + 1) / len(tts), msg="")
-        tts = tts_
+        vts, c = mdl.encode(tts[0: 1])
+        tts = np.concatenate([vts for _ in range(len(tts))], axis=0)
+        tk_count += c
 
     cnts_ = np.array([])
     for i in range(0, len(cnts), batch_size):
