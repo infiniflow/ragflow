@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
+import { Search } from 'lucide-react';
 
 export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {}
@@ -22,4 +23,38 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
 );
 Input.displayName = 'Input';
 
-export { Input };
+export interface ExpandedInputProps extends Omit<InputProps, 'prefix'> {
+  prefix?: React.ReactNode;
+  suffix?: React.ReactNode;
+}
+
+const ExpandedInput = ({ suffix, prefix, ...props }: ExpandedInputProps) => {
+  return (
+    <div className="relative">
+      <span
+        className={cn({
+          ['absolute left-3 top-[50%] translate-y-[-50%]']: prefix,
+        })}
+      >
+        {prefix}
+      </span>
+      <Input
+        className={cn({ 'pr-10': suffix, 'pl-10': prefix })}
+        {...props}
+      ></Input>
+      <span
+        className={cn({
+          ['absolute right-3 top-[50%] translate-y-[-50%]']: suffix,
+        })}
+      >
+        {suffix}
+      </span>
+    </div>
+  );
+};
+
+const SearchInput = (props: InputProps) => {
+  return <ExpandedInput suffix={<Search />} {...props}></ExpandedInput>;
+};
+
+export { ExpandedInput, Input, SearchInput };
