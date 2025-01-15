@@ -1,7 +1,6 @@
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
@@ -175,24 +174,20 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
         <Background />
         <Controls>
           <ControlButton onClick={handleImportJson}>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <FolderInput className={controlIconClassname} />
-                </TooltipTrigger>
-                <TooltipContent>Import</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <FolderInput className={controlIconClassname} />
+              </TooltipTrigger>
+              <TooltipContent>Import</TooltipContent>
+            </Tooltip>
           </ControlButton>
           <ControlButton onClick={handleExportJson}>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <FolderOutput className={controlIconClassname} />
-                </TooltipTrigger>
-                <TooltipContent>Export</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <FolderOutput className={controlIconClassname} />
+              </TooltipTrigger>
+              <TooltipContent>Export</TooltipContent>
+            </Tooltip>
           </ControlButton>
         </Controls>
       </ReactFlow>

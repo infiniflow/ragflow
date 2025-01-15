@@ -13,7 +13,7 @@ export default function Dataset() {
     documentUploadLoading,
   } = useHandleUploadDocument();
   return (
-    <section className="p-8 text-foreground">
+    <section className="p-8">
       <ListFilterBar title="Files" showDialog={showDocumentUploadModal}>
         <Upload />
         Upload file

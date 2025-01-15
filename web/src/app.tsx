@@ -15,6 +15,7 @@ import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
 import React, { ReactNode, useEffect, useState } from 'react';
 import { ThemeProvider, useTheme } from './components/theme-provider';
+import { TooltipProvider } from './components/ui/tooltip';
 import storage from './utils/authorization-util';
 
 dayjs.extend(customParseFormat);
@@ -78,11 +79,13 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light" storageKey="ragflow-ui-theme">
-        <Root>{children}</Root>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <TooltipProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider defaultTheme="light" storageKey="ragflow-ui-theme">
+          <Root>{children}</Root>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </TooltipProvider>
   );
 };
 export function rootContainer(container: ReactNode) {

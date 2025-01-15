@@ -113,3 +113,28 @@ export function hexToArrayBuffer(input: string) {
 
   return view.buffer;
 }
+
+export function formatFileSize(bytes: number, si = true, dp = 1) {
+  let nextBytes = bytes;
+  const thresh = si ? 1000 : 1024;
+
+  if (Math.abs(bytes) < thresh) {
+    return nextBytes + ' B';
+  }
+
+  const units = si
+    ? ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+    : ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+  let u = -1;
+  const r = 10 ** dp;
+
+  do {
+    nextBytes /= thresh;
+    ++u;
+  } while (
+    Math.round(Math.abs(nextBytes) * r) / r >= thresh &&
+    u < units.length - 1
+  );
+
+  return nextBytes.toFixed(dp) + ' ' + units[u];
+}

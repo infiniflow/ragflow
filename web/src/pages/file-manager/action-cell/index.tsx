@@ -1,5 +1,4 @@
 import NewDocumentLink from '@/components/new-document-link';
-import SvgIcon from '@/components/svg-icon';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useDownloadFile } from '@/hooks/file-manager-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
@@ -8,13 +7,13 @@ import {
   isSupportedPreviewDocumentType,
 } from '@/utils/document-util';
 import {
-  DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
   EyeOutlined,
   LinkOutlined,
 } from '@ant-design/icons';
 import { Button, Space, Tooltip } from 'antd';
+import { FolderInput, Trash2 } from 'lucide-react';
 import { useHandleDeleteFile } from '../hooks';
 
 interface IProps {
@@ -92,15 +91,21 @@ const ActionCell = ({
             type="text"
             disabled={beingUsed}
             onClick={onShowMoveFileModal}
+            className="flex items-end"
           >
-            <SvgIcon name={`move`} width={16}></SvgIcon>
+            <FolderInput className="size-4" />
           </Button>
         </Tooltip>
       )}
       {isKnowledgeBase || (
         <Tooltip title={t('delete', { keyPrefix: 'common' })}>
-          <Button type="text" disabled={beingUsed} onClick={handleRemoveFile}>
-            <DeleteOutlined size={20} />
+          <Button
+            type="text"
+            disabled={beingUsed}
+            onClick={handleRemoveFile}
+            className="flex items-end"
+          >
+            <Trash2 className="size-4" />
           </Button>
         </Tooltip>
       )}
