@@ -48,7 +48,7 @@ dependencies = [
     "html-text==0.6.2",
     "httpx==0.27.0",
     "huggingface-hub>=0.25.0,<0.26.0",
-    "infinity-sdk==0.6.0-dev1",
+    "infinity-sdk==0.6.0-dev2",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
     "markdown==3.6",
@@ -120,7 +120,6 @@ dependencies = [
     "pyodbc>=5.2.0,<6.0.0",
     "pyicu>=2.13.1,<3.0.0",
     "flasgger>=0.9.7.1,<0.10.0",
-    "polars-lts-cpu>=1.9.0,<2.0.0",
     "xxhash>=3.5.0,<4.0.0"
 ]
 
