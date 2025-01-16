@@ -34,3 +34,18 @@ export const buildMessageUuidWithRole = (
 ) => {
   return `${message.role}_${message.id}`;
 };
+
+// Preprocess LaTeX equations to be rendered by KaTeX
+// ref: https://github.com/remarkjs/react-markdown/issues/785
+
+export const preprocessLaTeX = (content: string) => {
+  const blockProcessedContent = content.replace(
+    /\\\[([\s\S]*?)\\\]/g,
+    (_, equation) => `$$${equation}$$`,
+  );
+  const inlineProcessedContent = blockProcessedContent.replace(
+    /\\\(([\s\S]*?)\\\)/g,
+    (_, equation) => `$${equation}$`,
+  );
+  return inlineProcessedContent;
+};
