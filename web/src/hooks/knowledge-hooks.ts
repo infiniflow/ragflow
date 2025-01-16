@@ -72,6 +72,17 @@ export const useFetchKnowledgeList = (
   return { list: data, loading };
 };
 
+export const useSelectKnowledgeOptions = () => {
+  const { list } = useFetchKnowledgeList();
+
+  const options = list?.map((item) => ({
+    label: item.name,
+    value: item.id,
+  }));
+
+  return options;
+};
+
 export const useInfiniteFetchKnowledgeList = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });

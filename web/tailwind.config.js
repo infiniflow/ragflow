@@ -37,6 +37,7 @@ module.exports = {
         'colors-text-neutral-standard': 'var(--colors-text-neutral-standard)',
         'colors-text-functional-danger': 'var(--colors-text-functional-danger)',
         'colors-text-inverse-strong': 'var(--colors-text-inverse-strong)',
+        'colors-text-persist-light': 'var(--colors-text-persist-light)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',
@@ -154,6 +155,10 @@ module.exports = {
         },
         'colors-background-neutral-weak': {
           DEFAULT: 'var(--colors-background-neutral-weak)',
+          foreground: 'var(--background-inverse-standard-foreground)',
+        },
+        'colors-background-sentiment-solid-primary': {
+          DEFAULT: 'var(--colors-background-sentiment-solid-primary)',
           foreground: 'var(--background-inverse-standard-foreground)',
         },
       },

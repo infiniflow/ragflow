@@ -224,7 +224,7 @@ export const useHandleConnectToKnowledge = () => {
   );
 
   return {
-    initialValue,
+    initialConnectedIds: initialValue,
     connectToKnowledgeLoading: loading,
     onConnectToKnowledgeOk,
     connectToKnowledgeVisible,
@@ -232,6 +232,10 @@ export const useHandleConnectToKnowledge = () => {
     showConnectToKnowledgeModal: handleShowConnectToKnowledgeModal,
   };
 };
+
+export type UseHandleConnectToKnowledgeReturnType = ReturnType<
+  typeof useHandleConnectToKnowledge
+>;
 
 export const useHandleBreadcrumbClick = () => {
   const navigate = useNavigate();

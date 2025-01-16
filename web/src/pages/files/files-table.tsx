@@ -11,22 +11,14 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { ArrowUpDown, MoreHorizontal, Pencil } from 'lucide-react';
+import { ArrowUpDown } from 'lucide-react';
 import * as React from 'react';
 
 import SvgIcon from '@/components/svg-icon';
 import { TableEmpty, TableSkeleton } from '@/components/table-skeleton';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -48,7 +40,9 @@ import { formatDate } from '@/utils/date';
 import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigateToOtherFolder } from './hooks';
+import { ActionCell } from './action-cell';
+import { useHandleConnectToKnowledge, useNavigateToOtherFolder } from './hooks';
+import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 
 export function FilesTable() {
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -62,6 +56,14 @@ export function FilesTable() {
     keyPrefix: 'fileManager',
   });
   const navigateToOtherFolder = useNavigateToOtherFolder();
+  const {
+    connectToKnowledgeVisible,
+    hideConnectToKnowledgeModal,
+    showConnectToKnowledgeModal,
+    initialConnectedIds,
+    onConnectToKnowledgeOk,
+    connectToKnowledgeLoading,
+  } = useHandleConnectToKnowledge();
 
   const { pagination, data, loading, setPagination } = useFetchFileList();
 
@@ -176,44 +178,37 @@ export function FilesTable() {
     {
       accessorKey: 'kbs_info',
       header: t('knowledgeBase'),
-      cell: ({ row }) => (
-        <Button variant="destructive" size={'sm'}>
-          {row.getValue('kbs_info')}
-        </Button>
-      ),
+      cell: ({ row }) => {
+        const value = row.getValue('kbs_info');
+        return Array.isArray(value) ? (
+          <section className="flex gap-2 items-center">
+            {value?.slice(0, 2).map((x) => (
+              <Badge key={x.kb_id} className="" variant={'tertiary'}>
+                {x.kb_name}
+              </Badge>
+            ))}
+
+            {value.length > 2 && (
+              <Button variant={'icon'} size={'auto'}>
+                +{value.length - 2}
+              </Button>
+            )}
+          </section>
+        ) : (
+          ''
+        );
+      },
     },
     {
       id: 'actions',
       header: t('action'),
       enableHiding: false,
       cell: ({ row }) => {
-        const payment = row.original;
-
         return (
-          <section className="flex gap-4 items-center">
-            <Switch id="airplane-mode" />
-            <Button variant="secondary" size={'icon'}>
-              <Pencil />
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="secondary" size={'icon'}>
-                  <MoreHorizontal />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                <DropdownMenuItem
-                  onClick={() => navigator.clipboard.writeText(payment.id)}
-                >
-                  Copy payment ID
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>View customer</DropdownMenuItem>
-                <DropdownMenuItem>View payment details</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </section>
+          <ActionCell
+            row={row}
+            showConnectToKnowledgeModal={showConnectToKnowledgeModal}
+          ></ActionCell>
         );
       },
     },
@@ -338,6 +333,14 @@ export function FilesTable() {
           </Button>
         </div>
       </div>
+      {connectToKnowledgeVisible && (
+        <LinkToDatasetDialog
+          hideModal={hideConnectToKnowledgeModal}
+          initialConnectedIds={initialConnectedIds}
+          onConnectToKnowledgeOk={onConnectToKnowledgeOk}
+          loading={connectToKnowledgeLoading}
+        ></LinkToDatasetDialog>
+      )}
     </div>
   );
 }
