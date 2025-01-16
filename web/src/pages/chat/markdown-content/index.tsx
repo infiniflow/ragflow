@@ -20,7 +20,9 @@ import { useTranslation } from 'react-i18next';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
+import { preprocessLaTeX } from '@/utils/chat';
 import { replaceTextByOldReg } from '../utils';
+
 import styles from './index.less';
 
 const reg = /(~{2}\d+={2})/g;
@@ -48,7 +50,7 @@ const MarkdownContent = ({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return loading ? nextText?.concat('~~2$$') : nextText;
+    return loading ? nextText?.concat('~~2$$') : preprocessLaTeX(nextText);
   }, [content, loading, t]);
 
   useEffect(() => {
