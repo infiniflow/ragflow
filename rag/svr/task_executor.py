@@ -433,13 +433,10 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
     return res, tk_count, vector_size
 
 
-def run_graphrag(row, chat_mdl, embd_mdl, callback=None):
-    vts, _ = embd_mdl.encode(["ok"])
-    vector_size = len(vts[0])
-    vctr_nm = "q_%d_vec" % vector_size
+def run_graphrag(row, callback=None):
     chunks = []
     for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
-                                             fields=["content_with_weight", vctr_nm]):
+                                             fields=["content_with_weight"]):
         chunks.append((d["id"], d["content_with_weight"]))
 
     build_knowledge_graph_with_chunks(
@@ -508,10 +505,7 @@ def do_handle_task(task):
     elif task.get("task_type", "") == "graphrag":
         start_ts = timer()
         try:
-            # bind LLM for graphrag
-            chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-            # run graphrag
-            run_graphrag(task, chat_model, embedding_model, progress_callback)
+            run_graphrag(task, progress_callback)
             progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(timer() - start_ts))
         except TaskCanceledException:
             raise

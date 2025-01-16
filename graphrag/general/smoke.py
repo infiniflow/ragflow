@@ -16,40 +16,27 @@
 
 import argparse
 import json
-from graphrag.general import leiden
-from graphrag.general.community_reports_extractor import CommunityReportsExtractor
-from graphrag.general.entity_resolution import EntityResolution
-from graphrag.general.graph_extractor import GraphExtractor
-from graphrag.general.leiden import add_community_info2graph
+from api import settings
+from api.db.services.document_service import DocumentService
+from graphrag.general.index import WithCommunity
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-t', '--tenant_id', default=False, help="Tenant ID", action='store', required=True)
     parser.add_argument('-d', '--doc_id', default=False, help="Document ID", action='store', required=True)
     args = parser.parse_args()
+    e, doc = DocumentService.get_by_id(args.doc_id)
+    if not e:
+        raise LookupError("Document not found.")
+    kb_id = doc.kb_id
 
-    from api.db import LLMType
-    from api.db.services.llm_service import LLMBundle
-    from api import settings
-    from api.db.services.knowledgebase_service import KnowledgebaseService
+    chunks = [d["content_with_weight"] for d in
+              settings.retrievaler.chunk_list(args.doc_id, args.tenant_id, [kb_id], max_count=6,
+                                              fields=["content_with_weight"])]
+    chunks = [("x", c) for c in chunks]
 
-    kb_ids = KnowledgebaseService.get_kb_ids(args.tenant_id)
+    dealer = WithCommunity(args.tenant_id, kb_id, chunks, "English")
 
-    ex = GraphExtractor(LLMBundle(args.tenant_id, LLMType.CHAT))
-    docs = [d["content_with_weight"] for d in
-            settings.retrievaler.chunk_list(args.doc_id, args.tenant_id, kb_ids, max_count=6, fields=["content_with_weight"])]
-    graph = ex(docs)
-
-    er = EntityResolution(LLMBundle(args.tenant_id, LLMType.CHAT))
-    graph = er(graph.output)
-
-    comm = leiden.run(graph.output, {})
-    add_community_info2graph(graph.output, comm)
-
-    # print(json.dumps(nx.node_link_data(graph.output), ensure_ascii=False,indent=2))
-    print(json.dumps(comm, ensure_ascii=False, indent=2))
-
-    cr = CommunityReportsExtractor(LLMBundle(args.tenant_id, LLMType.CHAT))
-    cr = cr(graph.output)
-    print("------------------ COMMUNITY REPORT ----------------------\n", cr.output)
-    print(json.dumps(cr.structured_output, ensure_ascii=False, indent=2))
+    print("------------------ COMMUNITY REPORT ----------------------\n", dealer.community_reports)
+    print(json.dumps(dealer.community_structure, ensure_ascii=False, indent=2))

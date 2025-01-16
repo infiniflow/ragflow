@@ -348,6 +348,7 @@ class ESConnection(DocStoreConnection):
             if (not isinstance(k, str) or not v) and k != "available_int":
                 continue
             if isinstance(v, str):
+                v = re.sub(r"['\"]", " ", v)
                 scripts.append(f"ctx._source.{k} = '{v}';")
             elif isinstance(v, int):
                 scripts.append(f"ctx._source.{k} = {v};")

@@ -9,12 +9,16 @@ Reference:
 import html
 import json
 import re
+import time
 from hashlib import md5
 from typing import Any, Callable
 
 import numpy as np
 import xxhash
+from networkx.readwrite import json_graph
 
+from api import settings
+from rag.nlp import search, rag_tokenizer
 from rag.utils.redis_conn import REDIS_CONN
 
 ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
@@ -182,6 +186,30 @@ def handle_single_entity_extraction(
     )
 
 
+def handle_single_relationship_extraction(record_attributes: list[str], chunk_key: str):
+    if len(record_attributes) < 5 or record_attributes[0] != '"relationship"':
+        return None
+    # add this record as edge
+    source = clean_str(record_attributes[1].upper())
+    target = clean_str(record_attributes[2].upper())
+    edge_description = clean_str(record_attributes[3])
+
+    edge_keywords = clean_str(record_attributes[4])
+    edge_source_id = chunk_key
+    weight = (
+        float(record_attributes[-1]) if is_float_regex(record_attributes[-1]) else 1.0
+    )
+    return dict(
+        src_id=source,
+        tgt_id=target,
+        weight=weight,
+        description=edge_description,
+        keywords=edge_keywords,
+        source_id=edge_source_id,
+        metadata={"created_at": time.time()},
+    )
+
+
 def pack_user_ass_to_openai_messages(*args: str):
     roles = ["user", "assistant"]
     return [
@@ -199,3 +227,111 @@ def split_string_by_multi_markers(content: str, markers: list[str]) -> list[str]
 
 def is_float_regex(value):
     return bool(re.match(r"^[-+]?[0-9]*\.?[0-9]+$", value))
+
+
+def chunk_id(chunk):
+    return xxhash.xxh64((chunk["content_with_weight"] + chunk["kb_id"]).encode("utf-8")).hexdigest()
+
+
+def get_entity(tenant_id, kb_id, ent_name):
+    conds = {
+        "fields": ["content_with_weight"],
+        "size": 1,
+        "entity_kwd": [ent_name],
+        "knowledge_graph_kwd": ["entity"]
+    }
+    res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
+    for id in res.ids:
+        try:
+            return json.loads(res.field[id]["content_with_weight"])
+        except Exception:
+            continue
+
+
+def set_entity(tenant_id, kb_id, ent_name, meta):
+    chunk = {
+        "important_kwd": [ent_name],
+        "title_tks": rag_tokenizer.tokenize(ent_name),
+        "entity_kwd": [ent_name],
+        "knowledge_graph_kwd": "entity",
+        "entity_type_kwd": meta["entity_type"],
+        "content_with_weight": json.dumps(meta, ensure_ascii=False),
+        "content_ltks": rag_tokenizer.tokenize(meta["description"]),
+        "source_id": meta["source_id"],
+        "kb_id": kb_id
+    }
+    chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
+    res = settings.retrievaler.search({"entity_kwd": ent_name, "size": 1, "fields": []},
+                                      search.index_name(tenant_id), [kb_id])
+    if res.ids:
+        settings.docStoreConn.update({"entity_kwd": ent_name}, chunk, search.index_name(tenant_id), kb_id)
+    else:
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+
+
+def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name):
+    conds = {
+        "fields": ["content_with_weight"],
+        "size": 1,
+        "from_entity_kwd": [from_ent_name, to_ent_name],
+        "to_entity_kwd": [from_ent_name, to_ent_name],
+        "knowledge_graph_kwd": ["relation"]
+    }
+    res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
+    for id in res.ids:
+        try:
+            return json.loads(res.field[id]["content_with_weight"])
+        except Exception:
+            continue
+
+
+def set_relation(tenant_id, kb_id, from_ent_name, to_ent_name, meta):
+    chunk = {
+        "from_entity_kwd": [from_ent_name],
+        "to_entity_kwd": [to_ent_name],
+        "knowledge_graph_kwd": "relation",
+        "content_with_weight": json.dumps(meta, ensure_ascii=False),
+        "content_ltks": rag_tokenizer.tokenize(meta["description"]),
+        "important_kwd": meta["keywords"],
+        "source_id": meta["source_id"],
+        "weight_int": int(meta["weight"]),
+        "kb_id": kb_id
+    }
+    chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
+    res = settings.retrievaler.search({"from_entity_kwd": to_ent_name, "to_entity_kwd": to_ent_name, "size": 1, "fields": []},
+                                      search.index_name(tenant_id), [kb_id])
+    if res.ids:
+        settings.docStoreConn.update({"from_entity_kwd": to_ent_name, "to_entity_kwd": to_ent_name},
+                                 chunk,
+                                 search.index_name(tenant_id), kb_id)
+    else:
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+
+
+def get_graph(tenant_id, kb_id):
+    conds = {
+        "fields": ["content_with_weight"],
+        "size": 1,
+        "knowledge_graph_kwd": ["graph"]
+    }
+    res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
+    for id in res.ids:
+        try:
+            return json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]))
+        except Exception:
+            continue
+
+
+def set_graph(tenant_id, kb_id, graph):
+    chunk = {
+        "content_with_weight": json.dumps(nx.node_link_data(graph), ensure_ascii=False,
+                                          indent=2),
+        "knowledge_graph_kwd": "graph",
+        "kb_id": kb_id
+    }
+    res = settings.retrievaler.search({"knowledge_graph_kwd": "graph", "size": 1, "fields": []}, search.index_name(tenant_id), [kb_id])
+    if res.ids:
+        settings.docStoreConn.update({"knowledge_graph_kwd": "graph"}, chunk,
+                                     search.index_name(tenant_id), kb_id)
+    else:
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
