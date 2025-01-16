@@ -1,30 +1,31 @@
 ---
-sidebar_position: 5
-slug: /categorize_component
+sidebar_position: 6
+slug: /keyword_component
 ---
 
-# Categorize component
+# Keyword component
 
-The component that classifies user inputs and applies strategies accordingly. 
+A component that extracts keywords from a user query.
 
 ---
 
-The **Categorize** component is usually the downstream of the **Interact** component.
+A **Keyword** component uses the specified LLM to extract keywords from a user query.
 
 ## Scenarios
 
-A **Categorize** component is essential when you need the LLM to help you identify user intentions and apply appropriate processing strategies.
+A **Keyword** component is essential where you need to prepare keywords for a potential keyword search.
 
 ## Configurations
 
 ### Input
 
-The **Categorize** component relies on input variables to specify its data inputs (queries). Click **+ Add variable** in the **Input** section to add the desired input variables. There are two types of input variables: **Reference** and **Text**.
+The **Keyword** component relies on input variables to specify its data inputs (queries). Click **+ Add variable** in the **Input** section to add the desired input variables. There are two types of input variables: **Reference** and **Text**.
 
 - **Reference**: Uses a component's output or a user input as the data source. You are required to select from the dropdown menu:
   - A component ID under **Component Output**, or 
   - A global variable under **Begin input**, which is defined in the **Begin** component.
 - **Text**: Uses fixed text as the query. You are required to enter static text.
+
 
 ### Model
 
@@ -61,51 +62,18 @@ Click the dropdown menu of **Model** to show the model configuration window.
 - If you are uncertain about the mechanism behind **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**, you can simply choose one of the three options of **Freedom**.
 :::
 
-### Message window size
 
-An integer specifying the number of previous dialogue rounds to input into the LLM. For example, if it is set to 12, the tokens from the last 12 dialogue rounds will be fed to the LLM. This feature consumes additional tokens.
+### Number of keywords
 
-Defaults to 1.
+An integer specifying the number of keywords to extract from the user query. Defaults to 3. Please note that the number of extracted keywords depends on the LLM's capabilities and the token count in the user query, and may *not* match the integer you set.
 
-:::tip IMPORTANT
-This feature is used for multi-turn dialogue *only*. If your **Categorize** component is not part of a multi-turn dialogue (i.e., it is not in a loop), leave this field as-is.
-:::
-
-### Category name
-
-A **Categorize** component must have at least two categories. This field sets the name of the category. Click **+ Add Item** to include the intended categories. 
-
-:::tip NOTE
-You will notice that the category name is auto-populated. No worries. Each category is assigned a random name upon creation. Feel free to change it to a name that is understandable to the LLM.
-:::
-
-#### Description
-
-Description of this category.  
-
-You can input criteria, situation, or information that may help the LLM determine which inputs belong in this category.
-
-#### Examples
-
-Additional examples that may help the LLM determine which inputs belong in this category.
-
-:::danger IMPORTANT
-Examples are more helpful than the description if you want the LLM to classify particular cases into this category.
-:::
-
-#### Next step
-
-Specifies the downstream component of this category.
-
-- Once you specify the ID of the downstream component, a link is established between this category and the corresponding component.
-- If you manually link this category to a downstream component on the canvas, the ID of that component is auto-populated.
 
 ## Examples
 
-You can explore our customer service agent template, where a **Categorize** component (component ID: **Question Categorize**) has four defined categories and takes data inputs from an **Interact** component (component ID: **Interface**):
+Explore our general-purpose chatbot agent template, where the **Keyword** component (component ID: **keywords**) is used to extract keywords from financial inputs for a potential stock search in the **akshare** component:
 
 1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
 2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
-3. On the **agent template** page, hover over the **Interpreter** card and click **Use this template**.
+3. On the **agent template** page, hover over the **General-purpose chatbot** card and click **Use this template**.
 4. Name your new agent and click **OK** to enter the workflow editor.
-
+5. Click on the **Keyword** component to display its **Configuration** window.
