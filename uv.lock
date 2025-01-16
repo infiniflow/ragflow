@@ -2371,13 +2371,13 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.6.0.dev1"
+version = "0.6.0.dev2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "openpyxl" },
     { name = "pandas" },
-    { name = "polars" },
+    { name = "polars-lts-cpu" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pytest" },
@@ -2388,7 +2388,7 @@ dependencies = [
     { name = "thrift" },
 ]
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/84/25/1de6d489bfbbf12791f258ef93af6fad4a559ee829cf9b4c1097e9edb751/infinity_sdk-0.6.0.dev1-py3-none-any.whl", hash = "sha256:e9c61b8af918911674e4a5ac2d7e5233c9d29f06f025afab68fdebf90fa5d6b9", size = 67967 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/22/3e/fa626b567436c9b76974678ae10ac0c0666bc5a085f9d5aed14745b20413/infinity_sdk-0.6.0.dev2-py3-none-any.whl", hash = "sha256:88197c9f634f5a8f06d12eb6a8b1912c3987df0789d9f0d90f4534983feb48d1", size = 67980 },
 ]
 
 [[package]]
@@ -3812,30 +3812,16 @@ wheels = [
 ]
 
 [[package]]
-name = "polars"
+name = "polars-lts-cpu"
 version = "1.9.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/53/09/c2fb0b231d551e0c8e68097d08577712bdff1ba91346cda8228e769602f5/polars-1.9.0.tar.gz", hash = "sha256:8e1206ef876f61c1d50a81e102611ea92ee34631cb135b46ad314bfefd3cb122", size = 4027431 }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/30/b8/81ada35f862f5b37456b225f578128ec4314da5a4627b440acf01180fbf9/polars_lts_cpu-1.9.0.tar.gz", hash = "sha256:4848ea9f54cb59cce6b08a5f161a5c488684b55729f2ef076c65ca92759a985e", size = 4028430 }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/64/cc/3d0292048d8f9045a03510aeecda2e6ed9df451ae8853274946ff841f98b/polars-1.9.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:a471d2ce96f6fa5dd0ef16bcdb227f3dbe3af8acb776ca52f9e64ef40c7489a0", size = 31870933 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ee/be/15af97f4d8b775630da16a8bf0141507d9c0ae5f2637b9a27ed337b3b1ba/polars-1.9.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:94b12d731cd200d2c50b13fc070d6353f708e632bca6529c5a72aa6a69e5285d", size = 28171055 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/bb/57/b286b317f061d8f17bab4726a27e7b185fbf3d3db65cf689074256ea34a9/polars-1.9.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f85f132732aa63c6f3b502b0fdfc3ba9f0b78cc6330059b5a2d6f9fd78508acb", size = 33063367 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e5/25/bf5d43dcb538bf6573b15f3d5995a52be61b8fbce0cd737e72c4d25eef88/polars-1.9.0-cp38-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:f753c8941a3b3249d59262d68a856714a96a7d4e16977aefbb196be0c192e151", size = 29764698 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a6/cf/f9170a3ac20e0efb9d3c1cdacc677e35b711ffd5ec48a6d5f3da7b7d8663/polars-1.9.0-cp38-abi3-win_amd64.whl", hash = "sha256:95de07066cd797dd940fa2783708a7bef93c827a57be0f4dfad3575a6144212b", size = 32819142 },
-]
-
-[[package]]
-name = "polars-lts-cpu"
-version = "1.19.0"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a5/55/6cfdbcd982dfa1cdf902e75c4540a58261447ee866d74263b3be7ae3a3ee/polars_lts_cpu-1.19.0.tar.gz", hash = "sha256:6b404b092173ab5d21cdab1e3406240c34ccace6f1954a780436333f4fe5d5bb", size = 4266208 }
-wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/bd/53/cc9f69f000fcc579ac8003ad6b6d2dcb4710d1e257d1cdfade9ca44be589/polars_lts_cpu-1.19.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:07846ed18800067e92848487d2c6befac3fad50d45719326afdf6d9d1a56c4b0", size = 29168732 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/dc/01/9177e9788d4a1b60cdf6d18d22d817397644f1b6dda44b86575ca5e6fd93/polars_lts_cpu-1.19.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:0d88eb211a57063e5bcb809e49d03e0c891f0cf4df7482f3661a0fe8eaaab56f", size = 26150653 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/bf/a6/8a7ec6696c5e665f80d55a9f5631b261fe79655275e804ab6a483b309235/polars_lts_cpu-1.19.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:86f586dc0e5c4292235e87218bbba79f4eefe465a5fdc271ee4410a1e6f3c25a", size = 32409093 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e9/01/3e15f949b1aea4468f4a291df90f100a87c7e23f57ed78f8c20c4d56aafc/polars_lts_cpu-1.19.0-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:2e5e104807663fc0fbd80d57c54b6b91ee52b4f62bbb7796eb7133d4d8215a72", size = 29704507 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e8/7a/3d055db2e9963454fe8c5f85726154804aa8c56fbb06d7f0bfc09a61cd74/polars_lts_cpu-1.19.0-cp39-abi3-win_amd64.whl", hash = "sha256:944445bb37f927620b923abfb5b37ec91d0ecc4c620613bf94c706ffdb0a7053", size = 32844829 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/88/b8/98353587fa16f19b06f537b6e8fa008e9321dd11ec6d69e321d7166dc06f/polars_lts_cpu-1.19.0-cp39-abi3-win_arm64.whl", hash = "sha256:29976c562d8ad169f7c4ebdfb175a47b6789d2ca66db184bd82662f627d89842", size = 29029286 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/9a/72/24127dc03627b0c50bef745b1ee0451359de17ba8e9a70027fdaf9f9c76e/polars_lts_cpu-1.9.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:1dd1484b9a08171184f198c7b1a1bdcea7457de4a7d481949ec410ee96a49bc9", size = 31460193 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/0d/36/2a816b333b2eeff12187026958cd2fac4a31f7f00e8a50f85ab08ed0531e/polars_lts_cpu-1.9.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:fb10fd9f8a8c0145ec70c4f3dde3ff1ef9f18079964c9dc40e8aac3d7521a862", size = 28171134 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/69/df/c393f41ad2da9cb0397436e3b424a1982b093d02181fc09ffbcefb98ff30/polars_lts_cpu-1.9.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9eb332c2e5837759a5cb406566a1d0feddf145711176cf89f745dba010c739a9", size = 32625386 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/27/f2/cad4bccf463695de44869d17419f891b356b3af7275dcc64be95264317e5/polars_lts_cpu-1.9.0-cp38-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:e8f8eb6d9c5b017eb4ffb6276255b77d4eb8508e30bc2898e2b55ebe8bc9715c", size = 29764771 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/53/b1/d7236cbcef17de67938be6068ff72153bffed7543b496a93b31b88e0c670/polars_lts_cpu-1.9.0-cp38-abi3-win_amd64.whl", hash = "sha256:0c199d86e3d6b775264e3a596ebfbae4c7848b88bed4248822b7b498b2e96f2d", size = 32949159 },
 ]
 
 [[package]]
@@ -4766,7 +4752,6 @@ dependencies = [
     { name = "pdfplumber" },
     { name = "peewee" },
     { name = "pillow" },
-    { name = "polars-lts-cpu" },
     { name = "protobuf" },
     { name = "psycopg2-binary" },
     { name = "pyclipper" },
@@ -4875,7 +4860,7 @@ requires-dist = [
     { name = "httpx", specifier = "==0.27.0" },
     { name = "huggingface-hub", specifier = ">=0.25.0,<0.26.0" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.6.0.dev1" },
+    { name = "infinity-sdk", specifier = "==0.6.0.dev2" },
     { name = "itsdangerous", specifier = "==2.1.2" },
     { name = "markdown", specifier = "==3.6" },
     { name = "markdown-to-json", specifier = "==2.1.1" },
@@ -4895,7 +4880,6 @@ requires-dist = [
     { name = "pdfplumber", specifier = "==0.10.4" },
     { name = "peewee", specifier = "==3.17.1" },
     { name = "pillow", specifier = "==10.4.0" },
-    { name = "polars-lts-cpu", specifier = ">=1.9.0,<2.0.0" },
     { name = "protobuf", specifier = "==5.27.2" },
     { name = "psycopg2-binary", specifier = "==2.9.9" },
     { name = "pyclipper", specifier = "==1.3.0.post5" },
