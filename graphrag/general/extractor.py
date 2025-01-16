@@ -64,6 +64,7 @@ class Extractor:
     def _entities_and_relations(self, chunk_key: str, records: list, tuple_delimiter: str):
         maybe_nodes = defaultdict(list)
         maybe_edges = defaultdict(list)
+        ent_types = [t.lower() for t in self._entity_types]
         for record in records:
             record_attributes = split_string_by_multi_markers(
                 record, [tuple_delimiter]
@@ -72,9 +73,10 @@ class Extractor:
             if_entities = handle_single_entity_extraction(
                 record_attributes, chunk_key
             )
-            if if_entities is not None:
+            if if_entities is not None and if_entities.get("entity_type", "unknown").lower() in ent_types:
                 maybe_nodes[if_entities["entity_name"]].append(if_entities)
                 continue
+
             if_relation = handle_single_relationship_extraction(
                 record_attributes, chunk_key
             )
@@ -136,12 +138,14 @@ class Extractor:
         return all_entities_data, all_relationships_data
 
     def _merge_nodes(self, entity_name: str, entities: list[dict]):
+        if not entities:
+            return
         already_entity_types = []
         already_source_ids = []
         already_description = []
 
         already_node = self._get_entity_(entity_name)
-        if already_node is not None:
+        if already_node:
             already_entity_types.append(already_node["entity_type"])
             already_source_ids.extend(already_node["source_id"])
             already_description.append(already_node["description"])
@@ -176,13 +180,15 @@ class Extractor:
             tgt_id: str,
             edges_data: list[dict]
     ):
+        if not edges_data:
+            return
         already_weights = []
         already_source_ids = []
         already_description = []
         already_keywords = []
 
         relation = self._get_relation_(src_id, tgt_id)
-        if relation is not None:
+        if relation:
             already_weights = [relation["weight"]]
             already_source_ids = relation["source_id"]
             already_description = [relation["description"]]

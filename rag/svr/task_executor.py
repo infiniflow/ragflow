@@ -19,7 +19,7 @@
 import random
 import sys
 from api.utils.log_utils import initRootLogger
-from graphrag.light.index import build_knowledge_graph_with_chunks
+from graphrag.general.index import WithCommunity, WithResolution
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 
 CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
@@ -178,8 +178,7 @@ def collect():
         logging.info(f"collect task {msg['id']} {state}")
         return None
 
-    if msg.get("type", "") == "raptor":
-        task["task_type"] = "raptor"
+    task["task_type"] = msg.get("task_type", "")
     return task
 
 
@@ -439,10 +438,25 @@ def run_graphrag(row, callback=None):
                                              fields=["content_with_weight"]):
         chunks.append((d["id"], d["content_with_weight"]))
 
-    build_knowledge_graph_with_chunks(
-        row["tenant_id"], str(row["kb_id"]), chunks, callback,
+    WithCommunity(
+        row["tenant_id"], str(row["kb_id"]), chunks,
         row["parser_config"]["graphrag"]["language"],
-        row["parser_config"]["graphrag"]["entity_types"]
+        row["parser_config"]["graphrag"]["entity_types"],
+        callback
+    )
+
+
+def run_graphrag_community(row, callback=None):
+    chunks = []
+    for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
+                                             fields=["content_with_weight"]):
+        chunks.append((d["id"], d["content_with_weight"]))
+
+    WithCommunity(
+        row["tenant_id"], str(row["kb_id"]), chunks,
+        row["parser_config"]["graphrag"]["language"],
+        row["parser_config"]["graphrag"]["entity_types"],
+        callback
     )
 
 
@@ -506,6 +520,33 @@ def do_handle_task(task):
         start_ts = timer()
         try:
             run_graphrag(task, progress_callback)
+            progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(timer() - start_ts))
+        except TaskCanceledException:
+            raise
+        except Exception as e:
+            error_message = f'Fail to bind LLM used by RAPTOR: {str(e)}'
+            progress_callback(-1, msg=error_message)
+            logging.exception(error_message)
+            raise
+    elif task.get("task_type", "") == "graph_resolution":
+        start_ts = timer()
+        try:
+            WithResolution(
+                task["tenant_id"], str(task["kb_id"]),
+                progress_callback
+            )
+            progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(timer() - start_ts))
+        except TaskCanceledException:
+            raise
+        except Exception as e:
+            error_message = f'Fail to bind LLM used by RAPTOR: {str(e)}'
+            progress_callback(-1, msg=error_message)
+            logging.exception(error_message)
+            raise
+    elif task.get("task_type", "") == "graph_community":
+        start_ts = timer()
+        try:
+            run_graphrag_community(task, progress_callback)
             progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(timer() - start_ts))
         except TaskCanceledException:
             raise

@@ -40,22 +40,23 @@ class CommunityReportsExtractor(Extractor):
     _max_report_length: int
 
     def __init__(
-        self,
-        llm_invoker: CompletionLLM,
-        extraction_prompt: str | None = None,
-        on_error: ErrorHandlerFn | None = None,
-        max_report_length: int | None = None,
+            self,
+            llm_invoker: CompletionLLM,
+            get_entity: Callable | None = None,
+            set_entity: Callable | None = None,
+            get_relation: Callable | None = None,
+            set_relation: Callable | None = None,
+            max_report_length: int | None = None,
     ):
+        super().__init__(llm_invoker, get_entity=get_entity, set_entity=set_entity, get_relation=get_relation, set_relation=set_relation)
         """Init method definition."""
         self._llm = llm_invoker
-        self._extraction_prompt = extraction_prompt or COMMUNITY_REPORT_PROMPT
-        self._on_error = on_error or (lambda _e, _s, _d: None)
+        self._extraction_prompt = COMMUNITY_REPORT_PROMPT
         self._max_report_length = max_report_length or 1500
 
     def __call__(self, graph: nx.Graph, callback: Callable | None = None):
         communities: dict[str, dict[str, list]] = leiden.run(graph, {})
         total = sum([len(comm.items()) for _, comm in communities.items()])
-        relations_df = pd.DataFrame([{"source":s, "target": t, **attr} for s, t, attr in graph.edges(data=True)])
         res_str = []
         res_dict = []
         over, token_count = 0, 0
@@ -63,9 +64,14 @@ class CommunityReportsExtractor(Extractor):
         for level, comm in communities.items():
             for cm_id, ents in comm.items():
                 weight = ents["weight"]
-                ents = ents["nodes"]
-                ent_df = pd.DataFrame([{"entity": n, **graph.nodes[n]} for n in ents])
-                rela_df = relations_df[(relations_df["source"].isin(ents)) | (relations_df["target"].isin(ents))].reset_index(drop=True)
+                ent_df = pd.DataFrame(self._get_entity_(ents["nodes"]))#[{"entity": n, **graph.nodes[n]} for n in ents])
+                ent_df["entity"] = ent_df["entity_name"]
+                del ent_df["entity_name"]
+                rela_df = pd.DataFrame(self._get_relation_(ents, ents, 10000))
+                rela_df["source"] = rela_df["src_id"]
+                rela_df["target"] = rela_df["tgt_id"]
+                del rela_df["src_id"]
+                del rela_df["tgt_id"]
 
                 prompt_variables = {
                     "entity_df": ent_df.to_csv(index_label="id"),

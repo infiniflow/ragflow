@@ -107,6 +107,7 @@ class ESConnection(DocStoreConnection):
                 logger.exception("ESConnection.indexExist got exception")
                 if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
                     continue
+                break
         return False
 
     """
@@ -309,8 +310,9 @@ class ESConnection(DocStoreConnection):
                 except Exception as e:
                     logger.exception(
                         f"ESConnection.update(index={indexName}, id={id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
-                    if str(e).find("Timeout") > 0:
+                    if re.search(r"(timeout|connection)", str(e).lower()):
                         continue
+                    break
             return False
 
         # update unspecific maybe-multiple documents
@@ -348,18 +350,19 @@ class ESConnection(DocStoreConnection):
             if (not isinstance(k, str) or not v) and k != "available_int":
                 continue
             if isinstance(v, str):
-                v = re.sub(r"['\"]", " ", v)
-                scripts.append(f"ctx._source.{k} = '{v}';")
+                v = re.sub(r"[']", " ", v)
+                scripts.append(f"ctx._source.{k}='{v}';")
             elif isinstance(v, int):
-                scripts.append(f"ctx._source.{k} = {v};")
+                scripts.append(f"ctx._source.{k}={v};")
             elif isinstance(v, list):
-                scripts.append(f"ctx._source.{k} = {json.dumps(v)};")
+                scripts.append(f"ctx._source.{k}={json.dumps(v, ensure_ascii=False)};")
             else:
                 raise Exception(
                     f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
         ubq = UpdateByQuery(
             index=indexName).using(
             self.es).query(bqry)
+        print("\n".join(scripts), "\n==============================\n")
         ubq = ubq.script(source="".join(scripts), params=params)
         ubq = ubq.params(refresh=True)
         ubq = ubq.params(slices=5)
@@ -371,8 +374,9 @@ class ESConnection(DocStoreConnection):
                 return True
             except Exception as e:
                 logger.error("ESConnection.update got exception: " + str(e))
-                if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
+                if re.search(r"(timeout|connection|conflict)", str(e).lower()):
                     continue
+                break
         return False
 
     def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:
@@ -402,7 +406,7 @@ class ESConnection(DocStoreConnection):
                 return res["deleted"]
             except Exception as e:
                 logger.warning("ESConnection.delete got exception: " + str(e))
-                if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
+                if re.search(r"(timeout|connection)", str(e).lower()):
                     time.sleep(3)
                     continue
                 if re.search(r"(not_found)", str(e), re.IGNORECASE):

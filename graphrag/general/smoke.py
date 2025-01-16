@@ -16,10 +16,15 @@
 
 import argparse
 import json
+
+import networkx as nx
+
 from api import settings
 from api.db.services.document_service import DocumentService
-from graphrag.general.index import WithCommunity
+from graphrag.general.index import WithCommunity, Dealer, WithResolution
+from graphrag.light.graph_extractor import GraphExtractor
 
+settings.init_settings()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -36,7 +41,11 @@ if __name__ == "__main__":
                                               fields=["content_with_weight"])]
     chunks = [("x", c) for c in chunks]
 
-    dealer = WithCommunity(args.tenant_id, kb_id, chunks, "English")
+    dealer = Dealer(GraphExtractor, args.tenant_id, kb_id, chunks, "English")
+    print(json.dumps(nx.node_link_data(dealer.graph), ensure_ascii=False, indent=2))
+
+    dealer = WithResolution(args.tenant_id, kb_id)
+    dealer = WithCommunity(args.tenant_id, kb_id)
 
     print("------------------ COMMUNITY REPORT ----------------------\n", dealer.community_reports)
     print(json.dumps(dealer.community_structure, ensure_ascii=False, indent=2))

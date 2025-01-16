@@ -395,10 +395,22 @@ class DocumentService(CommonService):
                         queue_raptor_o_graphrag_tasks(d, "raptor")
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
                         msg.append("------ RAPTOR -------")
-                    elif d["parser_id"] == "knowledge_graph" and d["progress_msg"].lower().find(" graphrag") < 0:
+                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") and d["progress_msg"].lower().find(" graphrag ") < 0:
                         queue_raptor_o_graphrag_tasks(d, "graphrag")
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
                         msg.append("------ GraphRAG -------")
+                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") \
+                        and d["parser_config"].get("graphrag", {}).get("resolution") \
+                        and d["progress_msg"].lower().find(" graph resolution ") < 0:
+                        queue_raptor_o_graphrag_tasks(d, "graph_resolution")
+                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
+                        msg.append("------ Graph Resolution -------")
+                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") \
+                        and d["parser_config"].get("graphrag", {}).get("community") \
+                        and d["progress_msg"].lower().find(" graph community ") < 0:
+                        queue_raptor_o_graphrag_tasks(d, "graph_community")
+                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
+                        msg.append("------ Graph Community Detection-------")
                     else:
                         status = TaskStatus.DONE.value
 
@@ -440,6 +452,13 @@ def queue_raptor_o_graphrag_tasks(doc, ty="raptor"):
     for field in sorted(chunking_config.keys()):
         hasher.update(str(chunking_config[field]).encode("utf-8"))
 
+    msg = {
+        "raptor": "Start to do RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval).",
+        "graphrag": "Start to do Graph Extraction",
+        "graph_resolution": "Start to do Graph Resolution",
+        "graph_community": "Start to do Graph Community Detection"
+    }
+
     def new_task():
         nonlocal doc
         return {
@@ -447,8 +466,7 @@ def queue_raptor_o_graphrag_tasks(doc, ty="raptor"):
             "doc_id": doc["id"],
             "from_page": 100000000,
             "to_page": 100000000,
-            "progress_msg": "Start to do RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval)." \
-                if ty == "raptor" else "Start to do GraphRAG"
+            "progress_msg":  msg[ty]
         }
 
     task = new_task()
@@ -456,7 +474,7 @@ def queue_raptor_o_graphrag_tasks(doc, ty="raptor"):
         hasher.update(str(task.get(field, "")).encode("utf-8"))
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
-    task["type"] = ty
+    task["task_type"] = ty
     assert REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=task), "Can't access Redis. Please check the Redis' status."
 
 

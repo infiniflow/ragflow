@@ -13,6 +13,7 @@ import time
 from hashlib import md5
 from typing import Any, Callable
 
+import networkx as nx
 import numpy as np
 import xxhash
 from networkx.readwrite import json_graph
@@ -146,7 +147,13 @@ def graph_merge(g1, g2):
             g.add_node(n, **attr)
             continue
 
-        g.nodes[n]["weight"] += 1
+        continue
+        if not attr.get("description"):
+            continue
+
+        if "description" not in g.nodes[n]:
+            g.nodes[n]["description"] = attr["description"]
+
         if g.nodes[n]["description"].lower().find(attr["description"][:32].lower()) < 0:
             g.nodes[n]["description"] += "\n" + attr["description"]
 
@@ -154,7 +161,7 @@ def graph_merge(g1, g2):
         if g.has_edge(source, target):
             g[source][target].update({"weight": attr["weight"]+1})
             continue
-        g.add_edge(source, target, **attr)
+        g.add_edge(source, target)#, **attr)
 
     for node_degree in g.degree:
         g.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
@@ -179,8 +186,8 @@ def handle_single_entity_extraction(
     entity_description = clean_str(record_attributes[3])
     entity_source_id = chunk_key
     return dict(
-        entity_name=entity_name,
-        entity_type=entity_type,
+        entity_name=entity_name.upper(),
+        entity_type=entity_type.upper(),
         description=entity_description,
         source_id=entity_source_id,
     )
@@ -199,9 +206,10 @@ def handle_single_relationship_extraction(record_attributes: list[str], chunk_ke
     weight = (
         float(record_attributes[-1]) if is_float_regex(record_attributes[-1]) else 1.0
     )
+    pair = sorted([source.upper(), target.upper()])
     return dict(
-        src_id=source,
-        tgt_id=target,
+        src_id=pair[0],
+        tgt_id=pair[1],
         weight=weight,
         description=edge_description,
         keywords=edge_keywords,
@@ -236,16 +244,21 @@ def chunk_id(chunk):
 def get_entity(tenant_id, kb_id, ent_name):
     conds = {
         "fields": ["content_with_weight"],
-        "size": 1,
-        "entity_kwd": [ent_name],
+        "entity_kwd": ent_name,
+        "size": 10000,
         "knowledge_graph_kwd": ["entity"]
     }
-    res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
-    for id in res.ids:
+    res = []
+    es_res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
+    for id in es_res.ids:
         try:
-            return json.loads(res.field[id]["content_with_weight"])
+            if isinstance(ent_name, str):
+                return json.loads(es_res.field[id]["content_with_weight"])
+            res.append(json.loads(es_res.field[id]["content_with_weight"]))
         except Exception:
             continue
+
+    return res
 
 
 def set_entity(tenant_id, kb_id, ent_name, meta):
@@ -269,20 +282,31 @@ def set_entity(tenant_id, kb_id, ent_name, meta):
         settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
 
 
-def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name):
+def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
+    ents = from_ent_name
+    if isinstance(ents, str):
+        ents = [from_ent_name]
+    if isinstance(to_ent_name, str):
+        to_ent_name = [to_ent_name]
+    ents.extend(to_ent_name)
+    ents = list(set(ents))
     conds = {
         "fields": ["content_with_weight"],
-        "size": 1,
-        "from_entity_kwd": [from_ent_name, to_ent_name],
-        "to_entity_kwd": [from_ent_name, to_ent_name],
+        "size": size,
+        "from_entity_kwd": ents,
+        "to_entity_kwd": ents,
         "knowledge_graph_kwd": ["relation"]
     }
-    res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
-    for id in res.ids:
+    res = []
+    es_res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
+    for id in es_res.ids:
         try:
-            return json.loads(res.field[id]["content_with_weight"])
+            if size == 1:
+                return json.loads(es_res.field[id]["content_with_weight"])
+            res.append(json.loads(es_res.field[id]["content_with_weight"]))
         except Exception:
             continue
+    return res
 
 
 def set_relation(tenant_id, kb_id, from_ent_name, to_ent_name, meta):
