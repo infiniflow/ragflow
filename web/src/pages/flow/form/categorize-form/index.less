@@ -2,7 +2,9 @@
 @darkBackgroundColor: rgba(150, 150, 150, 0.12);
 
 .caseCard {
-  background-color: @darkBackgroundColor;
+  :global(.ant-collapse-content) {
+    background-color: @darkBackgroundColor;
+  }
 }
 
 .addButton {
