@@ -172,6 +172,10 @@ class XInferenceRerank(Base):
     def similarity(self, query: str, texts: list):
         if len(texts) == 0:
             return np.array([]), 0
+        pairs = [(query, truncate(t, 4096)) for t in texts]
+        token_count = 0
+        for _, t in pairs:
+            token_count += num_tokens_from_string(t)
         data = {
             "model": self.model_name,
             "query": query,
@@ -183,7 +187,7 @@ class XInferenceRerank(Base):
         rank = np.zeros(len(texts), dtype=float)
         for d in res["results"]:
             rank[d["index"]] = d["relevance_score"]
-        return rank, res["meta"]["tokens"]["input_tokens"] + res["meta"]["tokens"]["output_tokens"]
+        return rank, token_count
 
 
 class LocalAIRerank(Base):
