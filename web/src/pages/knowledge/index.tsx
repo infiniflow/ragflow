@@ -79,7 +79,7 @@ const KnowledgeList = () => {
           next={fetchNextPage}
           hasMore={hasNextPage}
           loader={<Skeleton avatar paragraph={{ rows: 1 }} active />}
-          endMessage={total && <Divider plain>{t('noMoreData')} 🤐</Divider>}
+          endMessage={!!total && <Divider plain>{t('noMoreData')} 🤐</Divider>}
           scrollableTarget="scrollableDiv"
         >
           <Flex

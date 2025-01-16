@@ -29,6 +29,7 @@ const llmFactoryToUrlMap = {
   OpenRouter: 'https://openrouter.ai/docs',
   HuggingFace:
     'https://huggingface.co/docs/text-embeddings-inference/quick_tour',
+  GPUStack: 'https://docs.gpustack.ai/latest/quickstart',
 };
 type LlmFactory = keyof typeof llmFactoryToUrlMap;
 
@@ -73,6 +74,13 @@ const OllamaModal = ({
       { value: 'embedding', label: 'embedding' },
       { value: 'rerank', label: 'rerank' },
       { value: 'image2text', label: 'image2text' },
+      { value: 'speech2text', label: 'sequence2text' },
+      { value: 'tts', label: 'tts' },
+    ],
+    GPUStack: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'rerank', label: 'rerank' },
       { value: 'speech2text', label: 'sequence2text' },
       { value: 'tts', label: 'tts' },
     ],
