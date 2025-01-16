@@ -426,6 +426,7 @@ export const initialGenerateValues = {
 
 export const initialRewriteQuestionValues = {
   ...initialLlmBaseValues,
+  message_history_window_size: 6,
 };
 
 export const initialRelevantValues = {
@@ -445,7 +446,7 @@ export const initialMessageValues = {
 
 export const initialKeywordExtractValues = {
   ...initialLlmBaseValues,
-  top_n: 1,
+  top_n: 3,
   ...initialQueryBaseValues,
 };
 export const initialDuckValues = {
