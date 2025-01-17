@@ -18,9 +18,15 @@ import argparse
 import json
 from api import settings
 import networkx as nx
+
+from api.db import LLMType
 from api.db.services.document_service import DocumentService
+from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.llm_service import LLMBundle
+from api.db.services.user_service import TenantService
 from graphrag.general.index import Dealer
 from graphrag.light.graph_extractor import GraphExtractor
+from rag.utils.redis_conn import RedisDistributedLock
 
 settings.init_settings()
 
@@ -40,6 +46,13 @@ if __name__ == "__main__":
                                               fields=["content_with_weight"])]
     chunks = [("x", c) for c in chunks]
 
-    dealer = Dealer(GraphExtractor, args.tenant_id, kb_id, chunks, "English")
+    RedisDistributedLock.clean_lock(kb_id)
+
+    _, tenant = TenantService.get_by_id(args.tenant_id)
+    llm_bdl = LLMBundle(args.tenant_id, LLMType.CHAT, tenant.llm_id)
+    _, kb = KnowledgebaseService.get_by_id(kb_id)
+    embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+
+    dealer = Dealer(GraphExtractor, args.tenant_id, kb_id, llm_bdl, chunks, "English", embed_bdl=embed_bdl)
 
     print(json.dumps(nx.node_link_data(dealer.graph), ensure_ascii=False, indent=2))

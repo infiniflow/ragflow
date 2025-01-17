@@ -8,6 +8,7 @@ Reference:
 
 import html
 import json
+import logging
 import re
 import time
 from hashlib import md5
@@ -261,7 +262,7 @@ def get_entity(tenant_id, kb_id, ent_name):
     return res
 
 
-def set_entity(tenant_id, kb_id, ent_name, meta):
+def set_entity(tenant_id, kb_id, embd_mdl, ent_name, meta):
     chunk = {
         "important_kwd": [ent_name],
         "title_tks": rag_tokenizer.tokenize(ent_name),
@@ -279,6 +280,11 @@ def set_entity(tenant_id, kb_id, ent_name, meta):
     if res.ids:
         settings.docStoreConn.update({"entity_kwd": ent_name}, chunk, search.index_name(tenant_id), kb_id)
     else:
+        try:
+            ebd, _ = embd_mdl.encode([ent_name])
+            chunk["q_%d_vec" % len(ebd[0])] = ebd[0]
+        except Exception as e:
+            logging.exception(f"Fail to embed entity: {e}")
         settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
 
 
@@ -309,7 +315,7 @@ def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     return res
 
 
-def set_relation(tenant_id, kb_id, from_ent_name, to_ent_name, meta):
+def set_relation(tenant_id, kb_id, embd_mdl, from_ent_name, to_ent_name, meta):
     chunk = {
         "from_entity_kwd": [from_ent_name],
         "to_entity_kwd": [to_ent_name],
@@ -329,6 +335,11 @@ def set_relation(tenant_id, kb_id, from_ent_name, to_ent_name, meta):
                                  chunk,
                                  search.index_name(tenant_id), kb_id)
     else:
+        try:
+            ebd, _ = embd_mdl.encode([f"{from_ent_name}, {to_ent_name}"])
+            chunk["q_%d_vec" % len(ebd[0])] = ebd[0]
+        except Exception as e:
+            logging.exception(f"Fail to embed entity relation: {e}")
         settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
 
 

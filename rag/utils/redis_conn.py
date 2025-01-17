@@ -272,6 +272,10 @@ class RedisDistributedLock:
         self.lock_value = str(uuid.uuid4())
         self.timeout = timeout
 
+    @staticmethod
+    def clean_lock(lock_key):
+        REDIS_CONN.REDIS.delete(lock_key)
+
     def acquire_lock(self):
         end_time = time.time() + self.timeout
         while time.time() < end_time:
@@ -281,11 +285,11 @@ class RedisDistributedLock:
         return False
 
     def release_lock(self):
-        if self.REDIS_CONN.REDIS.get(self.lock_key) == self.lock_value:
-            self.REDIS_CONN.REDIS.delete(self.lock_key)
+        if REDIS_CONN.REDIS.get(self.lock_key) == self.lock_value:
+            REDIS_CONN.REDIS.delete(self.lock_key)
 
     def __enter__(self):
         self.acquire_lock()
 
     def __exit__(self, exception_type, exception_value, exception_traceback):
-        self.release_lock
+        self.release_lock()

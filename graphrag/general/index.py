@@ -36,19 +36,21 @@ class Dealer:
                  extractor: Extractor,
                  tenant_id: str,
                  kb_id: str,
+                 llm_bdl,
                  chunks: list[tuple[str, str]],
                  language,
                  entity_types=DEFAULT_ENTITY_TYPES,
+                 embed_bdl=None,
                  callback=None
                  ):
-        _, tenant = TenantService.get_by_id(tenant_id)
-        self.llm_bdl = LLMBundle(tenant_id, LLMType.CHAT, tenant.llm_id)
+        self.llm_bdl = llm_bdl
+        self.embed_bdl = embed_bdl
         ext = extractor(self.llm_bdl, language=language,
                         entity_types=entity_types,
                         get_entity=partial(get_entity, tenant_id, kb_id),
-                        set_entity=partial(set_entity, tenant_id, kb_id),
+                        set_entity=partial(set_entity, tenant_id, kb_id, self.embed_bdl),
                         get_relation=partial(get_relation, tenant_id, kb_id),
-                        set_relation=partial(set_relation, tenant_id, kb_id)
+                        set_relation=partial(set_relation, tenant_id, kb_id, self.embed_bdl)
                         )
         ents, rels = ext(chunks, callback)
         self.graph = nx.Graph()
@@ -76,10 +78,12 @@ class WithResolution(Dealer):
     def __init__(self,
                  tenant_id: str,
                  kb_id: str,
+                 llm_bdl,
+                 embed_bdl=None,
                  callback=None
                  ):
-        _, tenant = TenantService.get_by_id(tenant_id)
-        self.llm_bdl = LLMBundle(tenant_id, LLMType.CHAT, tenant.llm_id)
+        self.llm_bdl = llm_bdl
+        self.embed_bdl = embed_bdl
 
         with RedisDistributedLock(kb_id, 60*60):
             self.graph = get_graph(tenant_id, kb_id)
@@ -93,9 +97,9 @@ class WithResolution(Dealer):
                 callback(msg="Fetch the existing graph.")
             er = EntityResolution(self.llm_bdl,
                                   get_entity=partial(get_entity, tenant_id, kb_id),
-                                  set_entity=partial(set_entity, tenant_id, kb_id),
+                                  set_entity=partial(set_entity, tenant_id, kb_id, self.embed_bdl),
                                   get_relation=partial(get_relation, tenant_id, kb_id),
-                                  set_relation=partial(set_relation, tenant_id, kb_id))
+                                  set_relation=partial(set_relation, tenant_id, kb_id, self.embed_bdl))
             reso = er(self.graph)
             self.graph = reso.graph
             logging.info("Graph resolution is done. Remove {} nodes.".format(len(reso.removed_entities)))
@@ -119,13 +123,15 @@ class WithCommunity(Dealer):
     def __init__(self,
                  tenant_id: str,
                  kb_id: str,
+                 llm_bdl,
+                 embed_bdl=None,
                  callback=None
                  ):
 
         self.community_structure = None
         self.community_reports = None
-        _, tenant = TenantService.get_by_id(tenant_id)
-        self.llm_bdl = LLMBundle(tenant_id, LLMType.CHAT, tenant.llm_id)
+        self.llm_bdl = llm_bdl
+        self.embed_bdl = embed_bdl
 
         with RedisDistributedLock(kb_id, 60*60):
             self.graph = get_graph(tenant_id, kb_id)
@@ -139,9 +145,9 @@ class WithCommunity(Dealer):
 
             cr = CommunityReportsExtractor(self.llm_bdl,
                                   get_entity=partial(get_entity, tenant_id, kb_id),
-                                  set_entity=partial(set_entity, tenant_id, kb_id),
+                                  set_entity=partial(set_entity, tenant_id, kb_id, self.embed_bdl),
                                   get_relation=partial(get_relation, tenant_id, kb_id),
-                                  set_relation=partial(set_relation, tenant_id, kb_id))
+                                  set_relation=partial(set_relation, tenant_id, kb_id, self.embed_bdl))
             cr = cr(self.graph, callback=callback)
             self.community_structure = cr.structured_output
             self.community_reports = cr.output
@@ -166,6 +172,11 @@ class WithCommunity(Dealer):
                 "important_kwd": community["entities"],
                 "kb_id": kb_id
             }
+            try:
+                ebd, _ = self.embed_bdl.encode([", ".join(community["entities"])])
+                chunk["q_%d_vec" % len(ebd[0])] = ebd[0]
+            except Exception as e:
+                logging.exception(f"Fail to embed entity relation: {e}")
             chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
             settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
 

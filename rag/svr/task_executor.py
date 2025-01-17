@@ -19,7 +19,9 @@
 import random
 import sys
 from api.utils.log_utils import initRootLogger
-from graphrag.general.index import WithCommunity, WithResolution
+from graphrag.general.index import WithCommunity, WithResolution, Dealer
+from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
+from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 
 CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
@@ -432,18 +434,21 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
     return res, tk_count, vector_size
 
 
-def run_graphrag(row, callback=None):
+def run_graphrag(row, chat_model, embedding_model, callback=None):
     chunks = []
     for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
                                              fields=["content_with_weight"]):
         chunks.append((d["id"], d["content_with_weight"]))
 
-    WithCommunity(
-        row["tenant_id"], str(row["kb_id"]), chunks,
-        row["parser_config"]["graphrag"]["language"],
-        row["parser_config"]["graphrag"]["entity_types"],
-        callback
-    )
+    Dealer(LightKGExt if row["parser_config"]["graphrag"]["method"] != 'general' else GeneralKGExt,
+                    row["tenant_id"],
+                    str(row["kb_id"]),
+                    chat_model,
+                    chunks=chunks,
+                    language=row["parser_config"]["graphrag"]["language"],
+                    entity_types=row["parser_config"]["graphrag"]["entity_types"],
+                    embed_bdl=embedding_model,
+                    callback=callback)
 
 
 def do_handle_task(task):
@@ -505,7 +510,8 @@ def do_handle_task(task):
     elif task.get("task_type", "") == "graphrag":
         start_ts = timer()
         try:
-            run_graphrag(task, progress_callback)
+            chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+            run_graphrag(task, chat_model, embedding_model, progress_callback)
             progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(timer() - start_ts))
         except TaskCanceledException:
             raise
@@ -517,8 +523,9 @@ def do_handle_task(task):
     elif task.get("task_type", "") == "graph_resolution":
         start_ts = timer()
         try:
+            chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
             WithResolution(
-                task["tenant_id"], str(task["kb_id"]),
+                task["tenant_id"], str(task["kb_id"]),chat_model, embedding_model,
                 progress_callback
             )
             progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(timer() - start_ts))
@@ -532,8 +539,9 @@ def do_handle_task(task):
     elif task.get("task_type", "") == "graph_community":
         start_ts = timer()
         try:
+            chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
             WithCommunity(
-                task["tenant_id"], str(task["kb_id"]),
+                task["tenant_id"], str(task["kb_id"]),chat_model, embedding_model,
                 progress_callback
             )
             progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(timer() - start_ts))
