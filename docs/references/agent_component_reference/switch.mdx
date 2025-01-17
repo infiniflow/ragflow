@@ -1,0 +1,69 @@
+---
+sidebar_position: 9
+slug: /switch_component
+---
+
+# Switch component
+
+The component that evaluates whether specified conditions are met and applies strategies accordingly. 
+
+---
+
+A **Switch** component evaluates conditions based on the output of specific components and directs the flow of execution accordingly. It allows for complex branching logic by defining cases and specifying actions for each case or default action if no conditions are met.
+
+## Scenarios
+
+A **Switch** component is essential for condition-based flow of execution. It is somewhat similar to the [Categorize](https://ragflow.io/docs/dev/categorize_component) component, which is also used for multi-pronged strategies. The difference is that it does not involve an LLM and that there is a *clearer* line between the conditions it defines. 
+
+## Configurations
+
+TO BE CONTINUED.
+
+### Input
+
+The **Switch** component relies on input variables to specify its data inputs (queries). Click **+ Add variable** in the **Input** section to add the desired input variables. There are two types of input variables: **Reference** and **Text**.
+
+- **Reference**: Uses a component's output or a user input as the data source. You are required to select from the dropdown menu:
+  - A component ID under **Component Output**, or 
+  - A global variable under **Begin input**, which is defined in the **Begin** component.
+- **Text**: Uses fixed text as the query. You are required to enter static text.
+
+### Case n
+
+A **Switch** component must have at least one case. This field sets the conditions and the corresponding downstream component.
+
+#### Condition
+
+- **Component ID**
+- **Operator**
+  - Equals
+  - Not equal
+  - Greater than
+  - Greater equal
+  - Less than
+  - Less equal
+  - Contains 
+  - Not contains 
+  - Starts with
+  - Ends with
+  - Is empty
+  - Not empty
+- **Value**
+
+#### Next step
+
+Specifies the downstream component of this case.
+
+- Once you specify the ID of the downstream component, a link is established between this case and the corresponding component.
+- If you manually link this category to a downstream component on the canvas, the ID of that component is auto-populated.
+
+
+### ELSE 
+
+Optional
+
+## Frequently asked questions
+
+### Where to specify the data inputs for this component?
+
+The **Switch** component evaluates only whether specific conditions are met and directs the flow of execution accordingly. It does not accept data input, so there is no need to specify data inputs.

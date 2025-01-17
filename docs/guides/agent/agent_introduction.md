@@ -62,8 +62,7 @@ Please review the flowing description of the RAG-specific components before you 
 | **Interact**   | A component that serves as the interface between human and the bot, receiving user inputs and displaying the agent's responses. |
 | **Categorize** | A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component. |
 | **Message**    | A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is **Interact**, the interface component. |
-| **Relevant**   | A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result. |
-| **Rewrite**    | A component that refines a user query if it fails to retrieve relevant information from the knowledge base. It repeats this process until the predefined looping upper limit is reached. Ensure its upstream is **Relevant** and downstream is **Retrieval**. |
+| **Rewrite**    | A component that edits, corrects, expands, or rewrites a user query from user-agent interaction, based on the context of previous dialogues. |
 | **Keyword**    | A component that extracts keywords from a user query, with TopN specifying the number of keywords to extract. |
 
 :::caution NOTE
