@@ -55,6 +55,11 @@ class CommunityReportsExtractor(Extractor):
         self._max_report_length = max_report_length or 1500
 
     def __call__(self, graph: nx.Graph, callback: Callable | None = None):
+        for n in graph.nodes:
+            if graph.nodes[n].get("weight"):
+                continue
+            graph.nodes[n]["weight"] = 1
+
         communities: dict[str, dict[str, list]] = leiden.run(graph, {})
         total = sum([len(comm.items()) for _, comm in communities.items()])
         res_str = []
@@ -64,10 +69,11 @@ class CommunityReportsExtractor(Extractor):
         for level, comm in communities.items():
             for cm_id, ents in comm.items():
                 weight = ents["weight"]
-                ent_df = pd.DataFrame(self._get_entity_(ents["nodes"]))#[{"entity": n, **graph.nodes[n]} for n in ents])
+                ents = ents["nodes"]
+                ent_df = pd.DataFrame(self._get_entity_(ents))#[{"entity": n, **graph.nodes[n]} for n in ents])
                 ent_df["entity"] = ent_df["entity_name"]
                 del ent_df["entity_name"]
-                rela_df = pd.DataFrame(self._get_relation_(ents, ents, 10000))
+                rela_df = pd.DataFrame(self._get_relation_(list(ent_df["entity"]), list(ent_df["entity"]), 10000))
                 rela_df["source"] = rela_df["src_id"]
                 rela_df["target"] = rela_df["tgt_id"]
                 del rela_df["src_id"]

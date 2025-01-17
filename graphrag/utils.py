@@ -159,7 +159,7 @@ def graph_merge(g1, g2):
 
     for source, target, attr in g1.edges(data=True):
         if g.has_edge(source, target):
-            g[source][target].update({"weight": attr["weight"]+1})
+            g[source][target].update({"weight": attr.get("weight", 0)+1})
             continue
         g.add_edge(source, target)#, **attr)
 
@@ -341,14 +341,14 @@ def get_graph(tenant_id, kb_id):
     res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
     for id in res.ids:
         try:
-            return json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]))
+            return json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]), edges="edges")
         except Exception:
             continue
 
 
 def set_graph(tenant_id, kb_id, graph):
     chunk = {
-        "content_with_weight": json.dumps(nx.node_link_data(graph), ensure_ascii=False,
+        "content_with_weight": json.dumps(nx.node_link_data(graph, edges="edges"), ensure_ascii=False,
                                           indent=2),
         "knowledge_graph_kwd": "graph",
         "kb_id": kb_id

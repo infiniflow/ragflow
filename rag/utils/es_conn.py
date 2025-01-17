@@ -350,7 +350,7 @@ class ESConnection(DocStoreConnection):
             if (not isinstance(k, str) or not v) and k != "available_int":
                 continue
             if isinstance(v, str):
-                v = re.sub(r"[']", " ", v)
+                v = re.sub(r"(['\n\r]|\\n)", " ", v)
                 scripts.append(f"ctx._source.{k}='{v}';")
             elif isinstance(v, int):
                 scripts.append(f"ctx._source.{k}={v};")
@@ -362,7 +362,6 @@ class ESConnection(DocStoreConnection):
         ubq = UpdateByQuery(
             index=indexName).using(
             self.es).query(bqry)
-        print("\n".join(scripts), "\n==============================\n")
         ubq = ubq.script(source="".join(scripts), params=params)
         ubq = ubq.params(refresh=True)
         ubq = ubq.params(slices=5)
@@ -373,7 +372,7 @@ class ESConnection(DocStoreConnection):
                 _ = ubq.execute()
                 return True
             except Exception as e:
-                logger.error("ESConnection.update got exception: " + str(e))
+                logger.error("ESConnection.update got exception: " + str(e) + "\n".join(scripts))
                 if re.search(r"(timeout|connection|conflict)", str(e).lower()):
                     continue
                 break

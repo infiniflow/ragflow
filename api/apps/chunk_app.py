@@ -155,7 +155,7 @@ def set():
                     r"[\n\t]",
                     req["content_with_weight"]) if len(t) > 1]
             q, a = rmPrefix(arr[0]), rmPrefix("\n".join(arr[1:]))
-            d = beAdoc(d, arr[0], arr[1], not any(
+            d = beAdoc(d, q, a, not any(
                 [rag_tokenizer.is_chinese(t) for t in q + a]))
 
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"])])

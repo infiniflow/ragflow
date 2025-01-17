@@ -446,20 +446,6 @@ def run_graphrag(row, callback=None):
     )
 
 
-def run_graphrag_community(row, callback=None):
-    chunks = []
-    for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
-                                             fields=["content_with_weight"]):
-        chunks.append((d["id"], d["content_with_weight"]))
-
-    WithCommunity(
-        row["tenant_id"], str(row["kb_id"]), chunks,
-        row["parser_config"]["graphrag"]["language"],
-        row["parser_config"]["graphrag"]["entity_types"],
-        callback
-    )
-
-
 def do_handle_task(task):
     task_id = task["id"]
     task_from_page = task["from_page"]
@@ -546,7 +532,10 @@ def do_handle_task(task):
     elif task.get("task_type", "") == "graph_community":
         start_ts = timer()
         try:
-            run_graphrag_community(task, progress_callback)
+            WithCommunity(
+                task["tenant_id"], str(task["kb_id"]),
+                progress_callback
+            )
             progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(timer() - start_ts))
         except TaskCanceledException:
             raise
