@@ -1,7 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Container } from '@/components/ui/container';
-import { Segmented, SegmentedValue } from '@/components/ui/segmented ';
+import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
 import {

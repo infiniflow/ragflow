@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Segmented, SegmentedValue } from '@/components/ui/segmented ';
+import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { CircleCheckBig, LogOut } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { PricingCard } from './pricing-card';
