@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Segmented, SegmentedValue } from '@/components/ui/segmented ';
+import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { ChevronRight, Cpu, MessageSquare, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 

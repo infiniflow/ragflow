@@ -723,7 +723,7 @@ def stop_parsing(tenant_id, dataset_id):
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if int(doc[0].progress) == 1 or int(doc[0].progress) == 0:
+        if int(doc[0].progress) == 1 or doc[0].progress == 0:
             return get_error_data_result(
                 "Can't stop parsing document with progress at 0 or 1"
             )
