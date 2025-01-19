@@ -5,17 +5,19 @@ slug: /rewrite_component
 
 # Rewrite component
 
-A component that edits, corrects, expands, or rewrites a user query.
+A component that rewrites a user query.
 
 ---
 
-A **Rewrite** component edits, corrects, expands, or rewrites a user query from user-agent interaction, based on the context of previous dialogues.
+A **Rewrite** component uses a specified LLM to rewrite a user query from the **Interact** component, based on the context of previous dialogues.
 
 ## Scenarios
 
-A **Rewrite** component is essential when you need to optimize a user query based on the context of previous conversations. It is usually used in conjunction with a **Retrieval** component.
+A **Rewrite** component is essential when you need to optimize a user query based on the context of previous conversations. It is usually the upstream component of a **Retrieval** component.
 
+:::tip NOTE
 See also the [Keyword](https://ragflow.io/docs/dev/keyword_component) component, a similar component used for multi-turn optimization.
+:::
 
 ## Configurations
 
