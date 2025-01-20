@@ -1,49 +1,39 @@
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { LoadingButton } from '@/components/ui/loading-button';
+import { IModalProps } from '@/interfaces/common';
+import { TagRenameId } from '@/pages/add-knowledge/constant';
+import { useTranslation } from 'react-i18next';
+import { RenameForm } from './rename-form';
 
-export function RenameDialog() {
+export function RenameDialog({
+  hideModal,
+  initialName,
+  onOk,
+  loading,
+}: IModalProps<any> & { initialName: string }) {
+  const { t } = useTranslation();
+
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="outline">Edit Profile</Button>
-      </DialogTrigger>
+    <Dialog open onOpenChange={hideModal}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Edit profile</DialogTitle>
+          <DialogTitle>{t('common.rename')}</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="name" className="text-right">
-              Name
-            </Label>
-            <Input
-              id="name"
-              defaultValue="Pedro Duarte"
-              className="col-span-3"
-            />
-          </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="username" className="text-right">
-              Username
-            </Label>
-            <Input
-              id="username"
-              defaultValue="@peduarte"
-              className="col-span-3"
-            />
-          </div>
-        </div>
+        <RenameForm
+          initialName={initialName}
+          hideModal={hideModal}
+          onOk={onOk}
+        ></RenameForm>
         <DialogFooter>
-          <Button type="submit">Save changes</Button>
+          <LoadingButton type="submit" form={TagRenameId} loading={loading}>
+            {t('common.save')}
+          </LoadingButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>
