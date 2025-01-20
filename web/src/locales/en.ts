@@ -1095,7 +1095,7 @@ This procedure will improve precision of retrieval by adding more information to
       output: 'Output',
       parameter: 'Parameter',
       howUseId: 'How to use agent ID?',
-      content: 'Content',
+      content: 'Content (1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement)',
       operationResults: 'Operation Results',
       autosaved: 'Autosaved',
       optional: 'Optional',

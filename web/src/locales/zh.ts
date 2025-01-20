@@ -1080,7 +1080,7 @@ export default {
       output: '输出',
       parameter: '参数',
       howUseId: '如何使用Agent ID？',
-      content: '内容',
+      content: '内容 (1、支持Jinja2模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式)',
       operationResults: '运行结果',
       autosaved: '已自动保存',
       optional: '可选项',

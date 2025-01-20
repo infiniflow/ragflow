@@ -1040,7 +1040,7 @@ export default {
       output: '出力',
       parameter: 'パラメータ',
       howUseId: 'エージェントIDの使用方法',
-      content: 'コンテンツ',
+      content: 'コンテンツ (1. Jinja2テンプレートをサポートし、最初に入力をオブジェクトに変換してからテンプレートをレンダリングします。2. {parameter}文字列置換を使用する元の方法も同時に保持します)',
       operationResults: '操作結果',
       autosaved: '自動保存済み',
       optional: 'オプション',

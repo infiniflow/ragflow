@@ -1065,7 +1065,7 @@ export default {
       output: 'Đầu ra',
       parameter: 'Tham số',
       howUseId: 'Cách sử dụng ID tác nhân?',
-      content: 'Nội dung',
+      content: 'Nội dung (1. Hỗ trợ mẫu Jinja2, trước tiên chuyển đầu vào thành đối tượng và sau đó kết xuất mẫu. 2. Phương pháp ban đầu sử dụng thay thế chuỗi {parameter} cũng được giữ lại đồng thời)',
       operationResults: 'Kết quả hoạt động',
       autosaved: 'Tự động lưu',
       optional: 'Tùy chọn',

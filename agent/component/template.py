@@ -13,8 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import re
 from agent.component.base import ComponentBase, ComponentParamBase
+from jinja2 import Template as Jinja2Template
 
 
 class TemplateParam(ComponentParamBase):
@@ -54,7 +56,13 @@ class Template(ComponentBase):
                 cpn_id, key = para["component_id"].split("@")
                 for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
                     if p["key"] == key:
-                        kwargs[para["key"]] = p.get("value", "")
+                        value = p.get("value", "")
+                        try:
+                            # If the value is a JSON string, convert it to a JSON object.
+                            value = json.loads(value)
+                        except Exception as e:
+                            pass
+                        kwargs[para["key"]] = value
                         self._param.inputs.append(
                             {"component_id": para["component_id"], "content": kwargs[para["key"]]})
                         break
@@ -76,10 +84,32 @@ class Template(ComponentBase):
             if "content" not in out.columns:
                 kwargs[para["key"]] = ""
             else:
-                kwargs[para["key"]] = "  - "+"\n - ".join([o if isinstance(o, str) else str(o) for o in out["content"]])
+                kwargs[para["key"]] = "".join([o if isinstance(o, str) else str(o) for o in out["content"]])
+            try:
+               # If the value is a JSON string, convert it to a JSON object.
+                kwargs[para["key"]] = json.loads(kwargs[para["key"]])
+            except Exception as e:
+                pass
             self._param.inputs.append({"component_id": para["component_id"], "content": kwargs[para["key"]]})
 
+        template_data = {}
         for n, v in kwargs.items():
+            template_data[n] = v
+            
+        template = Jinja2Template(content)
+        
+        try:
+            # First, perform Jinja2 rendering.
+            content = template.render(template_data)
+        except Exception as e:
+            pass
+        
+        for n, v in kwargs.items():
+            try:
+                v = json.dumps(v)
+            except Exception as e:
+                pass
+            # Then, perform string replacement.
             content = re.sub(r"\{%s\}" % re.escape(n), str(v).replace("\\", " "), content)
 
         return Template.be_output(content)

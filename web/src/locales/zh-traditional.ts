@@ -1059,7 +1059,7 @@ export default {
       output: '輸出',
       parameter: '參數',
       howUseId: '如何使用Agent ID？',
-      content: '內容',
+      content: '內容 (1、支持Jinja2模板，會先將輸入轉為對象後進行模板渲染2、同時保留原使用{參數}字符串替換的方式)',
       operationResults: '運行結果',
       autosaved: '已自動儲存',
       optional: '可選項',
