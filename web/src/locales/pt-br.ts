@@ -15,6 +15,7 @@ export default {
       edit: 'Editar',
       upload: 'Carregar',
       english: 'Inglês',
+      portugeseBr: 'Português (Brasil)',
       chinese: 'Chinês Simplificado',
       traditionalChinese: 'Chinês Tradicional',
       language: 'Idioma',
