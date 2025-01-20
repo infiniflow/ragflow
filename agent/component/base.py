@@ -482,11 +482,12 @@ class ComponentBase(ABC):
                         continue
 
                     if q["component_id"].lower().find("answer") == 0:
-                        for r, c in self._canvas.history[::-1]:
-                            if r == "user":
-                                self._param.inputs.append({"content": c, "component_id": q["component_id"]})
-                                outs.append(pd.DataFrame([{"content": c}]))
-                                break
+                        txt = []
+                        for r, c in self._canvas.history[::-1][:self._param.message_history_window_size]:
+                            txt.append(f"{r.upper()}: {c}")
+                        txt = "\n".join(txt)
+                        self._param.inputs.append({"content": txt, "component_id": q["component_id"]})
+                        outs.append(pd.DataFrame([{"content": txt}]))
                         continue
 
                     outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
