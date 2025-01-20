@@ -21,7 +21,7 @@ from typing import Callable
 
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import get_llm_cache, set_llm_cache, handle_single_entity_extraction, \
-    handle_single_relationship_extraction, split_string_by_multi_markers
+    handle_single_relationship_extraction, split_string_by_multi_markers, flat_uniq_list
 from rag.llm.chat_model import Base as CompletionLLM
 from rag.utils import truncate
 
@@ -160,8 +160,7 @@ class Extractor:
         description = GRAPH_FIELD_SEP.join(
             sorted(set([dp["description"] for dp in entities] + already_description))
         )
-        already_source_ids.extend(set([dp["source_id"] for dp in entities]))
-        already_source_ids = list(set(already_source_ids))
+        already_source_ids = flat_uniq_list(entities, "source_id")
         description = self._handle_entity_relation_summary(
             entity_name, description
         )
@@ -198,9 +197,8 @@ class Extractor:
         description = GRAPH_FIELD_SEP.join(
             sorted(set([dp["description"] for dp in edges_data] + already_description))
         )
-        keywords = list(set([dp["keywords"] for dp in edges_data] + already_keywords))
-
-        source_id = list(set([dp["source_id"] for dp in edges_data] + already_source_ids))
+        keywords = flat_uniq_list(edges_data, "keywords") + already_keywords
+        source_id = flat_uniq_list(edges_data, "source_id") + already_source_ids
 
         for need_insert_id in [src_id, tgt_id]:
             if self._get_entity_(need_insert_id):

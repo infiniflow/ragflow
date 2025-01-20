@@ -370,3 +370,14 @@ def set_graph(tenant_id, kb_id, graph):
                                      search.index_name(tenant_id), kb_id)
     else:
         settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+
+
+def flat_uniq_list(arr, key):
+    res = []
+    for a in arr:
+        a = a[key]
+        if isinstance(a, list):
+            res.extend(a)
+        else:
+            res.append(a)
+    return list(set(res))
