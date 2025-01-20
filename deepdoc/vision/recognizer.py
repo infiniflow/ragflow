@@ -25,6 +25,7 @@ from huggingface_hub import snapshot_download
 from api.utils.file_utils import get_project_base_directory
 from .operators import *  # noqa: F403
 from .operators import preprocess
+from . import operators
 
 
 class Recognizer(object):
@@ -319,7 +320,7 @@ class Recognizer(object):
             ]:
                 new_op_info = op_info.copy()
                 op_type = new_op_info.pop('type')
-                preprocess_ops.append(eval(op_type)(**new_op_info))
+                preprocess_ops.append(getattr(operators, op_type)(**new_op_info))
 
             for im_path in image_list:
                 im, im_info = preprocess(im_path, preprocess_ops)
