@@ -1048,7 +1048,7 @@ export default {
       testRun: 'テスト実行',
       template: 'テンプレート',
       templateDescription:
-        'このコンポーネントは、さまざまなコンポーネントの出力を組版するために使用されます。',
+        'このコンポーネントは、さまざまなコンポーネントの出力を組版するために使用されます。1. Jinja2テンプレートをサポートし、最初に入力をオブジェクトに変換してからテンプレートをレンダリングします。2. {parameter}文字列置換を使用する元の方法も同時に保持します',
       emailComponent: 'メール',
       emailDescription: '指定されたアドレスにメールを送信',
       smtpServer: 'SMTPサーバー',

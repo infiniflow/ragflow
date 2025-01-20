@@ -1066,7 +1066,7 @@ export default {
       pasteFileLink: '貼上文件連結',
       testRun: '試運行',
       template: '模板轉換',
-      templateDescription: '此元件用於排版各種元件的輸出。 ',
+      templateDescription: '此元件用於排版各種元件的輸出。1、支持Jinja2模板，會先將輸入轉為對象後進行模板渲染2、同時保留原使用{參數}字符串替換的方式',
       jsonUploadTypeErrorMessage: '請上傳json檔',
       jsonUploadContentErrorMessage: 'json 檔案錯誤',
       iterationDescription: `此元件首先透過「分隔符號」將輸入拆分為陣列。

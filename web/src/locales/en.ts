@@ -1103,7 +1103,7 @@ This procedure will improve precision of retrieval by adding more information to
       testRun: 'Test Run',
       template: 'Template',
       templateDescription:
-        'A component that formats the output of other components.',
+        'A component that formats the output of other components.1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement',
       emailComponent: 'Email',
       emailDescription: 'Send an email to a specified address.',
       smtpServer: 'SMTP Server',
