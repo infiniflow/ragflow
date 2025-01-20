@@ -90,6 +90,10 @@ export const useRenameCurrentFile = () => {
   };
 };
 
+export type UseRenameCurrentFileReturnType = ReturnType<
+  typeof useRenameCurrentFile
+>;
+
 export const useSelectBreadcrumbItems = () => {
   const parentFolderList = useFetchParentFolderList();
 
