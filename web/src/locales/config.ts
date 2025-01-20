@@ -50,7 +50,7 @@ i18n
     },
     supportedLngs: ['en', 'zh', 'zh-TRADITIONAL', 'id', 'es', 'vi', 'ja', 'pt-br'],
     resources,
-    fallbackLng: 'pt-br',
+    fallbackLng: 'en',
     interpolation: {
       escapeValue: false,
     },
