@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
     "datrie==0.8.2",
-    "akshare>=1.14.81,<2.0.0",
+    "akshare>=1.15.78,<2.0.0",
     "azure-storage-blob==12.22.0",
     "azure-identity==1.17.1",
     "azure-storage-file-datalake==12.16.0",

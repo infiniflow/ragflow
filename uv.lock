@@ -146,7 +146,7 @@ wheels = [
 
 [[package]]
 name = "akshare"
-version = "1.15.69"
+version = "1.15.78"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "akracer", marker = "sys_platform == 'linux'" },
@@ -165,9 +165,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "xlrd" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/25/3c/519100279bd0a9c872ff6d23232d38d25dc6ee1de8712be8c1c3a566e9eb/akshare-1.15.69.tar.gz", hash = "sha256:5f184a837374aa68f65f7fec5e8b113bb3b3cf752c4dde8ea2e576d8f345fc5e", size = 817957 }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/24/64/bdcdbc30089c2e9808b86f3e75328a87a369eb0a5e88d672c18e77c6f352/akshare-1.15.78.tar.gz", hash = "sha256:1060d125591a49cf2897989e98aa40768b8501564bbacd9a8cd375524e382907", size = 820097 }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6c/c2/2630b6fc6fce0707640615842591fe42a34acfe61982f394f50f16239fce/akshare-1.15.69-py3-none-any.whl", hash = "sha256:f66aef273868b8033553460ff5723ef24db27a00fec645dc1d48e1344d5f8024", size = 1018520 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/37/0e/e7f69c7e5a109d6cb84808844995e7b7ffe6e63c3ef168c459a1d36739b8/akshare-1.15.78-py3-none-any.whl", hash = "sha256:4903a7b526dae908c0bcd7876408b233c2df27a02d3d4c62745cee48208ea5b9", size = 1021772 },
 ]
 
 [[package]]
@@ -310,7 +310,6 @@ wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6e/db/680408b92f47aa9ff2c70f80b2f5d02155a8ff81ac493c3061099bf56c37/Aspose.Slides-24.12.0-py3-none-macosx_10_14_x86_64.whl", hash = "sha256:ccfaa61a863ed28cd37b221e31a0edf4a83802599d76fb50861c25149ac5e5e3", size = 87164865 },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/01/ac/29838004784acb72c9d93f0b327a8e5105f35eb925cdaeccd07907464018/Aspose.Slides-24.12.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b050659129c5ca92e52fbcd7d5091caa244db731adb68fbea1fd0a8b9fd62a5a", size = 68916630 },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2b/6e/0b9da3757ce46b63f3fbb10ee352009c20260813d369306438bd3552fc18/Aspose.Slides-24.12.0-py3-none-manylinux1_x86_64.whl", hash = "sha256:a5eb8407bd93fa7851584c3b143000c09d9f5285f3c1da99677bf1d9c0abefe9", size = 102438903 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/11/d4/023ce536ee861b6b8757b8ebfed3326cd21a48b9e557390cd904fc48ef1e/Aspose.Slides-24.12.0-py3-none-win32.whl", hash = "sha256:6e8bf6e20ff05a81ed9ef8025b20f16c5ada1af908934c82e8290aab26ad4f83", size = 62974346 },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/58/0b/af65314b471766709627a65096f69e8b70b7840edd98cabaa9b74fda671d/Aspose.Slides-24.12.0-py3-none-win_amd64.whl", hash = "sha256:e816e37a621221e8a73fc631c879ada37cf6a80513a817b687d6f7e189d5a978", size = 72093115 },
 ]
 
@@ -3380,7 +3379,6 @@ name = "nvidia-nccl-cu12"
 version = "2.20.5"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c1/bb/d09dda47c881f9ff504afd6f9ca4f502ded6d8fc2f572cacc5e39da91c28/nvidia_nccl_cu12-2.20.5-py3-none-manylinux2014_aarch64.whl", hash = "sha256:1fc150d5c3250b170b29410ba682384b14581db722b2531b0d8d33c595f33d01", size = 176238458 },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4b/2a/0a131f572aa09f741c30ccd45a8e56316e8be8dfc7bc19bf0ab7cfef7b19/nvidia_nccl_cu12-2.20.5-py3-none-manylinux2014_x86_64.whl", hash = "sha256:057f6bf9685f75215d0c53bf3ac4a10b3e6578351de307abad9e18a99182af56", size = 176249402 },
 ]
 
@@ -3390,7 +3388,6 @@ version = "12.6.85"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/9d/d7/c5383e47c7e9bf1c99d5bd2a8c935af2b6d705ad831a7ec5c97db4d82f4f/nvidia_nvjitlink_cu12-12.6.85-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl", hash = "sha256:eedc36df9e88b682efe4309aa16b5b4e78c2407eac59e8c10a6a47535164369a", size = 19744971 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/31/db/dc71113d441f208cdfe7ae10d4983884e13f464a6252450693365e166dcf/nvidia_nvjitlink_cu12-12.6.85-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:cf4eaa7d4b6b543ffd69d6abfb11efdeb2db48270d94dfd3a452c24150829e41", size = 19270338 },
 ]
 
 [[package]]
@@ -4814,7 +4811,7 @@ full = [
 
 [package.metadata]
 requires-dist = [
-    { name = "akshare", specifier = ">=1.14.81,<2.0.0" },
+    { name = "akshare", specifier = ">=1.15.78,<2.0.0" },
     { name = "anthropic", specifier = "==0.34.1" },
     { name = "arxiv", specifier = "==2.1.3" },
     { name = "aspose-slides", marker = "platform_machine == 'x86_64' or (platform_machine == 'arm64' and sys_platform == 'darwin')", specifier = ">=24.9.0,<25.0.0" },
