@@ -362,6 +362,17 @@ This procedure will improve precision of retrieval by adding more information to
       topnTags: 'Top-N Tags',
       tags: 'Tags',
       addTag: 'Add tag',
+      useGraphRag: 'Extract knowledge graph',
+      useGraphRagTip:
+        'After files being chunked, all the chunks will be used for knowlege graph generation which helps inference of multi-hop and complex problems a lot.',
+      graphRagMethod: 'Method',
+      graphRagMethodTip: `Light: the entity and relation extraction prompt is from GitHub - HKUDS/LightRAG: "LightRAG: Simple and Fast Retrieval-Augmented Generation"
+        General: the entity and relation extraction prompt is from GitHub - microsoft/graphrag: A modular graph-based Retrieval-Augmented Generation (RAG) system`,
+      resolution: 'Entity resolution',
+      resolutionTip: `The resolution procedure would merge entities with the same meaning together which allows the graph conciser and more accurate. Entities as following should be merged:  President Trump, Donald Trump, Donald J. Trump, Donald John Trump`,
+      community: 'Community reports',
+      communityTip:
+        'https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: 'Chunk',
@@ -970,8 +981,8 @@ This procedure will improve precision of retrieval by adding more information to
         notEmpty: 'Not empty',
       },
       switchLogicOperatorOptions: {
-        and: 'And',
-        or: 'Or',
+        and: 'AND',
+        or: 'OR',
       },
       operator: 'Operator',
       value: 'Value',

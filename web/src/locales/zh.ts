@@ -363,6 +363,17 @@ export default {
       `,
       tags: '标签',
       addTag: '增加标签',
+      useGraphRag: '提取知识图谱',
+      useGraphRagTip:
+        '文件分块后，所有块将用于知识图谱生成，这对多跳和复杂问题的推理大有帮助。',
+      graphRagMethod: '方法',
+      graphRagMethodTip: `Light：实体和关系提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”
+General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图形的模块化检索增强生成 (RAG) 系统`,
+      resolution: '实体解析',
+      resolutionTip: `解析过程会将具有相同含义的实体合并在一起，从而使图表更简洁、更准确。应合并以下实体：特朗普总统、唐纳德·特朗普、唐纳德·J·特朗普、唐纳德·约翰·特朗普`,
+      community: '社区报告',
+      communityTip:
+        'https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: '解析块',

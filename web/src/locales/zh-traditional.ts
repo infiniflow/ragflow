@@ -345,6 +345,17 @@ export default {
  `,
       tags: '標籤',
       addTag: '增加標籤',
+      useGraphRag: '提取知識圖譜',
+      useGraphRagTip:
+        '文件分塊後，所有區塊將用於知識圖譜生成，這對多跳和複雜問題的推理有很大幫助。',
+      graphRagMethod: '方法',
+      graphRagMethodTip: `Light：實體和關係提取提示來自 GitHub - HKUDS/LightRAG：“LightRAG：簡單快速的檢索增強生成”
+ 一般：實體和關係擷取提示來自 GitHub - microsoft/graphrag：基於模組化圖形的檢索增強生成 (RAG) 系統，`,
+      resolution: '實體解析度',
+      resolutionTip: `解析過程會將具有相同意義的實體合併在一起，使圖形更簡潔、更準確。以下實體應合併：川普總統、唐納德·川普、唐納德·J·川普、唐納德·約翰·川普`,
+      community: '社區報告',
+      communityTip:
+        'https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: '解析塊',
