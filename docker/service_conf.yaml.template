@@ -1,12 +1,12 @@
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
-  http_port: ${SVR_HTTP_PORT:9380}
+  http_port: '${SVR_HTTP_PORT:-9380}'
 mysql:
   name: '${MYSQL_DBNAME:-rag_flow}'
   user: '${MYSQL_USER:-root}'
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
-  port: '${MYSQL_PORT:-3306}
+  port: '${MYSQL_PORT:-3306}'
   max_connections: 100
   stale_timeout: 30
 minio:
