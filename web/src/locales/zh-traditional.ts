@@ -187,6 +187,9 @@ export default {
 <li>這是區塊內容....</li>
 </ul>
 `,
+      metaData: '元資料',
+      deleteDocumentConfirmContent:
+        '該文件與知識圖譜相關聯。刪除後，相關節點和關係資訊將被刪除，但圖不會立即更新。更新圖動作是在解析承載知識圖譜提取任務的新文件的過程中執行的。 ',
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
