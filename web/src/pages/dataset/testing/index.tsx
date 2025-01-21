@@ -16,7 +16,7 @@ export default function RetrievalTesting() {
         <h2 className="text-3xl font-bold mb-8 px-[10%]">
           15 Results from 3 files
         </h2>
-        <section className="flex flex-col gap-4 overflow-auto h-[85vh] px-[10%]">
+        <section className="flex flex-col gap-4 overflow-auto h-[83vh] px-[10%]">
           {list.map((x, idx) => (
             <Card
               key={idx}
