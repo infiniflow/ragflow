@@ -15,7 +15,7 @@ export default {
       edit: 'Editar',
       upload: 'Carregar',
       english: 'Inglês',
-      portugeseBr: 'Português (Brasil)',
+      portugueseBr: 'Português (Brasil)',
       chinese: 'Chinês Simplificado',
       traditionalChinese: 'Chinês Tradicional',
       language: 'Idioma',
@@ -36,7 +36,7 @@ export default {
       submit: 'Enviar',
       embedIntoSite: 'Incorporar no site',
       previousPage: 'Anterior',
-      nextPage: 'Próxima'
+      nextPage: 'Próxima',
     },
     login: {
       login: 'Entrar',
@@ -55,8 +55,9 @@ export default {
       register: 'Criar uma conta',
       continue: 'Continuar',
       title: 'Comece a construir seus assistentes inteligentes.',
-      description: 'Inscreva-se gratuitamente para explorar a tecnologia RAG de ponta. Crie bases de conhecimento e IAs para capacitar seu negócio.',
-      review: 'de 500+ avaliações'
+      description:
+        'Inscreva-se gratuitamente para explorar a tecnologia RAG de ponta. Crie bases de conhecimento e IAs para capacitar seu negócio.',
+      review: 'de 500+ avaliações',
     },
     header: {
       knowledgeBase: 'Base de Conhecimento',
@@ -68,7 +69,7 @@ export default {
       logout: 'Sair',
       fileManager: 'Gerenciamento de Arquivos',
       flow: 'Agente',
-      search: 'Buscar'
+      search: 'Buscar',
     },
     knowledgeList: {
       welcome: 'Bem-vindo de volta',
@@ -78,7 +79,7 @@ export default {
       namePlaceholder: 'Por favor, insira o nome!',
       doc: 'Documentos',
       searchKnowledgePlaceholder: 'Buscar',
-      noMoreData: 'Isso é tudo. Nada mais.'
+      noMoreData: 'Isso é tudo. Nada mais.',
     },
     knowledgeDetail: {
       dataset: 'Conjunto de dados',
@@ -88,7 +89,8 @@ export default {
       name: 'Nome',
       namePlaceholder: 'Por favor, insira o nome!',
       doc: 'Documentos',
-      datasetDescription: '😉 Por favor, aguarde o término da análise do seu arquivo antes de iniciar um chat com IA.',
+      datasetDescription:
+        '😉 Por favor, aguarde o término da análise do seu arquivo antes de iniciar um chat com IA.',
       addFile: 'Adicionar arquivo',
       searchFiles: 'Buscar seus arquivos',
       localFiles: 'Arquivos locais',
@@ -104,11 +106,14 @@ export default {
       processBeginAt: 'Início em',
       processDuration: 'Duração',
       progressMsg: 'Progresso',
-      testingDescription: 'Realize um teste de recuperação para verificar se o RAGFlow pode recuperar o conteúdo pretendido para o LLM.',
+      testingDescription:
+        'Realize um teste de recuperação para verificar se o RAGFlow pode recuperar o conteúdo pretendido para o LLM.',
       similarityThreshold: 'Limite de similaridade',
-      similarityThresholdTip: 'O RAGFlow emprega uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada, ou uma combinação de similaridade de palavras-chave ponderada e pontuação de reranking ponderada durante a recuperação. Este parâmetro define o limite para similaridades entre a consulta do usuário e os fragmentos. Qualquer fragmento com uma pontuação de similaridade abaixo deste limite será excluído dos resultados.',
+      similarityThresholdTip:
+        'O RAGFlow emprega uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada, ou uma combinação de similaridade de palavras-chave ponderada e pontuação de reranking ponderada durante a recuperação. Este parâmetro define o limite para similaridades entre a consulta do usuário e os fragmentos. Qualquer fragmento com uma pontuação de similaridade abaixo deste limite será excluído dos resultados.',
       vectorSimilarityWeight: 'Peso da similaridade de palavras-chave',
-      vectorSimilarityWeightTip: 'Define o peso da similaridade de palavras-chave na pontuação de similaridade combinada, usada com a similaridade de cosseno vetorial ou com a pontuação de reranking. O total dos dois pesos deve ser igual a 1.0.',
+      vectorSimilarityWeightTip:
+        'Define o peso da similaridade de palavras-chave na pontuação de similaridade combinada, usada com a similaridade de cosseno vetorial ou com a pontuação de reranking. O total dos dois pesos deve ser igual a 1.0.',
       testText: 'Texto de teste',
       testTextPlaceholder: 'Insira sua pergunta aqui!',
       testingLabel: 'Testando',
@@ -126,37 +131,46 @@ export default {
       runningStatus3: 'Sucesso',
       runningStatus4: 'Falha',
       pageRanges: 'Intervalos de páginas',
-      pageRangesTip: 'Intervalo de páginas a serem analisadas; páginas fora deste intervalo não serão processadas.',
+      pageRangesTip:
+        'Intervalo de páginas a serem analisadas; páginas fora deste intervalo não serão processadas.',
       fromPlaceholder: 'de',
       fromMessage: 'Página inicial ausente',
       toPlaceholder: 'até',
       toMessage: 'Página final ausente (excluída)',
       layoutRecognize: 'Reconhecimento de layout',
-      layoutRecognizeTip: 'Use modelos visuais para análise de layout para entender melhor a estrutura do documento e localizar efetivamente títulos, blocos de texto, imagens e tabelas. Se desativado, apenas o texto simples no PDF será recuperado.',
+      layoutRecognizeTip:
+        'Use modelos visuais para análise de layout para entender melhor a estrutura do documento e localizar efetivamente títulos, blocos de texto, imagens e tabelas. Se desativado, apenas o texto simples no PDF será recuperado.',
       taskPageSize: 'Tamanho da página da tarefa',
       taskPageSizeMessage: 'Por favor, insira o tamanho da página da tarefa!',
-      taskPageSizeTip: 'Durante o reconhecimento de layout, um arquivo PDF é dividido em fragmentos e processado em paralelo para aumentar a velocidade de processamento. Este parâmetro define o tamanho de cada fragmento. Um tamanho de fragmento maior reduz a probabilidade de dividir texto contínuo entre páginas.',
+      taskPageSizeTip:
+        'Durante o reconhecimento de layout, um arquivo PDF é dividido em fragmentos e processado em paralelo para aumentar a velocidade de processamento. Este parâmetro define o tamanho de cada fragmento. Um tamanho de fragmento maior reduz a probabilidade de dividir texto contínuo entre páginas.',
       addPage: 'Adicionar página',
       greaterThan: 'O valor atual deve ser maior que!',
       greaterThanPrevious: 'O valor atual deve ser maior que o anterior!',
       selectFiles: 'Selecionar arquivos',
       changeSpecificCategory: 'Alterar categoria específica',
-      uploadTitle: 'Clique ou arraste o arquivo para esta área para fazer o upload',
-      uploadDescription: 'Suporte para upload único ou em massa. Estritamente proibido fazer upload de dados da empresa ou outros arquivos proibidos.',
+      uploadTitle:
+        'Clique ou arraste o arquivo para esta área para fazer o upload',
+      uploadDescription:
+        'Suporte para upload único ou em massa. Estritamente proibido fazer upload de dados da empresa ou outros arquivos proibidos.',
       chunk: 'Fragmento',
       bulk: 'Em massa',
       cancel: 'Cancelar',
       rerankModel: 'Modelo de reranking',
       rerankPlaceholder: 'Por favor, selecione',
-      rerankTip: 'Se deixado vazio, o RAGFlow usará uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada; se um modelo de reranking for selecionado, uma pontuação de reranking ponderada substituirá a similaridade de cosseno vetorial ponderada. Esteja ciente de que usar um modelo de reranking aumentará significativamente o tempo de resposta do sistema.',
+      rerankTip:
+        'Se deixado vazio, o RAGFlow usará uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada; se um modelo de reranking for selecionado, uma pontuação de reranking ponderada substituirá a similaridade de cosseno vetorial ponderada. Esteja ciente de que usar um modelo de reranking aumentará significativamente o tempo de resposta do sistema.',
       topK: 'Top-K',
       topKTip: 'K fragmentos serão alimentados em modelos de reranking.',
       delimiter: 'Delimitador',
-      delimiterTip: 'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula.',
+      delimiterTip:
+        'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula.',
       html4excel: 'Excel para HTML',
-      html4excelTip: 'Quando ativado, a planilha será analisada em tabelas HTML, com no máximo 256 linhas por tabela. Caso contrário, será analisada em pares chave-valor por linha.',
+      html4excelTip:
+        'Quando ativado, a planilha será analisada em tabelas HTML, com no máximo 256 linhas por tabela. Caso contrário, será analisada em pares chave-valor por linha.',
       autoKeywords: 'Palavras-chave automáticas',
-      autoKeywordsTip: 'Extraia automaticamente N palavras-chave para cada fragmento para aumentar sua classificação para consultas que contenham essas palavras-chave. Você pode verificar ou atualizar as palavras-chave adicionadas para um fragmento na lista de fragmentos. Esteja ciente de que tokens extras serão consumidos pelo LLM especificado nas "Configurações do modelo do sistema".',
+      autoKeywordsTip:
+        'Extraia automaticamente N palavras-chave para cada fragmento para aumentar sua classificação para consultas que contenham essas palavras-chave. Você pode verificar ou atualizar as palavras-chave adicionadas para um fragmento na lista de fragmentos. Esteja ciente de que tokens extras serão consumidos pelo LLM especificado nas "Configurações do modelo do sistema".',
       autoQuestions: 'Perguntas automáticas',
       autoQuestionsTip: `Extraia automaticamente N perguntas para cada fragmento para aumentar sua relevância em consultas que contenham essas perguntas. Você pode verificar ou atualizar as perguntas adicionadas a um fragmento na lista de fragmentos. Essa funcionalidade não interromperá o processo de fragmentação em caso de erro, exceto pelo fato de que pode adicionar um resultado vazio ao fragmento original. Esteja ciente de que tokens extras serão consumidos pelo LLM especificado nas 'Configurações do modelo do sistema'.`,
       redo: 'Deseja limpar os {{chunkNum}} fragmentos existentes?',
@@ -207,7 +221,8 @@ export default {
       upload: 'Enviar',
       english: 'Inglês',
       chinese: 'Chinês',
-      embeddingModelPlaceholder: 'Por favor, selecione um modelo de incorporação',
+      embeddingModelPlaceholder:
+        'Por favor, selecione um modelo de incorporação',
       chunkMethodPlaceholder: 'Por favor, selecione um método de fragmentação',
       save: 'Salvar',
       me: 'Somente eu',
@@ -376,7 +391,8 @@ export default {
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'O máximo de tokens é obrigatório',
       maxTokensTip: `Define o comprimento máximo da saída do modelo, medido pelo número de tokens (palavras ou partes de palavras). O padrão é 512. Se desativado, você remove o limite máximo de tokens, permitindo que o modelo determine o número de tokens em suas respostas.`,
-      maxTokensInvalidMessage: 'Por favor, insira um número válido para o máximo de tokens.',
+      maxTokensInvalidMessage:
+        'Por favor, insira um número válido para o máximo de tokens.',
       maxTokensMinMessage: 'O máximo de tokens não pode ser menor que 0.',
       quote: 'Mostrar citação',
       quoteTip: 'Exibir ou não o texto original como referência.',
@@ -432,7 +448,8 @@ export default {
       maxTokens: 'Máximo de Tokens',
       maxTokensMessage: 'Máximo de Tokens é obrigatório',
       maxTokensTip: `Isso define o comprimento máximo da saída do modelo, medido em número de tokens (palavras ou partes de palavras). O padrão é 512. Se desativado, você remove o limite máximo de tokens, permitindo que o modelo determine o número de tokens em suas respostas.`,
-      maxTokensInvalidMessage: 'Por favor, insira um número válido para Máximo de Tokens.',
+      maxTokensInvalidMessage:
+        'Por favor, insira um número válido para Máximo de Tokens.',
       maxTokensMinMessage: 'O Máximo de Tokens não pode ser menor que 0.',
       password: 'Senha',
       passwordDescription: 'Digite sua senha atual para alterá-la.',
@@ -463,31 +480,41 @@ export default {
       newPasswordDescription: 'Sua nova senha deve ter mais de 8 caracteres.',
       confirmPassword: 'Confirmar nova senha',
       confirmPasswordMessage: 'Por favor, confirme sua senha!',
-      confirmPasswordNonMatchMessage: 'A nova senha que você inseriu não corresponde!',
+      confirmPasswordNonMatchMessage:
+        'A nova senha que você inseriu não corresponde!',
       cancel: 'Cancelar',
       addedModels: 'Modelos adicionados',
       modelsToBeAdded: 'Modelos a serem adicionados',
       addTheModel: 'Adicionar o modelo',
       apiKey: 'Chave da API',
-      apiKeyMessage: 'Por favor, insira a chave da API (para modelos implantados localmente, ignore isso).',
-      apiKeyTip: 'A chave da API pode ser obtida registrando-se no fornecedor correspondente do LLM.',
+      apiKeyMessage:
+        'Por favor, insira a chave da API (para modelos implantados localmente, ignore isso).',
+      apiKeyTip:
+        'A chave da API pode ser obtida registrando-se no fornecedor correspondente do LLM.',
       showMoreModels: 'Mostrar mais modelos',
       baseUrl: 'URL Base',
-      baseUrlTip: 'Se sua chave da API for do OpenAI, ignore isso. Outros provedores intermediários fornecerão essa URL base com a chave da API.',
+      baseUrlTip:
+        'Se sua chave da API for do OpenAI, ignore isso. Outros provedores intermediários fornecerão essa URL base com a chave da API.',
       modify: 'Modificar',
       systemModelSettings: 'Configurações do Modelo do Sistema',
       chatModel: 'Modelo de chat',
-      chatModelTip: 'O modelo LLM padrão que todos os novos bancos de conhecimento usarão.',
+      chatModelTip:
+        'O modelo LLM padrão que todos os novos bancos de conhecimento usarão.',
       embeddingModel: 'Modelo de incorporação',
-      embeddingModelTip: 'O modelo de incorporação padrão que todos os novos bancos de conhecimento usarão.',
+      embeddingModelTip:
+        'O modelo de incorporação padrão que todos os novos bancos de conhecimento usarão.',
       img2txtModel: 'Modelo Img2Txt',
-      img2txtModelTip: 'O modelo multimodal padrão que todos os novos bancos de conhecimento usarão. Ele pode descrever uma imagem ou vídeo.',
+      img2txtModelTip:
+        'O modelo multimodal padrão que todos os novos bancos de conhecimento usarão. Ele pode descrever uma imagem ou vídeo.',
       sequence2txtModel: 'Modelo Sequence2Txt',
-      sequence2txtModelTip: 'O modelo ASR padrão que todos os novos bancos de conhecimento usarão. Use este modelo para converter vozes em texto correspondente.',
+      sequence2txtModelTip:
+        'O modelo ASR padrão que todos os novos bancos de conhecimento usarão. Use este modelo para converter vozes em texto correspondente.',
       rerankModel: 'Modelo de Reordenação',
-      rerankModelTip: 'O modelo de reordenação padrão usado para reordenar os fragmentos recuperados pelas perguntas dos usuários.',
+      rerankModelTip:
+        'O modelo de reordenação padrão usado para reordenar os fragmentos recuperados pelas perguntas dos usuários.',
       ttsModel: 'Modelo TTS',
-      ttsModelTip: 'O modelo TTS padrão será usado para gerar fala durante as conversas sob demanda.',
+      ttsModelTip:
+        'O modelo TTS padrão será usado para gerar fala durante as conversas sob demanda.',
       workspace: 'Área de trabalho',
       upgrade: 'Atualizar',
       addLlmTitle: 'Adicionar LLM',
@@ -544,11 +571,13 @@ export default {
       yiyanAKMessage: 'Por favor, insira sua chave da API',
       addyiyanSK: 'Chave secreta yiyan',
       yiyanSKMessage: 'Por favor, insira sua chave secreta',
-      FishAudioModelNameMessage: 'Por favor, dê um nome ao seu modelo de síntese de voz',
+      FishAudioModelNameMessage:
+        'Por favor, dê um nome ao seu modelo de síntese de voz',
       addFishAudioAK: 'Chave da API Fish Audio',
       addFishAudioAKMessage: 'Por favor, insira sua chave da API',
       addFishAudioRefID: 'ID de referência do FishAudio',
-      addFishAudioRefIDMessage: 'Por favor, insira o ID de referência (deixe em branco para usar o modelo padrão).',
+      addFishAudioRefIDMessage:
+        'Por favor, insira o ID de referência (deixe em branco para usar o modelo padrão).',
       modelProvidersWarn: `Por favor, adicione tanto o modelo de incorporação quanto o LLM em <b>Configurações > Provedores de Modelo</b> primeiro. Depois, defina-os nas 'Configurações do modelo do sistema'.`,
       apiVersion: 'Versão da API',
       apiVersionMessage: 'Por favor, insira a versão da API',
@@ -610,7 +639,8 @@ export default {
       file: 'Arquivo',
       uploadFile: 'Carregar Arquivo',
       directory: 'Diretório',
-      uploadTitle: 'Clique ou arraste o arquivo para esta área para fazer o upload',
+      uploadTitle:
+        'Clique ou arraste o arquivo para esta área para fazer o upload',
       uploadDescription:
         'Suporta upload de um único arquivo ou múltiplos arquivos. É estritamente proibido o upload de dados da empresa ou outros arquivos proibidos.',
       local: 'Uploads locais',
@@ -785,17 +815,17 @@ export default {
         cht: 'Chinês tradicional',
         vie: 'Vietnamita',
       },
-      
+
       qWeather: 'QWeather',
       qWeatherDescription:
         'Um componente que recupera informações meteorológicas, como temperatura e qualidade do ar, de https://www.qweather.com.',
-      
+
       lang: 'Idioma',
       type: 'Tipo',
       webApiKey: 'Chave de API da Web',
       userType: 'Tipo de usuário',
       timePeriod: 'Período de tempo',
-      
+
       qWeatherLangOptions: {
         zh: 'Chinês simplificado',
         'zh-hant': 'Chinês tradicional',
@@ -829,7 +859,7 @@ export default {
         is: 'Islandês',
         nb: 'Norueguês',
       },
-      
+
       qWeatherTypeOptions: {
         weather: 'Previsão do tempo',
         indices: 'Índice de qualidade de vida relacionado ao clima',
@@ -839,7 +869,7 @@ export default {
         free: 'Assinante gratuito',
         paid: 'Assinante pago',
       },
-      
+
       qWeatherTimePeriodOptions: {
         now: 'Agora',
         '3d': '3 dias',
@@ -848,12 +878,12 @@ export default {
         '15d': '12 dias',
         '30d': '30 dias',
       },
-      
+
       publish: 'API',
       exeSQL: 'ExeSQL',
       exeSQLDescription:
         'Um componente que executa consultas SQL em um banco de dados relacional, suportando consultas de MySQL, PostgreSQL ou MariaDB.',
-      
+
       dbType: 'Tipo de banco de dados',
       database: 'Banco de dados',
       username: 'Nome de usuário',
@@ -876,12 +906,12 @@ export default {
         empty: 'Vazio',
         notEmpty: 'Não vazio',
       },
-      
+
       switchLogicOperatorOptions: {
         and: 'E',
         or: 'Ou',
       },
-      
+
       operator: 'Operador',
       value: 'Valor',
       useTemplate: 'Usar este modelo',
@@ -889,7 +919,7 @@ export default {
       queryType: 'Tipo de consulta',
       wenCaiDescription:
         'Um componente que obtém informações financeiras, incluindo preços de ações e notícias de financiamento, de uma ampla variedade de sites financeiros.',
-        
+
       wenCaiQueryTypeOptions: {
         stock: 'Ação',
         zhishu: 'Índice',
@@ -903,26 +933,26 @@ export default {
         lccp: 'Financiamento',
         foreign_exchange: 'Câmbio',
       },
-      
+
       akShare: 'AkShare',
       akShareDescription:
         'Um componente que obtém notícias sobre ações de https://www.eastmoney.com/.',
-      
+
       yahooFinance: 'YahooFinance',
       yahooFinanceDescription:
         'Um componente que consulta informações sobre uma empresa de capital aberto usando seu símbolo de ticker.',
-      
+
       crawler: 'Rastreador Web',
       crawlerDescription:
         'Um componente que rastreia o código-fonte HTML de um URL especificado.',
-      
+
       proxy: 'Proxy',
       crawlerResultOptions: {
         html: 'Html',
         markdown: 'Markdown',
         content: 'Conteúdo',
       },
-      
+
       extractType: 'Tipo de extração',
       info: 'Informações',
       history: 'Histórico',
@@ -932,7 +962,7 @@ export default {
       jin10: 'Jin10',
       jin10Description:
         'Um componente que obtém informações financeiras da Plataforma Aberta Jin10, incluindo notícias, calendários, cotações e referências.',
-      
+
       flashType: 'Tipo de Flash',
       filter: 'Filtro',
       contain: 'Contém',
@@ -946,7 +976,7 @@ export default {
         symbols: 'Cotações',
         news: 'Referência',
       },
-      
+
       jin10FlashTypeOptions: {
         '1': 'Notícias do Mercado',
         '2': 'Notícias de Futuros',
@@ -954,27 +984,27 @@ export default {
         '4': 'Notícias A-Share',
         '5': 'Notícias de Commodities & Forex',
       },
-      
+
       jin10CalendarTypeOptions: {
         cj: 'Calendário de dados macroeconômicos',
         qh: 'Calendário de Futuros',
         hk: 'Calendário do mercado de ações de Hong Kong',
         us: 'Calendário do mercado de ações dos EUA',
       },
-      
+
       jin10CalendarDatashapeOptions: {
         data: 'Dados',
         event: 'Evento',
         holiday: 'Feriado',
       },
-      
+
       jin10SymbolsTypeOptions: {
         GOODS: 'Cotações de commodities',
         FOREX: 'Cotações de Forex',
         FUTURE: 'Cotações do mercado internacional',
         CRYPTO: 'Cotações de criptomoedas',
       },
-      
+
       jin10SymbolsDatatypeOptions: {
         symbols: 'Lista de commodities',
         quotes: 'Últimas cotações do mercado',
@@ -1096,4 +1126,3 @@ export default {
     },
   },
 };
-
