@@ -1104,7 +1104,7 @@ This procedure will improve precision of retrieval by adding more information to
       testRun: 'Test Run',
       template: 'Template',
       templateDescription:
-        'A component that formats the output of other components.',
+        'A component that formats user inputs or the outputs of other components.',
       emailComponent: 'Email',
       emailDescription: 'Send an email to a specified address.',
       smtpServer: 'SMTP Server',
