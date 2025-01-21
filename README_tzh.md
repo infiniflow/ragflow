@@ -9,7 +9,8 @@
   <a href="./README_zh.md">简体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
-  <a href="./README_id.md">Bahasa Indonesia</a>
+  <a href="./README_id.md">Bahasa Indonesia</a> |
+  <a href="/README_pt_br.md">Português (Brasil)</a>
 </p>
 
 <p align="center">
@@ -30,7 +31,6 @@
     </a>
 </p>
 
-
 <h4 align="center">
   <a href="https://ragflow.io/docs/dev/">Document</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
@@ -45,12 +45,12 @@
 
 ## 🎮 Demo 試用
 
-請登入網址 [https://demo.ragflow.io](https://demo.ragflow.io)  試用 demo。
+請登入網址 [https://demo.ragflow.io](https://demo.ragflow.io) 試用 demo。
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
 <img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
 </div>
-
 
 ## 🔥 近期更新
 
@@ -62,11 +62,12 @@
 - 2024-08-02 支持 GraphRAG 啟發於 [graphrag](https://github.com/microsoft/graphrag) 和心智圖。
 
 ## 🎉 關注項目
-⭐️點擊右上角的 Star 追蹤RAGFlow，可以取得最新發布的即時通知 !🌟
+
+⭐️ 點擊右上角的 Star 追蹤 RAGFlow，可以取得最新發布的即時通知 !🌟
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
-
 
 ## 🌟 主要功能
 
@@ -102,7 +103,7 @@
 <img src="https://github.com/infiniflow/ragflow/assets/12318111/d6ac5664-c237-4200-a7c2-a4a00691b485" width="1000"/>
 </div>
 
-## 🎬快速開始
+## 🎬 快速開始
 
 ### 📝 前提條件
 
@@ -144,6 +145,7 @@
 3. 進入 **docker** 資料夾，利用事先編譯好的 Docker 映像啟動伺服器：
 
    > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.15.1-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.15.1-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1` 來下載 RAGFlow 鏡像的 `v0.15.1` 完整發行版。
+
    ```bash
    $ cd ragflow
    $ docker compose -f docker/docker-compose.yml up -d
@@ -153,11 +155,12 @@
    | ----------------- | --------------- | --------------------- | ------------------------ |
    | v0.15.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
    | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
+   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 
-   > [!TIP] 
+   > [!TIP]
    > 如果你遇到 Docker 映像檔拉不下來的問題，可以在 **docker/.env** 檔案內根據變數 `RAGFLOW_IMAGE` 的註解提示選擇華為雲或阿里雲的對應映像。
+   >
    > - 華為雲鏡像名：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow`
    > - 阿里雲鏡像名：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow`
 
@@ -170,17 +173,18 @@
    _出現以下介面提示說明伺服器啟動成功：_
 
    ```bash
-        ____   ___    ______ ______ __               
+        ____   ___    ______ ______ __
        / __ \ /   |  / ____// ____// /____  _      __
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
     * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
+
    > 如果您跳過這一步驟系統確認步驟就登入 RAGFlow，你的瀏覽器有可能會提示 `network anormal` 或 `網路異常`，因為 RAGFlow 可能並未完全啟動成功。
 
 5. 在你的瀏覽器中輸入你的伺服器對應的 IP 位址並登入 RAGFlow。
@@ -205,7 +209,7 @@
 
 > [./docker/README](./docker/README.md) 解釋了 [service_conf.yaml.template](./docker/service_conf.yaml.template) 用到的環境變數設定和服務配置。
 
-如需更新預設的HTTP 服務連接埠(80), 可以在[docker-compose.yml](./docker/docker-compose.yml) 檔案中將配置`80:80` 改為`<YOUR_SERVING_PORT>:80` 。
+如需更新預設的 HTTP 服務連接埠(80), 可以在[docker-compose.yml](./docker/docker-compose.yml) 檔案中將配置`80:80` 改為`<YOUR_SERVING_PORT>:80` 。
 
 > 所有系統配置都需要透過系統重新啟動生效：
 >
@@ -234,7 +238,6 @@ RAGFlow 預設使用 Elasticsearch 儲存文字和向量資料. 如果要切換�
 > [!WARNING]
 > Infinity 目前官方並未正式支援在 Linux/arm64 架構下的機器上運行.
 
-
 ## 🔧 原始碼編譯 Docker 映像（不含 embedding 模型）
 
 本 Docker 映像大小約 2 GB 左右並且依賴外部的大模型和 embedding 服務。
@@ -258,12 +261,14 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
 ## 🔨 以原始碼啟動服務
 
 1. 安裝 uv。如已安裝，可跳過此步驟：
+
    ```bash
    pipx install uv
    export UV_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
    ```
 
 2. 下載原始碼並安裝 Python 依賴：
+
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
@@ -271,41 +276,47 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
    ```
 
 3. 透過 Docker Compose 啟動依賴的服務（MinIO, Elasticsearch, Redis, and MySQL）：
+
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
    在 `/etc/hosts` 中加入以下程式碼，將 **conf/service_conf.yaml** 檔案中的所有 host 位址都解析為 `127.0.0.1`：
+
    ```
    127.0.0.1 es01 infinity mysql minio redis
    ```
 
-4. 如果無法存取 HuggingFace，可以把環境變數 `HF_ENDPOINT` 設為對應的鏡像網站：  
- 
+4. 如果無法存取 HuggingFace，可以把環境變數 `HF_ENDPOINT` 設為對應的鏡像網站：
+
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
 5.啟動後端服務：
-   『`bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
+『`bash
+source .venv/bin/activate
+export PYTHONPATH=$(pwd)
+bash docker/launch_backend_service.sh
+
+```
 
 6. 安裝前端依賴：
-   『`bash
-   cd web
-   npm install
-   ```
+『`bash
+cd web
+npm install
+```
+
 7. 啟動前端服務：
    『`bash
    npm run dev
+
    ```
 
    以下界面說明系統已成功啟動：_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+   ```
 
 ## 📚 技術文檔
 
@@ -339,4 +350,3 @@ RAGFlow 只有透過開源協作才能蓬勃發展。秉持這項精神,我們�
 <p align="center">
   <img src="https://github.com/infiniflow/ragflow/assets/7248/bccf284f-46f2-4445-9809-8f1030fb7585" width=50% height=50%>
 </p>
-

@@ -9,7 +9,8 @@
   <a href="./README_zh.md">简体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
-  <a href="./README_id.md">Bahasa Indonesia</a>
+  <a href="./README_id.md">Bahasa Indonesia</a> |
+  <a href="/README_pt_br.md">Português (Brasil)</a>
 </p>
 
 <p align="center">
@@ -30,7 +31,6 @@
     </a>
 </p>
 
-
 <h4 align="center">
   <a href="https://ragflow.io/docs/dev/">Document</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
@@ -46,11 +46,11 @@
 ## 🎮 Demo 试用
 
 请登录网址 [https://demo.ragflow.io](https://demo.ragflow.io) 试用 demo。
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
 <img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
 </div>
-
 
 ## 🔥 近期更新
 
@@ -62,11 +62,12 @@
 - 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
 
 ## 🎉 关注项目
-⭐️点击右上角的 Star 关注RAGFlow，可以获取最新发布的实时通知 !🌟
+
+⭐️ 点击右上角的 Star 关注 RAGFlow，可以获取最新发布的实时通知 !🌟
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
-
 
 ## 🌟 主要功能
 
@@ -154,11 +155,12 @@
    | ----------------- | --------------- | --------------------- | ------------------------ |
    | v0.15.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
    | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
+   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 
-   > [!TIP] 
+   > [!TIP]
    > 如果你遇到 Docker 镜像拉不下来的问题，可以在 **docker/.env** 文件内根据变量 `RAGFLOW_IMAGE` 的注释提示选择华为云或者阿里云的相应镜像。
+   >
    > - 华为云镜像名：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow`
    > - 阿里云镜像名：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow`
 
@@ -171,17 +173,18 @@
    _出现以下界面提示说明服务器启动成功：_
 
    ```bash
-        ____   ___    ______ ______ __               
+        ____   ___    ______ ______ __
        / __ \ /   |  / ____// ____// /____  _      __
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
     * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
+
    > 如果您跳过这一步系统确认步骤就登录 RAGFlow，你的浏览器有可能会提示 `network anormal` 或 `网络异常`，因为 RAGFlow 可能并未完全启动成功。
 
 5. 在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
@@ -232,9 +235,8 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
    $ docker compose -f docker/docker-compose.yml up -d
    ```
 
-> [!WARNING] 
+> [!WARNING]
 > Infinity 目前官方并未正式支持在 Linux/arm64 架构下的机器上运行.
-
 
 ## 🔧 源码编译 Docker 镜像（不含 embedding 模型）
 
@@ -258,53 +260,59 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
 
 ## 🔨 以源代码启动服务
 
-1. 安装 uv。如已经安装，可跳过本步骤：  
+1. 安装 uv。如已经安装，可跳过本步骤：
+
    ```bash
    pipx install uv
    export UV_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
    ```
 
-2. 下载源代码并安装 Python 依赖：  
+2. 下载源代码并安装 Python 依赖：
+
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
    ```
 
-3. 通过 Docker Compose 启动依赖的服务（MinIO, Elasticsearch, Redis, and MySQL）：  
+3. 通过 Docker Compose 启动依赖的服务（MinIO, Elasticsearch, Redis, and MySQL）：
+
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   在 `/etc/hosts` 中添加以下代码，将 **conf/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：  
+   在 `/etc/hosts` 中添加以下代码，将 **conf/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：
+
    ```
    127.0.0.1       es01 infinity mysql minio redis
-   ```  
+   ```
 
-4. 如果无法访问 HuggingFace，可以把环境变量 `HF_ENDPOINT` 设成相应的镜像站点：  
- 
+4. 如果无法访问 HuggingFace，可以把环境变量 `HF_ENDPOINT` 设成相应的镜像站点：
+
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. 启动后端服务：  
+5. 启动后端服务：
+
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
 
-6. 安装前端依赖：  
+6. 安装前端依赖：
    ```bash
    cd web
    npm install
-   ```  
-7. 启动前端服务：  
-   ```bash
-   npm run dev 
-   ```  
+   ```
+7. 启动前端服务：
 
-   _以下界面说明系统已经成功启动：_  
+   ```bash
+   npm run dev
+   ```
+
+   _以下界面说明系统已经成功启动：_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
@@ -340,4 +348,3 @@ RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们�
 <p align="center">
   <img src="https://github.com/infiniflow/ragflow/assets/7248/bccf284f-46f2-4445-9809-8f1030fb7585" width=50% height=50%>
 </p>
-
