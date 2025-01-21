@@ -37,7 +37,7 @@ class GraphExtractor(Extractor):
         set_entity: Callable | None = None,
         get_relation: Callable | None = None,
         set_relation: Callable | None = None,
-        example_number: int = 3,
+        example_number: int = 2,
         max_gleanings: int | None = None,
     ):
         super().__init__(llm_invoker, language, entity_types, get_entity, set_entity, get_relation, set_relation)

@@ -11,6 +11,8 @@ import json
 import logging
 import re
 import time
+from collections import defaultdict
+from copy import deepcopy
 from hashlib import md5
 from typing import Any, Callable
 
@@ -148,16 +150,6 @@ def graph_merge(g1, g2):
             g.add_node(n, **attr)
             continue
 
-        continue
-        if not attr.get("description"):
-            continue
-
-        if "description" not in g.nodes[n]:
-            g.nodes[n]["description"] = attr["description"]
-
-        if g.nodes[n]["description"].lower().find(attr["description"][:32].lower()) < 0:
-            g.nodes[n]["description"] += "\n" + attr["description"]
-
     for source, target, attr in g1.edges(data=True):
         if g.has_edge(source, target):
             g[source][target].update({"weight": attr.get("weight", 0)+1})
@@ -266,12 +258,12 @@ def set_entity(tenant_id, kb_id, embd_mdl, ent_name, meta):
     chunk = {
         "important_kwd": [ent_name],
         "title_tks": rag_tokenizer.tokenize(ent_name),
-        "entity_kwd": [ent_name],
+        "entity_kwd": ent_name,
         "knowledge_graph_kwd": "entity",
         "entity_type_kwd": meta["entity_type"],
         "content_with_weight": json.dumps(meta, ensure_ascii=False),
         "content_ltks": rag_tokenizer.tokenize(meta["description"]),
-        "source_id": meta["source_id"],
+        "source_id": list(set(meta["source_id"])),
         "kb_id": kb_id
     }
     chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
@@ -280,11 +272,16 @@ def set_entity(tenant_id, kb_id, embd_mdl, ent_name, meta):
     if res.ids:
         settings.docStoreConn.update({"entity_kwd": ent_name}, chunk, search.index_name(tenant_id), kb_id)
     else:
-        try:
-            ebd, _ = embd_mdl.encode([ent_name])
-            chunk["q_%d_vec" % len(ebd[0])] = ebd[0]
-        except Exception as e:
-            logging.exception(f"Fail to embed entity: {e}")
+        ebd = get_embed_cache(embd_mdl.llm_name, ent_name)
+        if ebd is None:
+            try:
+                ebd, _ = embd_mdl.encode([ent_name])
+                ebd = ebd[0]
+                set_embed_cache(embd_mdl.llm_name, ent_name, ebd)
+            except Exception as e:
+                logging.exception(f"Fail to embed entity: {e}")
+        if ebd is not None:
+            chunk["q_%d_vec" % len(ebd)] = ebd
         settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
 
 
@@ -304,7 +301,7 @@ def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
         "knowledge_graph_kwd": ["relation"]
     }
     res = []
-    es_res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
+    es_res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id] if isinstance(kb_id, str) else kb_id)
     for id in es_res.ids:
         try:
             if size == 1:
@@ -317,29 +314,36 @@ def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
 
 def set_relation(tenant_id, kb_id, embd_mdl, from_ent_name, to_ent_name, meta):
     chunk = {
-        "from_entity_kwd": [from_ent_name],
-        "to_entity_kwd": [to_ent_name],
+        "from_entity_kwd": from_ent_name,
+        "to_entity_kwd": to_ent_name,
         "knowledge_graph_kwd": "relation",
         "content_with_weight": json.dumps(meta, ensure_ascii=False),
         "content_ltks": rag_tokenizer.tokenize(meta["description"]),
         "important_kwd": meta["keywords"],
-        "source_id": meta["source_id"],
+        "source_id": list(set(meta["source_id"])),
         "weight_int": int(meta["weight"]),
         "kb_id": kb_id
     }
     chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
     res = settings.retrievaler.search({"from_entity_kwd": to_ent_name, "to_entity_kwd": to_ent_name, "size": 1, "fields": []},
                                       search.index_name(tenant_id), [kb_id])
+
     if res.ids:
-        settings.docStoreConn.update({"from_entity_kwd": to_ent_name, "to_entity_kwd": to_ent_name},
+        settings.docStoreConn.update({"from_entity_kwd": from_ent_name, "to_entity_kwd": to_ent_name},
                                  chunk,
                                  search.index_name(tenant_id), kb_id)
     else:
-        try:
-            ebd, _ = embd_mdl.encode([f"{from_ent_name}, {to_ent_name}"])
-            chunk["q_%d_vec" % len(ebd[0])] = ebd[0]
-        except Exception as e:
-            logging.exception(f"Fail to embed entity relation: {e}")
+        txt = f"{from_ent_name}->{to_ent_name}"
+        ebd = get_embed_cache(embd_mdl.llm_name, txt)
+        if ebd is None:
+            try:
+                ebd, _ = embd_mdl.encode([txt+f": {meta['description']}"])
+                ebd = ebd[0]
+                set_embed_cache(embd_mdl.llm_name, txt, ebd)
+            except Exception as e:
+                logging.exception(f"Fail to embed entity relation: {e}")
+        if ebd is not None:
+            chunk["q_%d_vec" % len(ebd)] = ebd
         settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
 
 
@@ -372,6 +376,116 @@ def set_graph(tenant_id, kb_id, graph):
         settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
 
 
+def is_continuous_subsequence(subseq, seq):
+    def find_all_indexes(tup, value):
+        indexes = []
+        start = 0
+        while True:
+            try:
+                index = tup.index(value, start)
+                indexes.append(index)
+                start = index + 1
+            except ValueError:
+                break
+        return indexes
+
+    index_list = find_all_indexes(seq,subseq[0])
+    for idx in index_list:
+        if idx!=len(seq)-1:
+            if seq[idx+1]==subseq[-1]:
+                return True
+    return False
+
+
+def merge_tuples(list1, list2):
+    result = []
+    for tup in list1:
+        last_element = tup[-1]
+        if last_element in tup[:-1]:
+            result.append(tup)
+        else:
+            matching_tuples = [t for t in list2 if t[0] == last_element]
+            already_match_flag = 0
+            for match in matching_tuples:
+                matchh = (match[1], match[0])
+                if is_continuous_subsequence(match, tup) or is_continuous_subsequence(matchh, tup):
+                    continue
+                already_match_flag = 1
+                merged_tuple = tup + match[1:]
+                result.append(merged_tuple)
+            if not already_match_flag:
+                result.append(tup)
+    return result
+
+
+def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
+    def n_neighbor(id):
+        nonlocal graph, n_hop
+        count = 0
+        source_edge = list(graph.edges(id))
+        if not source_edge:
+            return []
+        count = count + 1
+        while count < n_hop:
+            count = count + 1
+            sc_edge = deepcopy(source_edge)
+            source_edge = []
+            for pair in sc_edge:
+                append_edge = list(graph.edges(pair[-1]))
+                for tuples in merge_tuples([pair], append_edge):
+                    source_edge.append(tuples)
+        return {",".join((sorted(tup))): nx.get_edge_attributes(graph, 'weight').get(tuple(tup), 0) for tup in source_edge}
+
+    pr = nx.pagerank(graph)
+    for n, p in pr.items():
+        graph.nodes[n]["pagerank"] = p
+        try:
+            settings.docStoreConn.update({"entity_kwd": n, "kb_id": kb_id},
+                                         {"rank_flt": p,
+                                          "n_hop_with_weight": json.dumps(n_neighbor(n))},
+                                         search.index_name(tenant_id), kb_id)
+        except Exception as e:
+            logging.exception(e)
+
+    ty2ents = defaultdict(list)
+    for p, r in sorted(pr.items(), key=lambda x: x[1], reverse=True):
+        ty = graph.nodes[p].get("entity_type")
+        if not ty or len(ty2ents[ty]) > 12:
+            continue
+        ty2ents[ty].append(p)
+
+    chunk = {"content_with_weight": json.dumps(ty2ents, ensure_ascii=False), "kb_id": kb_id}
+    res = settings.retrievaler.search({"knowledge_graph_kwd": "ty2ents", "size": 1, "fields": []},
+                                      search.index_name(tenant_id), [kb_id])
+    if res.ids:
+        settings.docStoreConn.update({"knowledge_graph_kwd": "ty2ents"},
+                                     chunk,
+                                     search.index_name(tenant_id), kb_id)
+    else:
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+
+
+def get_entity_type2sampels(idxnm, kb_ids: list):
+    es_res = settings.retrievaler.search({"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids,
+                                       "size": 10000,
+                                       "fields": ["content_with_weight"]},
+                                      idxnm, kb_ids)
+
+    res = defaultdict(list)
+    for id in es_res.ids:
+        smp = es_res.field[id].get("content_with_weight")
+        if not smp:
+            continue
+        try:
+            smp = json.loads(smp)
+        except Exception as e:
+            logging.exception(e)
+
+        for ty, ents in smp.item():
+            res[ty].extend(ents)
+    return res
+
+
 def flat_uniq_list(arr, key):
     res = []
     for a in arr:
@@ -381,3 +495,4 @@ def flat_uniq_list(arr, key):
         else:
             res.append(a)
     return list(set(res))
+

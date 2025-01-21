@@ -107,6 +107,11 @@ class DocumentService(CommonService):
     def remove_document(cls, doc, tenant_id):
         settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
         cls.clear_chunk_num(doc.id)
+        settings.docStoreConn.update({"kb_id": doc.kb_id, "exist": "knowledge_graph_kwd", "source_id": doc.id},
+                                     {"remove": {"source_id": doc.id}},
+                                     search.index_name(tenant_id), doc.kb_id)
+        settings.docStoreConn.delete({"kb_id": doc.kb_id, "exists": "knowledge_graph_kwd", "must_not": {"exists": "source_id"}},
+                                     search.index_name(tenant_id), doc.kb_id)
         return cls.delete_by_id(doc.id)
 
     @classmethod
@@ -365,6 +370,12 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_progress(cls):
+        MSG = {
+            "raptor": "Start RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval).",
+            "graphrag": "Start Graph Extraction",
+            "graph_resolution": "Start Graph Resolution",
+            "graph_community": "Start Graph Community Reports Generation"
+        }
         docs = cls.get_unfinished_docs()
         for d in docs:
             try:
@@ -390,31 +401,27 @@ class DocumentService(CommonService):
                     prg = -1
                     status = TaskStatus.FAIL.value
                 elif finished:
-                    if d["parser_config"].get("raptor", {}).get("use_raptor") and d["progress_msg"].lower().find(
-                            " raptor") < 0:
-                        queue_raptor_o_graphrag_tasks(d, "raptor")
+                    m = "\n".join(sorted(msg))
+                    if d["parser_config"].get("raptor", {}).get("use_raptor") and m.find(MSG["raptor"]) < 0:
+                        queue_raptor_o_graphrag_tasks(d, "raptor", MSG["raptor"])
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                        msg.append("------ RAPTOR -------")
-                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") and d["progress_msg"].lower().find(" graphrag ") < 0:
-                        queue_raptor_o_graphrag_tasks(d, "graphrag")
+                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") and m.find(MSG["graphrag"]) < 0:
+                        queue_raptor_o_graphrag_tasks(d, "graphrag", MSG["graphrag"])
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                        msg.append("------ GraphRAG -------")
                     elif d["parser_config"].get("graphrag", {}).get("use_graphrag") \
                         and d["parser_config"].get("graphrag", {}).get("resolution") \
-                        and d["progress_msg"].lower().find(" graph resolution ") < 0:
-                        queue_raptor_o_graphrag_tasks(d, "graph_resolution")
+                        and m.find(MSG["graph_resolution"]) < 0:
+                        queue_raptor_o_graphrag_tasks(d, "graph_resolution", MSG["graph_resolution"])
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                        msg.append("------ Graph Resolution -------")
                     elif d["parser_config"].get("graphrag", {}).get("use_graphrag") \
                         and d["parser_config"].get("graphrag", {}).get("community") \
-                        and d["progress_msg"].lower().find(" graph community ") < 0:
-                        queue_raptor_o_graphrag_tasks(d, "graph_community")
+                        and m.find(MSG["graph_community"]) < 0:
+                        queue_raptor_o_graphrag_tasks(d, "graph_community", MSG["graph_community"])
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                        msg.append("------ Graph Community Detection-------")
                     else:
                         status = TaskStatus.DONE.value
 
-                msg = "\n".join(msg)
+                msg = "\n".join(sorted(msg))
                 info = {
                     "process_duation": datetime.timestamp(
                         datetime.now()) -
@@ -446,18 +453,11 @@ class DocumentService(CommonService):
         return False
 
 
-def queue_raptor_o_graphrag_tasks(doc, ty="raptor"):
+def queue_raptor_o_graphrag_tasks(doc, ty, msg):
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     hasher = xxhash.xxh64()
     for field in sorted(chunking_config.keys()):
         hasher.update(str(chunking_config[field]).encode("utf-8"))
-
-    msg = {
-        "raptor": "Start to do RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval).",
-        "graphrag": "Start to do Graph Extraction",
-        "graph_resolution": "Start to do Graph Resolution",
-        "graph_community": "Start to do Graph Community Detection"
-    }
 
     def new_task():
         nonlocal doc
@@ -466,12 +466,13 @@ def queue_raptor_o_graphrag_tasks(doc, ty="raptor"):
             "doc_id": doc["id"],
             "from_page": 100000000,
             "to_page": 100000000,
-            "progress_msg":  msg[ty]
+            "progress_msg":  datetime.now().strftime("%H:%M:%S") + " " + msg
         }
 
     task = new_task()
     for field in ["doc_id", "from_page", "to_page"]:
         hasher.update(str(task.get(field, "")).encode("utf-8"))
+    hasher.update(ty.encode("utf-8"))
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
     task["task_type"] = ty

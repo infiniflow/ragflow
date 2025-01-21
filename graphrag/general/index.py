@@ -13,20 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import logging
 from functools import reduce, partial
 import networkx as nx
 
 from api import settings
-from api.db import LLMType
-from api.db.services.llm_service import LLMBundle
-from api.db.services.user_service import TenantService
 from graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from graphrag.entity_resolution import EntityResolution
 from graphrag.general.extractor import Extractor
-from graphrag.general.graph_extractor import GraphExtractor, DEFAULT_ENTITY_TYPES
+from graphrag.general.graph_extractor import DEFAULT_ENTITY_TYPES
 from graphrag.utils import graph_merge, set_entity, get_relation, set_relation, get_entity, get_graph, set_graph, \
-    chunk_id
+    chunk_id, update_nodes_pagerank_nhop_neighbour
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
 
@@ -55,7 +53,7 @@ class Dealer:
         ents, rels = ext(chunks, callback)
         self.graph = nx.Graph()
         for en in ents:
-            self.graph.add_node(en["entity_name"])#, entity_type=en["entity_type"], description=en["description"])
+            self.graph.add_node(en["entity_name"], entity_type=en["entity_type"])#, description=en["description"])
 
         for rel in rels:
             self.graph.add_edge(
@@ -70,7 +68,7 @@ class Dealer:
             if old_graph is not None:
                 logging.info("Merge with an exiting graph...................")
                 self.graph = reduce(graph_merge, [old_graph, self.graph])
-
+            update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, self.graph, 2)
             set_graph(tenant_id, kb_id, self.graph)
 
 
@@ -105,6 +103,7 @@ class WithResolution(Dealer):
             logging.info("Graph resolution is done. Remove {} nodes.".format(len(reso.removed_entities)))
             if callback:
                 callback(msg="Graph resolution is done. Remove {} nodes.".format(len(reso.removed_entities)))
+            update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, self.graph, 2)
             set_graph(tenant_id, kb_id, self.graph)
 
         settings.docStoreConn.delete({
@@ -116,6 +115,11 @@ class WithResolution(Dealer):
             "knowledge_graph_kwd": "relation",
             "kb_id": kb_id,
             "to_entity_kwd": reso.removed_entities
+        }, search.index_name(tenant_id), kb_id)
+        settings.docStoreConn.delete({
+            "knowledge_graph_kwd": "entity",
+            "kb_id": kb_id,
+            "entity_kwd": reso.removed_entities
         }, search.index_name(tenant_id), kb_id)
 
 
@@ -154,29 +158,34 @@ class WithCommunity(Dealer):
             set_graph(tenant_id, kb_id, self.graph)
 
         if callback:
-            callback(msg="Graph community extraction is done. Indexing {} reports.".format(cr.structured_output))
+            callback(msg="Graph community extraction is done. Indexing {} reports.".format(len(cr.structured_output)))
 
         settings.docStoreConn.delete({
             "knowledge_graph_kwd": "community_report",
             "kb_id": kb_id
         }, search.index_name(tenant_id), kb_id)
 
-        for community, desc in zip(cr.structured_output, cr.output):
+        for stru, rep in zip(self.community_structure, self.community_reports):
+            obj = {
+                "report": rep,
+                "evidences": "\n".join([f["explanation"] for f in stru["findings"]])
+            }
             chunk = {
-                "title_tks": rag_tokenizer.tokenize(community["title"]),
-                "content_with_weight": desc,
-                "content_ltks": rag_tokenizer.tokenize(desc),
+                "docnm_kwd": stru["title"],
+                "title_tks": rag_tokenizer.tokenize(stru["title"]),
+                "content_with_weight": json.dumps(obj, ensure_ascii=False),
+                "content_ltks": rag_tokenizer.tokenize(obj["report"] +" "+ obj["evidences"]),
                 "knowledge_graph_kwd": "community_report",
-                "weight_flt": community["weight"],
-                "entities_kwd": community["entities"],
-                "important_kwd": community["entities"],
+                "weight_flt": stru["weight"],
+                "entities_kwd": stru["entities"],
+                "important_kwd": stru["entities"],
                 "kb_id": kb_id
             }
-            try:
-                ebd, _ = self.embed_bdl.encode([", ".join(community["entities"])])
-                chunk["q_%d_vec" % len(ebd[0])] = ebd[0]
-            except Exception as e:
-                logging.exception(f"Fail to embed entity relation: {e}")
             chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
+            #try:
+            #    ebd, _ = self.embed_bdl.encode([", ".join(community["entities"])])
+            #    chunk["q_%d_vec" % len(ebd[0])] = ebd[0]
+            #except Exception as e:
+            #    logging.exception(f"Fail to embed entity relation: {e}")
             settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
 

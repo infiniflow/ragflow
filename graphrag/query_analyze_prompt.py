@@ -172,40 +172,47 @@ Given the query, list both high-level and low-level keywords. High-level keyword
 ######################
 -Examples-
 ######################
-Example 1:
+{examples}
 
-Query: "How does international trade influence global economic stability?"
-################
-Output:
-{{
-  "high_level_keywords": ["International trade", "Global economic stability", "Economic impact"],
-  "low_level_keywords": ["Trade agreements", "Tariffs", "Currency exchange", "Imports", "Exports"]
-}}
-#############################
-Example 2:
-
-Query: "What are the environmental consequences of deforestation on biodiversity?"
-################
-Output:
-{{
-  "high_level_keywords": ["Environmental consequences", "Deforestation", "Biodiversity loss"],
-  "low_level_keywords": ["Species extinction", "Habitat destruction", "Carbon emissions", "Rainforest", "Ecosystem"]
-}}
-#############################
-Example 3:
-
-Query: "What is the role of education in reducing poverty?"
-################
-Output:
-{{
-  "high_level_keywords": ["Education", "Poverty reduction", "Socioeconomic development"],
-  "low_level_keywords": ["School access", "Literacy rates", "Job training", "Income inequality"]
-}}
 #############################
 -Real Data-
 ######################
 Query: {query}
 ######################
+The `Output` should be human text, not unicode characters. Keep the same language as `Query`.
 Output:
 
 """
+
+PROMPTS["keywords_extraction_examples"] = [
+    """Example 1:
+
+Query: "How does international trade influence global economic stability?"
+################
+Output:
+{
+  "high_level_keywords": ["International trade", "Global economic stability", "Economic impact"],
+  "low_level_keywords": ["Trade agreements", "Tariffs", "Currency exchange", "Imports", "Exports"]
+}
+#############################""",
+    """Example 2:
+
+Query: "What are the environmental consequences of deforestation on biodiversity?"
+################
+Output:
+{
+  "high_level_keywords": ["Environmental consequences", "Deforestation", "Biodiversity loss"],
+  "low_level_keywords": ["Species extinction", "Habitat destruction", "Carbon emissions", "Rainforest", "Ecosystem"]
+}
+#############################""",
+    """Example 3:
+
+Query: "What is the role of education in reducing poverty?"
+################
+Output:
+{
+  "high_level_keywords": ["Education", "Poverty reduction", "Socioeconomic development"],
+  "low_level_keywords": ["School access", "Literacy rates", "Job training", "Income inequality"]
+}
+#############################""",
+]

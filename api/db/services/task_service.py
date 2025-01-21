@@ -183,7 +183,7 @@ class TaskService(CommonService):
         if os.environ.get("MACOS"):
             if info["progress_msg"]:
                 task = cls.model.get_by_id(id)
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 1000)
+                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
                 cls.model.update(progress=info["progress"]).where(
@@ -194,7 +194,7 @@ class TaskService(CommonService):
         with DB.lock("update_progress", -1):
             if info["progress_msg"]:
                 task = cls.model.get_by_id(id)
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 1000)
+                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
                 cls.model.update(progress=info["progress"]).where(
@@ -243,6 +243,10 @@ def queue_tasks(doc: dict, bucket: str, name: str):
     for task in parse_task_array:
         hasher = xxhash.xxh64()
         for field in sorted(chunking_config.keys()):
+            if field == "parser_config":
+                for k in ["raptor", "graphrag"]:
+                    if k in chunking_config[field]:
+                        del chunking_config[field][k]
             hasher.update(str(chunking_config[field]).encode("utf-8"))
         for field in ["doc_id", "from_page", "to_page"]:
             hasher.update(str(task.get(field, "")).encode("utf-8"))
@@ -278,18 +282,26 @@ def queue_tasks(doc: dict, bucket: str, name: str):
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):
     idx = bisect.bisect_left(prev_tasks, (task.get("from_page", 0), task.get("digest", "")),
                              key=lambda x: (x.get("from_page", 0), x.get("digest", "")))
+    idx = 0
+    while idx < len(prev_tasks):
+        prev_task = prev_tasks[idx]
+        if prev_task.get("from_page", 0) == task.get("from_page", 0) \
+                and prev_task.get("digest", 0) == task.get("digest", ""):
+            break
+
     if idx >= len(prev_tasks):
         return 0
     prev_task = prev_tasks[idx]
-    if prev_task["progress"] < 1.0 or prev_task["digest"] != task["digest"] or not prev_task["chunk_ids"]:
+    if prev_task["progress"] < 1.0 or not prev_task["chunk_ids"]:
         return 0
     task["chunk_ids"] = prev_task["chunk_ids"]
     task["progress"] = 1.0
-    if "from_page" in task and "to_page" in task:
+    if "from_page" in task and "to_page" in task and int(task['to_page']) - int(task['from_page']) >= 10 ** 6:
         task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
     else:
         task["progress_msg"] = ""
-    task["progress_msg"] += "reused previous task's chunks."
+    task["progress_msg"] = " ".join(
+        [datetime.now().strftime("%H:%M:%S"), task["progress_msg"], "Reused previous task's chunks."])
     prev_task["chunk_ids"] = ""
 
     return len(task["chunk_ids"].split())

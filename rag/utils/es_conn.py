@@ -350,9 +350,9 @@ class ESConnection(DocStoreConnection):
             if (not isinstance(k, str) or not v) and k != "available_int":
                 continue
             if isinstance(v, str):
-                v = re.sub(r"(['\n\r]|\\n)", " ", v)
+                v = re.sub(r"(['\n\r]|\\.)", " ", v)
                 scripts.append(f"ctx._source.{k}='{v}';")
-            elif isinstance(v, int):
+            elif isinstance(v, int) or isinstance(v, float):
                 scripts.append(f"ctx._source.{k}={v};")
             elif isinstance(v, list):
                 scripts.append(f"ctx._source.{k}={json.dumps(v, ensure_ascii=False)};")
@@ -389,7 +389,16 @@ class ESConnection(DocStoreConnection):
         else:
             qry = Q("bool")
             for k, v in condition.items():
-                if isinstance(v, list):
+                if k == "exists":
+                    qry.filter.append(Q("exists", field=v))
+
+                elif k == "must_not":
+                    if isinstance(v, dict):
+                        for kk, vv in v.items():
+                            if kk == "exists":
+                                qry.must_not.append(Q("exists", field=vv))
+
+                elif isinstance(v, list):
                     qry.must.append(Q("terms", **{k: v}))
                 elif isinstance(v, str) or isinstance(v, int):
                     qry.must.append(Q("term", **{k: v}))
@@ -398,6 +407,7 @@ class ESConnection(DocStoreConnection):
         logger.debug("ESConnection.delete query: " + json.dumps(qry.to_dict()))
         for _ in range(ATTEMPT_TIME):
             try:
+                print(Search().query(qry).to_dict(), flush=True)
                 res = self.es.delete_by_query(
                     index=indexName,
                     body=Search().query(qry).to_dict(),

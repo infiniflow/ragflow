@@ -166,9 +166,6 @@ class EntityResolution(Extractor):
                                            ))
                 graph.remove_node(remove_node)
 
-        for node_degree in graph.degree:
-            graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
-
         return EntityResolutionResult(
             graph=graph,
             removed_entities=removed_entities

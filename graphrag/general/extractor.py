@@ -27,7 +27,7 @@ from rag.utils import truncate
 
 GRAPH_FIELD_SEP = "<SEP>"
 DEFAULT_ENTITY_TYPES = ["organization", "person", "geo", "event", "category"]
-ENTITY_EXTRACTION_MAX_GLEANINGS = 1
+ENTITY_EXTRACTION_MAX_GLEANINGS = 2
 
 
 class Extractor:
