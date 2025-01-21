@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Divider, Form, Select, Switch } from 'antd';
 import { upperFirst } from 'lodash';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import EntityTypesItem from '../entity-types-item';
 
 const excludedTagParseMethods = ['table', 'knowledge_graph', 'tag'];
@@ -26,6 +26,16 @@ const GraphRagItems = () => {
     }));
   }, []);
 
+  const renderWideTooltip = useCallback(
+    (title: React.ReactNode | string) => {
+      return {
+        title: typeof title === 'string' ? t(title) : title,
+        overlayInnerStyle: { width: '50vw' },
+      };
+    },
+    [t],
+  );
+
   return (
     <>
       <Divider></Divider>
@@ -34,7 +44,7 @@ const GraphRagItems = () => {
         label={t('useGraphRag')}
         initialValue={false}
         valuePropName="checked"
-        tooltip={t('useGraphRagTip')}
+        tooltip={renderWideTooltip('useGraphRagTip')}
       >
         <Switch />
       </Form.Item>
@@ -60,7 +70,13 @@ const GraphRagItems = () => {
                 <Form.Item
                   name={['parser_config', 'graphrag', 'method']}
                   label={t('graphRagMethod')}
-                  tooltip={t('graphRagMethodTip')}
+                  tooltip={renderWideTooltip(
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: t('graphRagMethodTip'),
+                      }}
+                    ></div>,
+                  )}
                   initialValue={MethodValue.Light}
                 >
                   <Select options={methodOptions} />
@@ -68,14 +84,14 @@ const GraphRagItems = () => {
                 <Form.Item
                   name={['parser_config', 'graphrag', 'resolution']}
                   label={t('resolution')}
-                  tooltip={t('resolutionTip')}
+                  tooltip={renderWideTooltip('resolutionTip')}
                 >
                   <Switch />
                 </Form.Item>
                 <Form.Item
                   name={['parser_config', 'graphrag', 'community']}
                   label={t('community')}
-                  tooltip={t('communityTip')}
+                  tooltip={renderWideTooltip('communityTip')}
                 >
                   <Switch />
                 </Form.Item>
