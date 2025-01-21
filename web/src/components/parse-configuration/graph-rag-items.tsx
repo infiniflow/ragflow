@@ -15,6 +15,19 @@ const enum MethodValue {
   Light = 'light',
 }
 
+export const excludedParseMethods = [
+  'table',
+  'resume',
+  'picture',
+  'knowledge_graph',
+  'qa',
+  'tag',
+];
+
+export const showGraphRagItems = (parserId: string) => {
+  return !excludedParseMethods.includes(parserId);
+};
+
 // The three types "table", "resume" and "one" do not display this configuration.
 const GraphRagItems = () => {
   const { t } = useTranslate('knowledgeConfiguration');

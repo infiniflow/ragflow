@@ -84,6 +84,7 @@ export default {
       dataset: '數據集',
       testing: '檢索測試',
       configuration: '配置',
+      knowledgeGraph: '知識圖譜',
       files: '文件',
       name: '名稱',
       namePlaceholder: '請輸入名稱',

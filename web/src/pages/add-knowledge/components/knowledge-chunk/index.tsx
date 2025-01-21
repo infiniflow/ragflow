@@ -8,7 +8,6 @@ import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
 import ChunkToolBar from './components/chunk-toolbar';
 import DocumentPreview from './components/document-preview/preview';
-import KnowledgeGraphModal from './components/knowledge-graph/modal';
 import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
@@ -196,7 +195,6 @@ const Chunk = () => {
           parserId={documentInfo.parser_id}
         />
       )}
-      <KnowledgeGraphModal></KnowledgeGraphModal>
     </>
   );
 };

@@ -84,6 +84,7 @@ export default {
       dataset: '数据集',
       testing: '检索测试',
       configuration: '配置',
+      knowledgeGraph: '知识图谱',
       files: '文件',
       name: '名称',
       namePlaceholder: '请输入名称',

@@ -30,7 +30,9 @@ import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
 } from '../parse-configuration';
-import GraphRagItems from '../parse-configuration/graph-rag-items';
+import GraphRagItems, {
+  showGraphRagItems,
+} from '../parse-configuration/graph-rag-items';
 import styles from './index.less';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
@@ -295,11 +297,9 @@ const ChunkMethodModal: React.FC<IProps> = ({
         )}
         {showExcelToHtml && <ExcelToHtml></ExcelToHtml>}
         {showRaptorParseConfiguration(selectedTag) && (
-          <>
-            <ParseConfiguration></ParseConfiguration>
-            <GraphRagItems></GraphRagItems>
-          </>
+          <ParseConfiguration></ParseConfiguration>
         )}
+        {showGraphRagItems(selectedTag) && <GraphRagItems></GraphRagItems>}
         {showEntityTypes && <EntityTypesItem></EntityTypesItem>}
       </Form>
     </Modal>

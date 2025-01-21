@@ -66,6 +66,10 @@ const routes = [
             path: '/knowledge/testing',
             component: '@/pages/add-knowledge/components/knowledge-testing',
           },
+          {
+            path: '/knowledge/knowledgeGraph',
+            component: '@/pages/add-knowledge/components/knowledge-graph',
+          },
         ],
       },
       {

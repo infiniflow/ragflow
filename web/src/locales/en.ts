@@ -85,6 +85,7 @@ export default {
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
+      knowledgeGraph: 'Knowledge graph',
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',

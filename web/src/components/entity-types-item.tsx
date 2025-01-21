@@ -5,9 +5,9 @@ import EditTag from './edit-tag';
 const initialEntityTypes = [
   'organization',
   'person',
-  'location',
+  'geo',
   'event',
-  'time',
+  'category',
 ];
 
 type IProps = {

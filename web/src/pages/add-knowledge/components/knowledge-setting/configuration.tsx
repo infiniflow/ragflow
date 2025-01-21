@@ -13,7 +13,9 @@ import ParseConfiguration, {
   showRaptorParseConfiguration,
   showTagItems,
 } from '@/components/parse-configuration';
-import GraphRagItems from '@/components/parse-configuration/graph-rag-items';
+import GraphRagItems, {
+  showGraphRagItems,
+} from '@/components/parse-configuration/graph-rag-items';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useHandleChunkMethodSelectChange } from '@/hooks/logic-hooks';
 import { normFile } from '@/utils/file-util';
@@ -147,11 +149,10 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
               )}
 
               {showRaptorParseConfiguration(parserId) && (
-                <>
-                  <ParseConfiguration></ParseConfiguration>
-                  <GraphRagItems></GraphRagItems>
-                </>
+                <ParseConfiguration></ParseConfiguration>
               )}
+
+              {showGraphRagItems(parserId) && <GraphRagItems></GraphRagItems>}
 
               {showTagItems(parserId) && <TagItems></TagItems>}
             </>
