@@ -9,7 +9,8 @@
   <a href="./README_zh.md">简体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
-  <a href="./README_id.md">Bahasa Indonesia</a>
+  <a href="./README_id.md">Bahasa Indonesia</a> |
+  <a href="/README_pt_br.md">Português (Brasil)</a>
 </p>
 
 <p align="center">
@@ -68,6 +69,7 @@ data.
 ## 🎮 Demo
 
 Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
 <img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
@@ -86,6 +88,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new
 releases! 🌟
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
@@ -134,7 +137,7 @@ releases! 🌟
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > If you have not installed Docker on your local machine (Windows, Mac, or Linux),
-  see [Install Docker Engine](https://docs.docker.com/engine/install/).
+  > see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
 ### 🚀 Start up the server
 
@@ -154,7 +157,7 @@ releases! 🌟
    > ```
    >
    > This change will be reset after a system reboot. To ensure your change remains permanent, add or update the
-   `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
+   > `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
    >
    > ```bash
    > vm.max_map_count=262144
@@ -179,8 +182,8 @@ releases! 🌟
    | ----------------- | --------------- | --------------------- | ------------------------ |
    | v0.15.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
    | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
+   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 
 4. Check the server status after having the server up and running:
 
@@ -192,23 +195,24 @@ releases! 🌟
 
    ```bash
 
-         ____   ___    ______ ______ __               
+         ____   ___    ______ ______ __
         / __ \ /   |  / ____// ____// /____  _      __
        / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/ 
+      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
     * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
+
    > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anormal`
-   error because, at that moment, your RAGFlow may not be fully initialized.
+   > error because, at that moment, your RAGFlow may not be fully initialized.
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
    > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default
-   HTTP serving port `80` can be omitted when using the default configurations.
+   > HTTP serving port `80` can be omitted when using the default configurations.
 6. In [service_conf.yaml.template](./docker/service_conf.yaml.template), select the desired LLM factory in `user_default_llm` and update
    the `API_KEY` field with the corresponding API key.
 
@@ -255,7 +259,7 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
    $ docker compose -f docker/docker-compose.yml up -d
    ```
 
-> [!WARNING] 
+> [!WARNING]
 > Switching to Infinity on a Linux/arm64 machine is not yet officially supported.
 
 ## 🔧 Build a Docker image without embedding models
@@ -281,11 +285,13 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ## 🔨 Launch service from source for development
 
 1. Install uv, or skip this step if it is already installed:
+
    ```bash
    pipx install uv
    ```
 
 2. Clone the source code and install Python dependencies:
+
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
@@ -293,14 +299,16 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    ```
 
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
+
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
    Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/.env** to `127.0.0.1`:
+
    ```
    127.0.0.1       es01 infinity mysql minio redis
-   ```  
+   ```
 
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
 
@@ -309,6 +317,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    ```
 
 5. Launch backend service:
+
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
@@ -319,11 +328,12 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    ```bash
    cd web
    npm install
-   ```  
+   ```
 7. Launch frontend service:
+
    ```bash
-   npm run dev 
-   ```  
+   npm run dev
+   ```
 
    _The following output confirms a successful launch of the system:_
 
