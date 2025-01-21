@@ -16,7 +16,7 @@ export default {
       upload: 'Subir',
       english: 'Ingles',
       spanish: 'Español',
-      portugeseBr: 'Portugués (Brasil)',
+      portugueseBr: 'Portugués (Brasil)',
       chinese: 'Chino simplificado',
       traditionalChinese: 'Chino tradicional',
       language: 'Idioma',

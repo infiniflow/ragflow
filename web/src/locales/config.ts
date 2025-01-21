@@ -20,7 +20,7 @@ const resources = {
   ja: translation_ja,
   es: translation_es,
   vi: translation_vi,
-  'pt-br': translation_pt_br,
+  'pt-BR': translation_pt_br,
 };
 const enFlattened = flattenObject(translation_en);
 const viFlattened = flattenObject(translation_vi);
@@ -39,7 +39,7 @@ export const translationTable = createTranslationTable(
     jaFlattened,
     pt_brFlattened,
   ],
-  ['English', 'Vietnamese', 'Spanish', 'zh', 'zh-TRADITIONAL', 'ja', 'pt-br'],
+  ['English', 'Vietnamese', 'Spanish', 'zh', 'zh-TRADITIONAL', 'ja', 'pt-BR'],
 );
 i18n
   .use(initReactI18next)
@@ -48,7 +48,16 @@ i18n
     detection: {
       lookupLocalStorage: 'lng',
     },
-    supportedLngs: ['en', 'zh', 'zh-TRADITIONAL', 'id', 'es', 'vi', 'ja', 'pt-br'],
+    supportedLngs: [
+      'en',
+      'zh',
+      'zh-TRADITIONAL',
+      'id',
+      'es',
+      'vi',
+      'ja',
+      'pt-BR',
+    ],
     resources,
     fallbackLng: 'en',
     interpolation: {
