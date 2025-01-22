@@ -105,16 +105,19 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
-        settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
         cls.clear_chunk_num(doc.id)
-        settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "community_report"], "source_id": doc.id},
-                                     {"remove": {"source_id": doc.id}},
-                                     search.index_name(tenant_id), doc.kb_id)
-        settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
-                                     {"removed_kwd": "Y"},
-                                     search.index_name(tenant_id), doc.kb_id)
-        settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "community_report"], "must_not": {"exists": "source_id"}},
-                                     search.index_name(tenant_id), doc.kb_id)
+        try:
+            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+            settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "community_report"], "source_id": doc.id},
+                                         {"remove": {"source_id": doc.id}},
+                                         search.index_name(tenant_id), doc.kb_id)
+            settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
+                                         {"removed_kwd": "Y"},
+                                         search.index_name(tenant_id), doc.kb_id)
+            settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "community_report"], "must_not": {"exists": "source_id"}},
+                                         search.index_name(tenant_id), doc.kb_id)
+        except Exception:
+            pass
         return cls.delete_by_id(doc.id)
 
     @classmethod
