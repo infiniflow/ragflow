@@ -84,7 +84,7 @@ class RewriteQuestion(Generate, ABC):
     component_name = "RewriteQuestion"
 
     def _run(self, history, **kwargs):
-        hist = self._canvas.get_history(4)
+        hist = self._canvas.get_history(self._param.message_history_window_size)
         conv = []
         for m in hist:
             if m["role"] not in ["user", "assistant"]:
