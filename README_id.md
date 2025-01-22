@@ -9,7 +9,8 @@
   <a href="./README_zh.md">简体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
-  <a href="./README_id.md">Bahasa Indonesia</a>
+  <a href="./README_id.md">Bahasa Indonesia</a> |
+  <a href="/README_pt_br.md">Português (Brasil)</a>
 </p>
 
 <p align="center">
@@ -65,6 +66,7 @@
 ## 🎮 Demo
 
 Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
 <img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
@@ -82,6 +84,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 ## 🎉 Tetap Terkini
 
 ⭐️ Star repositori kami untuk tetap mendapat informasi tentang fitur baru dan peningkatan menarik! 🌟
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
@@ -147,7 +150,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    > ```
    >
    > Perubahan ini akan hilang setelah sistem direboot. Untuk membuat perubahan ini permanen, tambahkan atau perbarui nilai
-   `vm.max_map_count` di **/etc/sysctl.conf**:
+   > `vm.max_map_count` di **/etc/sysctl.conf**:
    >
    > ```bash
    > vm.max_map_count=262144
@@ -172,8 +175,8 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    | ----------------- | --------------- | --------------------- | ------------------------ |
    | v0.15.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
    | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
+   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 
 4. Periksa status server setelah server aktif dan berjalan:
 
@@ -185,23 +188,24 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
    ```bash
 
-         ____   ___    ______ ______ __               
+         ____   ___    ______ ______ __
         / __ \ /   |  / ____// ____// /____  _      __
        / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/ 
+      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
     * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
+
    > Jika Anda melewatkan langkah ini dan langsung login ke RAGFlow, browser Anda mungkin menampilkan error `network anormal`
-   karena RAGFlow mungkin belum sepenuhnya siap.
+   > karena RAGFlow mungkin belum sepenuhnya siap.
 
 5. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
-   > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena 
-   port HTTP default `80` bisa dihilangkan saat menggunakan konfigurasi default.
+   > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena
+   > port HTTP default `80` bisa dihilangkan saat menggunakan konfigurasi default.
 6. Dalam [service_conf.yaml.template](./docker/service_conf.yaml.template), pilih LLM factory yang diinginkan di `user_default_llm` dan perbarui
    bidang `API_KEY` dengan kunci API yang sesuai.
 
@@ -250,11 +254,13 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ## 🔨 Menjalankan Aplikasi dari untuk Pengembangan
 
 1. Instal uv, atau lewati langkah ini jika sudah terinstal:
+
    ```bash
    pipx install uv
    ```
 
 2. Clone kode sumber dan instal dependensi Python:
+
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
@@ -262,14 +268,16 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    ```
 
 3. Jalankan aplikasi yang diperlukan (MinIO, Elasticsearch, Redis, dan MySQL) menggunakan Docker Compose:
+
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
    Tambahkan baris berikut ke `/etc/hosts` untuk memetakan semua host yang ditentukan di **conf/service_conf.yaml** ke `127.0.0.1`:
+
    ```
    127.0.0.1       es01 infinity mysql minio redis
-   ```  
+   ```
 
 4. Jika Anda tidak dapat mengakses HuggingFace, atur variabel lingkungan `HF_ENDPOINT` untuk menggunakan situs mirror:
 
@@ -278,6 +286,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    ```
 
 5. Jalankan aplikasi backend:
+
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
@@ -290,9 +299,10 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    npm install
    ```
 7. Jalankan aplikasi frontend:
+
    ```bash
-   npm run dev 
-   ```  
+   npm run dev
+   ```
 
    _Output berikut menandakan bahwa sistem berhasil diluncurkan:_
 

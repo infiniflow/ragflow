@@ -14,6 +14,7 @@ import {
 import { ArrowUpDown } from 'lucide-react';
 import * as React from 'react';
 
+import { RenameDialog } from '@/components/rename-dialog';
 import SvgIcon from '@/components/svg-icon';
 import { TableEmpty, TableSkeleton } from '@/components/table-skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -41,7 +42,11 @@ import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionCell } from './action-cell';
-import { useHandleConnectToKnowledge, useNavigateToOtherFolder } from './hooks';
+import {
+  useHandleConnectToKnowledge,
+  useNavigateToOtherFolder,
+  useRenameCurrentFile,
+} from './hooks';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 
 export function FilesTable() {
@@ -64,6 +69,14 @@ export function FilesTable() {
     onConnectToKnowledgeOk,
     connectToKnowledgeLoading,
   } = useHandleConnectToKnowledge();
+  const {
+    fileRenameVisible,
+    showFileRenameModal,
+    hideFileRenameModal,
+    onFileRenameOk,
+    initialFileName,
+    fileRenameLoading,
+  } = useRenameCurrentFile();
 
   const { pagination, data, loading, setPagination } = useFetchFileList();
 
@@ -208,6 +221,7 @@ export function FilesTable() {
           <ActionCell
             row={row}
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
+            showFileRenameModal={showFileRenameModal}
           ></ActionCell>
         );
       },
@@ -340,6 +354,14 @@ export function FilesTable() {
           onConnectToKnowledgeOk={onConnectToKnowledgeOk}
           loading={connectToKnowledgeLoading}
         ></LinkToDatasetDialog>
+      )}
+      {fileRenameVisible && (
+        <RenameDialog
+          hideModal={hideFileRenameModal}
+          onOk={onFileRenameOk}
+          initialName={initialFileName}
+          loading={fileRenameLoading}
+        ></RenameDialog>
       )}
     </div>
   );
