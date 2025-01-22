@@ -15,6 +15,7 @@ export default {
       edit: '编辑',
       upload: '上传',
       english: '英文',
+      portugueseBr: '葡萄牙语 (巴西)',
       chinese: '简体中文',
       traditionalChinese: '繁体中文',
       language: '语言',
@@ -166,6 +167,28 @@ export default {
       autoQuestions: '自动问题',
       autoQuestionsTip: `在查询此类问题时，为每个块提取 N 个问题以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。如果发生错误，此功能不会破坏整个分块过程，除了将空结果添加到原始块。`,
       redo: '是否清空已有 {{chunkNum}}个 chunk？',
+      setMetaData: '设置元数据',
+      pleaseInputJson: '请输入JSON',
+      documentMetaTips: `<p>元数据为 Json 格式（不可搜索）。如果提示中包含此文档的任何块，它将被添加到 LLM 的提示中。</p>
+<p>示例：</p>
+<b>元数据为：</b><br>
+<code>
+{
+“作者”：“Alex Dowson”，
+“日期”：“2024-11-12”
+}
+</code><br>
+<b>提示将为：</b><br>
+<p>文档：the_name_of_document</p>
+<p>作者：Alex Dowson</p>
+<p>日期：2024-11-12</p>
+<p>相关片段如下：</p>
+<ul>
+<li> 这是块内容....</li>
+<li> 这是块内容....</li>
+</ul>
+`,
+      metaData: '元資料',
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',
@@ -229,14 +252,14 @@ export default {
       此块方法支持<b> excel </b>和<b> csv/txt </b>文件格式。
     </p>
     <li>
-      如果文件以<b> excel </b>格式，则应由两个列组成
+      如果文件是<b> excel </b>格式，则应由两个列组成
       没有标题：一个提出问题，另一个用于答案，
       答案列之前的问题列。多张纸是
       只要列正确结构，就可以接受。
     </li>
     <li>
-      如果文件以<b> csv/txt </b>格式为
-      用作分开问题和答案的定界符。
+      如果文件是<b> csv/txt </b>格式
+      以 UTF-8 编码且用 TAB 作分开问题和答案的定界符。
     </li>
     <p>
       <i>

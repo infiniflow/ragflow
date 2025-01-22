@@ -3,7 +3,9 @@
 # build and publish python SDK to pypi.org
 
 ```shell
-poetry build
-poetry config pypi-token.pypi $YOUR_PYPI_API_TOKEN
-poetry publish
+uv build
+uv pip install twine
+export TWINE_USERNAME="__token__"
+export TWINE_PASSWORD=$YOUR_PYPI_API_TOKEN
+twine upload dist/*.whl
 ```

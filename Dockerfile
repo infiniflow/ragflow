@@ -64,19 +64,15 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 RUN if [ "$NEED_MIRROR" == "1" ]; then \
         pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
         pip3 config set global.trusted-host pypi.tuna.tsinghua.edu.cn; \
+        mkdir -p /etc/uv && \
+        echo "[[index]]" > /etc/uv/uv.toml && \
+        echo 'url = "https://pypi.tuna.tsinghua.edu.cn/simple"' >> /etc/uv/uv.toml && \
+        echo "default = true" >> /etc/uv/uv.toml; \
     fi; \
-    pipx install poetry; \
-    if [ "$NEED_MIRROR" == "1" ]; then \
-        pipx inject poetry poetry-plugin-pypi-mirror; \
-    fi
+    pipx install uv
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 ENV PATH=/root/.local/bin:$PATH
-# Configure Poetry
-ENV POETRY_NO_INTERACTION=1
-ENV POETRY_VIRTUALENVS_IN_PROJECT=true
-ENV POETRY_VIRTUALENVS_CREATE=true
-ENV POETRY_REQUESTS_TIMEOUT=15
 
 # nodejs 12.22 on Ubuntu 22.04 is too old
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
@@ -85,7 +81,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt autoremove && \
     apt update && \
     apt install -y nodejs cargo 
-    
+
 
 # Add msssql ODBC driver
 # macOS ARM64 environment, install msodbcsql18.
@@ -131,17 +127,21 @@ USER root
 
 WORKDIR /ragflow
 
-# install dependencies from poetry.lock file
-COPY pyproject.toml poetry.toml poetry.lock ./
+# install dependencies from uv.lock file
+COPY pyproject.toml uv.lock ./
 
-RUN --mount=type=cache,id=ragflow_poetry,target=/root/.cache/pypoetry,sharing=locked \
+# https://github.com/astral-sh/uv/issues/10462
+# uv records index url into uv.lock but doesn't failover among multiple indexes
+RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
-        export POETRY_PYPI_MIRROR_URL=https://pypi.tuna.tsinghua.edu.cn/simple/; \
+        sed -i 's|pypi.org|pypi.tuna.tsinghua.edu.cn|g' uv.lock; \
+    else \
+        sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
     if [ "$LIGHTEN" == "1" ]; then \
-        poetry install --no-root; \
+        uv sync --python 3.10 --frozen; \
     else \
-        poetry install --no-root --with=full; \
+        uv sync --python 3.10 --frozen --all-extras; \
     fi
 
 COPY web web
@@ -180,11 +180,11 @@ COPY deepdoc deepdoc
 COPY rag rag
 COPY agent agent
 COPY graphrag graphrag
-COPY pyproject.toml poetry.toml poetry.lock ./
+COPY pyproject.toml uv.lock ./
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
-COPY docker/entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
+COPY docker/entrypoint.sh docker/entrypoint_task_executor.sh ./
+RUN chmod +x ./entrypoint*.sh
 
 # Copy compiled web pages
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist

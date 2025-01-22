@@ -15,6 +15,7 @@ export default {
       edit: 'Edit',
       upload: 'Upload',
       english: 'English',
+      portugueseBr: 'Portuguese (Brazil)',
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
       language: 'Language',
@@ -169,6 +170,28 @@ export default {
       autoQuestions: 'Auto-question',
       autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
+      setMetaData: 'Set Meta Data',
+      pleaseInputJson: 'Please enter JSON',
+      documentMetaTips: `<p>The meta data is in Json format(it's not searchable). It will be added into prompt for LLM if any chunks of this document are included in the prompt.</p>
+<p>Examples:</p>
+<b>The meta data is:</b><br>
+<code>
+  {
+      "Author": "Alex Dowson",
+      "Date": "2024-11-12"
+  }
+</code><br>
+<b>The prompt will be:</b><br>
+<p>Document: the_name_of_document</p>
+<p>Author: Alex Dowson</p>
+<p>Date: 2024-11-12</p>
+<p>Relevant fragments as following:</p>
+<ul>
+<li>  Here is the chunk content....</li>
+<li>  Here is the chunk content....</li>
+</ul>
+`,
+      metaData: 'Meta data',
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -729,9 +752,9 @@ This procedure will improve precision of retrieval by adding more information to
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
       categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
-      rewriteQuestionDescription: `A component that refines a user query if it fails to retrieve relevant information from the knowledge base. It repeats this process until the predefined looping upper limit is reached.`,
+      rewriteQuestionDescription: `A component that rewrites a user query from the Interact component, based on the context of previous dialogues.`,
       messageDescription:
-        "A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is 'Answer', the interface component.",
+        "A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is 'Interact', the interface component.",
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
       switchDescription: `A component that evaluates conditions based on the output of previous components and directs the flow of execution accordingly. It allows for complex branching logic by defining cases and specifying actions for each case or default action if no conditions are met.`,
       wikipediaDescription: `A component that searches from wikipedia.org, using TopN to specify the number of search results. It supplements the existing knowledge bases.`,
@@ -934,17 +957,17 @@ This procedure will improve precision of retrieval by adding more information to
       switch: 'Switch',
       logicalOperator: 'Logical operator',
       switchOperatorOptions: {
-        equal: 'equal',
-        notEqual: 'notEqual',
+        equal: 'Equals',
+        notEqual: 'Not equal',
         gt: 'Greater than',
         ge: 'Greater equal',
         lt: 'Less than',
         le: 'Less equal',
         contains: 'Contains',
         notContains: 'Not contains',
-        startWith: 'Start with',
-        endWith: 'End with',
-        empty: 'Empty',
+        startWith: 'Starts with',
+        endWith: 'Ends with',
+        empty: 'Is empty',
         notEmpty: 'Not empty',
       },
       switchLogicOperatorOptions: {
@@ -1081,7 +1104,7 @@ This procedure will improve precision of retrieval by adding more information to
       testRun: 'Test Run',
       template: 'Template',
       templateDescription:
-        'A component that formats the output of another component.',
+        'A component that formats user inputs or the outputs of other components.',
       emailComponent: 'Email',
       emailDescription: 'Send an email to a specified address.',
       smtpServer: 'SMTP Server',

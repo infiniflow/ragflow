@@ -18,10 +18,12 @@ import threading
 from urllib.parse import urljoin
 
 import requests
+import httpx
 from huggingface_hub import snapshot_download
 import os
 from abc import ABC
 import numpy as np
+from yarl import URL
 
 from api import settings
 from api.utils.file_utils import get_home_cache_dir
@@ -170,6 +172,10 @@ class XInferenceRerank(Base):
     def similarity(self, query: str, texts: list):
         if len(texts) == 0:
             return np.array([]), 0
+        pairs = [(query, truncate(t, 4096)) for t in texts]
+        token_count = 0
+        for _, t in pairs:
+            token_count += num_tokens_from_string(t)
         data = {
             "model": self.model_name,
             "query": query,
@@ -181,7 +187,7 @@ class XInferenceRerank(Base):
         rank = np.zeros(len(texts), dtype=float)
         for d in res["results"]:
             rank[d["index"]] = d["relevance_score"]
-        return rank, res["meta"]["tokens"]["input_tokens"] + res["meta"]["tokens"]["output_tokens"]
+        return rank, token_count
 
 
 class LocalAIRerank(Base):
@@ -457,3 +463,53 @@ class QWenRerank(Base):
             return rank, resp.usage.total_tokens
         else:
             raise ValueError(f"Error calling QWenRerank model {self.model_name}: {resp.status_code} - {resp.text}")
+
+class GPUStackRerank(Base):
+    def __init__(
+            self, key, model_name, base_url
+    ):
+        if not base_url:
+            raise ValueError("url cannot be None")
+
+        self.model_name = model_name
+        self.base_url = str(URL(base_url)/ "v1" / "rerank")
+        self.headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "authorization": f"Bearer {key}",
+        }
+
+    def similarity(self, query: str, texts: list):
+        payload = {
+            "model": self.model_name,
+            "query": query,
+            "documents": texts,
+            "top_n": len(texts),
+        }
+
+        try:
+            response = requests.post(
+                self.base_url, json=payload, headers=self.headers
+            )
+            response.raise_for_status()
+            response_json = response.json()
+
+            rank = np.zeros(len(texts), dtype=float)
+            if "results" not in response_json:
+                return rank, 0
+
+            token_count = 0
+            for t in texts:
+                token_count += num_tokens_from_string(t)
+
+            for result in response_json["results"]:
+                rank[result["index"]] = result["relevance_score"]
+
+            return (
+                rank,
+                token_count,
+            )
+
+        except httpx.HTTPStatusError as e:
+            raise ValueError(f"Error calling GPUStackRerank model {self.model_name}: {e.response.status_code} - {e.response.text}")
+

@@ -612,6 +612,10 @@ def set_meta():
     except Exception as e:
         return get_json_result(
             data=False, message=f'Json syntax error: {e}', code=settings.RetCode.ARGUMENT_ERROR)
+    if not isinstance(meta, dict):
+        return get_json_result(
+            data=False, message='Meta data should be in Json map format, like {"key": "value"}', code=settings.RetCode.ARGUMENT_ERROR)
+
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:

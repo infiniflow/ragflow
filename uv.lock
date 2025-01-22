@@ -146,7 +146,7 @@ wheels = [
 
 [[package]]
 name = "akshare"
-version = "1.15.74"
+version = "1.15.79"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "akracer", marker = "sys_platform == 'linux'" },
@@ -165,9 +165,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "xlrd" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/7b/ec81465f88159b976c26182904b392da129bb9a6a2944024e45c98cc98ce/akshare-1.15.74.tar.gz", hash = "sha256:4f7b893390bb7a3075a551c76a05d1b2d682690d9092ee56b90429b64d3aee2b", size = 818282 }
+sdist = { url = "https://files.pythonhosted.org/packages/02/6c/cc794859adb8d28130c478c2c469f0cb104ad39e0e24bbef2010b18df809/akshare-1.15.79.tar.gz", hash = "sha256:29b8dfae32a21517350be7b366f8ef64cddd9145607924b57e3c37d71f85e41e", size = 820122 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/b5/7f73395273e262b89035414b1282de2e8f841d3105b9f1d27409783d8c21/akshare-1.15.74-py3-none-any.whl", hash = "sha256:c2d5861d8a222800c001ddb9bb6a6344456d3556b2c54d18f53c86b75c92e652", size = 1018922 },
+    { url = "https://files.pythonhosted.org/packages/4a/c7/0681727694c30a3f21fe6cce3081c86871f86f494f1e17313b60d1a5a4bc/akshare-1.15.79-py3-none-any.whl", hash = "sha256:0ab7f11d811fe0483c3d7f585a429ce2bb9deab2f6d20c36ea6cc4cb2b4e0541", size = 1021785 },
 ]
 
 [[package]]
@@ -2539,6 +2539,15 @@ wheels = [
 ]
 
 [[package]]
+name = "json-repair"
+version = "0.35.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/9c/5ef83a13541c3444e0b949e88b3aa0f4e364e37acf4ffa9de476d36a3de0/json_repair-0.35.0.tar.gz", hash = "sha256:e70f834865a4ae5fe64352c23c1c16d3b70c5dd62dc544a169d8b0932bdbdcaa", size = 29053 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/c7/9a63ff79f2f6350c0f5e504bad940386015381b4d171bd73077465a7dbbc/json_repair-0.35.0-py3-none-any.whl", hash = "sha256:1d429407158474d28a996e745b8f8f7dc78957cb2cfbc92120b9f580b5230a9e", size = 19908 },
+]
+
+[[package]]
 name = "jsonpath"
 version = "0.82.2"
 source = { registry = "https://pypi.org/simple" }
@@ -4731,12 +4740,12 @@ dependencies = [
     { name = "infinity-emb" },
     { name = "infinity-sdk" },
     { name = "itsdangerous" },
+    { name = "json-repair" },
     { name = "markdown" },
     { name = "markdown-to-json" },
     { name = "mini-racer" },
     { name = "minio" },
     { name = "mistralai" },
-    { name = "networkx" },
     { name = "nltk" },
     { name = "numpy" },
     { name = "ollama" },
@@ -4812,7 +4821,7 @@ full = [
 
 [package.metadata]
 requires-dist = [
-    { name = "akshare", specifier = ">=1.14.81,<2.0.0" },
+    { name = "akshare", specifier = ">=1.15.78,<2.0.0" },
     { name = "anthropic", specifier = "==0.34.1" },
     { name = "arxiv", specifier = "==2.1.3" },
     { name = "aspose-slides", marker = "platform_machine == 'x86_64' or (platform_machine == 'arm64' and sys_platform == 'darwin')", specifier = ">=24.9.0,<25.0.0" },
@@ -4860,12 +4869,12 @@ requires-dist = [
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
     { name = "infinity-sdk", specifier = "==0.6.0.dev2" },
     { name = "itsdangerous", specifier = "==2.1.2" },
+    { name = "json-repair", specifier = "==0.35.0" },
     { name = "markdown", specifier = "==3.6" },
     { name = "markdown-to-json", specifier = "==2.1.1" },
     { name = "mini-racer", specifier = ">=0.12.4,<0.13.0" },
     { name = "minio", specifier = "==7.2.4" },
     { name = "mistralai", specifier = "==0.4.2" },
-    { name = "networkx", specifier = ">=3.4.2" },
     { name = "nltk", specifier = "==3.9.1" },
     { name = "numpy", specifier = ">=1.26.0,<2.0.0" },
     { name = "ollama", specifier = "==0.2.1" },

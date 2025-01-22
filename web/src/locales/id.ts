@@ -16,6 +16,7 @@ export default {
       edit: 'Ubah',
       upload: 'Unggah',
       english: 'Inggris',
+      portugueseBr: 'Portugis (Brasil)',
       chinese: 'Cina',
       traditionalChinese: 'Cina Tradisional',
       language: 'Bahasa',

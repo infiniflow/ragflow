@@ -72,6 +72,7 @@ export const IconMap = {
   'nomic-ai': 'nomic-ai',
   jinaai: 'jina',
   'sentence-transformers': 'sentence-transformers',
+  GPUStack: 'gpustack',
 };
 
 export const TimezoneList = [

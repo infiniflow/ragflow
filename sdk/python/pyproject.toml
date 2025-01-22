@@ -1,19 +1,20 @@
-[tool.poetry]
+[project]
 name = "ragflow-sdk"
 version = "0.15.1"
 description = "Python client sdk of [RAGFlow](https://github.com/infiniflow/ragflow). RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding."
-authors = ["Zhichang Yu <yuzhichang@gmail.com>"]
-license = "Apache License, Version 2.0"
+authors = [
+    { name = "Zhichang Yu", email = "yuzhichang@gmail.com" }
+]
+license = { text = "Apache License, Version 2.0" }
 readme = "README.md"
-package-mode = true
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "requests>=2.30.0,<3.0.0",
+    "beartype>=0.18.5,<0.19.0",
+    "pytest>=8.0.0,<9.0.0"
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<3.13"
-requests = "^2.30.0"
-beartype = "^0.18.5"
-pytest = "^8.0.0"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0,<9.0.0"
+]

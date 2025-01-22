@@ -118,8 +118,10 @@ def update():
         if not e:
             return get_data_error_result(
                 message="Database error (Knowledgebase rename)!")
+        kb = kb.to_dict()
+        kb.update(req)
 
-        return get_json_result(data=kb.to_json())
+        return get_json_result(data=kb)
     except Exception as e:
         return server_error_response(e)
 

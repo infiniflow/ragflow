@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
     "datrie==0.8.2",
-    "akshare>=1.14.81,<2.0.0",
+    "akshare>=1.15.78,<2.0.0",
     "azure-storage-blob==12.22.0",
     "azure-identity==1.17.1",
     "azure-storage-file-datalake==12.16.0",
@@ -51,11 +51,11 @@ dependencies = [
     "infinity-sdk==0.6.0-dev2",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
+    "json-repair==0.35.0",
     "markdown==3.6",
     "markdown-to-json==2.1.1",
     "minio==7.2.4",
     "mistralai==0.4.2",
-    "networkx>=3.4.2",
     "nltk==3.9.1",
     "numpy>=1.26.0,<2.0.0",
     "ollama==0.2.1",
