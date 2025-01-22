@@ -16,7 +16,6 @@
 import os
 import random
 import xxhash
-import bisect
 from datetime import datetime
 
 from api.db.db_utils import bulk_insert_into_db
