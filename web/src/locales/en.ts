@@ -15,6 +15,7 @@ export default {
       edit: 'Edit',
       upload: 'Upload',
       english: 'English',
+      portugueseBr: 'Portuguese (Brazil)',
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
       language: 'Language',
@@ -751,7 +752,7 @@ This procedure will improve precision of retrieval by adding more information to
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
       categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
-      rewriteQuestionDescription: `A component that refines a user query if it fails to retrieve relevant information from the knowledge base. It repeats this process until the predefined looping upper limit is reached.`,
+      rewriteQuestionDescription: `A component that rewrites a user query from the Interact component, based on the context of previous dialogues.`,
       messageDescription:
         "A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is 'Interact', the interface component.",
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
@@ -1103,7 +1104,7 @@ This procedure will improve precision of retrieval by adding more information to
       testRun: 'Test Run',
       template: 'Template',
       templateDescription:
-        'A component that formats the output of another component.',
+        'A component that formats user inputs or the outputs of other components.',
       emailComponent: 'Email',
       emailDescription: 'Send an email to a specified address.',
       smtpServer: 'SMTP Server',

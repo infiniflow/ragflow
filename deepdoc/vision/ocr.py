@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -19,6 +22,7 @@ from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
 from .operators import *  # noqa: F403
+from . import operators
 import math
 import numpy as np
 import cv2
@@ -55,7 +59,7 @@ def create_operators(op_param_list, global_config=None):
         param = {} if operator[op_name] is None else operator[op_name]
         if global_config is not None:
             param.update(global_config)
-        op = eval(op_name)(**param)
+        op = getattr(operators, op_name)(**param)
         ops.append(op)
     return ops
 

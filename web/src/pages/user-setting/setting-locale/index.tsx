@@ -12,6 +12,7 @@ function UserSettingLocale() {
         'zh',
         'zh-TRADITIONAL',
         'ja',
+        'pt-br',
       ]}
     />
   );
