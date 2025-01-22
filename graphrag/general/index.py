@@ -183,7 +183,9 @@ class WithCommunity(Dealer):
                 "weight_flt": stru["weight"],
                 "entities_kwd": stru["entities"],
                 "important_kwd": stru["entities"],
-                "kb_id": kb_id
+                "kb_id": kb_id,
+                "source_id": doc_ids,
+                "available_int": 0
             }
             chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
             #try:

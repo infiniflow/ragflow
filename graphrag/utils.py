@@ -264,7 +264,8 @@ def set_entity(tenant_id, kb_id, embd_mdl, ent_name, meta):
         "content_with_weight": json.dumps(meta, ensure_ascii=False),
         "content_ltks": rag_tokenizer.tokenize(meta["description"]),
         "source_id": list(set(meta["source_id"])),
-        "kb_id": kb_id
+        "kb_id": kb_id,
+        "available_int": 0
     }
     chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
     res = settings.retrievaler.search({"entity_kwd": ent_name, "size": 1, "fields": []},
@@ -322,7 +323,8 @@ def set_relation(tenant_id, kb_id, embd_mdl, from_ent_name, to_ent_name, meta):
         "important_kwd": meta["keywords"],
         "source_id": list(set(meta["source_id"])),
         "weight_int": int(meta["weight"]),
-        "kb_id": kb_id
+        "kb_id": kb_id,
+        "available_int": 0
     }
     chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
     res = settings.retrievaler.search({"from_entity_kwd": to_ent_name, "to_entity_kwd": to_ent_name, "size": 1, "fields": []},
@@ -350,6 +352,7 @@ def set_relation(tenant_id, kb_id, embd_mdl, from_ent_name, to_ent_name, meta):
 def get_graph(tenant_id, kb_id):
     conds = {
         "fields": ["content_with_weight", "source_id"],
+        "removed_kwd": "N",
         "size": 1,
         "knowledge_graph_kwd": ["graph"]
     }
@@ -369,7 +372,9 @@ def set_graph(tenant_id, kb_id, graph, docids):
                                           indent=2),
         "knowledge_graph_kwd": "graph",
         "kb_id": kb_id,
-        "source_id": list(docids)
+        "source_id": list(docids),
+        "available_int": 0,
+        "removed_kwd": "N"
     }
     res = settings.retrievaler.search({"knowledge_graph_kwd": "graph", "size": 1, "fields": []}, search.index_name(tenant_id), [kb_id])
     if res.ids:
@@ -465,7 +470,12 @@ def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
             continue
         ty2ents[ty].append(p)
 
-    chunk = {"content_with_weight": json.dumps(ty2ents, ensure_ascii=False), "kb_id": kb_id}
+    chunk = {
+        "content_with_weight": json.dumps(ty2ents, ensure_ascii=False),
+        "kb_id": kb_id,
+        "knowledge_graph_kwd": "ty2ents",
+        "available_int": 0
+    }
     res = settings.retrievaler.search({"knowledge_graph_kwd": "ty2ents", "size": 1, "fields": []},
                                       search.index_name(tenant_id), [kb_id])
     if res.ids:
@@ -476,11 +486,11 @@ def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
         settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
 
 
-def get_entity_type2sampels(idxnm, kb_ids: list):
+def get_entity_type2sampels(idxnms, kb_ids: list):
     es_res = settings.retrievaler.search({"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids,
                                        "size": 10000,
                                        "fields": ["content_with_weight"]},
-                                      idxnm, kb_ids)
+                                      idxnms, kb_ids)
 
     res = defaultdict(list)
     for id in es_res.ids:
@@ -492,7 +502,7 @@ def get_entity_type2sampels(idxnm, kb_ids: list):
         except Exception as e:
             logging.exception(e)
 
-        for ty, ents in smp.item():
+        for ty, ents in smp.items():
             res[ty].extend(ents)
     return res
 

@@ -281,7 +281,7 @@ class RedisDistributedLock:
         while time.time() < end_time:
             if REDIS_CONN.REDIS.setnx(self.lock_key, self.lock_value):
                 return True
-            time.sleep(0.1)
+            time.sleep(1)
         return False
 
     def release_lock(self):

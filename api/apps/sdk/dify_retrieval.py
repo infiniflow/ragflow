@@ -30,6 +30,7 @@ def retrieval(tenant_id):
     req = request.json
     question = req["query"]
     kb_id = req["knowledge_id"]
+    use_kg = req.get("use_kg", False)
     retrieval_setting = req.get("retrieval_setting", {})
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
@@ -45,8 +46,7 @@ def retrieval(tenant_id):
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
-        retr = settings.retrievaler if kb.parser_id != ParserType.KG else settings.kg_retrievaler
-        ranks = retr.retrieval(
+        ranks = settings.retrievaler.retrieval(
             question,
             embd_mdl,
             kb.tenant_id,
@@ -58,6 +58,16 @@ def retrieval(tenant_id):
             top=top,
             rank_feature=label_question(question, [kb])
         )
+
+        if use_kg:
+            ck = settings.kg_retrievaler.retrieval(question,
+                                                   [tenant_id],
+                                                   [kb_id],
+                                                   embd_mdl,
+                                                   LLMBundle(kb.tenant_id, LLMType.CHAT))
+            if ck["content_with_weight"]:
+                ranks["chunks"].insert(0, ck)
+
         records = []
         for c in ranks["chunks"]:
             c.pop("vector", None)

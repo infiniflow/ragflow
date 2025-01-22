@@ -20,12 +20,13 @@ from copy import deepcopy
 import json_repair
 import pandas as pd
 
+from api.utils import get_uuid
 from graphrag.query_analyze_prompt import PROMPTS
 from graphrag.utils import get_entity_type2sampels, get_llm_cache, set_llm_cache, get_relation
 from rag.utils import num_tokens_from_string
-from rag.utils.doc_store_conn import OrderByExpr, MatchTextExpr
+from rag.utils.doc_store_conn import OrderByExpr
 
-from rag.nlp.search import Dealer
+from rag.nlp.search import Dealer, index_name
 
 
 class KGSearch(Dealer):
@@ -39,11 +40,11 @@ class KGSearch(Dealer):
         set_llm_cache(llm_bdl.llm_name, system, response, history, gen_conf)
         return response
 
-    def query_rewrite(self, question, idxnm, kb_ids):
-        ty2ents = get_entity_type2sampels(idxnm, kb_ids)
+    def query_rewrite(self, llm, question, idxnms, kb_ids):
+        ty2ents = get_entity_type2sampels(idxnms, kb_ids)
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question,
                                                           TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
-        result = self._chat(hint_prompt, [{"role": "user", "content": "Output:"}], {"temperature": .5})
+        result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {"temperature": .5})
         try:
             keywords_data = json_repair.loads(result)
             type_keywords = keywords_data.get("answer_type_keywords", [])
@@ -67,12 +68,12 @@ class KGSearch(Dealer):
         es_res = self.dataStore.getFields(es_res, ["content_with_weight", "_score", "entity_kwd", "rank_flt",
                                                    "n_hop_with_weight"])
         for _, ent in es_res.items():
-            if float(ent["_score"]) < sim_thr:
+            if float(ent.get("_score", 0)) < sim_thr:
                 continue
             if isinstance(ent["entity_kwd"], list):
                 ent["entity_kwd"] = ent["entity_kwd"][0]
             res[ent["entity_kwd"]] = {
-                "sim": float(ent["_score"]),
+                "sim": float(ent.get("_score", 0)),
                 "pagerank": float(ent.get("rank_flt", 0)),
                 "n_hop_ents": json.loads(ent.get("n_hop_with_weight", "[]")),
                 "description": ent.get("content_with_weight", "{}")
@@ -98,7 +99,7 @@ class KGSearch(Dealer):
             }
         return res
 
-    def get_relevant_ents_by_keywords(self, keywords, filters, idxnm, kb_ids, emb_mdl, sim_thr=0.3, N=56):
+    def get_relevant_ents_by_keywords(self, keywords, filters, idxnms, kb_ids, emb_mdl, sim_thr=0.3, N=56):
         if not keywords:
             return {}
         filters = deepcopy(filters)
@@ -106,10 +107,10 @@ class KGSearch(Dealer):
         matchDense = self.get_vector(", ".join(keywords), emb_mdl, 1024, sim_thr)
         es_res = self.dataStore.search(["content_with_weight", "entity_kwd", "rank_flt"], [], filters, [matchDense],
                                        OrderByExpr(), 0, N,
-                                       idxnm, kb_ids)
+                                       idxnms, kb_ids)
         return self._ent_info_from_(es_res, sim_thr)
 
-    def get_relevant_relations_by_txt(self, txt, filters, idxnm, kb_ids, emb_mdl, sim_thr=0.3, N=56):
+    def get_relevant_relations_by_txt(self, txt, filters, idxnms, kb_ids, emb_mdl, sim_thr=0.3, N=56):
         if not txt:
             return {}
         filters = deepcopy(filters)
@@ -117,10 +118,10 @@ class KGSearch(Dealer):
         matchDense = self.get_vector(txt, emb_mdl, 1024, sim_thr)
         es_res = self.dataStore.search(
             ["content_with_weight", "_score", "from_entity_kwd", "to_entity_kwd", "weight_int"],
-            [], filters, [matchDense], OrderByExpr(), 0, N, idxnm, kb_ids)
+            [], filters, [matchDense], OrderByExpr(), 0, N, idxnms, kb_ids)
         return self._relation_info_from_(es_res, sim_thr)
 
-    def get_relevant_ents_by_types(self, types, filters, idxnm, kb_ids, N=56):
+    def get_relevant_ents_by_types(self, types, filters, idxnms, kb_ids, N=56):
         if not types:
             return {}
         filters = deepcopy(filters)
@@ -129,11 +130,11 @@ class KGSearch(Dealer):
         ordr = OrderByExpr()
         ordr.desc("rank_flt")
         es_res = self.dataStore.search(["entity_kwd", "rank_flt"], [], filters, [], ordr, 0, N,
-                                       idxnm, kb_ids)
-        return self._ent_info_from_(es_res)
+                                       idxnms, kb_ids)
+        return self._ent_info_from_(es_res, 0)
 
-    def search(self, req: dict,
-               idxnm: str | list[str],
+    def retrieval(self, question: str,
+               tenant_ids: str | list[str],
                kb_ids: list[str],
                emb_mdl,
                llm,
@@ -144,21 +145,24 @@ class KGSearch(Dealer):
                ent_sim_threshold: float = 0.3,
                rel_sim_threshold: float = 0.3,
                ):
-        self._llm = llm
-        qst = req.get("question", "")
-        filters = self.get_filters(req)
+        qst = question
+        filters = self.get_filters({"kb_ids": kb_ids})
+        if isinstance(tenant_ids, str):
+            tenant_ids = tenant_ids.split(",")
+        idxnms = [index_name(tid) for tid in tenant_ids]
         ty_kwds = []
         ents = []
         try:
-            ty_kwds, ents = self.query_rewrite(qst, idxnm, kb_ids)
+            ty_kwds, ents = self.query_rewrite(llm, qst, [index_name(tid) for tid in tenant_ids], kb_ids)
             logging.info(f"Q: {qst}, Types: {ty_kwds}, Entities: {ents}")
         except Exception as e:
+            logging.exception(e)
             ents = [qst]
             pass
 
-        ents_from_query = self.get_relevant_ents_by_keywords(ents, filters, idxnm, kb_ids, emb_mdl, ent_sim_threshold)
-        ents_from_types = self.get_relevant_ents_by_types(ty_kwds, filters, idxnm, kb_ids, 10000)
-        rels_from_txt = self.get_relevant_relations_by_txt(qst, filters, idxnm, kb_ids, emb_mdl, rel_sim_threshold)
+        ents_from_query = self.get_relevant_ents_by_keywords(ents, filters, idxnms, kb_ids, emb_mdl, ent_sim_threshold)
+        ents_from_types = self.get_relevant_ents_by_types(ty_kwds, filters, idxnms, kb_ids, 10000)
+        rels_from_txt = self.get_relevant_relations_by_txt(qst, filters, idxnms, kb_ids, emb_mdl, rel_sim_threshold)
         nhop_pathes = defaultdict(dict)
         for _, ent in ents_from_query.items():
             nhops = ent.get("n_hop_ents", [])
@@ -228,8 +232,11 @@ class KGSearch(Dealer):
 
         for (f, t), rel in rels_from_txt:
             if not rel.get("description"):
-                rela = get_relation(idxnm.replace("ragflow_", ""), kb_ids, f, t)
-                if not rela:
+                for tid in tenant_ids:
+                    rela = get_relation(tid, kb_ids, f, t)
+                    if rela:
+                        break
+                else:
                     continue
                 rel["description"] = rela["description"]
             relas.append({
@@ -252,10 +259,24 @@ class KGSearch(Dealer):
         else:
             relas = ""
 
-        return ents + relas + self._community_retrival_([n for n, _ in ents_from_query], filters, kb_ids, idxnm,
-                                                        comm_topn, max_token)
+        return {
+                "chunk_id": get_uuid(),
+                "content_ltks": "",
+                "content_with_weight": ents + relas + self._community_retrival_([n for n, _ in ents_from_query], filters, kb_ids, idxnms,
+                                                        comm_topn, max_token),
+                "doc_id": "",
+                "docnm_kwd": "Related content in Knowledge Graph",
+                "kb_id": kb_ids,
+                "important_kwd": [],
+                "image_id": "",
+                "similarity": 1.,
+                "vector_similarity": 1.,
+                "term_similarity": 0,
+                "vector": [],
+                "positions": [],
+            }
 
-    def _community_retrival_(self, entities, condition, kb_ids, idxnm, topn, max_token):
+    def _community_retrival_(self, entities, condition, kb_ids, idxnms, topn, max_token):
         ## Community retrieval
         fields = ["docnm_kwd", "content_with_weight"]
         odr = OrderByExpr()
@@ -264,7 +285,7 @@ class KGSearch(Dealer):
         fltr["knowledge_graph_kwd"] = "community_report"
         fltr["entities_kwd"] = entities
         comm_res = self.dataStore.search(fields, [], fltr, [],
-                                         OrderByExpr(), 0, topn, idxnm, kb_ids)
+                                         OrderByExpr(), 0, topn, idxnms, kb_ids)
         comm_res_fields = self.dataStore.getFields(comm_res, fields)
         txts = []
         for ii, (_, row) in enumerate(comm_res_fields.items()):
@@ -301,5 +322,5 @@ if __name__ == "__main__":
     embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
 
     kg = KGSearch(settings.docStoreConn)
-    print(kg.search({"question": args.question, "kb_ids": [kb_id]},
+    print(kg.retrieval({"question": args.question, "kb_ids": [kb_id]},
                     search.index_name(kb.tenant_id), [kb_id], embed_bdl, llm_bdl))
