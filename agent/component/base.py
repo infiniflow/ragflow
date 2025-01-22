@@ -483,7 +483,7 @@ class ComponentBase(ABC):
 
                     if q["component_id"].lower().find("answer") == 0:
                         txt = []
-                        for r, c in self._canvas.history[::-1][:self._param.message_history_window_size]:
+                        for r, c in self._canvas.history[::-1][:self._param.message_history_window_size][::-1]:
                             txt.append(f"{r.upper()}: {c}")
                         txt = "\n".join(txt)
                         self._param.inputs.append({"content": txt, "component_id": q["component_id"]})
