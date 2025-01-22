@@ -39,7 +39,12 @@ const ParsingActionCell = ({
 
   const onRmDocument = () => {
     if (!isRunning) {
-      showDeleteConfirm({ onOk: () => removeDocument([documentId]) });
+      showDeleteConfirm({
+        onOk: () => removeDocument([documentId]),
+        content: record?.parser_config?.graphrag?.use_graphrag
+          ? t('deleteDocumentConfirmContent')
+          : '',
+      });
     }
   };
 

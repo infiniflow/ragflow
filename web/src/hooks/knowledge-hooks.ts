@@ -1,11 +1,13 @@
 import { ResponsePostType } from '@/interfaces/database/base';
 import {
   IKnowledge,
+  IKnowledgeGraph,
   IRenameTag,
   ITestingResult,
 } from '@/interfaces/database/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
+  getKnowledgeGraph,
   listTag,
   removeTag,
   renameTag,
@@ -373,3 +375,20 @@ export const useFetchTagListByKnowledgeIds = () => {
 };
 
 //#endregion
+
+export function useFetchKnowledgeGraph() {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IKnowledgeGraph>({
+    queryKey: ['fetchKnowledgeGraph', knowledgeBaseId],
+    initialData: { graph: {}, mind_map: {} } as IKnowledgeGraph,
+    enabled: !!knowledgeBaseId,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getKnowledgeGraph(knowledgeBaseId);
+      return data?.data;
+    },
+  });
+
+  return { data, loading };
+}

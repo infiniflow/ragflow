@@ -1,7 +1,7 @@
 import { ExclamationCircleFilled } from '@ant-design/icons';
 import { App } from 'antd';
 import isEqual from 'lodash/isEqual';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export const useSetModalState = () => {
@@ -78,6 +78,7 @@ export function useDynamicSVGImport(
 
 interface IProps {
   title?: string;
+  content?: ReactNode;
   onOk?: (...args: any[]) => any;
   onCancel?: (...args: any[]) => any;
 }
@@ -87,12 +88,12 @@ export const useShowDeleteConfirm = () => {
   const { t } = useTranslation();
 
   const showDeleteConfirm = useCallback(
-    ({ title, onOk, onCancel }: IProps): Promise<number> => {
+    ({ title, content, onOk, onCancel }: IProps): Promise<number> => {
       return new Promise((resolve, reject) => {
         modal.confirm({
           title: title ?? t('common.deleteModalTitle'),
           icon: <ExclamationCircleFilled />,
-          // content: 'Some descriptions',
+          content,
           okText: t('common.ok'),
           okType: 'danger',
           cancelText: t('common.cancel'),

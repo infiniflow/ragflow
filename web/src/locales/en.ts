@@ -86,6 +86,7 @@ export default {
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
+      knowledgeGraph: 'Knowledge graph',
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
@@ -137,7 +138,7 @@ export default {
       fromMessage: 'Missing start page number',
       toPlaceholder: 'to',
       toMessage: 'Missing end page number (excluded)',
-      layoutRecognize: 'Layout recognition',
+      layoutRecognize: 'Layout recognition & OCR',
       layoutRecognizeTip:
         'Use visual models for layout analysis to better understand the structure of the document and effectively locate document titles, text blocks, images, and tables. If disabled, only the plain text in the PDF will be retrieved.',
       taskPageSize: 'Task page size',
@@ -192,6 +193,8 @@ export default {
 </ul>
 `,
       metaData: 'Meta data',
+      deleteDocumentConfirmContent:
+        'The document is associated with the knowledge graph. After deletion, the related node and relationship information will be deleted, but the graph will not be updated immediately. The update graph action is performed during the process of parsing the new document that carries the knowledge graph extraction task.',
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -363,6 +366,17 @@ This procedure will improve precision of retrieval by adding more information to
       topnTags: 'Top-N Tags',
       tags: 'Tags',
       addTag: 'Add tag',
+      useGraphRag: 'Extract knowledge graph',
+      useGraphRagTip:
+        'After files being chunked, all the chunks will be used for knowlege graph generation which helps inference of multi-hop and complex problems a lot.',
+      graphRagMethod: 'Method',
+      graphRagMethodTip: `Light: the entity and relation extraction prompt is from GitHub - HKUDS/LightRAG: "LightRAG: Simple and Fast Retrieval-Augmented Generation"</br>
+        General: the entity and relation extraction prompt is from GitHub - microsoft/graphrag: A modular graph-based Retrieval-Augmented Generation (RAG) system`,
+      resolution: 'Entity resolution',
+      resolutionTip: `The resolution procedure would merge entities with the same meaning together which allows the graph conciser and more accurate. Entities as following should be merged:  President Trump, Donald Trump, Donald J. Trump, Donald John Trump`,
+      community: 'Community reports generation',
+      communityTip:
+        'Chunks are clustered into hierarchical communities with entities and relationships connecting each segment up through higher levels of abstraction. We then use an LLM to generate a summary of each community, known as a community report. More: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: 'Chunk',
@@ -503,6 +517,9 @@ This procedure will improve precision of retrieval by adding more information to
         'This optimizes user queries using context in a multi-round conversation. When enabled, it will consume additional LLM tokens.',
       howUseId: 'How to use chat ID?',
       description: 'Description of assistant',
+      useKnowledgeGraph: 'Use knowledge graph',
+      useKnowledgeGraphTip:
+        'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
     },
     setting: {
       profile: 'Profile',
@@ -971,8 +988,8 @@ This procedure will improve precision of retrieval by adding more information to
         notEmpty: 'Not empty',
       },
       switchLogicOperatorOptions: {
-        and: 'And',
-        or: 'Or',
+        and: 'AND',
+        or: 'OR',
       },
       operator: 'Operator',
       value: 'Value',

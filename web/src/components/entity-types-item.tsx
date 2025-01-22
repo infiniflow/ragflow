@@ -5,16 +5,22 @@ import EditTag from './edit-tag';
 const initialEntityTypes = [
   'organization',
   'person',
-  'location',
+  'geo',
   'event',
-  'time',
+  'category',
 ];
 
-const EntityTypesItem = () => {
+type IProps = {
+  field?: string[];
+};
+
+const EntityTypesItem = ({
+  field = ['parser_config', 'entity_types'],
+}: IProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
   return (
     <Form.Item
-      name={['parser_config', 'entity_types']}
+      name={field}
       label={t('entityTypes')}
       rules={[{ required: true }]}
       initialValue={initialEntityTypes}

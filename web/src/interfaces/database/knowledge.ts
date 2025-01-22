@@ -1,4 +1,5 @@
 import { RunningStatus } from '@/constants/knowledge';
+import { TreeData } from '@antv/g6/lib/types';
 
 // knowledge base
 export interface IKnowledge {
@@ -136,3 +137,8 @@ export interface ITestingResult {
 }
 
 export type IRenameTag = { fromTag: string; toTag: string };
+
+export interface IKnowledgeGraph {
+  graph: Record<string, any>;
+  mind_map: TreeData;
+}

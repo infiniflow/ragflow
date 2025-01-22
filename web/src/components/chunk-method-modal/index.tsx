@@ -30,6 +30,9 @@ import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
 } from '../parse-configuration';
+import GraphRagItems, {
+  showGraphRagItems,
+} from '../parse-configuration/graph-rag-items';
 import styles from './index.less';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
@@ -296,6 +299,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
         {showRaptorParseConfiguration(selectedTag) && (
           <ParseConfiguration></ParseConfiguration>
         )}
+        {showGraphRagItems(selectedTag) && <GraphRagItems></GraphRagItems>}
         {showEntityTypes && <EntityTypesItem></EntityTypesItem>}
       </Form>
     </Modal>

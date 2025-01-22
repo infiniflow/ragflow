@@ -1,16 +1,15 @@
-import { useFetchKnowledgeGraph } from '@/hooks/chunk-hooks';
-import { Modal } from 'antd';
 import { useTranslation } from 'react-i18next';
 import IndentedTree from './indented-tree';
 
+import { useFetchKnowledgeGraph } from '@/hooks/knowledge-hooks';
 import { IModalProps } from '@/interfaces/common';
+import { Modal } from 'antd';
 
 const IndentedTreeModal = ({
-  documentId,
   visible,
   hideModal,
 }: IModalProps<any> & { documentId: string }) => {
-  const { data } = useFetchKnowledgeGraph(documentId);
+  const { data } = useFetchKnowledgeGraph();
   const { t } = useTranslation();
 
   return (
@@ -22,7 +21,7 @@ const IndentedTreeModal = ({
       footer={null}
     >
       <section>
-        <IndentedTree data={data?.data?.mind_map} show></IndentedTree>
+        <IndentedTree data={data?.mind_map} show></IndentedTree>
       </section>
     </Modal>
   );

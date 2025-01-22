@@ -24,7 +24,7 @@ const ForceGraph = ({ data, show }: IProps) => {
     if (!isEmpty(data)) {
       const graphData = data;
       const mi = buildNodesAndCombos(graphData.nodes);
-      return { edges: graphData.links, ...mi };
+      return { edges: graphData.edges, ...mi };
     }
     return { nodes: [], edges: [] };
   }, [data]);
@@ -130,8 +130,8 @@ const ForceGraph = ({ data, show }: IProps) => {
       ref={containerRef}
       className={styles.forceContainer}
       style={{
-        width: '90vw',
-        height: '80vh',
+        width: '100%',
+        height: '100%',
         display: show ? 'block' : 'none',
       }}
     />
