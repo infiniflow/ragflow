@@ -16,6 +16,8 @@
 
 import logging
 import json
+import time
+import uuid
 
 import valkey as redis
 from rag import settings
@@ -278,3 +280,32 @@ class RedisDB:
 
 
 REDIS_CONN = RedisDB()
+
+
+class RedisDistributedLock:
+    def __init__(self, lock_key, timeout=10):
+        self.lock_key = lock_key
+        self.lock_value = str(uuid.uuid4())
+        self.timeout = timeout
+
+    @staticmethod
+    def clean_lock(lock_key):
+        REDIS_CONN.REDIS.delete(lock_key)
+
+    def acquire_lock(self):
+        end_time = time.time() + self.timeout
+        while time.time() < end_time:
+            if REDIS_CONN.REDIS.setnx(self.lock_key, self.lock_value):
+                return True
+            time.sleep(1)
+        return False
+
+    def release_lock(self):
+        if REDIS_CONN.REDIS.get(self.lock_key) == self.lock_value:
+            REDIS_CONN.REDIS.delete(self.lock_key)
+
+    def __enter__(self):
+        self.acquire_lock()
+
+    def __exit__(self, exception_type, exception_value, exception_traceback):
+        self.release_lock()

@@ -155,7 +155,7 @@ def set():
                     r"[\n\t]",
                     req["content_with_weight"]) if len(t) > 1]
             q, a = rmPrefix(arr[0]), rmPrefix("\n".join(arr[1:]))
-            d = beAdoc(d, arr[0], arr[1], not any(
+            d = beAdoc(d, q, a, not any(
                 [rag_tokenizer.is_chinese(t) for t in q + a]))
 
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"])])
@@ -270,6 +270,7 @@ def retrieval_test():
     doc_ids = req.get("doc_ids", [])
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+    use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
     tenant_ids = []
 
@@ -301,12 +302,20 @@ def retrieval_test():
             question += keyword_extraction(chat_mdl, question)
 
         labels = label_question(question, [kb])
-        retr = settings.retrievaler if kb.parser_id != ParserType.KG else settings.kg_retrievaler
-        ranks = retr.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
+        ranks = settings.retrievaler.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
                                similarity_threshold, vector_similarity_weight, top,
                                doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
                                rank_feature=labels
                                )
+        if use_kg:
+            ck = settings.kg_retrievaler.retrieval(question,
+                                                   tenant_ids,
+                                                   kb_ids,
+                                                   embd_mdl,
+                                                   LLMBundle(kb.tenant_id, LLMType.CHAT))
+            if ck["content_with_weight"]:
+                ranks["chunks"].insert(0, ck)
+
         for c in ranks["chunks"]:
             c.pop("vector", None)
         ranks["labels"] = labels
