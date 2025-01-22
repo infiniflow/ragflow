@@ -184,9 +184,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if kwargs.get(
-            "parser_config", {}).get(
-            "layout_recognize", True) else PlainParser()
+        pdf_parser = Pdf()
+        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         if sections and len(sections[0]) < 3:

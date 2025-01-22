@@ -32,6 +32,7 @@ import asyncio
 LENGTH_NOTIFICATION_CN = "······\n由于长度的原因，回答被截断了，要继续吗？"
 LENGTH_NOTIFICATION_EN = "...\nFor the content length reason, it stopped, continue?"
 
+
 class Base(ABC):
     def __init__(self, key, model_name, base_url):
         timeout = int(os.environ.get('LM_TIMEOUT_SECONDS', 600))

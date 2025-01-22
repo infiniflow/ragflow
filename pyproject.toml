@@ -51,6 +51,7 @@ dependencies = [
     "infinity-sdk==0.6.0-dev2",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
+    "json-repair==0.35.0",
     "markdown==3.6",
     "markdown-to-json==2.1.1",
     "minio==7.2.4",

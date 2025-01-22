@@ -119,9 +119,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             res.append(d)
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if kwargs.get(
-            "parser_config", {}).get(
-            "layout_recognize", True) else PlainPdf()
+        pdf_parser = Pdf()
+        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
         for pn, (txt, img) in enumerate(pdf_parser(filename, binary,
                                                    from_page=from_page, to_page=to_page, callback=callback)):
             d = copy.deepcopy(doc)

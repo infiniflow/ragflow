@@ -197,8 +197,7 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     embedding_model_name = embedding_list[0]
 
-    is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
-    retriever = settings.retrievaler if not is_knowledge_graph else settings.kg_retrievaler
+    retriever = settings.retrievaler
 
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None
@@ -275,6 +274,14 @@ def chat(dialog, messages, stream=True, **kwargs):
                                       top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl,
                                       rank_feature=label_question(" ".join(questions), kbs)
                                       )
+        if prompt_config.get("use_kg"):
+            ck = settings.kg_retrievaler.retrieval(" ".join(questions),
+                                              tenant_ids,
+                                              dialog.kb_ids,
+                                              embd_mdl,
+                                              LLMBundle(dialog.tenant_id, LLMType.CHAT))
+            if ck["content_with_weight"]:
+                kbinfos["chunks"].insert(0, ck)
 
     retrieval_ts = timer()
 

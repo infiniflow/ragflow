@@ -31,7 +31,7 @@ from api.db.services.llm_service import LLMBundle, TenantService
 from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from graphrag.mind_map_extractor import MindMapExtractor
+from graphrag.general.mind_map_extractor import MindMapExtractor
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821

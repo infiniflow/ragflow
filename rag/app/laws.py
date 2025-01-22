@@ -162,9 +162,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return tokenize_chunks(chunks, doc, eng, None)
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if kwargs.get(
-            "parser_config", {}).get(
-            "layout_recognize", True) else PlainParser()
+        pdf_parser = Pdf()
+        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
         for txt, poss in pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)[0]:
             sections.append(txt + poss)
