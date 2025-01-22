@@ -30,6 +30,7 @@ import { EditableCell, EditableRow } from './editable-cell';
 
 import Rerank from '@/components/rerank';
 import TopNItem from '@/components/top-n-item';
+import { UseKnowledgeGraphItem } from '@/components/use-knowledge-graph-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectPromptConfigParameters } from '../hooks';
 import styles from './index.less';
@@ -168,6 +169,9 @@ const PromptEngine = (
       >
         <Switch></Switch>
       </Form.Item>
+      <UseKnowledgeGraphItem
+        filedName={['prompt_config', 'use_kg']}
+      ></UseKnowledgeGraphItem>
       <Rerank></Rerank>
       <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">

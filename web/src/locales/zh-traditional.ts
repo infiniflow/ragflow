@@ -85,6 +85,7 @@ export default {
       dataset: '數據集',
       testing: '檢索測試',
       configuration: '配置',
+      knowledgeGraph: '知識圖譜',
       files: '文件',
       name: '名稱',
       namePlaceholder: '請輸入名稱',
@@ -135,7 +136,7 @@ export default {
       fromMessage: '缺少起始頁碼',
       toPlaceholder: '到',
       toMessage: '缺少結束頁碼（不包含）',
-      layoutRecognize: '佈局識別',
+      layoutRecognize: '佈局識別和 OCR',
       layoutRecognizeTip:
         '使用視覺模型進行佈局分析，以更好地識別文檔結構，找到標題、文本塊、圖像和表格的位置。如果沒有此功能，則只能獲取 PDF 的純文本。',
       taskPageSize: '任務頁面大小',
@@ -187,6 +188,9 @@ export default {
 <li>這是區塊內容....</li>
 </ul>
 `,
+      metaData: '元資料',
+      deleteDocumentConfirmContent:
+        '該文件與知識圖譜相關聯。刪除後，相關節點和關係資訊將被刪除，但圖不會立即更新。更新圖動作是在解析承載知識圖譜提取任務的新文件的過程中執行的。 ',
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
@@ -346,6 +350,17 @@ export default {
  `,
       tags: '標籤',
       addTag: '增加標籤',
+      useGraphRag: '提取知識圖譜',
+      useGraphRagTip:
+        '文件分塊後，所有區塊將用於知識圖譜生成，這對多跳和複雜問題的推理有很大幫助。',
+      graphRagMethod: '方法',
+      graphRagMethodTip: `Light：實體和關係提取提示來自 GitHub - HKUDS/LightRAG：“LightRAG：簡單快速的檢索增強生成”<br>
+ 一般：實體和關係擷取提示來自 GitHub - microsoft/graphrag：基於模組化圖形的檢索增強生成 (RAG) 系統，`,
+      resolution: '實體歸一化',
+      resolutionTip: `解析過程會將具有相同意義的實體合併在一起，使知識圖譜更簡潔、更準確。應合併以下實體：川普總統、唐納德·川普、唐納德·J·川普、唐納德·約翰·川普`,
+      community: '社群報告生成',
+      communityTip:
+        '區塊被聚集成層次化的社區，其中實體和關係透過更高層次的抽象將每個部分連接起來。然後，我們使用 LLM 產生每個社群的摘要，即社群報告。更多資訊：https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: '解析塊',
@@ -486,6 +501,9 @@ export default {
         '在多輪對話的中，對去知識庫查詢的問題進行最佳化。會呼叫大模型額外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      useKnowledgeGraph: '使用知識圖譜',
+      useKnowledgeGraph提示:
+        '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
     },
     setting: {
       profile: '概述',
