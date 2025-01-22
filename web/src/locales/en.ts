@@ -516,6 +516,9 @@ This procedure will improve precision of retrieval by adding more information to
         'This optimizes user queries using context in a multi-round conversation. When enabled, it will consume additional LLM tokens.',
       howUseId: 'How to use chat ID?',
       description: 'Description of assistant',
+      useKnowledgeGraph: 'Use knowledge graph',
+      useKnowledgeGraphTip:
+        'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
     },
     setting: {
       profile: 'Profile',

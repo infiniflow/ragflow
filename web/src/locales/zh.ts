@@ -517,6 +517,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      useKnowledgeGraph: '使用知识图谱',
+      useKnowledgeGraphTip:
+        '它将检索相关实体、关系和社区报告的描述，这将增强多跳和复杂问题的推理。',
     },
     setting: {
       profile: '概要',
