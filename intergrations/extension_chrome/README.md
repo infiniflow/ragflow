@@ -1,5 +1,5 @@
 # Chrome Extension
-
+```
 chrome-extension/
 │
 ├── manifest.json         # Main configuration file for the extension
@@ -19,7 +19,7 @@ chrome-extension/
 │   ├── utils.js        # File containing utility functions
 │   └── api.js          # File containing API call logic
 └── README.md           # Instructions for using and installing the extension
-
+```
 
 # Installation
 1. Open chrome://extensions/.
