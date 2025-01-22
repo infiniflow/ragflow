@@ -143,9 +143,11 @@ class EntityResolution(Extractor):
                 remove_node_neighbors = list(remove_node_neighbors)
                 for remove_node_neighbor in remove_node_neighbors:
                     rel = self._get_relation_(remove_node, remove_node_neighbor)
-                    graph.remove_edge(remove_node, remove_node_neighbor)
+                    if graph.has_edge(remove_node, remove_node_neighbor):
+                        graph.remove_edge(remove_node, remove_node_neighbor)
                     if remove_node_neighbor == keep_node:
-                        graph.remove_edge(keep_node, remove_node)
+                        if graph.has_edge(keep_node, remove_node):
+                            graph.remove_edge(keep_node, remove_node)
                         continue
                     if not rel:
                         continue

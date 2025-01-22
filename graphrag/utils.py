@@ -349,24 +349,27 @@ def set_relation(tenant_id, kb_id, embd_mdl, from_ent_name, to_ent_name, meta):
 
 def get_graph(tenant_id, kb_id):
     conds = {
-        "fields": ["content_with_weight"],
+        "fields": ["content_with_weight", "source_id"],
         "size": 1,
         "knowledge_graph_kwd": ["graph"]
     }
     res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
     for id in res.ids:
         try:
-            return json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]), edges="edges")
+            return json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]), edges="edges"), \
+                   res.field[id]["source_id"]
         except Exception:
             continue
+    return None, None
 
 
-def set_graph(tenant_id, kb_id, graph):
+def set_graph(tenant_id, kb_id, graph, docids):
     chunk = {
         "content_with_weight": json.dumps(nx.node_link_data(graph, edges="edges"), ensure_ascii=False,
                                           indent=2),
         "knowledge_graph_kwd": "graph",
-        "kb_id": kb_id
+        "kb_id": kb_id,
+        "source_id": list(docids)
     }
     res = settings.retrievaler.search({"knowledge_graph_kwd": "graph", "size": 1, "fields": []}, search.index_name(tenant_id), [kb_id])
     if res.ids:
@@ -434,7 +437,15 @@ def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
                 append_edge = list(graph.edges(pair[-1]))
                 for tuples in merge_tuples([pair], append_edge):
                     source_edge.append(tuples)
-        return {",".join((sorted(tup))): nx.get_edge_attributes(graph, 'weight').get(tuple(tup), 0) for tup in source_edge}
+        nbrs = []
+        for path in source_edge:
+            n = {"path": path, "weights": []}
+            wts = nx.get_edge_attributes(graph, 'weight')
+            for i in range(len(path)-1):
+                f, t = path[i], path[i+1]
+                n["weights"].append(wts.get((f, t), 0))
+            nbrs.append(n)
+        return nbrs
 
     pr = nx.pagerank(graph)
     for n, p in pr.items():
@@ -442,7 +453,7 @@ def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
         try:
             settings.docStoreConn.update({"entity_kwd": n, "kb_id": kb_id},
                                          {"rank_flt": p,
-                                          "n_hop_with_weight": json.dumps(n_neighbor(n))},
+                                          "n_hop_with_weight": json.dumps(n_neighbor(n), ensure_ascii=False)},
                                          search.index_name(tenant_id), kb_id)
         except Exception as e:
             logging.exception(e)

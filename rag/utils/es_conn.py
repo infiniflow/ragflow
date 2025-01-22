@@ -223,6 +223,7 @@ class ESConnection(DocStoreConnection):
 
         for i in range(ATTEMPT_TIME):
             try:
+                #print(json.dumps(q, ensure_ascii=False))
                 res = self.es.search(index=indexNames,
                                      body=q,
                                      timeout="600s",

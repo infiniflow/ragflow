@@ -17,6 +17,7 @@ import logging
 import os
 from collections import defaultdict, Counter
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from typing import Callable
 
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
@@ -52,10 +53,12 @@ class Extractor:
         self._set_relation_ = set_relation
 
     def _chat(self, system, history, gen_conf):
-        response = get_llm_cache(self._llm.llm_name, system, history, gen_conf)
+        hist = deepcopy(history)
+        conf = deepcopy(gen_conf)
+        response = get_llm_cache(self._llm.llm_name, system, hist, conf)
         if response:
             return response
-        response = self._llm.chat(system, history, gen_conf)
+        response = self._llm.chat(system, hist, conf)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
         set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)

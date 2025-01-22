@@ -41,6 +41,7 @@ class Dealer:
                  embed_bdl=None,
                  callback=None
                  ):
+        docids = list(set([docid for docid,_ in chunks]))
         self.llm_bdl = llm_bdl
         self.embed_bdl = embed_bdl
         ext = extractor(self.llm_bdl, language=language,
@@ -64,12 +65,15 @@ class Dealer:
             )
 
         with RedisDistributedLock(kb_id, 60*60):
-            old_graph = get_graph(tenant_id, kb_id)
+            old_graph, old_doc_ids = get_graph(tenant_id, kb_id)
             if old_graph is not None:
                 logging.info("Merge with an exiting graph...................")
                 self.graph = reduce(graph_merge, [old_graph, self.graph])
             update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, self.graph, 2)
-            set_graph(tenant_id, kb_id, self.graph)
+            if old_doc_ids:
+                docids.extend(old_doc_ids)
+                docids = list(set(docids))
+            set_graph(tenant_id, kb_id, self.graph, docids)
 
 
 class WithResolution(Dealer):
@@ -84,7 +88,7 @@ class WithResolution(Dealer):
         self.embed_bdl = embed_bdl
 
         with RedisDistributedLock(kb_id, 60*60):
-            self.graph = get_graph(tenant_id, kb_id)
+            self.graph, doc_ids = get_graph(tenant_id, kb_id)
             if not self.graph:
                 logging.error(f"Faild to fetch the graph. tenant_id:{kb_id}, kb_id:{kb_id}")
                 if callback:
@@ -104,7 +108,7 @@ class WithResolution(Dealer):
             if callback:
                 callback(msg="Graph resolution is done. Remove {} nodes.".format(len(reso.removed_entities)))
             update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, self.graph, 2)
-            set_graph(tenant_id, kb_id, self.graph)
+            set_graph(tenant_id, kb_id, self.graph, doc_ids)
 
         settings.docStoreConn.delete({
             "knowledge_graph_kwd": "relation",
@@ -138,7 +142,7 @@ class WithCommunity(Dealer):
         self.embed_bdl = embed_bdl
 
         with RedisDistributedLock(kb_id, 60*60):
-            self.graph = get_graph(tenant_id, kb_id)
+            self.graph, doc_ids = get_graph(tenant_id, kb_id)
             if not self.graph:
                 logging.error(f"Faild to fetch the graph. tenant_id:{kb_id}, kb_id:{kb_id}")
                 if callback:
@@ -155,7 +159,7 @@ class WithCommunity(Dealer):
             cr = cr(self.graph, callback=callback)
             self.community_structure = cr.structured_output
             self.community_reports = cr.output
-            set_graph(tenant_id, kb_id, self.graph)
+            set_graph(tenant_id, kb_id, self.graph, doc_ids)
 
         if callback:
             callback(msg="Graph community extraction is done. Indexing {} reports.".format(len(cr.structured_output)))
