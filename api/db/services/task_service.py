@@ -280,14 +280,13 @@ def queue_tasks(doc: dict, bucket: str, name: str):
 
 
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):
-    idx = bisect.bisect_left(prev_tasks, (task.get("from_page", 0), task.get("digest", "")),
-                             key=lambda x: (x.get("from_page", 0), x.get("digest", "")))
     idx = 0
     while idx < len(prev_tasks):
         prev_task = prev_tasks[idx]
         if prev_task.get("from_page", 0) == task.get("from_page", 0) \
                 and prev_task.get("digest", 0) == task.get("digest", ""):
             break
+        idx += 1
 
     if idx >= len(prev_tasks):
         return 0
