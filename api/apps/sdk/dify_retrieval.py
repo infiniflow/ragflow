@@ -15,7 +15,7 @@
 #
 from flask import request, jsonify
 
-from api.db import LLMType, ParserType
+from api.db import LLMType
 from api.db.services.dialog_service import label_question
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle

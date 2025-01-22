@@ -210,12 +210,12 @@ def queue_tasks(doc: dict, bucket: str, name: str):
 
     if doc["type"] == FileType.PDF.value:
         file_bin = STORAGE_IMPL.get(bucket, name)
-        do_layout = doc["parser_config"].get("layout_recognize", True)
+        do_layout = doc["parser_config"].get("layout_recognize", "DeepDOC")
         pages = PdfParser.total_page_number(doc["name"], file_bin)
         page_size = doc["parser_config"].get("task_page_size", 12)
         if doc["parser_id"] == "paper":
             page_size = doc["parser_config"].get("task_page_size", 22)
-        if doc["parser_id"] in ["one", "knowledge_graph"] or not do_layout:
+        if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC":
             page_size = 10 ** 9
         page_ranges = doc["parser_config"].get("pages") or [(1, 10 ** 5)]
         for s, e in page_ranges:

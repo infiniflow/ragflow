@@ -23,10 +23,10 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
     parser_config = kwargs.get(
         "parser_config", {
-            "chunk_token_num": 512, "delimiter": "\n!?;。；！？", "layout_recognize": True})
+            "chunk_token_num": 512, "delimiter": "\n!?;。；！？", "layout_recognize": "DeepDOC"})
     eng = lang.lower() == "english"
 
-    parser_config["layout_recognize"] = True
+    parser_config["layout_recognize"] = "DeepDOC"
     sections = naive.chunk(filename, binary, from_page=from_page, to_page=to_page, section_only=True,
                            parser_config=parser_config, callback=callback)
 
@@ -42,6 +42,6 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=100000,
         "knowledge_graph_kwd": "text"
     }
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
-    chunks.extend(tokenize_chunks(sections, doc, eng))
-
-    return chunks
+    #chunks.extend(tokenize_chunks(sections, doc, eng))
+    #return chunks
+    return []

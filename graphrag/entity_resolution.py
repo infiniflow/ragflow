@@ -17,7 +17,6 @@ import logging
 import itertools
 import re
 import time
-import traceback
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -28,7 +27,7 @@ from rag.nlp import is_english
 import editdistance
 from graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
 from rag.llm.chat_model import Base as CompletionLLM
-from graphrag.utils import ErrorHandlerFn, perform_variable_replacements
+from graphrag.utils import perform_variable_replacements
 
 DEFAULT_RECORD_DELIMITER = "##"
 DEFAULT_ENTITY_INDEX_DELIMITER = "<|>"
@@ -126,7 +125,7 @@ class EntityResolution(Extractor):
                                                                         DEFAULT_RESOLUTION_RESULT_DELIMITER))
                     for result_i in result:
                         resolution_result.add(candidate_resolution_i[1][result_i[0] - 1])
-                except Exception as e:
+                except Exception:
                     logging.exception("error entity resolution")
 
         connect_graph = nx.Graph()
