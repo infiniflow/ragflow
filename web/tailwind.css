@@ -151,4 +151,20 @@
       'rlig' 1,
       'calt' 1;
   }
+
+  /* https://tailwindcss.com/docs/preflight */
+
+  h1 {
+    @apply text-2xl font-bold;
+  }
+  h2 {
+    @apply text-xl font-semibold;
+  }
+  h3 {
+    @apply text-lg font-medium;
+  }
+
+  h4 {
+    @apply text-base font-normal;
+  }
 }
