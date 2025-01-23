@@ -177,7 +177,7 @@ class Pdf(PdfParser):
         tbl_tag = "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
             .format(tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom)
         _tbl_text = ''.join(tbls[tbl_index][0][1])
-        return tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag,
+        return tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, _tbl_text
 
 
 class Docx(DocxParser):
