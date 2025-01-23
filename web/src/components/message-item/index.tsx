@@ -28,6 +28,7 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   reference: IReference;
   loading?: boolean;
   sendLoading?: boolean;
+  visibleAvartar?: boolean;
   nickname?: string;
   avatar?: string;
   avatardialog?: string | null;
@@ -50,6 +51,7 @@ const MessageItem = ({
   regenerateMessage,
   showLikeButton = true,
   showLoudspeaker = true,
+  visibleAvartar = true,
 }: IProps) => {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -105,13 +107,15 @@ const MessageItem = ({
             [styles.messageItemContentReverse]: item.role === MessageType.User,
           })}
         >
-          {item.role === MessageType.User ? (
-            <Avatar size={40} src={avatar ?? '/logo.svg'} />
-          ) : avatardialog ? (
-            <Avatar size={40} src={avatardialog} />
-          ) : (
-            <AssistantIcon />
-          )}
+          {visibleAvartar &&
+            (item.role === MessageType.User ? (
+              <Avatar size={40} src={avatar ?? '/logo.svg'} />
+            ) : avatardialog ? (
+              <Avatar size={40} src={avatardialog} />
+            ) : (
+              <AssistantIcon />
+            ))}
+
           <Flex vertical gap={8} flex={1}>
             <Space>
               {isAssistant ? (
