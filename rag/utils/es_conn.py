@@ -424,7 +424,7 @@ class ESConnection(DocStoreConnection):
         logger.debug("ESConnection.delete query: " + json.dumps(qry.to_dict()))
         for _ in range(ATTEMPT_TIME):
             try:
-                print(Search().query(qry).to_dict(), flush=True)
+                #print(Search().query(qry).to_dict(), flush=True)
                 res = self.es.delete_by_query(
                     index=indexName,
                     body=Search().query(qry).to_dict(),
