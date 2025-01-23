@@ -327,8 +327,10 @@ def build_chunks(task, progress_callback):
                                          random.choices(examples, k=2) if len(examples)>2 else examples,
                                          topn=topn_tags)
                 if cached:
-                    set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, all_tags, {"topn": topn_tags})
-            d[TAG_FLD] = json.loads(cached)
+                    cached = json.dumps(cached)
+            if cached:
+                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, all_tags, {"topn": topn_tags})
+                d[TAG_FLD] = json.loads(cached)
 
         progress_callback(msg="Tagging completed in {:.2f}s".format(timer() - st))
 
