@@ -504,6 +504,8 @@ export default {
       useKnowledgeGraph: '使用知識圖譜',
       useKnowledgeGraph提示:
         '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
+      keyword: '關鍵字分析',
+      keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。`,
     },
     setting: {
       profile: '概述',
