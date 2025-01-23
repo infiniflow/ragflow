@@ -52,12 +52,6 @@ class UserService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def user_gateway(cls, tenant_id):
-        hashobj = hashlib.sha256(tenant_id.encode("utf-8"))
-        return int(hashobj.hexdigest(), 16)%len(MINIO)
-
-    @classmethod
-    @DB.connection_context()
     def save(cls, **kwargs):
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()
@@ -133,6 +127,12 @@ class TenantService(CommonService):
             cls.model.id == user_id).execute()
         if num == 0:
             raise LookupError("Tenant not found which is supposed to be there")
+
+    @classmethod
+    @DB.connection_context()
+    def user_gateway(cls, tenant_id):
+        hashobj = hashlib.sha256(tenant_id.encode("utf-8"))
+        return int(hashobj.hexdigest(), 16)%len(MINIO)
 
 
 class UserTenantService(CommonService):
