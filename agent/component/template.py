@@ -82,7 +82,7 @@ class Template(ComponentBase):
 
             result = ""
             if "content" in out.columns:
-                result = "".join(
+                result = "\n".join(
                     [o if isinstance(o, str) else str(o) for o in out["content"]]
                 )
 
@@ -97,11 +97,17 @@ class Template(ComponentBase):
 
         for n, v in kwargs.items():
             try:
-                v = json.dumps(v)
+                v = json.dumps(v, ensure_ascii=False)
             except Exception:
                 pass
             content = re.sub(
-                r"\{%s\}" % re.escape(n), str(v).replace("\\", " "), content
+                r"\{%s\}" % re.escape(n), v, content
+            )
+            content = re.sub(
+                r"(\\\"|\")", "", content
+            )
+            content = re.sub(
+                r"(#+)", r" \1 ", content
             )
 
         return Template.be_output(content)
