@@ -28,7 +28,6 @@ from rag import settings
 from rag.settings import TAG_FLD, PAGERANK_FLD
 from rag.utils import singleton
 from api.utils.file_utils import get_project_base_directory
-import polars as pl
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
@@ -142,7 +141,7 @@ class ESConnection(DocStoreConnection):
             knowledgebaseIds: list[str],
             aggFields: list[str] = [],
             rank_feature: dict | None = None
-    ) -> list[dict] | pl.DataFrame:
+    ):
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
         """
@@ -424,7 +423,7 @@ class ESConnection(DocStoreConnection):
         logger.debug("ESConnection.delete query: " + json.dumps(qry.to_dict()))
         for _ in range(ATTEMPT_TIME):
             try:
-                print(Search().query(qry).to_dict(), flush=True)
+                #print(Search().query(qry).to_dict(), flush=True)
                 res = self.es.delete_by_query(
                     index=indexName,
                     body=Search().query(qry).to_dict(),
