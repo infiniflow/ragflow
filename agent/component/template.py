@@ -13,8 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import re
 from agent.component.base import ComponentBase, ComponentParamBase
+from jinja2 import Template as Jinja2Template
 
 
 class TemplateParam(ComponentParamBase):
@@ -36,10 +38,15 @@ class Template(ComponentBase):
     component_name = "Template"
 
     def get_dependent_components(self):
-        cpnts = set([para["component_id"].split("@")[0] for para in self._param.parameters \
-                     if para.get("component_id") \
-                     and para["component_id"].lower().find("answer") < 0 \
-                     and para["component_id"].lower().find("begin") < 0])
+        cpnts = set(
+            [
+                para["component_id"].split("@")[0]
+                for para in self._param.parameters
+                if para.get("component_id")
+                and para["component_id"].lower().find("answer") < 0
+                and para["component_id"].lower().find("begin") < 0
+            ]
+        )
         return list(cpnts)
 
     def _run(self, history, **kwargs):
@@ -54,9 +61,8 @@ class Template(ComponentBase):
                 cpn_id, key = para["component_id"].split("@")
                 for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
                     if p["key"] == key:
-                        kwargs[para["key"]] = p.get("value", "")
-                        self._param.inputs.append(
-                            {"component_id": para["component_id"], "content": kwargs[para["key"]]})
+                        value = p.get("value", "")
+                        self.make_kwargs(para, kwargs, value)
                         break
                 else:
                     assert False, f"Can't find parameter '{key}' for {cpn_id}"
@@ -69,18 +75,49 @@ class Template(ComponentBase):
                     hist = hist[0]["content"]
                 else:
                     hist = ""
-                kwargs[para["key"]] = hist
+                self.make_kwargs(para, kwargs, hist)
                 continue
 
             _, out = cpn.output(allow_partial=False)
-            if "content" not in out.columns:
-                kwargs[para["key"]] = ""
-            else:
-                kwargs[para["key"]] = "  - "+"\n - ".join([o if isinstance(o, str) else str(o) for o in out["content"]])
-            self._param.inputs.append({"component_id": para["component_id"], "content": kwargs[para["key"]]})
+
+            result = ""
+            if "content" in out.columns:
+                result = "\n".join(
+                    [o if isinstance(o, str) else str(o) for o in out["content"]]
+                )
+
+            self.make_kwargs(para, kwargs, result)
+
+        template = Jinja2Template(content)
+
+        try:
+            content = template.render(kwargs)
+        except Exception:
+            pass
 
         for n, v in kwargs.items():
-            content = re.sub(r"\{%s\}" % re.escape(n), str(v).replace("\\", " "), content)
+            try:
+                v = json.dumps(v, ensure_ascii=False)
+            except Exception:
+                pass
+            content = re.sub(
+                r"\{%s\}" % re.escape(n), v, content
+            )
+            content = re.sub(
+                r"(\\\"|\")", "", content
+            )
+            content = re.sub(
+                r"(#+)", r" \1 ", content
+            )
 
         return Template.be_output(content)
 
+    def make_kwargs(self, para, kwargs, value):
+        self._param.inputs.append(
+            {"component_id": para["component_id"], "content": value}
+        )
+        try:
+            value = json.loads(value)
+        except Exception:
+            pass
+        kwargs[para["key"]] = value
