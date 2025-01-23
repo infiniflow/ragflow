@@ -1,45 +1,38 @@
 services:
   es01:
-    container_name: ragflow-es-01
-    profiles:
-      - elasticsearch
-    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    container_name: ragflow-opensearch-01
+    image: opensearchproject/opensearch:latest
     volumes:
-      - esdata01:/usr/share/elasticsearch/data
+      - osdata01:/usr/share/opensearch/data
     ports:
-      - ${ES_PORT}:9200
-    env_file: .env
+      - "9200:9200"  # Map container port 9200 to host port 9200
     environment:
-      - node.name=es01
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      - bootstrap.memory_lock=false
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch01
       - discovery.type=single-node
-      - xpack.security.enabled=true
-      - xpack.security.http.ssl.enabled=false
-      - xpack.security.transport.ssl.enabled=false
-      - cluster.routing.allocation.disk.watermark.low=5gb
-      - cluster.routing.allocation.disk.watermark.high=3gb
-      - cluster.routing.allocation.disk.watermark.flood_stage=2gb
-      - TZ=${TIMEZONE}
-    mem_limit: ${MEM_LIMIT}
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=opensearch_password
+      - TZ=UTC
+      - network.host=0.0.0.0
+      - "DISABLE_SECURITY_PLUGIN=true"
+    mem_limit: 2g
     ulimits:
       memlock:
         soft: -1
         hard: -1
     healthcheck:
-      test: ["CMD-SHELL", "curl http://localhost:9200"]
+      test: ["CMD-SHELL", "curl -s http://localhost:9200 || exit 1"]
       interval: 10s
       timeout: 10s
-      retries: 120
+      retries: 5
     networks:
       - ragflow
-    restart: on-failure
+    restart: always
 
   infinity:
     container_name: ragflow-infinity
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.5.0-dev6
+    image: infiniflow/infinity:v0.6.0-dev2
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -65,9 +58,7 @@ services:
       retries: 120
     restart: on-failure
 
-
   mysql:
-    # mysql:5.7 linux/arm64 image is unavailable.
     image: mysql:8.0.39
     container_name: ragflow-mysql
     env_file: .env
@@ -82,14 +73,14 @@ services:
       --tls_version="TLSv1.2,TLSv1.3"
       --init-file /data/application/init.sql
     ports:
-      - ${MYSQL_PORT}:3306
+      - 5455:3306
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/data/application/init.sql
     networks:
       - ragflow
     healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-uroot", "-p${MYSQL_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-p${MYSQL_PASSWORD}"]
       interval: 10s
       timeout: 10s
       retries: 3
@@ -126,10 +117,42 @@ services:
       - ragflow
     restart: on-failure
 
-
+  ragflow:
+    depends_on:
+      es01:
+        condition: service_healthy
+    image: infiniflow/ragflow:nightly-slim
+    container_name: ragflow-server
+    ports:
+      - ${SVR_HTTP_PORT}:9380
+      - 80:80
+      - 443:443
+    volumes:
+      - ./ragflow-logs:/ragflow/logs
+      - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
+      - ./nginx/proxy.conf:/etc/nginx/proxy.conf
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    env_file: .env
+    environment:
+      - TZ=${TIMEZONE}
+      - HF_ENDPOINT=${HF_ENDPOINT}
+      - MACOS=${MACOS}
+    networks:
+      - ragflow
+    restart: on-failure
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:latest
+    container_name: ragflow-dashboards
+    environment:
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+      OPENSEARCH_HOSTS: "http://ragflow-opensearch-01:9200"
+    ports:
+      - "5601:5601"
+    networks:
+      - ragflow
 
 volumes:
-  esdata01:
+  osdata01:
     driver: local
   infinity_data:
     driver: local

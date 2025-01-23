@@ -1,93 +1,134 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
 import logging
 import re
 import json
 import time
 import os
-
 import copy
-from elasticsearch import Elasticsearch, NotFoundError
-from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
+from opensearchpy import OpenSearch, NotFoundError
+from opensearchpy import Index
 from elastic_transport import ConnectionTimeout
 from rag import settings
+from rag.settings import TAG_FLD, PAGERANK_FLD
 from rag.utils import singleton
 from api.utils.file_utils import get_project_base_directory
 import polars as pl
-from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
-    FusionExpr
-from rag.nlp import is_english, rag_tokenizer
+from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr
+from rag.nlp import is_english
 
 ATTEMPT_TIME = 2
 
 logger = logging.getLogger('ragflow.es_conn')
 
+
 @singleton
-class ESConnection(DocStoreConnection):
+class OSConnection(DocStoreConnection):
     def __init__(self):
         self.info = {}
-        logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
+        logger.info(f"Use OpenSearch {settings.ES['hosts']} as the doc engine.")
         for _ in range(ATTEMPT_TIME):
             try:
-                self.es = Elasticsearch(
-                    settings.ES["hosts"].split(","),
-                    basic_auth=(settings.ES["username"], settings.ES[
-                        "password"]) if "username" in settings.ES and "password" in settings.ES else None,
+                self.es = OpenSearch(
+                    hosts=["https://vpc-opensearch-ai-cog-use01-inriygymoxoihklcebbajsljhu.us-east-1.es.amazonaws.com"],
+                    use_ssl=True,
                     verify_certs=False,
-                    timeout=600
+                    timeout=600,
                 )
                 if self.es:
                     self.info = self.es.info()
                     break
             except Exception as e:
-                logger.warning(f"{str(e)}. Waiting Elasticsearch {settings.ES['hosts']} to be healthy.")
+                logger.warning(f"{str(e)}. Waiting for OpenSearch {settings.ES['hosts']} to be healthy.")
                 time.sleep(5)
         if not self.es.ping():
-            msg = f"Elasticsearch {settings.ES['hosts']} didn't become healthy in 120s."
+            msg = f"OpenSearch {settings.ES['hosts']} is unhealthy in 120s."
             logger.error(msg)
             raise Exception(msg)
-        v = self.info.get("version", {"number": "8.11.3"})
+        v = self.info.get("version", {"number": "2.11.0"})
         v = v["number"].split(".")[0]
-        if int(v) < 8:
-            msg = f"Elasticsearch version must be greater than or equal to 8, current version: {v}"
+        if int(v) < 2:
+            msg = f"OpenSearch version must be greater than or equal to 2, current version: {v}"
             logger.error(msg)
             raise Exception(msg)
         fp_mapping = os.path.join(get_project_base_directory(), "conf", "mapping.json")
         if not os.path.exists(fp_mapping):
-            msg = f"Elasticsearch mapping file not found at {fp_mapping}"
+            msg = f"OpenSearch mapping file not found at {fp_mapping}"
             logger.error(msg)
             raise Exception(msg)
         self.mapping = json.load(open(fp_mapping, "r"))
-        logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
-
-    """
-    Database operations
-    """
+        logger.info(f"OpenSearch {settings.ES['hosts']} is healthy.")
 
     def dbType(self) -> str:
-        return "elasticsearch"
+        return "opensearch"
 
     def health(self) -> dict:
         health_dict = dict(self.es.cluster.health())
-        health_dict["type"] = "elasticsearch"
+        health_dict["type"] = "opensearch"
         return health_dict
 
-    """
-    Table operations
-    """
-
-    def createIdx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
-        if self.indexExist(indexName, knowledgebaseId):
-            return True
+    def createIdx(self, indexName: str, knowledgebaseId: str, embedding_dim: int):
+        """
+        Ensure the index is created with the correct mapping using both the provided mapping
+        and KNN settings. If the index exists, delete it and recreate.
+        """
         try:
-            from elasticsearch.client import IndicesClient
-            return IndicesClient(self.es).create(index=indexName,
-                                                 settings=self.mapping["settings"],
-                                                 mappings=self.mapping["mappings"])
-        except Exception:
-            logger.exception("ESConnection.createIndex error %s" % (indexName))
+            from opensearchpy.client.indices import IndicesClient
+
+            logger.info(f"Creating index '{indexName}' with combined settings and KNN mappings.")
+            index_body = {
+                "settings": {
+                    **self.mapping.get("settings", {}),
+                    "index": {
+                        "knn": True,
+                        "knn.algo_param.ef_search": 100
+                    },
+                },
+                "mappings": {
+                    **self.mapping.get("mappings", {}),
+                    "properties": {
+                        **self.mapping["mappings"].get("properties", {}),
+                        "vector_field": {  # Adjust field name as per your context
+                            "type": "knn_vector",
+                            "dimension": embedding_dim,
+                            "method": {
+                                "name": "hnsw",
+                                "space_type": "l2",
+                                "engine": "nmslib",
+                                "parameters": {
+                                    "ef_construction": 128,
+                                    "m": 24
+                                }
+                            },
+                        },
+                    },
+                },
+            }
+
+            IndicesClient(self.es).create(index=indexName, body=index_body)
+            logger.info(f"Index '{indexName}' created successfully.")
+            return True
+
+        except Exception as e:
+            logger.exception(f"Failed to create index '{indexName}': {e}")
+            return False
 
     def deleteIdx(self, indexName: str, knowledgebaseId: str):
         if len(knowledgebaseId) > 0:
-            # The index need to be alive after any kb deletion since all kb under this tenant are in one index.
             return
         try:
             self.es.indices.delete(index=indexName, allow_no_indices=True)
@@ -103,83 +144,73 @@ class ESConnection(DocStoreConnection):
                 return s.exists()
             except Exception as e:
                 logger.exception("ESConnection.indexExist got exception")
-                if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
+                if "Timeout" in str(e) or "Conflict" in str(e):
                     continue
+                break
         return False
 
-    """
-    CRUD operations
-    """
-
     def search(self, selectFields: list[str], highlightFields: list[str], condition: dict, matchExprs: list[MatchExpr],
-               orderBy: OrderByExpr, offset: int, limit: int, indexNames: str | list[str],
-               knowledgebaseIds: list[str]) -> list[dict] | pl.DataFrame:
-        """
-        Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
-        """
+            orderBy: OrderByExpr, offset: int, limit: int, indexNames: str | list[str],
+            knowledgebaseIds: list[str]) -> list[dict] | pl.DataFrame:
         if isinstance(indexNames, str):
             indexNames = indexNames.split(",")
         assert isinstance(indexNames, list) and len(indexNames) > 0
         assert "_id" not in condition
 
-        bqry = Q("bool", must=[])
+        must_clauses = []
+        filter_clauses = []
+
         condition["kb_id"] = knowledgebaseIds
         for k, v in condition.items():
             if k == "available_int":
                 if v == 0:
-                    bqry.filter.append(Q("range", available_int={"lt": 1}))
+                    filter_clauses.append({"range": {"available_int": {"lt": 1}}})
                 else:
-                    bqry.filter.append(
-                        Q("bool", must_not=Q("range", available_int={"lt": 1})))
+                    filter_clauses.append({"bool": {"must_not": {"range": {"available_int": {"lt": 1}}}}})
                 continue
             if not v:
                 continue
             if isinstance(v, list):
-                bqry.filter.append(Q("terms", **{k: v}))
-            elif isinstance(v, str) or isinstance(v, int):
-                bqry.filter.append(Q("term", **{k: v}))
+                filter_clauses.append({"terms": {k: v}})
+            elif isinstance(v, (str, int)):
+                filter_clauses.append({"term": {k: v}})
             else:
-                raise Exception(
-                    f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+                raise Exception(f"Condition `{str(k)}={str(v)}` has unexpected type {type(v)}.")
 
-        s = Search()
-        vector_similarity_weight = 0.5
-        for m in matchExprs:
-            if isinstance(m, FusionExpr) and m.method == "weighted_sum" and "weights" in m.fusion_params:
-                assert len(matchExprs) == 3 and isinstance(matchExprs[0], MatchTextExpr) and isinstance(matchExprs[1],
-                                                                                                        MatchDenseExpr) and isinstance(
-                    matchExprs[2], FusionExpr)
-                weights = m.fusion_params["weights"]
-                vector_similarity_weight = float(weights.split(",")[1])
+        knn_query = None
         for m in matchExprs:
             if isinstance(m, MatchTextExpr):
-                minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
-                if isinstance(minimum_should_match, float):
-                    minimum_should_match = str(int(minimum_should_match * 100)) + "%"
-                bqry.must.append(Q("query_string", fields=m.fields,
-                                   type="best_fields", query=m.matching_text,
-                                   minimum_should_match=minimum_should_match,
-                                   boost=1))
-                bqry.boost = 1.0 - vector_similarity_weight
-
+                must_clauses.append({
+                    "query_string": {
+                        "fields": m.fields,
+                        "query": m.matching_text,
+                        "minimum_should_match": m.extra_options.get("minimum_should_match", "0%"),
+                        "boost": 1
+                    }
+                })
             elif isinstance(m, MatchDenseExpr):
-                assert (bqry is not None)
-                similarity = 0.0
-                if "similarity" in m.extra_options:
-                    similarity = m.extra_options["similarity"]
-                s = s.knn(m.vector_column_name,
-                          m.topn,
-                          m.topn * 2,
-                          query_vector=list(m.embedding_data),
-                          filter=bqry.to_dict(),
-                          similarity=similarity,
-                          )
+                knn_query = {
+                    "knn": {
+                        m.vector_column_name: {
+                            "vector": list(m.embedding_data),
+                            "k": m.topn
+                        }
+                    }
+                }
 
-        if bqry:
-            bqry.should.append(Q("rank_feature", field="pagerank_fea", linear={}, boost=10))
-            s = s.query(bqry)
-        for field in highlightFields:
-            s = s.highlight(field)
+        query = {"query": {"bool": {}}}
+        if must_clauses:
+            query["query"]["bool"]["must"] = must_clauses
+        if filter_clauses:
+            query["query"]["bool"]["filter"] = filter_clauses
+
+        if knn_query:
+            query["query"] = knn_query
+
+        if highlightFields:
+            for field in highlightFields:
+                s = s.highlight(field)
+            query["highlight"] = {"fields": {field: {} for field in highlightFields}}
 
         if orderBy:
             orders = list()
@@ -187,7 +218,7 @@ class ESConnection(DocStoreConnection):
                 order = "asc" if order == 0 else "desc"
                 if field in ["page_num_int", "top_int"]:
                     order_info = {"order": order, "unmapped_type": "float",
-                                "mode": "avg", "numeric_type": "double"}
+                                  "mode": "avg", "numeric_type": "double"}
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
                 else:
@@ -195,125 +226,138 @@ class ESConnection(DocStoreConnection):
                 orders.append({field: order_info})
             s = s.sort(*orders)
 
+            query["sort"] = [{field: {"order": "asc" if order == 0 else "desc", "unmapped_type": "float"}}
+                            for field, order in orderBy.fields]
+
         if limit > 0:
-            s = s[offset:limit]
+            s = s[offset:offset + limit]
         q = s.to_dict()
         logger.debug(f"ESConnection.search {str(indexNames)} query: " + json.dumps(q))
+        query["from"] = offset
+        query["size"] = limit
+
+        logger.debug(f"Generated Query: {json.dumps(query, indent=2)}")
 
         for i in range(ATTEMPT_TIME):
             try:
-                res = self.es.search(index=indexNames,
-                                     body=q,
-                                     timeout="600s",
-                                     # search_type="dfs_query_then_fetch",
-                                     track_total_hits=True,
-                                     _source=True)
-                if str(res.get("timed_out", "")).lower() == "true":
-                    raise Exception("Es Timeout.")
-                logger.debug(f"ESConnection.search {str(indexNames)} res: " + str(res))
+                res = self.es.search(index=",".join(indexNames), body=query, timeout=600, track_total_hits=True, _source=True)
                 return res
             except Exception as e:
-                logger.exception(f"ESConnection.search {str(indexNames)} query: " + str(q))
-                if str(e).find("Timeout") > 0:
+                logger.exception(f"ESConnection.search {str(indexNames)} query failed.")
+                if "Timeout" in str(e):
                     continue
                 raise e
-        logger.error("ESConnection.search timeout for 3 times!")
-        raise Exception("ESConnection.search timeout.")
+
+
+
 
     def get(self, chunkId: str, indexName: str, knowledgebaseIds: list[str]) -> dict | None:
         for i in range(ATTEMPT_TIME):
             try:
-                res = self.es.get(index=(indexName),
-                                  id=chunkId, source=True, )
-                if str(res.get("timed_out", "")).lower() == "true":
-                    raise Exception("Es Timeout.")
-                chunk = res["_source"]
-                chunk["id"] = chunkId
-                return chunk
+                res = self.es.get(index=indexName, id=chunkId, _source=True)
+                return res["_source"]
             except NotFoundError:
                 return None
             except Exception as e:
-                logger.exception(f"ESConnection.get({chunkId}) got exception")
-                if str(e).find("Timeout") > 0:
+                logger.exception(f"ESConnection.get({chunkId}) encountered an error.")
+                if "Timeout" in str(e):
                     continue
-                raise e
-        logger.error("ESConnection.get timeout for 3 times!")
-        raise Exception("ESConnection.get timeout.")
+
+    @staticmethod
+    def transform_dict(input_dict):
+        transformed_dict = {
+            "vector_field": input_dict.get("vector_field"),
+            "text": input_dict.get("text"),
+        }
+        
+        metadata = {k: v for k, v in input_dict.items() if k not in ["vector_field", "text"]}
+        if metadata:
+            transformed_dict["metadata"] = metadata
+        
+        return transformed_dict
 
     def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str) -> list[str]:
-        # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         operations = []
-        for d in documents:
-            assert "_id" not in d
-            assert "id" in d
-            d_copy = copy.deepcopy(d)
-            meta_id = d_copy.pop("id", "")
+        for doc in documents:
+            assert "_id" not in doc
+            assert "id" in doc
+            
+            doc_copy = copy.deepcopy(doc)
+            doc_copy["source"] = doc_copy.pop("docnm_kwd")
+            doc_copy = self.transform_dict(doc_copy)
+            print('doc_copy: ', doc_copy)
+            
+            meta_id = doc_copy.get("id")
+            
             operations.append(
-                {"index": {"_index": indexName, "_id": meta_id}})
-            operations.append(d_copy)
+                {"index": {"_index": indexName, "_id": meta_id}}
+            )
+            operations.append(doc_copy)
 
-        res = []
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(ATTEMPT_TIME):
             try:
-                res = []
-                r = self.es.bulk(index=(indexName), operations=operations,
-                                 refresh=False, timeout="60s")
-                if re.search(r"False", str(r["errors"]), re.IGNORECASE):
-                    return res
+                response = self.es.bulk(
+                    body=operations,
+                    refresh=False,
+                    timeout=60
+                )
 
-                for item in r["items"]:
-                    for action in ["create", "delete", "index", "update"]:
-                        if action in item and "error" in item[action]:
-                            res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
-                return res
+                if not response["errors"]:
+                    return []
+
+                errors = [
+                    f'{item["index"]["_id"]}: {item["index"]["error"]}'
+                    for item in response["items"]
+                    if "error" in item["index"]
+                ]
+                return errors
             except Exception as e:
-                res.append(str(e))
-                logger.warning("ESConnection.insert got exception: " + str(e))
-                res = []
-                if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
-                    res.append(str(e))
-                    time.sleep(3)
-                    continue
-        return res
+                logger.warning(f"ESConnection.insert encountered an error: {e}")
+                time.sleep(3)
+        return ["Failed to insert after multiple attempts"]
 
     def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str) -> bool:
         doc = copy.deepcopy(newValue)
         doc.pop("id", None)
+
         if "id" in condition and isinstance(condition["id"], str):
-            # update specific single document
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
                 try:
-                    self.es.update(index=indexName, id=chunkId, doc=doc)
+                    self.es.update(index=indexName, id=chunkId, body={"doc": doc})
                     return True
                 except Exception as e:
                     logger.exception(
-                        f"ESConnection.update(index={indexName}, id={id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
-                    if str(e).find("Timeout") > 0:
+                        f"ESConnection.update(index={indexName}, id={chunkId}, doc={json.dumps(condition, ensure_ascii=False)}) got exception"
+                    )
+                    if "Timeout" in str(e):
                         continue
+                    break
             return False
         else:
-            # update unspecific maybe-multiple documents
-            bqry = Q("bool")
+            query = {"bool": {"must": []}}
+
             for k, v in condition.items():
                 if not isinstance(k, str) or not v:
                     continue
                 if k == "exist":
-                    bqry.filter.append(Q("exists", field=v))
+                    query["must"].append({"exists": {"field": v}})
                     continue
                 if isinstance(v, list):
-                    bqry.filter.append(Q("terms", **{k: v}))
-                elif isinstance(v, str) or isinstance(v, int):
-                    bqry.filter.append(Q("term", **{k: v}))
+                    query["must"].append({"terms": {k: v}})
+                elif isinstance(v, (str, int)):
+                    query["must"].append({"term": {k: v}})
                 else:
                     raise Exception(
-                        f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+                        f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str, or list."
+                    )
+
             scripts = []
             for k, v in newValue.items():
                 if k == "remove":
                     scripts.append(f"ctx._source.remove('{v}');")
                     continue
-                if (not isinstance(k, str) or not v) and k != "available_int":
+                if not isinstance(k, str) or not v:
                     continue
                 if isinstance(v, str):
                     scripts.append(f"ctx._source.{k} = '{v}'")
@@ -321,69 +365,71 @@ class ESConnection(DocStoreConnection):
                     scripts.append(f"ctx._source.{k} = {v}")
                 else:
                     raise Exception(
-                        f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
-        ubq = UpdateByQuery(
-            index=indexName).using(
-            self.es).query(bqry)
-        ubq = ubq.script(source="; ".join(scripts))
-        ubq = ubq.params(refresh=True)
-        ubq = ubq.params(slices=5)
-        ubq = ubq.params(conflicts="proceed")
-        for i in range(3):
-            try:
-                _ = ubq.execute()
-                return True
-            except Exception as e:
-                logger.error("ESConnection.update got exception: " + str(e))
-                if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
-                    continue
-        return False
+                        f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int or str."
+                    )
+
+            body = {
+                "script": {
+                    "source": "; ".join(scripts),
+                    "lang": "painless"
+                },
+                "query": query
+            }
+
+            for i in range(ATTEMPT_TIME):
+                try:
+                    res = self.es.update_by_query(index=indexName, body=body, refresh=True, conflicts="proceed")
+                    return res.get("updated", 0) > 0
+                except Exception as e:
+                    logger.exception(f"ESConnection.update_by_query got exception: {str(e)}")
+                    if "Timeout" in str(e):
+                        continue
+            return False
+
 
     def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:
-        qry = None
-        assert "_id" not in condition
+        query = None
+
         if "id" in condition:
             chunk_ids = condition["id"]
             if not isinstance(chunk_ids, list):
                 chunk_ids = [chunk_ids]
-            qry = Q("ids", values=chunk_ids)
+            query = {"ids": {"values": chunk_ids}}
         else:
-            qry = Q("bool")
+            query = {"bool": {"must": []}}
             for k, v in condition.items():
                 if isinstance(v, list):
-                    qry.must.append(Q("terms", **{k: v}))
-                elif isinstance(v, str) or isinstance(v, int):
-                    qry.must.append(Q("term", **{k: v}))
+                    query["bool"]["must"].append({"terms": {k: v}})
+                elif isinstance(v, (str, int)):
+                    query["bool"]["must"].append({"term": {k: v}})
                 else:
-                    raise Exception("Condition value must be int, str or list.")
-        logger.debug("ESConnection.delete query: " + json.dumps(qry.to_dict()))
+                    raise Exception("Condition value must be int, str, or list.")
+
+        body = {"query": query}
+
         for _ in range(ATTEMPT_TIME):
             try:
-                res = self.es.delete_by_query(
-                    index=indexName,
-                    body=Search().query(qry).to_dict(),
-                    refresh=True)
+                res = self.es.delete_by_query(index=indexName, body=body, refresh=True)
                 return res["deleted"]
             except Exception as e:
-                logger.warning("ESConnection.delete got exception: " + str(e))
-                if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
+                logger.warning(f"ESConnection.delete got exception: {e}")
+                if "Timeout" in str(e):
                     time.sleep(3)
                     continue
-                if re.search(r"(not_found)", str(e), re.IGNORECASE):
+                if "not_found" in str(e).lower():
                     return 0
         return 0
 
-    """
-    Helper functions for search result
-    """
 
     def getTotal(self, res):
-        if isinstance(res["hits"]["total"], type({})):
+        if isinstance(res["hits"]["total"], dict):
             return res["hits"]["total"]["value"]
         return res["hits"]["total"]
 
+
     def getChunkIds(self, res):
         return [d["_id"] for d in res["hits"]["hits"]]
+
 
     def __getSource(self, res):
         rr = []
@@ -392,6 +438,7 @@ class ESConnection(DocStoreConnection):
             d["_source"]["_score"] = d["_score"]
             rr.append(d["_source"])
         return rr
+
 
     def getFields(self, res, fields: list[str]) -> dict[str, dict]:
         res_fields = {}
@@ -405,12 +452,10 @@ class ESConnection(DocStoreConnection):
                     continue
                 if not isinstance(v, str):
                     m[n] = str(m[n])
-                # if n.find("tks") > 0:
-                #     m[n] = rmSpace(m[n])
-
             if m:
                 res_fields[d["id"]] = m
         return res_fields
+
 
     def getHighlight(self, res, keywords: list[str], fieldnm: str):
         ans = {}
@@ -429,13 +474,13 @@ class ESConnection(DocStoreConnection):
             for t in re.split(r"[.?!;\n]", txt):
                 for w in keywords:
                     t = re.sub(r"(^|[ .?/'\"\(\)!,:;-])(%s)([ .?/'\"\(\)!,:;-])" % re.escape(w), r"\1<em>\2</em>\3", t,
-                               flags=re.IGNORECASE | re.MULTILINE)
+                            flags=re.IGNORECASE | re.MULTILINE)
                 if not re.search(r"<em>[^<>]+</em>", t, flags=re.IGNORECASE | re.MULTILINE):
                     continue
                 txts.append(t)
             ans[d["_id"]] = "...".join(txts) if txts else "...".join([a for a in list(hlts.items())[0][1]])
-
         return ans
+
 
     def getAggregation(self, res, fieldnm: str):
         agg_field = "aggs_" + fieldnm
@@ -444,34 +489,16 @@ class ESConnection(DocStoreConnection):
         bkts = res["aggregations"][agg_field]["buckets"]
         return [(b["key"], b["doc_count"]) for b in bkts]
 
-    """
-    SQL
-    """
 
     def sql(self, sql: str, fetch_size: int, format: str):
         logger.debug(f"ESConnection.sql get sql: {sql}")
         sql = re.sub(r"[ `]+", " ", sql)
         sql = sql.replace("%", "")
-        replaces = []
-        for r in re.finditer(r" ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'", sql):
-            fld, v = r.group(1), r.group(3)
-            match = " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(
-                fld, rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(v)))
-            replaces.append(
-                ("{}{}'{}'".format(
-                    r.group(1),
-                    r.group(2),
-                    r.group(3)),
-                 match))
-
-        for p, r in replaces:
-            sql = sql.replace(p, r, 1)
-        logger.debug(f"ESConnection.sql to es: {sql}")
+        body = {"query": sql, "fetch_size": fetch_size}
 
         for i in range(ATTEMPT_TIME):
             try:
-                res = self.es.sql.query(body={"query": sql, "fetch_size": fetch_size}, format=format,
-                                        request_timeout="2s")
+                res = self.es.sql.query(body=body, format=format, request_timeout=2)
                 return res
             except ConnectionTimeout:
                 logger.exception("ESConnection.sql timeout")
@@ -481,3 +508,4 @@ class ESConnection(DocStoreConnection):
                 return None
         logger.error("ESConnection.sql timeout for 3 times!")
         return None
+

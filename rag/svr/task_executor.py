@@ -16,10 +16,13 @@
 # from beartype import BeartypeConf
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
-
+import random
 import sys
 from api.utils.log_utils import initRootLogger
-from graphrag.utils import get_llm_cache, set_llm_cache
+from graphrag.general.index import WithCommunity, WithResolution, Dealer
+from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
+from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
+from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 
 CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
 CONSUMER_NAME = "task_executor_" + CONSUMER_NO
@@ -44,7 +47,7 @@ import numpy as np
 from peewee import DoesNotExist
 
 from api.db import LLMType, ParserType, TaskStatus
-from api.db.services.dialog_service import keyword_extraction, question_proposal
+from api.db.services.dialog_service import keyword_extraction, question_proposal, content_tagging
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService
@@ -53,13 +56,14 @@ from api import settings
 from api.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
-    knowledge_graph, email
+    email, tag
 from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
-from rag.settings import DOC_MAXIMUM_SIZE, SVR_QUEUE_NAME, print_rag_settings
+from rag.settings import DOC_MAXIMUM_SIZE, SVR_QUEUE_NAME, print_rag_settings, TAG_FLD, PAGERANK_FLD
 from rag.utils import num_tokens_from_string
 from rag.utils.redis_conn import REDIS_CONN, Payload
 from rag.utils.storage_factory import STORAGE_IMPL
+from api.db.services.knowledgebase_service import KnowledgebaseService
 
 BATCH_SIZE = 64
 
@@ -78,12 +82,13 @@ FACTORY = {
     ParserType.ONE.value: one,
     ParserType.AUDIO.value: audio,
     ParserType.EMAIL.value: email,
-    ParserType.KG.value: knowledge_graph
+    ParserType.KG.value: naive,
+    ParserType.TAG.value: tag
 }
 
 CONSUMER_NAME = "task_consumer_" + CONSUMER_NO
 PAYLOAD: Payload | None = None
-BOOT_AT = datetime.now().isoformat()
+BOOT_AT = datetime.now().astimezone().isoformat(timespec="milliseconds")
 PENDING_TASKS = 0
 LAG_TASKS = 0
 
@@ -92,9 +97,11 @@ DONE_TASKS = 0
 FAILED_TASKS = 0
 CURRENT_TASK = None
 
+
 class TaskCanceledException(Exception):
     def __init__(self, msg):
         self.msg = msg
+
 
 def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
     global PAYLOAD
@@ -115,7 +122,10 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
 
     if to_page > 0:
         if msg:
-            msg = f"Page({from_page + 1}~{to_page + 1}): " + msg
+            if from_page < to_page:
+                msg = f"Page({from_page + 1}~{to_page + 1}): " + msg
+    if msg:
+        msg = datetime.now().strftime("%H:%M:%S") + " " + msg
     d = {"progress_msg": msg}
     if prog is not None:
         d["progress"] = prog
@@ -172,14 +182,12 @@ def collect():
         logging.info(f"collect task {msg['id']} {state}")
         return None
 
-    if msg.get("type", "") == "raptor":
-        task["task_type"] = "raptor"
+    task["task_type"] = msg.get("task_type", "")
     return task
 
 
 def get_storage_binary(bucket, name):
     return STORAGE_IMPL.get(bucket, name)
-
 
 def build_chunks(task, progress_callback):
     if task["size"] > DOC_MAXIMUM_SIZE:
@@ -195,7 +203,8 @@ def build_chunks(task, progress_callback):
         logging.info("From minio({}) {}/{}".format(timer() - st, task["location"], task["name"]))
     except TimeoutError:
         progress_callback(-1, "Internal server error: Fetch file from minio timeout. Could you try it again.")
-        logging.exception("Minio {}/{} got timeout: Fetch file from minio timeout.".format(task["location"], task["name"]))
+        logging.exception(
+            "Minio {}/{} got timeout: Fetch file from minio timeout.".format(task["location"], task["name"]))
         raise
     except Exception as e:
         if re.search("(No such file|not found)", str(e)):
@@ -217,18 +226,22 @@ def build_chunks(task, progress_callback):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    e, kb_name = KnowledgebaseService.get_by_id(task["kb_id"])
+    if not e or kb_name.status != "1":
+        raise Exception('Error when getting kb name from id')
     docs = []
     doc = {
         "doc_id": task["doc_id"],
         "kb_id": str(task["kb_id"])
     }
     if task["pagerank"]:
-        doc["pagerank_fea"] = int(task["pagerank"])
+        doc[PAGERANK_FLD] = int(task["pagerank"])
     el = 0
     for ck in cks:
+        ck["text"] = ck.pop("content_with_weight")
         d = copy.deepcopy(doc)
         d.update(ck)
-        d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
+        d["id"] = xxhash.xxh64((ck["text"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
         d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
         d["create_timestamp_flt"] = datetime.now().timestamp()
         if not d.get("image"):
@@ -248,7 +261,8 @@ def build_chunks(task, progress_callback):
             STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue())
             el += timer() - st
         except Exception:
-            logging.exception("Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["_id"]))
+            logging.exception(
+                "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
             raise
 
         d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
@@ -261,13 +275,13 @@ def build_chunks(task, progress_callback):
         progress_callback(msg="Start to generate keywords for every chunk ...")
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
         for d in docs:
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords",
+            cached = get_llm_cache(chat_mdl.llm_name, d["text"], "keywords",
                                    {"topn": task["parser_config"]["auto_keywords"]})
             if not cached:
-                cached = keyword_extraction(chat_mdl, d["content_with_weight"],
+                cached = keyword_extraction(chat_mdl, d["text"],
                                             task["parser_config"]["auto_keywords"])
                 if cached:
-                    set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords",
+                    set_llm_cache(chat_mdl.llm_name, d["text"], cached, "keywords",
                                   {"topn": task["parser_config"]["auto_keywords"]})
 
             d["important_kwd"] = cached.split(",")
@@ -279,24 +293,55 @@ def build_chunks(task, progress_callback):
         progress_callback(msg="Start to generate questions for every chunk ...")
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
         for d in docs:
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question",
+            cached = get_llm_cache(chat_mdl.llm_name, d["text"], "question",
                                    {"topn": task["parser_config"]["auto_questions"]})
             if not cached:
-                cached = question_proposal(chat_mdl, d["content_with_weight"], task["parser_config"]["auto_questions"])
+                cached = question_proposal(chat_mdl, d["text"], task["parser_config"]["auto_questions"])
                 if cached:
-                    set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "question",
+                    set_llm_cache(chat_mdl.llm_name, d["text"], cached, "question",
                                   {"topn": task["parser_config"]["auto_questions"]})
 
             d["question_kwd"] = cached.split("\n")
             d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
         progress_callback(msg="Question generation completed in {:.2f}s".format(timer() - st))
 
+    if task["kb_parser_config"].get("tag_kb_ids", []):
+        progress_callback(msg="Start to tag for every chunk ...")
+        kb_ids = task["kb_parser_config"]["tag_kb_ids"]
+        tenant_id = task["tenant_id"]
+        topn_tags = task["kb_parser_config"].get("topn_tags", 3)
+        S = 1000
+        st = timer()
+        examples = []
+        all_tags = get_tags_from_cache(kb_ids)
+        if not all_tags:
+            all_tags = settings.retrievaler.all_tags_in_portion(tenant_id, kb_ids, S)
+            set_tags_to_cache(kb_ids, all_tags)
+        else:
+            all_tags = json.loads(all_tags)
+
+        chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
+        for d in docs:
+            if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S):
+                examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
+                continue
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], all_tags, {"topn": topn_tags})
+            if not cached:
+                cached = content_tagging(chat_mdl, d["content_with_weight"], all_tags,
+                                         random.choices(examples, k=2) if len(examples)>2 else examples,
+                                         topn=topn_tags)
+                if cached:
+                    set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, all_tags, {"topn": topn_tags})
+            d[TAG_FLD] = json.loads(cached)
+
+        progress_callback(msg="Tagging completed in {:.2f}s".format(timer() - st))
+
     return docs
 
 
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    return settings.docStoreConn.createIdx(idxnm, row.get("kb_id",""), vector_size)
+    return settings.docStoreConn.createIdx(idxnm, row.get("kb_id", ""), vector_size)
 
 
 def embedding(docs, mdl, parser_config=None, callback=None):
@@ -308,22 +353,17 @@ def embedding(docs, mdl, parser_config=None, callback=None):
         tts.append(d.get("docnm_kwd", "Title"))
         c = "\n".join(d.get("question_kwd", []))
         if not c:
-            c = d["content_with_weight"]
+            c = d["text"]
         c = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", c)
+        if not c:
+            c = "None"
         cnts.append(c)
 
     tk_count = 0
     if len(tts) == len(cnts):
-        tts_ = np.array([])
-        for i in range(0, len(tts), batch_size):
-            vts, c = mdl.encode(tts[i: i + batch_size])
-            if len(tts_) == 0:
-                tts_ = vts
-            else:
-                tts_ = np.concatenate((tts_, vts), axis=0)
-            tk_count += c
-            callback(prog=0.6 + 0.1 * (i + 1) / len(tts), msg="")
-        tts = tts_
+        vts, c = mdl.encode(tts[0: 1])
+        tts = np.concatenate([vts for _ in range(len(tts))], axis=0)
+        tk_count += c
 
     cnts_ = np.array([])
     for i in range(0, len(cnts), batch_size):
@@ -345,18 +385,16 @@ def embedding(docs, mdl, parser_config=None, callback=None):
     for i, d in enumerate(docs):
         v = vects[i].tolist()
         vector_size = len(v)
-        d["q_%d_vec" % len(v)] = v
+        d["vector_field"] = v
     return tk_count, vector_size
 
 
-def run_raptor(row, chat_mdl, embd_mdl, callback=None):
-    vts, _ = embd_mdl.encode(["ok"])
-    vector_size = len(vts[0])
-    vctr_nm = "q_%d_vec" % vector_size
+def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
     chunks = []
+    vctr_nm = "q_%d_vec"%vector_size
     for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
-                                             fields=["content_with_weight", vctr_nm]):
-        chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+                                             fields=["text", vctr_nm]):
+        chunks.append((d["text"], np.array(d[vctr_nm])))
 
     raptor = Raptor(
         row["parser_config"]["raptor"].get("max_cluster", 64),
@@ -375,7 +413,7 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         "title_tks": rag_tokenizer.tokenize(row["name"])
     }
     if row["pagerank"]:
-        doc["pagerank_fea"] = int(row["pagerank"])
+        doc[PAGERANK_FLD] = int(row["pagerank"])
     res = []
     tk_count = 0
     for content, vctr in chunks[original_length:]:
@@ -384,17 +422,33 @@ def run_raptor(row, chat_mdl, embd_mdl, callback=None):
         d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
         d["create_timestamp_flt"] = datetime.now().timestamp()
         d[vctr_nm] = vctr.tolist()
-        d["content_with_weight"] = content
+        d["text"] = content
         d["content_ltks"] = rag_tokenizer.tokenize(content)
         d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
         res.append(d)
         tk_count += num_tokens_from_string(content)
-    return res, tk_count, vector_size
+    return res, tk_count
 
 
+def run_graphrag(row, chat_model, language, embedding_model, callback=None):
+    chunks = []
+    for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
+                                             fields=["content_with_weight", "doc_id"]):
+        chunks.append((d["doc_id"], d["content_with_weight"]))
+
+    Dealer(LightKGExt if row["parser_config"]["graphrag"]["method"] != 'general' else GeneralKGExt,
+                    row["tenant_id"],
+                    str(row["kb_id"]),
+                    chat_model,
+                    chunks=chunks,
+                    language=language,
+                    entity_types=row["parser_config"]["graphrag"]["entity_types"],
+                    embed_bdl=embedding_model,
+                    callback=callback)
 
 
 def do_handle_task(task):
+    
     task_id = task["id"]
     task_from_page = task["from_page"]
     task_to_page = task["to_page"]
@@ -409,6 +463,13 @@ def do_handle_task(task):
 
     # prepare the progress callback function
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
+
+    # FIXME: workaround, Infinity doesn't support table parsing method, this check is to notify user
+    lower_case_doc_engine = settings.DOC_ENGINE.lower()
+    if lower_case_doc_engine == 'infinity' and task['parser_id'].lower() == 'table':
+        error_message = "Table parsing method is not supported by Infinity, please use other parsing methods or use Elasticsearch as the document engine."
+        progress_callback(-1, msg=error_message)
+        raise Exception(error_message)
 
     try:
         task_canceled = TaskService.do_cancel(task_id)
@@ -428,14 +489,17 @@ def do_handle_task(task):
         logging.exception(error_message)
         raise
 
+    vts, _ = embedding_model.encode(["ok"])
+    vector_size = len(vts[0])
+    init_kb(task, vector_size)
+
     # Either using RAPTOR or Standard chunking methods
     if task.get("task_type", "") == "raptor":
         try:
             # bind LLM for raptor
             chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-
             # run RAPTOR
-            chunks, token_count, vector_size = run_raptor(task, chat_model, embedding_model, progress_callback)
+            chunks, token_count = run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
         except TaskCanceledException:
             raise
         except Exception as e:
@@ -443,10 +507,61 @@ def do_handle_task(task):
             progress_callback(-1, msg=error_message)
             logging.exception(error_message)
             raise
+    # Either using graphrag or Standard chunking methods
+    elif task.get("task_type", "") == "graphrag":
+        start_ts = timer()
+        try:
+            chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+            run_graphrag(task, chat_model, task_language, embedding_model, progress_callback)
+            progress_callback(prog=1.0, msg="Knowledge Graph is done ({:.2f}s)".format(timer() - start_ts))
+        except TaskCanceledException:
+            raise
+        except Exception as e:
+            error_message = f'Fail to bind LLM used by Knowledge Graph: {str(e)}'
+            progress_callback(-1, msg=error_message)
+            logging.exception(error_message)
+            raise
+        return
+    elif task.get("task_type", "") == "graph_resolution":
+        start_ts = timer()
+        try:
+            chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+            WithResolution(
+                task["tenant_id"], str(task["kb_id"]),chat_model, embedding_model,
+                progress_callback
+            )
+            progress_callback(prog=1.0, msg="Knowledge Graph resolution is done ({:.2f}s)".format(timer() - start_ts))
+        except TaskCanceledException:
+            raise
+        except Exception as e:
+            error_message = f'Fail to bind LLM used by Knowledge Graph resolution: {str(e)}'
+            progress_callback(-1, msg=error_message)
+            logging.exception(error_message)
+            raise
+        return
+    elif task.get("task_type", "") == "graph_community":
+        start_ts = timer()
+        try:
+            chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
+            WithCommunity(
+                task["tenant_id"], str(task["kb_id"]), chat_model, embedding_model,
+                progress_callback
+            )
+            progress_callback(prog=1.0, msg="GraphRAG community reports generation is done ({:.2f}s)".format(timer() - start_ts))
+        except TaskCanceledException:
+            raise
+        except Exception as e:
+            error_message = f'Fail to bind LLM used by GraphRAG community reports generation: {str(e)}'
+            progress_callback(-1, msg=error_message)
+            logging.exception(error_message)
+            raise
+        return
     else:
         # Standard chunking methods
         start_ts = timer()
-        chunks = build_chunks(task, progress_callback)
+        chunks, kb_name = build_chunks(task, progress_callback)
+        kb_name = str(kb_name)
+        task["kb_name"] = kb_name
         logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
         if chunks is None:
             return
@@ -469,14 +584,13 @@ def do_handle_task(task):
         logging.info(progress_message)
         progress_callback(msg=progress_message)
 
-    # logging.info(f"task_executor init_kb index {search.index_name(task_tenant_id)} embedding_model {embedding_model.llm_name} vector length {vector_size}")
-    init_kb(task, vector_size)
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
     doc_store_result = ""
     es_bulk_size = 4
     for b in range(0, len(chunks), es_bulk_size):
-        doc_store_result = settings.docStoreConn.insert(chunks[b:b + es_bulk_size], search.index_name(task_tenant_id), task_dataset_id)
+        doc_store_result = settings.docStoreConn.insert(chunks[b:b + es_bulk_size], search.index_name(task_tenant_id),
+                                                        task_dataset_id)
         if b % 128 == 0:
             progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
         if doc_store_result:
@@ -489,15 +603,21 @@ def do_handle_task(task):
             TaskService.update_chunk_ids(task["id"], chunk_ids_str)
         except DoesNotExist:
             logging.warning(f"do_handle_task update_chunk_ids failed since task {task['id']} is unknown.")
-            doc_store_result = settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id)
+            doc_store_result = settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id),
+                                                            task_dataset_id)
             return
-    logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page, task_to_page, len(chunks), timer() - start_ts))
+    logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page,
+                                                                                     task_to_page, len(chunks),
+                                                                                     timer() - start_ts))
 
     DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
 
     time_cost = timer() - start_ts
     progress_callback(prog=1.0, msg="Done ({:.2f}s)".format(time_cost))
-    logging.info("Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(task_document_name, task_from_page, task_to_page, len(chunks), token_count, time_cost))
+    logging.info(
+        "Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(task_document_name, task_from_page,
+                                                                                   task_to_page, len(chunks),
+                                                                                   token_count, time_cost))
 
 
 def handle_task():
@@ -522,12 +642,12 @@ def handle_task():
             except Exception:
                 pass
             logging.debug("handle_task got TaskCanceledException", exc_info=True)
-        except Exception:
+        except Exception as e:
             with mt_lock:
                 FAILED_TASKS += 1
                 CURRENT_TASK = None
             try:
-                set_progress(task["id"], prog=-1, msg="handle_task got exception, please check log")
+                set_progress(task["id"], prog=-1, msg=f"[Exception]: {e}")
             except Exception:
                 pass
             logging.exception(f"handle_task got exception for task {json.dumps(task)}")
@@ -550,7 +670,7 @@ def report_status():
             with mt_lock:
                 heartbeat = json.dumps({
                     "name": CONSUMER_NAME,
-                    "now": now.isoformat(),
+                    "now": now.astimezone().isoformat(timespec="milliseconds"),
                     "boot_at": BOOT_AT,
                     "pending": PENDING_TASKS,
                     "lag": LAG_TASKS,

@@ -1,0 +1,4 @@
+services:
+  ragflow:
+    volumes:
+      - ./ragflow:/home/jakub/work/ragflow  # Mount your local code directory

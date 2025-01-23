@@ -165,7 +165,7 @@ def init_settings():
     DOC_ENGINE = os.environ.get('DOC_ENGINE', "elasticsearch")
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
-        docStoreConn = rag.utils.es_conn.ESConnection()
+        docStoreConn = rag.utils.es_conn.OSConnection()
     elif lower_case_doc_engine == "infinity":
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     else:

@@ -6,7 +6,7 @@ mysql:
   user: 'root'
   password: 'infini_rag_flow'
   host: 'mysql'
-  port: 5455
+  port: 3306
   max_connections: 100
   stale_timeout: 30
 minio:
@@ -14,15 +14,15 @@ minio:
   password: 'infini_rag_flow'
   host: 'minio:9000'
 es:
-  hosts: 'http://es01:1200'
-  username: 'elastic'
-  password: 'infini_rag_flow'
+  hosts: 'http://ragflow-opensearch-01:9200'
+  username: 'opensearch_username'
+  password: 'opensearch_password'
 infinity:
   uri: 'infinity:23817'
   db_name: 'default_db'
 redis:
   db: 1
-  password: 'infini_rag_flow' 
+  password: 'infini_rag_flow'
   host: 'redis:6379'
 
 # postgres:
@@ -34,7 +34,6 @@ redis:
 #   max_connections: 100
 #   stale_timeout: 30
 # s3:
-#   endpoint: 'endpoint'
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
 #   region: 'region'
