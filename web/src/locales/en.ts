@@ -520,6 +520,8 @@ This procedure will improve precision of retrieval by adding more information to
       useKnowledgeGraph: 'Use knowledge graph',
       useKnowledgeGraphTip:
         'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
+      keyword: 'Keyword analysis',
+      keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphesize during the relevance omputation.`,
     },
     setting: {
       profile: 'Profile',

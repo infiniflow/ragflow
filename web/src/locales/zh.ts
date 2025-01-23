@@ -521,6 +521,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       useKnowledgeGraph: '使用知识图谱',
       useKnowledgeGraphTip:
         '它将检索相关实体、关系和社区报告的描述，这将增强多跳和复杂问题的推理。',
+      keyword: '关键词分析',
+      keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
     },
     setting: {
       profile: '概要',
