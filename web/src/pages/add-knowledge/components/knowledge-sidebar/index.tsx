@@ -79,7 +79,7 @@ const KnowledgeSidebar = () => {
       ),
     ];
 
-    if (!isEmpty(data.graph)) {
+    if (!isEmpty(data?.graph)) {
       list.push(
         getItem(
           KnowledgeRouteKey.KnowledgeGraph,
