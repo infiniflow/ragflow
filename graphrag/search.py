@@ -251,11 +251,11 @@ class KGSearch(Dealer):
                 break
 
         if ents:
-            ents = "\n-Entities-\n{}".format(pd.DataFrame(ents).to_csv())
+            ents = "\n---- Entities ----\n{}".format(pd.DataFrame(ents).to_csv())
         else:
             ents = ""
         if relas:
-            relas = "\n-Relations-\n{}".format(pd.DataFrame(relas).to_csv())
+            relas = "\n---- Relations ----\n{}".format(pd.DataFrame(relas).to_csv())
         else:
             relas = ""
 
@@ -296,7 +296,7 @@ class KGSearch(Dealer):
 
         if not txts:
             return ""
-        return "\n-Community Report-\n" + "\n".join(txts)
+        return "\n---- Community Report ----\n" + "\n".join(txts)
 
 
 if __name__ == "__main__":
