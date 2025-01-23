@@ -59,7 +59,7 @@ class Dealer:
             if key in req and req[key] is not None:
                 condition[field] = req[key]
         # TODO(yzc): `available_int` is nullable however infinity doesn't support nullable columns.
-        for key in ["knowledge_graph_kwd", "available_int"]:
+        for key in ["knowledge_graph_kwd", "available_int", "entity_kwd", "from_entity_kwd", "to_entity_kwd", "removed_kwd"]:
             if key in req and req[key] is not None:
                 condition[key] = req[key]
         return condition
@@ -198,6 +198,11 @@ class Dealer:
             return answer, set([])
 
         ans_v, _ = embd_mdl.encode(pieces_)
+        for i in range(len(chunk_v)):
+            if len(ans_v[0]) != len(chunk_v[i]):
+                chunk_v[i] = [0.0]*len(ans_v[0])
+                logging.warning("The dimension of query and chunk do not match: {} vs. {}".format(len(ans_v[0]), len(chunk_v[i])))
+
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(
             len(ans_v[0]), len(chunk_v[0]))
 
@@ -434,6 +439,8 @@ class Dealer:
             es_res = self.dataStore.search(fields, [], condition, [], OrderByExpr(), p, bs, index_name(tenant_id),
                                            kb_ids)
             dict_chunks = self.dataStore.getFields(es_res, fields)
+            for id, doc in dict_chunks.items():
+                doc["id"] = id
             if dict_chunks:
                 res.extend(dict_chunks.values())
             if len(dict_chunks.values()) < bs:

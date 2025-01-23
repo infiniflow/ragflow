@@ -36,6 +36,8 @@ export default {
   update_kb: `${api_host}/kb/update`,
   rm_kb: `${api_host}/kb/rm`,
   get_kb_detail: `${api_host}/kb/detail`,
+  getKnowledgeGraph: (knowledgeId: string) =>
+    `${api_host}/kb/${knowledgeId}/knowledge_graph`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,

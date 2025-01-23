@@ -2,6 +2,7 @@ export enum KnowledgeRouteKey {
   Dataset = 'dataset',
   Testing = 'testing',
   Configuration = 'configuration',
+  KnowledgeGraph = 'knowledgeGraph',
 }
 
 export const DatasetBaseKey = 'dataset';

@@ -33,8 +33,17 @@ export interface IParserConfig {
   layout_recognize?: boolean;
   pages: any[];
   raptor?: Raptor;
+  graphrag?: GraphRag;
 }
 
 interface Raptor {
   use_raptor: boolean;
+}
+
+interface GraphRag {
+  community?: boolean;
+  entity_types?: string[];
+  method?: string;
+  resolution?: boolean;
+  use_graphrag?: boolean;
 }

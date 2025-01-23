@@ -202,7 +202,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
-            "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": True})
+            "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -231,8 +231,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if parser_config.get("layout_recognize", True) else PlainParser()
-        sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+        pdf_parser = Pdf()
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
+        sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
+                                      callback=callback)
         res = tokenize_table(tables, doc, is_english)
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):

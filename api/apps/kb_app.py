@@ -13,6 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
+import logging
+
 from flask import request
 from flask_login import login_required, current_user
 
@@ -273,3 +276,40 @@ def rename_tags(kb_id):
                                      search.index_name(kb.tenant_id),
                                      kb_id)
     return get_json_result(data=True)
+
+
+@manager.route('/<kb_id>/knowledge_graph', methods=['GET'])  # noqa: F821
+@login_required
+def knowledge_graph(kb_id):
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    _, kb = KnowledgebaseService.get_by_id(kb_id)
+    req = {
+        "kb_id": [kb_id],
+        "knowledge_graph_kwd": ["graph"]
+    }
+    obj = {"graph": {}, "mind_map": {}}
+    try:
+        sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(data=obj)
+
+    for id in sres.ids[:1]:
+        ty = sres.field[id]["knowledge_graph_kwd"]
+        try:
+            content_json = json.loads(sres.field[id]["content_with_weight"])
+        except Exception:
+            continue
+
+        obj[ty] = content_json
+
+    if "nodes" in obj["graph"]:
+        obj["graph"]["nodes"] = sorted(obj["graph"]["nodes"], key=lambda x: x.get("pagerank", 0), reverse=True)[:256]
+    if "edges" in obj["graph"]:
+        obj["graph"]["edges"] = sorted(obj["graph"]["edges"], key=lambda x: x.get("weight", 0), reverse=True)[:128]
+    return get_json_result(data=obj)

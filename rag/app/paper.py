@@ -144,7 +144,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
     """
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        if not kwargs.get("parser_config", {}).get("layout_recognize", True):
+        if kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
             paper = {
                 "title": filename,
