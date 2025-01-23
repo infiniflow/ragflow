@@ -107,6 +107,15 @@ const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
       >
         <Switch />
       </Form.Item>
+      <Form.Item
+        label={t('keyword')}
+        valuePropName="checked"
+        name={['prompt_config', 'keyword']}
+        tooltip={t('keywordTip')}
+        initialValue={false}
+      >
+        <Switch />
+      </Form.Item>
       {/* <Form.Item
         label={t('selfRag')}
         valuePropName="checked"
