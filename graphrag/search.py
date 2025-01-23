@@ -23,7 +23,7 @@ from rag.nlp.search import Dealer
 
 
 class KGSearch(Dealer):
-    def search(self, req, idxnm: str | list[str], kb_ids: list[str], emb_mdl=None, highlight=False):
+    def search(self, req, idxnm: str | list[str], kb_ids: list[str], emb_mdl=None, highlight=False, rank_feature: dict | None = None):
         def merge_into_first(sres, title="") -> dict[str, str]:
             if not sres:
                 return {}
@@ -65,7 +65,7 @@ class KGSearch(Dealer):
 
         fusionExpr = FusionExpr("weighted_sum", 32, {"weights": "0.5, 0.5"})
 
-        ent_res = self.dataStore.search(src, list(), condition, [matchText, matchDense, fusionExpr], OrderByExpr(), 0, 32, idxnm, kb_ids)
+        ent_res = self.dataStore.search(src, list(), condition, [matchText, matchDense, fusionExpr], OrderByExpr(), 0, 32, idxnm, kb_ids, rank_feature=rank_feature)
         ent_res_fields = self.dataStore.getFields(ent_res, src)
         entities = [d["name_kwd"] for d in ent_res_fields.values() if d.get("name_kwd")]
         ent_ids = self.dataStore.getChunkIds(ent_res)
@@ -76,7 +76,7 @@ class KGSearch(Dealer):
         ## Community retrieval
         condition = self.get_filters(req)
         condition.update({"entities_kwd": entities, "knowledge_graph_kwd": ["community_report"]})
-        comm_res = self.dataStore.search(src, list(), condition, [matchText, matchDense, fusionExpr], OrderByExpr(), 0, 32, idxnm, kb_ids)
+        comm_res = self.dataStore.search(src, list(), condition, [matchText, matchDense, fusionExpr], OrderByExpr(), 0, 32, idxnm, kb_ids, rank_feature=rank_feature)
         comm_res_fields = self.dataStore.getFields(comm_res, src)
         comm_ids = self.dataStore.getChunkIds(comm_res)
         comm_content = merge_into_first(comm_res_fields, "-Community Report-")
@@ -86,7 +86,7 @@ class KGSearch(Dealer):
         ## Text content retrieval
         condition = self.get_filters(req)
         condition.update({"knowledge_graph_kwd": ["text"]})
-        txt_res = self.dataStore.search(src, list(), condition, [matchText, matchDense, fusionExpr], OrderByExpr(), 0, 6, idxnm, kb_ids)
+        txt_res = self.dataStore.search(src, list(), condition, [matchText, matchDense, fusionExpr], OrderByExpr(), 0, 6, idxnm, kb_ids, rank_feature=rank_feature)
         txt_res_fields = self.dataStore.getFields(txt_res, src)
         txt_ids = self.dataStore.getChunkIds(txt_res)
         txt_content = merge_into_first(txt_res_fields, "-Original Content-")
