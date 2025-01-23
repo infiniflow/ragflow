@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import hashlib
 from datetime import datetime
 
 import peewee
@@ -24,6 +25,7 @@ from api.db.db_models import User, Tenant
 from api.db.services.common_service import CommonService
 from api.utils import get_uuid, current_timestamp, datetime_format
 from api.db import StatusEnum
+from rag.settings import MINIO
 
 
 class UserService(CommonService):
@@ -47,6 +49,12 @@ class UserService(CommonService):
             return user
         else:
             return None
+
+    @classmethod
+    @DB.connection_context()
+    def user_gateway(cls, tenant_id):
+        hashobj = hashlib.sha256(tenant_id.encode("utf-8"))
+        return int(hashobj.hexdigest(), 16)%len(MINIO)
 
     @classmethod
     @DB.connection_context()
