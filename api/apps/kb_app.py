@@ -287,7 +287,7 @@ def knowledge_graph(kb_id):
             message='No authorization.',
             code=settings.RetCode.AUTHENTICATION_ERROR
         )
-    e, kb = KnowledgebaseService.get_by_id(kb_id)
+    _, kb = KnowledgebaseService.get_by_id(kb_id)
     req = {
         "kb_id": [kb_id],
         "knowledge_graph_kwd": ["graph"]
