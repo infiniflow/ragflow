@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 
 from flask import request
 from flask_login import login_required, current_user
@@ -291,8 +292,13 @@ def knowledge_graph(kb_id):
         "kb_id": [kb_id],
         "knowledge_graph_kwd": ["graph"]
     }
-    sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
     obj = {"graph": {}, "mind_map": {}}
+    try:
+        sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(data=obj)
+
     for id in sres.ids[:1]:
         ty = sres.field[id]["knowledge_graph_kwd"]
         try:
