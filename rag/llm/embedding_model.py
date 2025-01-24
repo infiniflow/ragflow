@@ -627,7 +627,7 @@ class CoHereEmbed(Base):
         )
 
 
-class TogetherAIEmbed(OllamaEmbed):
+class TogetherAIEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url="https://api.together.xyz/v1"):
         if not base_url:
             base_url = "https://api.together.xyz/v1"
