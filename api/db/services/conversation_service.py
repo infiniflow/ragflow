@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import time
 from uuid import uuid4
 from api.db import StatusEnum
 from api.db.db_models import Conversation, DB
@@ -75,9 +76,9 @@ def structure_answer(conv, ans, message_id, session_id):
     if not conv.message:
         conv.message = []
     if not conv.message or conv.message[-1].get("role", "") != "assistant":
-        conv.message.append({"role": "assistant", "content": ans["answer"], "id": message_id})
+        conv.message.append({"role": "assistant", "content": ans["answer"], "created_at": time.time(), "id": message_id})
     else:
-        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "id": message_id}
+        conv.message[-1] = {"role": "assistant", "content": ans["answer"], "created_at": time.time(), "id": message_id}
     if conv.reference:
         conv.reference[-1] = reference
     return ans
@@ -94,7 +95,7 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
             "id": session_id,
             "dialog_id": chat_id,
             "name": name,
-            "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}],
+            "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue"), "created_at": time.time()}],
             "user_id": kwargs.get("user_id", "")
         }
         ConversationService.save(**conv)
@@ -166,7 +167,7 @@ def iframe_completion(dialog_id, question, session_id=None, stream=True, **kwarg
             "id": session_id,
             "dialog_id": dialog_id,
             "user_id": kwargs.get("user_id", ""),
-            "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
+            "message": [{"role": "assistant", "content": dia.prompt_config["prologue"], "created_at": time.time()}]
         }
         API4ConversationService.save(**conv)
         yield "data:" + json.dumps({"code": 0, "message": "",
