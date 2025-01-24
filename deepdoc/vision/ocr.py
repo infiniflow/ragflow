@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 import copy
 import time
 import os
@@ -75,17 +76,32 @@ def load_model(model_dir, nm):
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     options.intra_op_num_threads = 2
     options.inter_op_num_threads = 2
-    if False and ort.get_device() == "GPU":
+
+    # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
+    # Shrink GPU memory after execution
+    run_options = ort.RunOptions()
+    if ort.get_device() == "GPU":
+        cuda_provider_options = {
+            "device_id": 0, # Use specific GPU
+            "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory
+            "arena_extend_strategy": "kNextPowerOfTwo",  # gpu memory allocation strategy
+        }
         sess = ort.InferenceSession(
             model_file_path,
             options=options,
-            providers=['CUDAExecutionProvider'])
+            providers=['CUDAExecutionProvider'],
+            provider_options=[cuda_provider_options]
+            )
+        run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
+        logging.info(f"TextRecognizer {nm} uses GPU")
     else:
         sess = ort.InferenceSession(
             model_file_path,
             options=options,
             providers=['CPUExecutionProvider'])
-    return sess, sess.get_inputs()[0]
+        run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "cpu")
+        logging.info(f"TextRecognizer {nm} uses CPU")
+    return sess, sess.get_inputs()[0], run_options
 
 
 class TextRecognizer(object):
@@ -98,7 +114,7 @@ class TextRecognizer(object):
             "use_space_char": True
         }
         self.postprocess_op = build_post_process(postprocess_params)
-        self.predictor, self.input_tensor = load_model(model_dir, 'rec')
+        self.predictor, self.input_tensor, self.run_options = load_model(model_dir, 'rec')
 
     def resize_norm_img(self, img, max_wh_ratio):
         imgC, imgH, imgW = self.rec_image_shape
@@ -344,7 +360,7 @@ class TextRecognizer(object):
             input_dict[self.input_tensor.name] = norm_img_batch
             for i in range(100000):
                 try:
-                    outputs = self.predictor.run(None, input_dict)
+                    outputs = self.predictor.run(None, input_dict, self.run_options)
                     break
                 except Exception as e:
                     if i >= 3:
@@ -383,7 +399,7 @@ class TextDetector(object):
                               "unclip_ratio": 1.5, "use_dilation": False, "score_mode": "fast", "box_type": "quad"}
 
         self.postprocess_op = build_post_process(postprocess_params)
-        self.predictor, self.input_tensor = load_model(model_dir, 'det')
+        self.predictor, self.input_tensor, self.run_options = load_model(model_dir, 'det')
 
         img_h, img_w = self.input_tensor.shape[2:]
         if isinstance(img_h, str) or isinstance(img_w, str):
@@ -456,7 +472,7 @@ class TextDetector(object):
         input_dict[self.input_tensor.name] = img
         for i in range(100000):
             try:
-                outputs = self.predictor.run(None, input_dict)
+                outputs = self.predictor.run(None, input_dict, self.run_options)
                 break
             except Exception as e:
                 if i >= 3:
