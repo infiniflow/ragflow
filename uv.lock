@@ -1334,7 +1334,8 @@ dependencies = [
     { name = "mmh3" },
     { name = "numpy" },
     { name = "onnx" },
-    { name = "onnxruntime" },
+    { name = "onnxruntime", version = "1.19.2", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "onnxruntime", version = "1.20.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
     { name = "pillow" },
     { name = "pystemmer" },
     { name = "requests" },
@@ -3426,32 +3427,63 @@ wheels = [
 
 [[package]]
 name = "onnxruntime"
-version = "1.20.1"
+version = "1.19.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12' and sys_platform == 'darwin'",
+    "(python_full_version >= '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.12' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version == '3.11.*' and sys_platform == 'darwin'",
+    "(python_full_version == '3.11.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.11.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version < '3.11' and sys_platform == 'darwin'",
+    "(python_full_version < '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.11' and sys_platform != 'darwin' and sys_platform != 'linux')",
+]
 dependencies = [
-    { name = "coloredlogs" },
-    { name = "flatbuffers" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "protobuf" },
-    { name = "sympy" },
+    { name = "coloredlogs", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "flatbuffers", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "numpy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "packaging", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "protobuf", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "sympy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
 ]
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4e/28/99f903b0eb1cd6f3faa0e343217d9fb9f47b84bca98bd9859884631336ee/onnxruntime-1.20.1-cp310-cp310-macosx_13_0_universal2.whl", hash = "sha256:e50ba5ff7fed4f7d9253a6baf801ca2883cc08491f9d32d78a80da57256a5439", size = 30996314 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/39/18/272d3d7406909141d3c9943796e3e97cafa53f4342d9231c0cfd8cb05702/onnxruntime-1.19.2-cp310-cp310-macosx_11_0_universal2.whl", hash = "sha256:84fa57369c06cadd3c2a538ae2a26d76d583e7c34bdecd5769d71ca5c0fc750e", size = 16776408 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d8/d3/eb93f4ae511cfc725d0c69e07008800f8ac018de19ea1e497b306f174ccc/onnxruntime-1.19.2-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:bdc471a66df0c1cdef774accef69e9f2ca168c851ab5e4f2f3341512c7ef4666", size = 11491779 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ca/4b/ce5958074abe4b6e8d1da9c10e443e01a681558a9ec17e5cc7619438e094/onnxruntime-1.19.2-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e3a4ce906105d99ebbe817f536d50a91ed8a4d1592553f49b3c23c4be2560ae6", size = 13170428 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ce/0f/6df82dfe02467d12adbaa05c2bd17519c29c7df531ed600231f0c741ad22/onnxruntime-1.19.2-cp310-cp310-win32.whl", hash = "sha256:4b3d723cc154c8ddeb9f6d0a8c0d6243774c6b5930847cc83170bfe4678fafb3", size = 9591305 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/3c/d8/68b63dc86b502169d017a86fe8bc718f4b0055ef1f6895bfaddd04f2eead/onnxruntime-1.19.2-cp310-cp310-win_amd64.whl", hash = "sha256:17ed7382d2c58d4b7354fb2b301ff30b9bf308a1c7eac9546449cd122d21cae5", size = 11084902 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f0/ff/77bee5df55f034ee81d2e1bc58b2b8511b9c54f06ce6566cb562c5d95aa5/onnxruntime-1.19.2-cp311-cp311-macosx_11_0_universal2.whl", hash = "sha256:d863e8acdc7232d705d49e41087e10b274c42f09e259016a46f32c34e06dc4fd", size = 16779187 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f3/78/e29f5fb76e0f6524f3520e8e5b9d53282784b45d14068c5112db9f712b0a/onnxruntime-1.19.2-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c1dfe4f660a71b31caa81fc298a25f9612815215a47b286236e61d540350d7b6", size = 11496005 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/60/ce/be4152da5c1030ab5a159a4a792ed9abad6ba498d79ef0aeba593ff7b5bf/onnxruntime-1.19.2-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a36511dc07c5c964b916697e42e366fa43c48cdb3d3503578d78cef30417cb84", size = 13167809 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e1/00/9740a074eb0e0a21ff13a2c4f32aecc5b21110b2c9b9177d8ac132b66e2d/onnxruntime-1.19.2-cp311-cp311-win32.whl", hash = "sha256:50cbb8dc69d6befad4746a69760e5b00cc3ff0a59c6c3fb27f8afa20e2cab7e7", size = 9591445 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1e/f5/9d995a685f97508b3254f17015b4a78641b0625e79480a7aed7a7a105d7c/onnxruntime-1.19.2-cp311-cp311-win_amd64.whl", hash = "sha256:1c3e5d415b78337fa0b1b75291e9ea9fb2a4c1f148eb5811e7212fed02cfffa8", size = 11085695 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f2/a5/2a02687a88fc8a2507bef65876c90e96b9f8de5ba1f810acbf67c140fc67/onnxruntime-1.19.2-cp312-cp312-macosx_11_0_universal2.whl", hash = "sha256:68e7051bef9cfefcbb858d2d2646536829894d72a4130c24019219442b1dd2ed", size = 16790434 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/47/64/da42254ec14452cad2cdd4cf407094841c0a378c0d08944e9a36172197e9/onnxruntime-1.19.2-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:d2d366fbcc205ce68a8a3bde2185fd15c604d9645888703785b61ef174265168", size = 11486028 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b2/92/3574f6836f33b1b25f272293e72538c38451b12c2d9aa08630bb6bc0f057/onnxruntime-1.19.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:477b93df4db467e9cbf34051662a4b27c18e131fa1836e05974eae0d6e4cf29b", size = 13175054 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ff/c9/8c37e413a830cac7f7dc094fffbd0c998c8bcb66a6f0b0a3201a49bc742b/onnxruntime-1.19.2-cp312-cp312-win32.whl", hash = "sha256:9a174073dc5608fad05f7cf7f320b52e8035e73d80b0a23c80f840e5a97c0147", size = 9592681 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/44/c0/59768846533786a82cafb38d8d2f900ad666bc91f0ae634774d286fa3c47/onnxruntime-1.19.2-cp312-cp312-win_amd64.whl", hash = "sha256:190103273ea4507638ffc31d66a980594b237874b65379e273125150eb044857", size = 11086411 },
+]
+
+[[package]]
+name = "onnxruntime"
+version = "1.20.1"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "python_full_version == '3.11.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "python_full_version < '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+]
+dependencies = [
+    { name = "coloredlogs", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
+    { name = "flatbuffers", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
+    { name = "numpy", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
+    { name = "packaging", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
+    { name = "protobuf", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
+    { name = "sympy", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
+]
+wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6d/c6/c4c0860bee2fde6037bdd9dcd12d323f6e38cf00fcc9a5065b394337fc55/onnxruntime-1.20.1-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:7b2908b50101a19e99c4d4e97ebb9905561daf61829403061c1adc1b588bc0de", size = 11954010 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/63/47/3dc0b075ab539f16b3d8b09df6b504f51836086ee709690a6278d791737d/onnxruntime-1.20.1-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d82daaec24045a2e87598b8ac2b417b1cce623244e80e663882e9fe1aae86410", size = 13330452 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/27/ef/80fab86289ecc01a734b7ddf115dfb93d8b2e004bd1e1977e12881c72b12/onnxruntime-1.20.1-cp310-cp310-win32.whl", hash = "sha256:4c4b251a725a3b8cf2aab284f7d940c26094ecd9d442f07dd81ab5470e99b83f", size = 9813849 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a9/e6/33ab10066c9875a29d55e66ae97c3bf91b9b9b987179455d67c32261a49c/onnxruntime-1.20.1-cp310-cp310-win_amd64.whl", hash = "sha256:d3b616bb53a77a9463707bb313637223380fc327f5064c9a782e8ec69c22e6a2", size = 11329702 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/95/8d/2634e2959b34aa8a0037989f4229e9abcfa484e9c228f99633b3241768a6/onnxruntime-1.20.1-cp311-cp311-macosx_13_0_universal2.whl", hash = "sha256:06bfbf02ca9ab5f28946e0f912a562a5f005301d0c419283dc57b3ed7969bb7b", size = 30998725 },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a5/da/c44bf9bd66cd6d9018a921f053f28d819445c4d84b4dd4777271b0fe52a2/onnxruntime-1.20.1-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f6243e34d74423bdd1edf0ae9596dd61023b260f546ee17d701723915f06a9f7", size = 11955227 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/11/ac/4120dfb74c8e45cce1c664fc7f7ce010edd587ba67ac41489f7432eb9381/onnxruntime-1.20.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5eec64c0269dcdb8d9a9a53dc4d64f87b9e0c19801d9321246a53b7eb5a7d1bc", size = 13331703 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/12/f1/cefacac137f7bb7bfba57c50c478150fcd3c54aca72762ac2c05ce0532c1/onnxruntime-1.20.1-cp311-cp311-win32.whl", hash = "sha256:a19bc6e8c70e2485a1725b3d517a2319603acc14c1f1a017dda0afe6d4665b41", size = 9813977 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2c/2d/2d4d202c0bcfb3a4cc2b171abb9328672d7f91d7af9ea52572722c6d8d96/onnxruntime-1.20.1-cp311-cp311-win_amd64.whl", hash = "sha256:8508887eb1c5f9537a4071768723ec7c30c28eb2518a00d0adcd32c89dea3221", size = 11329895 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e5/39/9335e0874f68f7d27103cbffc0e235e32e26759202df6085716375c078bb/onnxruntime-1.20.1-cp312-cp312-macosx_13_0_universal2.whl", hash = "sha256:22b0655e2bf4f2161d52706e31f517a0e54939dc393e92577df51808a7edc8c9", size = 31007580 },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c5/9d/a42a84e10f1744dd27c6f2f9280cc3fb98f869dd19b7cd042e391ee2ab61/onnxruntime-1.20.1-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f1f56e898815963d6dc4ee1c35fc6c36506466eff6d16f3cb9848cea4e8c8172", size = 11952833 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/47/42/2f71f5680834688a9c81becbe5c5bb996fd33eaed5c66ae0606c3b1d6a02/onnxruntime-1.20.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:bb71a814f66517a65628c9e4a2bb530a6edd2cd5d87ffa0af0f6f773a027d99e", size = 13333903 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c8/f1/aabfdf91d013320aa2fc46cf43c88ca0182860ff15df872b4552254a9680/onnxruntime-1.20.1-cp312-cp312-win32.whl", hash = "sha256:bd386cc9ee5f686ee8a75ba74037750aca55183085bf1941da8efcfe12d5b120", size = 9814562 },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/dd/80/76979e0b744307d488c79e41051117634b956612cc731f1028eb17ee7294/onnxruntime-1.20.1-cp312-cp312-win_amd64.whl", hash = "sha256:19c2d843eb074f385e8bbb753a40df780511061a63f9def1b216bf53860223fb", size = 11331482 },
 ]
 
 [[package]]
@@ -3459,12 +3491,12 @@ name = "onnxruntime-gpu"
 version = "1.19.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "coloredlogs" },
-    { name = "flatbuffers" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "protobuf" },
-    { name = "sympy" },
+    { name = "coloredlogs", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "flatbuffers", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "numpy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "packaging", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "protobuf", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "sympy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d0/9c/3fa310e0730643051eb88e884f19813a6c8b67d0fbafcda610d960e589db/onnxruntime_gpu-1.19.2-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a49740e079e7c5215830d30cde3df792e903df007aa0b0fd7aa797937061b27a", size = 226178508 },
@@ -4746,7 +4778,8 @@ dependencies = [
     { name = "nltk" },
     { name = "numpy" },
     { name = "ollama" },
-    { name = "onnxruntime-gpu" },
+    { name = "onnxruntime", version = "1.19.2", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "platform_machine == 'arm64' or sys_platform == 'darwin'" },
+    { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64'" },
     { name = "openai" },
     { name = "opencv-python" },
     { name = "opencv-python-headless" },
@@ -4875,7 +4908,8 @@ requires-dist = [
     { name = "nltk", specifier = "==3.9.1" },
     { name = "numpy", specifier = ">=1.26.0,<2.0.0" },
     { name = "ollama", specifier = "==0.2.1" },
-    { name = "onnxruntime-gpu", specifier = "==1.19.2" },
+    { name = "onnxruntime", marker = "platform_machine == 'arm64' or sys_platform == 'darwin'", specifier = "==1.19.2" },
+    { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64'", specifier = "==1.19.2" },
     { name = "openai", specifier = "==1.45.0" },
     { name = "opencv-python", specifier = "==4.10.0.84" },
     { name = "opencv-python-headless", specifier = "==4.10.0.84" },
