@@ -299,7 +299,7 @@ class InfinityConnection(DocStoreConnection):
                         matchExpr.extra_options[k] = str(v)
                 logger.debug(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, MatchDenseExpr):
-                if filter_cond and "filter" not in matchExpr.extra_options:
+                if filter_fulltext and filter_cond and "filter" not in matchExpr.extra_options:
                     matchExpr.extra_options.update({"filter": filter_fulltext})
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
@@ -424,9 +424,11 @@ class InfinityConnection(DocStoreConnection):
             assert "_id" not in d
             assert "id" in d
             for k, v in d.items():
-                if k in ["important_kwd", "question_kwd", "entities_kwd"]:
+                if k in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd"]:
                     assert isinstance(v, list)
                     d[k] = "###".join(v)
+                elif re.search(r"_feas$", k):
+                    d[k] = json.dumps(v)
                 elif k == 'kb_id':
                     if isinstance(d[k], list):
                         d[k] = d[k][0]  # since d[k] is a list, but we need a str
@@ -462,7 +464,12 @@ class InfinityConnection(DocStoreConnection):
             del condition["exist"]
         filter = equivalent_condition_to_str(condition)
         for k, v in list(newValue.items()):
-            if k.endswith("_kwd") and isinstance(v, list):
+            if k in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd"]:
+                assert isinstance(v, list)
+                newValue[k] = "###".join(v)
+            elif re.search(r"_feas$", k):
+                newValue[k] = json.dumps(v)
+            elif k.endswith("_kwd") and isinstance(v, list):
                 newValue[k] = " ".join(v)
             elif k == 'kb_id':
                 if isinstance(newValue[k], list):
@@ -531,7 +538,7 @@ class InfinityConnection(DocStoreConnection):
                 v = res[fieldnm][i]
                 if isinstance(v, Series):
                     v = list(v)
-                elif fieldnm in ["important_kwd", "question_kwd", "entities_kwd"]:
+                elif fieldnm in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd"]:
                     assert isinstance(v, str)
                     v = [kwd for kwd in v.split("###") if kwd]
                 elif fieldnm == "position_int":
