@@ -1420,7 +1420,7 @@ wheels = [
 
 [[package]]
 name = "flagembedding"
-version = "1.2.11"
+version = "1.2.10"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "accelerate" },
@@ -1429,7 +1429,7 @@ dependencies = [
     { name = "torch" },
     { name = "transformers" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c9/6b/819ce6f901e2094464750ae73da495f4a7e2338eeecdb2d836c66b594803/FlagEmbedding-1.2.11.tar.gz", hash = "sha256:12c55eb535e9325c3efa539af4aa39c6f4e4e1b6441db7778d42ad0612906501", size = 147114 }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d5/4c/6bfbbf677aea4a0eb33da8516c8098dd1e1f57dd9bfae8df396c3b9d68ff/FlagEmbedding-1.2.10.tar.gz", hash = "sha256:0d0a553e5cca935bb80576f031023e8cb1775e6f9b29b0ab6bbe210697755d30", size = 141345 }
 
 [[package]]
 name = "flasgger"
@@ -4825,7 +4825,7 @@ requires-dist = [
     { name = "azure-identity", specifier = "==1.17.1" },
     { name = "azure-storage-blob", specifier = "==12.22.0" },
     { name = "azure-storage-file-datalake", specifier = "==12.16.0" },
-    { name = "bcembedding", marker = "extra == 'full'", specifier = ">=0.1.5" },
+    { name = "bcembedding", marker = "extra == 'full'", specifier = "==0.1.5" },
     { name = "beartype", specifier = ">=0.18.5,<0.19.0" },
     { name = "bio", specifier = "==1.7.1" },
     { name = "blinker", specifier = "==1.7.0" },
@@ -4849,7 +4849,7 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'full'", specifier = ">=0.3.6,<0.4.0" },
     { name = "fasttext", specifier = "==0.9.3" },
     { name = "filelock", specifier = "==3.15.4" },
-    { name = "flagembedding", marker = "extra == 'full'", specifier = ">=1.2.10,<2.0.0" },
+    { name = "flagembedding", marker = "extra == 'full'", specifier = "==1.2.10" },
     { name = "flasgger", specifier = ">=0.9.7.1,<0.10.0" },
     { name = "flask", specifier = "==3.0.3" },
     { name = "flask-cors", specifier = "==5.0.0" },
