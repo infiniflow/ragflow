@@ -1,12 +1,44 @@
 import LLMSelect from '@/components/llm-select';
 import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
+import { PromptEditor } from '@/components/prompt-editor';
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Input, Switch } from 'antd';
+import { Form, Switch } from 'antd';
+import { useMemo } from 'react';
+import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
 import { IOperatorForm } from '../../interface';
 import DynamicParameters from './dynamic-parameters';
 
+const list = [
+  {
+    value: 'afc163',
+    label: 'afc163',
+  },
+  {
+    value: 'zombieJ',
+    label: 'zombieJ',
+  },
+  {
+    value: 'yesmeck',
+    label: 'yesmeck',
+  },
+].map((x) => ({
+  ...x,
+  value: `{${x.value}}`,
+}));
+
 const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
+
+  const options = useBuildComponentIdSelectOptions(node?.id, node?.parentId);
+
+  const nextOptions = useMemo(() => {
+    return options.reduce<any[]>((pre, cur) => {
+      cur.options.forEach((x) => {
+        pre.push({ ...x, value: `{${x.value}}` });
+      });
+      return pre;
+    }, []);
+  }, [options]);
 
   return (
     <Form
@@ -35,7 +67,7 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
           },
         ]}
       >
-        <Input.TextArea rows={8} />
+        <PromptEditor></PromptEditor>
       </Form.Item>
       <Form.Item
         name={['cite']}
