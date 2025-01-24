@@ -63,9 +63,8 @@ def create(tenant_id):
                    "prologue": "opener",
                    "quote": "show_quote",
                    "system": "prompt",
-                   "rerank_id": "rerank_model",
-                   "vector_similarity_weight": "keywords_similarity_weight"}
-    key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id","top_k"]
+                   "rerank_id": "rerank_model"}
+    key_list = ["similarity_threshold", "keywords_similarity_weight", "top_n", "rerank_id","top_k"]
     if prompt:
         for new_key, old_key in key_mapping.items():
             if old_key in prompt:
@@ -140,7 +139,7 @@ def create(tenant_id):
     res["prompt"] = renamed_dict
     del res["prompt_config"]
     new_dict = {"similarity_threshold": res["similarity_threshold"],
-                "keywords_similarity_weight": res["vector_similarity_weight"],
+                "keywords_similarity_weight": 1 - res["vector_similarity_weight"],
                 "top_n": res["top_n"],
                 "rerank_model": res['rerank_id']}
     res["prompt"].update(new_dict)
@@ -198,9 +197,8 @@ def update(tenant_id, chat_id):
                    "prologue": "opener",
                    "quote": "show_quote",
                    "system": "prompt",
-                   "rerank_id": "rerank_model",
-                   "vector_similarity_weight": "keywords_similarity_weight"}
-    key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id","top_k"]
+                   "rerank_id": "rerank_model"}
+    key_list = ["similarity_threshold", "keywords_similarity_weight", "top_n", "rerank_id","top_k"]
     if prompt:
         for new_key, old_key in key_mapping.items():
             if old_key in prompt:
@@ -293,7 +291,6 @@ def list_chat(tenant_id):
                    "quote": "show_quote",
                    "system": "prompt",
                    "rerank_id": "rerank_model",
-                   "vector_similarity_weight": "keywords_similarity_weight",
                    "do_refer": "show_quotation"}
     key_list = ["similarity_threshold", "vector_similarity_weight", "top_n", "rerank_id"]
     for res in chats:
@@ -304,7 +301,7 @@ def list_chat(tenant_id):
         res["prompt"] = renamed_dict
         del res["prompt_config"]
         new_dict = {"similarity_threshold": res["similarity_threshold"],
-                    "keywords_similarity_weight": res["vector_similarity_weight"],
+                    "keywords_similarity_weight": 1 - res["vector_similarity_weight"],
                     "top_n": res["top_n"],
                     "rerank_model": res['rerank_id']}
         res["prompt"].update(new_dict)
