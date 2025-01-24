@@ -59,7 +59,6 @@ dependencies = [
     "nltk==3.9.1",
     "numpy>=1.26.0,<2.0.0",
     "ollama==0.2.1",
-    "onnxruntime==1.19.2",
     "onnxruntime-gpu==1.19.2",
     "openai==1.45.0",
     "opencv-python==4.10.0.84",
