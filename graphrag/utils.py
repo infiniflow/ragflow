@@ -484,7 +484,7 @@ def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
                                      chunk,
                                      search.index_name(tenant_id), kb_id)
     else:
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def get_entity_type2sampels(idxnms, kb_ids: list):
