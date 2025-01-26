@@ -1,0 +1,66 @@
+---
+sidebar_position: 12
+slug: /iteration_component
+---
+
+# Iteration component
+
+A component that splits its input into segments and iterates a predefined workflow for each one.
+
+---
+
+An **Interaction** component can divide its input into segments and apply its built-in component workflow to each segment. 
+
+
+## Scenario
+
+An **Iteration** component is essential when a workflow loop is required and the loop count is *not* fixed but depends on the output of specific agent components. 
+
+- If, for instance, you plan to feed several paragraphs into an LLM for content generation, each with its own focus, and feeding them to the LLM all at once could create confusion or contradictions, then you can use an **Iteration** component, which encapsulates a **Generate** component, to repeat the content generation process for each paragraph.
+- Another example: If you wish to use the LLM to translate a lengthy paper into a target language without exceeding its token limit, consider using an **Iteration** component, which encapsulates a **Generate** component, to break the paper into smaller pieces and repeat the translation process for each one.
+
+## Internal components
+
+
+
+### IterationItem
+
+
+
+### Added internal components 
+
+
+
+## Configurations
+
+### Input
+
+The **Iteration** component relies on input variables to specify its data inputs (queries). Click **+ Add variable** in the **Input** section to add the desired input variables. There are two types of input variables: **Reference** and **Text**.
+
+- **Reference**: Uses a component's output or a user input as the data source. You are required to select from the dropdown menu:
+  - A component ID under **Component Output**, or 
+  - A global variable under **Begin input**, which is defined in the **Begin** component.
+- **Text**: Uses fixed text as the query. You are required to enter static text.
+
+### Delimiter
+
+
+- Comma (Default)
+- Line break
+- Tab
+- Underline
+- Forward slash
+- Minus
+- Semicolon
+
+
+
+## Examples
+
+Explore our customer service agent template, where the **Message** component (component ID: **What else?**) randomly sends out a message to the user interface if the user inputs is related to personal contact information:
+
+1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
+2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
+3. On the **agent template** page, hover over the **Customer service** card and click **Use this template**.
+4. Name your new agent and click **OK** to enter the workflow editor.
+5. Click on the **Message** component to display its **Configuration** window.
