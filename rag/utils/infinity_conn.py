@@ -554,7 +554,7 @@ class InfinityConnection(DocStoreConnection):
             table_instance = db_instance.get_table(table_name)
         except Exception:
             logger.warning(
-                f"Skipped deleting `{filter}` from table {table_name} since the table doesn't exist."
+                f"Skipped deleting from table {table_name} since the table doesn't exist."
             )
             return 0
         filter = equivalent_condition_to_str(condition, table_instance)
