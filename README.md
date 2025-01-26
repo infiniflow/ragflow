@@ -78,7 +78,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
-- 2025-01-26 Optimize the extraction and application of knowledge graphs and provide a variety of configuration options.
+- 2025-01-26 Optimizes knowledge graph extraction and application, offering various configuration options.
 - 2024-12-18 Upgrades Document Layout Analysis model in Deepdoc.
 - 2024-12-04 Adds support for pagerank score in knowledge base.
 - 2024-11-22 Adds more variables to Agent.
