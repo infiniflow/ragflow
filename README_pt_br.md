@@ -7,6 +7,7 @@
 <p align="center">
   <a href="./README.md">English</a> |
   <a href="./README_zh.md">简体中文</a> |
+  <a href="./README_tzh.md">繁体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
   <a href="./README_id.md">Bahasa Indonesia</a> |
@@ -74,12 +75,12 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Últimas Atualizações
 
+- 26-01-2025 Otimize a extração e aplicação de gráficos de conhecimento e forneça uma variedade de opções de configuração.
 - 18-12-2024 Atualiza o modelo de Análise de Layout de Documentos no Deepdoc.
 - 04-12-2024 Adiciona suporte para pontuação de pagerank na base de conhecimento.
 - 22-11-2024 Adiciona mais variáveis para o Agente.
 - 01-11-2024 Adiciona extração de palavras-chave e geração de perguntas relacionadas aos blocos analisados para melhorar a precisão da recuperação.
 - 22-08-2024 Suporta conversão de texto para comandos SQL via RAG.
-- 02-08-2024 Suporta GraphRAG inspirado pelo [graphrag](https://github.com/microsoft/graphrag) e mapa mental.
 
 ## 🎉 Fique Ligado
 
