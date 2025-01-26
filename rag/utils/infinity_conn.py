@@ -310,7 +310,7 @@ class InfinityConnection(DocStoreConnection):
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
-                logger.info(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
+                logger.debug(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, MatchDenseExpr):
                 if filter_fulltext and filter_cond and "filter" not in matchExpr.extra_options:
                     matchExpr.extra_options.update({"filter": filter_fulltext})
@@ -380,7 +380,6 @@ class InfinityConnection(DocStoreConnection):
             res = res.sort(pl.col(score_column) + pl.col(PAGERANK_FLD), descending=True, maintain_order=True)
             if score_column and score_column != "SCORE":
                 res = res.rename({score_column: "SCORE"})
-        print(res, flush=True)
         res = res.limit(limit)
         logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
