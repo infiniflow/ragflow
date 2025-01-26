@@ -24,6 +24,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserTenantService
+from api.settings import DOC_ENGINE
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
 from api.db import StatusEnum, FileSource
@@ -96,6 +97,13 @@ def update():
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
 
+        if req.get("parser_id", "") == "tag" and DOC_ENGINE == "infinity":
+            return get_json_result(
+                data=False,
+                message='The chunk method Tag has not been supported by Infinity yet.',
+                code=settings.RetCode.OPERATING_ERROR
+            )
+
         if req["name"].lower() != kb.name.lower() \
                 and len(
             KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) > 1:
@@ -112,7 +120,7 @@ def update():
                                          search.index_name(kb.tenant_id), kb.id)
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
-                settings.docStoreConn.update({"exist": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
+                settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
                                          search.index_name(kb.tenant_id), kb.id)
 
         e, kb = KnowledgebaseService.get_by_id(kb.id)

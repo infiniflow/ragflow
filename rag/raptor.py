@@ -71,7 +71,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         start, end = 0, len(chunks)
         if len(chunks) <= 1:
             return
-        chunks = [(s, a) for s, a in chunks if len(a) > 0]
+        chunks = [(s, a) for s, a in chunks if s and len(a) > 0]
 
         def summarize(ck_idx, lock):
             nonlocal chunks
@@ -125,6 +125,8 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 threads = []
                 for c in range(n_clusters):
                     ck_idx = [i + start for i in range(len(lbls)) if lbls[i] == c]
+                    if not ck_idx:
+                        continue
                     threads.append(executor.submit(summarize, ck_idx, lock))
                 wait(threads, return_when=ALL_COMPLETED)
                 for th in threads:

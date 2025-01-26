@@ -336,7 +336,7 @@ class ESConnection(DocStoreConnection):
         for k, v in condition.items():
             if not isinstance(k, str) or not v:
                 continue
-            if k == "exist":
+            if k == "exists":
                 bqry.filter.append(Q("exists", field=v))
                 continue
             if isinstance(v, list):
