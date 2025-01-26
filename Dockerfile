@@ -77,11 +77,20 @@ ENV PATH=/root/.local/bin:$PATH
 # nodejs 12.22 on Ubuntu 22.04 is too old
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt purge -y nodejs npm && \
+    apt purge -y nodejs npm cargo && \
     apt autoremove && \
     apt update && \
-    apt install -y nodejs cargo 
+    apt install -y nodejs
 
+
+# A modern version of cargo is needed for the latest version of the Rust compiler.
+RUN apt update && apt install -y curl build-essential \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y --profile minimal \
+    && echo 'export PATH="/root/.cargo/bin:${PATH}"' >> /root/.bashrc
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN cargo --version && rustc --version
 
 # Add msssql ODBC driver
 # macOS ARM64 environment, install msodbcsql18.
