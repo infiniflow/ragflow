@@ -7,6 +7,7 @@
 <p align="center">
   <a href="./README.md">English</a> |
   <a href="./README_zh.md">简体中文</a> |
+  <a href="./README_tzh.md">繁体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
   <a href="./README_id.md">Bahasa Indonesia</a> |
@@ -54,12 +55,12 @@
 
 ## 🔥 近期更新
 
+- 2025-01-26 优化知识图谱的提取和应用，提供了多种配置选择。
 - 2024-12-18 升级了 Deepdoc 的文档布局分析模型。
 - 2024-12-04 支持知识库的 Pagerank 分数。
 - 2024-11-22 完善了 Agent 中的变量定义和使用。
 - 2024-11-01 对解析后的 chunk 加入关键词抽取和相关问题生成以提高召回的准确度。
 - 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
-- 2024-08-02 支持 GraphRAG 启发于 [graphrag](https://github.com/microsoft/graphrag) 和思维导图。
 
 ## 🎉 关注项目
 
