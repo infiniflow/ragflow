@@ -34,7 +34,7 @@ The **IterationItem** component is visible *only* to the comonents encapsulated 
 You are allowed to pull other components into the **Iteration** components to build an internal workflow, in which case these components are called "added internal componnets" and they are no longer visible to components outside of the current **Iteration** component.
 
 :::danger IMPORTANT
-To reference the created segments from an internal component, simply add a **Reference** variable that equals **IterationItem** within the **Input** section of that internal component. There is no need to reference the corresponding external component, as the **IterationItem** component manages the loop of the workflow for all created segments. 
+To reference the created segments from an added internal component, simply add a **Reference** variable that equals **IterationItem** within the **Input** section of that internal component. There is no need to reference the corresponding external component, as the **IterationItem** component manages the loop of the workflow for all created segments. 
 :::
 
 :::tip NOTE
