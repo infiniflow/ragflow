@@ -850,7 +850,7 @@ name = "coloredlogs"
 version = "15.0.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "humanfriendly", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "humanfriendly" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/cc/c7/eed8f27100517e8c0e6b923d5f0845d0cb99763da6fdee00478f91db7325/coloredlogs-15.0.1.tar.gz", hash = "sha256:7c991aa71a4577af2f82600d8f8f3a89f936baeaf9b50a9c197da014e5bf16b0", size = 278520 }
 wheels = [
@@ -1329,18 +1329,18 @@ name = "fastembed"
 version = "0.3.6"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "huggingface-hub", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "loguru", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "mmh3", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "numpy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "onnx", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "onnxruntime", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "pillow", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "pystemmer", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "requests", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "snowballstemmer", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "tokenizers", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "tqdm", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "huggingface-hub" },
+    { name = "loguru" },
+    { name = "mmh3" },
+    { name = "numpy" },
+    { name = "onnx" },
+    { name = "onnxruntime" },
+    { name = "pillow" },
+    { name = "pystemmer" },
+    { name = "requests" },
+    { name = "snowballstemmer" },
+    { name = "tokenizers" },
+    { name = "tqdm" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ae/20/68a109c8def842ed47a2951873fb2d7d23ee296ef8c195aedbb735670fff/fastembed-0.3.6.tar.gz", hash = "sha256:c93c8ec99b8c008c2d192d6297866b8d70ec7ac8f5696b34eb5ea91f85efd15f", size = 35058 }
 wheels = [
@@ -1352,17 +1352,17 @@ name = "fastembed-gpu"
 version = "0.3.6"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "huggingface-hub", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "loguru", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "mmh3", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "numpy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "onnxruntime-gpu", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "pillow", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "pystemmer", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "requests", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "snowballstemmer", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "tokenizers", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "tqdm", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "huggingface-hub", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "loguru", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "mmh3", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "onnxruntime-gpu", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "pillow", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "pystemmer", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "requests", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "snowballstemmer", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "tokenizers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "tqdm", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/da/07/7336c7f3d7ee47f33b407eeb50f5eeb152889de538a52a8f1cc637192816/fastembed_gpu-0.3.6.tar.gz", hash = "sha256:ee2de8918b142adbbf48caaffec0c492f864d73c073eea5a3dcd0e8c1041c50d", size = 35051 }
 wheels = [
@@ -3424,8 +3424,8 @@ name = "onnx"
 version = "1.17.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "protobuf", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "numpy" },
+    { name = "protobuf" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/9a/54/0e385c26bf230d223810a9c7d06628d954008a5e5e4b73ee26ef02327282/onnx-1.17.0.tar.gz", hash = "sha256:48ca1a91ff73c1d5e3ea2eef20ae5d0e709bb8a2355ed798ffc2169753013fd3", size = 12165120 }
 wheels = [
@@ -3451,12 +3451,12 @@ name = "onnxruntime"
 version = "1.19.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "coloredlogs", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "flatbuffers", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "numpy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "packaging", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "protobuf", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "sympy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "coloredlogs" },
+    { name = "flatbuffers" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "protobuf" },
+    { name = "sympy" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/39/18/272d3d7406909141d3c9943796e3e97cafa53f4342d9231c0cfd8cb05702/onnxruntime-1.19.2-cp310-cp310-macosx_11_0_universal2.whl", hash = "sha256:84fa57369c06cadd3c2a538ae2a26d76d583e7c34bdecd5769d71ca5c0fc750e", size = 16776408 },
@@ -3481,12 +3481,12 @@ name = "onnxruntime-gpu"
 version = "1.19.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "coloredlogs", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "flatbuffers", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "numpy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "packaging", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "protobuf", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
-    { name = "sympy", marker = "platform_machine != 'aarch64' or sys_platform != 'linux'" },
+    { name = "coloredlogs", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "flatbuffers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "packaging", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "protobuf", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "sympy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d0/9c/3fa310e0730643051eb88e884f19813a6c8b67d0fbafcda610d960e589db/onnxruntime_gpu-1.19.2-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a49740e079e7c5215830d30cde3df792e903df007aa0b0fd7aa797937061b27a", size = 226178508 },
@@ -4768,8 +4768,8 @@ dependencies = [
     { name = "nltk" },
     { name = "numpy" },
     { name = "ollama" },
-    { name = "onnxruntime", marker = "platform_machine == 'arm64' or sys_platform == 'darwin'" },
-    { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64'" },
+    { name = "onnxruntime", marker = "platform_machine != 'x86_64' or sys_platform == 'darwin'" },
+    { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "openai" },
     { name = "opencv-python" },
     { name = "opencv-python-headless" },
@@ -4833,8 +4833,8 @@ dependencies = [
 [package.optional-dependencies]
 full = [
     { name = "bcembedding" },
-    { name = "fastembed", marker = "platform_machine == 'arm64' or sys_platform == 'darwin'" },
-    { name = "fastembed-gpu", marker = "platform_machine == 'x86_64'" },
+    { name = "fastembed", marker = "platform_machine != 'x86_64' or sys_platform == 'darwin'" },
+    { name = "fastembed-gpu", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "flagembedding" },
     { name = "torch" },
     { name = "transformers" },
@@ -4870,8 +4870,8 @@ requires-dist = [
     { name = "elastic-transport", specifier = "==8.12.0" },
     { name = "elasticsearch", specifier = "==8.12.1" },
     { name = "elasticsearch-dsl", specifier = "==8.12.0" },
-    { name = "fastembed", marker = "(platform_machine == 'arm64' and extra == 'full') or (sys_platform == 'darwin' and extra == 'full')", specifier = ">=0.3.6,<0.4.0" },
-    { name = "fastembed-gpu", marker = "platform_machine == 'x86_64' and extra == 'full'", specifier = ">=0.3.6,<0.4.0" },
+    { name = "fastembed", marker = "(platform_machine != 'x86_64' and extra == 'full') or (sys_platform == 'darwin' and extra == 'full')", specifier = ">=0.3.6,<0.4.0" },
+    { name = "fastembed-gpu", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin' and extra == 'full'", specifier = ">=0.3.6,<0.4.0" },
     { name = "fasttext", specifier = "==0.9.3" },
     { name = "filelock", specifier = "==3.15.4" },
     { name = "flagembedding", marker = "extra == 'full'", specifier = "==1.2.10" },
@@ -4900,8 +4900,8 @@ requires-dist = [
     { name = "nltk", specifier = "==3.9.1" },
     { name = "numpy", specifier = ">=1.26.0,<2.0.0" },
     { name = "ollama", specifier = "==0.2.1" },
-    { name = "onnxruntime", marker = "platform_machine == 'arm64' or sys_platform == 'darwin'", specifier = "==1.19.2" },
-    { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64'", specifier = "==1.19.2" },
+    { name = "onnxruntime", marker = "platform_machine != 'x86_64' or sys_platform == 'darwin'", specifier = "==1.19.2" },
+    { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'", specifier = "==1.19.2" },
     { name = "openai", specifier = "==1.45.0" },
     { name = "opencv-python", specifier = "==4.10.0.84" },
     { name = "opencv-python-headless", specifier = "==4.10.0.84" },
