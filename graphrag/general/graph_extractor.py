@@ -135,7 +135,7 @@ class GraphExtractor(Extractor):
                     break
                 history.append({"role": "assistant", "content": response})
                 history.append({"role": "user", "content": LOOP_PROMPT})
-                continuation = self._chat("", history, self._loop_args)
+                continuation = self._chat("", history, {"temperature": 0.8})
                 token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + response)
                 if continuation != "YES":
                     break
