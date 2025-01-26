@@ -53,7 +53,7 @@ class Base(ABC):
                     ans += LENGTH_NOTIFICATION_CN
                 else:
                     ans += LENGTH_NOTIFICATION_EN
-            return ans, response.usage.total_tokens
+            return ans, self.total_token_count(response)
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
 
@@ -75,15 +75,11 @@ class Base(ABC):
                     resp.choices[0].delta.content = ""
                 ans += resp.choices[0].delta.content
 
-                if not hasattr(resp, "usage") or not resp.usage:
-                    total_tokens = (
-                                total_tokens
-                                + num_tokens_from_string(resp.choices[0].delta.content)
-                        )
-                elif isinstance(resp.usage, dict):
-                    total_tokens = resp.usage.get("total_tokens", total_tokens)
+                tol = self.total_token_count(resp)
+                if not tol:
+                    total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
                 else:
-                    total_tokens = resp.usage.total_tokens
+                    total_tokens = tol
 
                 if resp.choices[0].finish_reason == "length":
                     if is_chinese(ans):
@@ -96,6 +92,17 @@ class Base(ABC):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
+
+    def total_token_count(self, resp):
+        try:
+            return resp.usage.total_tokens
+        except Exception:
+            pass
+        try:
+            return resp["usage"]["total_tokens"]
+        except Exception:
+            pass
+        return 0
 
 
 class GptTurbo(Base):
@@ -182,7 +189,7 @@ class BaiChuanChat(Base):
                     ans += LENGTH_NOTIFICATION_CN
                 else:
                     ans += LENGTH_NOTIFICATION_EN
-            return ans, response.usage.total_tokens
+            return ans, self.total_token_count(response)
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
 
@@ -212,14 +219,11 @@ class BaiChuanChat(Base):
                 if not resp.choices[0].delta.content:
                     resp.choices[0].delta.content = ""
                 ans += resp.choices[0].delta.content
-                total_tokens = (
-                    (
-                            total_tokens
-                            + num_tokens_from_string(resp.choices[0].delta.content)
-                    )
-                    if not hasattr(resp, "usage")
-                    else resp.usage["total_tokens"]
-                )
+                tol = self.total_token_count(resp)
+                if not tol:
+                    total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
+                else:
+                    total_tokens = tol
                 if resp.choices[0].finish_reason == "length":
                     if is_chinese([ans]):
                         ans += LENGTH_NOTIFICATION_CN
@@ -256,7 +260,7 @@ class QWenChat(Base):
             tk_count = 0
             if response.status_code == HTTPStatus.OK:
                 ans += response.output.choices[0]['message']['content']
-                tk_count += response.usage.total_tokens
+                tk_count += self.total_token_count(response)
                 if response.output.choices[0].get("finish_reason", "") == "length":
                     if is_chinese([ans]):
                         ans += LENGTH_NOTIFICATION_CN
@@ -292,7 +296,7 @@ class QWenChat(Base):
             for resp in response:
                 if resp.status_code == HTTPStatus.OK:
                     ans = resp.output.choices[0]['message']['content']
-                    tk_count = resp.usage.total_tokens
+                    tk_count = self.total_token_count(resp)
                     if resp.output.choices[0].get("finish_reason", "") == "length":
                         if is_chinese(ans):
                             ans += LENGTH_NOTIFICATION_CN
@@ -334,7 +338,7 @@ class ZhipuChat(Base):
                     ans += LENGTH_NOTIFICATION_CN
                 else:
                     ans += LENGTH_NOTIFICATION_EN
-            return ans, response.usage.total_tokens
+            return ans, self.total_token_count(response)
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
@@ -364,9 +368,9 @@ class ZhipuChat(Base):
                         ans += LENGTH_NOTIFICATION_CN
                     else:
                         ans += LENGTH_NOTIFICATION_EN
-                    tk_count = resp.usage.total_tokens
+                    tk_count = self.total_token_count(resp)
                 if resp.choices[0].finish_reason == "stop":
-                    tk_count = resp.usage.total_tokens
+                    tk_count = self.total_token_count(resp)
                 yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
@@ -569,7 +573,7 @@ class MiniMaxChat(Base):
                     ans += LENGTH_NOTIFICATION_CN
                 else:
                     ans += LENGTH_NOTIFICATION_EN
-            return ans, response["usage"]["total_tokens"]
+            return ans, self.total_token_count(response)
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
@@ -603,11 +607,11 @@ class MiniMaxChat(Base):
                 if "choices" in resp and "delta" in resp["choices"][0]:
                     text = resp["choices"][0]["delta"]["content"]
                 ans += text
-                total_tokens = (
-                    total_tokens + num_tokens_from_string(text)
-                    if "usage" not in resp
-                    else resp["usage"]["total_tokens"]
-                )
+                tol = self.total_token_count(resp)
+                if not tol:
+                    total_tokens += num_tokens_from_string(text)
+                else:
+                    total_tokens = tol
                 yield ans
 
         except Exception as e:
@@ -640,7 +644,7 @@ class MistralChat(Base):
                     ans += LENGTH_NOTIFICATION_CN
                 else:
                     ans += LENGTH_NOTIFICATION_EN
-            return ans, response.usage.total_tokens
+            return ans, self.total_token_count(response)
         except openai.APIError as e:
             return "**ERROR**: " + str(e), 0
 
@@ -838,7 +842,7 @@ class GeminiChat(Base):
         yield 0
 
 
-class GroqChat:
+class GroqChat(Base):
     def __init__(self, key, model_name, base_url=''):
         from groq import Groq
         self.client = Groq(api_key=key)
@@ -863,7 +867,7 @@ class GroqChat:
                     ans += LENGTH_NOTIFICATION_CN
                 else:
                     ans += LENGTH_NOTIFICATION_EN
-            return ans, response.usage.total_tokens
+            return ans, self.total_token_count(response)
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0
 
@@ -1255,7 +1259,7 @@ class BaiduYiyanChat(Base):
                 **gen_conf
             ).body
             ans = response['result']
-            return ans, response["usage"]["total_tokens"]
+            return ans, self.total_token_count(response)
 
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0
@@ -1283,7 +1287,7 @@ class BaiduYiyanChat(Base):
             for resp in response:
                 resp = resp.body
                 ans += resp['result']
-                total_tokens = resp["usage"]["total_tokens"]
+                total_tokens = self.total_token_count(resp)
 
                 yield ans
 
