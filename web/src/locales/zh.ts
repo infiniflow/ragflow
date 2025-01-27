@@ -1107,7 +1107,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pasteFileLink: '粘贴文件链接',
       testRun: '试运行',
       template: '模板转换',
-      templateDescription: '该组件用于排版各种组件的输出。1、支持Jinja2模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式',
+      templateDescription:
+        '该组件用于排版各种组件的输出。1、支持Jinja2模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式',
       emailComponent: '邮件',
       emailDescription: '发送邮件到指定邮箱',
       smtpServer: 'SMTP服务器',
@@ -1145,7 +1146,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         tab: '制表符',
         underline: '下划线',
         diagonal: '斜线',
-        minus: '减号',
+        minus: '连字符',
         semicolon: '分号',
       },
       addCategory: '新增分类',
