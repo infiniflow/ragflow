@@ -36,7 +36,7 @@ RAGFlow has a number of built-in models for document structure parsing, which ac
 
 ### Which architectures or devices does RAGFlow support?
 
-We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we haven't maintained RAGFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
+We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
 
 ---
 
