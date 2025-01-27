@@ -36,7 +36,7 @@
 	"to_entity_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"entity_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"entity_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
-	"source_id": {"type": "varchar", "default": "", "analyzer": "whitespace"},
+	"source_id": {"type": "varchar", "default": ""},
 	"n_hop_with_weight": {"type": "varchar", "default": ""},
 	"removed_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"}
 }
