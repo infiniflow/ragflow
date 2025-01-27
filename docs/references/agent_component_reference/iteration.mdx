@@ -23,18 +23,20 @@ An **Iteration** component is essential when a workflow loop is required and the
 
 ### IterationItem
 
-Each **Iteration** component includes an internal **IterationItem** component. The **IterationItem** component serves as both the starting point and input node of the workflow within the **Iteration** component. It manages the loop of the workflow for all segments created from the input.
+Each **Iteration** component includes an internal **IterationItem** component. The **IterationItem** component serves as both the starting point and input node of the workflow within the **Iteration** component. It manages the loop of the workflow for all text segments created from the input.
 
 :::tip NOTE
 The **IterationItem** component is visible *only* to the comonents encapsulated by the current **Iteration** components.
 :::
 
-### Added internal components 
+![Iterationitem](https://github.com/user-attachments/assets/97117ceb-76c4-432e-aa86-48f253bcb886)
 
-You are allowed to pull other components into the **Iteration** components to build an internal workflow, in which case these components are called "added internal componnets" and they are no longer visible to components outside of the current **Iteration** component.
+### Build an internal workflow 
+
+You are allowed to pull other components into the **Iteration** component to build an internal workflow, and these "added internal components" are no longer visible to components outside of the current **Iteration** component.
 
 :::danger IMPORTANT
-To reference the created segments from an added internal component, simply add a **Reference** variable that equals **IterationItem** within the **Input** section of that internal component. There is no need to reference the corresponding external component, as the **IterationItem** component manages the loop of the workflow for all created segments. 
+To reference the created text segments from an added internal component, simply add a **Reference** variable that equals **IterationItem** within the **Input** section of that internal component. There is no need to reference the corresponding external component, as the **IterationItem** component manages the loop of the workflow for all created text segments. 
 :::
 
 :::tip NOTE
