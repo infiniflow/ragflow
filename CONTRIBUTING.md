@@ -1,6 +1,6 @@
 # Contribution guidelines
 
-This document offers guidlines and major considerations for submitting your contributions to RAGFlow.
+This document offers guidelines and major considerations for submitting your contributions to RAGFlow.
 
 - To report a bug, file a [GitHub issue](https://github.com/infiniflow/ragflow/issues/new/choose) with us.
 - For further questions, you can explore existing discussions or initiate a new one in [Discussions](https://github.com/orgs/infiniflow/discussions).

@@ -1256,7 +1256,7 @@ curl --request POST \
 - `"vector_similarity_weight"`: (*Body parameter*), `float`  
   The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
 - `"top_k"`: (*Body parameter*), `integer`  
-  The number of chunks engaged in vector cosine computaton. Defaults to `1024`.
+  The number of chunks engaged in vector cosine computation. Defaults to `1024`.
 - `"rerank_id"`: (*Body parameter*), `integer`  
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`  

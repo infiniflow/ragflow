@@ -39,7 +39,7 @@ time=2024-12-02T02:20:21.360Z level=INFO source=common.go:49 msg="Dynamic LLM li
 
 Ensure ollama is listening on all IP address:
 ```bash
-sudo ss -tunlp|grep 11434
+sudo ss -tunlp | grep 11434
 tcp   LISTEN 0      4096                  0.0.0.0:11434      0.0.0.0:*    users:(("docker-proxy",pid=794507,fd=4))
 tcp   LISTEN 0      4096                     [::]:11434         [::]:*    users:(("docker-proxy",pid=794513,fd=4))
 ```

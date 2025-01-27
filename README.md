@@ -41,7 +41,7 @@
 </h4>
 
 <details open>
-<summary></b>📕 Table of Contents</b></summary>
+<summary><b>📕 Table of Contents</b></summary>
 
 - 💡 [What is RAGFlow?](#-what-is-ragflow)
 - 🎮 [Demo](#-demo)
@@ -180,11 +180,11 @@ releases! 🌟
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   | ----------------- | --------------- | --------------------- | ------------------------ |
+   |-------------------|-----------------|-----------------------|--------------------------|
    | v0.15.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.15.1-slim      | &approx;2       | ❌                     | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
 4. Check the server status after having the server up and running:
 
