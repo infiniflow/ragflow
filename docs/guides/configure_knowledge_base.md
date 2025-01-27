@@ -122,7 +122,7 @@ You can add keywords to a file chunk to increase its ranking for queries contain
 RAGFlow uses multiple recall of both full-text search and vector search in its chats. Prior to setting up an AI chat, consider adjusting the following parameters to ensure that the intended information always turns up in answers:
 
 - Similarity threshold: Chunks with similarities below the threshold will be filtered. By default, it is set to 0.2.
-- Vector similarity weight: The percentage by which vector similarity contributes to the overall score. By default, it set to 0.3.
+- Vector similarity weight: The percentage by which vector similarity contributes to the overall score. By default, it is set to 0.3.
 
 ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
 
