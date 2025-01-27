@@ -1164,7 +1164,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         tab: 'Tab',
         underline: 'Underline',
         diagonal: 'Forward slash',
-        minus: 'Minus',
+        minus: 'Dash',
         semicolon: 'Semicolon',
       },
       addVariable: 'Add variable',

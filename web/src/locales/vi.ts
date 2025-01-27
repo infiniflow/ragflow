@@ -1115,7 +1115,7 @@ export default {
         tab: 'Tab',
         underline: 'Gạch chân',
         diagonal: 'Forward slash',
-        minus: 'Minus',
+        minus: 'Dash',
         semicolon: 'Semicolon',
       },
     },

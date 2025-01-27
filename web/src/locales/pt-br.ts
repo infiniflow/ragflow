@@ -1105,7 +1105,7 @@ export default {
         tab: 'Tabulação',
         underline: 'Sublinhado',
         diagonal: 'Forward slash',
-        minus: 'Menos',
+        minus: 'Dash',
         semicolon: 'Ponto e vírgula',
       },
       addVariable: 'Adicionar variável',
