@@ -1104,7 +1104,7 @@ export default {
         lineBreak: 'Quebra de linha',
         tab: 'Tabulação',
         underline: 'Sublinhado',
-        diagonal: 'Diagonal',
+        diagonal: 'Forward slash',
         minus: 'Menos',
         semicolon: 'Ponto e vírgula',
       },

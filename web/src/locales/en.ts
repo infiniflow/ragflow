@@ -1163,7 +1163,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         lineBreak: 'Line break',
         tab: 'Tab',
         underline: 'Underline',
-        diagonal: 'Diagonal',
+        diagonal: 'Forward slash',
         minus: 'Minus',
         semicolon: 'Semicolon',
       },
