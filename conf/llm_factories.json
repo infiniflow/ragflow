@@ -397,13 +397,13 @@
                 {
                     "llm_name": "deepseek-chat",
                     "tags": "LLM,CHAT,",
-                    "max_tokens": 32768,
+                    "max_tokens": 64000,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "deepseek-coder",
+                    "llm_name": "deepseek-reasoner",
                     "tags": "LLM,CHAT,",
-                    "max_tokens": 16385,
+                    "max_tokens": 64000,
                     "model_type": "chat"
                 }
             ]
