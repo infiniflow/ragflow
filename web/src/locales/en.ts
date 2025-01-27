@@ -281,7 +281,7 @@ export default {
       </p>
       `,
       table: `<p>Supported file formats are <b>EXCEL</b> and <b>CSV/TXT</b>.</p><p>
-      Here're some prerequisites and tips:
+      Here are some prerequisites and tips:
       <ul>
     <li>For CSV or TXT file, the delimiter between columns must be <em><b>TAB</b></em>.</li>
     <li>The first row must be column headers.</li>
@@ -312,14 +312,14 @@ export default {
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number', at which point a chunk is created.</p>
 <p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
-      tag: `<p>Knowlege base using 'Tag' as a chunking method is supposed to be used by other knowledge bases to add tags to their chunks, queries to which will also be with tags too.</p>
-<p>Knowlege base using 'Tag' as a chunking method is <b>NOT</b> supposed to be involved in RAG procedure.</p>
+      tag: `<p>Knowledge base using 'Tag' as a chunking method is supposed to be used by other knowledge bases to add tags to their chunks, queries to which will also be with tags too.</p>
+<p>Knowledge base using 'Tag' as a chunking method is <b>NOT</b> supposed to be involved in RAG procedure.</p>
 <p>The chunks in this knowledge base are examples of tags, which demonstrate the entire tag set and the relevance between chunk and tags.</p>
 
 <p>This chunk method supports <b>EXCEL</b> and <b>CSV/TXT</b> file formats.</p>
 <p>If a file is in <b>Excel</b> format, it should contain two columns without headers: one for content and the other for tags, with the content column preceding the tags column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
 <p>If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate content and tags.</p>
-<p>In tags column, there're English <b>comma</b> between tags.</p>
+<p>In tags column, there are English <b>comma</b> between tags.</p>
 <i>Lines of texts that fail to follow the above rules will be ignored, and each  pair will be considered a distinct chunk.</i>
 `,
       useRaptor: 'Use RAPTOR to enhance retrieval',
@@ -368,7 +368,7 @@ This procedure will improve precision of retrieval by adding more information to
       addTag: 'Add tag',
       useGraphRag: 'Extract knowledge graph',
       useGraphRagTip:
-        'After files being chunked, all the chunks will be used for knowlege graph generation which helps inference of multi-hop and complex problems a lot.',
+        'After files being chunked, all the chunks will be used for Knowledge graph generation which helps inference of multi-hop and complex problems a lot.',
       graphRagMethod: 'Method',
       graphRagMethodTip: `Light: the entity and relation extraction prompt is from GitHub - HKUDS/LightRAG: "LightRAG: Simple and Fast Retrieval-Augmented Generation"</br>
         General: the entity and relation extraction prompt is from GitHub - microsoft/graphrag: A modular graph-based Retrieval-Augmented Generation (RAG) system`,
@@ -397,7 +397,7 @@ This procedure will improve precision of retrieval by adding more information to
       graph: 'Knowledge graph',
       mind: 'Mind map',
       question: 'Question',
-      questionTip: `If there're given questions, the embedding of the chunk will be based on them.`,
+      questionTip: `If there are given questions, the embedding of the chunk will be based on them.`,
     },
     chat: {
       newConversation: 'New conversation',
@@ -521,7 +521,7 @@ This procedure will improve precision of retrieval by adding more information to
       useKnowledgeGraphTip:
         'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
       keyword: 'Keyword analysis',
-      keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphesize during the relevance omputation.`,
+      keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphasize during the relevance computation.`,
     },
     setting: {
       profile: 'Profile',
