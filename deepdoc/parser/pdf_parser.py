@@ -956,8 +956,6 @@ class RAGFlowPdfParser:
                 fnm, str) else pdfplumber.open(BytesIO(fnm))
             self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
                                 enumerate(self.pdf.pages[page_from:page_to])]
-            self.page_images_x2 = [p.to_image(resolution=72 * zoomin * 2).annotated for i, p in
-                                enumerate(self.pdf.pages[page_from:page_to])]
             try:
                 self.page_chars = [[{**c, 'top': c['top'], 'bottom': c['bottom']} for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
             except Exception as e:
@@ -997,7 +995,7 @@ class RAGFlowPdfParser:
             self.is_english = False
 
         # st = timer()
-        for i, img in enumerate(self.page_images_x2):
+        for i, img in enumerate(self.page_images):
             chars = self.page_chars[i] if not self.is_english else []
             self.mean_height.append(
                 np.median(sorted([c["height"] for c in chars])) if chars else 0
@@ -1005,7 +1003,7 @@ class RAGFlowPdfParser:
             self.mean_width.append(
                 np.median(sorted([c["width"] for c in chars])) if chars else 8
             )
-            self.page_cum_height.append(img.size[1] / zoomin/2)
+            self.page_cum_height.append(img.size[1] / zoomin)
             j = 0
             while j + 1 < len(chars):
                 if chars[j]["text"] and chars[j + 1]["text"] \
@@ -1015,7 +1013,7 @@ class RAGFlowPdfParser:
                     chars[j]["text"] += " "
                 j += 1
 
-            self.__ocr(i + 1, img, chars, zoomin*2)
+            self.__ocr(i + 1, img, chars, zoomin)
             if callback and i % 6 == 5:
                 callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
         # print("OCR:", timer()-st)
