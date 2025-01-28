@@ -1,10 +1,12 @@
 import Rerank from '@/components/rerank';
 import SimilaritySlider from '@/components/similarity-slider';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useChunkIsTesting } from '@/hooks/knowledge-hooks';
 import { Button, Card, Divider, Flex, Form, Input } from 'antd';
 import { FormInstance } from 'antd/lib';
+import { LabelWordCloud } from './label-word-cloud';
 
-import { useChunkIsTesting } from '@/hooks/knowledge-hooks';
+import { UseKnowledgeGraphItem } from '@/components/use-knowledge-graph-item';
 import styles from './index.less';
 
 type FieldType = {
@@ -37,6 +39,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
         <Form name="testing" layout="vertical" form={form}>
           <SimilaritySlider isTooltipShown></SimilaritySlider>
           <Rerank></Rerank>
+          <UseKnowledgeGraphItem filedName={['use_kg']}></UseKnowledgeGraphItem>
           <Card size="small" title={t('testText')}>
             <Form.Item<FieldType>
               name={'question'}
@@ -58,6 +61,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
           </Card>
         </Form>
       </section>
+      <LabelWordCloud></LabelWordCloud>
       {/* <section>
         <div className={styles.historyTitle}>
           <Space size={'middle'}>

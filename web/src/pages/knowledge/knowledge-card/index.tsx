@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'umi';
 
 import OperateDropdown from '@/components/operate-dropdown';
+import { useTheme } from '@/components/theme-provider';
 import { useDeleteKnowledge } from '@/hooks/knowledge-hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
@@ -24,7 +25,7 @@ const KnowledgeCard = ({ item }: IProps) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { data: userInfo } = useFetchUserInfo();
-
+  const { theme } = useTheme();
   const { deleteKnowledge } = useDeleteKnowledge();
 
   const removeKnowledge = async () => {
@@ -39,8 +40,8 @@ const KnowledgeCard = ({ item }: IProps) => {
 
   return (
     <Badge.Ribbon
-      text={item.nickname}
-      color={userInfo.nickname === item.nickname ? '#1677ff' : 'pink'}
+      text={item?.nickname}
+      color={userInfo?.nickname === item?.nickname ? '#1677ff' : 'pink'}
       className={classNames(styles.ribbon, {
         [styles.hideRibbon]: item.permission !== 'team',
       })}
@@ -52,8 +53,18 @@ const KnowledgeCard = ({ item }: IProps) => {
             <OperateDropdown deleteItem={removeKnowledge}></OperateDropdown>
           </div>
           <div className={styles.titleWrapper}>
-            <span className={styles.title}>{item.name}</span>
-            <p className={styles.description}>{item.description}</p>
+            <span
+              className={theme === 'dark' ? styles.titledark : styles.title}
+            >
+              {item.name}
+            </span>
+            <p
+              className={
+                theme === 'dark' ? styles.descriptiondark : styles.description
+              }
+            >
+              {item.description}
+            </p>
           </div>
           <div className={styles.footer}>
             <div className={styles.footerTop}>

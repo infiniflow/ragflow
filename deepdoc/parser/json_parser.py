@@ -1,9 +1,26 @@
 # -*- coding: utf-8 -*-
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
 # The following documents are mainly referenced, and only adaptation modifications have been made
 # from https://github.com/langchain-ai/langchain/blob/master/libs/text-splitters/langchain_text_splitters/json.py
 
 import json
 from typing import Any
+
 from rag.nlp import find_codec
 class RAGFlowJsonParser:
     def __init__(
@@ -22,7 +39,7 @@ class RAGFlowJsonParser:
         txt = binary.decode(encoding, errors="ignore")
         json_data = json.loads(txt)
         chunks = self.split_json(json_data, True)   
-        sections = [json.dumps(l, ensure_ascii=False) for l in chunks if l]
+        sections = [json.dumps(line, ensure_ascii=False) for line in chunks if line]
         return sections
 
     @staticmethod
@@ -53,7 +70,7 @@ class RAGFlowJsonParser:
         
     def _json_split(
         self,
-        data: dict[str, Any],
+        data,
         current_path: list[str] | None,
         chunks: list[dict] | None,
     ) -> list[dict]:
@@ -86,15 +103,16 @@ class RAGFlowJsonParser:
 
     def split_json(
         self,
-        json_data: dict[str, Any],
+        json_data,
         convert_lists: bool = False,
     ) -> list[dict]:
         """Splits JSON into a list of JSON chunks"""
 
         if convert_lists:
-            chunks = self._json_split(self._list_to_dict_preprocessing(json_data))
+            preprocessed_data = self._list_to_dict_preprocessing(json_data)
+            chunks = self._json_split(preprocessed_data, None, None)
         else:
-            chunks = self._json_split(json_data)
+            chunks = self._json_split(json_data, None, None)
 
         # Remove the last chunk if it's empty
         if not chunks[-1]:

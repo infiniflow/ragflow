@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import logging
 from tika import parser
 import re
@@ -84,9 +88,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if kwargs.get(
-            "parser_config", {}).get(
-            "layout_recognize", True) else PlainParser()
+        pdf_parser = Pdf()
+        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
 
@@ -94,7 +98,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         sections = txt.split("\n")
-        sections = [(l, "") for l in sections if l]
+        sections = [(line, "") for line in sections if line]
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
         callback(0.8, "Finish parsing.")
@@ -102,7 +106,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = HtmlParser()(filename, binary)
-        sections = [(l, "") for l in sections if l]
+        sections = [(line, "") for line in sections if line]
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
         callback(0.8, "Finish parsing.")
@@ -112,7 +116,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         binary = BytesIO(binary)
         doc_parsed = parser.from_buffer(binary)
         sections = doc_parsed['content'].split('\n')
-        sections = [(l, "") for l in sections if l]
+        sections = [(line, "") for line in sections if line]
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
         callback(0.8, "Finish parsing.")

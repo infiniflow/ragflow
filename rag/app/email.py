@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -37,7 +40,7 @@ def chunk(
     eng = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config",
-        {"chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": True},
+        {"chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"},
     )
     doc = {
         "docnm_kwd": filename,
@@ -75,7 +78,7 @@ def chunk(
     _add_content(msg, msg.get_content_type())
 
     sections = TxtParser.parser_txt("\n".join(text_txt)) + [
-        (l, "") for l in HtmlParser.parser_txt("\n".join(html_txt)) if l
+        (line, "") for line in HtmlParser.parser_txt("\n".join(html_txt)) if line
     ]
 
     st = timer()

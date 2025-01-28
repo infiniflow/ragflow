@@ -9,6 +9,8 @@ import TabItem from '@theme/TabItem';
 
 Run models locally using Ollama, Xinference, or other frameworks.
 
+---
+
 RAGFlow supports deploying models locally using Ollama, Xinference, IPEX-LLM, or jina. If you have locally deployed models to leverage or wish to enable GPU or CUDA for inference acceleration, you can bind Ollama or Xinference into RAGFlow and use either of them as a local "server" for interacting with your local models.
 
 RAGFlow seamlessly integrates with Ollama and Xinference, without the need for further environment configurations. You can use them to deploy two types of local models in RAGFlow: chat models and embedding models.
@@ -37,7 +39,7 @@ time=2024-12-02T02:20:21.360Z level=INFO source=common.go:49 msg="Dynamic LLM li
 
 Ensure ollama is listening on all IP address:
 ```bash
-sudo ss -tunlp|grep 11434
+sudo ss -tunlp | grep 11434
 tcp   LISTEN 0      4096                  0.0.0.0:11434      0.0.0.0:*    users:(("docker-proxy",pid=794507,fd=4))
 tcp   LISTEN 0      4096                     [::]:11434         [::]:*    users:(("docker-proxy",pid=794513,fd=4))
 ```
@@ -78,7 +80,7 @@ Ollama is running
 
 ### 4. Add Ollama
 
-In RAGFlow, click on your logo on the top right of the page **>** **Model Providers** and add Ollama to RAGFlow: 
+In RAGFlow, click on your logo on the top right of the page **>** **Model providers** and add Ollama to RAGFlow:
 
 ![add ollama](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
@@ -101,7 +103,7 @@ Max retries exceeded with url: /api/chat (Caused by NewConnectionError('<urllib3
 
 ### 6. Update System Model Settings
 
-Click on your logo **>** **Model Providers** **>** **System Model Settings** to update your model: 
+Click on your logo **>** **Model providers** **>** **System Model Settings** to update your model:
    
 *You should now be able to find **llama3.2** from the dropdown list under **Chat model**, and **bge-m3** from the dropdown list under **Embedding model**.*
 
@@ -143,7 +145,7 @@ $ xinference launch -u mistral --model-name mistral-v0.1 --size-in-billions 7 --
 ```
 ### 4. Add Xinference
 
-In RAGFlow, click on your logo on the top right of the page **>** **Model Providers** and add Xinference to RAGFlow: 
+In RAGFlow, click on your logo on the top right of the page **>** **Model providers** and add Xinference to RAGFlow:
 
 ![add xinference](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
@@ -154,7 +156,7 @@ Enter an accessible base URL, such as `http://<your-xinference-endpoint-domain>:
 
 ### 6. Update System Model Settings
 
-Click on your logo **>** **Model Providers** **>** **System Model Settings** to update your model.
+Click on your logo **>** **Model providers** **>** **System Model Settings** to update your model.
    
 *You should now be able to find **mistral** from the dropdown list under **Chat model**.*
 

@@ -97,8 +97,8 @@ const Login = () => {
   const step = Number((searchParams.get('step') ?? Step.SignIn) as Step);
 
   return (
-    <div className="w-full h-full flex items-center pl-[15%]">
-      <div className="inline-block">
+    <div className="w-full h-full flex items-center pl-[15%] bg-[url('@/assets/svg/next-login-bg.svg')] bg-cover bg-center">
+      <div className="inline-block bg-colors-background-neutral-standard rounded-lg">
         {step === Step.SignIn && <SignInCard></SignInCard>}
         {step === Step.SignUp && <SignUpCard></SignUpCard>}
         {step === Step.VerifyEmail && <VerifyEmailCard></VerifyEmailCard>}

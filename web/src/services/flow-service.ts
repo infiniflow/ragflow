@@ -4,6 +4,7 @@ import request from '@/utils/request';
 
 const {
   getCanvas,
+  getCanvasSSE,
   setCanvas,
   listCanvas,
   resetCanvas,
@@ -11,11 +12,17 @@ const {
   runCanvas,
   listTemplates,
   testDbConnect,
+  getInputElements,
+  debug,
 } = api;
 
 const methods = {
   getCanvas: {
     url: getCanvas,
+    method: 'get',
+  },
+  getCanvasSSE: {
+    url: getCanvasSSE,
     method: 'get',
   },
   setCanvas: {
@@ -44,6 +51,14 @@ const methods = {
   },
   testDbConnect: {
     url: testDbConnect,
+    method: 'post',
+  },
+  getInputElements: {
+    url: getInputElements,
+    method: 'get',
+  },
+  debugSingle: {
+    url: debug,
     method: 'post',
   },
 } as const;

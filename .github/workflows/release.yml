@@ -1,0 +1,124 @@
+name: release
+
+on:
+  schedule:
+    - cron: '0 13 * * *'  # This schedule runs every 13:00:00Z(21:00:00+08:00)
+  # The "create tags" trigger is specifically focused on the creation of new tags, while the "push tags" trigger is activated when tags are pushed, including both new tag creations and updates to existing tags.
+  create:
+    tags:
+      - "v*.*.*"                  # normal release
+      - "nightly"                 # the only one mutable tag
+
+# https://docs.github.com/en/actions/using-jobs/using-concurrency
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: [ "self-hosted", "overseas" ]
+    steps:
+      - name: Ensure workspace ownership
+        run: echo "chown -R $USER $GITHUB_WORKSPACE" && sudo chown -R $USER $GITHUB_WORKSPACE
+
+      # https://github.com/actions/checkout/blob/v3/README.md
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.MY_GITHUB_TOKEN }}  # Use the secret as an environment variable
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Prepare release body
+        run: |
+          if [[ $GITHUB_EVENT_NAME == 'create' ]]; then
+            RELEASE_TAG=${GITHUB_REF#refs/tags/}
+            if [[ $RELEASE_TAG == 'nightly' ]]; then
+              PRERELEASE=true
+            else
+              PRERELEASE=false
+            fi
+            echo "Workflow triggered by create tag: $RELEASE_TAG"
+          else
+            RELEASE_TAG=nightly
+            PRERELEASE=true
+            echo "Workflow triggered by schedule"
+          fi
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
+          echo "PRERELEASE=$PRERELEASE" >> $GITHUB_ENV
+          RELEASE_DATETIME=$(date --rfc-3339=seconds)
+          echo Release $RELEASE_TAG created from $GITHUB_SHA at $RELEASE_DATETIME > release_body.md
+
+      - name: Move the existing mutable tag
+        # https://github.com/softprops/action-gh-release/issues/171
+        run: |
+          git fetch --tags
+          if [[ $GITHUB_EVENT_NAME == 'schedule' ]]; then
+            # Determine if a given tag exists and matches a specific Git commit.
+            # actions/checkout@v4 fetch-tags doesn't work when triggered by schedule
+            if [ "$(git rev-parse -q --verify "refs/tags/$RELEASE_TAG")" = "$GITHUB_SHA" ]; then
+              echo "mutable tag $RELEASE_TAG exists and matches $GITHUB_SHA"
+            else
+              git tag -f $RELEASE_TAG $GITHUB_SHA
+              git push -f origin $RELEASE_TAG:refs/tags/$RELEASE_TAG
+              echo "created/moved mutable tag $RELEASE_TAG to $GITHUB_SHA"
+            fi
+          fi
+
+      - name: Create or overwrite a release
+        # https://github.com/actions/upload-release-asset has been replaced by https://github.com/softprops/action-gh-release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.MY_GITHUB_TOKEN }}  # Use the secret as an environment variable
+          prerelease: ${{ env.PRERELEASE }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          # The body field does not support environment variable substitution directly.
+          body_path: release_body.md
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # https://github.com/marketplace/actions/docker-login
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: infiniflow
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # https://github.com/marketplace/actions/build-and-push-docker-images
+      - name: Build and push full image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: infiniflow/ragflow:${{ env.RELEASE_TAG }}
+          file: Dockerfile
+          platforms: linux/amd64
+
+      # https://github.com/marketplace/actions/build-and-push-docker-images
+      - name: Build and push slim image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: infiniflow/ragflow:${{ env.RELEASE_TAG }}-slim
+          file: Dockerfile
+          build-args: LIGHTEN=1
+          platforms: linux/amd64
+
+      - name: Build ragflow-sdk
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd sdk/python && \
+          uv build
+
+      - name: Publish package distributions to PyPI
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk/python/dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          verbose: true

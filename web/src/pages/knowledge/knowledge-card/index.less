@@ -27,7 +27,7 @@
   .titleWrapper {
     margin: 16px 0;
     overflow: hidden;
-    
+
     .title {
       display: -webkit-box;
       -webkit-line-clamp: 2;
@@ -39,8 +39,8 @@
       color: rgba(0, 0, 0, 0.88);
       word-break: break-all;
     }
-    
-    .description{
+
+    .description {
       margin-top: 4px;
       display: -webkit-box;
       -webkit-line-clamp: 3;
@@ -51,31 +51,50 @@
       line-height: 20px;
       color: rgba(0, 0, 0, 0.45);
     }
+    .titledark {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 24px;
+      line-height: 32px;
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    .descriptiondark {
+      margin-top: 4px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 20px;
+    }
   }
 }
 
 .card {
   border-radius: 12px;
-  border: 1px solid rgba(234, 236, 240, 1);
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  background-color: rgba(255, 255, 255, 0.1);
   box-shadow: 0px 1px 2px 0px rgba(16, 24, 40, 0.05);
   padding: 24px;
   width: 300px;
   cursor: pointer;
 
   .titleWrapper {
-    // flex: 1;
     .title {
       font-size: 24px;
       line-height: 32px;
       font-weight: 600;
-      color: rgba(0, 0, 0, 0.88);
       word-break: break-all;
     }
     .description {
       font-size: 12px;
       font-weight: 600;
       line-height: 20px;
-      color: rgba(0, 0, 0, 0.45);
     }
   }
 
@@ -101,7 +120,6 @@
   .rightText {
     font-size: 12px;
     font-weight: 600;
-    color: rgba(0, 0, 0, 0.65);
     vertical-align: middle;
   }
 }

@@ -232,7 +232,7 @@ class LinearResize(object):
         """
         assert len(self.target_size) == 2
         assert self.target_size[0] > 0 and self.target_size[1] > 0
-        im_channel = im.shape[2]
+        _im_channel = im.shape[2]
         im_scale_y, im_scale_x = self.generate_scale(im)
         im = cv2.resize(
             im,
@@ -255,7 +255,7 @@ class LinearResize(object):
             im_scale_y: the resize ratio of Y
         """
         origin_shape = im.shape[:2]
-        im_c = im.shape[2]
+        _im_c = im.shape[2]
         if self.keep_ratio:
             im_size_min = np.min(origin_shape)
             im_size_max = np.max(origin_shape)
@@ -581,7 +581,7 @@ class SRResize(object):
             return data
 
         images_HR = data["image_hr"]
-        label_strs = data["label"]
+        _label_strs = data["label"]
         transform = ResizeNormalize((imgW, imgH))
         images_HR = transform(images_HR)
         data["img_hr"] = images_HR
@@ -709,3 +709,29 @@ def preprocess(im, preprocess_ops):
     for operator in preprocess_ops:
         im, im_info = operator(im, im_info)
     return im, im_info
+
+
+def nms(bboxes, scores, iou_thresh):
+    import numpy as np
+    x1 = bboxes[:, 0]
+    y1 = bboxes[:, 1]
+    x2 = bboxes[:, 2]
+    y2 = bboxes[:, 3]
+    areas = (y2 - y1) * (x2 - x1)
+
+    indices = []
+    index = scores.argsort()[::-1]
+    while index.size > 0:
+        i = index[0]
+        indices.append(i)
+        x11 = np.maximum(x1[i], x1[index[1:]])
+        y11 = np.maximum(y1[i], y1[index[1:]])
+        x22 = np.minimum(x2[i], x2[index[1:]])
+        y22 = np.minimum(y2[i], y2[index[1:]])
+        w = np.maximum(0, x22 - x11 + 1)
+        h = np.maximum(0, y22 - y11 + 1)
+        overlaps = w * h
+        ious = overlaps / (areas[i] + areas[index[1:]] - overlaps)
+        idx = np.where(ious <= iou_thresh)[0]
+        index = index[idx + 1]
+    return indices

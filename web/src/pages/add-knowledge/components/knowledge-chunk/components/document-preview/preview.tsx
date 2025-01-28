@@ -32,7 +32,6 @@ const HighlightPopup = ({
 // TODO: merge with DocumentPreviewer
 const Preview = ({ highlights: state, setWidthAndHeight }: IProps) => {
   const url = useGetDocumentUrl();
-  useCatchDocumentError(url);
 
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
   const error = useCatchDocumentError(url);
@@ -117,14 +116,6 @@ const Preview = ({ highlights: state, setWidthAndHeight }: IProps) => {
       </PdfLoader>
     </div>
   );
-};
-
-const compare = (oldProps: IProps, newProps: IProps) => {
-  const arePropsEqual =
-    oldProps.highlights === newProps.highlights ||
-    (oldProps.highlights.length === 0 && newProps.highlights.length === 0);
-
-  return arePropsEqual;
 };
 
 export default memo(Preview);

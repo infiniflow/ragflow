@@ -34,7 +34,7 @@ from api.utils.file_utils import filename_type
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
-@manager.route('/upload', methods=['POST'])
+@manager.route('/upload', methods=['POST'])  # noqa: F821
 @login_required
 # @validate_request("parent_id")
 def upload():
@@ -120,7 +120,7 @@ def upload():
         return server_error_response(e)
 
 
-@manager.route('/create', methods=['POST'])
+@manager.route('/create', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("name")
 def create():
@@ -160,7 +160,7 @@ def create():
         return server_error_response(e)
 
 
-@manager.route('/list', methods=['GET'])
+@manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_files():
     pf_id = request.args.get("parent_id")
@@ -192,7 +192,7 @@ def list_files():
         return server_error_response(e)
 
 
-@manager.route('/root_folder', methods=['GET'])
+@manager.route('/root_folder', methods=['GET'])  # noqa: F821
 @login_required
 def get_root_folder():
     try:
@@ -202,7 +202,7 @@ def get_root_folder():
         return server_error_response(e)
 
 
-@manager.route('/parent_folder', methods=['GET'])
+@manager.route('/parent_folder', methods=['GET'])  # noqa: F821
 @login_required
 def get_parent_folder():
     file_id = request.args.get("file_id")
@@ -217,7 +217,7 @@ def get_parent_folder():
         return server_error_response(e)
 
 
-@manager.route('/all_parent_folder', methods=['GET'])
+@manager.route('/all_parent_folder', methods=['GET'])  # noqa: F821
 @login_required
 def get_all_parent_folders():
     file_id = request.args.get("file_id")
@@ -235,7 +235,7 @@ def get_all_parent_folders():
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['POST'])
+@manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_ids")
 def rm():
@@ -284,7 +284,7 @@ def rm():
         return server_error_response(e)
 
 
-@manager.route('/rename', methods=['POST'])
+@manager.route('/rename', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_id", "name")
 def rename():
@@ -322,15 +322,20 @@ def rename():
         return server_error_response(e)
 
 
-@manager.route('/get/<file_id>', methods=['GET'])
-# @login_required
+@manager.route('/get/<file_id>', methods=['GET'])  # noqa: F821
+@login_required
 def get(file_id):
     try:
         e, file = FileService.get_by_id(file_id)
         if not e:
             return get_data_error_result(message="Document not found!")
-        b, n = File2DocumentService.get_storage_address(file_id=file_id)
-        response = flask.make_response(STORAGE_IMPL.get(b, n))
+
+        blob = STORAGE_IMPL.get(file.parent_id, file.location)
+        if not blob:
+            b, n = File2DocumentService.get_storage_address(file_id=file_id)
+            blob = STORAGE_IMPL.get(b, n)
+
+        response = flask.make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name)
         if ext:
             if file.type == FileType.VISUAL.value:
@@ -345,7 +350,7 @@ def get(file_id):
         return server_error_response(e)
 
 
-@manager.route('/mv', methods=['POST'])
+@manager.route('/mv', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("src_file_ids", "dest_file_id")
 def move():

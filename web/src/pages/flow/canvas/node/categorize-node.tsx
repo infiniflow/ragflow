@@ -1,22 +1,31 @@
 import LLMLabel from '@/components/llm-select/llm-label';
+import { useTheme } from '@/components/theme-provider';
+import { ICategorizeNode } from '@/interfaces/database/flow';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { NodeData } from '../../interface';
 import { RightHandleStyle } from './handle-icon';
 import { useBuildCategorizeHandlePositions } from './hooks';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-export function CategorizeNode({ id, data, selected }: NodeProps<NodeData>) {
+export function CategorizeNode({
+  id,
+  data,
+  selected,
+}: NodeProps<ICategorizeNode>) {
   const { positions } = useBuildCategorizeHandlePositions({ data, id });
-
+  const { theme } = useTheme();
   return (
     <section
-      className={classNames(styles.logicNode, {
-        [styles.selectedNode]: selected,
-      })}
+      className={classNames(
+        styles.logicNode,
+        theme === 'dark' ? styles.dark : '',
+        {
+          [styles.selectedNode]: selected,
+        },
+      )}
     >
       <Handle
         type="target"

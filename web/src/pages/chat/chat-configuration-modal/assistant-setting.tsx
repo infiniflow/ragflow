@@ -24,7 +24,7 @@ const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
     (checked: boolean) => {
       if (checked && !data.tts_id) {
         message.error(`Please set TTS model firstly. 
-        Setting >> Model Providers >> System model settings`);
+        Setting >> Model providers >> System model settings`);
         form.setFieldValue(['prompt_config', 'tts'], false);
       }
     },
@@ -104,6 +104,15 @@ const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
         name={['prompt_config', 'quote']}
         tooltip={t('quoteTip')}
         initialValue={true}
+      >
+        <Switch />
+      </Form.Item>
+      <Form.Item
+        label={t('keyword')}
+        valuePropName="checked"
+        name={['prompt_config', 'keyword']}
+        tooltip={t('keywordTip')}
+        initialValue={false}
       >
         <Switch />
       </Form.Item>

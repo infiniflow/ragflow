@@ -1,10 +1,11 @@
+import { NodeProps, NodeResizeControl } from '@xyflow/react';
 import { Flex, Form, Input } from 'antd';
 import classNames from 'classnames';
-import { NodeProps, NodeResizeControl } from 'reactflow';
-import { NodeData } from '../../interface';
 import NodeDropdown from './dropdown';
 
 import SvgIcon from '@/components/svg-icon';
+import { useTheme } from '@/components/theme-provider';
+import { INoteNode } from '@/interfaces/database/flow';
 import { memo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -20,9 +21,10 @@ const controlStyle = {
   border: 'none',
 };
 
-function NoteNode({ data, id }: NodeProps<NodeData>) {
+function NoteNode({ data, id }: NodeProps<INoteNode>) {
   const { t } = useTranslation();
   const [form] = Form.useForm();
+  const { theme } = useTheme();
 
   const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
     id,
@@ -48,10 +50,15 @@ function NoteNode({ data, id }: NodeProps<NodeData>) {
           }}
         ></SvgIcon>
       </NodeResizeControl>
-      <section className={styles.noteNode}>
+      <section
+        className={classNames(
+          styles.noteNode,
+          theme === 'dark' ? styles.dark : '',
+        )}
+      >
         <Flex
           justify={'space-between'}
-          className={classNames(styles.noteTitle, 'note-drag-handle')}
+          className={classNames('note-drag-handle')}
           align="center"
           gap={6}
         >

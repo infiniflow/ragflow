@@ -17,6 +17,9 @@ services:
       - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=false
       - xpack.security.transport.ssl.enabled=false
+      - cluster.routing.allocation.disk.watermark.low=5gb
+      - cluster.routing.allocation.disk.watermark.high=3gb
+      - cluster.routing.allocation.disk.watermark.flood_stage=2gb
       - TZ=${TIMEZONE}
     mem_limit: ${MEM_LIMIT}
     ulimits:
@@ -36,7 +39,7 @@ services:
     container_name: ragflow-infinity
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.5.0-dev5
+    image: infiniflow/infinity:v0.6.0-dev2
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -74,7 +77,7 @@ services:
     command:
       --max_connections=1000
       --character-set-server=utf8mb4
-      --collation-server=utf8mb4_general_ci
+      --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
       --tls_version="TLSv1.2,TLSv1.3"
       --init-file /data/application/init.sql

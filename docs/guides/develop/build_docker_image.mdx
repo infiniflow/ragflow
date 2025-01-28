@@ -12,6 +12,7 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
 ## Target Audience
 
 - Developers who have added new features or modified the existing code and require a Docker image to view and debug their changes.
+- Developers looking to build a RAGFlow Docker image for an ARM64 platform.
 - Testers looking to explore the latest features of RAGFlow in a Docker image.
 
 ## Prerequisites
@@ -31,7 +32,7 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
   ]}>
   <TabItem value="without">
 
-This image is approximately 1 GB in size and relies on external LLM and embedding services.
+This image is approximately 2 GB in size and relies on external LLM and embedding services.
 
 :::tip NOTE
 While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
@@ -40,9 +41,7 @@ While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlo
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
-python3 download_deps.py
-docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+docker compose -f docker/docker-compose-macos.yml up -d
 ```
 
 
@@ -52,15 +51,17 @@ docker build -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
 This image is approximately 9 GB in size. As it includes embedding models, it relies on external LLM services only.  
 
 :::tip NOTE
-While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
+While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine.
 :::
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-pip3 install huggingface-hub nltk
+pip3 install huggingface_hub nltk
 python3 download_deps.py
-docker build -f Dockerfile -t infiniflow/ragflow:dev .
+docker build -f Dockerfile.deps -t infiniflow/ragflow_deps .
+docker build -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
   </TabItem>

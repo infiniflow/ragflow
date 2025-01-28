@@ -1,8 +1,10 @@
-import Editor from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
 import { Form, Input, InputNumber, Select, Space, Switch } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { IOperatorForm } from '../../interface';
 import DynamicVariablesForm from './dynamic-variables';
+
+loader.config({ paths: { vs: '/vs' } });
 
 enum Method {
   GET = 'GET',
@@ -67,7 +69,7 @@ const InvokeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         >
           <Switch />
         </Form.Item>
-        <DynamicVariablesForm nodeId={node?.id}></DynamicVariablesForm>
+        <DynamicVariablesForm node={node}></DynamicVariablesForm>
       </Form>
     </>
   );

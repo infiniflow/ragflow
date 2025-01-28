@@ -12,7 +12,7 @@ const AkShareForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <TopNItem initialValue={10} max={99}></TopNItem>
     </Form>
   );

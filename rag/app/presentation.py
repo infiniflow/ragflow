@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import copy
 import re
 from io import BytesIO
@@ -20,7 +24,6 @@ from rag.nlp import tokenize, is_english
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, PptParser, PlainParser
 from PyPDF2 import PdfReader as pdf2_read
-import json
 
 
 class Ppt(PptParser):
@@ -109,26 +112,25 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             d = copy.deepcopy(doc)
             pn += from_page
             d["image"] = img
-            d["page_num_list"] = json.dumps([pn + 1])
-            d["top_list"] = json.dumps([0])
-            d["position_list"] = json.dumps([(pn + 1, 0, img.size[0], 0, img.size[1])])
+            d["page_num_int"] = [pn + 1]
+            d["top_int"] = [0]
+            d["position_int"] = [(pn + 1, 0, img.size[0], 0, img.size[1])]
             tokenize(d, txt, eng)
             res.append(d)
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if kwargs.get(
-            "parser_config", {}).get(
-            "layout_recognize", True) else PlainPdf()
+        pdf_parser = Pdf()
+        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
         for pn, (txt, img) in enumerate(pdf_parser(filename, binary,
                                                    from_page=from_page, to_page=to_page, callback=callback)):
             d = copy.deepcopy(doc)
             pn += from_page
             if img:
                 d["image"] = img
-            d["page_num_list"] = json.dumps([pn + 1])
-            d["top_list"] = json.dumps([0])
-            d["position_list"] = json.dumps([
-                (pn + 1, 0, img.size[0] if img else 0, 0, img.size[1] if img else 0)])
+            d["page_num_int"] = [pn + 1]
+            d["top_int"] = [0]
+            d["position_int"] = [(pn + 1, 0, img.size[0] if img else 0, 0, img.size[1] if img else 0)]
             tokenize(d, txt, eng)
             res.append(d)
         return res

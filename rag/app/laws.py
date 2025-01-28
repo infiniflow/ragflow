@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import logging
 from tika import parser
 import re
@@ -48,7 +52,7 @@ class Docx(DocxParser):
                     continue
                 if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
-        return [l for l in lines if l]
+        return [line for line in lines if line]
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000):
         self.doc = Document(
@@ -60,7 +64,8 @@ class Docx(DocxParser):
             if pn > to_page:
                 break
             question_level, p_text = docx_question_level(p, bull)
-            if not p_text.strip("\n"):continue
+            if not p_text.strip("\n"):
+                continue
             lines.append((question_level, p_text))
 
             for run in p.runs:
@@ -78,19 +83,21 @@ class Docx(DocxParser):
                 if lines[e][0] <= lines[s][0]:
                     break
                 e += 1
-            if e - s == 1 and visit[s]: continue
+            if e - s == 1 and visit[s]:
+                continue
             sec = []
             next_level = lines[s][0] + 1
             while not sec and next_level < 22:
                 for i in range(s+1, e):
-                    if lines[i][0] != next_level: continue
+                    if lines[i][0] != next_level:
+                        continue
                     sec.append(lines[i][1])
                     visit[i] = True
                 next_level += 1
             sec.insert(0, lines[s][1])
 
             sections.append("\n".join(sec))
-        return [l for l in sections if l]
+        return [s for s in sections if s]
 
     def __str__(self) -> str:
         return f'''
@@ -150,16 +157,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        for txt in Docx()(filename, binary):
-            sections.append(txt)
-        callback(0.8, "Finish parsing.")
-        chunks = sections
-        return tokenize_chunks(chunks, doc, eng, pdf_parser)
+        chunks = Docx()(filename, binary)
+        callback(0.7, "Finish parsing.")
+        return tokenize_chunks(chunks, doc, eng, None)
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if kwargs.get(
-            "parser_config", {}).get(
-            "layout_recognize", True) else PlainParser()
+        pdf_parser = Pdf()
+        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
         for txt, poss in pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)[0]:
             sections.append(txt + poss)
@@ -168,13 +173,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         sections = txt.split("\n")
-        sections = [l for l in sections if l]
+        sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = HtmlParser()(filename, binary)
-        sections = [l for l in sections if l]
+        sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
@@ -182,7 +187,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         binary = BytesIO(binary)
         doc_parsed = parser.from_buffer(binary)
         sections = doc_parsed['content'].split('\n')
-        sections = [l for l in sections if l]
+        sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
     else:

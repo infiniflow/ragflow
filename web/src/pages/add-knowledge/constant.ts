@@ -17,3 +17,5 @@ export const datasetRouteMap = {
 };
 
 export * from '@/constants/knowledge';
+
+export const TagRenameId = 'tagRename';

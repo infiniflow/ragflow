@@ -16,6 +16,9 @@
 - **docker-compose-base.yml**  
   Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
 
+> [!CAUTION]
+> We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-gpu-CN-oc9.yml**, or **docker-compose-gpu.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
+
 ## 🐬 Docker environment variables
 
 The [.env](./.env) file contains important environment variables for Docker.
@@ -27,7 +30,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `ES_PORT`  
   The port used to expose the Elasticsearch service to the host machine, allowing **external** access to the service running inside the Docker container.  Defaults to `1200`.
 - `ELASTIC_PASSWORD`  
-  The password for Elasticsearch. 
+  The password for Elasticsearch.
 
 ### Kibana
 
@@ -46,7 +49,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### MySQL
 
 - `MYSQL_PASSWORD`  
-  The password for MySQL. 
+  The password for MySQL.
 - `MYSQL_PORT`  
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
 
@@ -59,7 +62,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MINIO_USER`  
   The username for MinIO.
 - `MINIO_PASSWORD`  
-  The password for MinIO. 
+  The password for MinIO.
 
 ### Redis
 
@@ -75,8 +78,8 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:dev-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:dev`: The RAGFlow Docker image with embedding models including:
+  - `infiniflow/ragflow:v0.15.1-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.15.1`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
       - `BAAI/bge-reranker-v2-m3`
@@ -95,12 +98,12 @@ The [.env](./.env) file contains important environment variables for Docker.
 > [!TIP]  
 > If you cannot download the RAGFlow Docker image, try the following mirrors.  
 > 
-> - For the `dev-slim` edition:  
->   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev-slim` or,
->   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev-slim`.
-> - For the `dev` edition:  
->   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:dev` or,
->   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:dev`.
+> - For the `nightly-slim` edition:  
+>   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly-slim` or,
+>   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly-slim`.
+> - For the `nightly` edition:  
+>   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
+>   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
 
 ### Timezone
 
@@ -120,7 +123,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### Maximum file size
 
 - `MAX_CONTENT_LENGTH`  
-  The maximum file size for each uploaded file, in bytes. You can uncomment this line if you wish to change the 128M file size limit.  Please also update `client_max_body_size` in nginx/nginx.conf correspondingly.
+  The maximum file size for each uploaded file, in bytes. You can uncomment this line if you wish to change the 128M file size limit. After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
 
 ## 🐋 Service configuration
 

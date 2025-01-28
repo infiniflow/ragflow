@@ -4,6 +4,7 @@ import {
   useNextWebCrawl,
   useRunNextDocument,
   useSaveNextDocumentName,
+  useSetDocumentMeta,
   useSetNextDocumentParser,
   useUploadNextDocument,
 } from '@/hooks/document-hooks';
@@ -213,6 +214,7 @@ export const useHandleRunDocumentByIds = (id: string) => {
   const handleRunDocumentByIds = async (
     documentId: string,
     isRunning: boolean,
+    shouldDelete: boolean = false,
   ) => {
     if (isLoading) {
       return;
@@ -222,6 +224,7 @@ export const useHandleRunDocumentByIds = (id: string) => {
       await runDocumentByIds({
         documentIds: [documentId],
         run: isRunning ? 2 : 1,
+        shouldDelete,
       });
       setCurrentId('');
     } catch (error) {
@@ -232,5 +235,36 @@ export const useHandleRunDocumentByIds = (id: string) => {
   return {
     handleRunDocumentByIds,
     loading: isLoading,
+  };
+};
+
+export const useShowMetaModal = (documentId: string) => {
+  const { setDocumentMeta, loading } = useSetDocumentMeta();
+
+  const {
+    visible: setMetaVisible,
+    hideModal: hideSetMetaModal,
+    showModal: showSetMetaModal,
+  } = useSetModalState();
+
+  const onSetMetaModalOk = useCallback(
+    async (meta: string) => {
+      const ret = await setDocumentMeta({
+        documentId,
+        meta,
+      });
+      if (ret === 0) {
+        hideSetMetaModal();
+      }
+    },
+    [setDocumentMeta, documentId, hideSetMetaModal],
+  );
+
+  return {
+    setMetaLoading: loading,
+    onSetMetaModalOk,
+    setMetaVisible,
+    hideSetMetaModal,
+    showSetMetaModal,
   };
 };

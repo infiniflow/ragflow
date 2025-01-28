@@ -12,7 +12,7 @@ A complete list of models supported by RAGFlow, which will continue to expand.
 <APITable>
 ```
 
-| Provider              | Chat               | Embedding          | Rerank             | Multimodal         | ASR                | TTS                |
+| Provider              | Chat               | Embedding          | Rerank             | Img2txt            | Sequence2txt       | TTS                |
 | --------------------- | ------------------ | ------------------ | ------------------ | ------------------ | ------------------ | ------------------ |
 | Anthropic             | :heavy_check_mark: |                    |                    |                    |                    |                    |
 | Azure-OpenAI          | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: | :heavy_check_mark: |                    |
@@ -26,6 +26,7 @@ A complete list of models supported by RAGFlow, which will continue to expand.
 | Fish Audio            |                    |                    |                    |                    |                    | :heavy_check_mark: |
 | Gemini                | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: |                    |                    |
 | Google Cloud          | :heavy_check_mark: |                    |                    |                    |                    |                    |
+| GPUStack              | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |                    | :heavy_check_mark: | :heavy_check_mark: |
 | Groq                  | :heavy_check_mark: |                    |                    |                    |                    |                    |
 | HuggingFace           | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |                    |
 | Jina                  |                    | :heavy_check_mark: | :heavy_check_mark: |                    |                    |                    |
@@ -61,6 +62,10 @@ A complete list of models supported by RAGFlow, which will continue to expand.
 ```mdx-code-block
 </APITable>
 ```
+
+:::danger IMPORTANT
+If your model is not listed here but has APIs compatible with those of OpenAI, click **OpenAI-API-Compatible** on the **Model providers** page to configure your model.
+::: 
 
 :::note
 The list of supported models is extracted from [this source](https://github.com/infiniflow/ragflow/blob/main/rag/llm/__init__.py) and may not be the most current. For the latest supported model list, please refer to the Python file.

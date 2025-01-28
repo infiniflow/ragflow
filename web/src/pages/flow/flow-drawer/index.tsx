@@ -1,9 +1,11 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
+import { CloseOutlined } from '@ant-design/icons';
 import { Drawer, Flex, Form, Input } from 'antd';
-import { useEffect } from 'react';
-import { Node } from 'reactflow';
-import { Operator, operatorMap } from '../constant';
+import { lowerFirst } from 'lodash';
+import { Play } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { BeginId, Operator, operatorMap } from '../constant';
 import AkShareForm from '../form/akshare-form';
 import AnswerForm from '../form/answer-form';
 import ArXivForm from '../form/arxiv-form';
@@ -15,6 +17,7 @@ import CategorizeForm from '../form/categorize-form';
 import CrawlerForm from '../form/crawler-form';
 import DeepLForm from '../form/deepl-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
+import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
 import GenerateForm from '../form/generate-form';
 import GithubForm from '../form/github-form';
@@ -30,21 +33,26 @@ import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SwitchForm from '../form/switch-form';
+import TemplateForm from '../form/template-form';
 import TuShareForm from '../form/tushare-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import OperatorIcon from '../operator-icon';
+import { getDrawerWidth, needsSingleStepDebugging } from '../utils';
+import SingleDebugDrawer from './single-debug-drawer';
 
-import { CloseOutlined } from '@ant-design/icons';
-import { lowerFirst } from 'lodash';
-import TemplateForm from '../form/template-form';
-import { getDrawerWidth } from '../utils';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RunTooltip } from '../flow-tooltip';
+import IterationForm from '../form/iteration-from';
 import styles from './index.less';
 
 interface IProps {
-  node?: Node;
+  node?: RAGFlowNodeType;
+  singleDebugDrawerVisible: IModalProps<any>['visible'];
+  hideSingleDebugDrawer: IModalProps<any>['hideModal'];
+  showSingleDebugDrawer: IModalProps<any>['showModal'];
 }
 
 const FormMap = {
@@ -81,6 +89,9 @@ const FormMap = {
   [Operator.Concentrator]: () => <></>,
   [Operator.Note]: () => <></>,
   [Operator.Template]: TemplateForm,
+  [Operator.Email]: EmailForm,
+  [Operator.Iteration]: IterationForm,
+  [Operator.IterationStart]: () => <></>,
 };
 
 const EmptyContent = () => <div></div>;
@@ -89,23 +100,32 @@ const FormDrawer = ({
   visible,
   hideModal,
   node,
+  singleDebugDrawerVisible,
+  hideSingleDebugDrawer,
+  showSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
-  const operatorName: Operator = node?.data.label;
+  const operatorName: Operator = node?.data.label as Operator;
   const OperatorForm = FormMap[operatorName] ?? EmptyContent;
   const [form] = Form.useForm();
   const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
     id: node?.id,
     data: node?.data,
   });
+  const previousId = useRef<string | undefined>(node?.id);
+
   const { t } = useTranslate('flow');
 
   const { handleValuesChange } = useHandleFormValuesChange(node?.id);
 
   useEffect(() => {
     if (visible) {
+      if (node?.id !== previousId.current) {
+        form.resetFields();
+      }
       form.setFieldsValue(node?.data?.form);
+      previousId.current = node?.id;
     }
-  }, [visible, form, node?.data?.form]);
+  }, [visible, form, node?.data?.form, node?.id]);
 
   return (
     <Drawer
@@ -120,12 +140,24 @@ const FormDrawer = ({
               <label htmlFor="" className={styles.title}>
                 {t('title')}
               </label>
-              <Input
-                value={name}
-                onBlur={handleNameBlur}
-                onChange={handleNameChange}
-              ></Input>
+              {node?.id === BeginId ? (
+                <span>{t(BeginId)}</span>
+              ) : (
+                <Input
+                  value={name}
+                  onBlur={handleNameBlur}
+                  onChange={handleNameChange}
+                ></Input>
+              )}
             </Flex>
+            {needsSingleStepDebugging(operatorName) && (
+              <RunTooltip>
+                <Play
+                  className="size-5 cursor-pointer"
+                  onClick={showSingleDebugDrawer}
+                />
+              </RunTooltip>
+            )}
             <CloseOutlined onClick={hideModal} />
           </Flex>
           <span className={styles.operatorDescription}>
@@ -140,6 +172,7 @@ const FormDrawer = ({
       mask={false}
       width={getDrawerWidth()}
       closeIcon={null}
+      rootClassName={styles.formDrawer}
     >
       <section className={styles.formWrapper}>
         {visible && (
@@ -150,6 +183,13 @@ const FormDrawer = ({
           ></OperatorForm>
         )}
       </section>
+      {singleDebugDrawerVisible && (
+        <SingleDebugDrawer
+          visible={singleDebugDrawerVisible}
+          hideModal={hideSingleDebugDrawer}
+          componentId={node?.id}
+        ></SingleDebugDrawer>
+      )}
     </Drawer>
   );
 };

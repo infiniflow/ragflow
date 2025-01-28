@@ -1,7 +1,22 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import numpy as np
-import polars as pl
 
 DEFAULT_MATCH_VECTOR_TOPN = 10
 DEFAULT_MATCH_SPARSE_TOPN = 10
@@ -176,8 +191,18 @@ class DocStoreConnection(ABC):
 
     @abstractmethod
     def search(
-        self, selectFields: list[str], highlight: list[str], condition: dict, matchExprs: list[MatchExpr], orderBy: OrderByExpr, offset: int, limit: int, indexNames: str|list[str], knowledgebaseIds: list[str]
-    ) -> list[dict] | pl.DataFrame:
+        self, selectFields: list[str],
+            highlightFields: list[str],
+            condition: dict,
+            matchExprs: list[MatchExpr],
+            orderBy: OrderByExpr,
+            offset: int,
+            limit: int,
+            indexNames: str|list[str],
+            knowledgebaseIds: list[str],
+            aggFields: list[str] = [],
+            rank_feature: dict | None = None
+    ):
         """
         Search with given conjunctive equivalent filtering condition and return all fields of matched documents
         """
@@ -191,7 +216,7 @@ class DocStoreConnection(ABC):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def insert(self, rows: list[dict], indexName: str, knowledgebaseId: str) -> list[str]:
+    def insert(self, rows: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
         """
         Update or insert a bulk of rows
         """

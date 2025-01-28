@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -19,3 +22,15 @@ from .html_parser import RAGFlowHtmlParser as HtmlParser
 from .json_parser import RAGFlowJsonParser as JsonParser
 from .markdown_parser import RAGFlowMarkdownParser as MarkdownParser
 from .txt_parser import RAGFlowTxtParser as TxtParser
+
+__all__ = [
+    "PdfParser",
+    "PlainParser",
+    "DocxParser",
+    "ExcelParser",
+    "PptParser",
+    "HtmlParser",
+    "JsonParser",
+    "MarkdownParser",
+    "TxtParser",
+]

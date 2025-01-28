@@ -5,6 +5,7 @@ import { ITestingChunk } from '@/interfaces/database/knowledge';
 import {
   Card,
   Collapse,
+  Empty,
   Flex,
   Pagination,
   PaginationProps,
@@ -14,7 +15,10 @@ import {
 import camelCase from 'lodash/camelCase';
 import SelectFiles from './select-files';
 
-import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
+import {
+  useSelectIsTestingSuccess,
+  useSelectTestingResult,
+} from '@/hooks/knowledge-hooks';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import { useCallback, useState } from 'react';
 import styles from './index.less';
@@ -50,6 +54,7 @@ const TestingResult = ({ handleTesting }: IProps) => {
   const { documents, chunks, total } = useSelectTestingResult();
   const { t } = useTranslate('knowledgeDetails');
   const { pagination, setPagination } = useGetPaginationWithRouter();
+  const isSuccess = useSelectIsTestingSuccess();
 
   const onChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
     pagination.onChange?.(pageNumber, pageSize);
@@ -82,7 +87,7 @@ const TestingResult = ({ handleTesting }: IProps) => {
               >
                 <Space>
                   <span>
-                    {selectedDocumentIds?.length ?? 0}/{documents.length}
+                    {selectedDocumentIds?.length ?? 0}/{documents?.length ?? 0}
                   </span>
                   {t('filesSelected')}
                 </Space>
@@ -105,26 +110,30 @@ const TestingResult = ({ handleTesting }: IProps) => {
         flex={1}
         className={styles.selectFilesCollapse}
       >
-        {chunks.map((x) => (
-          <Card key={x.chunk_id} title={<ChunkTitle item={x}></ChunkTitle>}>
-            <Flex gap={'middle'}>
-              {x.img_id && (
-                <Popover
-                  placement="left"
-                  content={
-                    <Image
-                      id={x.img_id}
-                      className={styles.imagePreview}
-                    ></Image>
-                  }
-                >
-                  <Image id={x.img_id} className={styles.image}></Image>
-                </Popover>
-              )}
-              <div>{x.content_with_weight}</div>
-            </Flex>
-          </Card>
-        ))}
+        {isSuccess && chunks.length > 0 ? (
+          chunks?.map((x) => (
+            <Card key={x.chunk_id} title={<ChunkTitle item={x}></ChunkTitle>}>
+              <Flex gap={'middle'}>
+                {x.img_id && (
+                  <Popover
+                    placement="left"
+                    content={
+                      <Image
+                        id={x.img_id}
+                        className={styles.imagePreview}
+                      ></Image>
+                    }
+                  >
+                    <Image id={x.img_id} className={styles.image}></Image>
+                  </Popover>
+                )}
+                <div>{x.content_with_weight}</div>
+              </Flex>
+            </Card>
+          ))
+        ) : isSuccess && chunks.length === 0 ? (
+          <Empty></Empty>
+        ) : null}
       </Flex>
       <Pagination
         {...pagination}

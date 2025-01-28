@@ -13,12 +13,131 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from .embedding_model import *
-from .chat_model import *
-from .cv_model import *
-from .rerank_model import *
-from .sequence2txt_model import *
-from .tts_model import *
+#  AFTER UPDATING THIS FILE, PLEASE ENSURE THAT docs/references/supported_models.mdx IS ALSO UPDATED for consistency!
+#
+from .embedding_model import (
+    OllamaEmbed,
+    LocalAIEmbed,
+    OpenAIEmbed,
+    AzureEmbed,
+    XinferenceEmbed,
+    QWenEmbed,
+    ZhipuEmbed,
+    FastEmbed,
+    YoudaoEmbed,
+    BaiChuanEmbed,
+    JinaEmbed,
+    DefaultEmbedding,
+    MistralEmbed,
+    BedrockEmbed,
+    GeminiEmbed,
+    NvidiaEmbed,
+    LmStudioEmbed,
+    OpenAI_APIEmbed,
+    CoHereEmbed,
+    TogetherAIEmbed,
+    PerfXCloudEmbed,
+    UpstageEmbed,
+    SILICONFLOWEmbed,
+    ReplicateEmbed,
+    BaiduYiyanEmbed,
+    VoyageEmbed,
+    HuggingFaceEmbed,
+    VolcEngineEmbed,
+    GPUStackEmbed,
+)
+from .chat_model import (
+    GptTurbo,
+    AzureChat,
+    ZhipuChat,
+    QWenChat,
+    OllamaChat,
+    LocalAIChat,
+    XinferenceChat,
+    MoonshotChat,
+    DeepSeekChat,
+    VolcEngineChat,
+    BaiChuanChat,
+    MiniMaxChat,
+    MistralChat,
+    GeminiChat,
+    BedrockChat,
+    GroqChat,
+    OpenRouterChat,
+    StepFunChat,
+    NvidiaChat,
+    LmStudioChat,
+    OpenAI_APIChat,
+    CoHereChat,
+    LeptonAIChat,
+    TogetherAIChat,
+    PerfXCloudChat,
+    UpstageChat,
+    NovitaAIChat,
+    SILICONFLOWChat,
+    YiChat,
+    ReplicateChat,
+    HunyuanChat,
+    SparkChat,
+    BaiduYiyanChat,
+    AnthropicChat,
+    GoogleChat,
+    HuggingFaceChat,
+    GPUStackChat,
+)
+
+from .cv_model import (
+    GptV4,
+    AzureGptV4,
+    OllamaCV,
+    XinferenceCV,
+    QWenCV,
+    Zhipu4V,
+    LocalCV,
+    GeminiCV,
+    OpenRouterCV,
+    LocalAICV,
+    NvidiaCV,
+    LmStudioCV,
+    StepFunCV,
+    OpenAI_APICV,
+    TogetherAICV,
+    YiCV,
+    HunyuanCV,
+)
+from .rerank_model import (
+    LocalAIRerank,
+    DefaultRerank,
+    JinaRerank,
+    YoudaoRerank,
+    XInferenceRerank,
+    NvidiaRerank,
+    LmStudioRerank,
+    OpenAI_APIRerank,
+    CoHereRerank,
+    TogetherAIRerank,
+    SILICONFLOWRerank,
+    BaiduYiyanRerank,
+    VoyageRerank,
+    QWenRerank,
+    GPUStackRerank,
+)
+from .sequence2txt_model import (
+    GPTSeq2txt,
+    QWenSeq2txt,
+    AzureSeq2txt,
+    XinferenceSeq2txt,
+    TencentCloudSeq2txt,
+    GPUStackSeq2txt,
+)
+from .tts_model import (
+    FishAudioTTS,
+    QwenTTS,
+    OpenAITTS,
+    SparkTTS,
+    XinferenceTTS,
+    GPUStackTTS,
+)
 
 EmbeddingModel = {
     "Ollama": OllamaEmbed,
@@ -48,7 +167,8 @@ EmbeddingModel = {
     "BaiduYiyan": BaiduYiyanEmbed,
     "Voyage AI": VoyageEmbed,
     "HuggingFace": HuggingFaceEmbed,
-    "VolcEngine":VolcEngineEmbed,
+    "VolcEngine": VolcEngineEmbed,
+    "GPUStack": GPUStackEmbed,
 }
 
 CvModel = {
@@ -68,7 +188,7 @@ CvModel = {
     "OpenAI-API-Compatible": OpenAI_APICV,
     "TogetherAI": TogetherAICV,
     "01.AI": YiCV,
-    "Tencent Hunyuan": HunyuanCV
+    "Tencent Hunyuan": HunyuanCV,
 }
 
 ChatModel = {
@@ -108,10 +228,11 @@ ChatModel = {
     "Anthropic": AnthropicChat,
     "Google Cloud": GoogleChat,
     "HuggingFace": HuggingFaceChat,
+    "GPUStack": GPUStackChat,
 }
 
 RerankModel = {
-    "LocalAI":LocalAIRerank,
+    "LocalAI": LocalAIRerank,
     "BAAI": DefaultRerank,
     "Jina": JinaRerank,
     "Youdao": YoudaoRerank,
@@ -125,6 +246,7 @@ RerankModel = {
     "BaiduYiyan": BaiduYiyanRerank,
     "Voyage AI": VoyageRerank,
     "Tongyi-Qianwen": QWenRerank,
+    "GPUStack": GPUStackRerank,
 }
 
 Seq2txtModel = {
@@ -132,7 +254,8 @@ Seq2txtModel = {
     "Tongyi-Qianwen": QWenSeq2txt,
     "Azure-OpenAI": AzureSeq2txt,
     "Xinference": XinferenceSeq2txt,
-    "Tencent Cloud": TencentCloudSeq2txt
+    "Tencent Cloud": TencentCloudSeq2txt,
+    "GPUStack": GPUStackSeq2txt,
 }
 
 TTSModel = {
@@ -141,4 +264,5 @@ TTSModel = {
     "OpenAI": OpenAITTS,
     "XunFei Spark": SparkTTS,
     "Xinference": XinferenceTTS,
+    "GPUStack": GPUStackTTS,
 }

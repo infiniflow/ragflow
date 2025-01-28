@@ -25,7 +25,7 @@ from api.db import FileType, LLMType, ParserType, FileSource
 from api.db.db_models import APIToken, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
-from api.db.services.dialog_service import DialogService, chat, keyword_extraction
+from api.db.services.dialog_service import DialogService, chat, keyword_extraction, label_question
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -45,7 +45,7 @@ from agent.canvas import Canvas
 from functools import partial
 
 
-@manager.route('/new_token', methods=['POST'])
+@manager.route('/new_token', methods=['POST'])  # noqa: F821
 @login_required
 def new_token():
     req = request.json
@@ -75,7 +75,7 @@ def new_token():
         return server_error_response(e)
 
 
-@manager.route('/token_list', methods=['GET'])
+@manager.route('/token_list', methods=['GET'])  # noqa: F821
 @login_required
 def token_list():
     try:
@@ -90,7 +90,7 @@ def token_list():
         return server_error_response(e)
 
 
-@manager.route('/rm', methods=['POST'])
+@manager.route('/rm', methods=['POST'])  # noqa: F821
 @validate_request("tokens", "tenant_id")
 @login_required
 def rm():
@@ -104,7 +104,7 @@ def rm():
         return server_error_response(e)
 
 
-@manager.route('/stats', methods=['GET'])
+@manager.route('/stats', methods=['GET'])  # noqa: F821
 @login_required
 def stats():
     try:
@@ -135,14 +135,13 @@ def stats():
         return server_error_response(e)
 
 
-@manager.route('/new_conversation', methods=['GET'])
+@manager.route('/new_conversation', methods=['GET'])  # noqa: F821
 def set_conversation():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
-    req = request.json
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
     try:
         if objs[0].source == "agent":
             e, cvs = UserCanvasService.get_by_id(objs[0].dialog_id)
@@ -176,19 +175,20 @@ def set_conversation():
         return server_error_response(e)
 
 
-@manager.route('/completion', methods=['POST'])
+@manager.route('/completion', methods=['POST'])  # noqa: F821
 @validate_request("conversation_id", "messages")
 def completion():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
     req = request.json
     e, conv = API4ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
-    if "quote" not in req: req["quote"] = False
+    if "quote" not in req:
+        req["quote"] = False
 
     msg = []
     for m in req["messages"]:
@@ -197,7 +197,8 @@ def completion():
         if m["role"] == "assistant" and not msg:
             continue
         msg.append(m)
-    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
 
     def fillin_conv(ans):
@@ -340,14 +341,14 @@ def completion():
         return server_error_response(e)
 
 
-@manager.route('/conversation/<conversation_id>', methods=['GET'])
+@manager.route('/conversation/<conversation_id>', methods=['GET'])  # noqa: F821
 # @login_required
 def get(conversation_id):
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     try:
         e, conv = API4ConversationService.get_by_id(conversation_id)
@@ -356,7 +357,7 @@ def get(conversation_id):
 
         conv = conv.to_dict()
         if token != APIToken.query(dialog_id=conv['dialog_id'])[0].token:
-            return get_json_result(data=False, message='Token is not valid for this conversation_id!"',
+            return get_json_result(data=False, message='Authentication error: API key is invalid for this conversation_id!"',
                                    code=settings.RetCode.AUTHENTICATION_ERROR)
 
         for referenct_i in conv['reference']:
@@ -371,14 +372,14 @@ def get(conversation_id):
         return server_error_response(e)
 
 
-@manager.route('/document/upload', methods=['POST'])
+@manager.route('/document/upload', methods=['POST'])  # noqa: F821
 @validate_request("kb_name")
 def upload():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     kb_name = request.form.get("kb_name").strip()
     tenant_id = objs[0].tenant_id
@@ -483,14 +484,14 @@ def upload():
     return get_json_result(data=doc_result.to_json())
 
 
-@manager.route('/document/upload_and_parse', methods=['POST'])
+@manager.route('/document/upload_and_parse', methods=['POST'])  # noqa: F821
 @validate_request("conversation_id")
 def upload_parse():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     if 'file' not in request.files:
         return get_json_result(
@@ -506,14 +507,14 @@ def upload_parse():
     return get_json_result(data=doc_ids)
 
 
-@manager.route('/list_chunks', methods=['POST'])
+@manager.route('/list_chunks', methods=['POST'])  # noqa: F821
 # @login_required
 def list_chunks():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     req = request.json
 
@@ -546,14 +547,14 @@ def list_chunks():
     return get_json_result(data=res)
 
 
-@manager.route('/list_kb_docs', methods=['POST'])
+@manager.route('/list_kb_docs', methods=['POST'])  # noqa: F821
 # @login_required
 def list_kb_docs():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     req = request.json
     tenant_id = objs[0].tenant_id
@@ -586,28 +587,28 @@ def list_kb_docs():
         return server_error_response(e)
 
 
-@manager.route('/document/infos', methods=['POST'])
+@manager.route('/document/infos', methods=['POST'])  # noqa: F821
 @validate_request("doc_ids")
 def docinfos():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
     req = request.json
     doc_ids = req["doc_ids"]
     docs = DocumentService.get_by_ids(doc_ids)
     return get_json_result(data=list(docs.dicts()))
 
 
-@manager.route('/document', methods=['DELETE'])
+@manager.route('/document', methods=['DELETE'])  # noqa: F821
 # @login_required
 def document_rm():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     tenant_id = objs[0].tenant_id
     req = request.json
@@ -659,7 +660,7 @@ def document_rm():
     return get_json_result(data=True)
 
 
-@manager.route('/completion_aibotk', methods=['POST'])
+@manager.route('/completion_aibotk', methods=['POST'])  # noqa: F821
 @validate_request("Authorization", "conversation_id", "word")
 def completion_faq():
     import base64
@@ -669,16 +670,18 @@ def completion_faq():
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     e, conv = API4ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
-    if "quote" not in req: req["quote"] = True
+    if "quote" not in req:
+        req["quote"] = True
 
     msg = []
     msg.append({"role": "user", "content": req["word"]})
-    if not msg[-1].get("id"): msg[-1]["id"] = get_uuid()
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]
 
     def fillin_conv(ans):
@@ -799,14 +802,14 @@ def completion_faq():
         return server_error_response(e)
 
 
-@manager.route('/retrieval', methods=['POST'])
+@manager.route('/retrieval', methods=['POST'])  # noqa: F821
 @validate_request("kb_id", "question")
 def retrieval():
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
         return get_json_result(
-            data=False, message='Token is not valid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
 
     req = request.json
     kb_ids = req.get("kb_id", [])
@@ -837,7 +840,8 @@ def retrieval():
             question += keyword_extraction(chat_mdl, question)
         ranks = settings.retrievaler.retrieval(question, embd_mdl, kbs[0].tenant_id, kb_ids, page, size,
                                                similarity_threshold, vector_similarity_weight, top,
-                                               doc_ids, rerank_mdl=rerank_mdl)
+                                               doc_ids, rerank_mdl=rerank_mdl,
+                                               rank_feature=label_question(question, kbs))
         for c in ranks["chunks"]:
             c.pop("vector", None)
         return get_json_result(data=ranks)

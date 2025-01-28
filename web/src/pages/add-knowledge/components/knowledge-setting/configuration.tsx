@@ -11,7 +11,11 @@ import MaxTokenNumber from '@/components/max-token-number';
 import PageRank from '@/components/page-rank';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
+  showTagItems,
 } from '@/components/parse-configuration';
+import GraphRagItems, {
+  showGraphRagItems,
+} from '@/components/parse-configuration/graph-rag-items';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useHandleChunkMethodSelectChange } from '@/hooks/logic-hooks';
 import { normFile } from '@/utils/file-util';
@@ -23,6 +27,7 @@ import {
   useSubmitKnowledgeConfiguration,
 } from './hooks';
 import styles from './index.less';
+import { TagItems } from './tag-item';
 
 const { Option } = Select;
 
@@ -70,6 +75,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
         <Select placeholder={t('languagePlaceholder')}>
           <Option value="English">{t('english')}</Option>
           <Option value="Chinese">{t('chinese')}</Option>
+          <Option value="Vietnamese">{t('vietnamese')}</Option>
         </Select>
       </Form.Item>
       <Form.Item
@@ -145,6 +151,10 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
               {showRaptorParseConfiguration(parserId) && (
                 <ParseConfiguration></ParseConfiguration>
               )}
+
+              {showGraphRagItems(parserId) && <GraphRagItems></GraphRagItems>}
+
+              {showTagItems(parserId) && <TagItems></TagItems>}
             </>
           );
         }}

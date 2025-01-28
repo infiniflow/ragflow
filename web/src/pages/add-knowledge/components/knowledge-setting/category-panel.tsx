@@ -6,9 +6,10 @@ import DOMPurify from 'dompurify';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
 import styles from './index.less';
+import { TagTabs } from './tag-tabs';
 import { ImageMap } from './utils';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   const parserList = useSelectParserList();
@@ -36,17 +37,15 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
     <section className={styles.categoryPanelWrapper}>
       {imageList.length > 0 ? (
         <>
-          <Title level={5} className={styles.topTitle}>
-            "{item.title}" {t('methodTitle')}
-          </Title>
+          <h5 className="font-semibold text-base mt-0 mb-1">
+            {`"${item.title}" ${t('methodTitle')}`}
+          </h5>
           <p
             dangerouslySetInnerHTML={{
               __html: DOMPurify.sanitize(item.description),
             }}
           ></p>
-          <Title level={5}>
-            "{item.title}" {t('methodExamples')}
-          </Title>
+          <h5 className="font-semibold text-base mt-4 mb-1">{`"${item.title}" ${t('methodExamples')}`}</h5>
           <Text>{t('methodExamplesDescription')}</Text>
           <Row gutter={[10, 10]} className={styles.imageRow}>
             {imageList.map((x) => (
@@ -59,9 +58,9 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
               </Col>
             ))}
           </Row>
-          <Title level={5}>
+          <h5 className="font-semibold text-base mt-4 mb-1">
             {item.title} {t('dialogueExamplesTitle')}
-          </Title>
+          </h5>
           <Divider></Divider>
         </>
       ) : (
@@ -70,6 +69,7 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
           <SvgIcon name={'chunk-method/chunk-empty'} width={'100%'}></SvgIcon>
         </Empty>
       )}
+      {chunkMethod === 'tag' && <TagTabs></TagTabs>}
     </section>
   );
 };

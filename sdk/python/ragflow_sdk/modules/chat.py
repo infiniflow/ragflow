@@ -1,3 +1,19 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
 
 from .base import Base
 from .session import Session
@@ -28,6 +44,7 @@ class Chat(Base):
             self.similarity_threshold = 0.2
             self.keywords_similarity_weight = 0.7
             self.top_n = 8
+            self.top_k = 1024
             self.variables = [{"key": "knowledge", "optional": True}]
             self.rerank_model = None
             self.empty_response = None
@@ -43,11 +60,10 @@ class Chat(Base):
 
     def update(self, update_message: dict):
         res = self.put(f'/chats/{self.id}',
-                        update_message)
+                       update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
-
 
     def create_session(self, name: str = "New session") -> Session:
         res = self.post(f"/chats/{self.id}/sessions", {"name": name})
@@ -56,9 +72,10 @@ class Chat(Base):
             return Session(self.rag, res['data'])
         raise Exception(res["message"])
 
-    def list_sessions(self,page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
+    def list_sessions(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
                       id: str = None, name: str = None) -> list[Session]:
-        res = self.get(f'/chats/{self.id}/sessions',{"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name} )
+        res = self.get(f'/chats/{self.id}/sessions',
+                       {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
         res = res.json()
         if res.get("code") == 0:
             result_list = []
@@ -67,7 +84,7 @@ class Chat(Base):
             return result_list
         raise Exception(res["message"])
 
-    def delete_sessions(self,ids: list[str] | None = None):
+    def delete_sessions(self, ids: list[str] | None = None):
         res = self.rm(f"/chats/{self.id}/sessions", {"ids": ids})
         res = res.json()
         if res.get("code") != 0:

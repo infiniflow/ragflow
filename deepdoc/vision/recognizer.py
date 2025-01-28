@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -13,13 +16,19 @@
 
 import logging
 import os
+import math
+import numpy as np
+import cv2
 from copy import deepcopy
+
 
 import onnxruntime as ort
 from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
-from .operators import *
+from .operators import *  # noqa: F403
+from .operators import preprocess
+from . import operators
 
 
 class Recognizer(object):
@@ -51,12 +60,29 @@ class Recognizer(object):
         if not os.path.exists(model_file_path):
             raise ValueError("not find model file path {}".format(
                 model_file_path))
-        if False and ort.get_device() == "GPU":
+        # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
+        # Shrink GPU memory after execution
+        self.run_options = ort.RunOptions()
+
+        if ort.get_device() == "GPU":
             options = ort.SessionOptions()
             options.enable_cpu_mem_arena = False
-            self.ort_sess = ort.InferenceSession(model_file_path, options=options, providers=[('CUDAExecutionProvider')])
+            cuda_provider_options = {
+                "device_id": 0, # Use specific GPU
+                "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory
+                "arena_extend_strategy": "kNextPowerOfTwo",  # gpu memory allocation strategy
+            }
+            self.ort_sess = ort.InferenceSession(
+                model_file_path, options=options,
+                providers=['CUDAExecutionProvider'],
+                provider_options=[cuda_provider_options]
+            )
+            self.run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
+            logging.info(f"Recognizer {task_name} uses GPU")
         else:
             self.ort_sess = ort.InferenceSession(model_file_path, providers=['CPUExecutionProvider'])
+            self.run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "cpu")
+            logging.info(f"Recognizer {task_name} uses CPU")
         self.input_names = [node.name for node in self.ort_sess.get_inputs()]
         self.output_names = [node.name for node in self.ort_sess.get_outputs()]
         self.input_shape = self.ort_sess.get_inputs()[0].shape[2:4]
@@ -140,11 +166,11 @@ class Recognizer(object):
             return 0
         x0_ = max(b["x0"], x0)
         x1_ = min(b["x1"], x1)
-        assert x0_ <= x1_, "Fuckedup! T:{},B:{},X0:{},X1:{} ==> {}".format(
+        assert x0_ <= x1_, "Bbox mismatch! T:{},B:{},X0:{},X1:{} ==> {}".format(
             tp, btm, x0, x1, b)
         tp_ = max(b["top"], tp)
         btm_ = min(b["bottom"], btm)
-        assert tp_ <= btm_, "Fuckedup! T:{},B:{},X0:{},X1:{} => {}".format(
+        assert tp_ <= btm_, "Bbox mismatch! T:{},B:{},X0:{},X1:{} => {}".format(
             tp, btm, x0, x1, b)
         ov = (btm_ - tp_) * (x1_ - x0_) if x1 - \
                                            x0 != 0 and btm - tp != 0 else 0
@@ -277,7 +303,8 @@ class Recognizer(object):
             return
         min_dis, min_i = 1000000, None
         for i,b in enumerate(boxes):
-            if box.get("layoutno", "0") != b.get("layoutno", "0"): continue
+            if box.get("layoutno", "0") != b.get("layoutno", "0"):
+                continue
             dis = min(abs(box["x0"] - b["x0"]), abs(box["x1"] - b["x1"]), abs(box["x0"]+box["x1"] - b["x1"] - b["x0"])/2)
             if dis < min_dis:
                 min_i = i
@@ -313,7 +340,7 @@ class Recognizer(object):
             ]:
                 new_op_info = op_info.copy()
                 op_type = new_op_info.pop('type')
-                preprocess_ops.append(eval(op_type)(**new_op_info))
+                preprocess_ops.append(getattr(operators, op_type)(**new_op_info))
 
             for im_path in image_list:
                 im, im_info = preprocess(im_path, preprocess_ops)
@@ -402,7 +429,8 @@ class Recognizer(object):
         scores = np.max(boxes[:, 4:], axis=1)
         boxes = boxes[scores > thr, :]
         scores = scores[scores > thr]
-        if len(boxes) == 0: return []
+        if len(boxes) == 0:
+            return []
 
         # Get the class with the highest confidence
         class_ids = np.argmax(boxes[:, 4:], axis=1)
@@ -432,7 +460,8 @@ class Recognizer(object):
         for i in range(len(image_list)):
             if not isinstance(image_list[i], np.ndarray):
                 imgs.append(np.array(image_list[i]))
-            else: imgs.append(image_list[i])
+            else:
+                imgs.append(image_list[i])
 
         batch_loop_cnt = math.ceil(float(len(imgs)) / batch_size)
         for i in range(batch_loop_cnt):
@@ -442,7 +471,7 @@ class Recognizer(object):
             inputs = self.preprocess(batch_image_list)
             logging.debug("preprocess")
             for ins in inputs:
-                bb = self.postprocess(self.ort_sess.run(None, {k:v for k,v in ins.items() if k in self.input_names})[0], ins, thr)
+                bb = self.postprocess(self.ort_sess.run(None, {k:v for k,v in ins.items() if k in self.input_names}, self.run_options)[0], ins, thr)
                 res.append(bb)
 
         #seeit.save_results(image_list, res, self.label_list, threshold=thr)

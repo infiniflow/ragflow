@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Form, Input, Modal, Select, InputNumber } from 'antd';
+import { Form, Input, InputNumber, Modal, Select } from 'antd';
 
 type FieldType = IAddLlmRequestBody & {
   google_project_id: string;
@@ -27,7 +27,7 @@ const GoogleModal = ({
     const data = {
       ...values,
       llm_factory: llmFactory,
-      max_tokens:values.max_tokens,
+      max_tokens: values.max_tokens,
     };
 
     onOk?.(data);
@@ -112,7 +112,6 @@ const GoogleModal = ({
             style={{ width: '100%' }}
           />
         </Form.Item>
-
       </Form>
     </Modal>
   );

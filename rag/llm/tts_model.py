@@ -16,7 +16,6 @@
 
 import _thread as thread
 import base64
-import datetime
 import hashlib
 import hmac
 import json
@@ -175,7 +174,8 @@ class QwenTTS(Base):
 
 class OpenAITTS(Base):
     def __init__(self, key, model_name="tts-1", base_url="https://api.openai.com/v1"):
-        if not base_url: base_url = "https://api.openai.com/v1"
+        if not base_url:
+            base_url = "https://api.openai.com/v1"
         self.api_key = key
         self.model_name = model_name
         self.base_url = base_url
@@ -299,8 +299,6 @@ class SparkTTS:
             yield audio_chunk
 
 
-
-
 class XinferenceTTS:
     def __init__(self, key, model_name, **kwargs):
         self.base_url = kwargs.get("base_url", None)
@@ -319,6 +317,65 @@ class XinferenceTTS:
 
         response = requests.post(
             f"{self.base_url}/v1/audio/speech",
+            headers=self.headers,
+            json=payload,
+            stream=stream
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"**Error**: {response.status_code}, {response.text}")
+
+        for chunk in response.iter_content(chunk_size=1024):
+            if chunk:
+                yield chunk
+
+
+class OllamaTTS(Base):
+    def __init__(self, key, model_name="ollama-tts", base_url="https://api.ollama.ai/v1"):
+        if not base_url: 
+            base_url = "https://api.ollama.ai/v1"
+        self.model_name = model_name
+        self.base_url = base_url
+        self.headers = {
+            "Content-Type": "application/json"
+        }
+
+    def tts(self, text, voice="standard-voice"):
+        payload = {
+            "model": self.model_name,
+            "voice": voice,
+            "input": text
+        }
+
+        response = requests.post(f"{self.base_url}/audio/tts", headers=self.headers, json=payload, stream=True)
+
+        if response.status_code != 200:
+            raise Exception(f"**Error**: {response.status_code}, {response.text}")
+
+        for chunk in response.iter_content():
+            if chunk:
+                yield chunk
+
+class GPUStackTTS:
+    def __init__(self, key, model_name, **kwargs):
+        self.base_url = kwargs.get("base_url", None)
+        self.api_key = key
+        self.model_name = model_name
+        self.headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+    def tts(self, text, voice="Chinese Female", stream=True):
+        payload = {
+            "model": self.model_name,
+            "input": text,
+            "voice": voice
+        }
+
+        response = requests.post(
+            f"{self.base_url}/v1-openai/audio/speech",
             headers=self.headers,
             json=payload,
             stream=stream

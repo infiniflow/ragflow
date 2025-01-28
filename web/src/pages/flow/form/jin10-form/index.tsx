@@ -65,7 +65,7 @@ const Jin10Form = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <Form.Item label={t('type')} name={'type'} initialValue={'flash'}>
         <Select options={jin10TypeOptions}></Select>
       </Form.Item>
