@@ -41,7 +41,7 @@ While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlo
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+docker compose -f docker/docker-compose-macos.yml up -d
 ```
 
 
