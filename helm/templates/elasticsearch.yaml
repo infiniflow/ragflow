@@ -52,6 +52,12 @@ spec:
         volumeMounts:
           - mountPath: /usr/share/elasticsearch/data
             name: es-data
+      - name: sysctl
+        image: busybox
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        command: ["sysctl", "-w", "vm.max_map_count=262144"]
       containers:
       - name: elasticsearch
         image: docker.elastic.co/elasticsearch/elasticsearch:{{ .Values.env.STACK_VERSION }}

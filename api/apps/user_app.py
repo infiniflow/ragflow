@@ -44,7 +44,7 @@ from api.db.services.file_service import FileService
 from api.utils.api_utils import get_json_result, construct_response
 
 
-@manager.route("/login", methods=["POST", "GET"])
+@manager.route("/login", methods=["POST", "GET"])  # noqa: F821
 def login():
     """
     User login endpoint.
@@ -115,7 +115,7 @@ def login():
         )
 
 
-@manager.route("/github_callback", methods=["GET"])
+@manager.route("/github_callback", methods=["GET"])  # noqa: F821
 def github_callback():
     """
     GitHub OAuth callback endpoint.
@@ -200,7 +200,7 @@ def github_callback():
     return redirect("/?auth=%s" % user.get_id())
 
 
-@manager.route("/feishu_callback", methods=["GET"])
+@manager.route("/feishu_callback", methods=["GET"])  # noqa: F821
 def feishu_callback():
     """
     Feishu OAuth callback endpoint.
@@ -330,12 +330,12 @@ def user_info_from_github(access_token):
         headers=headers,
     ).json()
     user_info["email"] = next(
-        (email for email in email_info if email["primary"] == True), None
+        (email for email in email_info if email["primary"]), None
     )["email"]
     return user_info
 
 
-@manager.route("/logout", methods=["GET"])
+@manager.route("/logout", methods=["GET"])  # noqa: F821
 @login_required
 def log_out():
     """
@@ -357,7 +357,7 @@ def log_out():
     return get_json_result(data=True)
 
 
-@manager.route("/setting", methods=["POST"])
+@manager.route("/setting", methods=["POST"])  # noqa: F821
 @login_required
 def setting_user():
     """
@@ -429,7 +429,7 @@ def setting_user():
         )
 
 
-@manager.route("/info", methods=["GET"])
+@manager.route("/info", methods=["GET"])  # noqa: F821
 @login_required
 def user_profile():
     """
@@ -531,7 +531,7 @@ def user_register(user_id, user):
     return UserService.query(email=user["email"])
 
 
-@manager.route("/register", methods=["POST"])
+@manager.route("/register", methods=["POST"])  # noqa: F821
 @validate_request("nickname", "email", "password")
 def user_add():
     """
@@ -617,7 +617,7 @@ def user_add():
         )
 
 
-@manager.route("/tenant_info", methods=["GET"])
+@manager.route("/tenant_info", methods=["GET"])  # noqa: F821
 @login_required
 def tenant_info():
     """
@@ -655,7 +655,7 @@ def tenant_info():
         return server_error_response(e)
 
 
-@manager.route("/set_tenant_info", methods=["POST"])
+@manager.route("/set_tenant_info", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id")
 def set_tenant_info():

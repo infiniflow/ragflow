@@ -1,3 +1,4 @@
+import LLMSelect from '@/components/llm-select';
 import TopNItem from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useTestDbConnect } from '@/hooks/flow-hooks';
@@ -24,7 +25,14 @@ const ExeSQLForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
+      <Form.Item
+        name={'llm_id'}
+        label={t('model', { keyPrefix: 'chat' })}
+        tooltip={t('modelTip', { keyPrefix: 'chat' })}
+      >
+        <LLMSelect></LLMSelect>
+      </Form.Item>
       <Form.Item
         label={t('dbType')}
         name={'db_type'}

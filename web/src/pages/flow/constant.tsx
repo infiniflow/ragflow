@@ -1,3 +1,9 @@
+import {
+  GitHubIcon,
+  KeywordIcon,
+  QWeatherIcon,
+  WikipediaIcon,
+} from '@/assets/icon/Icon';
 import { ReactComponent as AkShareIcon } from '@/assets/svg/akshare.svg';
 import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
 import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
@@ -8,22 +14,21 @@ import { ReactComponent as ConcentratorIcon } from '@/assets/svg/concentrator.sv
 import { ReactComponent as CrawlerIcon } from '@/assets/svg/crawler.svg';
 import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
+import { ReactComponent as EmailIcon } from '@/assets/svg/email.svg';
 import { ReactComponent as ExeSqlIcon } from '@/assets/svg/exesql.svg';
-import { ReactComponent as GithubIcon } from '@/assets/svg/github.svg';
 import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as InvokeIcon } from '@/assets/svg/invoke-ai.svg';
 import { ReactComponent as Jin10Icon } from '@/assets/svg/jin10.svg';
-import { ReactComponent as KeywordIcon } from '@/assets/svg/keyword.svg';
 import { ReactComponent as NoteIcon } from '@/assets/svg/note.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
-import { ReactComponent as QWeatherIcon } from '@/assets/svg/qweather.svg';
 import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
 import { ReactComponent as TemplateIcon } from '@/assets/svg/template.svg';
 import { ReactComponent as TuShareIcon } from '@/assets/svg/tushare.svg';
 import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
-import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
 import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
+
+// 邮件功能
 
 import { variableEnabledFieldMap } from '@/constants/chat';
 import i18n from '@/locales/config';
@@ -45,13 +50,17 @@ import {
 } from '@ant-design/icons';
 import upperFirst from 'lodash/upperFirst';
 import {
+  CirclePower,
   CloudUpload,
+  IterationCcw,
   ListOrdered,
   OptionIcon,
   TextCursorInput,
   ToggleLeft,
   WrapText,
 } from 'lucide-react';
+
+export const BeginId = 'begin';
 
 export enum Operator {
   Begin = 'Begin',
@@ -87,6 +96,9 @@ export enum Operator {
   Crawler = 'Crawler',
   Invoke = 'Invoke',
   Template = 'Template',
+  Email = 'Email',
+  Iteration = 'Iteration',
+  IterationStart = 'IterationItem',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -112,7 +124,7 @@ export const operatorIconMap = {
   [Operator.Bing]: BingIcon,
   [Operator.GoogleScholar]: GoogleScholarIcon,
   [Operator.DeepL]: DeepLIcon,
-  [Operator.GitHub]: GithubIcon,
+  [Operator.GitHub]: GitHubIcon,
   [Operator.BaiduFanyi]: baiduFanyiIcon,
   [Operator.QWeather]: QWeatherIcon,
   [Operator.ExeSQL]: ExeSqlIcon,
@@ -127,6 +139,9 @@ export const operatorIconMap = {
   [Operator.Crawler]: CrawlerIcon,
   [Operator.Invoke]: InvokeIcon,
   [Operator.Template]: TemplateIcon,
+  [Operator.Email]: EmailIcon,
+  [Operator.Iteration]: IterationCcw,
+  [Operator.IterationStart]: CirclePower,
 };
 
 export const operatorMap: Record<
@@ -188,11 +203,10 @@ export const operatorMap: Record<
   [Operator.KeywordExtract]: {
     width: 70,
     height: 70,
-    backgroundColor: '#0f0e0f',
-    color: '#0f0e0f',
+    backgroundColor: '#6E5494',
+    color: '#6E5494',
     fontSize: 12,
     iconWidth: 16,
-    // iconFontSize: 16,
   },
   [Operator.DuckDuckGo]: {
     backgroundColor: '#e7e389',
@@ -230,10 +244,14 @@ export const operatorMap: Record<
     backgroundColor: '#f5e8e6',
   },
   [Operator.GitHub]: {
-    backgroundColor: '#c7c7f8',
+    backgroundColor: 'purple',
+    color: 'purple',
   },
   [Operator.BaiduFanyi]: { backgroundColor: '#e5f2d3' },
-  [Operator.QWeather]: { backgroundColor: '#a4bbf3' },
+  [Operator.QWeather]: {
+    backgroundColor: '#a4bbf3',
+    color: '#a4bbf3',
+  },
   [Operator.ExeSQL]: { backgroundColor: '#b9efe8' },
   [Operator.Switch]: { backgroundColor: '#dbaff6', color: '#dbaff6' },
   [Operator.WenCai]: { backgroundColor: '#faac5b' },
@@ -259,6 +277,9 @@ export const operatorMap: Record<
   [Operator.Template]: {
     backgroundColor: '#dee0e2',
   },
+  [Operator.Email]: { backgroundColor: '#e6f7ff' },
+  [Operator.Iteration]: { backgroundColor: '#e6f7ff' },
+  [Operator.IterationStart]: { backgroundColor: '#e6f7ff' },
 };
 
 export const componentMenuList = [
@@ -277,9 +298,7 @@ export const componentMenuList = [
   {
     name: Operator.Message,
   },
-  {
-    name: Operator.Relevant,
-  },
+
   {
     name: Operator.RewriteQuestion,
   },
@@ -294,6 +313,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Template,
+  },
+  {
+    name: Operator.Iteration,
   },
   {
     name: Operator.Note,
@@ -358,6 +380,9 @@ export const componentMenuList = [
   {
     name: Operator.Invoke,
   },
+  {
+    name: Operator.Email,
+  },
 ];
 
 const initialQueryBaseValues = {
@@ -401,7 +426,7 @@ export const initialGenerateValues = {
 
 export const initialRewriteQuestionValues = {
   ...initialLlmBaseValues,
-  loop: 1,
+  message_history_window_size: 6,
 };
 
 export const initialRelevantValues = {
@@ -421,7 +446,7 @@ export const initialMessageValues = {
 
 export const initialKeywordExtractValues = {
   ...initialLlmBaseValues,
-  top_n: 1,
+  top_n: 3,
   ...initialQueryBaseValues,
 };
 export const initialDuckValues = {
@@ -504,6 +529,7 @@ export const initialQWeatherValues = {
 };
 
 export const initialExeSqlValues = {
+  ...initialLlmBaseValues,
   db_type: 'mysql',
   database: '',
   username: '',
@@ -579,6 +605,23 @@ export const initialTemplateValues = {
   content: '',
   parameters: [],
 };
+
+export const initialEmailValues = {
+  smtp_server: '',
+  smtp_port: 587,
+  email: '',
+  password: '',
+  sender_name: '',
+  to_email: '',
+  cc_email: '',
+  subject: '',
+  content: '',
+};
+
+export const initialIterationValues = {
+  delimiter: ',',
+};
+export const initialIterationStartValues = {};
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -660,6 +703,9 @@ export const RestrictedUpstreamMap = {
   [Operator.Note]: [],
   [Operator.Invoke]: [Operator.Begin],
   [Operator.Template]: [Operator.Begin, Operator.Relevant],
+  [Operator.Email]: [Operator.Begin],
+  [Operator.Iteration]: [Operator.Begin],
+  [Operator.IterationStart]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -696,6 +742,9 @@ export const NodeMap = {
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'invokeNode',
   [Operator.Template]: 'templateNode',
+  [Operator.Email]: 'emailNode',
+  [Operator.Iteration]: 'group',
+  [Operator.IterationStart]: 'iterationStartNode',
 };
 
 export const LanguageOptions = [
@@ -2827,10 +2876,12 @@ export const QWeatherTimePeriodOptions = [
   '30d',
 ];
 
-export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb'].map((x) => ({
-  label: upperFirst(x),
-  value: x,
-}));
+export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb', 'mssql'].map(
+  (x) => ({
+    label: upperFirst(x),
+    value: x,
+  }),
+);
 
 export const SwitchElseTo = 'end_cpn_id';
 
@@ -2901,3 +2952,14 @@ export const BeginQueryTypeIconMap = {
   [BeginQueryType.Integer]: ListOrdered,
   [BeginQueryType.Boolean]: ToggleLeft,
 };
+
+export const NoDebugOperatorsList = [
+  Operator.Begin,
+  Operator.Answer,
+  Operator.Concentrator,
+  Operator.Template,
+  Operator.Message,
+  Operator.RewriteQuestion,
+  Operator.Switch,
+  Operator.Iteration,
+];

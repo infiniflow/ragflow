@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import logging
 from tika import parser
 from io import BytesIO
@@ -169,11 +173,13 @@ class Markdown(MarkdownParser):
         sections = []
         tbls = []
         for sec in remainder.split("\n"):
-            if num_tokens_from_string(sec) > 10 * self.chunk_token_num:
+            if num_tokens_from_string(sec) > 3 * self.chunk_token_num:
                 sections.append((sec[:int(len(sec) / 2)], ""))
                 sections.append((sec[int(len(sec) / 2):], ""))
             else:
-                if sections and sections[-1][0].strip().find("#") == 0:
+                if sec.strip().find("#") == 0:
+                    sections.append((sec, ""))
+                elif sections and sections[-1][0].strip().find("#") == 0:
                     sec_, _ = sections.pop(-1)
                     sections.append((sec_ + "\n" + sec, ""))
                 else:
@@ -196,7 +202,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
-            "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": True})
+            "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -225,8 +231,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if parser_config.get("layout_recognize", True) else PlainParser()
-        sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+        pdf_parser = Pdf()
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
+        sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
+                                      callback=callback)
         res = tokenize_table(tables, doc, is_english)
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
@@ -258,7 +267,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.json$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = JsonParser(int(parser_config.get("chunk_token_num", 128)))(binary)
+        chunk_token_num = int(parser_config.get("chunk_token_num", 128))
+        sections = JsonParser(chunk_token_num)(binary)
         sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 

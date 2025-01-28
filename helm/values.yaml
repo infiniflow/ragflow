@@ -27,13 +27,13 @@ env:
   REDIS_PASSWORD: infini_rag_flow_helm
 
   # The RAGFlow Docker image to download.
-  # Defaults to the dev-slim edition, which is the RAGFlow Docker image without embedding models.
-  RAGFLOW_IMAGE: infiniflow/ragflow:dev-slim
+  # Defaults to the v0.15.1-slim edition, which is the RAGFlow Docker image without embedding models.
+  RAGFLOW_IMAGE: infiniflow/ragflow:v0.15.1-slim
   #
   # To download the RAGFlow Docker image with embedding models, uncomment the following line instead:
-  # RAGFLOW_IMAGE=infiniflow/ragflow:dev
+  # RAGFLOW_IMAGE: infiniflow/ragflow:v0.15.1
   #
-  # The Docker image of the dev edition includes:
+  # The Docker image of the v0.15.1 edition includes:
   # - Built-in embedding models:
   #   - BAAI/bge-large-zh-v1.5
   #   - BAAI/bge-reranker-v2-m3
@@ -60,6 +60,7 @@ env:
   # The maximum file size for each uploaded file, in bytes.
   # You can uncomment this line and update the value if you wish to change 128M file size limit
   # MAX_CONTENT_LENGTH: "134217728"
+  # After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
 
 ragflow:
   deployment:
@@ -72,7 +73,7 @@ ragflow:
 infinity:
   image:
     repository: infiniflow/infinity
-    tag: v0.5.0-dev5
+    tag: v0.5.0
   storage:
     className:
     capacity: 5Gi
@@ -90,7 +91,8 @@ elasticsearch:
     strategy:
     resources:
       requests:
-        memory: 8Gi
+        cpu: "4"
+        memory: "16Gi"
   service:
     type: ClusterIP
 

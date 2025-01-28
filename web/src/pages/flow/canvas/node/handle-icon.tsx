@@ -10,11 +10,11 @@ export const HandleIcon = () => {
 };
 
 export const RightHandleStyle: CSSProperties = {
-  right: -5,
+  right: 0,
 };
 
 export const LeftHandleStyle: CSSProperties = {
-  left: -7,
+  left: 0,
 };
 
 export default HandleIcon;

@@ -38,7 +38,7 @@ from timeit import default_timer as timer
 from rag.utils.redis_conn import REDIS_CONN
 
 
-@manager.route("/version", methods=["GET"])
+@manager.route("/version", methods=["GET"])  # noqa: F821
 @login_required
 def version():
     """
@@ -61,7 +61,7 @@ def version():
     return get_json_result(data=get_ragflow_version())
 
 
-@manager.route("/status", methods=["GET"])
+@manager.route("/status", methods=["GET"])  # noqa: F821
 @login_required
 def status():
     """
@@ -170,7 +170,7 @@ def status():
     return get_json_result(data=res)
 
 
-@manager.route("/new_token", methods=["POST"])
+@manager.route("/new_token", methods=["POST"])  # noqa: F821
 @login_required
 def new_token():
     """
@@ -205,6 +205,7 @@ def new_token():
         obj = {
             "tenant_id": tenant_id,
             "token": generate_confirmation_token(tenant_id),
+            "beta": generate_confirmation_token(generate_confirmation_token(tenant_id)).replace("ragflow-", "")[:32],
             "create_time": current_timestamp(),
             "create_date": datetime_format(datetime.now()),
             "update_time": None,
@@ -219,7 +220,7 @@ def new_token():
         return server_error_response(e)
 
 
-@manager.route("/token_list", methods=["GET"])
+@manager.route("/token_list", methods=["GET"])  # noqa: F821
 @login_required
 def token_list():
     """
@@ -255,13 +256,19 @@ def token_list():
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
 
-        objs = APITokenService.query(tenant_id=tenants[0].tenant_id)
-        return get_json_result(data=[o.to_dict() for o in objs])
+        tenant_id = tenants[0].tenant_id
+        objs = APITokenService.query(tenant_id=tenant_id)
+        objs = [o.to_dict() for o in objs]
+        for o in objs:
+            if not o["beta"]:
+                o["beta"] = generate_confirmation_token(generate_confirmation_token(tenants[0].tenant_id)).replace("ragflow-", "")[:32]
+                APITokenService.filter_update([APIToken.tenant_id == tenant_id, APIToken.token == o["token"]], o)
+        return get_json_result(data=objs)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route("/token/<token>", methods=["DELETE"])
+@manager.route("/token/<token>", methods=["DELETE"])  # noqa: F821
 @login_required
 def rm(token):
     """

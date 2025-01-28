@@ -15,7 +15,7 @@
 #
 import logging
 import json
-
+import os
 from flask import request
 from flask_login import login_required, current_user
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
@@ -24,11 +24,11 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
+from api.utils.file_utils import get_project_base_directory
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
-import requests
 
 
-@manager.route('/factories', methods=['GET'])
+@manager.route('/factories', methods=['GET'])  # noqa: F821
 @login_required
 def factories():
     try:
@@ -50,7 +50,7 @@ def factories():
         return server_error_response(e)
 
 
-@manager.route('/set_api_key', methods=['POST'])
+@manager.route('/set_api_key', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("llm_factory", "api_key")
 def set_api_key():
@@ -129,7 +129,7 @@ def set_api_key():
     return get_json_result(data=True)
 
 
-@manager.route('/add_llm', methods=['POST'])
+@manager.route('/add_llm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("llm_factory")
 def add_llm():
@@ -216,7 +216,7 @@ def add_llm():
             base_url=llm["api_base"])
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
-            if len(arr[0]) == 0 or tc == 0:
+            if len(arr[0]) == 0:
                 raise Exception("Fail")
         except Exception as e:
             msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
@@ -242,7 +242,7 @@ def add_llm():
         )
         try:
             arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!", "Ohh, my friend!"])
-            if len(arr) == 0 or tc == 0:
+            if len(arr) == 0:
                 raise Exception("Not known.")
         except Exception as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(
@@ -254,18 +254,10 @@ def add_llm():
             base_url=llm["api_base"]
         )
         try:
-            img_url = (
-                "https://upload.wikimedia.org/wikipedia/comm"
-                "ons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/256"
-                "0px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-            )
-            res = requests.get(img_url)
-            if res.status_code == 200:
-                m, tc = mdl.describe(res.content)
+            with open(os.path.join(get_project_base_directory(), "web/src/assets/yay.jpg"), "rb") as f:
+                m, tc = mdl.describe(f.read())
                 if not tc:
                     raise Exception(m)
-            else:
-                pass
         except Exception as e:
             msg += f"\nFail to access model({llm['llm_name']})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
@@ -292,7 +284,7 @@ def add_llm():
     return get_json_result(data=True)
 
 
-@manager.route('/delete_llm', methods=['POST'])
+@manager.route('/delete_llm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("llm_factory", "llm_name")
 def delete_llm():
@@ -303,7 +295,7 @@ def delete_llm():
     return get_json_result(data=True)
 
 
-@manager.route('/delete_factory', methods=['POST'])
+@manager.route('/delete_factory', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("llm_factory")
 def delete_factory():
@@ -313,7 +305,7 @@ def delete_factory():
     return get_json_result(data=True)
 
 
-@manager.route('/my_llms', methods=['GET'])
+@manager.route('/my_llms', methods=['GET'])  # noqa: F821
 @login_required
 def my_llms():
     try:
@@ -334,10 +326,10 @@ def my_llms():
         return server_error_response(e)
 
 
-@manager.route('/list', methods=['GET'])
+@manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_app():
-    self_deploied = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]
+    self_deployed = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
     weighted = ["Youdao", "FastEmbed", "BAAI"] if settings.LIGHTEN != 0 else []
     model_type = request.args.get("model_type")
     try:
@@ -347,12 +339,14 @@ def list_app():
         llms = [m.to_dict()
                 for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted]
         for m in llms:
-            m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deploied
+            m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deployed
 
         llm_set = set([m["llm_name"] + "@" + m["fid"] for m in llms])
         for o in objs:
-            if not o.api_key: continue
-            if o.llm_name + "@" + o.llm_factory in llm_set: continue
+            if not o.api_key:
+                continue
+            if o.llm_name + "@" + o.llm_factory in llm_set:
+                continue
             llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True})
 
         res = {}

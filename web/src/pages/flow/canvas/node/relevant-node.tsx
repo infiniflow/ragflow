@@ -1,24 +1,29 @@
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { NodeData } from '../../interface';
 import { RightHandleStyle } from './handle-icon';
 
+import { useTheme } from '@/components/theme-provider';
+import { IRelevantNode } from '@/interfaces/database/flow';
 import { get } from 'lodash';
 import { useReplaceIdWithName } from '../../hooks';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
+export function RelevantNode({ id, data, selected }: NodeProps<IRelevantNode>) {
   const yes = get(data, 'form.yes');
   const no = get(data, 'form.no');
   const replaceIdWithName = useReplaceIdWithName();
-
+  const { theme } = useTheme();
   return (
     <section
-      className={classNames(styles.logicNode, {
-        [styles.selectedNode]: selected,
-      })}
+      className={classNames(
+        styles.logicNode,
+        theme === 'dark' ? styles.dark : '',
+        {
+          [styles.selectedNode]: selected,
+        },
+      )}
     >
       <Handle
         type="target"
@@ -33,7 +38,7 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
         isConnectable
         className={styles.handle}
         id={'yes'}
-        style={{ ...RightHandleStyle, top: 59 }}
+        style={{ ...RightHandleStyle, top: 57 + 20 }}
       ></Handle>
       <Handle
         type="source"
@@ -41,7 +46,7 @@ export function RelevantNode({ id, data, selected }: NodeProps<NodeData>) {
         isConnectable
         className={styles.handle}
         id={'no'}
-        style={{ ...RightHandleStyle, top: 112 }}
+        style={{ ...RightHandleStyle, top: 115 + 20 }}
       ></Handle>
       <NodeHeader
         id={id}

@@ -1,8 +1,7 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { IReference } from '@/interfaces/database/chat';
-import { IChunk } from '@/interfaces/database/knowledge';
+import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -18,6 +17,7 @@ import { Avatar, Button, Flex, List, Space, Typography } from 'antd';
 import FileIcon from '../file-icon';
 import IndentedTreeModal from '../indented-tree/modal';
 import NewDocumentLink from '../new-document-link';
+import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
 
@@ -30,23 +30,28 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   sendLoading?: boolean;
   nickname?: string;
   avatar?: string;
-  clickDocumentButton?: (documentId: string, chunk: IChunk) => void;
+  avatardialog?: string | null;
+  clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
   index: number;
   showLikeButton?: boolean;
+  showLoudspeaker?: boolean;
 }
 
 const MessageItem = ({
   item,
   reference,
   loading = false,
-  avatar = '',
+  avatar,
+  avatardialog,
   sendLoading = false,
   clickDocumentButton,
   index,
   removeMessageById,
   regenerateMessage,
   showLikeButton = true,
+  showLoudspeaker = true,
 }: IProps) => {
+  const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
   const { data: documentList, setDocumentIds } = useFetchDocumentInfosByIds();
@@ -101,15 +106,11 @@ const MessageItem = ({
           })}
         >
           {item.role === MessageType.User ? (
-            <Avatar
-              size={40}
-              src={
-                avatar ??
-                'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png'
-              }
-            />
+            <Avatar size={40} src={avatar ?? '/logo.svg'} />
+          ) : avatardialog ? (
+            <Avatar size={40} src={avatardialog} />
           ) : (
-            <AssistantIcon></AssistantIcon>
+            <AssistantIcon />
           )}
           <Flex vertical gap={8} flex={1}>
             <Space>
@@ -121,6 +122,7 @@ const MessageItem = ({
                     prompt={item.prompt}
                     showLikeButton={showLikeButton}
                     audioBinary={item.audio_binary}
+                    showLoudspeaker={showLoudspeaker}
                   ></AssistantGroupButton>
                 )
               ) : (
@@ -139,7 +141,11 @@ const MessageItem = ({
             </Space>
             <div
               className={
-                isAssistant ? styles.messageText : styles.messageUserText
+                isAssistant
+                  ? theme === 'dark'
+                    ? styles.messageTextDark
+                    : styles.messageText
+                  : styles.messageUserText
               }
             >
               <MarkdownContent
@@ -181,8 +187,8 @@ const MessageItem = ({
                 dataSource={documentList}
                 renderItem={(item) => {
                   // TODO:
-                  const fileThumbnail =
-                    documentThumbnails[item.id] || documentThumbnails[item.id];
+                  // const fileThumbnail =
+                  //   documentThumbnails[item.id] || documentThumbnails[item.id];
                   const fileExtension = getExtension(item.name);
                   return (
                     <List.Item>

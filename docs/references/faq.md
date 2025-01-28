@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 10
 slug: /faq
 ---
 
@@ -36,16 +36,16 @@ RAGFlow has a number of built-in models for document structure parsing, which ac
 
 ### Which architectures or devices does RAGFlow support?
 
-We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM.
+We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
 
 ---
 
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `dev-slim` and `dev`:  
+RAGFlow offers two Docker image editions, `v0.15.1-slim` and `v0.15.1`:  
   
-- `infiniflow/ragflow:dev-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:dev`: The RAGFlow Docker image with embedding models including:
+- `infiniflow/ragflow:v0.15.1-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.15.1`: The RAGFlow Docker image with embedding models including:
   - Built-in embedding models:
     - `BAAI/bge-large-zh-v1.5`
     - `BAAI/bge-reranker-v2-m3`
@@ -81,9 +81,13 @@ No, this feature is not supported.
 
 ---
 
-### Do you support multiple rounds of dialogues, i.e., referencing previous dialogues as context for the current dialogue?
+### Do you support multiple rounds of dialogues, referencing previous dialogues as context for the current query?
 
-This feature and the related APIs are still in development. Contributions are welcome.
+Yes, we support enhancing user queries based on existing context of an ongoing conversation:
+
+1. On the **Chat** page, hover over the desired assistant and select **Edit**.
+2. In the **Chat Configuration** popup, click the **Prompt Engine** tab.
+3. Toggle on **Multi-turn optimization** to enable this feature.
 
 ---
 
@@ -376,7 +380,7 @@ The status of a Docker container status does not necessarily reflect the status 
 
 ### How to increase the length of RAGFlow responses?
 
-1. Right click the desired dialog to display the **Chat Configuration** window.
+1. Right-click the desired dialog to display the **Chat Configuration** window.
 2. Switch to the **Model Setting** tab and adjust the **Max Tokens** slider to get the desired length.
 3. Click **OK** to confirm your change.
 
@@ -385,6 +389,14 @@ The status of a Docker container status does not necessarily reflect the status 
 ### How to run RAGFlow with a locally deployed LLM?
 
 You can use Ollama or Xinference to deploy local LLM. See [here](../guides/deploy_local_llm.mdx) for more information.
+
+---
+
+### Is it possible to add an LLM that is not supported?
+
+If your model is not currently supported but has APIs compatible with those of OpenAI, click **OpenAI-API-Compatible** on the **Model providers** page to configure your model:
+
+![openai-api-compatible](https://github.com/user-attachments/assets/b1e964f2-b86e-41af-8528-fd8a96dc5f6f)
 
 ---
 
@@ -402,8 +414,8 @@ See [here](../guides/deploy_local_llm.mdx) for more information.
 This error occurs because there are too many chunks matching your search criteria. Try reducing the **TopN** and increasing **Similarity threshold** to fix this issue:
 
 1. Click **Chat** in the middle top of the page.
-2. Right click the desired conversation > **Edit** > **Prompt Engine**
-3. Reduce the **TopN** and/or raise **Silimarity threshold**.
+2. Right-click the desired conversation > **Edit** > **Prompt Engine**
+3. Reduce the **TopN** and/or raise **Similarity threshold**.
 4. Click **OK** to confirm your changes.
 
 ![topn](https://github.com/infiniflow/ragflow/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)

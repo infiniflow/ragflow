@@ -1,3 +1,5 @@
+import { FileMimeType } from '@/constants/common';
+import fileManagerService from '@/services/file-manager-service';
 import { UploadFile } from 'antd';
 
 export const transformFile2Base64 = (val: any): Promise<any> => {
@@ -49,7 +51,6 @@ export const transformBase64ToFile = (
   dataUrl: string,
   filename: string = 'file',
 ) => {
-  console.log('transformBase64ToFile', dataUrl);
   let arr = dataUrl.split(','),
     bstr = atob(arr[1]),
     n = bstr.length,
@@ -65,7 +66,6 @@ export const transformBase64ToFile = (
 };
 
 export const normFile = (e: any) => {
-  console.log('normFile', e);
   if (Array.isArray(e)) {
     return e;
   }
@@ -73,7 +73,6 @@ export const normFile = (e: any) => {
 };
 
 export const getUploadFileListFromBase64 = (avatar: string) => {
-  console.log('getUploadFileListFromBase64', avatar);
   let fileList: UploadFile[] = [];
 
   if (avatar) {
@@ -84,7 +83,6 @@ export const getUploadFileListFromBase64 = (avatar: string) => {
 };
 
 export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
-  console.log('getBase64FromUploadFileList', fileList);
   if (Array.isArray(fileList) && fileList.length > 0) {
     const file = fileList[0];
     const originFileObj = file.originFileObj;
@@ -100,35 +98,32 @@ export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
   return '';
 };
 
-export const downloadFile = ({
-  url,
+export const downloadFileFromBlob = (blob: Blob, name?: string) => {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  if (name) {
+    a.download = name;
+  }
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
+
+export const downloadDocument = async ({
+  id,
   filename,
-  target,
 }: {
-  url: string;
+  id: string;
   filename?: string;
-  target?: string;
 }) => {
-  console.log('downloadFile', url);
-  const downloadElement = document.createElement('a');
-  downloadElement.style.display = 'none';
-  downloadElement.href = url;
-  if (target) {
-    downloadElement.target = '_blank';
-  }
-  downloadElement.rel = 'noopener noreferrer';
-  if (filename) {
-    downloadElement.download = filename;
-  }
-  document.body.appendChild(downloadElement);
-  downloadElement.click();
-  document.body.removeChild(downloadElement);
+  const response = await fileManagerService.getDocumentFile({}, id);
+  const blob = new Blob([response.data], { type: response.data.type });
+  downloadFileFromBlob(blob, filename);
 };
 
 const Units = ['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
 
 export const formatBytes = (x: string | number) => {
-  console.log('formatBytes', x);
   let l = 0,
     n = (typeof x === 'string' ? parseInt(x, 10) : x) || 0;
 
@@ -137,4 +132,12 @@ export const formatBytes = (x: string | number) => {
   }
 
   return n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + Units[l];
+};
+
+export const downloadJsonFile = async (
+  data: Record<string, any>,
+  fileName: string,
+) => {
+  const blob = new Blob([JSON.stringify(data)], { type: FileMimeType.Json });
+  downloadFileFromBlob(blob, fileName);
 };

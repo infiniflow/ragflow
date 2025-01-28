@@ -1,10 +1,12 @@
 import LLMLabel from '@/components/llm-select/llm-label';
+import { useTheme } from '@/components/theme-provider';
+import { IGenerateNode } from '@/interfaces/database/flow';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { useGetComponentLabelByValue } from '../../hooks';
-import { IGenerateParameter, NodeData } from '../../interface';
+import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
+import { IGenerateParameter } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -14,15 +16,19 @@ export function GenerateNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<NodeData>) {
+}: NodeProps<IGenerateNode>) {
   const parameters: IGenerateParameter[] = get(data, 'form.parameters', []);
   const getLabel = useGetComponentLabelByValue(id);
-
+  const { theme } = useTheme();
   return (
     <section
-      className={classNames(styles.logicNode, {
-        [styles.selectedNode]: selected,
-      })}
+      className={classNames(
+        styles.logicNode,
+        theme === 'dark' ? styles.dark : '',
+        {
+          [styles.selectedNode]: selected,
+        },
+      )}
     >
       <Handle
         id="c"

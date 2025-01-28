@@ -34,7 +34,7 @@ from api.utils.api_utils import (
 )
 
 
-@manager.route("/datasets", methods=["POST"])
+@manager.route("/datasets", methods=["POST"])  # noqa: F821
 @token_required
 def create(tenant_id):
     """
@@ -73,7 +73,8 @@ def create(tenant_id):
             chunk_method:
               type: string
               enum: ["naive", "manual", "qa", "table", "paper", "book", "laws",
-                     "presentation", "picture", "one", "knowledge_graph", "email"]
+                     "presentation", "picture", "one", "knowledge_graph", "email", "tag"
+                     ]
               description: Chunking method.
             parser_config:
               type: object
@@ -108,6 +109,7 @@ def create(tenant_id):
         "one",
         "knowledge_graph",
         "email",
+        "tag"
     ]
     check_validation = valid(
         permission,
@@ -190,7 +192,7 @@ def create(tenant_id):
     return get_result(data=renamed_data)
 
 
-@manager.route("/datasets", methods=["DELETE"])
+@manager.route("/datasets", methods=["DELETE"])  # noqa: F821
 @token_required
 def delete(tenant_id):
     """
@@ -260,7 +262,7 @@ def delete(tenant_id):
     return get_result(code=settings.RetCode.SUCCESS)
 
 
-@manager.route("/datasets/<dataset_id>", methods=["PUT"])
+@manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821
 @token_required
 def update(tenant_id, dataset_id):
     """
@@ -302,7 +304,8 @@ def update(tenant_id, dataset_id):
             chunk_method:
               type: string
               enum: ["naive", "manual", "qa", "table", "paper", "book", "laws",
-                     "presentation", "picture", "one", "knowledge_graph", "email"]
+                     "presentation", "picture", "one", "knowledge_graph", "email", "tag"
+                     ]
               description: Updated chunking method.
             parser_config:
               type: object
@@ -339,6 +342,7 @@ def update(tenant_id, dataset_id):
         "one",
         "knowledge_graph",
         "email",
+        "tag"
     ]
     check_validation = valid(
         permission,
@@ -429,7 +433,7 @@ def update(tenant_id, dataset_id):
     return get_result(code=settings.RetCode.SUCCESS)
 
 
-@manager.route("/datasets", methods=["GET"])
+@manager.route("/datasets", methods=["GET"])  # noqa: F821
 @token_required
 def list(tenant_id):
     """

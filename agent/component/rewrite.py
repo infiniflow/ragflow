@@ -29,7 +29,6 @@ class RewriteQuestionParam(GenerateParam):
         super().__init__()
         self.temperature = 0.9
         self.prompt = ""
-        self.loop = 1
 
     def check(self):
         super().check()
@@ -85,17 +84,11 @@ class RewriteQuestion(Generate, ABC):
     component_name = "RewriteQuestion"
 
     def _run(self, history, **kwargs):
-        if not hasattr(self, "_loop"):
-            setattr(self, "_loop", 0)
-        if self._loop >= self._param.loop:
-            self._loop = 0
-            raise Exception("Sorry! Nothing relevant found.")
-        self._loop += 1
-
-        hist = self._canvas.get_history(4)
+        hist = self._canvas.get_history(self._param.message_history_window_size)
         conv = []
         for m in hist:
-            if m["role"] not in ["user", "assistant"]: continue
+            if m["role"] not in ["user", "assistant"]:
+                continue
             conv.append("{}: {}".format(m["role"].upper(), m["content"]))
         conv = "\n".join(conv)
 
@@ -107,5 +100,6 @@ class RewriteQuestion(Generate, ABC):
 
         logging.debug(ans)
         return RewriteQuestion.be_output(ans)
+
 
 

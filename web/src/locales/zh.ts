@@ -15,6 +15,7 @@ export default {
       edit: '编辑',
       upload: '上传',
       english: '英文',
+      portugueseBr: '葡萄牙语 (巴西)',
       chinese: '简体中文',
       traditionalChinese: '繁体中文',
       language: '语言',
@@ -33,6 +34,9 @@ export default {
       pleaseSelect: '请选择',
       pleaseInput: '请输入',
       submit: '提交',
+      embedIntoSite: '嵌入网站',
+      previousPage: '上一页',
+      nextPage: '下一页',
     },
     login: {
       login: '登录',
@@ -81,6 +85,7 @@ export default {
       dataset: '数据集',
       testing: '检索测试',
       configuration: '配置',
+      knowledgeGraph: '知识图谱',
       files: '文件',
       name: '名称',
       namePlaceholder: '请输入名称',
@@ -98,10 +103,10 @@ export default {
       disabled: '禁用',
       action: '动作',
       parsingStatus: '解析状态',
-      processBeginAt: '流程开始于',
-      processDuration: '过程持续时间',
-      progressMsg: '进度消息',
-      testingDescription: '最后一步！ 成功后，剩下的就交给Infiniflow AI吧。',
+      processBeginAt: '开始于',
+      processDuration: '持续时间',
+      progressMsg: '进度',
+      testingDescription: '最后一步！ 成功后，剩下的就交给 RAGFlow 吧。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。',
@@ -118,8 +123,8 @@ export default {
       view: '看法',
       filesSelected: '选定的文件',
       upload: '上传',
-      run: '启动',
-      runningStatus0: '未启动',
+      run: '解析',
+      runningStatus0: '未解析',
       runningStatus1: '解析中',
       runningStatus2: '取消',
       runningStatus3: '成功',
@@ -131,7 +136,7 @@ export default {
       fromMessage: '缺少起始页码',
       toPlaceholder: '到',
       toMessage: '缺少结束页码（不包含）',
-      layoutRecognize: '布局识别',
+      layoutRecognize: '布局识别和 OCR',
       layoutRecognizeTip:
         '使用视觉模型进行布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果没有此功能，则只能获取 PDF 的纯文本。',
       taskPageSize: '任务页面大小',
@@ -157,11 +162,36 @@ export default {
       delimiterTip:
         '支持多字符作为分隔符，多字符分隔符用`包裹。如配置成这样：\n`##`;那么就会用换行，两个#以及分号先对文本进行分割，然后按照“ token number”大小进行拼装。',
       html4excel: '表格转HTML',
-      html4excelTip: `Excel 是否将被解析为 HTML 表。如果为 FALSE，Excel 中的每一行都将形成一个块。`,
+      html4excelTip: `开启后电子表格会被解析为 HTML 表格，每张表格最多 256 行，否则会按行解析为键值对。`,
       autoKeywords: '自动关键词',
       autoKeywordsTip: `在查询此类关键词时，为每个块提取 N 个关键词以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。`,
       autoQuestions: '自动问题',
       autoQuestionsTip: `在查询此类问题时，为每个块提取 N 个问题以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。如果发生错误，此功能不会破坏整个分块过程，除了将空结果添加到原始块。`,
+      redo: '是否清空已有 {{chunkNum}}个 chunk？',
+      setMetaData: '设置元数据',
+      pleaseInputJson: '请输入JSON',
+      documentMetaTips: `<p>元数据为 Json 格式（不可搜索）。如果提示中包含此文档的任何块，它将被添加到 LLM 的提示中。</p>
+<p>示例：</p>
+<b>元数据为：</b><br>
+<code>
+{
+“作者”：“Alex Dowson”，
+“日期”：“2024-11-12”
+}
+</code><br>
+<b>提示将为：</b><br>
+<p>文档：the_name_of_document</p>
+<p>作者：Alex Dowson</p>
+<p>日期：2024-11-12</p>
+<p>相关片段如下：</p>
+<ul>
+<li> 这是块内容....</li>
+<li> 这是块内容....</li>
+</ul>
+`,
+      metaData: '元数据',
+      deleteDocumentConfirmContent:
+        '该文档与知识图谱相关联。删除后，相关节点和关系信息将被删除，但图不会立即更新。更新图动作是在解析承载知识图谱提取任务的新文档的过程中执行的。',
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',
@@ -225,14 +255,14 @@ export default {
       此块方法支持<b> excel </b>和<b> csv/txt </b>文件格式。
     </p>
     <li>
-      如果文件以<b> excel </b>格式，则应由两个列组成
+      如果文件是<b> excel </b>格式，则应由两个列组成
       没有标题：一个提出问题，另一个用于答案，
       答案列之前的问题列。多张纸是
       只要列正确结构，就可以接受。
     </li>
     <li>
-      如果文件以<b> csv/txt </b>格式为
-      用作分开问题和答案的定界符。
+      如果文件是<b> csv/txt </b>格式
+      以 UTF-8 编码且用 TAB 作分开问题和答案的定界符。
     </li>
     <p>
       <i>
@@ -284,6 +314,16 @@ export default {
 <p>接下来，将分块传输到 LLM 以提取知识图谱和思维导图的节点和关系。</p>
 
 注意您需要指定的条目类型。</p>`,
+      tag: `<p>使用“标签”作为分块方法的知识库应该被其他知识库使用，以将标签添加到其块中，对这些块的查询也将带有标签。</p>
+<p>使用“标签”作为分块方法的知识库<b>不</b>应该参与 RAG 过程。</p>
+<p>此知识库中的块是标签的示例，它们演示了整个标签集以及块和标签之间的相关性。</p>
+
+<p>此块方法支持<b>EXCEL</b>和<b>CSV/TXT</b>文件格式。</p>
+<p>如果文件为<b>Excel</b>格式，则它应该包含两列无标题：一列用于内容，另一列用于标签，内容列位于标签列之前。可以接受多个工作表，只要列结构正确即可。</p>
+<p>如果文件为 <b>CSV/TXT</b> 格式，则必须使用 UTF-8 编码并以 TAB 作为分隔符来分隔内容和标签。</p>
+<p>在标签列中，标签之间使用英文 <b>逗号</b>。</p>
+<i>不符合上述规则的文本行将被忽略，并且每对文本将被视为一个不同的块。</i>
+`,
       useRaptor: '使用召回增强RAPTOR策略',
       useRaptorTip: '请参考 https://huggingface.co/papers/2401.18059',
       prompt: '提示词',
@@ -307,6 +347,37 @@ export default {
       pageRank: '页面排名',
       pageRankTip: `这用于提高相关性得分。所有检索到的块的相关性得分将加上此数字。
 当您想首先搜索给定的知识库时，请设置比其他知识库更高的 pagerank 得分。`,
+      tagName: '标签',
+      frequency: '频次',
+      searchTags: '搜索标签',
+      tagCloud: '云',
+      tagTable: '表',
+      tagSet: '标签库',
+      topnTags: 'Top-N 标签',
+      tagSetTip: `
+      <p> 选择“标签”知识库有助于标记每个块。 </p>
+      <p>对这些块的查询也将带有标签。 </p>
+      此过程将通过向数据集添加更多信息来提高检索的准确性，尤其是在存在大量块的情况下。
+      <p>标签和关键字之间的区别：</p>
+      <ul>
+      <li>标签是一个由用户定义和操作的封闭集，而关键字是一个开放集。 </li>
+      <li>您需要在使用前上传带有样本的标签集。 </li>
+      <li>关键字由 LLM 生成，这既昂贵又耗时。 </li>
+      </ul>
+      `,
+      tags: '标签',
+      addTag: '增加标签',
+      useGraphRag: '提取知识图谱',
+      useGraphRagTip:
+        '文件分块后，所有块将用于知识图谱生成，这对多跳和复杂问题的推理大有帮助。',
+      graphRagMethod: '方法',
+      graphRagMethodTip: `Light：实体和关系提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
+General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图形的模块化检索增强生成 (RAG) 系统`,
+      resolution: '实体归一化',
+      resolutionTip: `解析过程会将具有相同含义的实体合并在一起，从而使知识图谱更简洁、更准确。应合并以下实体：特朗普总统、唐纳德·特朗普、唐纳德·J·特朗普、唐纳德·约翰·特朗普`,
+      community: '社区报告生成',
+      communityTip:
+        '区块被聚集成层次化的社区，实体和关系通过更高抽象层次将每个部分连接起来。然后，我们使用 LLM 生成每个社区的摘要，称为社区报告。更多信息：https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: '解析块',
@@ -326,6 +397,8 @@ export default {
       ellipse: '省略',
       graph: '知识图谱',
       mind: '思维导图',
+      question: '问题',
+      questionTip: `如果有给定的问题，则块的嵌入将基于它们。`,
     },
     chat: {
       newConversation: '新会话',
@@ -429,6 +502,7 @@ export default {
       partialTitle: '部分嵌入',
       extensionTitle: 'Chrome 插件',
       tokenError: '请先创建 API Token!',
+      betaError: '请先在系统设置中申请API密钥。',
       searching: '搜索中',
       parsing: '解析中',
       uploading: '上传中',
@@ -444,6 +518,11 @@ export default {
         '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      useKnowledgeGraph: '使用知识图谱',
+      useKnowledgeGraphTip:
+        '它将检索相关实体、关系和社区报告的描述，这将增强多跳和复杂问题的推理。',
+      keyword: '关键词分析',
+      keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
     },
     setting: {
       profile: '概要',
@@ -580,7 +659,7 @@ export default {
         '请输入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 区域',
       GoogleRegionMessage: '请输入 Google Cloud 区域',
-      modelProvidersWarn: `请先在<b>设置 > 模型提供程序</b>中添加嵌入模型和 LLM。然后在“系统模型设置”中设置它们。`,
+      modelProvidersWarn: `请先在<b>模型提供商</b>中添加嵌入模型和LLM，然后在“系统模型设置”中设置它们。`,
       apiVersion: 'API版本',
       apiVersionMessage: '请输入API版本!',
       add: '添加',
@@ -682,7 +761,7 @@ export default {
       generateDescription: `此组件用于调用LLM生成文本，请注意提示的设置。`,
       categorizeDescription: `此组件用于对文本进行分类。请指定类别的名称、描述和示例。每个类别都指向不同的下游组件。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
-      rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。只有“检索”可作为其下游。`,
+      rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:
         '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
@@ -757,7 +836,7 @@ export default {
       sourceLang: '源语言',
       targetLang: '目标语言',
       gitHub: 'GitHub',
-      githubDescription:
+      gitHubDescription:
         '该组件用于从 https://github.com/ 搜索仓库。Top N 指定需要调整的搜索结果数量。',
       baiduFanyi: '百度翻译',
       baiduFanyiDescription:
@@ -1028,7 +1107,51 @@ export default {
       pasteFileLink: '粘贴文件链接',
       testRun: '试运行',
       template: '模板转换',
-      templateDescription: '该组件用于排版各种组件的输出。',
+      templateDescription:
+        '该组件用于排版各种组件的输出。1、支持Jinja2模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式',
+      emailComponent: '邮件',
+      emailDescription: '发送邮件到指定邮箱',
+      smtpServer: 'SMTP服务器',
+      smtpPort: 'SMTP端口',
+      senderEmail: '发件人邮箱',
+      authCode: '授权码',
+      senderName: '发件人名称',
+      toEmail: '收件人邮箱',
+      ccEmail: '抄送邮箱',
+      emailSubject: '邮件主题',
+      emailContent: '邮件内容',
+      smtpServerRequired: '请输入SMTP服务器地址',
+      senderEmailRequired: '请输入发件人邮箱',
+      authCodeRequired: '请输入授权码',
+      toEmailRequired: '请输入收件人邮箱',
+      emailContentRequired: '请输入邮件内容',
+      emailSentSuccess: '邮件发送成功',
+      emailSentFailed: '邮件发送失败',
+      dynamicParameters: '动态参数说明',
+      jsonFormatTip: '上游组件需要传入以下格式的JSON字符串:',
+      toEmailTip: 'to_email: 收件人邮箱(必填)',
+      ccEmailTip: 'cc_email: 抄送邮箱(可选)',
+      subjectTip: 'subject: 邮件主题(可选)',
+      contentTip: 'content: 邮件内容(可选)',
+      jsonUploadTypeErrorMessage: '请上传json文件',
+      jsonUploadContentErrorMessage: 'json 文件错误',
+      iteration: '循环',
+      iterationDescription: `该组件首先将输入以“分隔符”分割成数组，然后依次对数组中的元素执行相同的操作步骤，直到输出所有结果，可以理解为一个任务批处理器。
+
+例如在长文本翻译迭代节点中，如果所有内容都输入到LLM节点，可能会达到单次对话的限制，上游节点可以先将长文本分割成多个片段，配合迭代节点对每个片段进行批量翻译，避免达到单次对话的LLM消息限制。`,
+      delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,
+      delimiterOptions: {
+        comma: '逗号',
+        lineBreak: '换行',
+        tab: '制表符',
+        underline: '下划线',
+        diagonal: '斜线',
+        minus: '连字符',
+        semicolon: '分号',
+      },
+      addCategory: '新增分类',
+      categoryName: '分类名称',
+      nextStep: '下一步',
     },
     footer: {
       profile: 'All rights reserved @ React',

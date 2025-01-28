@@ -50,14 +50,24 @@ class Invoke(ComponentBase, ABC):
         args = {}
         for para in self._param.variables:
             if para.get("component_id"):
-                cpn = self._canvas.get_component(para["component_id"])["obj"]
-                if cpn.component_name.lower() == "answer":
-                    args[para["key"]] = self._canvas.get_history(1)[0]["content"]
-                    continue
-                _, out = cpn.output(allow_partial=False)
-                args[para["key"]] = "\n".join(out["content"])
+                if '@' in para["component_id"]:
+                    component = para["component_id"].split('@')[0]
+                    field = para["component_id"].split('@')[1]
+                    cpn = self._canvas.get_component(component)["obj"]
+                    for param in cpn._param.query:
+                        if param["key"] == field:
+                            if "value" in param:
+                                args[para["key"]] = param["value"]
+                else:
+                    cpn = self._canvas.get_component(para["component_id"])["obj"]
+                    if cpn.component_name.lower() == "answer":
+                        args[para["key"]] = self._canvas.get_history(1)[0]["content"]
+                        continue
+                    _, out = cpn.output(allow_partial=False)
+                    if not out.empty:
+                        args[para["key"]] = "\n".join(out["content"])
             else:
-                args[para["key"]] = "\n".join(para["value"])
+                args[para["key"]] = para["value"]
 
         url = self._param.url.strip()
         if url.find("http") != 0:

@@ -1,11 +1,12 @@
-import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useTheme } from '@/components/theme-provider';
+import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { IRetrievalNode } from '@/interfaces/database/flow';
 import { UserOutlined } from '@ant-design/icons';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Avatar, Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
 import { useMemo } from 'react';
-import { Handle, NodeProps, Position } from 'reactflow';
-import { NodeData } from '../../interface';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -15,9 +16,10 @@ export function RetrievalNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<NodeData>) {
+}: NodeProps<IRetrievalNode>) {
   const knowledgeBaseIds: string[] = get(data, 'form.kb_ids', []);
-  const { list: knowledgeList } = useNextFetchKnowledgeList(true);
+  const { theme } = useTheme();
+  const { list: knowledgeList } = useFetchKnowledgeList(true);
   const knowledgeBases = useMemo(() => {
     return knowledgeBaseIds.map((x) => {
       const item = knowledgeList.find((y) => x === y.id);
@@ -31,9 +33,13 @@ export function RetrievalNode({
 
   return (
     <section
-      className={classNames(styles.logicNode, {
-        [styles.selectedNode]: selected,
-      })}
+      className={classNames(
+        styles.logicNode,
+        theme === 'dark' ? styles.dark : '',
+        {
+          [styles.selectedNode]: selected,
+        },
+      )}
     >
       <Handle
         id="c"

@@ -25,7 +25,6 @@ const MaxTokenNumber = ({ initialValue = 128, max = 2048 }: IProps) => {
         <Form.Item
           name={['parser_config', 'chunk_token_num']}
           noStyle
-          initialValue={initialValue}
           rules={[{ required: true, message: t('chunkTokenNumberMessage') }]}
         >
           <InputNumber max={max} min={0} />

@@ -13,14 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 import requests
 from openai.lib.azure import AzureOpenAI
-from zhipuai import ZhipuAI
 import io
 from abc import ABC
-from ollama import Client
 from openai import OpenAI
-import os
 import json
 from rag.utils import num_tokens_from_string
 import base64
@@ -49,7 +47,8 @@ class Base(ABC):
 
 class GPTSeq2txt(Base):
     def __init__(self, key, model_name="whisper-1", base_url="https://api.openai.com/v1"):
-        if not base_url: base_url = "https://api.openai.com/v1"
+        if not base_url:
+            base_url = "https://api.openai.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
@@ -193,3 +192,14 @@ class TencentCloudSeq2txt(Base):
             return "**ERROR**: " + str(e), 0
         except Exception as e:
             return "**ERROR**: " + str(e), 0
+
+
+class GPUStackSeq2txt(Base):
+    def __init__(self, key, model_name, base_url):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        if base_url.split("/")[-1] != "v1-openai":
+            base_url = os.path.join(base_url, "v1-openai")
+        self.base_url = base_url
+        self.model_name = model_name
+        self.key = key

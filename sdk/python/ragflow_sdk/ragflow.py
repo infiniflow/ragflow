@@ -18,6 +18,7 @@ import requests
 from .modules.chat import Chat
 from .modules.chunk import Chunk
 from .modules.dataset import DataSet
+from .modules.agent import Agent
 
 
 class RAGFlow:
@@ -45,13 +46,15 @@ class RAGFlow:
         res = requests.put(url=self.api_url + path, json= json,headers=self.authorization_header)
         return res
 
-    def create_dataset(self, name: str, avatar: str = "", description: str = "", language: str = "English",
+    def create_dataset(self, name: str, avatar: str = "", description: str = "", embedding_model:str = "BAAI/bge-large-zh-v1.5",
+                       language: str = "English",
                        permission: str = "me",chunk_method: str = "naive",
                        parser_config: DataSet.ParserConfig = None) -> DataSet:
         if parser_config:
             parser_config = parser_config.to_json()
         res = self.post("/datasets",
-                        {"name": name, "avatar": avatar, "description": description, "language": language,
+                        {"name": name, "avatar": avatar, "description": description,"embedding_model":embedding_model,
+                         "language": language,
                          "permission": permission, "chunk_method": chunk_method,
                          "parser_config": parser_config
                          }
@@ -86,8 +89,10 @@ class RAGFlow:
             return result_list
         raise Exception(res["message"])
 
-    def create_chat(self, name: str, avatar: str = "", dataset_ids: list[str] = [],
-                         llm: Chat.LLM | None = None, prompt: Chat.Prompt | None = None) -> Chat:
+    def create_chat(self, name: str, avatar: str = "", dataset_ids=None,
+                    llm: Chat.LLM | None = None, prompt: Chat.Prompt | None = None) -> Chat:
+        if dataset_ids is None:
+            dataset_ids = []
         dataset_list = []
         for id in dataset_ids:
             dataset_list.append(id)
@@ -103,6 +108,7 @@ class RAGFlow:
             prompt = Chat.Prompt(self, {"similarity_threshold": 0.2,
                                              "keywords_similarity_weight": 0.7,
                                              "top_n": 8,
+                                             "top_k": 1024,
                                              "variables": [{
                                                  "key": "knowledge",
                                                  "optional": True
@@ -176,3 +182,15 @@ class RAGFlow:
                     chunks.append(chunk)
                 return chunks
             raise Exception(res.get("message"))
+
+
+    def list_agents(self, page: int = 1, page_size: int = 30, orderby: str = "update_time", desc: bool = True,
+                      id: str | None = None, title: str | None = None) -> list[Agent]:
+        res = self.get("/agents",{"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "title": title})
+        res = res.json()
+        result_list = []
+        if res.get("code") == 0:
+            for data in res['data']:
+                result_list.append(Agent(self, data))
+            return result_list
+        raise Exception(res["message"])

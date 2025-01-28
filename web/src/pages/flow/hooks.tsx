@@ -1,7 +1,10 @@
-import { useSetModalState } from '@/hooks/common-hooks';
-import { useFetchFlow, useResetFlow, useSetFlow } from '@/hooks/flow-hooks';
-import { IGraph } from '@/interfaces/database/flow';
-import { useIsFetching } from '@tanstack/react-query';
+import {
+  Connection,
+  Edge,
+  Node,
+  Position,
+  ReactFlowInstance,
+} from '@xyflow/react';
 import React, {
   ChangeEvent,
   useCallback,
@@ -9,7 +12,6 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { Connection, Edge, Node, Position, ReactFlowInstance } from 'reactflow';
 // import { shallow } from 'zustand/shallow';
 import { variableEnabledFieldMap } from '@/constants/chat';
 import {
@@ -18,15 +20,17 @@ import {
 } from '@/constants/knowledge';
 import { useFetchModelId } from '@/hooks/logic-hooks';
 import { Variable } from '@/interfaces/database/chat';
-import { useDebounceEffect } from 'ahooks';
+import {
+  ICategorizeForm,
+  IRelevantForm,
+  ISwitchForm,
+  RAGFlowNodeType,
+} from '@/interfaces/database/flow';
 import { FormInstance, message } from 'antd';
-import { DefaultOptionType } from 'antd/es/select';
-import dayjs from 'dayjs';
 import { humanId } from 'human-id';
 import { get, isEmpty, lowerFirst, pick } from 'lodash';
 import trim from 'lodash/trim';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import {
   NodeMap,
@@ -44,12 +48,14 @@ import {
   initialCrawlerValues,
   initialDeepLValues,
   initialDuckValues,
+  initialEmailValues,
   initialExeSqlValues,
   initialGenerateValues,
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
   initialInvokeValues,
+  initialIterationValues,
   initialJin10Values,
   initialKeywordExtractValues,
   initialMessageValues,
@@ -66,18 +72,12 @@ import {
   initialWikipediaValues,
   initialYahooFinanceValues,
 } from './constant';
-import {
-  BeginQuery,
-  ICategorizeForm,
-  IRelevantForm,
-  ISwitchForm,
-} from './interface';
 import useGraphStore, { RFState } from './store';
 import {
-  buildDslComponentsByGraph,
   generateNodeNamesWithIncreasingIndex,
   generateSwitchHandleText,
   getNodeDragHandle,
+  getRelativePositionToIterationNode,
   replaceIdWithText,
 } from './utils';
 
@@ -129,7 +129,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.GitHub]: initialGithubValues,
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
-      [Operator.ExeSQL]: initialExeSqlValues,
+      [Operator.ExeSQL]: { ...initialExeSqlValues, llm_id: llmId },
       [Operator.Switch]: initialSwitchValues,
       [Operator.WenCai]: initialWenCaiValues,
       [Operator.AkShare]: initialAkShareValues,
@@ -141,6 +141,9 @@ export const useInitializeOperatorParams = () => {
       [Operator.Crawler]: initialCrawlerValues,
       [Operator.Invoke]: initialInvokeValues,
       [Operator.Template]: initialTemplateValues,
+      [Operator.Email]: initialEmailValues,
+      [Operator.Iteration]: initialIterationValues,
+      [Operator.IterationStart]: initialIterationValues,
     };
   }, [llmId]);
 
@@ -157,7 +160,7 @@ export const useInitializeOperatorParams = () => {
 export const useHandleDrag = () => {
   const handleDragStart = useCallback(
     (operatorId: string) => (ev: React.DragEvent<HTMLDivElement>) => {
-      ev.dataTransfer.setData('application/reactflow', operatorId);
+      ev.dataTransfer.setData('application/@xyflow/react', operatorId);
       ev.dataTransfer.effectAllowed = 'move';
     },
     [],
@@ -192,7 +195,7 @@ export const useHandleDrop = () => {
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
 
-      const type = event.dataTransfer.getData('application/reactflow');
+      const type = event.dataTransfer.getData('application/@xyflow/react');
 
       // check if the dropped element is valid
       if (typeof type === 'undefined' || !type) {
@@ -201,12 +204,12 @@ export const useHandleDrop = () => {
 
       // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
       // and you don't need to subtract the reactFlowBounds.left/top anymore
-      // details: https://reactflow.dev/whats-new/2023-11-10
+      // details: https://@xyflow/react.dev/whats-new/2023-11-10
       const position = reactFlowInstance?.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
-      const newNode = {
+      const newNode: Node<any> = {
         id: `${type}:${humanId()}`,
         type: NodeMap[type as Operator] || 'ragNode',
         position: position || {
@@ -223,69 +226,41 @@ export const useHandleDrop = () => {
         dragHandle: getNodeDragHandle(type),
       };
 
-      addNode(newNode);
+      if (type === Operator.Iteration) {
+        newNode.width = 500;
+        newNode.height = 250;
+        const iterationStartNode: Node<any> = {
+          id: `${Operator.IterationStart}:${humanId()}`,
+          type: 'iterationStartNode',
+          position: { x: 50, y: 100 },
+          // draggable: false,
+          data: {
+            label: Operator.IterationStart,
+            name: Operator.IterationStart,
+            form: {},
+          },
+          parentId: newNode.id,
+          extent: 'parent',
+        };
+        addNode(newNode);
+        addNode(iterationStartNode);
+      } else {
+        const subNodeOfIteration = getRelativePositionToIterationNode(
+          nodes,
+          position,
+        );
+        if (subNodeOfIteration) {
+          newNode.parentId = subNodeOfIteration.parentId;
+          newNode.position = subNodeOfIteration.position;
+          newNode.extent = 'parent';
+        }
+        addNode(newNode);
+      }
     },
     [reactFlowInstance, getNodeName, nodes, initializeOperatorParams, addNode],
   );
 
   return { onDrop, onDragOver, setReactFlowInstance };
-};
-
-export const useShowFormDrawer = () => {
-  const {
-    clickedNodeId: clickNodeId,
-    setClickedNodeId,
-    getNode,
-  } = useGraphStore((state) => state);
-  const {
-    visible: formDrawerVisible,
-    hideModal: hideFormDrawer,
-    showModal: showFormDrawer,
-  } = useSetModalState();
-
-  const handleShow = useCallback(
-    (node: Node) => {
-      setClickedNodeId(node.id);
-      showFormDrawer();
-    },
-    [showFormDrawer, setClickedNodeId],
-  );
-
-  return {
-    formDrawerVisible,
-    hideFormDrawer,
-    showFormDrawer: handleShow,
-    clickedNode: getNode(clickNodeId),
-  };
-};
-
-export const useSaveGraph = () => {
-  const { data } = useFetchFlow();
-  const { setFlow, loading } = useSetFlow();
-  const { id } = useParams();
-  const { nodes, edges } = useGraphStore((state) => state);
-  useEffect(() => {}, [nodes]);
-  const saveGraph = useCallback(
-    async (currentNodes?: Node[]) => {
-      const dslComponents = buildDslComponentsByGraph(
-        currentNodes ?? nodes,
-        edges,
-        data.dsl.components,
-      );
-      return setFlow({
-        id,
-        title: data.title,
-        dsl: {
-          ...data.dsl,
-          graph: { nodes: currentNodes ?? nodes, edges },
-          components: dslComponents,
-        },
-      });
-    },
-    [nodes, edges, setFlow, id, data],
-  );
-
-  return { saveGraph, loading };
 };
 
 export const useHandleFormValuesChange = (id?: string) => {
@@ -314,39 +289,6 @@ export const useHandleFormValuesChange = (id?: string) => {
   );
 
   return { handleValuesChange };
-};
-
-const useSetGraphInfo = () => {
-  const { setEdges, setNodes } = useGraphStore((state) => state);
-  const setGraphInfo = useCallback(
-    ({ nodes = [], edges = [] }: IGraph) => {
-      if (nodes.length || edges.length) {
-        setNodes(nodes);
-        setEdges(edges);
-      }
-    },
-    [setEdges, setNodes],
-  );
-  return setGraphInfo;
-};
-
-export const useFetchDataOnMount = () => {
-  const { loading, data, refetch } = useFetchFlow();
-  const setGraphInfo = useSetGraphInfo();
-
-  useEffect(() => {
-    setGraphInfo(data?.dsl?.graph ?? ({} as IGraph));
-  }, [setGraphInfo, data]);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  return { loading, flowDetail: data };
-};
-
-export const useFlowIsFetching = () => {
-  return useIsFetching({ queryKey: ['flowDetail'] }) > 0;
 };
 
 export const useSetLlmSetting = (
@@ -382,10 +324,25 @@ export const useSetLlmSetting = (
 };
 
 export const useValidateConnection = () => {
-  const { edges, getOperatorTypeFromId } = useGraphStore((state) => state);
+  const { edges, getOperatorTypeFromId, getParentIdById } = useGraphStore(
+    (state) => state,
+  );
+
+  const isSameNodeChild = useCallback(
+    (connection: Connection | Edge) => {
+      const sourceParentId = getParentIdById(connection.source);
+      const targetParentId = getParentIdById(connection.target);
+      if (sourceParentId || targetParentId) {
+        return sourceParentId === targetParentId;
+      }
+      return true;
+    },
+    [getParentIdById],
+  );
+
   // restricted lines cannot be connected successfully.
   const isValidConnection = useCallback(
-    (connection: Connection) => {
+    (connection: Connection | Edge) => {
       // node cannot connect to itself
       const isSelfConnected = connection.target === connection.source;
 
@@ -399,10 +356,11 @@ export const useValidateConnection = () => {
         !hasLine &&
         RestrictedUpstreamMap[
           getOperatorTypeFromId(connection.source) as Operator
-        ]?.every((x) => x !== getOperatorTypeFromId(connection.target));
+        ]?.every((x) => x !== getOperatorTypeFromId(connection.target)) &&
+        isSameNodeChild(connection);
       return ret;
     },
-    [edges, getOperatorTypeFromId],
+    [edges, getOperatorTypeFromId, isSameNodeChild],
   );
 
   return isValidConnection;
@@ -443,38 +401,6 @@ export const useHandleNodeNameChange = ({
   }, [previousName]);
 
   return { name, handleNameBlur, handleNameChange };
-};
-
-export const useGetBeginNodeDataQuery = () => {
-  const getNode = useGraphStore((state) => state.getNode);
-
-  const getBeginNodeDataQuery = useCallback(() => {
-    return get(getNode('begin'), 'data.form.query', []);
-  }, [getNode]);
-
-  return getBeginNodeDataQuery;
-};
-
-export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
-  const { saveGraph, loading } = useSaveGraph();
-  const { resetFlow } = useResetFlow();
-
-  const handleRun = useCallback(
-    async (nextNodes?: Node[]) => {
-      const saveRet = await saveGraph(nextNodes);
-      if (saveRet?.code === 0) {
-        // Call the reset api before opening the run drawer each time
-        const resetRet = await resetFlow();
-        // After resetting, all previous messages will be cleared.
-        if (resetRet?.code === 0) {
-          show();
-        }
-      }
-    },
-    [saveGraph, resetFlow, show],
-  );
-
-  return { handleRun, loading };
 };
 
 export const useReplaceIdWithName = () => {
@@ -587,7 +513,6 @@ export const useWatchNodeFormDataChange = () => {
   );
 
   useEffect(() => {
-    console.info('xxx');
     nodes.forEach((node) => {
       const currentNode = getNode(node.id);
       const form = currentNode?.data.form ?? {};
@@ -613,66 +538,6 @@ export const useWatchNodeFormDataChange = () => {
     buildRelevantEdgesByFormData,
     buildSwitchEdgesByFormData,
   ]);
-};
-
-// exclude nodes with branches
-const ExcludedNodes = [
-  Operator.Categorize,
-  Operator.Relevant,
-  Operator.Begin,
-  Operator.Note,
-];
-
-export const useBuildComponentIdSelectOptions = (nodeId?: string) => {
-  const nodes = useGraphStore((state) => state.nodes);
-  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
-  const query: BeginQuery[] = getBeginNodeDataQuery();
-
-  const componentIdOptions = useMemo(() => {
-    return nodes
-      .filter(
-        (x) =>
-          x.id !== nodeId && !ExcludedNodes.some((y) => y === x.data.label),
-      )
-      .map((x) => ({ label: x.data.name, value: x.id }));
-  }, [nodes, nodeId]);
-
-  const groupedOptions = [
-    {
-      label: <span>Component Output</span>,
-      title: 'Component Output',
-      options: componentIdOptions,
-    },
-    {
-      label: <span>Begin Input</span>,
-      title: 'Begin Input',
-      options: query.map((x) => ({
-        label: x.name,
-        value: `begin@${x.key}`,
-      })),
-    },
-  ];
-
-  return groupedOptions;
-};
-
-export const useGetComponentLabelByValue = (nodeId: string) => {
-  const options = useBuildComponentIdSelectOptions(nodeId);
-  const flattenOptions = useMemo(
-    () =>
-      options.reduce<DefaultOptionType[]>((pre, cur) => {
-        return [...pre, ...cur.options];
-      }, []),
-    [options],
-  );
-
-  const getLabel = useCallback(
-    (val?: string) => {
-      return flattenOptions.find((x) => x.value === val)?.label;
-    },
-    [flattenOptions],
-  );
-  return getLabel;
 };
 
 export const useDuplicateNode = () => {
@@ -711,7 +576,7 @@ export const useCopyPaste = () => {
     (event: ClipboardEvent) => {
       const nodes = JSON.parse(
         event.clipboardData?.getData('agent:nodes') || '[]',
-      ) as Node[] | undefined;
+      ) as RAGFlowNodeType[] | undefined;
 
       if (Array.isArray(nodes) && nodes.length) {
         event.preventDefault();
@@ -736,39 +601,4 @@ export const useCopyPaste = () => {
       window.removeEventListener('paste', onPasteCapture);
     };
   }, [onPasteCapture]);
-};
-
-export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
-  const [time, setTime] = useState<string>();
-  const nodes = useGraphStore((state) => state.nodes);
-  const edges = useGraphStore((state) => state.edges);
-  const { saveGraph } = useSaveGraph();
-  const { data: flowDetail } = useFetchFlow();
-
-  const setSaveTime = useCallback((updateTime: number) => {
-    setTime(dayjs(updateTime).format('YYYY-MM-DD HH:mm:ss'));
-  }, []);
-
-  useEffect(() => {
-    setSaveTime(flowDetail?.update_time);
-  }, [flowDetail, setSaveTime]);
-
-  const saveAgent = useCallback(async () => {
-    if (!chatDrawerVisible) {
-      const ret = await saveGraph();
-      setSaveTime(ret.data.update_time);
-    }
-  }, [chatDrawerVisible, saveGraph, setSaveTime]);
-
-  useDebounceEffect(
-    () => {
-      saveAgent();
-    },
-    [nodes, edges],
-    {
-      wait: 1000 * 20,
-    },
-  );
-
-  return time;
 };

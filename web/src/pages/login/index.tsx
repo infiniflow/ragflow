@@ -168,7 +168,7 @@ const Login = () => {
                     onClick={toGoogle}
                     style={{ marginTop: 15 }}
                   >
-                    <div>
+                    <div className="flex items-center">
                       <Icon
                         icon="local:github"
                         style={{ verticalAlign: 'middle', marginRight: 5 }}

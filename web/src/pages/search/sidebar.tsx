@@ -1,4 +1,4 @@
-import { useNextFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { UserOutlined } from '@ant-design/icons';
 import type { TreeDataNode, TreeProps } from 'antd';
 import { Avatar, Layout, Space, Spin, Tree, Typography } from 'antd';
@@ -27,7 +27,7 @@ const SearchSidebar = ({
   checkedList,
   setCheckedList,
 }: IProps) => {
-  const { list, loading } = useNextFetchKnowledgeList();
+  const { list, loading } = useFetchKnowledgeList();
 
   const groupedList = useMemo(() => {
     return list.reduce((pre: TreeDataNode[], cur) => {

@@ -1,21 +1,19 @@
 import NewDocumentLink from '@/components/new-document-link';
-import SvgIcon from '@/components/svg-icon';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useDownloadFile } from '@/hooks/file-manager-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
-import { api_host } from '@/utils/api';
 import {
   getExtension,
   isSupportedPreviewDocumentType,
 } from '@/utils/document-util';
-import { downloadFile } from '@/utils/file-util';
 import {
-  DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
   EyeOutlined,
   LinkOutlined,
 } from '@ant-design/icons';
 import { Button, Space, Tooltip } from 'antd';
+import { FolderInput, Trash2 } from 'lucide-react';
 import { useHandleDeleteFile } from '../hooks';
 
 interface IProps {
@@ -42,12 +40,13 @@ const ActionCell = ({
     [documentId],
     setSelectedRowKeys,
   );
+  const { downloadFile, loading } = useDownloadFile();
   const extension = getExtension(record.name);
   const isKnowledgeBase = record.source_type === 'knowledgebase';
 
   const onDownloadDocument = () => {
     downloadFile({
-      url: `${api_host}/file/get/${documentId}`,
+      id: documentId,
       filename: record.name,
     });
   };
@@ -92,21 +91,32 @@ const ActionCell = ({
             type="text"
             disabled={beingUsed}
             onClick={onShowMoveFileModal}
+            className="flex items-end"
           >
-            <SvgIcon name={`move`} width={16}></SvgIcon>
+            <FolderInput className="size-4" />
           </Button>
         </Tooltip>
       )}
       {isKnowledgeBase || (
         <Tooltip title={t('delete', { keyPrefix: 'common' })}>
-          <Button type="text" disabled={beingUsed} onClick={handleRemoveFile}>
-            <DeleteOutlined size={20} />
+          <Button
+            type="text"
+            disabled={beingUsed}
+            onClick={handleRemoveFile}
+            className="flex items-end"
+          >
+            <Trash2 className="size-4" />
           </Button>
         </Tooltip>
       )}
       {record.type !== 'folder' && (
         <Tooltip title={t('download', { keyPrefix: 'common' })}>
-          <Button type="text" disabled={beingUsed} onClick={onDownloadDocument}>
+          <Button
+            type="text"
+            disabled={beingUsed}
+            loading={loading}
+            onClick={onDownloadDocument}
+          >
             <DownloadOutlined size={20} />
           </Button>
         </Tooltip>

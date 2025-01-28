@@ -6,7 +6,7 @@ import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import RetrievalDocuments from '@/components/retrieval-documents';
 import SvgIcon from '@/components/svg-icon';
 import {
-  useNextFetchKnowledgeList,
+  useFetchKnowledgeList,
   useSelectTestingResult,
 } from '@/hooks/knowledge-hooks';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
@@ -45,7 +45,7 @@ const SearchPage = () => {
   const { t } = useTranslation();
   const [checkedList, setCheckedList] = useState<string[]>([]);
   const { chunks, total } = useSelectTestingResult();
-  const { list: knowledgeList } = useNextFetchKnowledgeList();
+  const { list: knowledgeList } = useFetchKnowledgeList();
   const checkedWithoutEmbeddingIdList = useMemo(() => {
     return checkedList.filter((x) => knowledgeList.some((y) => y.id === x));
   }, [checkedList, knowledgeList]);
@@ -146,9 +146,9 @@ const SearchPage = () => {
                   ></RetrievalDocuments>
                   <Divider></Divider>
                   <Spin spinning={loading}>
-                    {chunks.length > 0 && (
+                    {chunks?.length > 0 && (
                       <List
-                        dataSource={chunks}
+                        dataSource={chunks || []}
                         className={styles.chunks}
                         renderItem={(item) => (
                           <List.Item>

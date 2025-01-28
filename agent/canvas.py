@@ -18,8 +18,12 @@ import json
 from abc import ABC
 from copy import deepcopy
 from functools import partial
+
+import pandas as pd
+
 from agent.component import component_class
 from agent.component.base import ComponentBase
+
 
 class Canvas(ABC):
     """
@@ -82,7 +86,8 @@ class Canvas(ABC):
                         }
                     },
                     "downstream": [],
-                    "upstream": []
+                    "upstream": [],
+                    "parent_id": ""
                 }
             },
             "history": [],
@@ -133,7 +138,8 @@ class Canvas(ABC):
             "components": {}
         }
         for k in self.dsl.keys():
-            if k in ["components"]:continue
+            if k in ["components"]:
+                continue
             dsl[k] = deepcopy(self.dsl[k])
 
         for k, cpn in self.components.items():
@@ -158,7 +164,8 @@ class Canvas(ABC):
 
     def get_compnent_name(self, cid):
         for n in self.dsl["graph"]["nodes"]:
-            if cid == n["id"]: return n["data"]["name"]
+            if cid == n["id"]:
+                return n["data"]["name"]
         return ""
 
     def run(self, **kwargs):
@@ -173,7 +180,8 @@ class Canvas(ABC):
             if kwargs.get("stream"):
                 for an in ans():
                     yield an
-            else: yield ans
+            else:
+                yield ans
             return
 
         if not self.path:
@@ -181,6 +189,7 @@ class Canvas(ABC):
             self.path.append(["begin"])
 
         self.path.append([])
+
         ran = -1
         waiting = []
         without_dependent_checking = []
@@ -188,7 +197,8 @@ class Canvas(ABC):
         def prepare2run(cpns):
             nonlocal ran, ans
             for c in cpns:
-                if self.path[-1] and c == self.path[-1][-1]: continue
+                if self.path[-1] and c == self.path[-1][-1]:
+                    continue
                 cpn = self.components[c]["obj"]
                 if cpn.component_name == "Answer":
                     self.answer.append(c)
@@ -197,50 +207,77 @@ class Canvas(ABC):
                     if c not in without_dependent_checking:
                         cpids = cpn.get_dependent_components()
                         if any([cc not in self.path[-1] for cc in cpids]):
-                            if c not in waiting: waiting.append(c)
+                            if c not in waiting:
+                                waiting.append(c)
                             continue
                     yield "*'{}'* is running...🕞".format(self.get_compnent_name(c))
-                    ans = cpn.run(self.history, **kwargs)
+
+                    if cpn.component_name.lower() == "iteration":
+                        st_cpn = cpn.get_start()
+                        assert st_cpn, "Start component not found for Iteration."
+                        if not st_cpn["obj"].end():
+                            cpn = st_cpn["obj"]
+                            c = cpn._id
+
+                    try:
+                        ans = cpn.run(self.history, **kwargs)
+                    except Exception as e:
+                        logging.exception(f"Canvas.run got exception: {e}")
+                        self.path[-1].append(c)
+                        ran += 1
+                        raise e
                     self.path[-1].append(c)
+
             ran += 1
 
-        for m in prepare2run(self.components[self.path[-2][-1]]["downstream"]):
+        downstream = self.components[self.path[-2][-1]]["downstream"]
+        if not downstream and self.components[self.path[-2][-1]].get("parent_id"):
+            cid = self.path[-2][-1]
+            pid = self.components[cid]["parent_id"]
+            o, _ = self.components[cid]["obj"].output(allow_partial=False)
+            oo, _ = self.components[pid]["obj"].output(allow_partial=False)
+            self.components[pid]["obj"].set(pd.concat([oo, o], ignore_index=True))
+            downstream = [pid]
+
+        for m in prepare2run(downstream):
             yield {"content": m, "running_status": True}
 
         while 0 <= ran < len(self.path[-1]):
             logging.debug(f"Canvas.run: {ran} {self.path}")
             cpn_id = self.path[-1][ran]
             cpn = self.get_component(cpn_id)
-            if not cpn["downstream"]: break
+            if not any([cpn["downstream"], cpn.get("parent_id"), waiting]):
+                break
 
             loop = self._find_loop()
-            if loop: raise OverflowError(f"Too much loops: {loop}")
+            if loop:
+                raise OverflowError(f"Too much loops: {loop}")
 
             if cpn["obj"].component_name.lower() in ["switch", "categorize", "relevant"]:
                 switch_out = cpn["obj"].output()[1].iloc[0, 0]
                 assert switch_out in self.components, \
                     "{}'s output: {} not valid.".format(cpn_id, switch_out)
-                try:
-                    for m in prepare2run([switch_out]):
-                        yield {"content": m, "running_status": True}
-                except Exception as e:
-                    yield {"content": "*Exception*: {}".format(e), "running_status": True}
-                    logging.exception("Canvas.run got exception")
+                for m in prepare2run([switch_out]):
+                    yield {"content": m, "running_status": True}
                 continue
 
-            try:
-                for m in prepare2run(cpn["downstream"]):
-                    yield {"content": m, "running_status": True}
-            except Exception as e:
-                yield {"content": "*Exception*: {}".format(e), "running_status": True}
-                logging.exception("Canvas.run got exception")
-                ran += 1
+            downstream = cpn["downstream"]
+            if not downstream and cpn.get("parent_id"):
+                pid = cpn["parent_id"]
+                _, o = cpn["obj"].output(allow_partial=False)
+                _, oo = self.components[pid]["obj"].output(allow_partial=False)
+                self.components[pid]["obj"].set_output(pd.concat([oo.dropna(axis=1), o.dropna(axis=1)], ignore_index=True))
+                downstream = [pid]
+
+            for m in prepare2run(downstream):
+                yield {"content": m, "running_status": True}
 
             if ran >= len(self.path[-1]) and waiting:
                 without_dependent_checking = waiting
                 waiting = []
                 for m in prepare2run(without_dependent_checking):
                     yield {"content": m, "running_status": True}
+                without_dependent_checking = []
                 ran -= 1
 
         if self.answer:
@@ -284,19 +321,22 @@ class Canvas(ABC):
 
     def _find_loop(self, max_loops=6):
         path = self.path[-1][::-1]
-        if len(path) < 2: return False
+        if len(path) < 2:
+            return False
 
         for i in range(len(path)):
-            if path[i].lower().find("answer") >= 0:
+            if path[i].lower().find("answer") == 0 or path[i].lower().find("iterationitem") == 0:
                 path = path[:i]
                 break
 
-        if len(path) < 2: return False
+        if len(path) < 2:
+            return False
 
-        for l in range(2, len(path) // 2):
-            pat = ",".join(path[0:l])
+        for loc in range(2, len(path) // 2):
+            pat = ",".join(path[0:loc])
             path_str = ",".join(path)
-            if len(pat) >= len(path_str): return False
+            if len(pat) >= len(path_str):
+                return False
             loop = max_loops
             while path_str.find(pat) == 0 and loop >= 0:
                 loop -= 1
@@ -304,10 +344,23 @@ class Canvas(ABC):
                     return False
                 path_str = path_str[len(pat)+1:]
             if loop < 0:
-                pat = " => ".join([p.split(":")[0] for p in path[0:l]])
+                pat = " => ".join([p.split(":")[0] for p in path[0:loc]])
                 return pat + " => " + pat
 
         return False
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
+
+    def set_global_param(self, **kwargs):
+        for k, v in kwargs.items():
+            for q in self.components["begin"]["obj"]._param.query:
+                if k != q["key"]:
+                    continue
+                q["value"] = v
+
+    def get_preset_param(self):
+        return self.components["begin"]["obj"]._param.query
+
+    def get_component_input_elements(self, cpnnm):
+        return self.components[cpnnm]["obj"].get_input_elements()

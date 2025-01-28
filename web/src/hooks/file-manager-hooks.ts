@@ -2,6 +2,7 @@ import { ResponseType } from '@/interfaces/database/base';
 import { IFolder } from '@/interfaces/database/file-manager';
 import { IConnectRequestBody } from '@/interfaces/request/file-manager';
 import fileManagerService from '@/services/file-manager-service';
+import { downloadFileFromBlob } from '@/utils/file-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PaginationProps, UploadFile, message } from 'antd';
 import React, { useCallback } from 'react';
@@ -112,6 +113,22 @@ export const useDeleteFile = () => {
   });
 
   return { data, loading, deleteFile: mutateAsync };
+};
+
+export const useDownloadFile = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['downloadFile'],
+    mutationFn: async (params: { id: string; filename?: string }) => {
+      const response = await fileManagerService.getFile({}, params.id);
+      const blob = new Blob([response.data], { type: response.data.type });
+      downloadFileFromBlob(blob, params.filename);
+    },
+  });
+  return { data, loading, downloadFile: mutateAsync };
 };
 
 export const useRenameFile = () => {

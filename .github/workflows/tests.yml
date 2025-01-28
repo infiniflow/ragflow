@@ -49,29 +49,36 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Build ragflow:dev-slim
+      # https://github.com/astral-sh/ruff-action
+      - name: Static check with Ruff
+        uses: astral-sh/ruff-action@v2
+        with:
+          version: ">=0.8.2"
+          args: "check --ignore E402"
+
+      - name: Build ragflow:nightly-slim
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
-          cp -r ${RUNNER_WORKSPACE_PREFIX}/huggingface.co ${RUNNER_WORKSPACE_PREFIX}/nltk_data ${RUNNER_WORKSPACE_PREFIX}/libssl*.deb  ${RUNNER_WORKSPACE_PREFIX}/tika-server*.jar* ${RUNNER_WORKSPACE_PREFIX}/chrome* ${RUNNER_WORKSPACE_PREFIX}/cl100k_base.tiktoken .
           sudo docker pull ubuntu:22.04
-          sudo docker build --progress=plain -f Dockerfile.slim -t infiniflow/ragflow:dev-slim .
+          sudo docker build --progress=plain --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 
-      - name: Build ragflow:dev
+      - name: Build ragflow:nightly
         run: |
-          sudo docker build --progress=plain -f Dockerfile -t infiniflow/ragflow:dev .
+          sudo docker build --progress=plain --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
 
-      - name: Start ragflow:dev-slim
+      - name: Start ragflow:nightly-slim
         run: |
+          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
-      - name: Stop ragflow:dev-slim
+      - name: Stop ragflow:nightly-slim
         if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml down -v
 
-      - name: Start ragflow:dev
+      - name: Start ragflow:nightly
         run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:dev" >> docker/.env
+          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Run sdk tests against Elasticsearch
@@ -82,7 +89,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
 
       - name: Run frontend api tests against Elasticsearch
         run: |
@@ -92,15 +99,15 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py 
+          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py 
           
 
-      - name: Stop ragflow:dev
+      - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
         run: |
           sudo docker compose -f docker/docker-compose.yml down -v
 
-      - name: Start ragflow:dev
+      - name: Start ragflow:nightly
         run: |
           sudo DOC_ENGINE=infinity docker compose -f docker/docker-compose.yml up -d
 
@@ -112,7 +119,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
 
       - name: Run frontend api tests against Infinity
         run: |
@@ -122,9 +129,9 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
+          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
 
-      - name: Stop ragflow:dev
+      - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
         run: |
           sudo DOC_ENGINE=infinity docker compose -f docker/docker-compose.yml down -v

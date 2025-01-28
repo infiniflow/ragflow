@@ -16,7 +16,7 @@ const KeywordExtractForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable nodeId={node?.id}></DynamicInputVariable>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
       <Form.Item
         name={'llm_id'}
         label={t('model', { keyPrefix: 'chat' })}
@@ -24,7 +24,7 @@ const KeywordExtractForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       >
         <LLMSelect></LLMSelect>
       </Form.Item>
-      <TopNItem initialValue={1}></TopNItem>
+      <TopNItem initialValue={3}></TopNItem>
     </Form>
   );
 };

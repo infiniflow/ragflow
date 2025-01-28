@@ -24,6 +24,7 @@ import time
 import uuid
 import requests
 import logging
+import copy
 from enum import Enum, IntEnum
 import importlib
 from Cryptodome.PublicKey import RSA
@@ -65,6 +66,10 @@ CONFIGS = read_config()
 def show_configs():
     msg = f"Current configs, from {conf_realpath(SERVICE_CONF)}:"
     for k, v in CONFIGS.items():
+        if isinstance(v, dict):
+            if "password" in v:
+                v = copy.deepcopy(v)
+                v["password"] = "*" * 8
         msg += f"\n\t{k}: {v}"
     logging.info(msg)
 

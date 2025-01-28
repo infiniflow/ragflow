@@ -1,14 +1,9 @@
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import type {} from '@redux-devtools/extension';
-import { humanId } from 'human-id';
-import differenceWith from 'lodash/differenceWith';
-import intersectionWith from 'lodash/intersectionWith';
-import lodashSet from 'lodash/set';
 import {
   Connection,
   Edge,
   EdgeChange,
-  Node,
-  NodeChange,
   OnConnect,
   OnEdgesChange,
   OnNodesChange,
@@ -17,40 +12,43 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
-} from 'reactflow';
+} from '@xyflow/react';
+import { omit } from 'lodash';
+import differenceWith from 'lodash/differenceWith';
+import intersectionWith from 'lodash/intersectionWith';
+import lodashSet from 'lodash/set';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { Operator, SwitchElseTo } from './constant';
-import { NodeData } from './interface';
 import {
   duplicateNodeForm,
+  generateDuplicateNode,
   generateNodeNamesWithIncreasingIndex,
-  getNodeDragHandle,
   getOperatorIndex,
   isEdgeEqual,
 } from './utils';
 
 export type RFState = {
-  nodes: Node<NodeData>[];
+  nodes: RAGFlowNodeType[];
   edges: Edge[];
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
   clickedNodeId: string; // currently selected node
-  onNodesChange: OnNodesChange;
+  onNodesChange: OnNodesChange<RAGFlowNodeType>;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
-  setNodes: (nodes: Node[]) => void;
+  setNodes: (nodes: RAGFlowNodeType[]) => void;
   setEdges: (edges: Edge[]) => void;
   setEdgesByNodeId: (nodeId: string, edges: Edge[]) => void;
   updateNodeForm: (
     nodeId: string,
     values: any,
     path?: (string | number)[],
-  ) => Node[];
+  ) => RAGFlowNodeType[];
   onSelectionChange: OnSelectionChangeFunc;
-  addNode: (nodes: Node) => void;
-  getNode: (id?: string | null) => Node<NodeData> | undefined;
+  addNode: (nodes: RAGFlowNodeType) => void;
+  getNode: (id?: string | null) => RAGFlowNodeType | undefined;
   addEdge: (connection: Connection) => void;
   getEdge: (id: string) => Edge | undefined;
   updateFormDataOnConnect: (connection: Connection) => void;
@@ -61,13 +59,16 @@ export type RFState = {
   ) => void;
   deletePreviousEdgeOfClassificationNode: (connection: Connection) => void;
   duplicateNode: (id: string, name: string) => void;
+  duplicateIterationNode: (id: string, name: string) => void;
   deleteEdge: () => void;
   deleteEdgeById: (id: string) => void;
   deleteNodeById: (id: string) => void;
+  deleteIterationNodeById: (id: string) => void;
   deleteEdgeBySourceAndSourceHandle: (connection: Partial<Connection>) => void;
-  findNodeByName: (operatorName: Operator) => Node | undefined;
+  findNodeByName: (operatorName: Operator) => RAGFlowNodeType | undefined;
   updateMutableNodeFormItem: (id: string, field: string, value: any) => void;
   getOperatorTypeFromId: (id?: string | null) => string | undefined;
+  getParentIdById: (id?: string | null) => string | undefined;
   updateNodeName: (id: string, name: string) => void;
   generateNodeName: (name: string) => string;
   setClickedNodeId: (id?: string) => void;
@@ -77,12 +78,12 @@ export type RFState = {
 const useGraphStore = create<RFState>()(
   devtools(
     immer((set, get) => ({
-      nodes: [] as Node[],
+      nodes: [] as RAGFlowNodeType[],
       edges: [] as Edge[],
       selectedNodeIds: [] as string[],
       selectedEdgeIds: [] as string[],
       clickedNodeId: '',
-      onNodesChange: (changes: NodeChange[]) => {
+      onNodesChange: (changes) => {
         set({
           nodes: applyNodeChanges(changes, get().nodes),
         });
@@ -109,7 +110,7 @@ const useGraphStore = create<RFState>()(
           selectedNodeIds: nodes.map((x) => x.id),
         });
       },
-      setNodes: (nodes: Node[]) => {
+      setNodes: (nodes: RAGFlowNodeType[]) => {
         set({ nodes });
       },
       setEdges: (edges: Edge[]) => {
@@ -161,7 +162,7 @@ const useGraphStore = create<RFState>()(
           ]);
         }
       },
-      addNode: (node: Node) => {
+      addNode: (node: RAGFlowNodeType) => {
         set({ nodes: get().nodes.concat(node) });
       },
       getNode: (id?: string | null) => {
@@ -169,6 +170,9 @@ const useGraphStore = create<RFState>()(
       },
       getOperatorTypeFromId: (id?: string | null) => {
         return get().getNode(id)?.data?.label;
+      },
+      getParentIdById: (id?: string | null) => {
+        return get().getNode(id)?.parentId;
       },
       addEdge: (connection: Connection) => {
         set({
@@ -234,12 +238,14 @@ const useGraphStore = create<RFState>()(
         }
       },
       duplicateNode: (id: string, name: string) => {
-        const { getNode, addNode, generateNodeName } = get();
+        const { getNode, addNode, generateNodeName, duplicateIterationNode } =
+          get();
         const node = getNode(id);
-        const position = {
-          x: (node?.position?.x || 0) + 50,
-          y: (node?.position?.y || 0) + 50,
-        };
+
+        if (node?.data.label === Operator.Iteration) {
+          duplicateIterationNode(id, name);
+          return;
+        }
 
         addNode({
           ...(node || {}),
@@ -247,12 +253,37 @@ const useGraphStore = create<RFState>()(
             ...duplicateNodeForm(node?.data),
             name: generateNodeName(name),
           },
-          selected: false,
-          dragging: false,
-          id: `${node?.data?.label}:${humanId()}`,
-          position,
-          dragHandle: getNodeDragHandle(node?.data?.label),
+          ...generateDuplicateNode(node?.position, node?.data?.label),
         });
+      },
+      duplicateIterationNode: (id: string, name: string) => {
+        const { getNode, generateNodeName, nodes } = get();
+        const node = getNode(id);
+
+        const iterationNode: RAGFlowNodeType = {
+          ...(node || {}),
+          data: {
+            ...(node?.data || { label: Operator.Iteration, form: {} }),
+            name: generateNodeName(name),
+          },
+          ...generateDuplicateNode(node?.position, node?.data?.label),
+        };
+
+        const children = nodes
+          .filter((x) => x.parentId === node?.id)
+          .map((x) => ({
+            ...(x || {}),
+            data: {
+              ...duplicateNodeForm(x?.data),
+              name: generateNodeName(x.data.name),
+            },
+            ...omit(generateDuplicateNode(x?.position, x?.data?.label), [
+              'position',
+            ]),
+            parentId: iterationNode.id,
+          }));
+
+        set({ nodes: nodes.concat(iterationNode, ...children) });
       },
       deleteEdge: () => {
         const { edges, selectedEdgeIds } = get();
@@ -321,6 +352,21 @@ const useGraphStore = create<RFState>()(
           edges: edges
             .filter((edge) => edge.source !== id)
             .filter((edge) => edge.target !== id),
+        });
+      },
+      deleteIterationNodeById: (id: string) => {
+        const { nodes, edges } = get();
+        const children = nodes.filter((node) => node.parentId === id);
+        set({
+          nodes: nodes.filter((node) => node.id !== id && node.parentId !== id),
+          edges: edges.filter(
+            (edge) =>
+              edge.source !== id &&
+              edge.target !== id &&
+              !children.some(
+                (child) => edge.source === child.id && edge.target === child.id,
+              ),
+          ),
         });
       },
       findNodeByName: (name: Operator) => {

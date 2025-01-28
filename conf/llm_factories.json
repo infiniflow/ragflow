@@ -73,9 +73,15 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "gpt-4-vision-preview",
+                    "llm_name": "gpt-4o-2024-08-06",
                     "tags": "LLM,CHAT,IMAGE2TEXT",
-                    "max_tokens": 765,
+                    "max_tokens": 128000,
+                    "model_type": "image2text"
+                },
+                 {
+                    "llm_name": "gpt-4o-mini-2024-07-18",
+                    "tags": "LLM,CHAT,IMAGE2TEXT",
+                    "max_tokens": 128000,
                     "model_type": "image2text"
                 },
                 {
@@ -102,6 +108,12 @@
                     "llm_name": "qwen-turbo",
                     "tags": "LLM,CHAT,8K",
                     "max_tokens": 8191,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "qwen-max",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
                     "model_type": "chat"
                 },
                 {
@@ -385,13 +397,13 @@
                 {
                     "llm_name": "deepseek-chat",
                     "tags": "LLM,CHAT,",
-                    "max_tokens": 32768,
+                    "max_tokens": 64000,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "deepseek-coder",
+                    "llm_name": "deepseek-reasoner",
                     "tags": "LLM,CHAT,",
-                    "max_tokens": 16385,
+                    "max_tokens": 64000,
                     "model_type": "chat"
                 }
             ]
@@ -947,9 +959,9 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "gemini-1.0-pro",
-                    "tags": "LLM,CHAT,30K",
-                    "max_tokens": 30720,
+                    "llm_name": "gemini-2.0-flash-exp",
+                    "tags": "LLM,CHAT,1024K",
+                    "max_tokens": 1048576,
                     "model_type": "chat"
                 },
                 {
@@ -1006,6 +1018,18 @@
                     "llm_name": "llama-3.1-8b-instant",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama-3.3-70b-versatile",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "llama-3.3-70b-specdec",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
                     "model_type": "chat"
                 },
                 {
@@ -2517,6 +2541,13 @@
             "name": "HuggingFace",
             "logo": "",
             "tags": "TEXT EMBEDDING",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "GPUStack",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TTS,SPEECH2TEXT,TEXT RE-RANK",
             "status": "1",
             "llm": []
         }

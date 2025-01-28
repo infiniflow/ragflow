@@ -1,12 +1,13 @@
+import { useUpdateNodeInternals } from '@xyflow/react';
 import get from 'lodash/get';
 import { useEffect, useMemo } from 'react';
-import { useUpdateNodeInternals } from 'reactflow';
 import { SwitchElseTo } from '../../constant';
+
 import {
   ICategorizeItemResult,
   ISwitchCondition,
-  NodeData,
-} from '../../interface';
+  RAGFlowNodeType,
+} from '@/interfaces/database/flow';
 import { generateSwitchHandleText } from '../../utils';
 
 export const useBuildCategorizeHandlePositions = ({
@@ -14,7 +15,7 @@ export const useBuildCategorizeHandlePositions = ({
   id,
 }: {
   id: string;
-  data: NodeData;
+  data: RAGFlowNodeType['data'];
 }) => {
   const updateNodeInternals = useUpdateNodeInternals();
 
@@ -35,7 +36,7 @@ export const useBuildCategorizeHandlePositions = ({
         list.push({
           text: x,
           idx,
-          top: idx === 0 ? 98 : list[idx - 1].top + 8 + 26,
+          top: idx === 0 ? 98 + 20 : list[idx - 1].top + 8 + 26,
         });
       });
 
@@ -54,7 +55,7 @@ export const useBuildSwitchHandlePositions = ({
   id,
 }: {
   id: string;
-  data: NodeData;
+  data: RAGFlowNodeType['data'];
 }) => {
   const updateNodeInternals = useUpdateNodeInternals();
 
@@ -71,7 +72,7 @@ export const useBuildSwitchHandlePositions = ({
     }> = [];
 
     [...conditions, ''].forEach((x, idx) => {
-      let top = idx === 0 ? 58 : list[idx - 1].top + 32; // case number (Case 1) height + flex gap
+      let top = idx === 0 ? 58 + 20 : list[idx - 1].top + 32; // case number (Case 1) height + flex gap
       if (idx - 1 >= 0) {
         const previousItems = conditions[idx - 1]?.items ?? [];
         if (previousItems.length > 0) {

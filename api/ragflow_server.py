@@ -18,12 +18,10 @@
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
-import logging
-import os
 from api.utils.log_utils import initRootLogger
-LOG_LEVELS = os.environ.get("LOG_LEVELS", "")
-initRootLogger("ragflow_server", LOG_LEVELS)
+initRootLogger("ragflow_server")
 
+import logging
 import os
 import signal
 import sys
@@ -47,7 +45,7 @@ from rag.settings import print_rag_settings
 
 def update_progress():
     while True:
-        time.sleep(3)
+        time.sleep(6)
         try:
             DocumentService.update_progress()
         except Exception:
