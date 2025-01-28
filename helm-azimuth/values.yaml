@@ -9,5 +9,5 @@ zenithClient:
 # RAGflow values
 ragflow:
   env:
-    RAGFLOW_IMAGE: infiniflow/ragflow:v0.14.0
+    RAGFLOW_IMAGE: infiniflow/ragflow:v0.15.1
     DOC_ENGINE: infinity
