@@ -81,7 +81,7 @@ export default {
       searchKnowledgePlaceholder: 'Buscar',
       noMoreData: 'Isso é tudo. Nada mais.',
     },
-    knowledgeDetail: {
+    knowledgeDetails: {
       dataset: 'Conjunto de dados',
       testing: 'Teste de recuperação',
       files: 'Arquivos',
@@ -221,6 +221,7 @@ export default {
       upload: 'Enviar',
       english: 'Inglês',
       chinese: 'Chinês',
+      portugueseBr: 'Português (Brasil)',
       embeddingModelPlaceholder:
         'Por favor, selecione um modelo de incorporação',
       chunkMethodPlaceholder: 'Por favor, selecione um método de fragmentação',
