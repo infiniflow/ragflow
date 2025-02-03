@@ -520,6 +520,8 @@ This procedure will improve precision of retrieval by adding more information to
       useKnowledgeGraph: 'Use knowledge graph',
       useKnowledgeGraphTip:
         'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
+      keyword: 'Keyword analysis',
+      keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphesize during the relevance omputation.`,
     },
     setting: {
       profile: 'Profile',
@@ -1121,7 +1123,7 @@ This procedure will improve precision of retrieval by adding more information to
       testRun: 'Test Run',
       template: 'Template',
       templateDescription:
-        'A component that formats user inputs or the outputs of other components.',
+        'A component that formats the output of other components.1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement',
       emailComponent: 'Email',
       emailDescription: 'Send an email to a specified address.',
       smtpServer: 'SMTP Server',
@@ -1161,8 +1163,8 @@ This delimiter is used to split the input text into several text pieces echo of 
         lineBreak: 'Line break',
         tab: 'Tab',
         underline: 'Underline',
-        diagonal: 'Diagonal',
-        minus: 'Minus',
+        diagonal: 'Forward slash',
+        minus: 'Dash',
         semicolon: 'Semicolon',
       },
       addVariable: 'Add variable',

@@ -177,7 +177,7 @@ class Pdf(PdfParser):
         tbl_tag = "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
             .format(tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom)
         _tbl_text = ''.join(tbls[tbl_index][0][1])
-        return tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag,
+        return tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, _tbl_text
 
 
 class Docx(DocxParser):
@@ -394,7 +394,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
                     f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
-            res.append(beAdoc(deepcopy(doc), question, answer, eng, len(reader)))
+            res.append(beAdoc(deepcopy(doc), question, answer, eng, len(list(reader))))
 
         callback(0.6, ("Extract Q&A: {}".format(len(res)) + (
             f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))

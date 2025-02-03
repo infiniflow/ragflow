@@ -30,9 +30,8 @@
 	"knowledge_graph_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"entities_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"pagerank_fea": {"type": "integer", "default":  0},
-	"tag_feas": {"type": "integer", "default":  0},
+	"tag_feas": {"type": "varchar", "default":  ""},
 
-	"important_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"from_entity_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"to_entity_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"entity_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},

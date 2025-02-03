@@ -1,3 +1,4 @@
+import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { UserOutlined } from '@ant-design/icons';
@@ -8,7 +9,11 @@ const KnowledgeBaseItem = () => {
 
   const { list: knowledgeList } = useFetchKnowledgeList(true);
 
-  const knowledgeOptions = knowledgeList.map((x) => ({
+  const filteredKnowledgeList = knowledgeList.filter(
+    (x) => x.parser_id !== DocumentParserType.Tag,
+  );
+
+  const knowledgeOptions = filteredKnowledgeList.map((x) => ({
     label: (
       <Space>
         <Avatar size={20} icon={<UserOutlined />} src={x.avatar} />

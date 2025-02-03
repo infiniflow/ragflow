@@ -7,6 +7,7 @@
 <p align="center">
   <a href="./README.md">English</a> |
   <a href="./README_zh.md">简体中文</a> |
+  <a href="./README_tzh.md">繁体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
   <a href="./README_id.md">Bahasa Indonesia</a> |
@@ -54,13 +55,13 @@
 
 ## 🔥 업데이트
 
+- 2025-01-26 지식 그래프 추출 및 적용을 최적화하고 다양한 구성 옵션을 제공합니다.
 - 2024-12-18 Deepdoc의 문서 레이아웃 분석 모델 업그레이드.
 - 2024-12-04 지식베이스에 대한 페이지랭크 점수를 지원합니다.
 
 - 2024-11-22 에이전트의 변수 정의 및 사용을 개선했습니다.
 - 2024-11-01 파싱된 청크에 키워드 추출 및 관련 질문 생성을 추가하여 재현율을 향상시킵니다.
 - 2024-08-22 RAG를 통해 SQL 문에 텍스트를 지원합니다.
-- 2024-08-02: [graphrag](https://github.com/microsoft/graphrag)와 마인드맵에서 영감을 받은 GraphRAG를 지원합니다.
 
 ## 🎉 계속 지켜봐 주세요
 

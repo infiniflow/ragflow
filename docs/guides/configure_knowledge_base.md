@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+sidebar_position: 0
 slug: /configure_knowledge_base
 ---
 
@@ -22,7 +22,7 @@ _Each time a knowledge base is created, a folder with the same name is generated
 
 ## Configure knowledge base
 
-The following screen shot shows the configuration page of a knowledge base. A proper configuration of your knowledge base is crucial for future AI chats. For example, choosing the wrong embedding model or chunk method would cause unexpected semantic loss or mismatched answers in chats. 
+The following screenshot shows the configuration page of a knowledge base. A proper configuration of your knowledge base is crucial for future AI chats. For example, choosing the wrong embedding model or chunk method would cause unexpected semantic loss or mismatched answers in chats. 
 
 ![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
 
@@ -39,18 +39,18 @@ This section covers the following topics:
 
 RAGFlow offers multiple chunking template to facilitate chunking files of different layouts and ensure semantic integrity. In **Chunk method**, you can choose the default template that suits the layouts and formats of your files. The following table shows the descriptions and the compatible file formats of each supported chunk template:
 
-| **Template** | Description                                                  | File format                                          |
-| ------------ | ------------------------------------------------------------ | ---------------------------------------------------- |
+| **Template** | Description                                                           | File format                                          |
+|--------------|-----------------------------------------------------------------------|------------------------------------------------------|
 | General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, EXCEL, PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF |
-| Q&A          |                                                              | EXCEL, CSV/TXT                                       |
-| Manual       |                                                              | PDF                                                  |
-| Table        |                                                              | EXCEL, CSV/TXT                                       |
-| Paper        |                                                              | PDF                                                  |
-| Book         |                                                              | DOCX, PDF, TXT                                       |
-| Laws         |                                                              | DOCX, PDF, TXT                                       |
-| Presentation |                                                              | PDF, PPTX                                            |
-| Picture      |                                                              | JPEG, JPG, PNG, TIF, GIF                             |
-| One          | The entire document is chunked as one.                       | DOCX, EXCEL, PDF, TXT                                |
+| Q&A          |                                                                       | EXCEL, CSV/TXT                                       |
+| Manual       |                                                                       | PDF                                                  |
+| Table        |                                                                       | EXCEL, CSV/TXT                                       |
+| Paper        |                                                                       | PDF                                                  |
+| Book         |                                                                       | DOCX, PDF, TXT                                       |
+| Laws         |                                                                       | DOCX, PDF, TXT                                       |
+| Presentation |                                                                       | PDF, PPTX                                            |
+| Picture      |                                                                       | JPEG, JPG, PNG, TIF, GIF                             |
+| One          | The entire document is chunked as one.                                | DOCX, EXCEL, PDF, TXT                                |
 
 You can also change the chunk template for a particular file on the **Datasets** page.
 
@@ -82,7 +82,7 @@ While uploading files directly to a knowledge base seems more convenient, we *hi
 
 ### Parse file
 
-File parsing is a crucial topic in knowledge base configuration. The meaning of file parsing in RAGFlow is twofold: chunking files based on file layout and building embedding and full-text (keyword) indexes on these chunks. After having selected the chunk method and embedding model, you can start parsing an file:
+File parsing is a crucial topic in knowledge base configuration. The meaning of file parsing in RAGFlow is twofold: chunking files based on file layout and building embedding and full-text (keyword) indexes on these chunks. After having selected the chunk method and embedding model, you can start parsing a file:
 
 ![parse file](https://github.com/infiniflow/ragflow/assets/93570324/5311f166-6426-447f-aa1f-bd488f1cfc7b)
 
@@ -121,8 +121,8 @@ You can add keywords to a file chunk to increase its ranking for queries contain
 
 RAGFlow uses multiple recall of both full-text search and vector search in its chats. Prior to setting up an AI chat, consider adjusting the following parameters to ensure that the intended information always turns up in answers:
 
-- Similarity threshold: Chunks with similarities below the threshold will be filtered. Defaultly set to 0.2.
-- Vector similarity weight: The percentage by which vector similarity contributes to the overall score. Defaultly set to 0.3.
+- Similarity threshold: Chunks with similarities below the threshold will be filtered. By default, it is set to 0.2.
+- Vector similarity weight: The percentage by which vector similarity contributes to the overall score. By default, it is set to 0.3.
 
 ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
 

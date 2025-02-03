@@ -7,6 +7,7 @@
 <p align="center">
   <a href="./README.md">English</a> |
   <a href="./README_zh.md">简体中文</a> |
+  <a href="./README_tzh.md">繁体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
   <a href="./README_id.md">Bahasa Indonesia</a> |
@@ -40,7 +41,7 @@
 </h4>
 
 <details open>
-<summary></b>📕 Table of Contents</b></summary>
+<summary><b>📕 Table of Contents</b></summary>
 
 - 💡 [What is RAGFlow?](#-what-is-ragflow)
 - 🎮 [Demo](#-demo)
@@ -77,12 +78,12 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2025-01-26 Optimizes knowledge graph extraction and application, offering various configuration options.
 - 2024-12-18 Upgrades Document Layout Analysis model in Deepdoc.
 - 2024-12-04 Adds support for pagerank score in knowledge base.
 - 2024-11-22 Adds more variables to Agent.
 - 2024-11-01 Adds keyword extraction and related question generation to the parsed chunks to improve the accuracy of retrieval.
 - 2024-08-22 Support text to SQL statements through RAG.
-- 2024-08-02 Supports GraphRAG inspired by [graphrag](https://github.com/microsoft/graphrag) and mind map.
 
 ## 🎉 Stay Tuned
 
@@ -179,11 +180,11 @@ releases! 🌟
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   | ----------------- | --------------- | --------------------- | ------------------------ |
+   |-------------------|-----------------|-----------------------|--------------------------|
    | v0.15.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.15.1-slim      | &approx;2       | ❌                     | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
 4. Check the server status after having the server up and running:
 

@@ -23,6 +23,7 @@ from networkx.readwrite import json_graph
 
 from api import settings
 from rag.nlp import search, rag_tokenizer
+from rag.utils.doc_store_conn import OrderByExpr
 from rag.utils.redis_conn import REDIS_CONN
 
 ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
@@ -283,7 +284,7 @@ def set_entity(tenant_id, kb_id, embd_mdl, ent_name, meta):
                 logging.exception(f"Fail to embed entity: {e}")
         if ebd is not None:
             chunk["q_%d_vec" % len(ebd)] = ebd
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
@@ -346,7 +347,7 @@ def set_relation(tenant_id, kb_id, embd_mdl, from_ent_name, to_ent_name, meta):
                 logging.exception(f"Fail to embed entity relation: {e}")
         if ebd is not None:
             chunk["q_%d_vec" % len(ebd)] = ebd
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def get_graph(tenant_id, kb_id):
@@ -363,7 +364,7 @@ def get_graph(tenant_id, kb_id):
                    res.field[id]["source_id"]
         except Exception:
             continue
-    return None, None
+    return rebuild_graph(tenant_id, kb_id)
 
 
 def set_graph(tenant_id, kb_id, graph, docids):
@@ -381,7 +382,7 @@ def set_graph(tenant_id, kb_id, graph, docids):
         settings.docStoreConn.update({"knowledge_graph_kwd": "graph"}, chunk,
                                      search.index_name(tenant_id), kb_id)
     else:
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def is_continuous_subsequence(subseq, seq):
@@ -483,7 +484,7 @@ def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
                                      chunk,
                                      search.index_name(tenant_id), kb_id)
     else:
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def get_entity_type2sampels(idxnms, kb_ids: list):
@@ -517,3 +518,36 @@ def flat_uniq_list(arr, key):
             res.append(a)
     return list(set(res))
 
+
+def rebuild_graph(tenant_id, kb_id):
+    graph = nx.Graph()
+    src_ids = []
+    flds = ["entity_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "weight_int", "knowledge_graph_kwd", "source_id"]
+    bs = 256
+    for i in range(0, 10000000, bs):
+        es_res = settings.docStoreConn.search(flds, [],
+                                 {"kb_id": kb_id, "knowledge_graph_kwd": ["entity", "relation"]},
+                                 [],
+                                 OrderByExpr(),
+                                 i, bs, search.index_name(tenant_id), [kb_id]
+                                 )
+        tot = settings.docStoreConn.getTotal(es_res)
+        if tot == 0:
+            return None, None
+
+        es_res = settings.docStoreConn.getFields(es_res, flds)
+        for id, d in es_res.items():
+            src_ids.extend(d.get("source_id", []))
+            if d["knowledge_graph_kwd"] == "entity":
+                graph.add_node(d["entity_kwd"], entity_type=d["entity_type_kwd"])
+            else:
+                graph.add_edge(
+                    d["from_entity_kwd"],
+                    d["to_entity_kwd"],
+                    weight=int(d["weight_int"])
+                )
+
+        if len(es_res.keys()) < 128:
+            return graph, list(set(src_ids))
+
+    return graph, list(set(src_ids))
