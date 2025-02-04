@@ -12,94 +12,128 @@ import {
   MenuOption,
   useBasicTypeaheadTriggerMatch,
 } from '@lexical/react/LexicalTypeaheadMenuPlugin';
-import { $getSelection, $isRangeSelection, TextNode } from 'lexical';
-import { useCallback, useState } from 'react';
+import {
+  $createParagraphNode,
+  $createTextNode,
+  $getRoot,
+  $getSelection,
+  $isRangeSelection,
+  TextNode,
+} from 'lexical';
+import {
+  ReactElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import * as ReactDOM from 'react-dom';
 
-import './index.css';
+import { FlowFormContext } from '@/pages/flow/context';
+import { useBuildComponentIdSelectOptions } from '@/pages/flow/hooks/use-get-begin-query';
 import { $createVariableNode } from './variable-node';
 
-type VariableOptionType = {
-  key: string;
-  label: string;
-  value: string;
-} & MenuOption;
-
-class VariableOption extends MenuOption {
+import './index.css';
+class VariableInnerOption extends MenuOption {
   label: string;
   value: string;
 
   constructor(label: string, value: string) {
-    super(label);
+    super(value);
     this.label = label;
     this.value = value;
   }
 }
 
+class VariableOption extends MenuOption {
+  label: ReactElement | string;
+  title: string;
+  options: VariableInnerOption[];
+
+  constructor(
+    label: ReactElement | string,
+    title: string,
+    options: VariableInnerOption[],
+  ) {
+    super(title);
+    this.label = label;
+    this.title = title;
+    this.options = options;
+  }
+}
+
 function VariablePickerMenuItem({
   index,
-  isSelected,
-  onClick,
-  onMouseEnter,
   option,
+  selectOptionAndCleanUp,
 }: {
   index: number;
-  isSelected: boolean;
-  onClick: () => void;
-  onMouseEnter: () => void;
-  option: VariableOptionType;
+  option: VariableOption;
+  selectOptionAndCleanUp: (option: VariableOption) => void;
 }) {
-  let className = 'item';
-  if (isSelected) {
-    className += ' selected';
-  }
   return (
     <li
       key={option.key}
       tabIndex={-1}
-      className={className}
       ref={option.setRefElement}
       role="option"
-      aria-selected={isSelected}
       id={'typeahead-item-' + index}
-      onMouseEnter={onMouseEnter}
-      onClick={onClick}
     >
-      {/* {option.icon} */}
-      <span className="text">{option.label}</span>
+      <div>
+        <span className="text text-slate-500">{option.title}</span>
+        <ul className="pl-2 py-1">
+          {option.options.map((x) => (
+            <li
+              key={x.value}
+              onClick={() => selectOptionAndCleanUp(x)}
+              className="hover:bg-slate-300 p-1"
+            >
+              {x.label}
+            </li>
+          ))}
+        </ul>
+      </div>
     </li>
   );
 }
 
-export default function VariablePickerMenuPlugin(): JSX.Element {
+export default function VariablePickerMenuPlugin({
+  value,
+}: {
+  value?: string;
+}): JSX.Element {
   const [editor] = useLexicalComposerContext();
   const [queryString, setQueryString] = useState<string | null>(null);
+  const isFirstRender = useRef(true);
+
+  const node = useContext(FlowFormContext);
 
   const checkForTriggerMatch = useBasicTypeaheadTriggerMatch('/', {
     minLength: 0,
   });
 
-  const options: VariableOptionType[] = [
-    {
-      value: 'afc163',
-      label: 'afc163',
-    },
-    {
-      value: 'zombieJ',
-      label: 'zombieJ',
-    },
-    {
-      value: 'yesmeck',
-      label: 'yesmeck',
-    },
-  ].map((x) => new VariableOption(x.label, x.value));
+  const options = useBuildComponentIdSelectOptions(node?.id, node?.parentId);
+
+  const nextOptions: VariableOption[] = options.map(
+    (x) =>
+      new VariableOption(
+        x.label,
+        x.title,
+        x.options.map((y) => new VariableInnerOption(y.label, y.value)),
+      ),
+  );
 
   const onSelectOption = useCallback(
     (
-      selectedOption: VariableOptionType,
+      selectedOption: VariableOption,
       nodeToRemove: TextNode | null,
       closeMenu: () => void,
     ) => {
+      console.log(
+        '🚀 ~ VariablePickerMenuPlugin ~ selectedOption:',
+        selectedOption,
+      );
       editor.update(() => {
         const selection = $getSelection();
 
@@ -111,7 +145,9 @@ export default function VariablePickerMenuPlugin(): JSX.Element {
           nodeToRemove.remove();
         }
 
-        selection.insertNodes([$createVariableNode(selectedOption.value)]);
+        selection.insertNodes([
+          $createVariableNode(selectedOption.value, selectedOption.label),
+        ]);
 
         closeMenu();
       });
@@ -119,34 +155,38 @@ export default function VariablePickerMenuPlugin(): JSX.Element {
     [editor],
   );
 
+  useEffect(() => {
+    if (editor && value && isFirstRender.current) {
+      isFirstRender.current = false;
+      editor.update(() => {
+        const paragraph = $createParagraphNode();
+        const textNode = $createTextNode(value);
+
+        paragraph.append(textNode);
+
+        $getRoot().clear().append(paragraph);
+      });
+    }
+  }, [editor, value]);
+
   return (
     <>
-      <LexicalTypeaheadMenuPlugin<VariableOptionType>
+      <LexicalTypeaheadMenuPlugin<VariableOption>
         onQueryChange={setQueryString}
         onSelectOption={onSelectOption}
         triggerFn={checkForTriggerMatch}
-        options={options}
-        menuRenderFn={(
-          anchorElementRef,
-          { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex },
-        ) =>
+        options={nextOptions}
+        menuRenderFn={(anchorElementRef, { selectOptionAndCleanUp }) =>
           anchorElementRef.current && options.length
             ? ReactDOM.createPortal(
-                <div className="typeahead-popover w-[200px]">
+                <div className="typeahead-popover w-[200px] p-2">
                   <ul>
-                    {options.map((option, i: number) => (
+                    {nextOptions.map((option, i: number) => (
                       <VariablePickerMenuItem
                         index={i}
-                        isSelected={selectedIndex === i}
-                        onClick={() => {
-                          setHighlightedIndex(i);
-                          selectOptionAndCleanUp(option);
-                        }}
-                        onMouseEnter={() => {
-                          setHighlightedIndex(i);
-                        }}
                         key={option.key}
                         option={option}
+                        selectOptionAndCleanUp={selectOptionAndCleanUp}
                       />
                     ))}
                   </ul>

@@ -3,19 +3,21 @@ import { ReactNode } from 'react';
 import { Badge } from '../ui/badge';
 
 export class VariableNode extends DecoratorNode<ReactNode> {
-  __id: string;
+  __value: string;
+  __label: string;
 
   static getType(): string {
-    return 'video';
+    return 'variable';
   }
 
   static clone(node: VariableNode): VariableNode {
-    return new VariableNode(node.__id, node.__key);
+    return new VariableNode(node.__value, node.__label, node.__key);
   }
 
-  constructor(id: string, key?: NodeKey) {
+  constructor(value: string, label: string, key?: NodeKey) {
     super(key);
-    this.__id = id;
+    this.__value = value;
+    this.__label = label;
   }
 
   createDOM(): HTMLElement {
@@ -30,12 +32,19 @@ export class VariableNode extends DecoratorNode<ReactNode> {
   }
 
   decorate(): ReactNode {
-    return <Badge>{this.__id}</Badge>;
+    return <Badge>{this.__label}</Badge>;
+  }
+
+  getTextContent(): string {
+    return `{${this.__value}}`;
   }
 }
 
-export function $createVariableNode(id: string): VariableNode {
-  return new VariableNode(id);
+export function $createVariableNode(
+  value: string,
+  label: string,
+): VariableNode {
+  return new VariableNode(value, label);
 }
 
 export function $isVariableNode(

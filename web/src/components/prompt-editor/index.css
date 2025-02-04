@@ -7,10 +7,10 @@
 }
 
 .typeahead-popover ul {
-  padding: 0;
+  /* padding: 0; */
   list-style: none;
   margin: 0;
-  border-radius: 8px;
+  /* border-radius: 8px; */
   max-height: 200px;
   overflow-y: scroll;
 }
@@ -39,7 +39,7 @@
 
 .typeahead-popover li {
   margin: 0 8px 0 8px;
-  padding: 8px;
+  /* padding: 8px; */
   color: #050505;
   cursor: pointer;
   line-height: 16px;
@@ -49,7 +49,7 @@
   flex-direction: row;
   flex-shrink: 0;
   background-color: #fff;
-  border-radius: 8px;
+  /* border-radius: 8px; */
   border: 0;
 }
 
@@ -60,17 +60,17 @@
   background-size: contain;
 }
 
-.typeahead-popover li:first-child {
+/* .typeahead-popover li:first-child {
   border-radius: 8px 8px 0px 0px;
-}
+} */
 
-.typeahead-popover li:last-child {
+/* .typeahead-popover li:last-child {
   border-radius: 0px 0px 8px 8px;
-}
+} */
 
-.typeahead-popover li:hover {
+/* .typeahead-popover li:hover {
   background-color: #eee;
-}
+} */
 
 .typeahead-popover li .text {
   display: flex;

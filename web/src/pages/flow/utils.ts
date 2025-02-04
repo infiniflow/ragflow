@@ -389,3 +389,13 @@ export const generateDuplicateNode = (
     dragHandle: getNodeDragHandle(label),
   };
 };
+
+export function splitTextToArray(text?: string) {
+  if (text) {
+    const separators = text.match(/\{.+\}/g);
+
+    separators?.forEach((separator) => {});
+  }
+
+  return [];
+}

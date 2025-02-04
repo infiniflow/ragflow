@@ -44,6 +44,7 @@ import { getDrawerWidth, needsSingleStepDebugging } from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
 
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { FlowFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
 import IterationForm from '../form/iteration-from';
 import styles from './index.less';
@@ -176,11 +177,13 @@ const FormDrawer = ({
     >
       <section className={styles.formWrapper}>
         {visible && (
-          <OperatorForm
-            onValuesChange={handleValuesChange}
-            form={form}
-            node={node}
-          ></OperatorForm>
+          <FlowFormContext.Provider value={node}>
+            <OperatorForm
+              onValuesChange={handleValuesChange}
+              form={form}
+              node={node}
+            ></OperatorForm>
+          </FlowFormContext.Provider>
         )}
       </section>
       {singleDebugDrawerVisible && (
