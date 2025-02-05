@@ -15,7 +15,6 @@
 #
 from abc import ABC
 import pandas as pd
-import akshare as ak
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
@@ -36,6 +35,7 @@ class AkShare(ComponentBase, ABC):
     component_name = "AkShare"
 
     def _run(self, history, **kwargs):
+        import akshare as ak
         ans = self.get_input()
         ans = ",".join(ans["content"]) if "content" in ans else ""
         if not ans:
