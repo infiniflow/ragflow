@@ -220,6 +220,7 @@ export default {
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
+      portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model',
       chunkMethodPlaceholder: 'Please select a chunk method',
       save: 'Save',

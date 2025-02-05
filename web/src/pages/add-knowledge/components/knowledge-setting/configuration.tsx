@@ -76,6 +76,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
           <Option value="English">{t('english')}</Option>
           <Option value="Chinese">{t('chinese')}</Option>
           <Option value="Vietnamese">{t('vietnamese')}</Option>
+          <Option value="Portuguese (Brazil)">{t('portugueseBr')}</Option>
         </Select>
       </Form.Item>
       <Form.Item
