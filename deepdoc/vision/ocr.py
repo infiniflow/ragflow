@@ -27,6 +27,7 @@ from . import operators
 import math
 import numpy as np
 import cv2
+import torch
 import onnxruntime as ort
 
 from .postprocess import build_post_process
@@ -80,7 +81,7 @@ def load_model(model_dir, nm):
     # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
     # Shrink GPU memory after execution
     run_options = ort.RunOptions()
-    if ort.get_device() == "GPU":
+    if torch.cuda.is_available():
         cuda_provider_options = {
             "device_id": 0, # Use specific GPU
             "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory
