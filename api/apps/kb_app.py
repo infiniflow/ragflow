@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import os
 
 from flask import request
 from flask_login import login_required, current_user
@@ -24,7 +25,6 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserTenantService
-from api.settings import DOC_ENGINE
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
 from api.db import StatusEnum, FileSource
@@ -97,7 +97,7 @@ def update():
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
 
-        if req.get("parser_id", "") == "tag" and DOC_ENGINE == "infinity":
+        if req.get("parser_id", "") == "tag" and os.environ.get('DOC_ENGINE', "elasticsearch") == "infinity":
             return get_json_result(
                 data=False,
                 message='The chunk method Tag has not been supported by Infinity yet.',
