@@ -2102,7 +2102,6 @@
                     "model_type": "chat"
                 },
                 {
-                {
                     "llm_name": "Pro/THUDM/glm-4-9b-chat",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
@@ -2127,7 +2126,6 @@
                     "model_type": "chat"
                 },
                 {
-                {
                     "llm_name": "Pro/mistralai/Mistral-7B-Instruct-v0.2",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
@@ -2139,7 +2137,6 @@
                     "max_tokens": 32768,
                     "model_type": "chat"
                 },
-                {
                 {
                     "llm_name": "Qwen/Qwen1.5-32B-Chat",
                     "tags": "LLM,CHAT,32k",
@@ -2200,7 +2197,6 @@
                     "max_tokens": 16384,
                     "model_type": "chat"
                 },
-                {
                 {
                     "llm_name": "internlm/internlm2_5-20b-chat",
                     "tags": "LLM,CHAT,32k",
