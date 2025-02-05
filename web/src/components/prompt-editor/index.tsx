@@ -18,6 +18,7 @@ import {
   LexicalNode,
 } from 'lexical';
 
+import { useTranslation } from 'react-i18next';
 import theme from './theme';
 import { VariableNode } from './variable-node';
 import VariablePickerMenuPlugin from './variable-picker-plugin';
@@ -43,8 +44,9 @@ type IProps = {
 };
 
 export function PromptEditor({ value, onChange }: IProps) {
+  const { t } = useTranslation();
   const initialConfig: InitialConfigType = {
-    namespace: 'MyEditor',
+    namespace: 'PromptEditor',
     theme,
     onError,
     nodes: Nodes,
@@ -52,12 +54,11 @@ export function PromptEditor({ value, onChange }: IProps) {
 
   function onValueChange(editorState: EditorState) {
     editorState?.read(() => {
-      const listNodes = $nodesOfType(VariableNode);
+      const listNodes = $nodesOfType(VariableNode); // to be removed
       // const allNodes = $dfs();
       console.log('🚀 ~ onChange ~ allNodes:', listNodes);
 
       const text = $getRoot().getTextContent();
-      console.log('🚀 ~ editorState?.read ~ x:', text);
       onChange?.(text);
     });
   }
@@ -69,13 +70,12 @@ export function PromptEditor({ value, onChange }: IProps) {
           <ContentEditable className="min-h-40 relative px-2 py-1 border" />
         }
         placeholder={
-          <div className="absolute top-2 left-2">Enter some text...</div>
+          <div className="absolute top-2 left-2">{t('common.pleaseInput')}</div>
         }
         ErrorBoundary={LexicalErrorBoundary}
       />
       <HistoryPlugin />
       <AutoFocusPlugin />
-      {/* <MyOnChangePlugin onChange={onChange} /> */}
       <VariablePickerMenuPlugin value={value}></VariablePickerMenuPlugin>
       <OnChangePlugin onChange={onValueChange}></OnChangePlugin>
     </LexicalComposer>

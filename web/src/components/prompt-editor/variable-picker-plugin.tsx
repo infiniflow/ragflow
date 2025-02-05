@@ -26,7 +26,6 @@ import {
   useContext,
   useEffect,
   useRef,
-  useState,
 } from 'react';
 import * as ReactDOM from 'react-dom';
 
@@ -70,7 +69,9 @@ function VariablePickerMenuItem({
 }: {
   index: number;
   option: VariableOption;
-  selectOptionAndCleanUp: (option: VariableOption) => void;
+  selectOptionAndCleanUp: (
+    option: VariableOption | VariableInnerOption,
+  ) => void;
 }) {
   return (
     <li
@@ -104,7 +105,6 @@ export default function VariablePickerMenuPlugin({
   value?: string;
 }): JSX.Element {
   const [editor] = useLexicalComposerContext();
-  const [queryString, setQueryString] = useState<string | null>(null);
   const isFirstRender = useRef(true);
 
   const node = useContext(FlowFormContext);
@@ -112,6 +112,8 @@ export default function VariablePickerMenuPlugin({
   const checkForTriggerMatch = useBasicTypeaheadTriggerMatch('/', {
     minLength: 0,
   });
+
+  const setQueryString = useCallback(() => {}, []);
 
   const options = useBuildComponentIdSelectOptions(node?.id, node?.parentId);
 
@@ -140,14 +142,10 @@ export default function VariablePickerMenuPlugin({
 
   const onSelectOption = useCallback(
     (
-      selectedOption: VariableOption,
+      selectedOption: VariableOption | VariableInnerOption,
       nodeToRemove: TextNode | null,
       closeMenu: () => void,
     ) => {
-      console.log(
-        '🚀 ~ VariablePickerMenuPlugin ~ selectedOption:',
-        selectedOption,
-      );
       editor.update(() => {
         const selection = $getSelection();
 
@@ -161,7 +159,7 @@ export default function VariablePickerMenuPlugin({
 
         selection.insertNodes([
           $createVariableNode(
-            selectedOption.value,
+            (selectedOption as VariableInnerOption).value,
             selectedOption.label as string,
           ),
         ]);
@@ -224,32 +222,30 @@ export default function VariablePickerMenuPlugin({
   }, [parseTextToVariableNodes, editor, value]);
 
   return (
-    <>
-      <LexicalTypeaheadMenuPlugin<VariableOption>
-        onQueryChange={setQueryString}
-        onSelectOption={onSelectOption}
-        triggerFn={checkForTriggerMatch}
-        options={nextOptions}
-        menuRenderFn={(anchorElementRef, { selectOptionAndCleanUp }) =>
-          anchorElementRef.current && options.length
-            ? ReactDOM.createPortal(
-                <div className="typeahead-popover w-[200px] p-2">
-                  <ul>
-                    {nextOptions.map((option, i: number) => (
-                      <VariablePickerMenuItem
-                        index={i}
-                        key={option.key}
-                        option={option}
-                        selectOptionAndCleanUp={selectOptionAndCleanUp}
-                      />
-                    ))}
-                  </ul>
-                </div>,
-                anchorElementRef.current,
-              )
-            : null
-        }
-      />
-    </>
+    <LexicalTypeaheadMenuPlugin<VariableOption | VariableInnerOption>
+      onQueryChange={setQueryString}
+      onSelectOption={onSelectOption}
+      triggerFn={checkForTriggerMatch}
+      options={nextOptions}
+      menuRenderFn={(anchorElementRef, { selectOptionAndCleanUp }) =>
+        anchorElementRef.current && options.length
+          ? ReactDOM.createPortal(
+              <div className="typeahead-popover w-[200px] p-2">
+                <ul>
+                  {nextOptions.map((option, i: number) => (
+                    <VariablePickerMenuItem
+                      index={i}
+                      key={option.key}
+                      option={option}
+                      selectOptionAndCleanUp={selectOptionAndCleanUp}
+                    />
+                  ))}
+                </ul>
+              </div>,
+              anchorElementRef.current,
+            )
+          : null
+      }
+    />
   );
 }
