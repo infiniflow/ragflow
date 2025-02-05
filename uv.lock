@@ -4814,7 +4814,6 @@ dependencies = [
     { name = "tencentcloud-sdk-python" },
     { name = "tika" },
     { name = "tiktoken" },
-    { name = "torch" },
     { name = "umap-learn" },
     { name = "valkey" },
     { name = "vertexai" },
@@ -4837,6 +4836,7 @@ full = [
     { name = "fastembed", marker = "platform_machine != 'x86_64' or sys_platform == 'darwin'" },
     { name = "fastembed-gpu", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
     { name = "flagembedding" },
+    { name = "torch" },
     { name = "transformers" },
 ]
 
@@ -4946,7 +4946,7 @@ requires-dist = [
     { name = "tencentcloud-sdk-python", specifier = "==3.0.1215" },
     { name = "tika", specifier = "==2.6.0" },
     { name = "tiktoken", specifier = "==0.7.0" },
-    { name = "torch", specifier = ">=2.5.0,<3.0.0" },
+    { name = "torch", marker = "extra == 'full'", specifier = ">=2.5.0,<3.0.0" },
     { name = "transformers", marker = "extra == 'full'", specifier = ">=4.35.0,<5.0.0" },
     { name = "umap-learn", specifier = "==0.5.6" },
     { name = "valkey", specifier = "==6.0.2" },
