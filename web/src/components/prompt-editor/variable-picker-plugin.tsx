@@ -124,6 +124,20 @@ export default function VariablePickerMenuPlugin({
       ),
   );
 
+  const findLabelByValue = useCallback(
+    (value: string) => {
+      const children = options.reduce<Array<{ label: string; value: string }>>(
+        (pre, cur) => {
+          return pre.concat(cur.options);
+        },
+        [],
+      );
+
+      return children.find((x) => x.value === value)?.label;
+    },
+    [options],
+  );
+
   const onSelectOption = useCallback(
     (
       selectedOption: VariableOption,
@@ -146,7 +160,10 @@ export default function VariablePickerMenuPlugin({
         }
 
         selection.insertNodes([
-          $createVariableNode(selectedOption.value, selectedOption.label),
+          $createVariableNode(
+            selectedOption.value,
+            selectedOption.label as string,
+          ),
         ]);
 
         closeMenu();
@@ -155,19 +172,56 @@ export default function VariablePickerMenuPlugin({
     [editor],
   );
 
+  const parseTextToVariableNodes = useCallback(
+    (text: string) => {
+      const paragraph = $createParagraphNode();
+
+      // Regular expression to match content within {}
+      const regex = /{([^}]*)}/g;
+      let match;
+      let lastIndex = 0;
+
+      while ((match = regex.exec(text)) !== null) {
+        const { 1: content, index, 0: template } = match;
+
+        // Add the previous text part (if any)
+        if (index > lastIndex) {
+          const textNode = $createTextNode(text.slice(lastIndex, index));
+
+          paragraph.append(textNode);
+        }
+
+        // Add variable node or text node
+        const label = findLabelByValue(content);
+        if (label) {
+          paragraph.append($createVariableNode(content, label));
+        } else {
+          paragraph.append($createTextNode(template));
+        }
+
+        // Update index
+        lastIndex = regex.lastIndex;
+      }
+
+      // Add the last part of text (if any)
+      if (lastIndex < text.length) {
+        const textNode = $createTextNode(text.slice(lastIndex));
+        paragraph.append(textNode);
+      }
+
+      $getRoot().clear().append(paragraph);
+    },
+    [findLabelByValue],
+  );
+
   useEffect(() => {
     if (editor && value && isFirstRender.current) {
       isFirstRender.current = false;
       editor.update(() => {
-        const paragraph = $createParagraphNode();
-        const textNode = $createTextNode(value);
-
-        paragraph.append(textNode);
-
-        $getRoot().clear().append(paragraph);
+        parseTextToVariableNodes(value);
       });
     }
-  }, [editor, value]);
+  }, [parseTextToVariableNodes, editor, value]);
 
   return (
     <>

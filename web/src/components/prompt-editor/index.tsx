@@ -39,7 +39,7 @@ const Nodes: Array<Klass<LexicalNode>> = [
 
 type IProps = {
   value?: string;
-  onChange: (value?: string) => void;
+  onChange?: (value?: string) => void;
 };
 
 export function PromptEditor({ value, onChange }: IProps) {
@@ -58,7 +58,7 @@ export function PromptEditor({ value, onChange }: IProps) {
 
       const text = $getRoot().getTextContent();
       console.log('🚀 ~ editorState?.read ~ x:', text);
-      onChange(text);
+      onChange?.(text);
     });
   }
 
