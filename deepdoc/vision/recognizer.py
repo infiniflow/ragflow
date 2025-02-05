@@ -21,7 +21,7 @@ import numpy as np
 import cv2
 from copy import deepcopy
 
-
+import torch
 import onnxruntime as ort
 from huggingface_hub import snapshot_download
 
@@ -64,7 +64,7 @@ class Recognizer(object):
         # Shrink GPU memory after execution
         self.run_options = ort.RunOptions()
 
-        if ort.get_device() == "GPU":
+        if torch.cuda.is_available():
             options = ort.SessionOptions()
             options.enable_cpu_mem_arena = False
             cuda_provider_options = {
