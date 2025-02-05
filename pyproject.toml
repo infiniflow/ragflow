@@ -100,6 +100,7 @@ dependencies = [
     "tencentcloud-sdk-python==3.0.1215",
     "tika==2.6.0",
     "tiktoken==0.7.0",
+    "torch>=2.5.0,<3.0.0",
     "umap_learn==0.5.6",
     "vertexai==1.64.0",
     "volcengine==1.0.146",
@@ -131,6 +132,5 @@ full = [
     "fastembed>=0.3.6,<0.4.0; sys_platform == 'darwin' or platform_machine != 'x86_64'",
     "fastembed-gpu>=0.3.6,<0.4.0; sys_platform != 'darwin' and platform_machine == 'x86_64'",
     "flagembedding==1.2.10",
-    "torch>=2.5.0,<3.0.0",
     "transformers>=4.35.0,<5.0.0"
 ]
