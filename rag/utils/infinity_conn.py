@@ -311,6 +311,7 @@ class InfinityConnection(DocStoreConnection):
         if matchExprs:
             selectFields.append(score_func)
             selectFields.append(PAGERANK_FLD)
+        selectFields = [f for f in selectFields if f != "_score"]
 
         # Prepare expressions common to all tables
         filter_cond = None
@@ -405,7 +406,7 @@ class InfinityConnection(DocStoreConnection):
         if matchExprs:
             res = res.sort(pl.col(score_column) + pl.col(PAGERANK_FLD), descending=True, maintain_order=True)
             if score_column and score_column != "SCORE":
-                res = res.rename({score_column: "SCORE"})
+                res = res.rename({score_column: "_score"})
         res = res.limit(limit)
         logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
