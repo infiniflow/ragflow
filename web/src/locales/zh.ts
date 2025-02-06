@@ -198,7 +198,7 @@ export default {
       name: '知识库名称',
       photo: '知识库图片',
       description: '描述',
-      language: '语言',
+      language: '文档语言',
       languageMessage: '请输入语言',
       languagePlaceholder: '请输入语言',
       permissions: '权限',
