@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.15.1"
+version = "0.16.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [
     { name = "Zhichang Yu", email = "yuzhichang@gmail.com" }
@@ -48,7 +48,7 @@ dependencies = [
     "html-text==0.6.2",
     "httpx==0.27.0",
     "huggingface-hub>=0.25.0,<0.26.0",
-    "infinity-sdk==0.6.0-dev2",
+    "infinity-sdk==0.6.0-dev3",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
     "json-repair==0.35.0",
