@@ -2396,7 +2396,7 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.6.0.dev2"
+version = "0.6.0.dev3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "numpy" },
@@ -2413,7 +2413,7 @@ dependencies = [
     { name = "thrift" },
 ]
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/22/3e/fa626b567436c9b76974678ae10ac0c0666bc5a085f9d5aed14745b20413/infinity_sdk-0.6.0.dev2-py3-none-any.whl", hash = "sha256:88197c9f634f5a8f06d12eb6a8b1912c3987df0789d9f0d90f4534983feb48d1", size = 67980 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fc/2c/5d93a6200e8022549d07c2609f89e81b96fe78383409881ca210f16736e1/infinity_sdk-0.6.0.dev3-py3-none-any.whl", hash = "sha256:e9f528446f21debbd1d15d11f42a5da4f38d62ad4537faacfdda6b2d295bf8fd", size = 69503 },
 ]
 
 [[package]]
@@ -4902,7 +4902,7 @@ requires-dist = [
     { name = "httpx", specifier = "==0.27.0" },
     { name = "huggingface-hub", specifier = ">=0.25.0,<0.26.0" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.6.0.dev2" },
+    { name = "infinity-sdk", specifier = "==0.6.0.dev3" },
     { name = "itsdangerous", specifier = "==2.1.2" },
     { name = "json-repair", specifier = "==0.35.0" },
     { name = "markdown", specifier = "==3.6" },
