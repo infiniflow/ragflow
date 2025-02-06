@@ -91,7 +91,7 @@ class GraphExtractor(Extractor):
         ).format(**self._context_base, input_text=content)
 
         try:
-            gen_conf = {"temperature": 0.3}
+            gen_conf = {"temperature": 0.8}
             final_result = self._chat(hint_prompt, [{"role": "user", "content": "Output:"}], gen_conf)
             token_count += num_tokens_from_string(hint_prompt + final_result)
             history = pack_user_ass_to_openai_messages(hint_prompt, final_result)

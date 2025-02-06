@@ -120,7 +120,7 @@ class GraphExtractor(Extractor):
             token_count += num_tokens_from_string(hint_prompt + response)
 
             results = response or ""
-            history = [{"role": "system", "content": hint_prompt}, {"role": "assistant", "content": response}]
+            history = [{"role": "system", "content": hint_prompt}, {"role": "user", "content": response}]
 
             # Repeat to ensure we maximize entity count
             for i in range(self._max_gleanings):

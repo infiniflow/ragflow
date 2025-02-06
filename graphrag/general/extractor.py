@@ -99,6 +99,7 @@ class Extractor:
         with ThreadPoolExecutor(max_workers=max_workers) as exe:
             threads = []
             for i, (cid, ck) in enumerate(chunks):
+                ck = truncate(ck, int(self._llm.max_length*0.8))
                 threads.append(
                     exe.submit(self._process_single_content, (cid, ck)))
 
@@ -241,5 +242,5 @@ class Extractor:
         )
         use_prompt = prompt_template.format(**context_base)
         logging.info(f"Trigger summary: {entity_or_relation_name}")
-        summary = self._chat(use_prompt, [{"role": "assistant", "content": "Output: "}], {"temperature": 0.8})
+        summary = self._chat(use_prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.8})
         return summary
