@@ -42,10 +42,10 @@ We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM6
 
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.15.1-slim` and `v0.15.1`:  
+RAGFlow offers two Docker image editions, `v0.16.0-slim` and `v0.16.0`:  
   
-- `infiniflow/ragflow:v0.15.1-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.15.1`: The RAGFlow Docker image with embedding models including:
+- `infiniflow/ragflow:v0.16.0-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.16.0`: The RAGFlow Docker image with embedding models including:
   - Built-in embedding models:
     - `BAAI/bge-large-zh-v1.5`
     - `BAAI/bge-reranker-v2-m3`
