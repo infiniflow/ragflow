@@ -11,7 +11,7 @@ import styles from './index.less';
 
 const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
   const { t } = useTranslate('chat');
-  const { data } = useFetchTenantInfo();
+  const { data } = useFetchTenantInfo(true);
 
   const normFile = (e: any) => {
     if (Array.isArray(e)) {
