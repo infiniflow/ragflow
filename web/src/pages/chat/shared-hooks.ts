@@ -27,8 +27,8 @@ export const useGetSharedChatSearchParams = () => {
     from: searchParams.get('from') as SharedFrom,
     sharedId: searchParams.get('shared_id'),
     locale: searchParams.get('locale'),
-    visibleAvartar: searchParams.get('visible_avartar')
-      ? searchParams.get('visible_avartar') !== '1'
+    visibleAvatar: searchParams.get('visible_avatar')
+      ? searchParams.get('visible_avatar') !== '1'
       : true,
   };
 };

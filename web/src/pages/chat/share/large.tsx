@@ -23,7 +23,7 @@ const ChatContainer = () => {
     sharedId: conversationId,
     from,
     locale,
-    visibleAvartar,
+    visibleAvatar,
   } = useGetSharedChatSearchParams();
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
@@ -49,7 +49,7 @@ const ChatContainer = () => {
     if (locale && i18n.language !== locale) {
       i18n.changeLanguage(locale);
     }
-  }, [locale, visibleAvartar]);
+  }, [locale, visibleAvatar]);
   const { data: avatarData } = useFetchAvatar();
 
   if (!conversationId) {
@@ -65,7 +65,7 @@ const ChatContainer = () => {
               {derivedMessages?.map((message, i) => {
                 return (
                   <MessageItem
-                    visibleAvartar={visibleAvartar}
+                    visibleAvatar={visibleAvatar}
                     key={buildMessageUuidWithRole(message)}
                     avatarDialog={avatarData?.avatar}
                     item={message}
