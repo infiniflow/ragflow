@@ -159,7 +159,6 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     else \
         uv sync --python 3.10 --frozen --all-extras; \
     fi
-RUN playwright install
 
 COPY web web
 COPY docs docs
@@ -189,6 +188,7 @@ COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 ENV PYTHONPATH=/ragflow/
+RUN playwright install
 
 COPY web web
 COPY api api
