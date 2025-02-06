@@ -188,7 +188,7 @@ COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 ENV PYTHONPATH=/ragflow/
-RUN playwright install
+RUN playwright install --with-deps chromium
 
 COPY web web
 COPY api api
