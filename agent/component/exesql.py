@@ -126,7 +126,8 @@ class ExeSQL(Generate, ABC):
                     single_sql = self._regenerate_sql(single_sql, str(e), **kwargs)
                     single_sql = self._refactor(single_sql)
                     if self._loop > self._param.loop:
-                        raise Exception("Maximum loop time exceeds. Can't query the correct data via SQL statement.")
+                        sql_res.append({"content": "Can't query the correct data via SQL statement."})
+                        # raise Exception("Maximum loop time exceeds. Can't query the correct data via SQL statement.")
         db.close()
         if not sql_res:
             return ExeSQL.be_output("")
