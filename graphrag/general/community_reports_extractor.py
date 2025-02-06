@@ -75,6 +75,8 @@ class CommunityReportsExtractor(Extractor):
                 ent_df["entity"] = ent_df["entity_name"]
                 del ent_df["entity_name"]
                 rela_df = pd.DataFrame(self._get_relation_(list(ent_df["entity"]), list(ent_df["entity"]), 10000))
+                if rela_df.empty:
+                    continue
                 rela_df["source"] = rela_df["src_id"]
                 rela_df["target"] = rela_df["tgt_id"]
                 del rela_df["src_id"]
