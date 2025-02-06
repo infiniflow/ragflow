@@ -31,7 +31,7 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   visibleAvartar?: boolean;
   nickname?: string;
   avatar?: string;
-  avatardialog?: string | null;
+  avatarDialog?: string | null;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
   index: number;
   showLikeButton?: boolean;
@@ -43,7 +43,7 @@ const MessageItem = ({
   reference,
   loading = false,
   avatar,
-  avatardialog,
+  avatarDialog,
   sendLoading = false,
   clickDocumentButton,
   index,
@@ -110,8 +110,8 @@ const MessageItem = ({
           {visibleAvartar &&
             (item.role === MessageType.User ? (
               <Avatar size={40} src={avatar ?? '/logo.svg'} />
-            ) : avatardialog ? (
-              <Avatar size={40} src={avatardialog} />
+            ) : avatarDialog ? (
+              <Avatar size={40} src={avatarDialog} />
             ) : (
               <AssistantIcon />
             ))}

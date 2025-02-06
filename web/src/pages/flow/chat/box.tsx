@@ -50,7 +50,7 @@ const FlowChatBox = () => {
                     key={buildMessageUuidWithRole(message)}
                     nickname={userInfo.nickname}
                     avatar={userInfo.avatar}
-                    avatardialog={cavasInfo.avatar}
+                    avatarDialog={cavasInfo.avatar}
                     item={message}
                     reference={buildMessageItemReference(
                       { message: derivedMessages, reference },

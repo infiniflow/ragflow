@@ -46,8 +46,6 @@ const ChatContainer = () => {
       : useFetchNextConversationSSE;
   }, [from]);
   React.useEffect(() => {
-    console.log(visibleAvartar);
-
     if (locale && i18n.language !== locale) {
       i18n.changeLanguage(locale);
     }
@@ -69,7 +67,7 @@ const ChatContainer = () => {
                   <MessageItem
                     visibleAvartar={visibleAvartar}
                     key={buildMessageUuidWithRole(message)}
-                    avatardialog={avatarData?.avatar}
+                    avatarDialog={avatarData?.avatar}
                     item={message}
                     nickname="You"
                     reference={buildMessageItemReference(
