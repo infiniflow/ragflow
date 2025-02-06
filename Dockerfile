@@ -69,7 +69,8 @@ RUN if [ "$NEED_MIRROR" == "1" ]; then \
         echo 'url = "https://pypi.tuna.tsinghua.edu.cn/simple"' >> /etc/uv/uv.toml && \
         echo "default = true" >> /etc/uv/uv.toml; \
     fi; \
-    pipx install uv
+    pipx install uv \
+    playwright install
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 ENV PATH=/root/.local/bin:$PATH
