@@ -70,7 +70,6 @@ RUN if [ "$NEED_MIRROR" == "1" ]; then \
         echo "default = true" >> /etc/uv/uv.toml; \
     fi; \
     pipx install uv 
-RUN playwright install
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 ENV PATH=/root/.local/bin:$PATH
@@ -160,6 +159,7 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     else \
         uv sync --python 3.10 --frozen --all-extras; \
     fi
+RUN playwright install
 
 COPY web web
 COPY docs docs
