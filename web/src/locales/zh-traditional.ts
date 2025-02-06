@@ -197,7 +197,7 @@ export default {
       name: '知識庫名稱',
       photo: '知識庫圖片',
       description: '描述',
-      language: '語言',
+      language: '文件語言',
       languageMessage: '請輸入語言',
       languagePlaceholder: '請輸入語言',
       permissions: '權限',
