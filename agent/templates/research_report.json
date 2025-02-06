@@ -1,7 +1,7 @@
 {
   "id": 10,
-  "title": "Research Report Generator",
-  "description": "This generator can produce a research report based on the given title and language. It decomposes into sub-titles and queries to search engine from different angles, and generates sections based on search engine results and comprehension of the sub-titles.",
+  "title": "Research report generator",
+  "description": "A report generator that creates a research report from a given title, in the specified target language. It generates queries from the input title, then uses these to create subtitles and sections, compiling everything into a comprehensive report.",
   "canvas_type": "chatbot",
   "dsl": {
     "answer": [],
