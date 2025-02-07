@@ -31,7 +31,7 @@ const FlowChatBox = () => {
   useGetFileIcon();
   const { t } = useTranslate('chat');
   const { data: userInfo } = useFetchUserInfo();
-  const { data: cavasInfo } = useFetchFlow();
+  const { data: canvasInfo } = useFetchFlow();
 
   return (
     <>
@@ -50,7 +50,7 @@ const FlowChatBox = () => {
                     key={buildMessageUuidWithRole(message)}
                     nickname={userInfo.nickname}
                     avatar={userInfo.avatar}
-                    avatardialog={cavasInfo.avatar}
+                    avatarDialog={canvasInfo.avatar}
                     item={message}
                     reference={buildMessageItemReference(
                       { message: derivedMessages, reference },

@@ -28,9 +28,10 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   reference: IReference;
   loading?: boolean;
   sendLoading?: boolean;
+  visibleAvatar?: boolean;
   nickname?: string;
   avatar?: string;
-  avatardialog?: string | null;
+  avatarDialog?: string | null;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
   index: number;
   showLikeButton?: boolean;
@@ -42,7 +43,7 @@ const MessageItem = ({
   reference,
   loading = false,
   avatar,
-  avatardialog,
+  avatarDialog,
   sendLoading = false,
   clickDocumentButton,
   index,
@@ -50,6 +51,7 @@ const MessageItem = ({
   regenerateMessage,
   showLikeButton = true,
   showLoudspeaker = true,
+  visibleAvatar = true,
 }: IProps) => {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -105,13 +107,15 @@ const MessageItem = ({
             [styles.messageItemContentReverse]: item.role === MessageType.User,
           })}
         >
-          {item.role === MessageType.User ? (
-            <Avatar size={40} src={avatar ?? '/logo.svg'} />
-          ) : avatardialog ? (
-            <Avatar size={40} src={avatardialog} />
-          ) : (
-            <AssistantIcon />
-          )}
+          {visibleAvatar &&
+            (item.role === MessageType.User ? (
+              <Avatar size={40} src={avatar ?? '/logo.svg'} />
+            ) : avatarDialog ? (
+              <Avatar size={40} src={avatarDialog} />
+            ) : (
+              <AssistantIcon />
+            ))}
+
           <Flex vertical gap={8} flex={1}>
             <Space>
               {isAssistant ? (
