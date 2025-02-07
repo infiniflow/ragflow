@@ -18,7 +18,13 @@ type FieldType = {
   group_id?: string;
 };
 
-const modelsWithBaseUrl = ['OpenAI', 'Azure-OpenAI'];
+const modelsWithBaseUrl = ['OpenAI', 'Azure-OpenAI', 'DeepSeek'];
+
+const baseUrlPlaceholders: Record<string, string> = {
+  'OpenAI': 'https://api.openai.com/v1',
+  'Azure-OpenAI': 'https://api.openai.com/v1',
+  'DeepSeek': 'https://api.deepseek.com/v1',
+};
 
 const ApiKeyModal = ({
   visible,
@@ -74,7 +80,7 @@ const ApiKeyModal = ({
             name="base_url"
             tooltip={t('baseUrlTip')}
           >
-            <Input placeholder="https://api.openai.com/v1" />
+            <Input placeholder={baseUrlPlaceholders[llmFactory] || "https://api.openai.com/v1"} />
           </Form.Item>
         )}
         {llmFactory?.toLowerCase() === 'Minimax'.toLowerCase() && (
