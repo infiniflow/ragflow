@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import os
 
 from flask import request
 from flask_login import login_required, current_user
@@ -96,6 +97,13 @@ def update():
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
 
+        if req.get("parser_id", "") == "tag" and os.environ.get('DOC_ENGINE', "elasticsearch") == "infinity":
+            return get_json_result(
+                data=False,
+                message='The chunk method Tag has not been supported by Infinity yet.',
+                code=settings.RetCode.OPERATING_ERROR
+            )
+
         if req["name"].lower() != kb.name.lower() \
                 and len(
             KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) > 1:
@@ -112,7 +120,7 @@ def update():
                                          search.index_name(kb.tenant_id), kb.id)
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
-                settings.docStoreConn.update({"exist": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
+                settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
                                          search.index_name(kb.tenant_id), kb.id)
 
         e, kb = KnowledgebaseService.get_by_id(kb.id)

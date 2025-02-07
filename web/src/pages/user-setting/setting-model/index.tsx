@@ -92,27 +92,31 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
           <Col span={12} className={styles.factoryOperationWrapper}>
             <Space size={'middle'}>
               <Button onClick={handleApiKeyClick}>
-                {isLocalLlmFactory(item.name) ||
-                item.name === 'VolcEngine' ||
-                item.name === 'Tencent Hunyuan' ||
-                item.name === 'XunFei Spark' ||
-                item.name === 'BaiduYiyan' ||
-                item.name === 'Fish Audio' ||
-                item.name === 'Tencent Cloud' ||
-                item.name === 'Google Cloud' ||
-                item.name === 'Azure OpenAI'
-                  ? t('addTheModel')
-                  : 'API-Key'}
-                <SettingOutlined />
+                <Flex align="center" gap={4}>
+                  {isLocalLlmFactory(item.name) ||
+                  item.name === 'VolcEngine' ||
+                  item.name === 'Tencent Hunyuan' ||
+                  item.name === 'XunFei Spark' ||
+                  item.name === 'BaiduYiyan' ||
+                  item.name === 'Fish Audio' ||
+                  item.name === 'Tencent Cloud' ||
+                  item.name === 'Google Cloud' ||
+                  item.name === 'Azure OpenAI'
+                    ? t('addTheModel')
+                    : 'API-Key'}
+                  <SettingOutlined />
+                </Flex>
               </Button>
               <Button onClick={handleShowMoreClick}>
-                <Flex gap={'small'}>
+                <Flex align="center" gap={4}>
                   {t('showMoreModels')}
                   <MoreModelIcon />
                 </Flex>
               </Button>
               <Button type={'text'} onClick={handleDeleteFactory}>
-                <CloseCircleOutlined style={{ color: '#D92D20' }} />
+                <Flex align="center">
+                  <CloseCircleOutlined style={{ color: '#D92D20' }} />
+                </Flex>
               </Button>
             </Space>
           </Col>

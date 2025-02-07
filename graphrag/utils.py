@@ -284,7 +284,7 @@ def set_entity(tenant_id, kb_id, embd_mdl, ent_name, meta):
                 logging.exception(f"Fail to embed entity: {e}")
         if ebd is not None:
             chunk["q_%d_vec" % len(ebd)] = ebd
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
@@ -347,7 +347,7 @@ def set_relation(tenant_id, kb_id, embd_mdl, from_ent_name, to_ent_name, meta):
                 logging.exception(f"Fail to embed entity relation: {e}")
         if ebd is not None:
             chunk["q_%d_vec" % len(ebd)] = ebd
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def get_graph(tenant_id, kb_id):
@@ -382,7 +382,7 @@ def set_graph(tenant_id, kb_id, graph, docids):
         settings.docStoreConn.update({"knowledge_graph_kwd": "graph"}, chunk,
                                      search.index_name(tenant_id), kb_id)
     else:
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def is_continuous_subsequence(subseq, seq):
@@ -484,7 +484,7 @@ def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
                                      chunk,
                                      search.index_name(tenant_id), kb_id)
     else:
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def get_entity_type2sampels(idxnms, kb_ids: list):

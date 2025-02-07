@@ -43,27 +43,27 @@ We also provide templates catered to different business scenarios. You can eithe
 
    ![workflow_editor](https://github.com/user-attachments/assets/47b4d5ce-b35a-4d6b-b483-ba495a75a65d)
 
-4. General speaking, now you can do the following:
+3. General speaking, now you can do the following:
    - Drag and drop a desired component to your workflow,
    - Select the knowledge base to use,
    - Update settings of specific components,
    - Update LLM settings
    - Sets the input and output for a specific component, and more.
-5. Click **Save** to apply changes to your agent and **Run** to test it.
+4. Click **Save** to apply changes to your agent and **Run** to test it.
 
 ## Components
 
 Please review the flowing description of the RAG-specific components before you proceed:
 
-| Component      | Description                                                  |
-| -------------- | ------------------------------------------------------------ |
-| **Retrieval**  | A component that retrieves information from specified knowledge bases and returns 'Empty response' if no information is found. Ensure the correct knowledge bases are selected. |
-| **Generate**   | A component that prompts the LLM to generate responses. You must ensure the prompt is set correctly. |
-| **Interact**   | A component that serves as the interface between human and the bot, receiving user inputs and displaying the agent's responses. |
+| Component      | Description                                                                                                                                                                                              |
+|----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Retrieval**  | A component that retrieves information from specified knowledge bases and returns 'Empty response' if no information is found. Ensure the correct knowledge bases are selected.                          |
+| **Generate**   | A component that prompts the LLM to generate responses. You must ensure the prompt is set correctly.                                                                                                     |
+| **Interact**   | A component that serves as the interface between human and the bot, receiving user inputs and displaying the agent's responses.                                                                          |
 | **Categorize** | A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component. |
-| **Message**    | A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is **Interact**, the interface component. |
-| **Rewrite**    | A component that rewrites a user query from the **Interact** component, based on the context of previous dialogues. |
-| **Keyword**    | A component that extracts keywords from a user query, with TopN specifying the number of keywords to extract. |
+| **Message**    | A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is **Interact**, the interface component.                         |
+| **Rewrite**    | A component that rewrites a user query from the **Interact** component, based on the context of previous dialogues.                                                                                      |
+| **Keyword**    | A component that extracts keywords from a user query, with TopN specifying the number of keywords to extract.                                                                                            |
 
 :::caution NOTE
 
@@ -75,9 +75,9 @@ Please review the flowing description of the RAG-specific components before you 
 
 ## Basic operations
 
-| Operation                 | Description                                                  |
-| ------------------------- | ------------------------------------------------------------ |
-| Add a component           | Drag and drop the desired component from the left panel onto the canvas. |
-| Delete a component        | On the canvas, hover over the three dots (...) of the component to display the delete option, then select it to remove the component. |
+| Operation                 | Description                                                                                                                              |
+|---------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
+| Add a component           | Drag and drop the desired component from the left panel onto the canvas.                                                                 |
+| Delete a component        | On the canvas, hover over the three dots (...) of the component to display the delete option, then select it to remove the component.    |
 | Copy a component          | On the canvas, hover over the three dots (...) of the component to display the copy option, then select it to make a copy the component. |
-| Update component settings | On the canvas, click the desired component to display the component settings. |
+| Update component settings | On the canvas, click the desired component to display the component settings.                                                            |

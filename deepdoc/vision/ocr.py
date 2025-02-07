@@ -71,6 +71,15 @@ def load_model(model_dir, nm):
         raise ValueError("not find model file path {}".format(
             model_file_path))
 
+    def cuda_is_available():
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return True
+        except Exception:
+            return False
+        return False
+
     options = ort.SessionOptions()
     options.enable_cpu_mem_arena = False
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
@@ -80,7 +89,7 @@ def load_model(model_dir, nm):
     # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
     # Shrink GPU memory after execution
     run_options = ort.RunOptions()
-    if ort.get_device() == "GPU":
+    if cuda_is_available():
         cuda_provider_options = {
             "device_id": 0, # Use specific GPU
             "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory

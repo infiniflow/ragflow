@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 slug: /start_chat
 ---
 
@@ -57,11 +57,11 @@ You start an AI conversation by creating an assistant.
 
 :::tip NOTE
 
-1. Click the light bubble icon above the answer to view the expanded system prompt:
+1. Click the light bulb icon above the answer to view the expanded system prompt:
 
 ![](https://github.com/user-attachments/assets/515ab187-94e8-412a-82f2-aba52cd79e09)
 
-   *The light bubble icon is available only for the current dialogue.*
+   *The light bulb icon is available only for the current dialogue.*
 
 2. Scroll down the expanded prompt to view the time consumed for each task:
 

@@ -36,16 +36,16 @@ RAGFlow has a number of built-in models for document structure parsing, which ac
 
 ### Which architectures or devices does RAGFlow support?
 
-We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM.
+We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
 
 ---
 
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.15.1-slim` and `v0.15.1`:  
+RAGFlow offers two Docker image editions, `v0.16.0-slim` and `v0.16.0`:  
   
-- `infiniflow/ragflow:v0.15.1-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.15.1`: The RAGFlow Docker image with embedding models including:
+- `infiniflow/ragflow:v0.16.0-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.16.0`: The RAGFlow Docker image with embedding models including:
   - Built-in embedding models:
     - `BAAI/bge-large-zh-v1.5`
     - `BAAI/bge-reranker-v2-m3`
@@ -380,7 +380,7 @@ The status of a Docker container status does not necessarily reflect the status 
 
 ### How to increase the length of RAGFlow responses?
 
-1. Right click the desired dialog to display the **Chat Configuration** window.
+1. Right-click the desired dialog to display the **Chat Configuration** window.
 2. Switch to the **Model Setting** tab and adjust the **Max Tokens** slider to get the desired length.
 3. Click **OK** to confirm your change.
 
@@ -414,8 +414,8 @@ See [here](../guides/deploy_local_llm.mdx) for more information.
 This error occurs because there are too many chunks matching your search criteria. Try reducing the **TopN** and increasing **Similarity threshold** to fix this issue:
 
 1. Click **Chat** in the middle top of the page.
-2. Right click the desired conversation > **Edit** > **Prompt Engine**
-3. Reduce the **TopN** and/or raise **Silimarity threshold**.
+2. Right-click the desired conversation > **Edit** > **Prompt Engine**
+3. Reduce the **TopN** and/or raise **Similarity threshold**.
 4. Click **OK** to confirm your changes.
 
 ![topn](https://github.com/infiniflow/ragflow/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)

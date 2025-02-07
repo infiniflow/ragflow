@@ -7,6 +7,7 @@
 <p align="center">
   <a href="./README.md">English</a> |
   <a href="./README_zh.md">简体中文</a> |
+  <a href="./README_tzh.md">繁体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
   <a href="./README_id.md">Bahasa Indonesia</a> |
@@ -21,7 +22,7 @@
         <img alt="Badge Estático" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.15.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.15.1">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.16.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.16.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Última%20Relese" alt="Última Versão">
@@ -74,12 +75,13 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Últimas Atualizações
 
+- 05-02-2025 Atualiza a lista de modelos de 'SILICONFLOW' e adiciona suporte para Deepseek-R1/DeepSeek-V3.
+- 26-01-2025 Otimize a extração e aplicação de gráficos de conhecimento e forneça uma variedade de opções de configuração.
 - 18-12-2024 Atualiza o modelo de Análise de Layout de Documentos no Deepdoc.
 - 04-12-2024 Adiciona suporte para pontuação de pagerank na base de conhecimento.
 - 22-11-2024 Adiciona mais variáveis para o Agente.
 - 01-11-2024 Adiciona extração de palavras-chave e geração de perguntas relacionadas aos blocos analisados para melhorar a precisão da recuperação.
 - 22-08-2024 Suporta conversão de texto para comandos SQL via RAG.
-- 02-08-2024 Suporta GraphRAG inspirado pelo [graphrag](https://github.com/microsoft/graphrag) e mapa mental.
 
 ## 🎉 Fique Ligado
 
@@ -164,7 +166,7 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3.  Inicie o servidor usando as imagens Docker pré-compiladas:
 
-    > O comando abaixo baixa a edição `v0.15.1-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.15.1-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1` para a edição completa `v0.15.1`.
+    > O comando abaixo baixa a edição `v0.16.0-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.16.0-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.16.0` para a edição completa `v0.16.0`.
 
     ```bash
     $ cd ragflow
@@ -173,8 +175,8 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
     | Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                 |
     | --------------------- | ---------------------- | ------------------------------- | ------------------------ |
-    | v0.15.1               | ~9                     | :heavy_check_mark:              | Lançamento estável       |
-    | v0.15.1-slim          | ~2                     | ❌                              | Lançamento estável       |
+    | v0.16.0               | ~9                     | :heavy_check_mark:              | Lançamento estável       |
+    | v0.16.0-slim          | ~2                     | ❌                              | Lançamento estável       |
     | nightly               | ~9                     | :heavy_check_mark:              | _Instável_ build noturno |
     | nightly-slim          | ~2                     | ❌                              | _Instável_ build noturno |
 

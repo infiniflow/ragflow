@@ -7,6 +7,7 @@
 <p align="center">
   <a href="./README.md">English</a> |
   <a href="./README_zh.md">简体中文</a> |
+  <a href="./README_tzh.md">繁体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
   <a href="./README_id.md">Bahasa Indonesia</a> |
@@ -21,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.15.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.15.1">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.16.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.16.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -54,12 +55,13 @@
 
 ## 🔥 最新情報
 
+- 2025-02-05 シリコン フローの St およびモデル リストを更新し、Deep Seek-R1/Deep Seek-V3 のサポートを追加しました。
+- 2025-01-26 ナレッジ グラフの抽出と適用を最適化し、さまざまな構成オプションを提供します。
 - 2024-12-18 Deepdoc のドキュメント レイアウト分析モデルをアップグレードします。
 - 2024-12-04 ナレッジ ベースへのページランク スコアをサポートしました。
 - 2024-11-22 エージェントでの変数の定義と使用法を改善しました。
 - 2024-11-01 再現の精度を向上させるために、解析されたチャンクにキーワード抽出と関連質問の生成を追加しました。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
-- 2024-08-02 [graphrag](https://github.com/microsoft/graphrag) からインスピレーションを得た GraphRAG とマインド マップをサポートします。
 
 ## 🎉 続きを楽しみに
 
@@ -144,7 +146,7 @@
 
 3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
 
-   > 以下のコマンドは、RAGFlow Docker イメージの v0.15.1-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.15.1-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.15.1 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1 と設定します。
+   > 以下のコマンドは、RAGFlow Docker イメージの v0.16.0-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.16.0-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.16.0 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.16.0 と設定します。
 
    ```bash
    $ cd ragflow
@@ -153,8 +155,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.15.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.16.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.16.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 

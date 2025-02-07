@@ -21,7 +21,6 @@ import numpy as np
 import cv2
 from copy import deepcopy
 
-
 import onnxruntime as ort
 from huggingface_hub import snapshot_download
 
@@ -60,11 +59,21 @@ class Recognizer(object):
         if not os.path.exists(model_file_path):
             raise ValueError("not find model file path {}".format(
                 model_file_path))
+
+        def cuda_is_available():
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    return True
+            except Exception:
+                return False
+            return False
+
         # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
         # Shrink GPU memory after execution
         self.run_options = ort.RunOptions()
 
-        if ort.get_device() == "GPU":
+        if cuda_is_available():
             options = ort.SessionOptions()
             options.enable_cpu_mem_arena = False
             cuda_provider_options = {

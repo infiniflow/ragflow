@@ -388,14 +388,14 @@ class Dealer:
                 break
             id = sres.ids[i]
             chunk = sres.field[id]
-            dnm = chunk["docnm_kwd"]
-            did = chunk["doc_id"]
+            dnm = chunk.get("docnm_kwd", "")
+            did = chunk.get("doc_id", "")
             position_int = chunk.get("position_int", [])
             d = {
                 "chunk_id": id,
                 "content_ltks": chunk["content_ltks"],
                 "content_with_weight": chunk["content_with_weight"],
-                "doc_id": chunk["doc_id"],
+                "doc_id": did,
                 "docnm_kwd": dnm,
                 "kb_id": chunk["kb_id"],
                 "important_kwd": chunk.get("important_kwd", []),
@@ -465,7 +465,7 @@ class Dealer:
         if not aggs:
             return False
         cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / (all_tags.get(a, 0.0001)))) for a, c in aggs],
+        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
         doc[TAG_FLD] = {a: c for a, c in tag_fea if c > 0}
         return True
@@ -481,6 +481,6 @@ class Dealer:
         if not aggs:
             return {}
         cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / (all_tags.get(a, 0.0001)))) for a, c in aggs],
+        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
         return {a: max(1, c) for a, c in tag_fea}

@@ -18,7 +18,7 @@ This quick start guide describes a general process from:
 - Establishing an AI chat based on your datasets.
 
 :::danger IMPORTANT
-We officially support x86 CPU and Nvidia GPU, and this document offers instructions on deploying RAGFlow using Docker on x86 platforms. While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM.
+We officially support x86 CPU and Nvidia GPU, and this document offers instructions on deploying RAGFlow using Docker on x86 platforms. While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM.
 
 If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
 :::
@@ -39,7 +39,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abnormal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation.
 
-   RAGFlow v0.15.1 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.16.0 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -179,13 +179,13 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    $ cd ragflow
-   $ git checkout -f v0.15.1
+   $ git checkout -f v0.16.0
    ```
 
 3. Use the pre-built Docker images and start up the server:
 
    :::tip NOTE
-   The command below downloads the `v0.15.1-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download an RAGFlow edition different from `v0.15.1-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1` for the full edition `v0.15.1`.
+   The command below downloads the `v0.16.0-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download an RAGFlow edition different from `v0.15.1-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1` for the full edition `v0.15.1`.
    :::
 
    ```bash
@@ -198,8 +198,8 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 | RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
 | ------------------- | --------------- | ----------------------------------------- | ------------------------ |
-| `v0.15.1`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
-| `v0.15.1-slim`      | &approx;2       | ❌                                        | Stable release           |
+| `v0.16.0`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
+| `v0.16.0-slim`      | &approx;2       | ❌                                        | Stable release           |
 | `nightly`           | &approx;9       | :heavy_check_mark:                        | *Unstable* nightly build |
 | `nightly-slim`      | &approx;2       | ❌                                        | *Unstable* nightly build |
 

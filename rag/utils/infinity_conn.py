@@ -44,8 +44,23 @@ from rag.utils.doc_store_conn import (
 logger = logging.getLogger('ragflow.infinity_conn')
 
 
-def equivalent_condition_to_str(condition: dict) -> str | None:
+def equivalent_condition_to_str(condition: dict, table_instance=None) -> str | None:
     assert "_id" not in condition
+    clmns = {}
+    if table_instance:
+        for n, ty, de, _ in table_instance.show_columns().rows():
+            clmns[n] = (ty, de)
+
+    def exists(cln):
+        nonlocal clmns
+        assert cln in clmns, f"'{cln}' should be in '{clmns}'."
+        ty, de = clmns[cln]
+        if ty.lower().find("cha"):
+            if not de:
+                de = ""
+            return f" {cln}!='{de}' "
+        return f"{cln}!={de}"
+
     cond = list()
     for k, v in condition.items():
         if not isinstance(k, str) or k in ["kb_id"] or not v:
@@ -61,8 +76,15 @@ def equivalent_condition_to_str(condition: dict) -> str | None:
                 strInCond = ", ".join(inCond)
                 strInCond = f"{k} IN ({strInCond})"
                 cond.append(strInCond)
+        elif k == "must_not":
+            if isinstance(v, dict):
+                for kk, vv in v.items():
+                    if kk == "exists":
+                        cond.append("NOT (%s)" % exists(vv))
         elif isinstance(v, str):
             cond.append(f"{k}='{v}'")
+        elif k == "exists":
+            cond.append(exists(v))
         else:
             cond.append(f"{k}={str(v)}")
     return " AND ".join(cond) if cond else "1=1"
@@ -273,15 +295,33 @@ class InfinityConnection(DocStoreConnection):
         for essential_field in ["id"]:
             if essential_field not in selectFields:
                 selectFields.append(essential_field)
+        score_func = ""
+        score_column = ""
+        for matchExpr in matchExprs:
+            if isinstance(matchExpr, MatchTextExpr):
+                score_func = "score()"
+                score_column = "SCORE"
+                break
+        if not score_func:
+            for matchExpr in matchExprs:
+                if isinstance(matchExpr, MatchDenseExpr):
+                    score_func = "similarity()"
+                    score_column = "SIMILARITY"
+                    break
         if matchExprs:
-            for essential_field in ["score()", PAGERANK_FLD]:
-                selectFields.append(essential_field)
+            selectFields.append(score_func)
+            selectFields.append(PAGERANK_FLD)
+        selectFields = [f for f in selectFields if f != "_score"]
 
         # Prepare expressions common to all tables
         filter_cond = None
         filter_fulltext = ""
         if condition:
-            filter_cond = equivalent_condition_to_str(condition)
+            for indexName in indexNames:
+                table_name = f"{indexName}_{knowledgebaseIds[0]}"
+                filter_cond = equivalent_condition_to_str(condition, db_instance.get_table(table_name))
+                break
+
         for matchExpr in matchExprs:
             if isinstance(matchExpr, MatchTextExpr):
                 if filter_cond and "filter" not in matchExpr.extra_options:
@@ -299,7 +339,7 @@ class InfinityConnection(DocStoreConnection):
                         matchExpr.extra_options[k] = str(v)
                 logger.debug(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, MatchDenseExpr):
-                if filter_cond and "filter" not in matchExpr.extra_options:
+                if filter_fulltext and filter_cond and "filter" not in matchExpr.extra_options:
                     matchExpr.extra_options.update({"filter": filter_fulltext})
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
@@ -364,7 +404,9 @@ class InfinityConnection(DocStoreConnection):
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, selectFields)
         if matchExprs:
-            res = res.sort(pl.col("SCORE") + pl.col(PAGERANK_FLD), descending=True, maintain_order=True)
+            res = res.sort(pl.col(score_column) + pl.col(PAGERANK_FLD), descending=True, maintain_order=True)
+            if score_column and score_column != "SCORE":
+                res = res.rename({score_column: "_score"})
         res = res.limit(limit)
         logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
@@ -419,14 +461,25 @@ class InfinityConnection(DocStoreConnection):
             self.createIdx(indexName, knowledgebaseId, vector_size)
             table_instance = db_instance.get_table(table_name)
 
+        # embedding fields can't have a default value....
+        embedding_clmns = []
+        clmns = table_instance.show_columns().rows()
+        for n, ty, _, _ in clmns:
+            r = re.search(r"Embedding\([a-z]+,([0-9]+)\)", ty)
+            if not r:
+                continue
+            embedding_clmns.append((n, int(r.group(1))))
+
         docs = copy.deepcopy(documents)
         for d in docs:
             assert "_id" not in d
             assert "id" in d
             for k, v in d.items():
-                if k in ["important_kwd", "question_kwd", "entities_kwd"]:
+                if k in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd", "source_id"]:
                     assert isinstance(v, list)
                     d[k] = "###".join(v)
+                elif re.search(r"_feas$", k):
+                    d[k] = json.dumps(v)
                 elif k == 'kb_id':
                     if isinstance(d[k], list):
                         d[k] = d[k][0]  # since d[k] is a list, but we need a str
@@ -437,6 +490,11 @@ class InfinityConnection(DocStoreConnection):
                 elif k in ["page_num_int", "top_int"]:
                     assert isinstance(v, list)
                     d[k] = "_".join(f"{num:08x}" for num in v)
+
+            for n, vs in embedding_clmns:
+                if n in d:
+                    continue
+                d[n] = [0] * vs
         ids = ["'{}'".format(d["id"]) for d in docs]
         str_ids = ", ".join(ids)
         str_filter = f"id IN ({str_ids})"
@@ -458,11 +516,16 @@ class InfinityConnection(DocStoreConnection):
         db_instance = inf_conn.get_database(self.dbName)
         table_name = f"{indexName}_{knowledgebaseId}"
         table_instance = db_instance.get_table(table_name)
-        if "exist" in condition:
-            del condition["exist"]
-        filter = equivalent_condition_to_str(condition)
+        #if "exists" in condition:
+        #    del condition["exists"]
+        filter = equivalent_condition_to_str(condition, table_instance)
         for k, v in list(newValue.items()):
-            if k.endswith("_kwd") and isinstance(v, list):
+            if k in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd", "source_id"]:
+                assert isinstance(v, list)
+                newValue[k] = "###".join(v)
+            elif re.search(r"_feas$", k):
+                newValue[k] = json.dumps(v)
+            elif k.endswith("_kwd") and isinstance(v, list):
                 newValue[k] = " ".join(v)
             elif k == 'kb_id':
                 if isinstance(newValue[k], list):
@@ -474,9 +537,11 @@ class InfinityConnection(DocStoreConnection):
             elif k in ["page_num_int", "top_int"]:
                 assert isinstance(v, list)
                 newValue[k] = "_".join(f"{num:08x}" for num in v)
-            elif k == "remove" and v in [PAGERANK_FLD]:
+            elif k == "remove":
                 del newValue[k]
-                newValue[v] = 0
+                if v in [PAGERANK_FLD]:
+                    newValue[v] = 0
+
         logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {newValue}.")
         table_instance.update(filter, newValue)
         self.connPool.release_conn(inf_conn)
@@ -486,14 +551,14 @@ class InfinityConnection(DocStoreConnection):
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
         table_name = f"{indexName}_{knowledgebaseId}"
-        filter = equivalent_condition_to_str(condition)
         try:
             table_instance = db_instance.get_table(table_name)
         except Exception:
             logger.warning(
-                f"Skipped deleting `{filter}` from table {table_name} since the table doesn't exist."
+                f"Skipped deleting from table {table_name} since the table doesn't exist."
             )
             return 0
+        filter = equivalent_condition_to_str(condition, table_instance)
         logger.debug(f"INFINITY delete table {table_name}, filter {filter}.")
         res = table_instance.delete(filter)
         self.connPool.release_conn(inf_conn)
@@ -531,7 +596,7 @@ class InfinityConnection(DocStoreConnection):
                 v = res[fieldnm][i]
                 if isinstance(v, Series):
                     v = list(v)
-                elif fieldnm in ["important_kwd", "question_kwd", "entities_kwd"]:
+                elif fieldnm in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd", "source_id"]:
                     assert isinstance(v, str)
                     v = [kwd for kwd in v.split("###") if kwd]
                 elif fieldnm == "position_int":
@@ -562,6 +627,8 @@ class InfinityConnection(DocStoreConnection):
         ans = {}
         num_rows = len(res)
         column_id = res["id"]
+        if fieldnm not in res:
+            return {}
         for i in range(num_rows):
             id = column_id[i]
             txt = res[fieldnm][i]
