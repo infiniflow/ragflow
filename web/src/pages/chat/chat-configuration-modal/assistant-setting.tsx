@@ -11,7 +11,7 @@ import styles from './index.less';
 
 const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
   const { t } = useTranslate('chat');
-  const { data } = useFetchTenantInfo();
+  const { data } = useFetchTenantInfo(true);
 
   const normFile = (e: any) => {
     if (Array.isArray(e)) {
@@ -104,6 +104,15 @@ const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
         name={['prompt_config', 'quote']}
         tooltip={t('quoteTip')}
         initialValue={true}
+      >
+        <Switch />
+      </Form.Item>
+      <Form.Item
+        label={t('keyword')}
+        valuePropName="checked"
+        name={['prompt_config', 'keyword']}
+        tooltip={t('keywordTip')}
+        initialValue={false}
       >
         <Switch />
       </Form.Item>

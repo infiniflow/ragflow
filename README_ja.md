@@ -7,9 +7,11 @@
 <p align="center">
   <a href="./README.md">English</a> |
   <a href="./README_zh.md">简体中文</a> |
+  <a href="./README_tzh.md">繁体中文</a> |
   <a href="./README_ja.md">日本語</a> |
   <a href="./README_ko.md">한국어</a> |
-  <a href="./README_id.md">Bahasa Indonesia</a>
+  <a href="./README_id.md">Bahasa Indonesia</a> |
+  <a href="/README_pt_br.md">Português (Brasil)</a>
 </p>
 
 <p align="center">
@@ -20,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.15.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.15.1">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.16.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.16.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -29,7 +31,6 @@
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
     </a>
 </p>
-
 
 <h4 align="center">
   <a href="https://ragflow.io/docs/dev/">Document</a> |
@@ -46,23 +47,26 @@
 ## 🎮 Demo
 
 デモをお試しください：[https://demo.ragflow.io](https://demo.ragflow.io)。
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/infiniflow/ragflow/assets/7248/2f6baa3e-1092-4f11-866d-36f6a9d075e5" width="1200"/>
 <img src="https://github.com/user-attachments/assets/504bbbf1-c9f7-4d83-8cc5-e9cb63c26db6" width="1200"/>
 </div>
 
-
 ## 🔥 最新情報
 
+- 2025-02-05 シリコン フローの St およびモデル リストを更新し、Deep Seek-R1/Deep Seek-V3 のサポートを追加しました。
+- 2025-01-26 ナレッジ グラフの抽出と適用を最適化し、さまざまな構成オプションを提供します。
 - 2024-12-18 Deepdoc のドキュメント レイアウト分析モデルをアップグレードします。
 - 2024-12-04 ナレッジ ベースへのページランク スコアをサポートしました。
 - 2024-11-22 エージェントでの変数の定義と使用法を改善しました。
 - 2024-11-01 再現の精度を向上させるために、解析されたチャンクにキーワード抽出と関連質問の生成を追加しました。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
-- 2024-08-02 [graphrag](https://github.com/microsoft/graphrag) からインスピレーションを得た GraphRAG とマインド マップをサポートします。
 
 ## 🎉 続きを楽しみに
+
 ⭐️ リポジトリをスター登録して、エキサイティングな新機能やアップデートを最新の状態に保ちましょう！すべての新しいリリースに関する即時通知を受け取れます！ 🌟
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
@@ -142,7 +146,7 @@
 
 3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
 
-   > 以下のコマンドは、RAGFlow Dockerイメージの v0.15.1-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.15.1-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.15.1 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1 と設定します。
+   > 以下のコマンドは、RAGFlow Docker イメージの v0.16.0-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.16.0-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.16.0 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.16.0 と設定します。
 
    ```bash
    $ cd ragflow
@@ -151,10 +155,10 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.15.1          | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;9       | :heavy_check_mark:    | *Unstable* nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | *Unstable* nightly build |
+   | v0.16.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.16.0-slim      | &approx;2       | ❌                    | Stable release           |
+   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 
 4. サーバーを立ち上げた後、サーバーの状態を確認する:
 
@@ -165,17 +169,18 @@
    _以下の出力は、システムが正常に起動したことを確認するものです:_
 
    ```bash
-        ____   ___    ______ ______ __               
+        ____   ___    ______ ______ __
        / __ \ /   |  / ____// ____// /____  _      __
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
     * Running on http://127.0.0.1:9380
     * Running on http://x.x.x.x:9380
     INFO:werkzeug:Press CTRL+C to quit
    ```
+
    > もし確認ステップをスキップして直接 RAGFlow にログインした場合、その時点で RAGFlow が完全に初期化されていない可能性があるため、ブラウザーがネットワーク異常エラーを表示するかもしれません。
 
 5. ウェブブラウザで、プロンプトに従ってサーバーの IP アドレスを入力し、RAGFlow にログインします。
@@ -214,16 +219,16 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
-2. **docker/.env** の「DOC _ ENGINE」を「infinity」に設定します。
+2. **docker/.env** の「DOC \_ ENGINE」を「infinity」に設定します。
 
 3. 起動コンテナ：
    ```bash
    $ docker compose -f docker/docker-compose.yml up -d
    ```
-> [!WARNING]  
-> Linux/arm64 マシンでの Infinity への切り替えは正式にサポートされていません。
+   > [!WARNING]  
+   > Linux/arm64 マシンでの Infinity への切り替えは正式にサポートされていません。
 
-## 🔧 ソースコードでDockerイメージを作成（埋め込みモデルなし）
+## 🔧 ソースコードで Docker イメージを作成（埋め込みモデルなし）
 
 この Docker イメージのサイズは約 1GB で、外部の大モデルと埋め込みサービスに依存しています。
 
@@ -233,7 +238,7 @@ cd ragflow/
 docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
-## 🔧 ソースコードをコンパイルしたDockerイメージ（埋め込みモデルを含む）
+## 🔧 ソースコードをコンパイルした Docker イメージ（埋め込みモデルを含む）
 
 この Docker のサイズは約 9GB で、埋め込みモデルを含むため、外部の大モデルサービスのみが必要です。
 
@@ -246,11 +251,13 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ## 🔨 ソースコードからサービスを起動する方法
 
 1. uv をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
+
    ```bash
    pipx install uv
    ```
 
 2. ソースコードをクローンし、Python の依存関係をインストールする:
+
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
@@ -258,39 +265,43 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    ```
 
 3. Docker Compose を使用して依存サービス（MinIO、Elasticsearch、Redis、MySQL）を起動する:
+
    ```bash
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   `/etc/hosts` に以下の行を追加して、**conf/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:  
+   `/etc/hosts` に以下の行を追加して、**conf/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:
+
    ```
    127.0.0.1       es01 infinity mysql minio redis
-   ```  
+   ```
 
 4. HuggingFace にアクセスできない場合は、`HF_ENDPOINT` 環境変数を設定してミラーサイトを使用してください:
- 
+
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
 5. バックエンドサービスを起動する:
+
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
 
-6. フロントエンドの依存関係をインストールする:  
+6. フロントエンドの依存関係をインストールする:
    ```bash
    cd web
    npm install
-   ```  
-7. フロントエンドサービスを起動する:  
+   ```
+7. フロントエンドサービスを起動する:
+
    ```bash
-   npm run dev 
+   npm run dev
    ```
 
-   _以下の画面で、システムが正常に起動したことを示します:_  
+   _以下の画面で、システムが正常に起動したことを示します:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 

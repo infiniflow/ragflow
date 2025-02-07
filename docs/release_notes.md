@@ -181,7 +181,7 @@ Released on September 30, 2024.
 - Enables users to remove added LLM vendors.
 - Adds support for **OpenTTS** and **SparkTTS** models.
 - Implements an **Excel to HTML** toggle in the **General** chunk method, allowing users to parse a spreadsheet into either HTML tables or key-value pairs by row.
-- Adds agent tools **YahooFance** and **Jin10**.
+- Adds agent tools **YahooFinance** and **Jin10**.
 - Adds an investment advisor agent template.
 
 ### Compatibility changes
@@ -242,7 +242,7 @@ Released on August 6, 2024.
 ### New features
 
 - Supports GraphRAG as a chunk method.
-- Introduces Agent component **Keyword** and search tools, including **Baidu**, **DduckDuckGo**, **PubMed**, **Wikipedia**, **Bing**, and **Google**.
+- Introduces Agent component **Keyword** and search tools, including **Baidu**, **DuckDuckGo**, **PubMed**, **Wikipedia**, **Bing**, and **Google**.
 - Supports speech-to-text recognition for audio files.
 - Supports model vendors **Gemini** and **Groq**.
 - Supports inference frameworks, engines, and services including **LM studio**, **OpenRouter**, **LocalAI**, and **Nvidia API**.
@@ -274,7 +274,7 @@ Released on May 31, 2024.
 - Supports ARM64 platforms.
 
 :::danger IMPORTANT
-While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM.
+While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM.
 
 If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
 :::

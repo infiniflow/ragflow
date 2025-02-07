@@ -1,3 +1,19 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
 import logging
 import re
 import json
@@ -12,7 +28,6 @@ from rag import settings
 from rag.settings import TAG_FLD, PAGERANK_FLD
 from rag.utils import singleton
 from api.utils.file_utils import get_project_base_directory
-import polars as pl
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
@@ -107,6 +122,7 @@ class ESConnection(DocStoreConnection):
                 logger.exception("ESConnection.indexExist got exception")
                 if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
                     continue
+                break
         return False
 
     """
@@ -125,7 +141,7 @@ class ESConnection(DocStoreConnection):
             knowledgebaseIds: list[str],
             aggFields: list[str] = [],
             rank_feature: dict | None = None
-    ) -> list[dict] | pl.DataFrame:
+    ):
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
         """
@@ -222,6 +238,7 @@ class ESConnection(DocStoreConnection):
 
         for i in range(ATTEMPT_TIME):
             try:
+                #print(json.dumps(q, ensure_ascii=False))
                 res = self.es.search(index=indexNames,
                                      body=q,
                                      timeout="600s",
@@ -309,8 +326,9 @@ class ESConnection(DocStoreConnection):
                 except Exception as e:
                     logger.exception(
                         f"ESConnection.update(index={indexName}, id={id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
-                    if str(e).find("Timeout") > 0:
+                    if re.search(r"(timeout|connection)", str(e).lower()):
                         continue
+                    break
             return False
 
         # update unspecific maybe-multiple documents
@@ -318,7 +336,7 @@ class ESConnection(DocStoreConnection):
         for k, v in condition.items():
             if not isinstance(k, str) or not v:
                 continue
-            if k == "exist":
+            if k == "exists":
                 bqry.filter.append(Q("exists", field=v))
                 continue
             if isinstance(v, list):
@@ -348,9 +366,12 @@ class ESConnection(DocStoreConnection):
             if (not isinstance(k, str) or not v) and k != "available_int":
                 continue
             if isinstance(v, str):
-                scripts.append(f"ctx._source.{k} = '{v}'")
-            elif isinstance(v, int):
-                scripts.append(f"ctx._source.{k} = {v}")
+                v = re.sub(r"(['\n\r]|\\.)", " ", v)
+                scripts.append(f"ctx._source.{k}='{v}';")
+            elif isinstance(v, int) or isinstance(v, float):
+                scripts.append(f"ctx._source.{k}={v};")
+            elif isinstance(v, list):
+                scripts.append(f"ctx._source.{k}={json.dumps(v, ensure_ascii=False)};")
             else:
                 raise Exception(
                     f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")
@@ -367,9 +388,10 @@ class ESConnection(DocStoreConnection):
                 _ = ubq.execute()
                 return True
             except Exception as e:
-                logger.error("ESConnection.update got exception: " + str(e))
-                if str(e).find("Timeout") > 0 or str(e).find("Conflict") > 0:
+                logger.error("ESConnection.update got exception: " + str(e) + "\n".join(scripts))
+                if re.search(r"(timeout|connection|conflict)", str(e).lower()):
                     continue
+                break
         return False
 
     def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:
@@ -383,7 +405,16 @@ class ESConnection(DocStoreConnection):
         else:
             qry = Q("bool")
             for k, v in condition.items():
-                if isinstance(v, list):
+                if k == "exists":
+                    qry.filter.append(Q("exists", field=v))
+
+                elif k == "must_not":
+                    if isinstance(v, dict):
+                        for kk, vv in v.items():
+                            if kk == "exists":
+                                qry.must_not.append(Q("exists", field=vv))
+
+                elif isinstance(v, list):
                     qry.must.append(Q("terms", **{k: v}))
                 elif isinstance(v, str) or isinstance(v, int):
                     qry.must.append(Q("term", **{k: v}))
@@ -392,6 +423,7 @@ class ESConnection(DocStoreConnection):
         logger.debug("ESConnection.delete query: " + json.dumps(qry.to_dict()))
         for _ in range(ATTEMPT_TIME):
             try:
+                #print(Search().query(qry).to_dict(), flush=True)
                 res = self.es.delete_by_query(
                     index=indexName,
                     body=Search().query(qry).to_dict(),
@@ -399,7 +431,7 @@ class ESConnection(DocStoreConnection):
                 return res["deleted"]
             except Exception as e:
                 logger.warning("ESConnection.delete got exception: " + str(e))
-                if re.search(r"(Timeout|time out)", str(e), re.IGNORECASE):
+                if re.search(r"(timeout|connection)", str(e).lower()):
                     time.sleep(3)
                     continue
                 if re.search(r"(not_found)", str(e), re.IGNORECASE):

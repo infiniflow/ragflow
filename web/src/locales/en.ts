@@ -15,6 +15,7 @@ export default {
       edit: 'Edit',
       upload: 'Upload',
       english: 'English',
+      portugueseBr: 'Portuguese (Brazil)',
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
       language: 'Language',
@@ -85,6 +86,7 @@ export default {
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
+      knowledgeGraph: 'Knowledge graph',
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
@@ -136,7 +138,7 @@ export default {
       fromMessage: 'Missing start page number',
       toPlaceholder: 'to',
       toMessage: 'Missing end page number (excluded)',
-      layoutRecognize: 'Layout recognition',
+      layoutRecognize: 'Layout recognition & OCR',
       layoutRecognizeTip:
         'Use visual models for layout analysis to better understand the structure of the document and effectively locate document titles, text blocks, images, and tables. If disabled, only the plain text in the PDF will be retrieved.',
       taskPageSize: 'Task page size',
@@ -159,7 +161,7 @@ export default {
       rerankTip: `If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time.`,
       topK: 'Top-K',
       topKTip: `K chunks will be fed into rerank models.`,
-      delimiter: `Delimiter`,
+      delimiter: `Delimiters`,
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \n`##`;, then your texts will be separated at line breaks, double hash symbols (##), or semicolons.',
       html4excel: 'Excel to HTML',
@@ -191,6 +193,8 @@ export default {
 </ul>
 `,
       metaData: 'Meta data',
+      deleteDocumentConfirmContent:
+        'The document is associated with the knowledge graph. After deletion, the related node and relationship information will be deleted, but the graph will not be updated immediately. The update graph action is performed during the process of parsing the new document that carries the knowledge graph extraction task.',
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -198,7 +202,7 @@ export default {
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
       description: 'Description',
-      language: 'Language',
+      language: 'Document language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'Please input your language!',
       permissions: 'Permissions',
@@ -216,6 +220,7 @@ export default {
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
+      portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model',
       chunkMethodPlaceholder: 'Please select a chunk method',
       save: 'Save',
@@ -362,6 +367,17 @@ This procedure will improve precision of retrieval by adding more information to
       topnTags: 'Top-N Tags',
       tags: 'Tags',
       addTag: 'Add tag',
+      useGraphRag: 'Extract knowledge graph',
+      useGraphRagTip:
+        'After files being chunked, all the chunks will be used for knowlege graph generation which helps inference of multi-hop and complex problems a lot.',
+      graphRagMethod: 'Method',
+      graphRagMethodTip: `Light: the entity and relation extraction prompt is from GitHub - HKUDS/LightRAG: "LightRAG: Simple and Fast Retrieval-Augmented Generation"</br>
+        General: the entity and relation extraction prompt is from GitHub - microsoft/graphrag: A modular graph-based Retrieval-Augmented Generation (RAG) system`,
+      resolution: 'Entity resolution',
+      resolutionTip: `The resolution procedure would merge entities with the same meaning together which allows the graph conciser and more accurate. Entities as following should be merged:  President Trump, Donald Trump, Donald J. Trump, Donald John Trump`,
+      community: 'Community reports generation',
+      communityTip:
+        'Chunks are clustered into hierarchical communities with entities and relationships connecting each segment up through higher levels of abstraction. We then use an LLM to generate a summary of each community, known as a community report. More: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: 'Chunk',
@@ -502,6 +518,11 @@ This procedure will improve precision of retrieval by adding more information to
         'This optimizes user queries using context in a multi-round conversation. When enabled, it will consume additional LLM tokens.',
       howUseId: 'How to use chat ID?',
       description: 'Description of assistant',
+      useKnowledgeGraph: 'Use knowledge graph',
+      useKnowledgeGraphTip:
+        'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
+      keyword: 'Keyword analysis',
+      keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphesize during the relevance omputation.`,
     },
     setting: {
       profile: 'Profile',
@@ -751,7 +772,7 @@ This procedure will improve precision of retrieval by adding more information to
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
       categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
-      rewriteQuestionDescription: `A component that refines a user query if it fails to retrieve relevant information from the knowledge base. It repeats this process until the predefined looping upper limit is reached.`,
+      rewriteQuestionDescription: `A component that rewrites a user query from the Interact component, based on the context of previous dialogues.`,
       messageDescription:
         "A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is 'Interact', the interface component.",
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
@@ -956,22 +977,22 @@ This procedure will improve precision of retrieval by adding more information to
       switch: 'Switch',
       logicalOperator: 'Logical operator',
       switchOperatorOptions: {
-        equal: 'equal',
-        notEqual: 'notEqual',
+        equal: 'Equals',
+        notEqual: 'Not equal',
         gt: 'Greater than',
         ge: 'Greater equal',
         lt: 'Less than',
         le: 'Less equal',
         contains: 'Contains',
         notContains: 'Not contains',
-        startWith: 'Start with',
-        endWith: 'End with',
-        empty: 'Empty',
+        startWith: 'Starts with',
+        endWith: 'Ends with',
+        empty: 'Is empty',
         notEmpty: 'Not empty',
       },
       switchLogicOperatorOptions: {
-        and: 'And',
-        or: 'Or',
+        and: 'AND',
+        or: 'OR',
       },
       operator: 'Operator',
       value: 'Value',
@@ -1103,7 +1124,7 @@ This procedure will improve precision of retrieval by adding more information to
       testRun: 'Test Run',
       template: 'Template',
       templateDescription:
-        'A component that formats the output of another component.',
+        'A component that formats the output of other components.1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement',
       emailComponent: 'Email',
       emailDescription: 'Send an email to a specified address.',
       smtpServer: 'SMTP Server',
@@ -1143,8 +1164,8 @@ This delimiter is used to split the input text into several text pieces echo of 
         lineBreak: 'Line break',
         tab: 'Tab',
         underline: 'Underline',
-        diagonal: 'Diagonal',
-        minus: 'Minus',
+        diagonal: 'Forward slash',
+        minus: 'Dash',
         semicolon: 'Semicolon',
       },
       addVariable: 'Add variable',

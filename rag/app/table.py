@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import copy
 import re
 from io import BytesIO
@@ -98,9 +102,9 @@ def column_data_type(arr):
     for a in arr:
         if a is None:
             continue
-        if re.match(r"[+-]?[0-9]+(\.0+)?$", str(a).replace("%%", "")):
+        if re.match(r"[+-]?[0-9]{,19}(\.0+)?$", str(a).replace("%%", "")):
             counts["int"] += 1
-        elif re.match(r"[+-]?[0-9.]+$", str(a).replace("%%", "")):
+        elif re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", "")):
             counts["float"] += 1
         elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", str(a), flags=re.IGNORECASE):
             counts["bool"] += 1

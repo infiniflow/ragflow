@@ -15,12 +15,15 @@
 #
 from abc import ABC
 import re
+from copy import deepcopy
+
 import pandas as pd
 import pymysql
 import psycopg2
 from agent.component import GenerateParam, Generate
 import pyodbc
 import logging
+
 
 class ExeSQLParam(GenerateParam):
     """
@@ -110,20 +113,21 @@ class ExeSQL(Generate, ABC):
                     logging.info("single_sql: ", single_sql)
                     cursor.execute(single_sql)
                     if cursor.rowcount == 0:
-                        sql_res.append({"content": "\nTotal: 0\n No record in the database!"})
+                        sql_res.append({"content": "No record in the database!"})
                         break
                     if self._param.db_type == 'mssql':
                         single_res  = pd.DataFrame.from_records(cursor.fetchmany(self._param.top_n),columns = [desc[0] for desc in cursor.description])
                     else:
                         single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.top_n)])
                         single_res.columns = [i[0] for i in cursor.description]
-                    sql_res.append({"content": "\nTotal: " + str(cursor.rowcount) + "\n" + single_res.to_markdown()})
+                    sql_res.append({"content":  single_res.to_markdown()})
                     break
                 except Exception as e:
                     single_sql = self._regenerate_sql(single_sql, str(e), **kwargs)
                     single_sql = self._refactor(single_sql)
                     if self._loop > self._param.loop:
-                        raise Exception("Maximum loop time exceeds. Can't query the correct data via SQL statement.")
+                        sql_res.append({"content": "Can't query the correct data via SQL statement."})
+                        # raise Exception("Maximum loop time exceeds. Can't query the correct data via SQL statement.")
         db.close()
         if not sql_res:
             return ExeSQL.be_output("")
@@ -137,7 +141,9 @@ class ExeSQL(Generate, ABC):
         ## Answer only the modified SQL statement. Please do not give any explanation, just answer the code.
 '''
         self._param.prompt=prompt
-        response = Generate._run(self, [], **kwargs)
+        kwargs_ = deepcopy(kwargs)
+        kwargs_["stream"] = False
+        response = Generate._run(self, [], **kwargs_)
         try:
             regenerated_sql = response.loc[0,"content"]
             return regenerated_sql

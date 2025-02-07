@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import time
 import traceback
 from uuid import uuid4
 from agent.canvas import Canvas
@@ -80,7 +81,7 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
             "id": session_id,
             "dialog_id": cvs.id,
             "user_id": kwargs.get("user_id", "") if isinstance(kwargs, dict) else "",
-            "message": [{"role": "assistant", "content": canvas.get_prologue()}],
+            "message": [{"role": "assistant", "content": canvas.get_prologue(), "created_at": time.time()}],
             "source": "agent",
             "dsl": cvs.dsl
         }
@@ -134,7 +135,7 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
                                            ensure_ascii=False) + "\n\n"
 
-            canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
+            canvas.messages.append({"role": "assistant", "content": final_ans["content"], "created_at": time.time(), "id": message_id})
             canvas.history.append(("assistant", final_ans["content"]))
             if final_ans.get("reference"):
                 canvas.reference.append(final_ans["reference"])

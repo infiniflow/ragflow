@@ -10,7 +10,6 @@ import html
 from typing import Any, cast
 from graspologic.partition import hierarchical_leiden
 from graspologic.utils import largest_connected_component
-
 import networkx as nx
 from networkx import is_empty
 
@@ -130,6 +129,8 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
         if not weights:
             continue
         max_weight = max(weights)
+        if max_weight == 0:
+            continue
         for _, comm in result.items():
             comm["weight"] /= max_weight
 

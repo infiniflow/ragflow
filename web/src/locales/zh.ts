@@ -15,6 +15,7 @@ export default {
       edit: '编辑',
       upload: '上传',
       english: '英文',
+      portugueseBr: '葡萄牙语 (巴西)',
       chinese: '简体中文',
       traditionalChinese: '繁体中文',
       language: '语言',
@@ -84,6 +85,7 @@ export default {
       dataset: '数据集',
       testing: '检索测试',
       configuration: '配置',
+      knowledgeGraph: '知识图谱',
       files: '文件',
       name: '名称',
       namePlaceholder: '请输入名称',
@@ -134,7 +136,7 @@ export default {
       fromMessage: '缺少起始页码',
       toPlaceholder: '到',
       toMessage: '缺少结束页码（不包含）',
-      layoutRecognize: '布局识别',
+      layoutRecognize: '布局识别和 OCR',
       layoutRecognizeTip:
         '使用视觉模型进行布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果没有此功能，则只能获取 PDF 的纯文本。',
       taskPageSize: '任务页面大小',
@@ -187,14 +189,16 @@ export default {
 <li> 这是块内容....</li>
 </ul>
 `,
-      metaData: '元資料',
+      metaData: '元数据',
+      deleteDocumentConfirmContent:
+        '该文档与知识图谱相关联。删除后，相关节点和关系信息将被删除，但图不会立即更新。更新图动作是在解析承载知识图谱提取任务的新文档的过程中执行的。',
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',
       name: '知识库名称',
       photo: '知识库图片',
       description: '描述',
-      language: '语言',
+      language: '文档语言',
       languageMessage: '请输入语言',
       languagePlaceholder: '请输入语言',
       permissions: '权限',
@@ -363,6 +367,17 @@ export default {
       `,
       tags: '标签',
       addTag: '增加标签',
+      useGraphRag: '提取知识图谱',
+      useGraphRagTip:
+        '文件分块后，所有块将用于知识图谱生成，这对多跳和复杂问题的推理大有帮助。',
+      graphRagMethod: '方法',
+      graphRagMethodTip: `Light：实体和关系提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
+General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图形的模块化检索增强生成 (RAG) 系统`,
+      resolution: '实体归一化',
+      resolutionTip: `解析过程会将具有相同含义的实体合并在一起，从而使知识图谱更简洁、更准确。应合并以下实体：特朗普总统、唐纳德·特朗普、唐纳德·J·特朗普、唐纳德·约翰·特朗普`,
+      community: '社区报告生成',
+      communityTip:
+        '区块被聚集成层次化的社区，实体和关系通过更高抽象层次将每个部分连接起来。然后，我们使用 LLM 生成每个社区的摘要，称为社区报告。更多信息：https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: '解析块',
@@ -503,6 +518,11 @@ export default {
         '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      useKnowledgeGraph: '使用知识图谱',
+      useKnowledgeGraphTip:
+        '它将检索相关实体、关系和社区报告的描述，这将增强多跳和复杂问题的推理。',
+      keyword: '关键词分析',
+      keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
     },
     setting: {
       profile: '概要',
@@ -1087,7 +1107,8 @@ export default {
       pasteFileLink: '粘贴文件链接',
       testRun: '试运行',
       template: '模板转换',
-      templateDescription: '该组件用于排版各种组件的输出。',
+      templateDescription:
+        '该组件用于排版各种组件的输出。1、支持Jinja2模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式',
       emailComponent: '邮件',
       emailDescription: '发送邮件到指定邮箱',
       smtpServer: 'SMTP服务器',
@@ -1125,7 +1146,7 @@ export default {
         tab: '制表符',
         underline: '下划线',
         diagonal: '斜线',
-        minus: '减号',
+        minus: '连字符',
         semicolon: '分号',
       },
       addCategory: '新增分类',

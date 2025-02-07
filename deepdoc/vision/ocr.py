@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -11,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 import copy
 import time
 import os
@@ -19,6 +23,7 @@ from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
 from .operators import *  # noqa: F403
+from . import operators
 import math
 import numpy as np
 import cv2
@@ -55,7 +60,7 @@ def create_operators(op_param_list, global_config=None):
         param = {} if operator[op_name] is None else operator[op_name]
         if global_config is not None:
             param.update(global_config)
-        op = eval(op_name)(**param)
+        op = getattr(operators, op_name)(**param)
         ops.append(op)
     return ops
 
@@ -66,22 +71,46 @@ def load_model(model_dir, nm):
         raise ValueError("not find model file path {}".format(
             model_file_path))
 
+    def cuda_is_available():
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return True
+        except Exception:
+            return False
+        return False
+
     options = ort.SessionOptions()
     options.enable_cpu_mem_arena = False
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     options.intra_op_num_threads = 2
     options.inter_op_num_threads = 2
-    if False and ort.get_device() == "GPU":
+
+    # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
+    # Shrink GPU memory after execution
+    run_options = ort.RunOptions()
+    if cuda_is_available():
+        cuda_provider_options = {
+            "device_id": 0, # Use specific GPU
+            "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory
+            "arena_extend_strategy": "kNextPowerOfTwo",  # gpu memory allocation strategy
+        }
         sess = ort.InferenceSession(
             model_file_path,
             options=options,
-            providers=['CUDAExecutionProvider'])
+            providers=['CUDAExecutionProvider'],
+            provider_options=[cuda_provider_options]
+            )
+        run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
+        logging.info(f"TextRecognizer {nm} uses GPU")
     else:
         sess = ort.InferenceSession(
             model_file_path,
             options=options,
             providers=['CPUExecutionProvider'])
-    return sess, sess.get_inputs()[0]
+        run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "cpu")
+        logging.info(f"TextRecognizer {nm} uses CPU")
+    return sess, sess.get_inputs()[0], run_options
 
 
 class TextRecognizer(object):
@@ -94,7 +123,7 @@ class TextRecognizer(object):
             "use_space_char": True
         }
         self.postprocess_op = build_post_process(postprocess_params)
-        self.predictor, self.input_tensor = load_model(model_dir, 'rec')
+        self.predictor, self.input_tensor, self.run_options = load_model(model_dir, 'rec')
 
     def resize_norm_img(self, img, max_wh_ratio):
         imgC, imgH, imgW = self.rec_image_shape
@@ -340,7 +369,7 @@ class TextRecognizer(object):
             input_dict[self.input_tensor.name] = norm_img_batch
             for i in range(100000):
                 try:
-                    outputs = self.predictor.run(None, input_dict)
+                    outputs = self.predictor.run(None, input_dict, self.run_options)
                     break
                 except Exception as e:
                     if i >= 3:
@@ -379,7 +408,7 @@ class TextDetector(object):
                               "unclip_ratio": 1.5, "use_dilation": False, "score_mode": "fast", "box_type": "quad"}
 
         self.postprocess_op = build_post_process(postprocess_params)
-        self.predictor, self.input_tensor = load_model(model_dir, 'det')
+        self.predictor, self.input_tensor, self.run_options = load_model(model_dir, 'det')
 
         img_h, img_w = self.input_tensor.shape[2:]
         if isinstance(img_h, str) or isinstance(img_w, str):
@@ -452,7 +481,7 @@ class TextDetector(object):
         input_dict[self.input_tensor.name] = img
         for i in range(100000):
             try:
-                outputs = self.predictor.run(None, input_dict)
+                outputs = self.predictor.run(None, input_dict, self.run_options)
                 break
             except Exception as e:
                 if i >= 3:

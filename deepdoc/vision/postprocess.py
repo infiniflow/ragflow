@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -20,7 +23,7 @@ import pyclipper
 
 
 def build_post_process(config, global_config=None):
-    support_dict = ['DBPostProcess', 'CTCLabelDecode']
+    support_dict = {'DBPostProcess': DBPostProcess, 'CTCLabelDecode': CTCLabelDecode}
 
     config = copy.deepcopy(config)
     module_name = config.pop('name')
@@ -28,10 +31,11 @@ def build_post_process(config, global_config=None):
         return
     if global_config is not None:
         config.update(global_config)
-    assert module_name in support_dict, Exception(
-        'post process only support {}'.format(support_dict))
-    module_class = eval(module_name)(**config)
-    return module_class
+    module_class = support_dict.get(module_name)
+    if module_class is None:
+        raise ValueError(
+            'post process only support {}'.format(list(support_dict)))
+    return module_class(**config)
 
 
 class DBPostProcess(object):

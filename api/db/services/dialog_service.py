@@ -17,6 +17,7 @@ import logging
 import binascii
 import os
 import json
+import json_repair
 import re
 from collections import defaultdict
 from copy import deepcopy
@@ -197,8 +198,7 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     embedding_model_name = embedding_list[0]
 
-    is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
-    retriever = settings.retrievaler if not is_knowledge_graph else settings.kg_retrievaler
+    retriever = settings.retrievaler
 
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None
@@ -275,6 +275,14 @@ def chat(dialog, messages, stream=True, **kwargs):
                                       top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl,
                                       rank_feature=label_question(" ".join(questions), kbs)
                                       )
+        if prompt_config.get("use_kg"):
+            ck = settings.kg_retrievaler.retrieval(" ".join(questions),
+                                              tenant_ids,
+                                              dialog.kb_ids,
+                                              embd_mdl,
+                                              LLMBundle(dialog.tenant_id, LLMType.CHAT))
+            if ck["content_with_weight"]:
+                kbinfos["chunks"].insert(0, ck)
 
     retrieval_ts = timer()
 
@@ -346,7 +354,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         generate_result_time_cost = (finish_chat_ts - retrieval_ts) * 1000
 
         prompt = f"{prompt}\n\n - Total: {total_time_cost:.1f}ms\n  - Check LLM: {check_llm_time_cost:.1f}ms\n  - Create retriever: {create_retriever_time_cost:.1f}ms\n  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n  - Bind LLM: {bind_llm_time_cost:.1f}ms\n  - Tune question: {refine_question_time_cost:.1f}ms\n  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n  - Retrieval: {retrieval_time_cost:.1f}ms\n  - Generate answer: {generate_result_time_cost:.1f}ms"
-        return {"answer": answer, "reference": refs, "prompt": prompt}
+        return {"answer": answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt)}
 
     if stream:
         last_ans = ""
@@ -788,5 +796,13 @@ Output:
     if kwd.find("**ERROR**") >= 0:
         raise Exception(kwd)
 
-    kwd = re.sub(r".*?\{", "{", kwd)
-    return json.loads(kwd)
+    try:
+        return json_repair.loads(kwd)
+    except json_repair.JSONDecodeError:
+        try:
+            result = kwd.replace(prompt[:-1], '').replace('user', '').replace('model', '').strip()
+            result = '{' + result.split('{')[1].split('}')[0] + '}'
+            return json_repair.loads(result)
+        except Exception as e:
+            logging.exception(f"JSON parsing error: {result} -> {e}")
+            raise e

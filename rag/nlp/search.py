@@ -59,7 +59,7 @@ class Dealer:
             if key in req and req[key] is not None:
                 condition[field] = req[key]
         # TODO(yzc): `available_int` is nullable however infinity doesn't support nullable columns.
-        for key in ["knowledge_graph_kwd", "available_int"]:
+        for key in ["knowledge_graph_kwd", "available_int", "entity_kwd", "from_entity_kwd", "to_entity_kwd", "removed_kwd"]:
             if key in req and req[key] is not None:
                 condition[key] = req[key]
         return condition
@@ -198,6 +198,11 @@ class Dealer:
             return answer, set([])
 
         ans_v, _ = embd_mdl.encode(pieces_)
+        for i in range(len(chunk_v)):
+            if len(ans_v[0]) != len(chunk_v[i]):
+                chunk_v[i] = [0.0]*len(ans_v[0])
+                logging.warning("The dimension of query and chunk do not match: {} vs. {}".format(len(ans_v[0]), len(chunk_v[i])))
+
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(
             len(ans_v[0]), len(chunk_v[0]))
 
@@ -383,14 +388,14 @@ class Dealer:
                 break
             id = sres.ids[i]
             chunk = sres.field[id]
-            dnm = chunk["docnm_kwd"]
-            did = chunk["doc_id"]
+            dnm = chunk.get("docnm_kwd", "")
+            did = chunk.get("doc_id", "")
             position_int = chunk.get("position_int", [])
             d = {
                 "chunk_id": id,
                 "content_ltks": chunk["content_ltks"],
                 "content_with_weight": chunk["content_with_weight"],
-                "doc_id": chunk["doc_id"],
+                "doc_id": did,
                 "docnm_kwd": dnm,
                 "kb_id": chunk["kb_id"],
                 "important_kwd": chunk.get("important_kwd", []),
@@ -434,6 +439,8 @@ class Dealer:
             es_res = self.dataStore.search(fields, [], condition, [], OrderByExpr(), p, bs, index_name(tenant_id),
                                            kb_ids)
             dict_chunks = self.dataStore.getFields(es_res, fields)
+            for id, doc in dict_chunks.items():
+                doc["id"] = id
             if dict_chunks:
                 res.extend(dict_chunks.values())
             if len(dict_chunks.values()) < bs:
@@ -458,7 +465,7 @@ class Dealer:
         if not aggs:
             return False
         cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / (all_tags.get(a, 0.0001)))) for a, c in aggs],
+        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
         doc[TAG_FLD] = {a: c for a, c in tag_fea if c > 0}
         return True
@@ -474,6 +481,6 @@ class Dealer:
         if not aggs:
             return {}
         cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / (all_tags.get(a, 0.0001)))) for a, c in aggs],
+        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
-        return {a: c for a, c in tag_fea if c > 0}
+        return {a: max(1, c) for a, c in tag_fea}

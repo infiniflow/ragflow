@@ -13,10 +13,10 @@ from typing import Callable
 from dataclasses import dataclass
 import networkx as nx
 import pandas as pd
-from graphrag import leiden
-from graphrag.community_report_prompt import COMMUNITY_REPORT_PROMPT
-from graphrag.extractor import Extractor
-from graphrag.leiden import add_community_info2graph
+from graphrag.general import leiden
+from graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
+from graphrag.general.extractor import Extractor
+from graphrag.general.leiden import add_community_info2graph
 from rag.llm.chat_model import Base as CompletionLLM
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, dict_has_keys_with_types
 from rag.utils import num_tokens_from_string
@@ -40,32 +40,47 @@ class CommunityReportsExtractor(Extractor):
     _max_report_length: int
 
     def __init__(
-        self,
-        llm_invoker: CompletionLLM,
-        extraction_prompt: str | None = None,
-        on_error: ErrorHandlerFn | None = None,
-        max_report_length: int | None = None,
+            self,
+            llm_invoker: CompletionLLM,
+            get_entity: Callable | None = None,
+            set_entity: Callable | None = None,
+            get_relation: Callable | None = None,
+            set_relation: Callable | None = None,
+            max_report_length: int | None = None,
     ):
+        super().__init__(llm_invoker, get_entity=get_entity, set_entity=set_entity, get_relation=get_relation, set_relation=set_relation)
         """Init method definition."""
         self._llm = llm_invoker
-        self._extraction_prompt = extraction_prompt or COMMUNITY_REPORT_PROMPT
-        self._on_error = on_error or (lambda _e, _s, _d: None)
+        self._extraction_prompt = COMMUNITY_REPORT_PROMPT
         self._max_report_length = max_report_length or 1500
 
     def __call__(self, graph: nx.Graph, callback: Callable | None = None):
+        for node_degree in graph.degree:
+            graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
+
         communities: dict[str, dict[str, list]] = leiden.run(graph, {})
         total = sum([len(comm.items()) for _, comm in communities.items()])
-        relations_df = pd.DataFrame([{"source":s, "target": t, **attr} for s, t, attr in graph.edges(data=True)])
         res_str = []
         res_dict = []
         over, token_count = 0, 0
         st = timer()
         for level, comm in communities.items():
+            logging.info(f"Level {level}: Community: {len(comm.keys())}")
             for cm_id, ents in comm.items():
                 weight = ents["weight"]
                 ents = ents["nodes"]
-                ent_df = pd.DataFrame([{"entity": n, **graph.nodes[n]} for n in ents])
-                rela_df = relations_df[(relations_df["source"].isin(ents)) | (relations_df["target"].isin(ents))].reset_index(drop=True)
+                ent_df = pd.DataFrame(self._get_entity_(ents)).dropna()#[{"entity": n, **graph.nodes[n]} for n in ents])
+                if ent_df.empty:
+                    continue
+                ent_df["entity"] = ent_df["entity_name"]
+                del ent_df["entity_name"]
+                rela_df = pd.DataFrame(self._get_relation_(list(ent_df["entity"]), list(ent_df["entity"]), 10000))
+                if rela_df.empty:
+                    continue
+                rela_df["source"] = rela_df["src_id"]
+                rela_df["target"] = rela_df["tgt_id"]
+                del rela_df["src_id"]
+                del rela_df["tgt_id"]
 
                 prompt_variables = {
                     "entity_df": ent_df.to_csv(index_label="id"),

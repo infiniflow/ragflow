@@ -723,7 +723,7 @@ def stop_parsing(tenant_id, dataset_id):
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if int(doc[0].progress) == 1 or int(doc[0].progress) == 0:
+        if int(doc[0].progress) == 1 or doc[0].progress == 0:
             return get_error_data_result(
                 "Can't stop parsing document with progress at 0 or 1"
             )
@@ -1297,15 +1297,15 @@ def retrieval_test(tenant_id):
     kb_ids = req["dataset_ids"]
     if not isinstance(kb_ids, list):
         return get_error_data_result("`dataset_ids` should be a list")
-    kbs = KnowledgebaseService.get_by_ids(kb_ids)
     for id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
+    kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embd_nms = list(set([kb.embd_id for kb in kbs]))
     if len(embd_nms) != 1:
         return get_result(
             message='Datasets use different embedding models."',
-            code=settings.RetCode.AUTHENTICATION_ERROR,
+            code=settings.RetCode.DATA_ERROR,
         )
     if "question" not in req:
         return get_error_data_result("`question` is required.")
@@ -1313,6 +1313,7 @@ def retrieval_test(tenant_id):
     size = int(req.get("page_size", 30))
     question = req["question"]
     doc_ids = req.get("document_ids", [])
+    use_kg = req.get("use_kg", False)
     if not isinstance(doc_ids, list):
         return get_error_data_result("`documents` should be a list")
     doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
@@ -1342,8 +1343,7 @@ def retrieval_test(tenant_id):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
 
-        retr = settings.retrievaler if kb.parser_id != ParserType.KG else settings.kg_retrievaler
-        ranks = retr.retrieval(
+        ranks = settings.retrievaler.retrieval(
             question,
             embd_mdl,
             kb.tenant_id,
@@ -1358,6 +1358,15 @@ def retrieval_test(tenant_id):
             highlight=highlight,
             rank_feature=label_question(question, kbs)
         )
+        if use_kg:
+            ck = settings.kg_retrievaler.retrieval(question,
+                                                   [k.tenant_id for k in kbs],
+                                                   kb_ids,
+                                                   embd_mdl,
+                                                   LLMBundle(kb.tenant_id, LLMType.CHAT))
+            if ck["content_with_weight"]:
+                ranks["chunks"].insert(0, ck)
+
         for c in ranks["chunks"]:
             c.pop("vector", None)
 

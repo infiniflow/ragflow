@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -18,13 +21,13 @@ import numpy as np
 import cv2
 from copy import deepcopy
 
-
 import onnxruntime as ort
 from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
 from .operators import *  # noqa: F403
 from .operators import preprocess
+from . import operators
 
 
 class Recognizer(object):
@@ -56,12 +59,39 @@ class Recognizer(object):
         if not os.path.exists(model_file_path):
             raise ValueError("not find model file path {}".format(
                 model_file_path))
-        if False and ort.get_device() == "GPU":
+
+        def cuda_is_available():
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    return True
+            except Exception:
+                return False
+            return False
+
+        # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
+        # Shrink GPU memory after execution
+        self.run_options = ort.RunOptions()
+
+        if cuda_is_available():
             options = ort.SessionOptions()
             options.enable_cpu_mem_arena = False
-            self.ort_sess = ort.InferenceSession(model_file_path, options=options, providers=[('CUDAExecutionProvider')])
+            cuda_provider_options = {
+                "device_id": 0, # Use specific GPU
+                "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory
+                "arena_extend_strategy": "kNextPowerOfTwo",  # gpu memory allocation strategy
+            }
+            self.ort_sess = ort.InferenceSession(
+                model_file_path, options=options,
+                providers=['CUDAExecutionProvider'],
+                provider_options=[cuda_provider_options]
+            )
+            self.run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
+            logging.info(f"Recognizer {task_name} uses GPU")
         else:
             self.ort_sess = ort.InferenceSession(model_file_path, providers=['CPUExecutionProvider'])
+            self.run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "cpu")
+            logging.info(f"Recognizer {task_name} uses CPU")
         self.input_names = [node.name for node in self.ort_sess.get_inputs()]
         self.output_names = [node.name for node in self.ort_sess.get_outputs()]
         self.input_shape = self.ort_sess.get_inputs()[0].shape[2:4]
@@ -319,7 +349,7 @@ class Recognizer(object):
             ]:
                 new_op_info = op_info.copy()
                 op_type = new_op_info.pop('type')
-                preprocess_ops.append(eval(op_type)(**new_op_info))
+                preprocess_ops.append(getattr(operators, op_type)(**new_op_info))
 
             for im_path in image_list:
                 im, im_info = preprocess(im_path, preprocess_ops)
@@ -450,7 +480,7 @@ class Recognizer(object):
             inputs = self.preprocess(batch_image_list)
             logging.debug("preprocess")
             for ins in inputs:
-                bb = self.postprocess(self.ort_sess.run(None, {k:v for k,v in ins.items() if k in self.input_names})[0], ins, thr)
+                bb = self.postprocess(self.ort_sess.run(None, {k:v for k,v in ins.items() if k in self.input_names}, self.run_options)[0], ins, thr)
                 res.append(bb)
 
         #seeit.save_results(image_list, res, self.label_list, threshold=thr)
