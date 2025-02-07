@@ -11,7 +11,7 @@ export default defineConfig({
   base: '/',
   routes,
   publicPath: '/',
-  esbuildMinifyIIFE: true,
+  // esbuildMinifyIIFE: true,
   icons: {},
   hash: true,
   favicons: ['/logo.svg'],
@@ -23,7 +23,8 @@ export default defineConfig({
     '@react-dev-inspector/umi4-plugin',
     '@umijs/plugins/dist/tailwindcss',
   ],
-  jsMinifier: 'terser',
+  jsMinifier: 'none',
+  // cssMinifier: 'cssnano',
   lessLoader: {
     modifyVars: {
       hack: `true; @import "~@/less/index.less";`,
