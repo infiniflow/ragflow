@@ -1922,6 +1922,24 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-R1",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
