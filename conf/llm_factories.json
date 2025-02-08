@@ -947,31 +947,37 @@
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "gemini-1.5-pro-latest",
+                    "llm_name": "gemini-2.0-flash-001",
                     "tags": "LLM,CHAT,1024K",
                     "max_tokens": 1048576,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "gemini-1.5-flash-latest",
-                    "tags": "LLM,CHAT,1024K",
+                    "llm_name": "gemini-1.5-flash",
+                    "tags": "LLM,IMAGE2TEXT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "chat"
+                    "model_type": "image2text"
                 },
                 {
-                    "llm_name": "gemini-2.0-flash-exp",
-                    "tags": "LLM,CHAT,1024K",
-                    "max_tokens": 1048576,
-                    "model_type": "chat"
+                    "llm_name": "gemini-1.5-pro",
+                    "tags": "LLM,IMAGE2TEXT,2048K",
+                    "max_tokens": 2097152,
+                    "model_type": "image2text"
                 },
                 {
-                    "llm_name": "gemini-1.0-pro-vision-latest",
-                    "tags": "LLM,IMAGE2TEXT,12K",
-                    "max_tokens": 12288,
+                    "llm_name": "gemini-1.5-flash-8b",
+                    "tags": "LLM,IMAGE2TEXT,1024K",
+                    "max_tokens": 1048576,
                     "model_type": "image2text"
                 },
                 {
                     "llm_name": "text-embedding-004",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 2048,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "embedding-001",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 2048,
                     "model_type": "embedding"
