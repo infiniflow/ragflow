@@ -68,7 +68,7 @@ const errorHandler = (error: {
       });
     }
   }
-  return response;
+  return response ?? { data: { code: 1999 } };
 };
 
 const request: RequestMethod = extend({
@@ -98,7 +98,7 @@ request.interceptors.request.use((url: string, options: any) => {
   };
 });
 
-request.interceptors.response.use(async (response: any, options) => {
+request.interceptors.response.use(async (response: Response, options) => {
   if (response?.status === 413 || response?.status === 504) {
     message.error(RetcodeMessage[response?.status as ResultCode]);
   }
