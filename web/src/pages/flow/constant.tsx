@@ -671,7 +671,6 @@ export const RestrictedUpstreamMap = {
     Operator.Message,
     Operator.Generate,
     Operator.RewriteQuestion,
-    Operator.Categorize,
     Operator.Relevant,
   ],
   [Operator.KeywordExtract]: [
