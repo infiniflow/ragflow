@@ -69,6 +69,7 @@ def find_codec(blob):
 
     return "utf-8"
 
+
 QUESTION_PATTERN = [
     r"第([零一二三四五六七八九十百0-9]+)问",
     r"第([零一二三四五六七八九十百0-9]+)条",
@@ -83,6 +84,7 @@ QUESTION_PATTERN = [
     r"QUESTION ([0-9]+)",
 ]
 
+
 def has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list):
     section, last_section = box['text'], last_box['text']
     q_reg = r'(\w|\W)*?(?:？|\?|\n|$)+'
@@ -94,7 +96,7 @@ def has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list):
             last_box['x0'] = box['x0']
         if 'top' not in last_box:
             last_box['top'] = box['top']
-        if last_bull and box['x0']-last_box['x0']>10:
+        if last_bull and box['x0'] - last_box['x0'] > 10:
             return None, last_index
         if not last_bull and box['x0'] >= last_box['x0'] and box['top'] - last_box['top'] < 20:
             return None, last_index
@@ -125,13 +127,14 @@ def has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list):
             return has_bull, index
     return None, last_index
 
+
 def index_int(index_str):
     res = -1
     try:
-        res=int(index_str)
+        res = int(index_str)
     except ValueError:
         try:
-            res=w2n.word_to_num(index_str)
+            res = w2n.word_to_num(index_str)
         except ValueError:
             try:
                 res = cn2an(index_str)
@@ -141,6 +144,7 @@ def index_int(index_str):
                 except ValueError:
                     return -1
     return res
+
 
 def qbullets_category(sections):
     global QUESTION_PATTERN
@@ -230,7 +234,10 @@ def is_english(texts):
         return True
     return False
 
+
 def is_chinese(text):
+    if not text:
+        return False
     chinese = 0
     for ch in text:
         if '\u4e00' <= ch <= '\u9fff':
@@ -238,6 +245,7 @@ def is_chinese(text):
     if chinese / len(text) > 0.2:
         return True
     return False
+
 
 def tokenize(d, t, eng):
     d["content_with_weight"] = t
@@ -328,7 +336,7 @@ def remove_contents_table(sections, eng=False):
         def get(i):
             nonlocal sections
             return (sections[i] if isinstance(sections[i],
-                    type("")) else sections[i][0]).strip()
+                                              type("")) else sections[i][0]).strip()
 
         if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$",
                         re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], re.IGNORECASE)):
@@ -378,9 +386,9 @@ def make_colon_as_title(sections):
 
 def title_frequency(bull, sections):
     bullets_size = len(BULLET_PATTERN[bull])
-    levels = [bullets_size+1 for _ in range(len(sections))]
+    levels = [bullets_size + 1 for _ in range(len(sections))]
     if not sections or bull < 0:
-        return bullets_size+1, levels
+        return bullets_size + 1, levels
 
     for i, (txt, layout) in enumerate(sections):
         for j, p in enumerate(BULLET_PATTERN[bull]):
@@ -390,8 +398,8 @@ def title_frequency(bull, sections):
         else:
             if re.search(r"(title|head)", layout) and not not_title(txt.split("@")[0]):
                 levels[i] = bullets_size
-    most_level = bullets_size+1
-    for level, c in sorted(Counter(levels).items(), key=lambda x:x[1]*-1):
+    most_level = bullets_size + 1
+    for level, c in sorted(Counter(levels).items(), key=lambda x: x[1] * -1):
         if level <= bullets_size:
             most_level = level
             break
@@ -415,7 +423,6 @@ def hierarchical_merge(bull, sections, depth):
                 t and len(t.split("@")[0].strip()) > 1 and not re.match(r"[0-9]+$", t.split("@")[0].strip())]
     bullets_size = len(BULLET_PATTERN[bull])
     levels = [[] for _ in range(bullets_size + 2)]
-
 
     for i, (txt, layout) in enumerate(sections):
         for j, p in enumerate(BULLET_PATTERN[bull]):
@@ -531,7 +538,7 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
     return cks
 
 
-def docx_question_level(p, bull = -1):
+def docx_question_level(p, bull=-1):
     txt = re.sub(r"\u3000", " ", p.text).strip()
     if p.style.name.startswith('Heading'):
         return int(p.style.name.split(' ')[-1]), txt
@@ -540,10 +547,10 @@ def docx_question_level(p, bull = -1):
             return 0, txt
         for j, title in enumerate(BULLET_PATTERN[bull]):
             if re.match(title, txt):
-                return j+1, txt
+                return j + 1, txt
     return len(BULLET_PATTERN[bull]), txt
 
-    
+
 def concat_img(img1, img2):
     if img1 and not img2:
         return img1
@@ -594,4 +601,3 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
         add_chunk(sec, image, '')
 
     return cks, images
-
