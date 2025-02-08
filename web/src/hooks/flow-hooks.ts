@@ -3,6 +3,7 @@ import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import { IDebugSingleRequestBody } from '@/interfaces/request/flow';
 import i18n from '@/locales/config';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
+import { BeginId } from '@/pages/flow/constant';
 import flowService from '@/services/flow-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,7 +17,7 @@ export const EmptyDsl = {
   graph: {
     nodes: [
       {
-        id: 'begin',
+        id: BeginId,
         type: 'beginNode',
         position: {
           x: 50,

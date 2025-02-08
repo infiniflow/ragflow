@@ -35,6 +35,7 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
           },
         ]}
       >
+        {/* <Input.TextArea rows={8}></Input.TextArea> */}
         <PromptEditor></PromptEditor>
       </Form.Item>
       <Form.Item
