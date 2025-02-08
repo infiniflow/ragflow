@@ -4,881 +4,883 @@
   "description": "An advanced agent that converts user queries into SQL statements, executes the queries, and assesses and returns the results. You must prepare three knowledge bases: 1: DDL for your database; 2: Examples of user queries converted to SQL statements; 3: A comprehensive description of your database, including but not limited to tables and records. You are also required to configure the corresponding database.",
   "canvas_type": "chatbot",
   "dsl": {
-        "answer": [],
-        "components": {
-          "Answer:SocialAdsWonder": {
-            "downstream": [
-              "Retrieval:SillyPartsCheer",
-              "Retrieval:BrownStreetsRhyme",
-              "Retrieval:OddSingersRefuse"
-            ],
-            "obj": {
-              "component_name": "Answer",
-              "inputs": [],
-              "output": {},
-              "params": {}
-            },
-            "upstream": [
-              "begin",
-              "ExeSQL:QuietRosesRun"
-            ]
-          },
-          "ExeSQL:QuietRosesRun": {
-            "downstream": [
-              "Answer:SocialAdsWonder"
-            ],
-            "obj": {
-              "component_name": "ExeSQL",
-              "inputs": [],
-              "output": {},
-              "params": {
-                "database": "",
-                "db_type": "mysql",
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "host": "",
-                "llm_id": "deepseek-chat@DeepSeek",
-                "loop": 3,
-                "maxTokensEnabled": true,
-                "max_tokens": 512,
-                "password": "",
-                "port": 6630,
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "query": [],
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_n": 30,
-                "top_p": 0.3,
-                "username": "root"
-              }
-            },
-            "upstream": [
-              "Generate:CuteSidesBuy"
-            ]
-          },
-          "Generate:CuteSidesBuy": {
-            "downstream": [
-              "ExeSQL:QuietRosesRun"
-            ],
-            "obj": {
-              "component_name": "Generate",
-              "inputs": [],
-              "output": {},
-              "params": {
-                "cite": false,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "max_tokens": 512,
-                "message_history_window_size": 1,
-                "parameters": [
-                  {
-                    "component_id": "Retrieval:SillyPartsCheer",
-                    "id": "2a77e574-a0a6-4a1a-af39-cb192f1d21f5",
-                    "key": "ddl_input"
-                  },
-                  {
-                    "component_id": "Retrieval:OddSingersRefuse",
-                    "id": "83941a85-0b59-408e-97e5-504964b0e090",
-                    "key": "db_input"
-                  },
-                  {
-                    "component_id": "Retrieval:BrownStreetsRhyme",
-                    "id": "c63d0ae6-7ee2-44a2-8a95-69d03c90cb44",
-                    "key": "sql_input"
-                  }
-                ],
-                "presence_penalty": 0.4,
-                "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {ddl_input}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {db_input}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {sql_input}.\n\n##Respond with only SQL code. Do not answer with any explanations -- just the code.",
-                "temperature": 0.1,
-                "top_p": 0.3
-              }
-            },
-            "upstream": [
-              "Retrieval:SillyPartsCheer",
-              "Retrieval:BrownStreetsRhyme",
-              "Retrieval:OddSingersRefuse"
-            ]
-          },
-          "Retrieval:BrownStreetsRhyme": {
-            "downstream": [
-              "Generate:CuteSidesBuy"
-            ],
-            "obj": {
-              "component_name": "Retrieval",
-              "inputs": [],
-              "output": {},
-              "params": {
-                "empty_response": "Nothing found in Q->SQL!",
-                "kb_ids": [],
-                "keywords_similarity_weight": 0.3,
-                "query": [
-                  {
-                    "component_id": "Answer:SocialAdsWonder",
-                    "type": "reference"
-                  }
-                ],
-                "similarity_threshold": 0.2,
-                "top_n": 8
-              }
-            },
-            "upstream": [
-              "Answer:SocialAdsWonder"
-            ]
-          },
-          "Retrieval:OddSingersRefuse": {
-            "downstream": [
-              "Generate:CuteSidesBuy"
-            ],
-            "obj": {
-              "component_name": "Retrieval",
-              "inputs": [],
-              "output": {},
-              "params": {
-                "empty_response": "Nothing found in DB-Description!",
-                "kb_ids": [],
-                "keywords_similarity_weight": 0.3,
-                "query": [
-                  {
-                    "component_id": "Answer:SocialAdsWonder",
-                    "type": "reference"
-                  }
-                ],
-                "similarity_threshold": 0.2,
-                "top_n": 8
-              }
-            },
-            "upstream": [
-              "Answer:SocialAdsWonder"
-            ]
-          },
-          "Retrieval:SillyPartsCheer": {
-            "downstream": [
-              "Generate:CuteSidesBuy"
-            ],
-            "obj": {
-              "component_name": "Retrieval",
-              "inputs": [],
-              "output": {},
-              "params": {
-                "empty_response": "Nothing found in DDL!",
-                "kb_ids": [],
-                "keywords_similarity_weight": 0.1,
-                "query": [
-                  {
-                    "component_id": "Answer:SocialAdsWonder",
-                    "type": "reference"
-                  }
-                ],
-                "similarity_threshold": 0.02,
-                "top_n": 18
-              }
-            },
-            "upstream": [
-              "Answer:SocialAdsWonder"
-            ]
-          },
-          "begin": {
-            "downstream": [
-              "Answer:SocialAdsWonder"
-            ],
-            "obj": {
-              "component_name": "Begin",
-              "inputs": [],
-              "output": {
-                "content": {
-                  "0": {
-                    "content": "Hi! I'm your smart assistant. What can I do for you?"
-                  }
-                }
-              },
-              "params": {}
-            },
-            "upstream": []
+    "answer": [],
+    "components": {
+      "Answer:SocialAdsWonder": {
+        "downstream": [
+          "RewriteQuestion:WildIdeasTell"
+        ],
+        "obj": {
+          "component_name": "Answer",
+          "inputs": [],
+          "output": {},
+          "params": {}
+        },
+        "upstream": [
+          "ExeSQL:QuietRosesRun",
+          "begin"
+        ]
+      },
+      "ExeSQL:QuietRosesRun": {
+        "downstream": [
+          "Answer:SocialAdsWonder"
+        ],
+        "obj": {
+          "component_name": "ExeSQL",
+          "inputs": [],
+          "output": {},
+          "params": {
+            "database": "",
+            "db_type": "mysql",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "host": "",
+            "llm_id": "deepseek-chat@DeepSeek",
+            "loop": 3,
+            "maxTokensEnabled": true,
+            "max_tokens": 512,
+            "password": "",
+            "port": 6630,
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "query": [],
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_n": 30,
+            "top_p": 0.3,
+            "username": "root"
           }
         },
-        "embed_id": "BAAI/bge-large-zh-v1.5",
-        "graph": {
-          "edges": [
-            {
-              "id": "reactflow__edge-begin-Answer:SocialAdsWonderc",
-              "markerEnd": "logo",
-              "source": "begin",
-              "sourceHandle": null,
-              "style": {
-                "stroke": "rgb(202 197 245)",
-                "strokeWidth": 2
-              },
-              "target": "Answer:SocialAdsWonder",
-              "targetHandle": "c",
-              "type": "buttonEdge"
-            },
-            {
-              "id": "reactflow__edge-Answer:SocialAdsWonderb-Retrieval:SillyPartsCheerc",
-              "markerEnd": "logo",
-              "source": "Answer:SocialAdsWonder",
-              "sourceHandle": "b",
-              "style": {
-                "stroke": "rgb(202 197 245)",
-                "strokeWidth": 2
-              },
-              "target": "Retrieval:SillyPartsCheer",
-              "targetHandle": "c",
-              "type": "buttonEdge"
-            },
-            {
-              "id": "reactflow__edge-Answer:SocialAdsWonderb-Retrieval:BrownStreetsRhymec",
-              "markerEnd": "logo",
-              "source": "Answer:SocialAdsWonder",
-              "sourceHandle": "b",
-              "style": {
-                "stroke": "rgb(202 197 245)",
-                "strokeWidth": 2
-              },
-              "target": "Retrieval:BrownStreetsRhyme",
-              "targetHandle": "c",
-              "type": "buttonEdge"
-            },
-            {
-              "id": "reactflow__edge-Answer:SocialAdsWonderb-Retrieval:OddSingersRefusec",
-              "markerEnd": "logo",
-              "source": "Answer:SocialAdsWonder",
-              "sourceHandle": "b",
-              "style": {
-                "stroke": "rgb(202 197 245)",
-                "strokeWidth": 2
-              },
-              "target": "Retrieval:OddSingersRefuse",
-              "targetHandle": "c",
-              "type": "buttonEdge"
-            },
-            {
-              "id": "reactflow__edge-Retrieval:SillyPartsCheerb-Generate:CuteSidesBuyb",
-              "markerEnd": "logo",
-              "source": "Retrieval:SillyPartsCheer",
-              "sourceHandle": "b",
-              "style": {
-                "stroke": "rgb(202 197 245)",
-                "strokeWidth": 2
-              },
-              "target": "Generate:CuteSidesBuy",
-              "targetHandle": "b",
-              "type": "buttonEdge"
-            },
-            {
-              "id": "reactflow__edge-Retrieval:BrownStreetsRhymeb-Generate:CuteSidesBuyb",
-              "markerEnd": "logo",
-              "source": "Retrieval:BrownStreetsRhyme",
-              "sourceHandle": "b",
-              "style": {
-                "stroke": "rgb(202 197 245)",
-                "strokeWidth": 2
-              },
-              "target": "Generate:CuteSidesBuy",
-              "targetHandle": "b",
-              "type": "buttonEdge"
-            },
-            {
-              "id": "reactflow__edge-Retrieval:OddSingersRefuseb-Generate:CuteSidesBuyb",
-              "markerEnd": "logo",
-              "source": "Retrieval:OddSingersRefuse",
-              "sourceHandle": "b",
-              "style": {
-                "stroke": "rgb(202 197 245)",
-                "strokeWidth": 2
-              },
-              "target": "Generate:CuteSidesBuy",
-              "targetHandle": "b",
-              "type": "buttonEdge"
-            },
-            {
-              "id": "xy-edge__Generate:CuteSidesBuyc-ExeSQL:QuietRosesRunb",
-              "markerEnd": "logo",
-              "source": "Generate:CuteSidesBuy",
-              "sourceHandle": "c",
-              "style": {
-                "stroke": "rgb(202 197 245)",
-                "strokeWidth": 2
-              },
-              "target": "ExeSQL:QuietRosesRun",
-              "targetHandle": "b",
-              "type": "buttonEdge",
-              "zIndex": 1001
-            },
-            {
-              "id": "xy-edge__ExeSQL:QuietRosesRunc-Answer:SocialAdsWonderc",
-              "markerEnd": "logo",
-              "source": "ExeSQL:QuietRosesRun",
-              "sourceHandle": "c",
-              "style": {
-                "stroke": "rgb(202 197 245)",
-                "strokeWidth": 2
-              },
-              "target": "Answer:SocialAdsWonder",
-              "targetHandle": "c",
-              "type": "buttonEdge",
-              "zIndex": 1001
-            }
-          ],
-          "nodes": [
-            {
-              "data": {
-                "label": "Begin",
-                "name": "begin"
-              },
-              "dragging": false,
-              "height": 44,
-              "id": "begin",
-              "measured": {
-                "height": 44,
-                "width": 200
-              },
-              "position": {
-                "x": -707.997699967585,
-                "y": 271.71609546793474
-              },
-              "positionAbsolute": {
-                "x": -707.997699967585,
-                "y": 271.71609546793474
-              },
-              "selected": false,
-              "sourcePosition": "left",
-              "targetPosition": "right",
-              "type": "beginNode",
-              "width": 200
-            },
-            {
-              "data": {
-                "form": {},
-                "label": "Answer",
-                "name": "Interface"
-              },
-              "dragging": false,
-              "height": 44,
-              "id": "Answer:SocialAdsWonder",
-              "measured": {
-                "height": 44,
-                "width": 200
-              },
-              "position": {
-                "x": -58.36886074370702,
-                "y": 272.1213623212045
-              },
-              "positionAbsolute": {
-                "x": -58.36886074370702,
-                "y": 272.1213623212045
-              },
-              "selected": false,
-              "sourcePosition": "right",
-              "targetPosition": "left",
-              "type": "logicNode",
-              "width": 200
-            },
-            {
-              "data": {
-                "form": {
-                  "text": "The large model modifies the original SQL statement based on the error message and returns the modified SQL statement."
-                },
-                "label": "Note",
-                "name": "N: Fix SQL Statement"
-              },
-              "dragging": false,
-              "height": 172,
-              "id": "Note:SevenDancersMarry",
-              "measured": {
-                "height": 172,
-                "width": 228
-              },
-              "position": {
-                "x": -62.91736862436424,
-                "y": 93.08952291375991
-              },
-              "positionAbsolute": {
-                "x": -62.91736862436424,
-                "y": 93.08952291375991
-              },
-              "resizing": false,
-              "selected": false,
-              "sourcePosition": "right",
-              "style": {
-                "height": 172,
-                "width": 228
-              },
-              "targetPosition": "left",
-              "type": "noteNode",
-              "width": 228
-            },
-            {
-              "data": {
-                "form": {
-                  "cite": false,
-                  "frequencyPenaltyEnabled": true,
-                  "frequency_penalty": 0.7,
-                  "llm_id": "deepseek-chat@DeepSeek",
-                  "maxTokensEnabled": true,
-                  "max_tokens": 512,
-                  "message_history_window_size": 1,
-                  "parameter": "Precise",
-                  "parameters": [
-                    {
-                      "component_id": "Retrieval:SillyPartsCheer",
-                      "id": "2a77e574-a0a6-4a1a-af39-cb192f1d21f5",
-                      "key": "ddl_input"
-                    },
-                    {
-                      "component_id": "Retrieval:OddSingersRefuse",
-                      "id": "83941a85-0b59-408e-97e5-504964b0e090",
-                      "key": "db_input"
-                    },
-                    {
-                      "component_id": "Retrieval:BrownStreetsRhyme",
-                      "id": "c63d0ae6-7ee2-44a2-8a95-69d03c90cb44",
-                      "key": "sql_input"
-                    }
-                  ],
-                  "presencePenaltyEnabled": true,
-                  "presence_penalty": 0.4,
-                  "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {ddl_input}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {db_input}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {sql_input}.\n\n##Respond with only SQL code. Do not answer with any explanations -- just the code.",
-                  "temperature": 0.1,
-                  "temperatureEnabled": true,
-                  "topPEnabled": true,
-                  "top_p": 0.3
-                },
-                "label": "Generate",
-                "name": "Generate SQL Statement LLM"
-              },
-              "dragging": false,
-              "height": 232,
-              "id": "Generate:CuteSidesBuy",
-              "measured": {
-                "height": 232,
-                "width": 200
-              },
-              "position": {
-                "x": 191.98081287844155,
-                "y": -255.36496490928363
-              },
-              "positionAbsolute": {
-                "x": 191.98081287844155,
-                "y": -255.36496490928363
-              },
-              "selected": false,
-              "sourcePosition": "right",
-              "targetPosition": "left",
-              "type": "generateNode",
-              "width": 200
-            },
-            {
-              "data": {
-                "form": {
-                  "empty_response": "Nothing found in DDL!",
-                  "kb_ids": [],
-                  "keywords_similarity_weight": 0.1,
-                  "query": [
-                    {
-                      "component_id": "Answer:SocialAdsWonder",
-                      "type": "reference"
-                    }
-                  ],
-                  "similarity_threshold": 0.02,
-                  "top_n": 18
-                },
-                "label": "Retrieval",
-                "name": "DDL"
-              },
-              "dragging": false,
-              "height": 106,
-              "id": "Retrieval:SillyPartsCheer",
-              "measured": {
-                "height": 106,
-                "width": 200
-              },
-              "position": {
-                "x": 198.3020069445181,
-                "y": -0.9595420072386389
-              },
-              "positionAbsolute": {
-                "x": 198.3020069445181,
-                "y": -0.9595420072386389
-              },
-              "selected": false,
-              "sourcePosition": "right",
-              "targetPosition": "left",
-              "type": "retrievalNode",
-              "width": 200
-            },
-            {
-              "data": {
-                "form": {
-                  "empty_response": "Nothing found in Q->SQL!",
-                  "kb_ids": [],
-                  "keywords_similarity_weight": 0.3,
-                  "query": [
-                    {
-                      "component_id": "Answer:SocialAdsWonder",
-                      "type": "reference"
-                    }
-                  ],
-                  "similarity_threshold": 0.2,
-                  "top_n": 8
-                },
-                "label": "Retrieval",
-                "name": "Q->SQL"
-              },
-              "dragging": false,
-              "height": 106,
-              "id": "Retrieval:BrownStreetsRhyme",
-              "measured": {
-                "height": 106,
-                "width": 200
-              },
-              "position": {
-                "x": 231.17453176754782,
-                "y": 123.02661106951555
-              },
-              "positionAbsolute": {
-                "x": 231.17453176754782,
-                "y": 123.02661106951555
-              },
-              "selected": false,
-              "sourcePosition": "right",
-              "targetPosition": "left",
-              "type": "retrievalNode",
-              "width": 200
-            },
-            {
-              "data": {
-                "form": {
-                  "empty_response": "Nothing found in DB-Description!",
-                  "kb_ids": [],
-                  "keywords_similarity_weight": 0.3,
-                  "query": [
-                    {
-                      "component_id": "Answer:SocialAdsWonder",
-                      "type": "reference"
-                    }
-                  ],
-                  "similarity_threshold": 0.2,
-                  "top_n": 8
-                },
-                "label": "Retrieval",
-                "name": "DB Description"
-              },
-              "dragging": false,
-              "height": 106,
-              "id": "Retrieval:OddSingersRefuse",
-              "measured": {
-                "height": 106,
-                "width": 200
-              },
-              "position": {
-                "x": 267.7575479510707,
-                "y": 249.15603226400776
-              },
-              "positionAbsolute": {
-                "x": 267.7575479510707,
-                "y": 249.15603226400776
-              },
-              "selected": false,
-              "sourcePosition": "right",
-              "targetPosition": "left",
-              "type": "retrievalNode",
-              "width": 200
-            },
-            {
-              "data": {
-                "form": {
-                  "text": "Based on the result of the SQL execution, returns the error message to the large model if any errors occur; otherwise, returns the result to the user."
-                },
-                "label": "Note",
-                "name": "N: Analyze SQL"
-              },
-              "dragHandle": ".note-drag-handle",
-              "dragging": false,
-              "height": 176,
-              "id": "Note:HeavyIconsFollow",
-              "measured": {
-                "height": 176,
-                "width": 266
-              },
-              "position": {
-                "x": -626.6563777191027,
-                "y": -48.82220889683933
-              },
-              "positionAbsolute": {
-                "x": -626.6563777191027,
-                "y": -48.82220889683933
-              },
-              "resizing": false,
-              "selected": false,
-              "sourcePosition": "right",
-              "style": {
-                "height": 176,
-                "width": 266
-              },
-              "targetPosition": "left",
-              "type": "noteNode",
-              "width": 266
-            },
-            {
-              "data": {
-                "form": {
-                  "text": "Receives the user's database-related questions and displays the large model's response."
-                },
-                "label": "Note",
-                "name": "N: Interface"
-              },
-              "dragHandle": ".note-drag-handle",
-              "dragging": false,
-              "height": 162,
-              "id": "Note:PinkTaxesClean",
-              "measured": {
-                "height": 162,
-                "width": 210
-              },
-              "position": {
-                "x": -52.004609812312424,
-                "y": 336.95180237635077
-              },
-              "positionAbsolute": {
-                "x": -52.004609812312424,
-                "y": 336.95180237635077
-              },
-              "resizing": false,
-              "selected": false,
-              "sourcePosition": "right",
-              "style": {
-                "height": 162,
-                "width": 210
-              },
-              "targetPosition": "left",
-              "type": "noteNode",
-              "width": 210
-            },
-            {
-              "data": {
-                "form": {
-                  "text": "Searches for description about meanings of  tables and fields."
-                },
-                "label": "Note",
-                "name": "N:DB Description"
-              },
-              "dragHandle": ".note-drag-handle",
-              "dragging": false,
-              "height": 128,
-              "id": "Note:IcyTreesPeel",
-              "measured": {
-                "height": 128,
-                "width": 251
-              },
-              "position": {
-                "x": 280.8431980571563,
-                "y": 394.1463067004627
-              },
-              "positionAbsolute": {
-                "x": 280.8431980571563,
-                "y": 394.1463067004627
-              },
-              "resizing": false,
-              "selected": false,
-              "sourcePosition": "right",
-              "style": {
-                "height": 128,
-                "width": 251
-              },
-              "targetPosition": "left",
-              "type": "noteNode",
-              "width": 251
-            },
-            {
-              "data": {
-                "form": {
-                  "text": "Searches for samples about question to SQL.\nPlease check this dataset: https://huggingface.co/datasets/InfiniFlow/text2sql"
-                },
-                "label": "Note",
-                "name": "N: Q->SQL"
-              },
-              "dragHandle": ".note-drag-handle",
-              "dragging": false,
-              "height": 131,
-              "id": "Note:HugeGroupsScream",
-              "measured": {
-                "height": 131,
-                "width": 387
-              },
-              "position": {
-                "x": 606.1206536213404,
-                "y": 113.09441734894426
-              },
-              "positionAbsolute": {
-                "x": 606.1206536213404,
-                "y": 113.09441734894426
-              },
-              "resizing": false,
-              "selected": false,
-              "sourcePosition": "right",
-              "style": {
-                "height": 131,
-                "width": 387
-              },
-              "targetPosition": "left",
-              "type": "noteNode",
-              "width": 387
-            },
-            {
-              "data": {
-                "form": {
-                  "text": "DDL(Data Definition Language).\n\nSearches for relevant database creation statements.\n\nIt should bind with a KB to which DDL is dumped in.\nYou could use  'General' as parsing method and ';' as delimiter."
-                },
-                "label": "Note",
-                "name": "N: DDL"
-              },
-              "dragHandle": ".note-drag-handle",
-              "dragging": false,
-              "height": 266,
-              "id": "Note:GreenCrewsArrive",
-              "measured": {
-                "height": 266,
-                "width": 266
-              },
-              "position": {
-                "x": 545.3423934788841,
-                "y": -166.58872868890683
-              },
-              "positionAbsolute": {
-                "x": 545.3423934788841,
-                "y": -166.58872868890683
-              },
-              "resizing": false,
-              "selected": false,
-              "sourcePosition": "right",
-              "style": {
-                "height": 266,
-                "width": 266
-              },
-              "targetPosition": "left",
-              "type": "noteNode",
-              "width": 266
-            },
-            {
-              "data": {
-                "form": {
-                  "text": "The large model learns which tables may be available based on the responses from three knowledge bases and converts the user's input into SQL statements."
-                },
-                "label": "Note",
-                "name": "N: Generate SQL"
-              },
-              "dragHandle": ".note-drag-handle",
-              "dragging": false,
-              "height": 175,
-              "id": "Note:EightTurtlesLike",
-              "measured": {
-                "height": 175,
-                "width": 265
-              },
-              "position": {
-                "x": 222.2150747084395,
-                "y": -445.32694170868734
-              },
-              "positionAbsolute": {
-                "x": 222.2150747084395,
-                "y": -445.32694170868734
-              },
-              "resizing": false,
-              "selected": false,
-              "sourcePosition": "right",
-              "style": {
-                "height": 175,
-                "width": 265
-              },
-              "targetPosition": "left",
-              "type": "noteNode",
-              "width": 265
-            },
-            {
-              "data": {
-                "form": {
-                  "text": "Executes the SQL statement in the database and returns the result.\n\nAfter configuring  an accessible database, press 'Test' to  ensure the accessibility."
-                },
-                "label": "Note",
-                "name": "N: Execute SQL"
-              },
-              "dragHandle": ".note-drag-handle",
-              "dragging": false,
-              "height": 178,
-              "id": "Note:FreshKidsTalk",
-              "measured": {
-                "height": 178,
-                "width": 346
-              },
-              "position": {
-                "x": -293.35258272850365,
-                "y": -206.3839921107096
-              },
-              "positionAbsolute": {
-                "x": -251.5866574377311,
-                "y": -372.2192837064241
-              },
-              "resizing": false,
-              "selected": true,
-              "sourcePosition": "right",
-              "style": {
-                "height": 178,
-                "width": 346
-              },
-              "targetPosition": "left",
-              "type": "noteNode",
-              "width": 346
-            },
-            {
-              "data": {
-                "form": {
-                  "database": "",
-                  "db_type": "mysql",
-                  "frequencyPenaltyEnabled": true,
-                  "frequency_penalty": 0.7,
-                  "host": "",
-                  "llm_id": "deepseek-chat@DeepSeek",
-                  "loop": 3,
-                  "maxTokensEnabled": true,
-                  "max_tokens": 512,
-                  "password": "",
-                  "port": 6630,
-                  "presencePenaltyEnabled": true,
-                  "presence_penalty": 0.4,
-                  "query": [],
-                  "temperature": 0.1,
-                  "temperatureEnabled": true,
-                  "topPEnabled": true,
-                  "top_n": 30,
-                  "top_p": 0.3,
-                  "username": "root"
-                },
-                "label": "ExeSQL",
-                "name": "ExeSQL_0"
-              },
-              "dragging": false,
-              "id": "ExeSQL:QuietRosesRun",
-              "measured": {
-                "height": 64,
-                "width": 200
-              },
-              "position": {
-                "x": -318.61920731731163,
-                "y": 3.5145731711609436
-              },
-              "selected": false,
-              "sourcePosition": "right",
-              "targetPosition": "left",
-              "type": "ragNode"
-            }
-          ]
-        },
-        "history": [],
-        "messages": [],
-        "path": [],
-        "reference": []
+        "upstream": [
+          "Generate:BlueShirtsLaugh"
+        ]
       },
+      "Generate:BlueShirtsLaugh": {
+        "downstream": [
+          "ExeSQL:QuietRosesRun",
+          "Retrieval:SillyPartsCheer",
+          "Retrieval:BrownStreetsRhyme",
+          "Retrieval:OddSingersRefuse"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "params": {
+            "cite": false,
+            "frequency_penalty": 0.7,
+            "llm_id": "deepseek-chat@DeepSeek",
+            "message_history_window_size": 1,
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:SillyPartsCheer}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:OddSingersRefuse}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:BrownStreetsRhyme}.\n\n##Respond with only SQL code. Do not answer with any explanations -- just the code.",
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": []
+      },
+      "Retrieval:BrownStreetsRhyme": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Retrieval",
+          "inputs": [],
+          "output": {},
+          "params": {
+            "empty_response": "Nothing found in Q->SQL!",
+            "kb_ids": [],
+            "keywords_similarity_weight": 0.3,
+            "query": [
+              {
+                "component_id": "Answer:SocialAdsWonder",
+                "type": "reference"
+              }
+            ],
+            "similarity_threshold": 0.2,
+            "top_n": 8
+          }
+        },
+        "upstream": [
+          "RewriteQuestion:WildIdeasTell",
+          "Generate:BlueShirtsLaugh"
+        ]
+      },
+      "Retrieval:OddSingersRefuse": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Retrieval",
+          "inputs": [],
+          "output": {},
+          "params": {
+            "empty_response": "Nothing found in DB-Description!",
+            "kb_ids": [],
+            "keywords_similarity_weight": 0.3,
+            "query": [
+              {
+                "component_id": "Answer:SocialAdsWonder",
+                "type": "reference"
+              }
+            ],
+            "similarity_threshold": 0.2,
+            "top_n": 8
+          }
+        },
+        "upstream": [
+          "RewriteQuestion:WildIdeasTell",
+          "Generate:BlueShirtsLaugh"
+        ]
+      },
+      "Retrieval:SillyPartsCheer": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Retrieval",
+          "inputs": [],
+          "output": {},
+          "params": {
+            "empty_response": "Nothing found in DDL!",
+            "kb_ids": [],
+            "keywords_similarity_weight": 0.1,
+            "query": [
+              {
+                "component_id": "Answer:SocialAdsWonder",
+                "type": "reference"
+              }
+            ],
+            "similarity_threshold": 0.02,
+            "top_n": 18
+          }
+        },
+        "upstream": [
+          "RewriteQuestion:WildIdeasTell",
+          "Generate:BlueShirtsLaugh"
+        ]
+      },
+      "RewriteQuestion:WildIdeasTell": {
+        "downstream": [
+          "Retrieval:OddSingersRefuse",
+          "Retrieval:BrownStreetsRhyme",
+          "Retrieval:SillyPartsCheer"
+        ],
+        "obj": {
+          "component_name": "RewriteQuestion",
+          "params": {
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "deepseek-chat@DeepSeek",
+            "maxTokensEnabled": true,
+            "max_tokens": 256,
+            "message_history_window_size": 6,
+            "parameter": "Precise",
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Answer:SocialAdsWonder"
+        ]
+      },
+      "begin": {
+        "downstream": [
+          "Answer:SocialAdsWonder"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "inputs": [],
+          "output": {
+            "content": {
+              "0": {
+                "content": "Hi! I'm your smart assistant. What can I do for you?"
+              }
+            }
+          },
+          "params": {}
+        },
+        "upstream": []
+      }
+    },
+    "embed_id": "BAAI/bge-large-zh-v1.5",
+    "graph": {
+      "edges": [
+        {
+          "id": "xy-edge__ExeSQL:QuietRosesRunc-Answer:SocialAdsWonderc",
+          "markerEnd": "logo",
+          "source": "ExeSQL:QuietRosesRun",
+          "sourceHandle": "c",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:SocialAdsWonder",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__begin-Answer:SocialAdsWonderc",
+          "markerEnd": "logo",
+          "source": "begin",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:SocialAdsWonder",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Answer:SocialAdsWonderb-RewriteQuestion:WildIdeasTellc",
+          "markerEnd": "logo",
+          "source": "Answer:SocialAdsWonder",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "RewriteQuestion:WildIdeasTell",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__RewriteQuestion:WildIdeasTellb-Retrieval:OddSingersRefusec",
+          "markerEnd": "logo",
+          "source": "RewriteQuestion:WildIdeasTell",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:OddSingersRefuse",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__RewriteQuestion:WildIdeasTellb-Retrieval:BrownStreetsRhymec",
+          "markerEnd": "logo",
+          "source": "RewriteQuestion:WildIdeasTell",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:BrownStreetsRhyme",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__RewriteQuestion:WildIdeasTellb-Retrieval:SillyPartsCheerc",
+          "markerEnd": "logo",
+          "source": "RewriteQuestion:WildIdeasTell",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:SillyPartsCheer",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:BlueShirtsLaughc-ExeSQL:QuietRosesRunb",
+          "markerEnd": "logo",
+          "source": "Generate:BlueShirtsLaugh",
+          "sourceHandle": "c",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "ExeSQL:QuietRosesRun",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:BlueShirtsLaughb-Retrieval:SillyPartsCheerb",
+          "markerEnd": "logo",
+          "source": "Generate:BlueShirtsLaugh",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:SillyPartsCheer",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:BlueShirtsLaughb-Retrieval:BrownStreetsRhymeb",
+          "markerEnd": "logo",
+          "source": "Generate:BlueShirtsLaugh",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:BrownStreetsRhyme",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:BlueShirtsLaughb-Retrieval:OddSingersRefuseb",
+          "markerEnd": "logo",
+          "source": "Generate:BlueShirtsLaugh",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:OddSingersRefuse",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        }
+      ],
+      "nodes": [
+        {
+          "data": {
+            "label": "Begin",
+            "name": "begin"
+          },
+          "dragging": false,
+          "height": 44,
+          "id": "begin",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -707.997699967585,
+            "y": 271.71609546793474
+          },
+          "positionAbsolute": {
+            "x": -707.997699967585,
+            "y": 271.71609546793474
+          },
+          "selected": false,
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "beginNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {},
+            "label": "Answer",
+            "name": "Interface"
+          },
+          "dragging": false,
+          "height": 44,
+          "id": "Answer:SocialAdsWonder",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -265.59460323639587,
+            "y": 271.1879130306969
+          },
+          "positionAbsolute": {
+            "x": -58.36886074370702,
+            "y": 272.1213623212045
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
+              "empty_response": "Nothing found in DDL!",
+              "kb_ids": [],
+              "keywords_similarity_weight": 0.1,
+              "query": [
+                {
+                  "component_id": "Answer:SocialAdsWonder",
+                  "type": "reference"
+                }
+              ],
+              "similarity_threshold": 0.02,
+              "top_n": 18
+            },
+            "label": "Retrieval",
+            "name": "DDL"
+          },
+          "dragging": false,
+          "height": 106,
+          "id": "Retrieval:SillyPartsCheer",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "position": {
+            "x": 194.69889765569846,
+            "y": 61.49435233230193
+          },
+          "positionAbsolute": {
+            "x": 198.3020069445181,
+            "y": -0.9595420072386389
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "retrievalNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
+              "empty_response": "Nothing found in Q->SQL!",
+              "kb_ids": [],
+              "keywords_similarity_weight": 0.3,
+              "query": [
+                {
+                  "component_id": "Answer:SocialAdsWonder",
+                  "type": "reference"
+                }
+              ],
+              "similarity_threshold": 0.2,
+              "top_n": 8
+            },
+            "label": "Retrieval",
+            "name": "Q->SQL"
+          },
+          "dragging": false,
+          "height": 106,
+          "id": "Retrieval:BrownStreetsRhyme",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "position": {
+            "x": 240.78282320440022,
+            "y": 162.66081324653166
+          },
+          "positionAbsolute": {
+            "x": 231.17453176754782,
+            "y": 123.02661106951555
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "retrievalNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
+              "empty_response": "Nothing found in DB-Description!",
+              "kb_ids": [],
+              "keywords_similarity_weight": 0.3,
+              "query": [
+                {
+                  "component_id": "Answer:SocialAdsWonder",
+                  "type": "reference"
+                }
+              ],
+              "similarity_threshold": 0.2,
+              "top_n": 8
+            },
+            "label": "Retrieval",
+            "name": "DB Description"
+          },
+          "dragging": false,
+          "height": 106,
+          "id": "Retrieval:OddSingersRefuse",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "position": {
+            "x": 284.5720579655624,
+            "y": 246.75395940479467
+          },
+          "positionAbsolute": {
+            "x": 267.7575479510707,
+            "y": 249.15603226400776
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "retrievalNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Based on the result of the SQL execution, returns the error message to the large model if any errors occur; otherwise, returns the result to the user."
+            },
+            "label": "Note",
+            "name": "N: Analyze SQL"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 165,
+          "id": "Note:HeavyIconsFollow",
+          "measured": {
+            "height": 165,
+            "width": 347
+          },
+          "position": {
+            "x": -709.8631299685773,
+            "y": 96.50319908555313
+          },
+          "positionAbsolute": {
+            "x": -626.6563777191027,
+            "y": -48.82220889683933
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
+            "height": 176,
+            "width": 266
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 347
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Receives the user's database-related questions and displays the large model's response."
+            },
+            "label": "Note",
+            "name": "N: Interface"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 159,
+          "id": "Note:PinkTaxesClean",
+          "measured": {
+            "height": 159,
+            "width": 259
+          },
+          "position": {
+            "x": -253.39933811515345,
+            "y": 353.7538896054877
+          },
+          "positionAbsolute": {
+            "x": -52.004609812312424,
+            "y": 336.95180237635077
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
+            "height": 162,
+            "width": 210
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 259
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Searches for description about meanings of  tables and fields."
+            },
+            "label": "Note",
+            "name": "N:DB Description"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 128,
+          "id": "Note:IcyTreesPeel",
+          "measured": {
+            "height": 128,
+            "width": 251
+          },
+          "position": {
+            "x": 280.8431980571563,
+            "y": 394.1463067004627
+          },
+          "positionAbsolute": {
+            "x": 280.8431980571563,
+            "y": 394.1463067004627
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
+            "height": 128,
+            "width": 251
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 251
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Searches for samples about question to SQL.\nPlease check this dataset: https://huggingface.co/datasets/InfiniFlow/text2sql"
+            },
+            "label": "Note",
+            "name": "N: Q->SQL"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 143,
+          "id": "Note:HugeGroupsScream",
+          "measured": {
+            "height": 143,
+            "width": 390
+          },
+          "position": {
+            "x": 612.8793199038756,
+            "y": 169.1868576959871
+          },
+          "positionAbsolute": {
+            "x": 606.1206536213404,
+            "y": 113.09441734894426
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
+            "height": 131,
+            "width": 387
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 390
+        },
+        {
+          "data": {
+            "form": {
+              "text": "DDL(Data Definition Language).\n\nSearches for relevant database creation statements.\n\nIt should bind with a KB to which DDL is dumped in.\nYou could use  'General' as parsing method and ';' as delimiter."
+            },
+            "label": "Note",
+            "name": "N: DDL"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 208,
+          "id": "Note:GreenCrewsArrive",
+          "measured": {
+            "height": 208,
+            "width": 467
+          },
+          "position": {
+            "x": 649.3481710005742,
+            "y": -87.70873445087781
+          },
+          "positionAbsolute": {
+            "x": 545.3423934788841,
+            "y": -166.58872868890683
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
+            "height": 266,
+            "width": 266
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 467
+        },
+        {
+          "data": {
+            "form": {
+              "text": "The large model learns which tables may be available based on the responses from three knowledge bases and converts the user's input into SQL statements."
+            },
+            "label": "Note",
+            "name": "N: Generate SQL"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 196,
+          "id": "Note:EightTurtlesLike",
+          "measured": {
+            "height": 196,
+            "width": 341
+          },
+          "position": {
+            "x": 134.0070839275931,
+            "y": -345.41228234051727
+          },
+          "positionAbsolute": {
+            "x": 222.2150747084395,
+            "y": -445.32694170868734
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
+            "height": 175,
+            "width": 265
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 341
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Executes the SQL statement in the database and returns the result.\n\nAfter configuring  an accessible database, press 'Test' to  ensure the accessibility.\n\nThe large model modifies the original SQL statement based on the error message and returns the modified SQL statement."
+            },
+            "label": "Note",
+            "name": "N: Execute SQL"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 276,
+          "id": "Note:FreshKidsTalk",
+          "measured": {
+            "height": 276,
+            "width": 336
+          },
+          "position": {
+            "x": -304.3577648765364,
+            "y": -288.054469323955
+          },
+          "positionAbsolute": {
+            "x": -251.5866574377311,
+            "y": -372.2192837064241
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
+            "height": 178,
+            "width": 346
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 336
+        },
+        {
+          "data": {
+            "form": {
+              "database": "",
+              "db_type": "mysql",
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "host": "",
+              "llm_id": "deepseek-chat@DeepSeek",
+              "loop": 3,
+              "maxTokensEnabled": true,
+              "max_tokens": 512,
+              "password": "",
+              "port": 6630,
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "query": [],
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_n": 30,
+              "top_p": 0.3,
+              "username": "root"
+            },
+            "label": "ExeSQL",
+            "name": "ExeSQL"
+          },
+          "dragging": false,
+          "id": "ExeSQL:QuietRosesRun",
+          "measured": {
+            "height": 64,
+            "width": 200
+          },
+          "position": {
+            "x": -318.61920731731163,
+            "y": 3.5145731711609436
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "ragNode"
+        },
+        {
+          "data": {
+            "form": {
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 6,
+              "parameter": "Precise",
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "RewriteQuestion",
+            "name": "RefineQuestion"
+          },
+          "dragging": false,
+          "id": "RewriteQuestion:WildIdeasTell",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "position": {
+            "x": -7.734116293705583,
+            "y": 236.92372325779243
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "rewriteNode"
+        },
+        {
+          "data": {
+            "form": {
+              "cite": false,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": false,
+              "max_tokens": 256,
+              "message_history_window_size": 1,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:SillyPartsCheer}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:OddSingersRefuse}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:BrownStreetsRhyme}.\n\n##Respond with only SQL code. Do not answer with any explanations -- just the code.",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "Generate",
+            "name": "Generate SQL Statement LLM"
+          },
+          "dragging": false,
+          "id": "Generate:BlueShirtsLaugh",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "position": {
+            "x": 147.62383788095065,
+            "y": -116.47462293167156
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
+        }
+      ]
+    },
+    "history": [],
+    "messages": [],
+    "path": [],
+    "reference": []
+  },
   "avatar": "data:image/png;base64,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"
 }
