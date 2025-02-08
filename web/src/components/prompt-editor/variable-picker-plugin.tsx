@@ -33,6 +33,7 @@ import { FlowFormContext } from '@/pages/flow/context';
 import { useBuildComponentIdSelectOptions } from '@/pages/flow/hooks/use-get-begin-query';
 import { $createVariableNode } from './variable-node';
 
+import { ProgrammaticTag } from './constant';
 import './index.css';
 class VariableInnerOption extends MenuOption {
   label: string;
@@ -215,9 +216,12 @@ export default function VariablePickerMenuPlugin({
   useEffect(() => {
     if (editor && value && isFirstRender.current) {
       isFirstRender.current = false;
-      editor.update(() => {
-        parseTextToVariableNodes(value);
-      });
+      editor.update(
+        () => {
+          parseTextToVariableNodes(value);
+        },
+        { tag: ProgrammaticTag },
+      );
     }
   }, [parseTextToVariableNodes, editor, value]);
 

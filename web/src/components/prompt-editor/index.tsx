@@ -1,13 +1,10 @@
 import { CodeHighlightNode, CodeNode } from '@lexical/code';
-import { AutoFocusPlugin } from '@lexical/react/LexicalAutoFocusPlugin';
 import {
   InitialConfigType,
   LexicalComposer,
 } from '@lexical/react/LexicalComposer';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
-import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
-import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { HeadingNode, QuoteNode } from '@lexical/rich-text';
 import {
@@ -18,9 +15,11 @@ import {
   LexicalNode,
 } from 'lexical';
 
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import theme from './theme';
 import { VariableNode } from './variable-node';
+import { VariableOnChangePlugin } from './variable-on-change-plugin';
 import VariablePickerMenuPlugin from './variable-picker-plugin';
 
 // Catch any errors that occur during Lexical updates and log them
@@ -52,16 +51,20 @@ export function PromptEditor({ value, onChange }: IProps) {
     nodes: Nodes,
   };
 
-  function onValueChange(editorState: EditorState) {
-    editorState?.read(() => {
-      const listNodes = $nodesOfType(VariableNode); // to be removed
-      // const allNodes = $dfs();
-      console.log('🚀 ~ onChange ~ allNodes:', listNodes);
+  const onValueChange = useCallback(
+    (editorState: EditorState) => {
+      editorState?.read(() => {
+        const listNodes = $nodesOfType(VariableNode); // to be removed
+        // const allNodes = $dfs();
+        console.log('🚀 ~ onChange ~ allNodes:', listNodes);
 
-      const text = $getRoot().getTextContent();
-      onChange?.(text);
-    });
-  }
+        const text = $getRoot().getTextContent();
+
+        onChange?.(text);
+      });
+    },
+    [onChange],
+  );
 
   return (
     <LexicalComposer initialConfig={initialConfig}>
@@ -74,10 +77,8 @@ export function PromptEditor({ value, onChange }: IProps) {
         }
         ErrorBoundary={LexicalErrorBoundary}
       />
-      <HistoryPlugin />
-      <AutoFocusPlugin />
       <VariablePickerMenuPlugin value={value}></VariablePickerMenuPlugin>
-      <OnChangePlugin onChange={onValueChange}></OnChangePlugin>
+      <VariableOnChangePlugin onChange={onValueChange}></VariableOnChangePlugin>
     </LexicalComposer>
   );
 }
