@@ -24,6 +24,7 @@
     "@antv/g6": "^5.0.10",
     "@hookform/resolvers": "^3.9.1",
     "@js-preview/excel": "^1.7.8",
+    "@lexical/react": "^0.23.1",
     "@monaco-editor/react": "^4.6.0",
     "@radix-ui/react-alert-dialog": "^1.1.4",
     "@radix-ui/react-aspect-ratio": "^1.1.0",
@@ -68,6 +69,7 @@
     "input-otp": "^1.4.1",
     "js-base64": "^3.7.5",
     "jsencrypt": "^3.3.2",
+    "lexical": "^0.23.1",
     "lodash": "^4.17.21",
     "lucide-react": "^0.454.0",
     "mammoth": "^1.7.2",
@@ -128,6 +130,7 @@
     "react-dev-inspector": "^2.0.1",
     "remark-loader": "^6.0.0",
     "tailwindcss": "^3",
+    "terser-webpack-plugin": "^5.3.11",
     "ts-node": "^10.9.2",
     "typescript": "^5.0.3",
     "umi-plugin-icons": "^0.1.1"

@@ -57,6 +57,7 @@
     --colors-text-functional-danger: rgba(255, 81, 81, 1);
     --colors-text-inverse-strong: rgba(255, 255, 255, 1);
     --colors-text-persist-light: rgba(255, 255, 255, 1);
+    --colors-text-inverse-weak: rgba(184, 181, 203, 1);
   }
 
   .dark {
@@ -138,6 +139,7 @@
     --colors-text-functional-danger: rgba(255, 81, 81, 1);
     --colors-text-inverse-strong: rgba(17, 16, 23, 1);
     --colors-text-persist-light: rgba(255, 255, 255, 1);
+    --colors-text-inverse-weak: rgba(84, 80, 106, 1);
   }
 }
 

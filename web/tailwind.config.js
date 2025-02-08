@@ -38,6 +38,7 @@ module.exports = {
         'colors-text-functional-danger': 'var(--colors-text-functional-danger)',
         'colors-text-inverse-strong': 'var(--colors-text-inverse-strong)',
         'colors-text-persist-light': 'var(--colors-text-persist-light)',
+        'colors-text-inverse-weak': 'var(--colors-text-inverse-weak)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',

@@ -1,9 +1,9 @@
-import { Form, Input } from 'antd';
+import { PromptEditor } from '@/components/prompt-editor';
+import { Form } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { IOperatorForm } from '../../interface';
-import DynamicParameters from '../generate-form/dynamic-parameters';
 
-const TemplateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
+const TemplateForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslation();
 
   return (
@@ -15,10 +15,8 @@ const TemplateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       layout={'vertical'}
     >
       <Form.Item name={['content']} label={t('flow.content')}>
-        <Input.TextArea rows={8} placeholder={t('flow.blank')} />
+        <PromptEditor></PromptEditor>
       </Form.Item>
-
-      <DynamicParameters node={node}></DynamicParameters>
     </Form>
   );
 };
