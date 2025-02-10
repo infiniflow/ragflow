@@ -209,10 +209,11 @@ def add_llm():
     }
 
     msg = ""
+    mdl_nm = llm["llm_name"].split("___")[0]
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"])
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
@@ -223,7 +224,7 @@ def add_llm():
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
             key=llm['api_key'],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"]
         )
         try:
@@ -237,7 +238,7 @@ def add_llm():
     elif llm["model_type"] == LLMType.RERANK:
         mdl = RerankModel[factory](
             key=llm["api_key"],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"]
         )
         try:
@@ -250,7 +251,7 @@ def add_llm():
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         mdl = CvModel[factory](
             key=llm["api_key"],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"]
         )
         try:
@@ -262,7 +263,7 @@ def add_llm():
             msg += f"\nFail to access model({llm['llm_name']})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
         mdl = TTSModel[factory](
-            key=llm["api_key"], model_name=llm["llm_name"], base_url=llm["api_base"]
+            key=llm["api_key"], model_name=mdl_nm, base_url=llm["api_base"]
         )
         try:
             for resp in mdl.tts("Hello~ Ragflower!"):
