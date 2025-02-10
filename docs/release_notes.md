@@ -7,6 +7,42 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.16.0
+
+Released on February 6, 2025.
+
+### New features
+
+- Supports DeepSeek R1 and DeepSeek V3.
+- GraphRAG refactor: Knowledge graph is dynamically built on an entire knowledge base (dataset) rather than on an individual file, and automatically updated when files are added or removed.
+- Supports creating and referencing a **Tag** knowledge base as a key milestone towards bridging the semantic gap between query and response.
+- Adds an **Iteration** agent component and a **Research report generator** agent template.
+- New UI language: Portuguese.
+- Allows setting metadata for a file in a knowledge base to support AI-powered chats.
+- Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
+
+:::danger IMPORTANT
+The **Tag knowledge base** feature is *unavailable* on the [Infinity](https://github.com/infiniflow/infinity) document engine.
+:::
+
+### Documentation
+
+#### Added documents
+
+- [Begin component](https://ragflow.io/docs/dev/begin_component)
+- [Generate component](https://ragflow.io/docs/dev/generate_component)
+- [Interact component](https://ragflow.io/docs/dev/interact_component)
+- [Retrieval component](https://ragflow.io/docs/dev/retrieval_component)
+- [Categorize component](https://ragflow.io/docs/dev/categorize_component)
+- [Keyword component](https://ragflow.io/docs/dev/keyword_component)
+- [Message component](https://ragflow.io/docs/dev/message_component)
+- [Rewrite component](https://ragflow.io/docs/dev/rewrite_component)
+- [Switch component](https://ragflow.io/docs/dev/switch_component)
+- [Concentrator component](https://ragflow.io/docs/dev/concentrator_component)
+- [Template component](https://ragflow.io/docs/dev/template_component)
+- [Iteration component](https://ragflow.io/docs/dev/iteration_component)
+- [Note component](https://ragflow.io/docs/dev/note_component)
+
 ## v0.15.1
 
 Released on December 25, 2024.
