@@ -378,7 +378,7 @@ class DocumentService(CommonService):
     def update_progress(cls):
         MSG = {
             "raptor": "Start RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval).",
-            "graphrag": "Start Graph Extraction",
+            "graphrag": "Entities extraction progress",
             "graph_resolution": "Start Graph Resolution",
             "graph_community": "Start Graph Community Reports Generation"
         }
