@@ -46,7 +46,7 @@ You start an AI conversation by creating an assistant.
 4. Update **Model Setting**:
 
    - In **Model**: you select the chat model. Though you have selected the default chat model in **System Model Settings**, RAGFlow allows you to choose an alternative chat model for your dialogue.
-   - **Freedom** refers to the level that the LLM improvises. From **Improvise**, **Precise**, to **Balance**, each freedom level corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.
+   - **Preset configurations** refers to the level that the LLM improvises. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.
    - **Temperature**: Level of the prediction randomness of the LLM. The higher the value, the more creative the LLM is.
    - **Top P** is also known as "nucleus sampling". See [here](https://en.wikipedia.org/wiki/Top-p_sampling) for more information.
    - **Max Tokens**: The maximum length of the LLM's responses. Note that the responses may be curtailed if this value is set too low.
