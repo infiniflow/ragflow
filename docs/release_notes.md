@@ -15,11 +15,11 @@ Released on February 6, 2025.
 
 - Supports DeepSeek R1 and DeepSeek V3.
 - GraphRAG refactor: Knowledge graph is dynamically built on an entire knowledge base (dataset) rather than on an individual file, and automatically updated when files are added or removed.
-- Supports creating and referencing a **Tag** knowledge base as a key milestone towards bridging the semantic gap between query and response.
 - Adds an **Iteration** agent component and a **Research report generator** agent template.
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a knowledge base to support AI-powered chats.
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
+- Supports creating and referencing a **Tag** knowledge base as a key milestone towards bridging the semantic gap between query and response.
 
 :::danger IMPORTANT
 The **Tag knowledge base** feature is *unavailable* on the [Infinity](https://github.com/infiniflow/infinity) document engine.
