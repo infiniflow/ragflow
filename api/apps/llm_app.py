@@ -220,7 +220,7 @@ def add_llm():
             if len(arr[0]) == 0:
                 raise Exception("Fail")
         except Exception as e:
-            msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access embedding model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
             key=llm['api_key'],
@@ -233,7 +233,7 @@ def add_llm():
             if not tc:
                 raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(
+            msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
         mdl = RerankModel[factory](
@@ -246,7 +246,7 @@ def add_llm():
             if len(arr) == 0:
                 raise Exception("Not known.")
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(
+            msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         mdl = CvModel[factory](
@@ -260,7 +260,7 @@ def add_llm():
                 if not tc:
                     raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
         mdl = TTSModel[factory](
             key=llm["api_key"], model_name=mdl_nm, base_url=llm["api_base"]
@@ -269,7 +269,7 @@ def add_llm():
             for resp in mdl.tts("Hello~ Ragflower!"):
                 pass
         except RuntimeError as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access model({mdl_nm})." + str(e)
     else:
         # TODO: check other type of models
         pass
