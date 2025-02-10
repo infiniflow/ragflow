@@ -5,9 +5,6 @@
       "number_of_replicas": 0,
       "refresh_interval": "1000ms"
     },
-    "persistent" : {
-        "script.max_compilations_rate" : "200/10m"
-    },
     "similarity": {
       "scripted_sim": {
         "type": "scripted",
