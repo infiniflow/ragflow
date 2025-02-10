@@ -460,8 +460,7 @@
           "selected": false,
           "sourcePosition": "left",
           "targetPosition": "right",
-          "type": "beginNode",
-          "width": 100
+          "type": "beginNode"
         },
         {
           "data": {
