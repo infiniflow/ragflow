@@ -18,7 +18,7 @@ Released on February 6, 2025.
 - Supports creating and referencing a **Tag** knowledge base as a key milestone towards bridging the semantic gap between query and response.
 - Adds an **Iteration** agent component and a **Research report generator** agent template.
 - New UI language: Portuguese.
-- Allows setting metadata for a file in a knowledge base to support AI-powered chats.
+- Allows setting metadata for a specific file in a knowledge base to support AI-powered chats.
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
 
 :::danger IMPORTANT
