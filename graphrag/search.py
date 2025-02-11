@@ -244,11 +244,16 @@ class KGSearch(Dealer):
                 else:
                     continue
                 rel["description"] = rela["description"]
+            desc = rel["description"]
+            try:
+                desc = json.loads(desc).get("description", "")
+            except Exception:
+                pass
             relas.append({
                 "From Entity": f,
                 "To Entity": t,
                 "Score": "%.2f" % (rel["sim"] * rel["pagerank"]),
-                "Description": json.loads(rel["description"]).get("description", "")
+                "Description": desc
             })
             max_token -= num_tokens_from_string(str(relas[-1]))
             if max_token <= 0:
