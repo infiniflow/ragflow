@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IDialog } from '@/interfaces/database/chat';
 import { formatPureDate } from '@/utils/date';
 import { ChevronRight, Trash2 } from 'lucide-react';
@@ -10,6 +11,8 @@ interface IProps {
 }
 
 export function ChatCard({ data }: IProps) {
+  const { navigateToChat } = useNavigatePage();
+
   return (
     <Card className="bg-colors-background-inverse-weak  border-colors-outline-neutral-standard">
       <CardContent className="p-4">
@@ -36,7 +39,7 @@ export function ChatCard({ data }: IProps) {
             </p>
           </div>
           <div className="space-x-2">
-            <Button variant="icon" size="icon">
+            <Button variant="icon" size="icon" onClick={navigateToChat}>
               <ChevronRight className="h-6 w-6" />
             </Button>
             <Button variant="icon" size="icon">
