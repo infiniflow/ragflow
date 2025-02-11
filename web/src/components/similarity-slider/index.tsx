@@ -1,5 +1,14 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Slider } from 'antd';
+import { useFormContext } from 'react-hook-form';
+import {
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../ui/form';
+import { FormSlider } from '../ui/slider';
 
 type FieldType = {
   similarity_threshold?: number;
@@ -40,3 +49,30 @@ const SimilaritySlider = ({
 };
 
 export default SimilaritySlider;
+
+interface SimilaritySliderFormFieldProps {
+  name?: string;
+}
+
+export function SimilaritySliderFormField({
+  name = 'vector_similarity_weight',
+}: SimilaritySliderFormFieldProps) {
+  const form = useFormContext();
+  const { t } = useTranslate('knowledgeDetails');
+
+  return (
+    <FormField
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{t('vectorSimilarityWeight')}</FormLabel>
+          <FormControl>
+            <FormSlider {...field}></FormSlider>
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
