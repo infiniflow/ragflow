@@ -21,10 +21,20 @@ export const useNavigatePage = () => {
     navigate(Routes.ProfileSetting);
   }, [navigate]);
 
+  const navigateToChatList = useCallback(() => {
+    navigate(Routes.Chats);
+  }, [navigate]);
+
+  const navigateToChat = useCallback(() => {
+    navigate(Routes.Chat);
+  }, [navigate]);
+
   return {
     navigateToDatasetList,
     navigateToDataset,
     navigateToHome,
     navigateToProfile,
+    navigateToChatList,
+    navigateToChat,
   };
 };
