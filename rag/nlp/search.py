@@ -24,7 +24,7 @@ from rag.utils import rmSpace
 from rag.nlp import rag_tokenizer
 import numpy as np
 from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
-from ragflow.rag.nlp import query_old
+from ragflow.rag.nlp import query
 
 
 def index_name(uid): return f"ragflow_{uid}"
@@ -32,7 +32,7 @@ def index_name(uid): return f"ragflow_{uid}"
 
 class Dealer:
     def __init__(self, dataStore: DocStoreConnection):
-        self.qryr = query_old.FulltextQueryer()
+        self.qryr = query.FulltextQueryer()
         self.dataStore = dataStore
 
     @dataclass
