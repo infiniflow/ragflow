@@ -35,9 +35,9 @@ export function AppSettings() {
       <div className="text-2xl font-bold mb-4 text-colors-text-neutral-strong px-6">
         App settings
       </div>
-      <div className="overflow-auto max-h-[88vh] px-6 space-y-6">
+      <div className="overflow-auto max-h-[88vh] px-6 ">
         <FormProvider {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <ChatBasicSetting></ChatBasicSetting>
             <ChatPromptEngine></ChatPromptEngine>
             <ChatModelSettings></ChatModelSettings>
