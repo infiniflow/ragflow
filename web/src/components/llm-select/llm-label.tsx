@@ -1,6 +1,5 @@
-import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
-import { useMemo } from 'react';
+import { getLLMIconName, getLlmNameAndFIdByLlmId } from '@/utils/llm-util';
+import { LlmIcon } from '../svg-icon';
 
 interface IProps {
   id?: string;
@@ -10,22 +9,19 @@ interface IProps {
 }
 
 const LLMLabel = ({ value }: IProps) => {
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
-  ]);
+  const { llmName, fId } = getLlmNameAndFIdByLlmId(value);
 
-  const label = useMemo(() => {
-    for (const item of modelOptions) {
-      for (const option of item.options) {
-        if (option.value === value) {
-          return option.label;
-        }
-      }
-    }
-  }, [modelOptions, value]);
-
-  return <div>{label}</div>;
+  return (
+    <div className="flex items-center gap-1">
+      <LlmIcon
+        name={getLLMIconName(fId, llmName)}
+        width={20}
+        height={20}
+        size={'small'}
+      />
+      {llmName}
+    </div>
+  );
 };
 
 export default LLMLabel;
