@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FormProvider, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -35,7 +36,7 @@ export function AppSettings() {
       <div className="text-2xl font-bold mb-4 text-colors-text-neutral-strong px-6">
         App settings
       </div>
-      <div className="overflow-auto max-h-[88vh] px-6 ">
+      <div className="overflow-auto max-h-[81vh] px-6 ">
         <FormProvider {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <ChatBasicSetting></ChatBasicSetting>
@@ -43,6 +44,14 @@ export function AppSettings() {
             <ChatModelSettings></ChatModelSettings>
           </form>
         </FormProvider>
+      </div>
+      <div className="p-6 text-center">
+        <p className="text-colors-text-neutral-weak mb-1">
+          There are unsaved changes
+        </p>
+        <Button variant={'tertiary'} className="w-full">
+          Update
+        </Button>
       </div>
     </section>
   );
