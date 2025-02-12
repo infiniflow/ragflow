@@ -94,11 +94,11 @@ class GraphExtractor(Extractor):
             gen_conf = {"temperature": 0.8}
             final_result = self._chat(hint_prompt, [{"role": "user", "content": "Output:"}], gen_conf)
             token_count += num_tokens_from_string(hint_prompt + final_result)
-            history = pack_user_ass_to_openai_messages(hint_prompt, final_result, "Output: ")
+            history = pack_user_ass_to_openai_messages("Output:", final_result, self._continue_prompt)
             for now_glean_index in range(self._max_gleanings):
-                glean_result = self._chat(self._continue_prompt, history, gen_conf)
-                token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + glean_result + self._continue_prompt)
-                history += pack_user_ass_to_openai_messages(self._continue_prompt, glean_result, "Output: ")
+                glean_result = self._chat(hint_prompt, history, gen_conf)
+                history.extend([{"role": "assistant", "content": glean_result}, {"role": "user", "content": self._continue_prompt}])
+                token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + hint_prompt + self._continue_prompt)
                 final_result += glean_result
                 if now_glean_index == self._max_gleanings - 1:
                     break
