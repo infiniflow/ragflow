@@ -13,6 +13,7 @@ import {
 } from '@/interfaces/request/llm';
 import userService from '@/services/user-service';
 import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/common-util';
+import { getLLMIconName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Flex, message } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
@@ -52,14 +53,6 @@ export const useSelectLlmOptions = () => {
   }, [llmInfo]);
 
   return embeddingModelOptions;
-};
-
-const getLLMIconName = (fid: string, llm_name: string) => {
-  if (fid === 'FastEmbed') {
-    return llm_name.split('/').at(0) ?? '';
-  }
-
-  return fid;
 };
 
 export const useSelectLlmOptionsByModelType = () => {

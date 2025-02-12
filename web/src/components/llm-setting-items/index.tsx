@@ -54,7 +54,11 @@ const LlmSettingItems = ({ prefix, formItemLayout = {} }: IProps) => {
         {...formItemLayout}
         rules={[{ required: true, message: t('modelMessage') }]}
       >
-        <Select options={modelOptions} showSearch />
+        <Select
+          options={modelOptions}
+          showSearch
+          popupMatchSelectWidth={false}
+        />
       </Form.Item>
       <div className="border rounded-md">
         <div className="flex justify-between bg-slate-100 p-2 mb-2">

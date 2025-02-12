@@ -169,4 +169,9 @@
   h4 {
     @apply text-base font-normal;
   }
+
+  img,
+  video {
+    max-width: none;
+  }
 }
