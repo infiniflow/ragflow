@@ -99,6 +99,54 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "deepseek-r1",
+                    "tags": "LLM,CHAT,64K",
+                    "max_tokens": 65792,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-v3",
+                    "tags": "LLM,CHAT,64K",
+                    "max_tokens": 65792,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-r1-distill-qwen-1.5b",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-r1-distill-qwen-7b",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-r1-distill-qwen-14b",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-r1-distill-qwen-32b",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-r1-distill-llama-8b",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek-r1-distill-llama-70b",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "qwen-long",
                     "tags": "LLM,CHAT,10000K",
                     "max_tokens": 1000000,
@@ -1648,7 +1696,8 @@
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 8129,
                     "model_type": "embedding"
-                },{
+                },
+                {
                     "llm_name": "BAAI/bge-large-en-v1.5",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 512,
@@ -1659,17 +1708,20 @@
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 512,
                     "model_type": "embedding"
-                },{
+                },
+                {
                     "llm_name": "BAAI/bge-small-en-v1.5",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 512,
                     "model_type": "embedding"
-                },{
+                },
+                {
                     "llm_name": "nvidia/embed-qa-4",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 512,
                     "model_type": "embedding"
-                },{
+                },
+                {
                     "llm_name": "nvidia/llama-3.2-nv-embedqa-1b-v1",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 512,
@@ -1704,7 +1756,8 @@
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 4096,
                     "model_type": "embedding"
-                },{
+                },
+                {
                     "llm_name": "nvidia/nv-embedqa-e5-v5",
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 1024,
@@ -1757,6 +1810,68 @@
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 512,
                     "model_type": "embedding"
+                },
+
+
+                {
+                    "llm_name": "adept/fuyu-8b",
+                    "tags": "IMAGE2TEXT,1K",
+                    "max_tokens": 1024,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "google/deplot",
+                    "tags": "IMAGE2TEXT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "google/paligemma",
+                    "tags": "IMAGE2TEXT,256K",
+                    "max_tokens": 256000,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "meta/llama-3.2-11b-vision-instruct",
+                    "tags": "IMAGE2TEXT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "meta/llama-3.2-90b-vision-instruct",
+                    "tags": "IMAGE2TEXT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "microsoft/florence-2",
+                    "tags": "IMAGE2TEXT,1K",
+                    "max_tokens": 1024,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "microsoft/kosmos-2",
+                    "tags": "IMAGE2TEXT,4K",
+                    "max_tokens": 4096,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "microsoft/phi-3-vision-128k-instruct",
+                    "tags": "IMAGE2TEXT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "microsoft/phi-3.5-vision-instruct",
+                    "tags": "IMAGE2TEXT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "nvidia/neva-22b",
+                    "tags": "IMAGE2TEXT,1K",
+                    "max_tokens": 1024,
+                    "model_type": "image2text"
                 }
             ]
         },
