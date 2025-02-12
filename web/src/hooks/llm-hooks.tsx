@@ -116,7 +116,11 @@ export const useComposeLlmOptionsByModelTypes = (
 ) => {
   const allOptions = useSelectLlmOptionsByModelType();
 
-  return modelTypes.reduce<DefaultOptionType[]>((pre, cur) => {
+  return modelTypes.reduce<
+    (DefaultOptionType & {
+      options: { label: JSX.Element; value: string; disabled: boolean }[];
+    })[]
+  >((pre, cur) => {
     const options = allOptions[cur];
     options.forEach((x) => {
       const item = pre.find((y) => y.label === x.label);

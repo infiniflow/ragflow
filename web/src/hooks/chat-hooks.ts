@@ -119,6 +119,26 @@ export const useFetchNextDialogList = () => {
   return { data, loading, refetch };
 };
 
+export const useFetchChatAppList = () => {
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IDialog[]>({
+    queryKey: ['fetchChatAppList'],
+    initialData: [],
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data } = await chatService.listDialog();
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
 export const useSetNextDialog = () => {
   const queryClient = useQueryClient();
 
