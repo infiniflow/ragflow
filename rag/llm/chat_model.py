@@ -73,7 +73,13 @@ class Base(ABC):
                     continue
                 if not resp.choices[0].delta.content:
                     resp.choices[0].delta.content = ""
-                ans += resp.choices[0].delta.content
+                if hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+                    if ans.find("<think>") < 0:
+                        ans += "<think>"
+                    ans = ans.replace("</think>", "")
+                    ans += resp.choices[0].delta.reasoning_content + "</think>"
+                else:
+                    ans += resp.choices[0].delta.content
 
                 tol = self.total_token_count(resp)
                 if not tol:
