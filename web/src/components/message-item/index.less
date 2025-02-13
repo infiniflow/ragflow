@@ -13,17 +13,19 @@
   .messageItemContentReverse {
     flex-direction: row-reverse;
   }
-  .messageText {
-    .chunkText();
-    padding: 0 14px;
-    background-color: rgba(249, 250, 251, 1);
-    word-break: break-word;
-  }
+
   .messageTextBase() {
     padding: 6px 10px;
     border-radius: 8px;
     & > p {
       margin: 0;
+    }
+    :global(section.think) {
+      padding-left: 10px;
+      color: #8b8b8b;
+      border-left: 2px solid #d5d3d3;
+      margin-bottom: 10px;
+      font-size: 12px;
     }
   }
   .messageText {

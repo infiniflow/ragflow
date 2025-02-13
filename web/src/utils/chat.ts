@@ -49,3 +49,11 @@ export const preprocessLaTeX = (content: string) => {
   );
   return inlineProcessedContent;
 };
+
+export function replaceThinkToSection(text: string) {
+  const pattern = /<think>([\s\S]*?)<\/think>/g;
+
+  const result = text.replace(pattern, '<section class="think">$1</section>');
+
+  return result;
+}
