@@ -58,7 +58,7 @@ export function Datasets() {
                     <Button
                       variant="icon"
                       size="icon"
-                      onClick={navigateToDataset}
+                      onClick={navigateToDataset(dataset.id)}
                     >
                       <ChevronRight className="h-6 w-6" />
                     </Button>

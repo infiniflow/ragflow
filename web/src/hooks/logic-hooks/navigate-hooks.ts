@@ -9,9 +9,12 @@ export const useNavigatePage = () => {
     navigate(Routes.Datasets);
   }, [navigate]);
 
-  const navigateToDataset = useCallback(() => {
-    navigate(Routes.Dataset);
-  }, [navigate]);
+  const navigateToDataset = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.Dataset}/${id}`);
+    },
+    [navigate],
+  );
 
   const navigateToHome = useCallback(() => {
     navigate(Routes.Home);

@@ -93,7 +93,13 @@ export const useChangeDocumentParser = (documentId: string) => {
   } = useSetModalState();
 
   const onChangeParserOk = useCallback(
-    async (parserId: string, parserConfig: IChangeParserConfigRequestBody) => {
+    async ({
+      parserId,
+      parserConfig,
+    }: {
+      parserId: string;
+      parserConfig: IChangeParserConfigRequestBody;
+    }) => {
       const ret = await setDocumentParser({
         parserId,
         documentId,
