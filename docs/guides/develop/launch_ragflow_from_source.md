@@ -3,7 +3,7 @@ sidebar_position: 2
 slug: /launch_ragflow_from_source
 ---
 
-# Launch the RAGFlow Service from Source 
+# Launch a RAGFlow Service from Source
 
 A guide explaining how to set up a RAGFlow service from its source code. By following this guide, you'll be able to debug using the source code.
 
