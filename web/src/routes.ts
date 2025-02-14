@@ -12,6 +12,12 @@ export enum Routes {
   ProfileSetting = '/profile-setting',
   DatasetTesting = '/testing',
   DatasetSetting = '/setting',
+  Chunk = '/chunk',
+  ChunkResult = `${Chunk}${Chunk}`,
+  Parsed = '/parsed',
+  ParsedResult = `${Chunk}${Parsed}`,
+  Result = '/result',
+  ResultView = `${Chunk}${Result}`,
 }
 
 const routes = [
@@ -236,6 +242,35 @@ const routes = [
         ],
       },
     ],
+  },
+  {
+    path: Routes.Chunk,
+    layout: false,
+    routes: [
+      {
+        path: Routes.Chunk,
+        component: `@/pages${Routes.Chunk}`,
+        routes: [
+          {
+            path: `${Routes.ParsedResult}/:id`,
+            component: `@/pages${Routes.Chunk}/parsed-result`,
+          },
+          {
+            path: `${Routes.ChunkResult}/:id`,
+            component: `@/pages${Routes.Chunk}/chunk-result`,
+          },
+          {
+            path: `${Routes.ResultView}/:id`,
+            component: `@/pages${Routes.Chunk}/result-view`,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    path: Routes.Chunk,
+    layout: false,
+    component: `@/pages${Routes.Chunk}`,
   },
   {
     path: Routes.ProfileSetting,
