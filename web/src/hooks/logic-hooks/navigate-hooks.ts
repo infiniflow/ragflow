@@ -1,6 +1,6 @@
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'umi';
+import { useNavigate, useParams, useSearchParams } from 'umi';
 
 export enum QueryStringMap {
   KnowledgeId = 'knowledgeId',
@@ -9,6 +9,7 @@ export enum QueryStringMap {
 export const useNavigatePage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { id } = useParams();
 
   const navigateToDatasetList = useCallback(() => {
     navigate(Routes.Datasets);
@@ -61,6 +62,15 @@ export const useNavigatePage = () => {
     [searchParams],
   );
 
+  const navigateToChunk = useCallback(
+    (route: Routes) => {
+      navigate(
+        `${route}/${id}?${QueryStringMap.KnowledgeId}=${getQueryString(QueryStringMap.KnowledgeId)}`,
+      );
+    },
+    [getQueryString, id, navigate],
+  );
+
   return {
     navigateToDatasetList,
     navigateToDataset,
@@ -70,5 +80,6 @@ export const useNavigatePage = () => {
     navigateToChat,
     navigateToChunkParsedResult,
     getQueryString,
+    navigateToChunk,
   };
 };
