@@ -1,5 +1,5 @@
 import { useTranslate } from '@/hooks/common-hooks';
-import { Divider, Form, Select, Switch } from 'antd';
+import { Form, Select, Switch } from 'antd';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import EntityTypesItem from '../entity-types-item';
@@ -50,8 +50,7 @@ const GraphRagItems = () => {
   );
 
   return (
-    <>
-      <Divider></Divider>
+    <div className="border p-2 rounded-lg bg-slate-50 dark:bg-gray-600">
       <Form.Item
         name={['parser_config', 'graphrag', 'use_graphrag']}
         label={t('useGraphRag')}
@@ -113,7 +112,7 @@ const GraphRagItems = () => {
           );
         }}
       </Form.Item>
-    </>
+    </div>
   );
 };
 
