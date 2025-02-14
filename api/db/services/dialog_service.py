@@ -372,8 +372,8 @@ def chat(dialog, messages, stream=True, **kwargs):
         yield decorate_answer(answer)
     else:
         answer = chat_mdl.chat(prompt, msg[1:], gen_conf)
-        logging.debug("User: {}|Assistant: {}".format(
-            msg[-1]["content"], answer))
+        user_content = msg[-1].get("content", "[content not available]")
+        logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         res = decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
         yield res
