@@ -120,7 +120,7 @@ class ExeSQL(Generate, ABC):
                     else:
                         single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.top_n)])
                         single_res.columns = [i[0] for i in cursor.description]
-                    sql_res.append({"content":  single_res.to_markdown()})
+                    sql_res.append({"content":  single_res.to_markdown(index=False,  floatfmt=".6f")})
                     break
                 except Exception as e:
                     single_sql = self._regenerate_sql(single_sql, str(e), **kwargs)
