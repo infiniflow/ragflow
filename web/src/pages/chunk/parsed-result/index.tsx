@@ -1,3 +1,10 @@
+import ParsedResultPanel from '../parsed-result-panel';
+
 export default function ParsedResult() {
-  return <div>ParsedResult</div>;
+  return (
+    <section className="flex">
+      <div className="flex-1"></div>
+      <ParsedResultPanel></ParsedResultPanel>
+    </section>
+  );
 }
