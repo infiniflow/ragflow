@@ -308,6 +308,13 @@
             "llm": []
         },
         {
+            "name": "ModelScope",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "LocalAI",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",

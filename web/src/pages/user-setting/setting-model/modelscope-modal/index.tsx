@@ -21,7 +21,7 @@ const llmFactoryToUrlMap = {
   Ollama:
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx',
   Xinference: 'https://inference.readthedocs.io/en/latest/user_guide',
-  ModelScope: 'https://www.modelscope.cn/docs/intro/quickstart',
+  ModelScoep: 'https://www.modelscope.cn/docs/intro/quickstart',
   LocalAI: 'https://localai.io/docs/getting-started/models/',
   'LM-Studio': 'https://lmstudio.ai/docs/basics',
   'OpenAI-API-Compatible': 'https://platform.openai.com/docs/models/gpt-4',
@@ -34,7 +34,7 @@ const llmFactoryToUrlMap = {
 };
 type LlmFactory = keyof typeof llmFactoryToUrlMap;
 
-const OllamaModal = ({
+const ModelScopeModal = ({
   visible,
   hideModal,
   onOk,
@@ -109,7 +109,7 @@ const OllamaModal = ({
         return (
           <Flex justify={'space-between'}>
             <a href={url} target="_blank" rel="noreferrer">
-              {t('ollamaLink', { name: llmFactory })}
+              {t('modelscopeLink', { name: llmFactory })}
             </a>
             <Space>{originNode}</Space>
           </Flex>
@@ -201,4 +201,4 @@ const OllamaModal = ({
   );
 };
 
-export default OllamaModal;
+export default ModelScopeModal;
