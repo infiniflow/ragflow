@@ -15,8 +15,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/utils/date';
 import { getExtension } from '@/utils/document-util';
 import { ColumnDef } from '@tanstack/table-core';
 import { ArrowUpDown, MoreHorizontal, Pencil, Wrench } from 'lucide-react';
@@ -53,6 +55,8 @@ export function useDatasetTableColumns({
   //   setRecord();
   //   showSetMetaModal();
   // }, [setRecord, showSetMetaModal]);
+
+  const { navigateToChunkParsedResult } = useNavigatePage();
 
   const columns: ColumnDef<IDocumentInfo>[] = [
     {
@@ -93,12 +97,17 @@ export function useDatasetTableColumns({
       meta: { cellClassName: 'max-w-[20vw]' },
       cell: ({ row }) => {
         const name: string = row.getValue('name');
-        // return <div className="capitalize">{row.getValue('name')}</div>;
 
         return (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex gap-2">
+              <div
+                className="flex gap-2 cursor-pointer"
+                onClick={navigateToChunkParsedResult(
+                  row.original.id,
+                  row.original.kb_id,
+                )}
+              >
                 <SvgIcon
                   name={`file-icon/${getExtension(name)}`}
                   width={24}
@@ -127,7 +136,9 @@ export function useDatasetTableColumns({
         );
       },
       cell: ({ row }) => (
-        <div className="lowercase">{row.getValue('create_time')}</div>
+        <div className="lowercase">
+          {formatDate(row.getValue('create_time'))}
+        </div>
       ),
     },
     {
