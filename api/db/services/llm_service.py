@@ -173,7 +173,8 @@ class TenantLLMService(CommonService):
     def increase_usage(cls, tenant_id, llm_type, used_tokens, llm_name=None):
         e, tenant = TenantService.get_by_id(tenant_id)
         if not e:
-            raise LookupError("Tenant not found")
+            logging.error(f"Tenant not found: {tenant_id}")
+            return 0
 
         llm_map = {
             LLMType.EMBEDDING.value: tenant.embd_id,
@@ -186,7 +187,8 @@ class TenantLLMService(CommonService):
 
         mdlnm = llm_map.get(llm_type)
         if mdlnm is None:
-            raise ValueError("LLM type error")
+            logging.error(f"LLM type error: {llm_type}")
+            return 0
 
         llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(mdlnm)
 
