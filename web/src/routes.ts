@@ -222,7 +222,7 @@ const routes = [
         component: `@/pages${Routes.DatasetBase}`,
         routes: [
           {
-            path: Routes.Dataset,
+            path: `${Routes.Dataset}/:id`,
             component: `@/pages${Routes.Dataset}`,
           },
           {
