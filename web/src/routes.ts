@@ -226,11 +226,11 @@ const routes = [
             component: `@/pages${Routes.Dataset}`,
           },
           {
-            path: `${Routes.DatasetBase}${Routes.DatasetSetting}`,
+            path: `${Routes.DatasetBase}${Routes.DatasetSetting}/:id`,
             component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
           },
           {
-            path: `${Routes.DatasetBase}${Routes.DatasetTesting}`,
+            path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
             component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
           },
         ],
