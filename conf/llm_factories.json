@@ -1001,6 +1001,12 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "gemini-2.0-flash-thinking-exp-01-21",
+                    "tags": "LLM,CHAT,1024K",
+                    "max_tokens": 1048576,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "gemini-1.5-flash",
                     "tags": "LLM,IMAGE2TEXT,1024K",
                     "max_tokens": 1048576,
