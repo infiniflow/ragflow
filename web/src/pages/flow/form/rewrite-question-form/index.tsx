@@ -1,7 +1,8 @@
 import LLMSelect from '@/components/llm-select';
 import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form } from 'antd';
+import { Form, Select } from 'antd';
+import { GoogleLanguageOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
 
 const RewriteQuestionForm = ({ onValuesChange, form }: IOperatorForm) => {
@@ -22,6 +23,13 @@ const RewriteQuestionForm = ({ onValuesChange, form }: IOperatorForm) => {
         tooltip={t('modelTip', { keyPrefix: 'chat' })}
       >
         <LLMSelect></LLMSelect>
+      </Form.Item>
+      <Form.Item
+        label={t('language')}
+        name={'language'}
+        tooltip={t('languageTip')}
+      >
+        <Select options={GoogleLanguageOptions} allowClear={true}></Select>
       </Form.Item>
       <MessageHistoryWindowSizeItem
         initialValue={6}
