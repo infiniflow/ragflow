@@ -20,7 +20,9 @@ const CrawlerForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
+      <Form.Item name={'url'} label={t('url')}>
+        <Input />
+      </Form.Item>
       <Form.Item label={t('proxy')} name={'proxy'}>
         <Input placeholder="like: http://127.0.0.1:8888"></Input>
       </Form.Item>
@@ -31,6 +33,7 @@ const CrawlerForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       >
         <Select options={crawlerResultOptions}></Select>
       </Form.Item>
+      <DynamicInputVariable node={node}></DynamicInputVariable>
     </Form>
   );
 };

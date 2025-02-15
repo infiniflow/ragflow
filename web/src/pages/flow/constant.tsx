@@ -585,6 +585,7 @@ export const initialNoteValues = {
 
 export const initialCrawlerValues = {
   extract_type: 'markdown',
+  url: 'http://',
   ...initialQueryBaseValues,
 };
 

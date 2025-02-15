@@ -29,21 +29,24 @@ class CrawlerParam(ComponentParamBase):
         super().__init__()
         self.proxy = None
         self.extract_type = "markdown"
-    
+        self.url = ""
+
     def check(self):
         self.check_valid_value(self.extract_type, "Type of content from the crawler", ['html', 'markdown', 'content'])
+        self.check_empty(self.url, "End point URL")
+
 
 
 class Crawler(ComponentBase, ABC):
     component_name = "Crawler"
 
     def _run(self, history, **kwargs):
-        ans = self.get_input()
-        ans = " - ".join(ans["content"]) if "content" in ans else ""
-        if not is_valid_url(ans):
-            return Crawler.be_output("URL not valid")
+       
+        url = self._param.url.strip()
+        if url.find("http") != 0:
+            url = "http://" + url
         try:
-            result = asyncio.run(self.get_web(ans))
+            result = asyncio.run(self.get_web(url))
 
             return Crawler.be_output(result)
             
