@@ -426,6 +426,7 @@ export const initialGenerateValues = {
 
 export const initialRewriteQuestionValues = {
   ...initialLlmBaseValues,
+  language: '',
   message_history_window_size: 6,
 };
 
