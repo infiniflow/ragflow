@@ -23,7 +23,7 @@ from agent.component.base import ComponentBase, ComponentParamBase
 
 class InvokeParam(ComponentParamBase):
     """
-    Define the Crawler component parameters.
+    Define the Invoke component parameters.
     """
 
     def __init__(self):
@@ -37,7 +37,7 @@ class InvokeParam(ComponentParamBase):
         self.clean_html = False
 
     def check(self):
-        self.check_valid_value(self.method.lower(), "Type of content from the crawler", ['get', 'post', 'put'])
+        self.check_valid_value(self.method.lower(), "Type of content from the invoke", ['get', 'post', 'put'])
         self.check_empty(self.url, "End point URL")
         self.check_positive_integer(self.timeout, "Timeout time in second")
         self.check_boolean(self.clean_html, "Clean HTML")

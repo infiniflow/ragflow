@@ -1,10 +1,10 @@
+import { PromptEditor } from '@/components/prompt-editor';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Select } from 'antd';
 import { useMemo } from 'react';
 import { CrawlerResultOptions } from '../../constant';
 import { IOperatorForm } from '../../interface';
-import DynamicInputVariable from '../components/dynamic-input-variable';
-const CrawlerForm = ({ onValuesChange, form, node }: IOperatorForm) => {
+const CrawlerForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
   const crawlerResultOptions = useMemo(() => {
     return CrawlerResultOptions.map((x) => ({
@@ -20,7 +20,9 @@ const CrawlerForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       onValuesChange={onValuesChange}
       layout={'vertical'}
     >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
+      <Form.Item name={'url'} label={t('url')}>
+        <PromptEditor></PromptEditor>
+      </Form.Item>
       <Form.Item label={t('proxy')} name={'proxy'}>
         <Input placeholder="like: http://127.0.0.1:8888"></Input>
       </Form.Item>
