@@ -19,7 +19,6 @@ import re
 import json
 from crawl4ai import AsyncWebCrawler
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.web_utils import is_valid_url
 from jinja2 import Template as Jinja2Template
 
 
