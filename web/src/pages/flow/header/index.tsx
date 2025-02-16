@@ -39,7 +39,7 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const handleShowEmbedModal = useCallback(() => {
     showEmbedModal();
   }, [showEmbedModal]);
-  
+
   const handleRunAgent = useCallback(() => {
     const query: BeginQuery[] = getBeginNodeDataQuery();
     if (query.length > 0) {
