@@ -8,8 +8,7 @@ import { Button, Flex, Space } from 'antd';
 import { useCallback } from 'react';
 import { Link, useParams } from 'umi';
 import {
-  useGetBeginNodeDataQuery,
-  useGetBeginNodeDataQueryIsEmpty,
+  useGetBeginNodeDataQuery
 } from '../hooks/use-get-begin-query';
 import {
   useSaveGraph,
@@ -35,8 +34,7 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
-  const isBeginNodeDataQueryEmpty = useGetBeginNodeDataQueryIsEmpty();
-
+  
   const handleShowEmbedModal = useCallback(() => {
     showEmbedModal();
   }, [showEmbedModal]);
@@ -79,7 +77,6 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
           <Button
             type="primary"
             onClick={handleShowEmbedModal}
-            disabled={!isBeginNodeDataQueryEmpty}
           >
             <b>{t('embedIntoSite', { keyPrefix: 'common' })}</b>
           </Button>
