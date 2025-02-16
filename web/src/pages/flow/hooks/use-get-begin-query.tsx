@@ -27,7 +27,7 @@ export const useGetBeginNodeDataQueryIsSafe = () => {
     const isSafe = !(query.some(function (item, index) {
         return !item.optional && ["file"].includes(item.type);
     }));
-    setIsBeginNodeDataQuerySafe(query.length === 0);
+    setIsBeginNodeDataQuerySafe(isSafe);
   }, [getBeginNodeDataQuery, nodes]);
 
   return isBeginNodeDataQuerySafe;
