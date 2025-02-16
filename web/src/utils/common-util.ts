@@ -38,6 +38,7 @@ export const formatNumberWithThousandsSeparator = (numberStr: string) => {
 const orderFactoryList = [
   'OpenAI',
   'Moonshot',
+  "PPIO",
   'ZHIPU-AI',
   'Ollama',
   'Xinference',
