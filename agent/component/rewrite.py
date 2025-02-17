@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
 from abc import ABC
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
