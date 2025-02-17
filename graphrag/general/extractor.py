@@ -15,6 +15,7 @@
 #
 import logging
 import os
+import re
 from collections import defaultdict, Counter
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -59,6 +60,7 @@ class Extractor:
         if response:
             return response
         response = self._llm.chat(system, hist, conf)
+        response = re.sub(r"<think>.*</think>", "", response)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
         set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
