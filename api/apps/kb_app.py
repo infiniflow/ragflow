@@ -318,6 +318,8 @@ def knowledge_graph(kb_id):
 
     if "nodes" in obj["graph"]:
         obj["graph"]["nodes"] = sorted(obj["graph"]["nodes"], key=lambda x: x.get("pagerank", 0), reverse=True)[:256]
-    if "edges" in obj["graph"]:
-        obj["graph"]["edges"] = sorted(obj["graph"]["edges"], key=lambda x: x.get("weight", 0), reverse=True)[:128]
+        if "edges" in obj["graph"]:
+            node_id_set = { o["id"] for o in obj["graph"]["nodes"] }
+            filtered_edges = [o for o in obj["graph"]["edges"] if o["source"] != o["target"] and o["source"] in node_id_set and o["target"] in node_id_set]
+            obj["graph"]["edges"] = sorted(filtered_edges, key=lambda x: x.get("weight", 0), reverse=True)[:128]
     return get_json_result(data=obj)
