@@ -540,7 +540,7 @@ def rebuild_graph(tenant_id, kb_id):
             src_ids.extend(d.get("source_id", []))
             if d["knowledge_graph_kwd"] == "entity":
                 graph.add_node(d["entity_kwd"], entity_type=d["entity_type_kwd"])
-            else:
+            elif "from_entity_kwd" in d and "to_entity_kwd" in d:
                 graph.add_edge(
                     d["from_entity_kwd"],
                     d["to_entity_kwd"],
