@@ -300,11 +300,12 @@ def knowledge_graph(kb_id):
         "kb_id": [kb_id],
         "knowledge_graph_kwd": ["graph"]
     }
+
     obj = {"graph": {}, "mind_map": {}}
-    try:
-        sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
-    except Exception:
-        logging.warning("No KG index found.")
+    if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id)):
+        return get_json_result(data=obj)
+    sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
+    if not len(sres.ids):
         return get_json_result(data=obj)
 
     for id in sres.ids[:1]:
