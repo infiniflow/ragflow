@@ -952,6 +952,13 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url)
 
 
+class PPIOChat(Base):
+    def __init__(self, key, model_name, base_url="https://api.ppinfra.com/v3/openai"):
+        if not base_url:
+            base_url = "https://api.ppinfra.com/v3/openai"
+        super().__init__(key, model_name, base_url)
+
+
 class CoHereChat(Base):
     def __init__(self, key, model_name, base_url=""):
         from cohere import Client

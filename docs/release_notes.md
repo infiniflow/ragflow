@@ -269,7 +269,7 @@ Released on August 26, 2024.
 - Incorporates monitoring for the task executor.
 - Introduces Agent tools **GitHub**, **DeepL**, **BaiduFanyi**, **QWeather**, and **GoogleScholar**.
 - Supports chunking of EML files.
-- Supports more LLMs or model services: **GPT-4o-mini**, **PerfXCloud**, **TogetherAI**, **Upstage**, **Novita.AI**, **01.AI**, **SiliconFlow**, **XunFei Spark**, **Baidu Yiyan**, and **Tencent Hunyuan**.
+- Supports more LLMs or model services: **GPT-4o-mini**, **PerfXCloud**, **TogetherAI**, **Upstage**, **Novita.AI**, **01.AI**, **SiliconFlow**, **PPIO**, **XunFei Spark**, **Baidu Yiyan**, and **Tencent Hunyuan**.
 
 ## v0.9.0
 
