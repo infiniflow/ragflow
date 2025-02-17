@@ -113,7 +113,7 @@ class ESConnection(DocStoreConnection):
         except Exception:
             logger.exception("ESConnection.deleteIdx error %s" % (indexName))
 
-    def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
+    def indexExist(self, indexName: str, knowledgebaseId: str = None) -> bool:
         s = Index(indexName, self.es)
         for i in range(ATTEMPT_TIME):
             try:
