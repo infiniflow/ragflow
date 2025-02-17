@@ -303,7 +303,7 @@ def knowledge_graph(kb_id):
     obj = {"graph": {}, "mind_map": {}}
     try:
         sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
-    except Exception as e:
+    except Exception:
         logging.warning("No KG index found.")
         return get_json_result(data=obj)
 
