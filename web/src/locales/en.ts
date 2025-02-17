@@ -523,6 +523,8 @@ This procedure will improve precision of retrieval by adding more information to
         'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
       keyword: 'Keyword analysis',
       keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphesize during the relevance omputation.`,
+      languageTip:
+        'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
     },
     setting: {
       profile: 'Profile',

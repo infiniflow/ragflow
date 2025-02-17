@@ -166,6 +166,7 @@ const FormDrawer = ({
                 ></Input>
               )}
             </Flex>
+
             {needsSingleStepDebugging(operatorName) && (
               <RunTooltip>
                 <Play
