@@ -33,60 +33,50 @@ class RewriteQuestionParam(GenerateParam):
 
     def check(self):
         super().check()
-        
-   
- 
+
+    
     def get_prompt(self, conv, language, query):
-        logging.info("language")
-        logging.info(language)
+        prompt = """
+Role: A helpful assistant
+Task: Generate a full user question that would follow the conversation.
+Requirements & Restrictions:
+  - Text generated MUST be in the same language of the original user's question.
+  - If the user's latest question is completely, don't do anything, just return the original question.
+  - DON'T generate anything except a refined question."""
+        
+      if language:
+          prompt += f"""
+  - Text generated MUST be in {language}"""
 
-        if language:
-            return  f"""
-        Role: A helpful assistant
-        Task: Generate a full user question that would follow the content.
-        Requirements & Restrictions:
-        - Text generated MUST be {language}.
-        - DON'T generate anything except a refined question.
-        ######################
-        ## There is content generated
-        {query}
-        ###############
-        """
-
-        return f"""
-    Role: A helpful assistant
-    Task: Generate a full user question that would follow the conversation.
-    Requirements & Restrictions:
-      - Text generated MUST be in the same language of the original user's question.
-      - If the user's latest question is completely, don't do anything, just return the original question.
-      - DON'T generate anything except a refined question.
-
-    ######################
-    -Examples-
-    ######################
-    # Example 1
-    ## Conversation
-    USER: What is the name of Donald Trump's father?
-    ASSISTANT:  Fred Trump.
-    USER: And his mother?
-    ###############
-    Output: What's the name of Donald Trump's mother?
-    ------------
-    # Example 2
-    ## Conversation
-    USER: What is the name of Donald Trump's father?
-    ASSISTANT:  Fred Trump.
-    USER: And his mother?
-    ASSISTANT:  Mary Trump.
-    User: What's her full name?
-    ###############
-    Output: What's the full name of Donald Trump's mother Mary Trump?
-    ######################
-    # Real Data
-    ## Conversation
-    {conv}
-    ###############
-        """
+      prompt += f"""
+######################
+-Examples-
+######################
+# Example 1
+## Conversation
+USER: What is the name of Donald Trump's father?
+ASSISTANT:  Fred Trump.
+USER: And his mother?
+###############
+Output: What's the name of Donald Trump's mother?
+------------
+# Example 2
+## Conversation
+USER: What is the name of Donald Trump's father?
+ASSISTANT:  Fred Trump.
+USER: And his mother?
+ASSISTANT:  Mary Trump.
+USER: What's her full name?
+###############
+Output: What's the full name of Donald Trump's mother Mary Trump?
+######################
+# Real Data
+## Conversation
+{conv}
+###############
+"""
+        return prompt
+    
 
 class RewriteQuestion(Generate, ABC):
     component_name = "RewriteQuestion"
