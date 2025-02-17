@@ -86,8 +86,6 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
 
-  const controlIconClassname = 'text-black';
-
   const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
 
   const {
@@ -175,11 +173,11 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
         onBeforeDelete={handleBeforeDelete}
       >
         <Background />
-        <Controls>
+        <Controls className="text-black !flex-col-reverse">
           <ControlButton onClick={handleImportJson}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <FolderInput className={controlIconClassname} />
+                <FolderInput className="!fill-none" />
               </TooltipTrigger>
               <TooltipContent>Import</TooltipContent>
             </Tooltip>
@@ -187,7 +185,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           <ControlButton onClick={handleExportJson}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <FolderOutput className={controlIconClassname} />
+                <FolderOutput className="!fill-none" />
               </TooltipTrigger>
               <TooltipContent>Export</TooltipContent>
             </Tooltip>
@@ -195,7 +193,7 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           <ControlButton onClick={openDocument}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Book className={controlIconClassname} />
+                <Book className="!fill-none" />
               </TooltipTrigger>
               <TooltipContent>Document</TooltipContent>
             </Tooltip>
