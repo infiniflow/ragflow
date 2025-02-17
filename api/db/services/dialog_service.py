@@ -570,6 +570,7 @@ Requirements:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
+    kwd = re.sub(r"<think>.*</think>", "", kwd)
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
@@ -599,6 +600,7 @@ Requirements:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
+    kwd = re.sub(r"<think>.*</think>", "", kwd)
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
