@@ -2177,9 +2177,8 @@ Creates a session with an agent.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - the required parameters:`str`
-  - the optional parameters:`str`
-    - `"user_id"`: `string`  
-      The optional user-defined ID.
+  - other parameters:
+    The parameters in the begin component.
 
 ##### Request example
 If `begin` component in the agent doesn't have required parameters:
