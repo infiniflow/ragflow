@@ -524,7 +524,7 @@ def rebuild_graph(tenant_id, kb_id):
     src_ids = []
     flds = ["entity_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "weight_int", "knowledge_graph_kwd", "source_id"]
     bs = 256
-    for i in range(0, 10000000, bs):
+    for i in range(0, 10000, bs):
         es_res = settings.docStoreConn.search(flds, [],
                                  {"kb_id": kb_id, "knowledge_graph_kwd": ["entity", "relation"]},
                                  [],
