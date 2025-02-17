@@ -180,7 +180,6 @@ const FormDrawer = ({
           <span className={styles.operatorDescription}>
             {t(`${lowerFirst(operatorName)}Description`)}
           </span>
-          <code>Id: {node?.id}</code>
         </Flex>
       }
       placement="right"
