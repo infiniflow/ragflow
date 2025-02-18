@@ -310,7 +310,18 @@ class ComponentParamBase(ABC):
             raise ValueError(
                 descr + " {} not supported, should be one of {}".format(param, types)
             )
-
+    @staticmethod
+    def check_json(param, descr=""):
+        if type(param).__name__ != "str":
+            raise ValueError(
+                descr + " {} not supported, should be string type".format(param)
+            )
+        try:
+            json.loads(param)
+        except json.JSONDecodeError:
+            raise ValueError(
+                descr + " {} not supported, should be json string".format(param)
+            )
     @staticmethod
     def check_and_change_lower(param, valid_list, descr=""):
         if type(param).__name__ != "str":
