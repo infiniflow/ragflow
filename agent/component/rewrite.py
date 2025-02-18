@@ -38,14 +38,17 @@ class RewriteQuestionParam(GenerateParam):
 Role: A helpful assistant
 Task: Generate a full user question that would follow the conversation.
 Requirements & Restrictions:
-  - Text generated MUST be in the same language of the original user's question.
-  - If the user's latest question is completely, don't do anything, just return the original question.
-  - DON'T generate anything except a refined question."""
-
+"""
         if language:
             prompt += f"""
-  - Text generated MUST be in {language}"""
-
+    - Text generated MUST be in {language}"""
+        else:
+            prompt += """
+    - Text generated MUST be in the same language of the original user's question.
+            """
+        prompt += f"""
+    - If the user's latest question is completely, don't do anything, just return the original question.
+    - DON'T generate anything except a refined question."""
         prompt += f"""
 ######################
 -Examples-
