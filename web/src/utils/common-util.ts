@@ -41,7 +41,6 @@ const orderFactoryList = [
   'ZHIPU-AI',
   'Ollama',
   'Xinference',
-  'ModelScope',
 ];
 
 export const sortLLmFactoryListBySpecifiedOrder = (list: IFactory[]) => {
