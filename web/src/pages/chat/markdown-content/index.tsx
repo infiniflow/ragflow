@@ -52,7 +52,7 @@ const MarkdownContent = ({
     }
     const nextText = replaceTextByOldReg(text);
     return loading
-      ? nextText?.concat('~~2$$')
+      ? nextText?.concat('~~2$$') // TODO: The style of thinking also needs to be displayed when outputting
       : pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
   }, [content, loading, t]);
 
@@ -186,6 +186,7 @@ const MarkdownContent = ({
     <Markdown
       rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
       remarkPlugins={[remarkGfm, remarkMath]}
+      className={styles.markdownContentWrapper}
       components={
         {
           'custom-typography': ({ children }: { children: string }) =>
