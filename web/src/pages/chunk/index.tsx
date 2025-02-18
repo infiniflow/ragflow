@@ -6,7 +6,7 @@ import {
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { Routes } from '@/routes';
-import { EllipsisVertical } from 'lucide-react';
+import { EllipsisVertical, Save } from 'lucide-react';
 import { useMemo } from 'react';
 import { Outlet, useLocation } from 'umi';
 
@@ -57,6 +57,7 @@ export default function ChunkPage() {
             <EllipsisVertical />
           </Button>
           <Button variant={'tertiary'} size={'sm'}>
+            <Save />
             Save
           </Button>
         </div>

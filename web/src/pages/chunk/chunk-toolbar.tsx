@@ -1,11 +1,15 @@
 import { Button } from '@/components/ui/button';
 import { Copy } from 'lucide-react';
 
-export function ChunkToolbar() {
+interface ChunkToolbarProps {
+  text: string;
+}
+
+export function ChunkToolbar({ text }: ChunkToolbarProps) {
   return (
     <div className="flex justify-between px-9">
       <span className="text-colors-text-neutral-strong text-3xl font-bold">
-        Parsed results
+        {text}
       </span>
       <div className="flex items-center gap-3">
         <Button variant={'icon'} size={'icon'}>

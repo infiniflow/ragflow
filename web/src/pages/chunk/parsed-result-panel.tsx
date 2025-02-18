@@ -20,8 +20,8 @@ const list = new Array(10).fill({
 export default function ParsedResultPanel() {
   return (
     <div className="flex-1 py-6 border-l space-y-6">
-      <ChunkToolbar></ChunkToolbar>
-      <div className="space-y-6  overflow-auto max-h-[94vh] px-9">
+      <ChunkToolbar text="Parsed  results"></ChunkToolbar>
+      <div className="space-y-6  overflow-auto max-h-[87vh] px-9">
         {list.map((x, idx) => (
           <ParsedPageCard
             key={idx}
