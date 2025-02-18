@@ -2178,10 +2178,12 @@ Creates a session with an agent.
 - Body:
   - the required parameters:`str`
   - other parameters:
-    The parameters in the begin component.
+    The parameters set in the **Begin** component.
 
 ##### Request example
-If `begin` component in the agent doesn't have required parameters:
+
+If the **Begin** component in your agent does not have required parameters:
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/sessions \
@@ -2190,7 +2192,9 @@ curl --request POST \
      --data '{
      }'
 ```
-If `begin` component in the agent has required parameters:
+
+If the **Begin** component in your agent has required parameters:
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/sessions \
@@ -2201,7 +2205,9 @@ curl --request POST \
             "file":"Who are you"
      }'
 ```
-If `begin` component in the agent has required file parameters:
+
+If the **Begin** component in your agent has required file parameters:
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/sessions?user_id={user_id} \
@@ -2215,7 +2221,7 @@ curl --request POST \
 - `agent_id`: (*Path parameter*)  
   The ID of the associated agent.
 - `user_id`: (*Filter parameter*), string
-  The optional user-defined ID for parsing docs(especially images) when creating session while uploading files.
+  The optional user-defined ID for parsing docs (especially images) when creating a session while uploading files.
 
 #### Response
 
@@ -2367,7 +2373,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"user_id"`: `string`(optional)
   - other parameters: `string`
 ##### Request example
-If the `begin` component doesn't have parameters, the following code will create a session.
+Ifthe **Begin** component doesn't have parameters, the following code will create a session.
 ```bash 
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2377,7 +2383,7 @@ curl --request POST \
      {
      }'
 ```
-If the `begin` component have parameters, the following code will create a session.
+Ifthe **Begin** component have parameters, the following code will create a session.
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2403,7 +2409,6 @@ curl --request POST \
      }'
 ```
 
-
 ##### Request Parameters
 
 - `agent_id`: (*Path parameter*), `string`  
@@ -2419,9 +2424,10 @@ curl --request POST \
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 - Other parameters: (*Body Parameter*)  
-  The parameters in the begin component.
+  Parameters specified in the **Begin** component.
+
 #### Response
-success without `session_id` provided and with no parameters in the `begin` component:
+success without `session_id` provided and with no parameters inthe **Begin** component:
 ```json
 data:{
     "code": 0,
@@ -2439,7 +2445,7 @@ data:{
     "data": true
 }
 ```
-Success without `session_id` provided and with parameters in the `begin` component:
+Success without `session_id` provided and with parameters inthe **Begin** component:
 
 ```json
 data:{
@@ -2475,7 +2481,7 @@ data:{
 }
 data:
 ```
-Success with parameters in the `begin` component:
+Success with parameters inthe **Begin** component:
 ```json
 data:{
     "code": 0,
