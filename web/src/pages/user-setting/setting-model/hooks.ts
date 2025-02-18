@@ -137,41 +137,6 @@ export const useSubmitOllama = () => {
   };
 };
 
-export const useSubmitModelScope = () => {
-  const [selectedModelScopeFactory, setSelectedModelScopeFactory] =
-    useState<string>('');
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: modelscopeAddingVisible,
-    hideModal: hideModelScopeAddingModal,
-    showModal: showModelScopeAddingModal,
-  } = useSetModalState();
-
-  const onModelScopeAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideModelScopeAddingModal();
-      }
-    },
-    [hideModelScopeAddingModal, addLlm],
-  );
-
-  const handleShowModelScopeAddingModal = (llmFactory: string) => {
-    setSelectedModelScopeFactory(llmFactory);
-    showModelScopeAddingModal();
-  };
-
-  return {
-    modelscopeAddingLoading: loading,
-    onModelScopeAddingOk,
-    modelscopeAddingVisible,
-    hideModelScopeAddingModal,
-    showModelScopeAddingModal: handleShowModelScopeAddingModal,
-    selectedModelScopeFactory,
-  };
-};
-
 export const useSubmitVolcEngine = () => {
   const { addLlm, loading } = useAddLlm();
   const {
