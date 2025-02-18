@@ -61,7 +61,7 @@ class ExeSQL(Generate, ABC):
     component_name = "ExeSQL"
 
     def _refactor(self, ans):
-        ans = re.sub(r"<think>.*</think>", "", ans)
+        ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
         match = re.search(r"```sql\s*(.*?)\s*```", ans, re.DOTALL)
         if match:
             ans = match.group(1)  # Query content
