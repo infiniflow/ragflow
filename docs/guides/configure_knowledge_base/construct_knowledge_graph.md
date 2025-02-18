@@ -69,7 +69,6 @@ In a knowledge graph, a community is a cluster of entities linked by relationshi
 
 3. Click **Knowledge Graph** to view the details of the generated graph.
 
-
 ## Frequently asked questions
 
 ### Can I have different knowledge graph settings for different files in my knowledge base?
