@@ -117,7 +117,7 @@ class VariableExtract(Generate, ABC):
             return VariableExtract.be_output(ans)
         except json.JSONDecodeError:
             logging.warning(f"VariableExtract: LLM returned non-JSON output: {ans}")
-        return VariableExtract.be_output("non-JSON")
+            return VariableExtract.be_output("non-JSON")
 
     def debug(self, **kwargs):
         return self._run([], **kwargs)
