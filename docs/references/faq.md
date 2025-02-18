@@ -44,8 +44,8 @@ Where:
 
 - `v0.16.0`: The officially published release.
 - `50`: The number of git commits since the official release.
-- `g`: Abbriviation for GitHub commit.
-- `g6daae7f2`: The first seven character of the current commit ID.
+- `g`: Prefix.
+- `6daae7f2`: The first seven characters of the current commit ID.
 - `full`/`slim`: The RAGFlow edition.
   - `full`: The full RAGFlow edition.
   - `slim`: The RAGFlow edition without embedding models and Python packages.
