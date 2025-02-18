@@ -13,7 +13,7 @@ To enhance multi-hop question-answering, RAGFlow adds a knowledge graph construc
 
 ![Image](https://github.com/user-attachments/assets/edf0528d-cb46-46fc-aef4-edb98996949b)
 
-As of v0.16.0, RAGFlow supports constructing a knowledge graph on a knowledge base, allowing you to extract a *unified* graph from multiple files within your knowledge base. When a newly uploaded file starts parsing, the generated graph will automatically update.
+As of v0.16.0, RAGFlow supports constructing a knowledge graph on a knowledge base, allowing you to construct a *unified* graph across multiple files within your knowledge base. When a newly uploaded file starts parsing, the generated graph will automatically update.
 
 :::danger WARNING
 Constructing a knowledge graph requires significant memory, computational resources, and tokens.
