@@ -6,7 +6,6 @@ import { IModalProps } from '@/interfaces/common';
 import {
   Card,
   Checkbox,
-  Flex,
   Form,
   Modal,
   Select,
@@ -14,11 +13,14 @@ import {
   TabsProps,
   Typography,
 } from 'antd';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useIsDarkTheme } from '@/components/theme-provider';
+import {
+  LanguageAbbreviation,
+  LanguageAbbreviationMap,
+} from '@/constants/common';
 import { cn } from '@/lib/utils';
-import { languageOptions } from '@/locales/config';
 import styles from './index.less';
 
 const { Paragraph, Link } = Typography;
@@ -41,6 +43,13 @@ const EmbedModal = ({
 
   const [visibleAvatar, setVisibleAvatar] = useState(false);
   const [locale, setLocale] = useState('');
+
+  const languageOptions = useMemo(() => {
+    return Object.values(LanguageAbbreviation).map((x) => ({
+      label: LanguageAbbreviationMap[x],
+      value: x,
+    }));
+  }, []);
 
   const generateIframeSrc = () => {
     let src = `${location.origin}/chat/share?shared_id=${token}&from=${form}&auth=${beta}`;
@@ -76,15 +85,24 @@ const EmbedModal = ({
           extra={<CopyToClipboard text={text}></CopyToClipboard>}
           className={styles.codeCard}
         >
-          <Flex vertical className={styles.optionContainer}>
-            <h2>Option</h2>
-            <Form.Item label={t('avatarHidden')}>
+          <div className="p-2">
+            <h2 className="mb-3">Option:</h2>
+
+            <Form.Item
+              label={t('avatarHidden')}
+              labelCol={{ span: 6 }}
+              wrapperCol={{ span: 18 }}
+            >
               <Checkbox
                 checked={visibleAvatar}
                 onChange={(e) => setVisibleAvatar(e.target.checked)}
               ></Checkbox>
             </Form.Item>
-            <Form.Item label={t('locale')}>
+            <Form.Item
+              label={t('locale')}
+              labelCol={{ span: 6 }}
+              wrapperCol={{ span: 18 }}
+            >
               <Select
                 placeholder="Select a locale"
                 onChange={(value) => setLocale(value)}
@@ -92,7 +110,7 @@ const EmbedModal = ({
                 style={{ width: '100%' }}
               />
             </Form.Item>
-          </Flex>
+          </div>
           <HightLightMarkdown>{text}</HightLightMarkdown>
         </Card>
       ),
