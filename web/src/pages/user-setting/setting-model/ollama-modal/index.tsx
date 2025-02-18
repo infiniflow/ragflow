@@ -21,7 +21,7 @@ const llmFactoryToUrlMap = {
   Ollama:
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx',
   Xinference: 'https://inference.readthedocs.io/en/latest/user_guide',
-  ModelScope: 'https://www.modelscope.cn/docs/intro/quickstart',
+  ModelScope: 'https://www.modelscope.cn/docs/model-service/API-Inference/intro',
   LocalAI: 'https://localai.io/docs/getting-started/models/',
   'LM-Studio': 'https://lmstudio.ai/docs/basics',
   'OpenAI-API-Compatible': 'https://platform.openai.com/docs/models/gpt-4',

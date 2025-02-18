@@ -39,7 +39,6 @@ import {
   useSubmitGoogle,
   useSubmitHunyuan,
   useSubmitOllama,
-  useSubmitModelScope,
   useSubmitSpark,
   useSubmitSystemModelSetting,
   useSubmitTencentCloud,
@@ -48,7 +47,6 @@ import {
 } from './hooks';
 import HunyuanModal from './hunyuan-modal';
 import styles from './index.less';
-import ModelScopeModal from './modelscope-modal';
 import OllamaModal from './ollama-modal';
 import SparkModal from './spark-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
@@ -191,15 +189,6 @@ const UserSettingModel = () => {
     onHunyuanAddingOk,
     HunyuanAddingLoading,
   } = useSubmitHunyuan();
-
-  const {
-    modelscopeAddingVisible,
-    hideModelScopeAddingModal,
-    showModelScopeAddingModal,
-    onModelScopeAddingOk,
-    modelscopeAddingLoading,
-    selectedModelScopeFactory,
-  } = useSubmitModelScope();
 
   const {
     GoogleAddingVisible,
@@ -402,13 +391,6 @@ const UserSettingModel = () => {
         loading={llmAddingLoading}
         llmFactory={selectedLlmFactory}
       ></OllamaModal>
-      <ModelScopeModal
-        visible={modelscopeAddingVisible}
-        hideModal={hideModelScopeAddingModal}
-        onOk={onModelScopeAddingOk}
-        loading={modelscopeAddingLoading}
-        llmFactory={selectedModelScopeFactory}
-      ></ModelScopeModal>
       <VolcEngineModal
         visible={volcAddingVisible}
         hideModal={hideVolcAddingModal}
