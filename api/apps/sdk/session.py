@@ -33,7 +33,7 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_error_data_result
 from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
-
+from api.db.services.file_service import FileService
 
 
 @manager.route('/chats/<chat_id>/sessions', methods=['POST'])  # noqa: F821
@@ -68,6 +68,11 @@ def create(tenant_id, chat_id):
 @token_required
 def create_agent_session(tenant_id, agent_id):
     req = request.json
+    if not request.is_json:
+        req = request.form
+    files = request.files
+    user_id = request.args.get('user_id', '')
+
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
@@ -84,15 +89,33 @@ def create_agent_session(tenant_id, agent_id):
     if query:
         for ele in query:
             if not ele["optional"]:
-                if not req.get(ele["key"]):
-                    return get_error_data_result(f"`{ele['key']}` is required")
-                ele["value"] = req[ele["key"]]
-            if ele["optional"]:
-                if req.get(ele["key"]):
-                    ele["value"] = req[ele['key']]
+                if ele["type"] == "file":
+                    if files is None or not files.get(ele["key"]):
+                        return get_error_data_result(f"`{ele['key']}` with type `{ele['type']}` is required")
+                    upload_file = files.get(ele["key"])
+                    file_content = FileService.parse_docs([upload_file], user_id)
+                    file_name = upload_file.filename
+                    ele["value"] = file_name + "\n" + file_content
                 else:
-                    if "value" in ele:
-                        ele.pop("value")
+                    if req is None or not req.get(ele["key"]):
+                        return get_error_data_result(f"`{ele['key']}` with type `{ele['type']}` is required")
+                    ele["value"] = req[ele["key"]]
+            else:
+                if ele["type"] == "file":
+                    if files is not None and files.get(ele["key"]):
+                        upload_file = files.get(ele["key"])
+                        file_content = FileService.parse_docs([upload_file], user_id)
+                        file_name = upload_file.filename
+                        ele["value"] = file_name + "\n" + file_content
+                    else:
+                        if "value" in ele:
+                            ele.pop("value")
+                else:
+                    if req is not None and req.get(ele["key"]):
+                        ele["value"] = req[ele['key']]
+                    else:
+                        if "value" in ele:
+                            ele.pop("value")
     else:
         for ans in canvas.run(stream=False):
             pass
@@ -100,7 +123,7 @@ def create_agent_session(tenant_id, agent_id):
     conv = {
         "id": get_uuid(),
         "dialog_id": cvs.id,
-        "user_id": req.get("user_id", "") if isinstance(req, dict) else "",
+        "user_id": user_id,
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent",
         "dsl": cvs.dsl
