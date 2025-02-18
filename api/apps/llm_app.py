@@ -167,10 +167,6 @@ def add_llm():
         llm_name = req["llm_name"] + "___HuggingFace"
         api_key = "xxxxxxxxxxxxxxx"
 
-    elif factory == "ModelScope":
-        llm_name = req["llm_name"]
-        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
-
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"] + "___OpenAI-API"
         api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
