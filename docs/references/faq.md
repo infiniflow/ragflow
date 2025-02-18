@@ -22,6 +22,36 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 ---
 
+### Where to find the version of RAGFlow? How to interprete it?
+
+You can find the RAGFlow version number on the **System** page of the UI:
+
+![Image](https://github.com/user-attachments/assets/20cf7213-2537-4e18-a88c-4dadf6228c6b)
+
+If you build RAGFlow from source, the version number is also in the system log:
+
+```
+        ____   ___    ______ ______ __               
+       / __ \ /   |  / ____// ____// /____  _      __
+      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
+
+2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.16.0-50-g6daae7f2 full
+```
+
+Where:
+
+- `v0.16.0`: The officially published release.
+- `50`: The number of git commits since the official release.
+- `g`: Abbriviation for GitHub commit.
+- `g6daae7f2`: The first seven character of the current commit ID.
+- `full`/`slim`: The RAGFlow edition.
+  - `full`: The full RAGFlow edition.
+  - `slim`: The RAGFlow edition without embedding models and Python packages.
+
+---
+
 ### Why does it take longer for RAGFlow to parse a document than LangChain?
 
 We put painstaking effort into document pre-processing tasks like layout analysis, table structure recognition, and OCR (Optical Character Recognition) using our vision models. This contributes to the additional time required.
