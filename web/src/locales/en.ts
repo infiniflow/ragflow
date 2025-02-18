@@ -525,7 +525,7 @@ This procedure will improve precision of retrieval by adding more information to
       keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphesize during the relevance omputation.`,
       languageTip:
         'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
-      avatarHidden: 'Hidden',
+      avatarHidden: 'Hide avatar',
       locale: 'Locale',
     },
     setting: {
