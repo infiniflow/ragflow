@@ -95,7 +95,7 @@ class Invoke(ComponentBase, ABC):
 
         if method == 'put':
             response = requests.put(url=url,
-                                    data=args,
+                                    json=args,
                                     headers=headers,
                                     proxies=proxies,
                                     timeout=self._param.timeout)
