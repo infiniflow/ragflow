@@ -87,7 +87,7 @@ Yes, we support enhancing user queries based on existing context of an ongoing c
 
 1. On the **Chat** page, hover over the desired assistant and select **Edit**.
 2. In the **Chat Configuration** popup, click the **Prompt Engine** tab.
-3. Toggle on **Multi-turn optimization** to enable this feature.
+3. Switch on **Multi-turn optimization** to enable this feature.
 
 ---
 
