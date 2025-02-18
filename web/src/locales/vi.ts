@@ -171,6 +171,13 @@ export default {
       autoQuestionsTip: `Trích xuất N câu hỏi cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các câu hỏi đó. Bạn có thể kiểm tra hoặc cập nhật các câu hỏi đã thêm cho một khối từ danh sách khối. Tính năng này sẽ không làm gián đoạn quá trình phân khối nếu xảy ra lỗi, ngoại trừ việc nó có thể thêm kết quả trống vào khối gốc. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
       delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token".`,
       redo: `Bạn có muốn xóa các đoạn {{chunkNum}} hiện có không?`,
+      knowledgeGraph: 'Đồ thị tri thức',
+      setMetaData: 'Đặt dữ liệu Meta',
+      pleaseInputJson: 'Vui lòng nhập dữ liệu JSON',
+      metaData: 'Dữ liệu Meta',
+      deleteDocumentConfirmContent:
+        'Tài liệu này được liên kết với đồ thị tri thức. Sau khi xóa, các thông tin về nút và quan hệ liên quan sẽ bị xóa theo, nhưng đồ thị sẽ không được cập nhật ngay lập tức. Việc cập nhật đồ thị được thực hiện trong quá trình phân tích tài liệu mới chứa tác vụ trích xuất đồ thị tri thức.',
+      documentMetaTips: `<p>Dữ liệu meta ở định dạng Json (không thể tìm kiếm). Nó sẽ được thêm vào prompt cho LLM nếu bất kỳ đoạn nào của tài liệu này được đưa vào prompt.</p> <p>Ví dụ:</p> <b>Dữ liệu meta là:</b><br> <code> { "Author": "Alex Dowson", "Date": "2024-11-12" } </code><br><b>Prompt sẽ là:</b><br> <p>Tài liệu: the_name_of_document</p> <p>Tác giả: Alex Dowson</p> <p>Ngày: 2024-11-12</p> <p>Các đoạn liên quan như sau:</p> <ul> <li> Đây là nội dung của đoạn...</li> <li> Đây là nội dung của đoạn...</li> </ul>`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -326,6 +333,20 @@ export default {
       topnTags: 'Thẻ Top-N',
       tags: 'Thẻ',
       addTag: 'Thêm thẻ',
+      useGraphRag: 'Trích xuất đồ thị tri thức',
+      portugueseBr: 'Tiếng Bồ Đào Nha',
+      tagCloud: 'Đám mây',
+      graphRagMethod: 'Phương pháp',
+      graphRagMethodTip: `Light: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - HKUDS/LightRAG: "LightRAG: Tạo sinh tăng cường truy xuất đơn giản và nhanh chóng".
+      General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.`,
+      useGraphRagTip:
+        'Sau khi các tệp được chia thành các đoạn nhỏ, tất cả các đoạn này sẽ được sử dụng để tạo biểu đồ tri thức, từ đó hỗ trợ suy luận cho các bài toán phức tạp và nhiều bước.',
+      resolution: 'Hợp nhất thực thể',
+      resolutionTip:
+        'Quy trình phân giải sẽ hợp nhất các thực thể có cùng ý nghĩa lại với nhau, giúp đồ thị trở nên cô đọng và chính xác hơn. Các thực thể sau đây nên được hợp nhất: President Trump, Donald Trump, Donald J. Trump, Donald John Trump.',
+      community: 'Xây dựng mối quan hệ cộng đồng',
+      communityTip:
+        'Các liên kết được nhóm lại thành các cộng đồng phân cấp, với các thực thể và mối quan hệ kết nối từng phân đoạn lên các cấp độ trừu tượng cao hơn. Sau đó, chúng tôi sử dụng một LLM để tạo ra bản tóm tắt cho mỗi cộng đồng, được gọi là báo cáo cộng đồng. Xem thêm: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: 'Khối',
@@ -471,6 +492,14 @@ export default {
       howUseId: 'Làm thế nào để sử dụng ID cuộc trò chuyện?',
       description: 'Mô tả về trợ lý',
       betaError: `"Beta API Token" không được để trống!`,
+      useKnowledgeGraph: 'Sử dụng đồ thị tri thức',
+      useKnowledgeGraphTip:
+        'Nó sẽ truy xuất các mô tả về các thực thể, quan hệ và cộng đồng liên quan, điều này sẽ tăng cường khả năng suy luận các câu hỏi phức tạp và nhiều bước.',
+      keyword: 'Phân tích từ khóa',
+      keywordTip:
+        'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan.',
+      languageTip:
+        'Cho phép viết lại câu với ngôn ngữ được chỉ định, hoặc sử dụng câu hỏi mới nhất nếu không chọn ngôn ngữ nào.',
     },
     setting: {
       profile: 'Hồ sơ',
