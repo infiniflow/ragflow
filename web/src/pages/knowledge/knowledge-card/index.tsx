@@ -43,27 +43,27 @@ const KnowledgeCard = ({ item }: IProps) => {
       text={item?.nickname}
       color={userInfo?.nickname === item?.nickname ? '#1677ff' : 'pink'}
       className={classNames(styles.ribbon, {
-        [styles.hideRibbon]: item.permission !== 'team',
+        [styles.hideRibbon]: item?.permission !== 'team',
       })}
     >
       <Card className={styles.card} onClick={handleCardClick}>
         <div className={styles.container}>
           <div className={styles.content}>
-            <Avatar size={34} icon={<UserOutlined />} src={item.avatar} />
+            <Avatar size={34} icon={<UserOutlined />} src={item?.avatar} />
             <OperateDropdown deleteItem={removeKnowledge}></OperateDropdown>
           </div>
           <div className={styles.titleWrapper}>
             <span
               className={theme === 'dark' ? styles.titledark : styles.title}
             >
-              {item.name}
+              {item?.name}
             </span>
             <p
               className={
                 theme === 'dark' ? styles.descriptiondark : styles.description
               }
             >
-              {item.description}
+              {item?.description}
             </p>
           </div>
           <div className={styles.footer}>

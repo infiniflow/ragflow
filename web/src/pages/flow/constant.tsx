@@ -99,6 +99,7 @@ export enum Operator {
   Email = 'Email',
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
+  VariableExtract = 'VariableExtract',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -114,6 +115,7 @@ export const operatorIconMap = {
   [Operator.Message]: MessageOutlined,
   [Operator.Relevant]: BranchesOutlined,
   [Operator.RewriteQuestion]: FormOutlined,
+  [Operator.VariableExtract]: CirclePower,
   [Operator.KeywordExtract]: KeywordIcon,
   [Operator.DuckDuckGo]: DuckIcon,
   [Operator.Baidu]: BaiduIcon,
@@ -200,6 +202,8 @@ export const operatorMap: Record<
     fontSize: 12,
     iconFontSize: 16,
   },
+  [Operator.VariableExtract]: { backgroundColor: '#e6f7ff' },
+
   [Operator.KeywordExtract]: {
     width: 70,
     height: 70,
@@ -318,6 +322,9 @@ export const componentMenuList = [
     name: Operator.Iteration,
   },
   {
+    name: Operator.VariableExtract,
+  },
+  {
     name: Operator.Note,
   },
   {
@@ -427,6 +434,14 @@ export const initialGenerateValues = {
 export const initialRewriteQuestionValues = {
   ...initialLlmBaseValues,
   language: '',
+  message_history_window_size: 6,
+};
+
+export const initialVariableValues = {
+  ...initialLlmBaseValues,
+  variables: `{
+   
+}`,
   message_history_window_size: 6,
 };
 
@@ -670,7 +685,12 @@ export const RestrictedUpstreamMap = {
   [Operator.RewriteQuestion]: [
     Operator.Begin,
     Operator.Message,
-    Operator.Generate,
+    Operator.RewriteQuestion,
+    Operator.Relevant,
+  ],
+  [Operator.VariableExtract]: [
+    Operator.Begin,
+    Operator.Message,
     Operator.RewriteQuestion,
     Operator.Relevant,
   ],
