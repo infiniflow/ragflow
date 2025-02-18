@@ -29,7 +29,7 @@ from api.db.db_models import Dialog, DB
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
+from api.db.services.llm_service import TenantLLMService, LLMBundle
 from api import settings
 from graphrag.utils import get_tags_from_cache, set_tags_to_cache
 from rag.app.resume import forbidden_select_fields4resume
