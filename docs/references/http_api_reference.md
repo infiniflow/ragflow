@@ -2171,15 +2171,14 @@ Creates a session with an agent.
 #### Request
 
 - Method: POST
-- URL: `/api/v1/agents/{agent_id}/sessions`
+- URL: `/api/v1/agents/{agent_id}/sessions?user_id={user_id}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'content-Type: application/json' or 'multipart/form-data'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - the required parameters:`str`
-  - the optional parameters:`str`
-    - `"user_id"`: `string`  
-      The optional user-defined ID.
+  - other parameters:
+    The parameters in the begin component.
 
 ##### Request example
 If `begin` component in the agent doesn't have required parameters:
@@ -2202,11 +2201,21 @@ curl --request POST \
             "file":"Who are you"
      }'
 ```
+If `begin` component in the agent has required file parameters:
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions?user_id={user_id} \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form '<FILE_KEY>=@./test1.png'    
+```
 
 ##### Request parameters
 
 - `agent_id`: (*Path parameter*)  
   The ID of the associated agent.
+- `user_id`: (*Filter parameter*), string
+  The optional user-defined ID for parsing docs(especially images) when creating session while uploading files.
 
 #### Response
 
