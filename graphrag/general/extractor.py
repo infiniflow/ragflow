@@ -60,7 +60,7 @@ class Extractor:
         if response:
             return response
         response = self._llm.chat(system, hist, conf)
-        response = re.sub(r"<think>.*</think>", "", response)
+        response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
         set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
