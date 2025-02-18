@@ -2,6 +2,7 @@ import {
   GitHubIcon,
   KeywordIcon,
   QWeatherIcon,
+  VarsIcon,
   WikipediaIcon,
 } from '@/assets/icon/Icon';
 import { ReactComponent as AkShareIcon } from '@/assets/svg/akshare.svg';
@@ -115,7 +116,7 @@ export const operatorIconMap = {
   [Operator.Message]: MessageOutlined,
   [Operator.Relevant]: BranchesOutlined,
   [Operator.RewriteQuestion]: FormOutlined,
-  [Operator.VariableExtract]: CirclePower,
+  [Operator.VariableExtract]: VarsIcon,
   [Operator.KeywordExtract]: KeywordIcon,
   [Operator.DuckDuckGo]: DuckIcon,
   [Operator.Baidu]: BaiduIcon,

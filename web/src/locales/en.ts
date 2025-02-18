@@ -1179,6 +1179,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
+      variableExtractDescription:
+        'Extract user information into global variable throughout the conversation',
+      variableExtract: 'Variable extract',
     },
     footer: {
       profile: 'All rights reserved @ React',
