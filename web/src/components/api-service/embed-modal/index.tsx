@@ -3,10 +3,22 @@ import HightLightMarkdown from '@/components/highlight-markdown';
 import { SharedFrom } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { Card, Modal, Tabs, TabsProps, Typography } from 'antd';
+import {
+  Card,
+  Checkbox,
+  Flex,
+  Form,
+  Modal,
+  Select,
+  Tabs,
+  TabsProps,
+  Typography,
+} from 'antd';
+import { useState } from 'react';
 
 import { useIsDarkTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
+import { languageOptions } from '@/locales/config';
 import styles from './index.less';
 
 const { Paragraph, Link } = Typography;
@@ -27,10 +39,26 @@ const EmbedModal = ({
   const { t } = useTranslate('chat');
   const isDarkTheme = useIsDarkTheme();
 
+  const [visibleAvatar, setVisibleAvatar] = useState(false);
+  const [locale, setLocale] = useState('');
+
+  const generateIframeSrc = () => {
+    let src = `${location.origin}/chat/share?shared_id=${token}&from=${form}&auth=${beta}`;
+    if (visibleAvatar) {
+      src += '&visible_avatar=1';
+    }
+    if (locale) {
+      src += `&locale=${locale}`;
+    }
+    return src;
+  };
+
+  const iframeSrc = generateIframeSrc();
+
   const text = `
   ~~~ html
   <iframe
-  src="${location.origin}/chat/share?shared_id=${token}&from=${form}&auth=${beta}"
+  src="${iframeSrc}"
   style="width: 100%; height: 100%; min-height: 600px"
   frameborder="0"
 >
@@ -48,6 +76,23 @@ const EmbedModal = ({
           extra={<CopyToClipboard text={text}></CopyToClipboard>}
           className={styles.codeCard}
         >
+          <Flex vertical className={styles.optionContainer}>
+            <h2>Option</h2>
+            <Form.Item label={t('avatarHidden')}>
+              <Checkbox
+                checked={visibleAvatar}
+                onChange={(e) => setVisibleAvatar(e.target.checked)}
+              ></Checkbox>
+            </Form.Item>
+            <Form.Item label={t('locale')}>
+              <Select
+                placeholder="Select a locale"
+                onChange={(value) => setLocale(value)}
+                options={languageOptions}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </Flex>
           <HightLightMarkdown>{text}</HightLightMarkdown>
         </Card>
       ),

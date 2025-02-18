@@ -65,4 +65,15 @@ i18n
     },
   });
 
+export const languageOptions = [
+  { value: 'en', label: 'English' },
+  { value: 'zh', label: 'Chinese' },
+  { value: 'zh-TRADITIONAL', label: 'Traditional Chinese' },
+  { value: 'id', label: 'Indonesian' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'vi', label: 'Vietnamese' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'pt-BR', label: 'Brazilian Portuguese' },
+];
+
 export default i18n;
