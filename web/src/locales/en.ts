@@ -1181,7 +1181,13 @@ This delimiter is used to split the input text into several text pieces echo of 
       nextStep: 'Next step',
       variableExtractDescription:
         'Extract user information into global variable throughout the conversation',
-      variableExtract: 'Variable',
+      variableExtract: 'Variables',
+      variables: 'Variables',
+      variablesTip: `Set the clear json key variable with a value of empty. e.g.
+      {
+        "UserCode":"",
+        "NumberPhone":""
+      }`,
     },
     footer: {
       profile: 'All rights reserved @ React',
