@@ -15,9 +15,9 @@ Released on February 6, 2025.
 
 - Supports DeepSeek R1 and DeepSeek V3.
 - GraphRAG refactor: Knowledge graph is dynamically built on an entire knowledge base (dataset) rather than on an individual file, and automatically updated when files are added or removed. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph).
-- Adds an **Iteration** agent component and a **Research report generator** agent template.
+- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](https://ragflow.io/docs/dev/iteration_component).
 - New UI language: Portuguese.
-- Allows setting metadata for a specific file in a knowledge base to support AI-powered chats.
+- Allows setting metadata for a specific file in a knowledge base to enhance AI-powered chats. See [here](https://ragflow.io/docs/dev/set_metada).
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
 - Supports GPU acceleration for DeepDoc (see [docker-compose-gpu.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose-gpu.yml)).
 - Supports creating and referencing a **Tag** knowledge base as a key milestone towards bridging the semantic gap between query and response.
@@ -30,6 +30,8 @@ The **Tag knowledge base** feature is *unavailable* on the [Infinity](https://gi
 
 #### Added documents
 
+- [Construct knowledge graph](https://ragflow.io/docs/dev/construct_knowledge_graph)
+- [Set metadata](https://ragflow.io/docs/dev/set_metada)
 - [Begin component](https://ragflow.io/docs/dev/begin_component)
 - [Generate component](https://ragflow.io/docs/dev/generate_component)
 - [Interact component](https://ragflow.io/docs/dev/interact_component)
@@ -43,6 +45,7 @@ The **Tag knowledge base** feature is *unavailable* on the [Infinity](https://gi
 - [Template component](https://ragflow.io/docs/dev/template_component)
 - [Iteration component](https://ragflow.io/docs/dev/iteration_component)
 - [Note component](https://ragflow.io/docs/dev/note_component)
+
 
 ## v0.15.1
 
