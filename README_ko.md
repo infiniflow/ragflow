@@ -150,8 +150,8 @@
    > 아래 명령어는 RAGFlow Docker 이미지의 v0.16.0-slim 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.16.0-slim과 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오. 예를 들어, 전체 버전인 v0.16.0을 다운로드하려면 RAGFLOW_IMAGE=infiniflow/ragflow:v0.16.0로 설정합니다.
 
    ```bash
-   $ cd ragflow
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ cd ragflow/docker
+   $ docker compose -f docker-compose.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
@@ -209,7 +209,7 @@
 > 모든 시스템 구성 업데이트는 적용되기 위해 시스템 재부팅이 필요합니다.
 >
 > ```bash
-> $ docker compose -f docker/docker-compose.yml up -d
+> $ docker compose -f docker-compose.yml up -d
 > ```
 
 ### Elasticsearch 에서 Infinity 로 문서 엔진 전환
