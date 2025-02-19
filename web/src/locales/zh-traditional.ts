@@ -1111,6 +1111,7 @@ export default {
       addCategory: '新增分類',
       categoryName: '分類名稱',
       nextStep: '下一步',
+      insertVariableTip: `輸入 / 插入變數`,
     },
     footer: {
       profile: '“保留所有權利 @ react”',

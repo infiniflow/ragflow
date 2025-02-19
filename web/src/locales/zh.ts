@@ -1152,6 +1152,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       addCategory: '新增分类',
       categoryName: '分类名称',
       nextStep: '下一步',
+      insertVariableTip: `输入 / 插入变量`,
     },
     footer: {
       profile: 'All rights reserved @ React',
