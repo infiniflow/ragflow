@@ -527,6 +527,7 @@ This procedure will improve precision of retrieval by adding more information to
         'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
       avatarHidden: 'Hide avatar',
       locale: 'Locale',
+      selectLanguage: 'Select a language',
     },
     setting: {
       profile: 'Profile',
@@ -837,7 +838,7 @@ This procedure will improve precision of retrieval by adding more information to
       bingDescription:
         'A component that searches from https://www.bing.com/, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases. Please note that this requires an API key from microsoft.com.',
       apiKey: 'API KEY',
-      country: 'Country&Region',
+      country: 'Country & Region',
       language: 'Language',
       googleScholar: 'Google Scholar',
       googleScholarDescription:
@@ -1179,6 +1180,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
+      datatype: 'MINE type',
     },
     footer: {
       profile: 'All rights reserved @ React',
