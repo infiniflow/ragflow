@@ -122,7 +122,7 @@ class FulltextQueryer:
 
         txt = FulltextQueryer.rmWWW(txt)
         qs, keywords = [], []
-        for tt in self.tw.split(txt)[:256]:  # .split():
+        for tt in self.tw.split(txt)[:128]:  # .split():
             if not tt:
                 continue
             keywords.append(tt)
