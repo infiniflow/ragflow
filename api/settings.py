@@ -103,8 +103,8 @@ def init_settings():
                 "asr_model": "",
             },
             "ModelScope": {
-                "chat_model": "qwen-14B-chat",
-                "embedding_model": "flag-embedding",
+                "chat_model": "Qwen/Qwen2.5-7B-Instruct",
+                "embedding_model": "",
                 "image2text_model": "",
                 "asr_model": "",
             },
