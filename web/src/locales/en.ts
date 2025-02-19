@@ -1181,6 +1181,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       categoryName: 'Category name',
       nextStep: 'Next step',
       datatype: 'MINE type',
+      insertVariableTip: `Enter / Insert variables`,
     },
     footer: {
       profile: 'All rights reserved @ React',
