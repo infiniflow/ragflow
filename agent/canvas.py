@@ -319,6 +319,8 @@ class Canvas(ABC):
         return convs
     def update_variables(self, variables):
         for key, value in variables.items():
+            if not self.variables.get(key):
+                self.variables[key] = ""
             if value:
                 self.variables[key] = value
 

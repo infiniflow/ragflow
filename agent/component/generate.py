@@ -168,7 +168,6 @@ class Generate(ComponentBase):
             self._param.inputs.append({"component_id": para["key"], "content": kwargs[para["key"]]})
 
         # Replace variables in the prompt
-    
         for var_key, var_value in self._canvas.get_variables().items():
             if var_value:
                 prompt = prompt.replace(f"{{{var_key}}}", str(var_value))

@@ -91,6 +91,8 @@ class VariableExtract(Generate, ABC):
         variables = {}
         if self._param.variables:
             variables = json.loads(self._param.variables)
+        self._canvas.update_variables(variables)
+    
         hist = self._canvas.get_history(self._param.message_history_window_size)
         conv = []
         for m in hist:
