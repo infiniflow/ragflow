@@ -35,6 +35,7 @@ import {
   useEffect,
   useRef,
   useState,
+  KeyboardEventHandler,
 } from 'react';
 import FileIcon from '../file-icon';
 import styles from './index.less';
@@ -155,6 +156,13 @@ const MessageInput = ({
     setFileList([]);
   }, [fileList, onPressEnter, isUploadingFile]);
 
+  const handleInputKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+    if (e.key === 'Enter' && !e.nativeEvent.shiftKey) {
+      e.preventDefault();
+      handlePressEnter();
+    }
+  };
+
   const handleRemove = useCallback(
     async (file: UploadFile) => {
       const ids = get(file, 'response.data', []);
@@ -202,7 +210,7 @@ const MessageInput = ({
 
   return (
     <Flex gap={20} vertical className={styles.messageInputWrapper}>
-      <Input
+      <Input.TextArea
         size="large"
         placeholder={t('sendPlaceholder')}
         value={value}
@@ -238,7 +246,7 @@ const MessageInput = ({
             </Button>
           </Space>
         }
-        onPressEnter={handlePressEnter}
+        onKeyDown={handleInputKeyDown}
         onChange={onInputChange}
       />
 
