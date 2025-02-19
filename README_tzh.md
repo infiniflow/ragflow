@@ -148,8 +148,8 @@
    > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.16.0-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.16.0-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.16.0` 來下載 RAGFlow 鏡像的 `v0.16.0` 完整發行版。
 
    ```bash
-   $ cd ragflow
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ cd ragflow/docker
+   $ docker compose -f docker-compose.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
@@ -215,7 +215,7 @@
 > 所有系統配置都需要透過系統重新啟動生效：
 >
 > ```bash
-> $ docker compose -f docker/docker-compose.yml up -d
+> $ docker compose -f docker-compose.yml up -d
 > ```
 
 ###把文檔引擎從 Elasticsearch 切換成為 Infinity
@@ -227,13 +227,14 @@ RAGFlow 預設使用 Elasticsearch 儲存文字和向量資料. 如果要切換�
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
+   Note: `-v` 將會刪除 docker 容器的 volumes，已有的資料會被清空。
 
 2. 設定 **docker/.env** 目錄中的 `DOC_ENGINE` 為 `infinity`.
 
 3. 啟動容器:
 
    ```bash
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
 
 > [!WARNING]
