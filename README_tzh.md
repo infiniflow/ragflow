@@ -227,6 +227,7 @@ RAGFlow 預設使用 Elasticsearch 儲存文字和向量資料. 如果要切換�
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
+   Note: `-v` 將會刪除 docker 容器的 volumes，已有的資料會被清空。
 
 2. 設定 **docker/.env** 目錄中的 `DOC_ENGINE` 為 `infinity`.
 
