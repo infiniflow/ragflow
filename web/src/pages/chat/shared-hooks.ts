@@ -63,15 +63,11 @@ export const useSendSharedMessage = () => {
 
   const sendMessage = useCallback(
     async (message: Message, id?: string) => {
-      const payload = {
+      const res = await send({
         conversation_id: id ?? conversationId,
         quote: true,
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
-      };
-      const res = await send({
-        ...payload,
-        ...data,
       });
 
       if (isCompletionError(res)) {
