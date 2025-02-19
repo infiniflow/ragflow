@@ -219,6 +219,7 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
+   Note: `-v` は docker コンテナのボリュームを削除し、既存のデータをクリアします。
 2. **docker/.env** の「DOC \_ ENGINE」を「infinity」に設定します。
 
 3. 起動コンテナ：
