@@ -24,7 +24,11 @@ const VariableForm = ({ onValuesChange, form }: IOperatorForm) => {
         >
           <LLMSelect></LLMSelect>
         </Form.Item>
-        <Form.Item name={'variables'} label={t('flow.variables')}>
+        <Form.Item
+          tooltip={t('flow.variablesTip')}
+          name={'variables'}
+          label={t('flow.variables')}
+        >
           <Editor height={200} defaultLanguage="json" theme="vs-dark" />
         </Form.Item>
         <MessageHistoryWindowSizeItem
