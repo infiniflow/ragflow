@@ -161,8 +161,10 @@ def update(tenant_id, chat_id, session_id):
 @token_required
 def chat_completion(tenant_id, chat_id):
     req = request.json
-    if not req or not req.get("session_id"):
+    if not req:
         req = {"question": ""}
+    if not req.get("session_id"):
+        req["question"]=""
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(f"You don't own the chat {chat_id}")
     if req.get("session_id"):
