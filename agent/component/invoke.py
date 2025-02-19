@@ -20,7 +20,6 @@ import requests
 from deepdoc.parser import HtmlParser
 from agent.component.base import ComponentBase, ComponentParamBase
 
-
 class InvokeParam(ComponentParamBase):
     """
     Define the Invoke component parameters.
@@ -48,6 +47,8 @@ class Invoke(ComponentBase, ABC):
 
     def _run(self, history, **kwargs):
         args = {}
+        vars =self._canvas.get_variables()
+
         for para in self._param.variables:
             if para.get("component_id"):
                 if '@' in para["component_id"]:
@@ -58,6 +59,8 @@ class Invoke(ComponentBase, ABC):
                         if param["key"] == field:
                             if "value" in param:
                                 args[para["key"]] = param["value"]
+                elif para.get("component_id") in vars.keys():
+                    args[para["key"]] = vars[para.get("component_id")]
                 else:
                     cpn = self._canvas.get_component(para["component_id"])["obj"]
                     if cpn.component_name.lower() == "answer":
@@ -66,6 +69,7 @@ class Invoke(ComponentBase, ABC):
                     _, out = cpn.output(allow_partial=False)
                     if not out.empty:
                         args[para["key"]] = "\n".join(out["content"])
+           
             else:
                 args[para["key"]] = para["value"]
 
