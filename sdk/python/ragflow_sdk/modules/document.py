@@ -49,6 +49,9 @@ class Document(Base):
         super().__init__(rag, res_dict)
 
     def update(self, update_message: dict):
+        if "meta_fields" in update_message:
+            if not isinstance(update_message["meta_fields"], dict):
+                raise Exception("meta_fields must be a dictionary")
         res = self.put(f'/datasets/{self.dataset_id}/documents/{self.id}',
                        update_message)
         res = res.json()

@@ -372,6 +372,10 @@ class DocumentService(CommonService):
                     "progress_msg": "Task is queued...",
                     "process_begin_at": get_format_time()
                     })
+    @classmethod
+    @DB.connection_context()
+    def update_meta_fields(cls, doc_id, meta_fields):
+        return cls.update_by_id(doc_id, {"meta_fields": meta_fields})
 
     @classmethod
     @DB.connection_context()

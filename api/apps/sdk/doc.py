@@ -255,6 +255,10 @@ def update_doc(tenant_id, dataset_id, document_id):
                 )
         if not DocumentService.update_by_id(document_id, {"name": req["name"]}):
             return get_error_data_result(message="Database error (Document rename)!")
+        if "meta_fields" in req:
+            if not isinstance(req["meta_fields"], dict):
+                return get_error_data_result(message="meta_fields must be a dictionary")
+            DocumentService.update_meta_fields(document_id, req["meta_fields"])
 
         informs = File2DocumentService.get_by_document_id(document_id)
         if informs:
