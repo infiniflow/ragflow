@@ -739,6 +739,7 @@ export const NodeMap = {
   [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.KeywordExtract]: 'keywordNode',
+  [Operator.VariableExtract]: 'variableNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Baidu]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',

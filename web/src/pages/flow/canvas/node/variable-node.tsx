@@ -48,7 +48,6 @@ export function VariableNode({
         label={data.label}
         className={styles.nodeHeader}
       ></NodeHeader>
-
       <div className={styles.nodeText}>
         <LLMLabel value={get(data, 'form.llm_id')}></LLMLabel>
       </div>
