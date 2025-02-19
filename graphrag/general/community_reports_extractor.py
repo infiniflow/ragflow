@@ -36,7 +36,6 @@ class CommunityReportsExtractor(Extractor):
 
     _extraction_prompt: str
     _output_formatter_prompt: str
-    _on_error: ErrorHandlerFn
     _max_report_length: int
 
     def __init__(
@@ -109,7 +108,6 @@ class CommunityReportsExtractor(Extractor):
                     response["entities"] = ents
                 except Exception as e:
                     logging.exception("CommunityReportsExtractor got exception")
-                    self._on_error(e, traceback.format_exc(), None)
                     continue
 
                 add_community_info2graph(graph, ents, response["title"])
