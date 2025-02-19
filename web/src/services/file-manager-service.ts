@@ -1,7 +1,6 @@
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
-import pureRequest from 'axios';
 
 const {
   listFile,
@@ -67,45 +66,3 @@ const fileManagerService = registerServer<keyof typeof methods>(
 );
 
 export default fileManagerService;
-
-export const getDocumentFile = (documentId: string) => {
-  return pureRequest(getFile + '/' + documentId, {
-    responseType: 'blob',
-    method: 'get',
-    // headers: {
-    //   'content-type':
-    //     'text/plain;charset=UTF-8, application/vnd.openxmlformats-officeddocument.spreadsheetml.sheet;charset=UTF-8',
-    // },
-
-    // parseResponse: false,
-    // getResponse: true,
-  })
-    .then((res) => {
-      const x = res?.headers?.get('content-disposition');
-      const y = res?.headers?.get('Content-Type');
-      console.info(res);
-      console.info(x);
-      console.info('Content-Type', y);
-      return res;
-    })
-    .then((res) => {
-      // const objectURL = URL.createObjectURL(res);
-
-      // let btn = document.createElement('a');
-
-      // btn.download = '文件名.pdf';
-
-      // btn.href = objectURL;
-
-      // btn.click();
-
-      // URL.revokeObjectURL(objectURL);
-
-      // btn = null;
-
-      return res;
-    })
-    .catch((err) => {
-      console.info(err);
-    });
-};

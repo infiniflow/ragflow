@@ -6,6 +6,7 @@ import Docx from './docx';
 import Excel from './excel';
 import Pdf from './pdf';
 
+import { previewHtmlFile } from '@/utils/file-util';
 import styles from './index.less';
 
 // TODO: The interface returns an incorrect content-type for the SVG.
@@ -16,6 +17,11 @@ const DocumentViewer = () => {
   const ext = currentQueryParameters.get('ext');
   const prefix = currentQueryParameters.get('prefix');
   const api = `${api_host}/${prefix || 'file'}/get/${documentId}`;
+
+  if (ext === 'html' && documentId) {
+    previewHtmlFile(documentId);
+    return;
+  }
 
   return (
     <section className={styles.viewerWrapper}>
