@@ -369,15 +369,15 @@ This procedure will improve precision of retrieval by adding more information to
       addTag: 'Add tag',
       useGraphRag: 'Extract knowledge graph',
       useGraphRagTip:
-        'After files being chunked, all the chunks will be used for knowlege graph generation which helps inference of multi-hop and complex problems a lot.',
+        'Construct a knowledge graph over extracted file chunks to enhance multi-hop question answering.',
       graphRagMethod: 'Method',
-      graphRagMethodTip: `Light: the entity and relation extraction prompt is from GitHub - HKUDS/LightRAG: "LightRAG: Simple and Fast Retrieval-Augmented Generation"</br>
-        General: the entity and relation extraction prompt is from GitHub - microsoft/graphrag: A modular graph-based Retrieval-Augmented Generation (RAG) system`,
+      graphRagMethodTip: `Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
+        General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
       resolution: 'Entity resolution',
-      resolutionTip: `The resolution procedure would merge entities with the same meaning together which allows the graph conciser and more accurate. Entities as following should be merged:  President Trump, Donald Trump, Donald J. Trump, Donald John Trump`,
+      resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
       community: 'Community reports generation',
       communityTip:
-        'Chunks are clustered into hierarchical communities with entities and relationships connecting each segment up through higher levels of abstraction. We then use an LLM to generate a summary of each community, known as a community report. More: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+        'In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See here for more information: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: 'Chunk',
