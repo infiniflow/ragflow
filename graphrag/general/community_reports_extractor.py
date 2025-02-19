@@ -106,7 +106,7 @@ class CommunityReportsExtractor(Extractor):
                         continue
                     response["weight"] = weight
                     response["entities"] = ents
-                except Exception as e:
+                except Exception:
                     logging.exception("CommunityReportsExtractor got exception")
                     continue
 
