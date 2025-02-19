@@ -1188,6 +1188,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         "UserCode":"",
         "NumberPhone":""
       }`,
+      insertVariableTip: `Enter / Insert variables`,
     },
     footer: {
       profile: 'All rights reserved @ React',
