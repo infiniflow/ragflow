@@ -35,6 +35,7 @@ import {
   useEffect,
   useRef,
   useState,
+  KeyboardEventHandler,
 } from 'react';
 import FileIcon from '../file-icon';
 import styles from './index.less';
@@ -155,6 +156,13 @@ const MessageInput = ({
     setFileList([]);
   }, [fileList, onPressEnter, isUploadingFile]);
 
+  const handleInputKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+    if (e.key === 'Enter' && !e.nativeEvent.shiftKey) {
+      e.preventDefault();
+      handlePressEnter();
+    }
+  };
+
   const handleRemove = useCallback(
     async (file: UploadFile) => {
       const ids = get(file, 'response.data', []);
@@ -202,45 +210,46 @@ const MessageInput = ({
 
   return (
     <Flex gap={20} vertical className={styles.messageInputWrapper}>
-      <Input
-        size="large"
-        placeholder={t('sendPlaceholder')}
-        value={value}
-        disabled={disabled}
-        className={classNames({ [styles.inputWrapper]: fileList.length === 0 })}
-        suffix={
-          <Space>
-            {showUploadIcon && (
-              <Upload
-                onPreview={handlePreview}
-                onChange={handleChange}
-                multiple={false}
-                onRemove={handleRemove}
-                showUploadList={false}
-                beforeUpload={() => {
-                  return false;
-                }}
-              >
-                <Button
-                  type={'text'}
-                  disabled={disabled}
-                  icon={<Paperclip></Paperclip>}
-                ></Button>
-              </Upload>
-            )}
-            <Button
-              type="primary"
-              onClick={handlePressEnter}
-              loading={sendLoading}
-              disabled={sendDisabled || isUploadingFile}
+      <Flex align="center" gap={8}>
+        <Input.TextArea
+          size="large"
+          placeholder={t('sendPlaceholder')}
+          value={value}
+          disabled={disabled}
+          className={classNames({ [styles.inputWrapper]: fileList.length === 0 })}
+          onKeyDown={handleInputKeyDown}
+          onChange={onInputChange}
+          autoSize={{ minRows: 1, maxRows: 6 }}
+        />
+        <Space>
+          {showUploadIcon && (
+            <Upload
+              onPreview={handlePreview}
+              onChange={handleChange}
+              multiple={false}
+              onRemove={handleRemove}
+              showUploadList={false}
+              beforeUpload={() => {
+                return false;
+              }}
             >
-              {t('send')}
-            </Button>
-          </Space>
-        }
-        onPressEnter={handlePressEnter}
-        onChange={onInputChange}
-      />
+              <Button
+                type={'text'}
+                disabled={disabled}
+                icon={<Paperclip />}
+              ></Button>
+            </Upload>
+          )}
+          <Button
+            type="primary"
+            onClick={handlePressEnter}
+            loading={sendLoading}
+            disabled={sendDisabled || isUploadingFile}
+          >
+            {t('send')}
+          </Button>
+        </Space>
+      </Flex>
 
       {fileList.length > 0 && (
         <List
