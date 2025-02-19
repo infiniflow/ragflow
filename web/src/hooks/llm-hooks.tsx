@@ -5,6 +5,7 @@ import {
   IFactory,
   IMyLlmValue,
   IThirdOAIModelCollection as IThirdAiModelCollection,
+  IThirdOAIModel,
   IThirdOAIModelCollection,
 } from '@/interfaces/database/llm';
 import {
@@ -55,6 +56,24 @@ export const useSelectLlmOptions = () => {
   return embeddingModelOptions;
 };
 
+function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
+  return {
+    label: (
+      <Flex align="center" gap={6}>
+        <LlmIcon
+          name={getLLMIconName(x.fid, x.llm_name)}
+          width={26}
+          height={26}
+          size={'small'}
+        />
+        <span>{x.llm_name}</span>
+      </Flex>
+    ),
+    value: `${x.llm_name}@${x.fid}`,
+    disabled: !x.available,
+  };
+}
+
 export const useSelectLlmOptionsByModelType = () => {
   const llmInfo: IThirdOAIModelCollection = useFetchLlmList();
 
@@ -73,21 +92,7 @@ export const useSelectLlmOptionsByModelType = () => {
                   (x.tags && x.tags.includes(modelTag))) &&
                 x.available,
             )
-            .map((x) => ({
-              label: (
-                <Flex align="center" gap={6}>
-                  <LlmIcon
-                    name={getLLMIconName(x.fid, x.llm_name)}
-                    width={26}
-                    height={26}
-                    size={'small'}
-                  />
-                  <span>{x.llm_name}</span>
-                </Flex>
-              ),
-              value: `${x.llm_name}@${x.fid}`,
-              disabled: !x.available,
-            })),
+            .map(buildLlmOptionsWithIcon),
         };
       })
       .filter((x) => x.options.length > 0);
@@ -107,21 +112,7 @@ export const useSelectLlmOptionsByModelType = () => {
                 (modelType ? x.model_type.includes(modelType) : true) &&
                 x.available,
             )
-            .map((x) => ({
-              label: (
-                <Flex align="center" gap={6}>
-                  <LlmIcon
-                    name={getLLMIconName(x.fid, x.llm_name)}
-                    width={26}
-                    height={26}
-                    size={'small'}
-                  />
-                  <span>{x.llm_name}</span>
-                </Flex>
-              ),
-              value: `${x.llm_name}@${x.fid}`,
-              disabled: !x.available,
-            })),
+            .map(buildLlmOptionsWithIcon),
         };
       })
       .filter((x) => x.options.length > 0);

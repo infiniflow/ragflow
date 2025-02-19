@@ -44,23 +44,23 @@ The method to use to construct knowledge graph:
 
 ### Entity resolution
 
-Whether to enable entity resolution. You can think of this as an entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph.
+Whether to enable entity resolution. You can think of this as an entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more effective graph.
 
-- (Default) Disable entity resolution. This option consumes fewer tokens.
-- Enable entity resolution.
+- (Default) Disable entity resolution.
+- Enable entity resolution. This option consumes more tokens.
 
 ### Community report generation
 
 In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See [here](https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/) for more information. This indicates whether to generate community reports:
 
-- Generate community reports.
-- (Default) Do not generate community reports. This options consumes fewer tokens.
+- Generate community reports. This option consumes more tokens.
+- (Default) Do not generate community reports.
 
 ## Procedure
 
 1. On the **Configuration** page of your knowledge base, switch on **Extract knowledge graph** or adjust its settings as needed, and click **Save** to confirm your changes.
 
-   - *The default GraphRAG configurations for your knowlege base are now set and files uploaded from this point onward will automatically use these settings during parsing.*
+   - *The default knowledge graph configurations for your knowlege base are now set and files uploaded from this point onward will automatically use these settings during parsing.*
    - *Files parsed before this update will retain their original knowledge graph settings.*
 
 2. The knowledge graph of your knowlege base does *not* automatically update *until* a newly uploaded file is parsed.

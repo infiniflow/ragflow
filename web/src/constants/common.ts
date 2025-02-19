@@ -61,6 +61,28 @@ export const LanguageMap = {
   'Portuguese BR': 'Português BR',
 };
 
+export enum LanguageAbbreviation {
+  En = 'en',
+  Zh = 'zh',
+  ZhTraditional = 'zh-TRADITIONAL',
+  Id = 'id',
+  Ja = 'ja',
+  Es = 'es',
+  Vi = 'vi',
+  PtBr = 'pt-BR',
+}
+
+export const LanguageAbbreviationMap = {
+  [LanguageAbbreviation.En]: 'English',
+  [LanguageAbbreviation.Zh]: '简体中文',
+  [LanguageAbbreviation.ZhTraditional]: '繁體中文',
+  [LanguageAbbreviation.Id]: 'Indonesia',
+  [LanguageAbbreviation.Es]: 'Español',
+  [LanguageAbbreviation.Vi]: 'Tiếng việt',
+  [LanguageAbbreviation.Ja]: '日本語',
+  [LanguageAbbreviation.PtBr]: 'Português BR',
+};
+
 export const LanguageTranslationMap = {
   English: 'en',
   Chinese: 'zh',
