@@ -240,7 +240,7 @@ O RAGFlow usa o Elasticsearch por padrão para armazenar texto completo e vetore
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
-
+   Note: `-v` irá deletar os volumes do contêiner, e os dados existentes serão apagados.
 2. Defina `DOC_ENGINE` no **docker/.env** para `infinity`.
 
 3. Inicie os contêineres:

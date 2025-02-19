@@ -220,6 +220,7 @@ RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 
    ```bash
    $docker compose-f docker/docker-compose.yml down -v
    ```
+   Note: `-v` 는 docker 컨테이너의 볼륨을 삭제하고 기존 데이터를 지우며, 이 작업은 컨테이너를 중지하는 것과 동일합니다.
 2. **docker/.env**의 "DOC_ENGINE" 을 "infinity" 로 설정합니다.
 3. 컨테이너 부팅:
    ```bash

@@ -252,6 +252,7 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
+   Note: `-v` will delete the docker container volumes, and the existing data will be cleared.
 
 2. Set `DOC_ENGINE` in **docker/.env** to `infinity`.
 
