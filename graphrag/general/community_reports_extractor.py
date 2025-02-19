@@ -8,7 +8,6 @@ Reference:
 import logging
 import json
 import re
-import traceback
 from typing import Callable
 from dataclasses import dataclass
 import networkx as nx
@@ -18,7 +17,7 @@ from graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from graphrag.general.extractor import Extractor
 from graphrag.general.leiden import add_community_info2graph
 from rag.llm.chat_model import Base as CompletionLLM
-from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, dict_has_keys_with_types
+from graphrag.utils import perform_variable_replacements, dict_has_keys_with_types
 from rag.utils import num_tokens_from_string
 from timeit import default_timer as timer
 
@@ -36,7 +35,6 @@ class CommunityReportsExtractor(Extractor):
 
     _extraction_prompt: str
     _output_formatter_prompt: str
-    _on_error: ErrorHandlerFn
     _max_report_length: int
 
     def __init__(
@@ -107,9 +105,8 @@ class CommunityReportsExtractor(Extractor):
                         continue
                     response["weight"] = weight
                     response["entities"] = ents
-                except Exception as e:
+                except Exception:
                     logging.exception("CommunityReportsExtractor got exception")
-                    self._on_error(e, traceback.format_exc(), None)
                     continue
 
                 add_community_info2graph(graph, ents, response["title"])
