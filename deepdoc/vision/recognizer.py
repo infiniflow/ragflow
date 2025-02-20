@@ -19,7 +19,7 @@ import os
 import math
 import numpy as np
 import cv2
-from copy import deepcopy
+from functools import cmp_to_key
 
 import onnxruntime as ort
 from huggingface_hub import snapshot_download
@@ -99,30 +99,22 @@ class Recognizer(object):
 
     @staticmethod
     def sort_Y_firstly(arr, threashold):
-        # sort using y1 first and then x1
-        arr = sorted(arr, key=lambda r: (r["top"], r["x0"]))
-        for i in range(len(arr) - 1):
-            for j in range(i, -1, -1):
-                # restore the order using th
-                if abs(arr[j + 1]["top"] - arr[j]["top"]) < threashold \
-                        and arr[j + 1]["x0"] < arr[j]["x0"]:
-                    tmp = deepcopy(arr[j])
-                    arr[j] = deepcopy(arr[j + 1])
-                    arr[j + 1] = deepcopy(tmp)
+        def cmp(c1, c2):
+            diff = c1["top"] - c2["top"]
+            if abs(diff) < threashold:
+                diff = c1["x0"] - c2["x0"]
+            return diff
+        arr = sorted(arr, key=cmp_to_key(cmp))
         return arr
 
     @staticmethod
-    def sort_X_firstly(arr, threashold, copy=True):
-        # sort using y1 first and then x1
-        arr = sorted(arr, key=lambda r: (r["x0"], r["top"]))
-        for i in range(len(arr) - 1):
-            for j in range(i, -1, -1):
-                # restore the order using th
-                if abs(arr[j + 1]["x0"] - arr[j]["x0"]) < threashold \
-                        and arr[j + 1]["top"] < arr[j]["top"]:
-                    tmp = deepcopy(arr[j]) if copy else arr[j]
-                    arr[j] = deepcopy(arr[j + 1]) if copy else arr[j + 1]
-                    arr[j + 1] = deepcopy(tmp) if copy else tmp
+    def sort_X_firstly(arr, threashold):
+        def cmp(c1, c2):
+            diff = c1["x0"] - c2["x0"]
+            if abs(diff) < threashold:
+                diff = c1["top"] - c2["top"]
+            return diff
+        arr = sorted(arr, key=cmp_to_key(cmp))
         return arr
 
     @staticmethod
@@ -144,8 +136,6 @@ class Recognizer(object):
                     arr[j] = arr[j + 1]
                     arr[j + 1] = tmp
         return arr
-
-        return sorted(arr, key=lambda r: (r.get("C", r["x0"]), r["top"]))
 
     @staticmethod
     def sort_R_firstly(arr, thr=0):
