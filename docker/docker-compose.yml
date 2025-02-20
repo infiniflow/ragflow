@@ -1,11 +1,11 @@
-include:
-  - ./docker-compose-base.yml
+#include:
+#  - ./docker-compose-base.yml
 
 services:
   ragflow:
-    depends_on:
-      mysql:
-        condition: service_healthy
+#    depends_on:
+#      mysql:
+#        condition: service_healthy
     image: ${RAGFLOW_IMAGE}
     container_name: ragflow-server
     ports:
@@ -29,6 +29,11 @@ services:
     # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+
+networks:
+  ragflow:
+    driver: bridge
   # executor:
   #   depends_on:
   #     mysql:
