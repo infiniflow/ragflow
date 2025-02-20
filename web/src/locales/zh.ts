@@ -523,6 +523,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '它将检索相关实体、关系和社区报告的描述，这将增强多跳和复杂问题的推理。',
       keyword: '关键词分析',
       keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
+      reasoning: '推理',
+      reasoningTip:
+        '它将像Deepseek-R1 / OpenAI o1一样触发推理过程。将代理搜索过程集成到推理工作流中，允许模型本身在遇到不确定信息时动态地检索外部知识。',
     },
     setting: {
       profile: '概要',
