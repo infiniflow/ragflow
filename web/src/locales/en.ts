@@ -527,6 +527,9 @@ This procedure will improve precision of retrieval by adding more information to
         'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
       avatarHidden: 'Hide avatar',
       locale: 'Locale',
+      reasoning: 'Reasoning',
+      reasoningTip:
+        'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
     },
     setting: {
       profile: 'Profile',
