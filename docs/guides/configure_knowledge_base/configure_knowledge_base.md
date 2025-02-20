@@ -52,7 +52,7 @@ RAGFlow offers multiple chunking template to facilitate chunking files of differ
 | Picture      |                                                                       | JPEG, JPG, PNG, TIF, GIF                             |
 | One          | The entire document is chunked as one.                                | DOCX, EXCEL, PDF, TXT                                |
 
-You can also change the chunk template for a particular file on the **Datasets** page.
+You can also change a file's chunk method on the **Datasets** page.
 
 ![change chunk method](https://github.com/infiniflow/ragflow/assets/93570324/ac116353-2793-42b2-b181-65e7082bed42)
 
