@@ -5,6 +5,7 @@ export enum Routes {
   DatasetBase = '/dataset',
   Dataset = `${Routes.DatasetBase}${Routes.DatasetBase}`,
   Agent = '/agent',
+  Agents = '/agents',
   Search = '/next-search',
   Chats = '/next-chats',
   Chat = '/next-chat',
@@ -196,15 +197,20 @@ const routes = [
     ],
   },
   {
-    path: Routes.Agent,
+    path: Routes.Agents,
     layout: false,
     component: '@/layouts/next',
     routes: [
       {
-        path: Routes.Agent,
-        component: `@/pages${Routes.Agent}`,
+        path: Routes.Agents,
+        component: `@/pages${Routes.Agents}`,
       },
     ],
+  },
+  {
+    path: Routes.Agent,
+    layout: false,
+    component: `@/pages${Routes.Agent}`,
   },
   {
     path: Routes.Files,
