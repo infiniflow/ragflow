@@ -172,6 +172,14 @@ const PromptEngine = (
       <UseKnowledgeGraphItem
         filedName={['prompt_config', 'use_kg']}
       ></UseKnowledgeGraphItem>
+      <Form.Item
+        label={t('reasoning')}
+        tooltip={t('reasoningTip')}
+        name={['prompt_config', 'reasoning']}
+        initialValue={false}
+      >
+        <Switch></Switch>
+      </Form.Item>
       <Rerank></Rerank>
       <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">

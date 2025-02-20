@@ -506,6 +506,9 @@ export default {
         '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
       keyword: '關鍵字分析',
       keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。`,
+      reasoning: '推理',
+      reasoningTip:
+        '它將觸發類似Deepseek-R1/OpenAI o1的推理過程。將代理搜尋過程整合到推理工作流程中，使得模型本身能夠在遇到不確定資訊時動態地檢索外部知識。',
     },
     setting: {
       profile: '概述',
