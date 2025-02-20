@@ -18,6 +18,7 @@ from flask import request
 from flask_login import login_required, current_user
 from api.db.services.dialog_service import DialogService
 from api.db import StatusEnum
+from api.db.services.llm_service import TenantLLMService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
 from api import settings
@@ -75,7 +76,7 @@ def set_dialog():
         if not e:
             return get_data_error_result(message="Tenant not found!")
         kbs = KnowledgebaseService.get_by_ids(req.get("kb_ids"))
-        embd_ids = [kb.embd_id.split('@')[0] for kb in kbs]  # remove vendor suffix for comparison
+        embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
         embd_count = len(set(embd_ids))
         if embd_count != 1:
             return get_data_error_result(message=f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"')
