@@ -75,7 +75,8 @@ def set_dialog():
         if not e:
             return get_data_error_result(message="Tenant not found!")
         kbs = KnowledgebaseService.get_by_ids(req.get("kb_ids"))
-        embd_count = len(set([kb.embd_id for kb in kbs]))
+        embd_ids = [kb.embd_id.split('@')[0] for kb in kbs]  # remove vendor suffix for comparison
+        embd_count = len(set(embd_ids))
         if embd_count != 1:
             return get_data_error_result(message=f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"')
 
