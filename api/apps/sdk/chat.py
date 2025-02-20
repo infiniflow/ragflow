@@ -177,7 +177,7 @@ def update(tenant_id, chat_id):
                 if kb.chunk_num == 0:
                     return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
             kbs = KnowledgebaseService.get_by_ids(ids)
-            embd_ids = [kb.embd_id.split('@')[0] for kb in kbs]  # remove vendor suffix for comparison
+            embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
             embd_count = list(set(embd_ids))
             if len(embd_count) != 1:
                 return get_result(
