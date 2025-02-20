@@ -15,7 +15,6 @@
 #
 import logging
 import re
-import json
 from dataclasses import dataclass
 
 from rag.settings import TAG_FLD, PAGERANK_FLD
