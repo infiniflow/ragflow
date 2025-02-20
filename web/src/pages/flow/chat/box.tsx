@@ -69,9 +69,9 @@ const FlowChatBox = () => {
         <MessageInput
           showUploadIcon={false}
           value={value}
-          sendLoading={loading}
-          disabled={loading}
-          sendDisabled={loading}
+          sendLoading={sendLoading}
+          disabled={false}
+          sendDisabled={sendLoading}
           conversationId=""
           onPressEnter={handlePressEnter}
           onInputChange={handleInputChange}
