@@ -156,8 +156,14 @@ const MessageInput = ({
     setFileList([]);
   }, [fileList, onPressEnter, isUploadingFile]);
 
+  const [isComposing, setIsComposing] = useState(false);
+
+  const handleCompositionStart = () => setIsComposing(true);
+  const handleCompositionEnd = () => setIsComposing(false);
+
   const handleInputKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
     if (e.key === 'Enter' && !e.nativeEvent.shiftKey) {
+      if (isComposing) return;
       e.preventDefault();
       handlePressEnter();
     }
@@ -219,6 +225,8 @@ const MessageInput = ({
           className={classNames({ [styles.inputWrapper]: fileList.length === 0 })}
           onKeyDown={handleInputKeyDown}
           onChange={onInputChange}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
           autoSize={{ minRows: 1, maxRows: 6 }}
         />
         <Space>
