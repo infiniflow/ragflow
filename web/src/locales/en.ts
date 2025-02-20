@@ -528,6 +528,9 @@ This procedure will improve precision of retrieval by adding more information to
       avatarHidden: 'Hide avatar',
       locale: 'Locale',
       selectLanguage: 'Select a language',
+      reasoning: 'Reasoning',
+      reasoningTip:
+        'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
     },
     setting: {
       profile: 'Profile',
