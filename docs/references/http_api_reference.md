@@ -2178,11 +2178,11 @@ Creates a session with an agent.
 - Body:
   - the required parameters:`str`
   - other parameters:
-    The parameters set in the **Begin** component.
+    The parameters specified in the **Begin** component.
 
 ##### Request example
 
-If the **Begin** component in your agent does not have required parameters:
+If the **Begin** component in your agent does not take required parameters:
 
 ```bash
 curl --request POST \
@@ -2193,7 +2193,7 @@ curl --request POST \
      }'
 ```
 
-If the **Begin** component in your agent has required parameters:
+If the **Begin** component in your agent takes required parameters:
 
 ```bash
 curl --request POST \
@@ -2206,7 +2206,7 @@ curl --request POST \
      }'
 ```
 
-If the **Begin** component in your agent has required file parameters:
+If the **Begin** component in your agent takes required file parameters:
 
 ```bash
 curl --request POST \
@@ -2220,7 +2220,7 @@ curl --request POST \
 
 - `agent_id`: (*Path parameter*)  
   The ID of the associated agent.
-- `user_id`: (*Filter parameter*), string
+- `user_id`: (*Filter parameter*)
   The optional user-defined ID for parsing docs (especially images) when creating a session while uploading files.
 
 #### Response
@@ -2373,7 +2373,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"user_id"`: `string`(optional)
   - other parameters: `string`
 ##### Request example
-Ifthe **Begin** component doesn't have parameters, the following code will create a session.
+If the **Begin** component does not take parameters, the following code will create a session.
 ```bash 
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2383,7 +2383,7 @@ curl --request POST \
      {
      }'
 ```
-Ifthe **Begin** component have parameters, the following code will create a session.
+If the **Begin** component takes parameters, the following code will create a session.
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2427,7 +2427,7 @@ curl --request POST \
   Parameters specified in the **Begin** component.
 
 #### Response
-success without `session_id` provided and with no parameters inthe **Begin** component:
+success without `session_id` provided and with no parameters specified in the **Begin** component:
 ```json
 data:{
     "code": 0,
@@ -2445,7 +2445,8 @@ data:{
     "data": true
 }
 ```
-Success without `session_id` provided and with parameters inthe **Begin** component:
+
+Success without `session_id` provided and with parameters specified in the **Begin** component:
 
 ```json
 data:{
@@ -2481,7 +2482,7 @@ data:{
 }
 data:
 ```
-Success with parameters inthe **Begin** component:
+Success with parameters specified in the **Begin** component:
 ```json
 data:{
     "code": 0,
@@ -2559,7 +2560,6 @@ data:{
     "data": true
 }
 ```
-
 
 Failure:
 

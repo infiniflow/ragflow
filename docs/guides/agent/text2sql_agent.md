@@ -383,7 +383,7 @@ Since version 0.15.0, ragflow has introduced step-by-step execution for Agent co
 Find all customers who has bought a mobile phone
 ```
 ![](https://github.com/user-attachments/assets/a6270188-72af-4be7-a192-efddb611f3a4)
-3. As the image shows, no matching information was retrieved from the Q->SQL knowledge base, yet a similar question exists within the database. Adjust the Rerank model, "Similarity threshold," or "Keywords similarity weight" accordingly to return relevant content.
+3. As the image shows, no matching information was retrieved from the Q->SQL knowledge base, yet a similar question exists within the database. Adjust the Rerank model, "Similarity threshold," or "Keyword similarity weight" accordingly to return relevant content.
 ![](https://github.com/user-attachments/assets/0592c45b-9276-465d-93d3-2530b2fb81c0)
 ![](https://github.com/user-attachments/assets/9e72be3a-41af-4ef2-863d-03757ddfdde6)
 
