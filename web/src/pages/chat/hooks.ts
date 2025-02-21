@@ -341,7 +341,7 @@ export const useSelectNextMessages = () => {
 export const useHandleMessageInputChange = () => {
   const [value, setValue] = useState('');
 
-  const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+  const handleInputChange: ChangeEventHandler<HTMLTextAreaElement> = (e) => {
     const value = e.target.value;
     const nextValue = value.replaceAll('\\n', '\n').replaceAll('\\t', '\t');
     setValue(nextValue);
