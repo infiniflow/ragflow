@@ -230,7 +230,7 @@ def add_llm():
         try:
             m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
                 "temperature": 0.9})
-            if not tc:
+            if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
             msg += f"\nFail to access model({mdl_nm})." + str(
