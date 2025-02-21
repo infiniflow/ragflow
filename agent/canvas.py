@@ -162,7 +162,7 @@ class Canvas(ABC):
             self.components[k]["obj"].reset()
         self._embed_id = ""
 
-    def get_compnent_name(self, cid):
+    def get_component_name(self, cid):
         for n in self.dsl["graph"]["nodes"]:
             if cid == n["id"]:
                 return n["data"]["name"]
@@ -210,7 +210,7 @@ class Canvas(ABC):
                             if c not in waiting:
                                 waiting.append(c)
                             continue
-                    yield "*'{}'* is running...🕞".format(self.get_compnent_name(c))
+                    yield "*'{}'* is running...🕞".format(self.get_component_name(c))
 
                     if cpn.component_name.lower() == "iteration":
                         st_cpn = cpn.get_start()
