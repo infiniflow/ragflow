@@ -68,7 +68,6 @@ This field is where you put in your testing query.
 
 1. Navigate to the **Retrieval testing** page of your knowledge base, enter your query in **Test text**, and click **Testing** to run the test.
 2. If the results are unsatisfactory, keep tuning the options listed in the Configuration section.
-3. Once you have achieved satisfactory results with your retrieval settings, remember to apply these settings to your chat assistant configurations.
 
    *The following is a screenshot of a retrieval test conducted without using knowledge graph. It demonstrates a hybrid search combining weighted keyword similarity and weighted vector cosine similarity. The overall similarity score 28.56, calculated as 25.17 x 0.7 + 36.49 x 0.3:*  
    ![Image](https://github.com/user-attachments/assets/541554d4-3f3e-44e1-954b-0ae77d7372c6)
