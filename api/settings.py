@@ -102,6 +102,12 @@ def init_settings():
                 "image2text_model": "",
                 "asr_model": "",
             },
+            "ModelScope": {
+                "chat_model": "Qwen/Qwen2.5-7B-Instruct",
+                "embedding_model": "",
+                "image2text_model": "",
+                "asr_model": "",
+            },
             "Moonshot": {
                 "chat_model": "moonshot-v1-8k",
                 "embedding_model": "",
