@@ -94,5 +94,5 @@ class Categorize(Generate, ABC):
     def debug(self, **kwargs):
         df = self._run([], **kwargs)
         cpn_id = df.iloc[0, 0]
-        return Categorize.be_output(self._canvas.get_compnent_name(cpn_id))
+        return Categorize.be_output(self._canvas.get_component_name(cpn_id))
 
