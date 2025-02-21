@@ -344,6 +344,10 @@ class InfinityConnection(DocStoreConnection):
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
+                similarity = matchExpr.extra_options.get("similarity")
+                if similarity:
+                    matchExpr.extra_options["threshold"] = similarity
+                    del matchExpr.extra_options["similarity"]
                 logger.debug(f"INFINITY search MatchDenseExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, FusionExpr):
                 logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
