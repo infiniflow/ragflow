@@ -3,7 +3,6 @@ import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import { IDebugSingleRequestBody } from '@/interfaces/request/flow';
 import i18n from '@/locales/config';
 import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
-import { BeginId } from '@/pages/flow/constant';
 import flowService from '@/services/flow-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,7 +16,7 @@ export const EmptyDsl = {
   graph: {
     nodes: [
       {
-        id: BeginId,
+        id: 'begin',
         type: 'beginNode',
         position: {
           x: 50,
@@ -305,4 +304,33 @@ export const useDebugSingle = () => {
   });
 
   return { data, loading, debugSingle: mutateAsync };
+};
+
+export const useUpdateFlowName = () => {
+  const { setFlow } = useSetFlow();
+  const queryClient = useQueryClient();
+
+  return {
+    updateFlowName: async (id: string, newName: string) => {
+      try {
+        const flowList =
+          queryClient.getQueryData<IFlow[]>(['fetchFlowList']) || [];
+        const currentFlow = flowList.find((flow) => flow.id === id);
+
+        if (!currentFlow?.dsl) {
+          message.error('Failed to get flow data');
+          return false;
+        }
+
+        const result = await setFlow({
+          id,
+          title: newName,
+          dsl: currentFlow.dsl,
+        });
+        return result.code === 0;
+      } catch (error) {
+        return false;
+      }
+    },
+  };
 };

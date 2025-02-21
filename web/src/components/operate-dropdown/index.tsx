@@ -1,5 +1,5 @@
 import { useShowDeleteConfirm } from '@/hooks/common-hooks';
-import { DeleteOutlined, MoreOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, MoreOutlined } from '@ant-design/icons';
 import { Dropdown, MenuProps, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
 
@@ -8,6 +8,7 @@ import styles from './index.less';
 
 interface IProps {
   deleteItem: () => Promise<any> | void;
+  onUpdateName?: () => void;
   iconFontSize?: number;
   iconFontColor?: string;
   items?: MenuProps['items'];
@@ -17,6 +18,7 @@ interface IProps {
 
 const OperateDropdown = ({
   deleteItem,
+  onUpdateName,
   children,
   iconFontSize = 30,
   iconFontColor = 'gray',
@@ -40,11 +42,22 @@ const OperateDropdown = ({
     domEvent.stopPropagation();
     if (key === '1') {
       handleDelete();
+    } else if (key === 'rename' && onUpdateName) {
+      onUpdateName();
     }
   };
 
   const items: MenuProps['items'] = useMemo(() => {
     return [
+      {
+        key: 'rename',
+        label: (
+          <Space>
+            {t('common.rename')}
+            <EditOutlined />
+          </Space>
+        ),
+      },
       {
         key: '1',
         label: (
