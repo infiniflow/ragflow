@@ -66,6 +66,7 @@ def init_settings():
     DATABASE_TYPE = os.getenv("DB_TYPE", 'mysql')
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
     LLM = get_base_config("user_default_llm", {})
+    LLM_DEFAULT_MODELS = LLM.get("default_models", {})
     LLM_FACTORY = LLM.get("factory", "Tongyi-Qianwen")
     LLM_BASE_URL = LLM.get("base_url")
 
@@ -135,7 +136,21 @@ def init_settings():
             IMAGE2TEXT_MDL = default_llm[LLM_FACTORY]["image2text_model"] + f"@{LLM_FACTORY}"
         EMBEDDING_MDL = default_llm["BAAI"]["embedding_model"] + "@BAAI"
         RERANK_MDL = default_llm["BAAI"]["rerank_model"] + "@BAAI"
-
+    
+    if LLM_DEFAULT_MODELS:
+        CHAT_MDL = LLM_DEFAULT_MODELS.get("chat_model", CHAT_MDL)
+        EMBEDDING_MDL = LLM_DEFAULT_MODELS.get("embedding_model", EMBEDDING_MDL)
+        RERANK_MDL = LLM_DEFAULT_MODELS.get("rerank_model", RERANK_MDL)
+        ASR_MDL = LLM_DEFAULT_MODELS.get("asr_model", ASR_MDL)
+        IMAGE2TEXT_MDL = LLM_DEFAULT_MODELS.get("image2text_model", IMAGE2TEXT_MDL)
+        
+        # factory can be specified in the config name with "@". LLM_FACTORY will be used if not specified
+        CHAT_MDL = CHAT_MDL + (f"@{LLM_FACTORY}" if "@" not in CHAT_MDL else "")
+        EMBEDDING_MDL = EMBEDDING_MDL + (f"@{LLM_FACTORY}" if "@" not in EMBEDDING_MDL else "")
+        RERANK_MDL = RERANK_MDL + (f"@{LLM_FACTORY}" if "@" not in RERANK_MDL else "")
+        ASR_MDL = ASR_MDL + (f"@{LLM_FACTORY}" if "@" not in ASR_MDL else "")
+        IMAGE2TEXT_MDL = IMAGE2TEXT_MDL + (f"@{LLM_FACTORY}" if "@" not in IMAGE2TEXT_MDL else "")
+    
     global API_KEY, PARSERS, HOST_IP, HOST_PORT, SECRET_KEY
     API_KEY = LLM.get("api_key", "")
     PARSERS = LLM.get(
