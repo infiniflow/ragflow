@@ -4,6 +4,7 @@ import { FormInstance } from 'antd';
 export interface ISegmentedContentProps {
   show: boolean;
   form: FormInstance;
+  setHasError: (hasError: boolean) => void;
 }
 
 export interface IVariable {

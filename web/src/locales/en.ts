@@ -420,6 +420,7 @@ This procedure will improve precision of retrieval by adding more information to
       language: 'Language',
       emptyResponse: 'Empty response',
       emptyResponseTip: `Set this as a response if no results are retrieved from the knowledge bases for your query, or leave this field blank to allow the LLM to improvise when nothing is found.`,
+      emptyResponseMessage: `Empty response will be triggered when nothing relevant is retrieved from knowledge bases. Erase 'Empty response' since none of knowledge base is selected.`,
       setAnOpener: 'Opening greeting',
       setAnOpenerInitial: `Hi! I'm your assistant, what can I do for you?`,
       setAnOpenerTip: 'Set an opening greeting for users.',

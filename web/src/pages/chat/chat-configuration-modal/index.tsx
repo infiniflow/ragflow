@@ -64,6 +64,7 @@ const ChatConfigurationModal = ({
   clearDialog,
 }: IProps) => {
   const [form] = Form.useForm();
+  const [hasError, setHasError] = useState(false);
 
   const [value, setValue] = useState<ConfigurationSegmented>(
     ConfigurationSegmented.AssistantSetting,
@@ -74,6 +75,9 @@ const ChatConfigurationModal = ({
 
   const handleOk = async () => {
     const values = await form.validateFields();
+    if (hasError) {
+      return;
+    }
     const nextValues: any = removeUselessFieldsFromValues(
       values,
       'llm_setting.',
@@ -173,6 +177,7 @@ const ChatConfigurationModal = ({
             key={key}
             show={key === value}
             form={form}
+            setHasError={setHasError}
             {...(key === ConfigurationSegmented.ModelSetting
               ? { initialLlmSetting: initialDialog.llm_setting, visible }
               : {})}

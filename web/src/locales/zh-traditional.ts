@@ -402,6 +402,7 @@ export default {
       language: '語言',
       emptyResponse: '空回复',
       emptyResponseTip: `如果在知識庫中沒有檢索到用戶的問題，它將使用它作為答案。如果您希望 LLM 在未檢索到任何內容時提出自己的意見，請將此留空。`,
+      emptyResponseMessage: `當知識庫中沒有檢索到任何相關內容時，將觸發空響應。由於未選擇任何知識庫，因此刪除“空響應”。`,
       setAnOpener: '設置開場白',
       setAnOpenerInitial: `你好！我是你的助理，有什麼可以幫到你的嗎？`,
       setAnOpenerTip: '您想如何歡迎您的客戶？',
