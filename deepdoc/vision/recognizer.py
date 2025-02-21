@@ -21,14 +21,12 @@ import numpy as np
 import cv2
 from functools import cmp_to_key
 
-import onnxruntime as ort
-from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
 from .operators import *  # noqa: F403
 from .operators import preprocess
 from . import operators
-
+from .ocr import load_model
 
 class Recognizer(object):
     def __init__(self, label_list, task_name, model_dir=None):
@@ -47,51 +45,7 @@ class Recognizer(object):
             model_dir = os.path.join(
                         get_project_base_directory(),
                         "rag/res/deepdoc")
-            model_file_path = os.path.join(model_dir, task_name + ".onnx")
-            if not os.path.exists(model_file_path):
-                model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
-                                              local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
-                                              local_dir_use_symlinks=False)
-                model_file_path = os.path.join(model_dir, task_name + ".onnx")
-        else:
-            model_file_path = os.path.join(model_dir, task_name + ".onnx")
-
-        if not os.path.exists(model_file_path):
-            raise ValueError("not find model file path {}".format(
-                model_file_path))
-
-        def cuda_is_available():
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    return True
-            except Exception:
-                return False
-            return False
-
-        # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
-        # Shrink GPU memory after execution
-        self.run_options = ort.RunOptions()
-
-        if cuda_is_available():
-            options = ort.SessionOptions()
-            options.enable_cpu_mem_arena = False
-            cuda_provider_options = {
-                "device_id": 0, # Use specific GPU
-                "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory
-                "arena_extend_strategy": "kNextPowerOfTwo",  # gpu memory allocation strategy
-            }
-            self.ort_sess = ort.InferenceSession(
-                model_file_path, options=options,
-                providers=['CUDAExecutionProvider'],
-                provider_options=[cuda_provider_options]
-            )
-            self.run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
-            logging.info(f"Recognizer {task_name} uses GPU")
-        else:
-            self.ort_sess = ort.InferenceSession(model_file_path, providers=['CPUExecutionProvider'])
-            self.run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "cpu")
-            logging.info(f"Recognizer {task_name} uses CPU")
+        self.ort_sess, self.run_options = load_model(model_dir, task_name)
         self.input_names = [node.name for node in self.ort_sess.get_inputs()]
         self.output_names = [node.name for node in self.ort_sess.get_outputs()]
         self.input_shape = self.ort_sess.get_inputs()[0].shape[2:4]
