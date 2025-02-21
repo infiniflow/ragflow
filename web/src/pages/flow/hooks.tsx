@@ -68,6 +68,7 @@ import {
   initialSwitchValues,
   initialTemplateValues,
   initialTuShareValues,
+  initialVariableValues,
   initialWenCaiValues,
   initialWikipediaValues,
   initialYahooFinanceValues,
@@ -112,6 +113,7 @@ export const useInitializeOperatorParams = () => {
         ...initialRewriteQuestionValues,
         llm_id: llmId,
       },
+      [Operator.VariableExtract]: { ...initialVariableValues, llm_id: llmId },
       [Operator.Message]: initialMessageValues,
       [Operator.KeywordExtract]: {
         ...initialKeywordExtractValues,

@@ -22,10 +22,22 @@ const GoogleForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         <Input></Input>
       </Form.Item>
       <Form.Item label={t('country')} name={'country'}>
-        <Select options={GoogleCountryOptions}></Select>
+        <Select
+          showSearch
+          filterOption={(input, option) =>
+            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+          }
+          options={GoogleCountryOptions}
+        ></Select>
       </Form.Item>
       <Form.Item label={t('language')} name={'language'}>
-        <Select options={GoogleLanguageOptions}></Select>
+        <Select
+          showSearch
+          filterOption={(input, option) =>
+            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+          }
+          options={GoogleLanguageOptions}
+        ></Select>
       </Form.Item>
     </Form>
   );
