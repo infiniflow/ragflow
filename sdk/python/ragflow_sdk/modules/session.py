@@ -38,6 +38,7 @@ class Session(Base):
             res = self._ask_agent(question, stream)
         elif self.__session_type == "chat":
             res = self._ask_chat(question, stream, **kwargs)
+            
         for line in res.iter_lines():
             line = line.decode("utf-8")
             if line.startswith("{"):
@@ -58,8 +59,11 @@ class Session(Base):
                 chunks = reference["chunks"]
                 temp_dict["reference"] = chunks
             message = Message(self.rag, temp_dict)
-            yield message
-
+            if stream:
+                yield message
+        if not stream:
+            return message
+    
     def _ask_chat(self, question: str, stream: bool, **kwargs):
         json_data = {"question": question, "stream": True, "session_id": self.id}
         json_data.update(kwargs)
