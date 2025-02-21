@@ -77,7 +77,7 @@ Yes, you can. Just one graph is generated per knowledge base. The smaller graphs
 
 ### Does the knowledge graph automatically update when I remove a related file?
 
-Nope. The knowledge graph does *not* automaically update *until* a newly uploaded graph is parsed.
+Nope. The knowledge graph does *not* automatically update *until* a newly uploaded graph is parsed.
 
 ### How to remove a generated knowledge graph?
 
