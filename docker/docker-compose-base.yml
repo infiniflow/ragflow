@@ -3,7 +3,7 @@ services:
     container_name: ragflow-es-01
     profiles:
       - elasticsearch
-    image: elasticsearch:${STACK_VERSION}
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - esdata01:/usr/share/elasticsearch/data
     ports:
@@ -27,7 +27,7 @@ services:
         soft: -1
         hard: -1
     healthcheck:
-      test: ["CMD-SHELL", "curl http://localhost:9200"]
+      test: ['CMD-SHELL', 'curl http://localhost:9200']
       interval: 10s
       timeout: 10s
       retries: 120
@@ -43,7 +43,7 @@ services:
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
-    command: ["-f", "/infinity_conf.toml"]
+    command: ['-f', '/infinity_conf.toml']
     ports:
       - ${INFINITY_THRIFT_PORT}:23817
       - ${INFINITY_HTTP_PORT}:23820
@@ -59,23 +59,21 @@ services:
     networks:
       - ragflow
     healthcheck:
-      test: ["CMD", "curl", "http://localhost:23820/admin/node/current"]
+      test: ['CMD', 'curl', 'http://localhost:23820/admin/node/current']
       interval: 10s
       timeout: 10s
       retries: 120
     restart: on-failure
 
-
   mysql:
     # mysql:5.7 linux/arm64 image is unavailable.
-    image: mysql:8.0.39
+    image: mysql:8.0.34
     container_name: ragflow-mysql
     env_file: .env
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
       - TZ=${TIMEZONE}
-    command:
-      --max_connections=1000
+    command: --max_connections=1000
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
@@ -89,7 +87,7 @@ services:
     networks:
       - ragflow
     healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-uroot", "-p${MYSQL_PASSWORD}"]
+      test: ['CMD', 'mysqladmin', 'ping', '-uroot', '-p${MYSQL_PASSWORD}']
       interval: 10s
       timeout: 10s
       retries: 3
@@ -126,8 +124,6 @@ services:
     networks:
       - ragflow
     restart: on-failure
-
-
 
 volumes:
   esdata01:
