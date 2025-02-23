@@ -980,7 +980,7 @@ class RAGFlowPdfParser:
         except Exception as e:
             logging.warning(f"Outlines exception: {e}")
         if not self.outlines:
-            logging.warning("Miss outlines")
+            logging.warning("Miss image outlines")
 
         logging.debug("Images converted.")
         # self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(
