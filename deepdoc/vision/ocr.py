@@ -620,6 +620,16 @@ class OCR(object):
             return ""
         return text
 
+    def recognize_batch(self, img_list):
+        rec_res, elapse = self.text_recognizer(img_list)
+        texts = []
+        for i in range(len(rec_res)):
+            text, score = rec_res[i]
+            if score < self.drop_score:
+                text = ""
+            texts.append(text)
+        return texts
+
     def __call__(self, img, cls=True):
         time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
 
