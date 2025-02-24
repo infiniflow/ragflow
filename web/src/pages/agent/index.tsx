@@ -1,7 +1,9 @@
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
+import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { Trash2 } from 'lucide-react';
+import { AgentSidebar } from './agent-sidebar';
 
 export default function Agent() {
   const { navigateToAgentList } = useNavigatePage();
@@ -28,6 +30,12 @@ export default function Agent() {
           </Button>
         </div>
       </PageHeader>
+      <div>
+        <SidebarProvider>
+          <AgentSidebar />
+          <SidebarTrigger />
+        </SidebarProvider>
+      </div>
     </section>
   );
 }
