@@ -149,7 +149,7 @@ export default {
       changeSpecificCategory: '更改特定类别',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。 严禁上传公司数据或其他违禁文件。',
+        '支持单次或批量上传。单个文件大小不超过10MB，最多上传128份文件。严禁上传违禁文件。',
       chunk: '解析块',
       bulk: '批量',
       cancel: '取消',
@@ -723,7 +723,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       uploadFile: '上传文件',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。 严禁上传公司数据或其他违禁文件。',
+        '支持单次或批量上传。 单个文件大小不超过10MB，最多上传128份文件。严禁上传违禁文件。',
       file: '文件',
       directory: '文件夹',
       local: '本地上传',
