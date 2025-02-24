@@ -30,6 +30,11 @@ docker/ragflow-logs/
 /flask_session
 /logs
 rag/res/deepdoc
+rag/Lib
+rag/Scripts
+
+# Virtual environment
+RAG3.11/
 
 # Exclude sdk generated files
 sdk/python/ragflow.egg-info/
