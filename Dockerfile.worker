@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 AS base
+FROM --platform=linux/amd64 docker.io/infiniflow/ragflow_deps:latest@sha256:d963eef897cc6254ef2cadb4977c537b7791492931052df2af1804508290f64c AS base
 USER root
 SHELL ["/bin/bash", "-c"]
 
@@ -98,7 +98,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN cargo --version && rustc --version
 
 # Copy pyproject.toml and uv.lock
-COPY /pyproject.toml /uv.lock ./
+COPY pyproject.toml uv.lock ./
 
 # Install dependencies using uv
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \

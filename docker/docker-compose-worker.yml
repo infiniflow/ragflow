@@ -3,8 +3,8 @@ version: "3.9"
 services:
   ragflow-worker:
     build:
-      context: .
-      dockerfile: ../Dockerfile.worker
+      context: ..
+      dockerfile: Dockerfile.worker
     container_name: ragflow-worker
     env_file: .env
     environment:
