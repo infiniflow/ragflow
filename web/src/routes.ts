@@ -215,7 +215,7 @@ const routes = [
     ],
   },
   {
-    path: Routes.Agent,
+    path: `${Routes.Agent}/:id`,
     layout: false,
     component: `@/pages${Routes.Agent}`,
   },
