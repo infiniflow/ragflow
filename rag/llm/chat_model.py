@@ -259,7 +259,7 @@ class QWenChat(Base):
         dashscope.api_key = key
         self.model_name = model_name
         if model_name.lower().find("deepseek") >= 0:
-            super().__init__(key, model_name)
+            super().__init__(key, model_name, "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
     def chat(self, system, history, gen_conf):
         if self.model_name.lower().find("deepseek") >= 0:
@@ -334,7 +334,7 @@ class QWenChat(Base):
     def chat_streamly(self, system, history, gen_conf):
         if self.model_name.lower().find("deepseek") >= 0:
             return super.chat_streamly(system, history, gen_conf)
-        
+
         return self._chat_streamly(system, history, gen_conf)
 
 
