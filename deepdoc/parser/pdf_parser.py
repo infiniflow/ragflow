@@ -315,14 +315,19 @@ class RAGFlowPdfParser:
 
         logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
         start = timer()
+        boxes_to_reg = []
+        img_np = np.array(img)
         for b in bxs:
             if not b["text"]:
                 left, right, top, bott = b["x0"] * ZM, b["x1"] * \
                                          ZM, b["top"] * ZM, b["bottom"] * ZM
-                b["text"] = self.ocr.recognize(np.array(img),
-                                               np.array([[left, top], [right, top], [right, bott], [left, bott]],
-                                                        dtype=np.float32))
+                b["box_image"] = self.ocr.get_rotate_crop_image(img_np, np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
+                boxes_to_reg.append(b)
             del b["txt"]
+        texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg])
+        for i in range(len(boxes_to_reg)):
+            boxes_to_reg[i]["text"] = texts[i]
+            del boxes_to_reg[i]["box_image"]
         logging.info(f"__ocr recognize {len(bxs)} boxes cost {timer() - start}s")
         bxs = [b for b in bxs if b["text"]]
         if self.mean_height[-1] == 0:
