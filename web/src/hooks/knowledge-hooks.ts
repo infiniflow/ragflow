@@ -209,14 +209,12 @@ export const useUpdateKnowledgeName = () => {
   const { mutateAsync } = useMutation({
     mutationKey: ['updateKnowledgeName'],
     mutationFn: async (params: { kb_id: string; name: string }) => {
-      // 获取当前 knowledge 的完整信息
       const { data: kbDetail } = await kbService.get_kb_detail({
         kb_id: params.kb_id,
       });
 
       const currentKnowledge = kbDetail?.data;
 
-      // 使用当前值更新名称
       const { data = {} } = await kbService.updateKb({
         kb_id: params.kb_id,
         name: params.name,
