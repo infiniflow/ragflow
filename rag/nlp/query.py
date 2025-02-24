@@ -63,8 +63,11 @@ class FulltextQueryer:
                 r"(^| )('s|'re|is|are|were|was|do|does|did|don't|doesn't|didn't|has|have|be|there|you|me|your|my|mine|just|please|may|i|should|would|wouldn't|will|won't|done|go|for|with|so|the|a|an|by|i'm|it's|he's|she's|they|they're|you're|as|by|on|in|at|up|out|down|of|to|or|and|if) ",
                 " ")
         ]
+        otxt = txt
         for r, p in patts:
             txt = re.sub(r, p, txt, flags=re.IGNORECASE)
+        if not otxt:
+            txt = otxt
         return txt
 
     def question(self, txt, tbl="qa", min_match: float = 0.6):
