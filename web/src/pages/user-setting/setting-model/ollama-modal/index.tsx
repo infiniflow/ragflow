@@ -21,6 +21,7 @@ const llmFactoryToUrlMap = {
   Ollama:
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/deploy_local_llm.mdx',
   Xinference: 'https://inference.readthedocs.io/en/latest/user_guide',
+  ModelScope: 'https://www.modelscope.cn/docs/model-service/API-Inference/intro',
   LocalAI: 'https://localai.io/docs/getting-started/models/',
   'LM-Studio': 'https://lmstudio.ai/docs/basics',
   'OpenAI-API-Compatible': 'https://platform.openai.com/docs/models/gpt-4',
@@ -76,6 +77,9 @@ const OllamaModal = ({
       { value: 'image2text', label: 'image2text' },
       { value: 'speech2text', label: 'sequence2text' },
       { value: 'tts', label: 'tts' },
+    ],
+    ModelScope: [
+      { value: 'chat', label: 'chat' },
     ],
     GPUStack: [
       { value: 'chat', label: 'chat' },
