@@ -9,7 +9,12 @@ ENV LIGHTEN=${LIGHTEN}
 WORKDIR /ragflow
 
 # Copy models downloaded via download_deps.py
-RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN mkdir -p /ragflow/rag/res/deepdoc && \
+    mkdir -p /app/.ragflow && \
+    chown -R 1000:1000 /ragflow /app
+
+USER 1000
+
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     cp /huggingface.co/InfiniFlow/huqie/huqie.txt.trie /ragflow/rag/res/ && \
     tar --exclude='.*' -cf - \
@@ -23,13 +28,13 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
             /huggingface.co/BAAI/bge-reranker-v2-m3 \
             /huggingface.co/maidalun1020/bce-embedding-base_v1 \
             /huggingface.co/maidalun1020/bce-reranker-base_v1 \
-            | tar -xf - --strip-components=2 -C /root/.ragflow) \
+            | tar -xf - --strip-components=2 -C /app/.ragflow) \
     fi
 
 # https://github.com/chrismattmann/tika-python
 # This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
-    cp -r /deps/nltk_data /root/ && \
+    cp -r /deps/nltk_data /app/ && \
     cp /deps/tika-server-standard-3.0.0.jar /deps/tika-server-standard-3.0.0.jar.md5 /ragflow/ && \
     cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 
@@ -71,7 +76,7 @@ RUN if [ "$NEED_MIRROR" == "1" ]; then \
     pipx install uv
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-ENV PATH=/root/.local/bin:$PATH
+ENV PATH=/app/.local/bin:$PATH
 
 # nodejs 12.22 on Ubuntu 22.04 is too old
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
@@ -91,9 +96,9 @@ RUN apt update && apt install -y curl build-essential \
        fi; \
     # Force curl to use HTTP/1.1
     curl --proto '=https' --tlsv1.2 --http1.1 -sSf https://sh.rustup.rs | bash -s -- -y --profile minimal \
-    && echo 'export PATH="/root/.cargo/bin:${PATH}"' >> /root/.bashrc
+    && echo 'export PATH="/app/.cargo/bin:${PATH}"' >> /app/.bashrc
 
-ENV PATH="/root/.cargo/bin:${PATH}"
+ENV PATH="/app/.cargo/bin:${PATH}"
 
 RUN cargo --version && rustc --version
 
@@ -101,7 +106,7 @@ FROM base AS builder
 WORKDIR /ragflow
 
 # Install production dependencies
-RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv \
+RUN --mount=type=cache,id=ragflow_uv,target=/app/.cache/uv \
     uv pip install --no-deps -r requirements.txt
 
 FROM base AS runtime
