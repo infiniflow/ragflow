@@ -14,15 +14,19 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { RAGFlowSelect } from '@/components/ui/select';
 import { FormSlider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
+
+const options = [
+  { label: 'xx', value: 'xx' },
+  { label: 'ii', value: 'ii' },
+];
+
+const groupOptions = [
+  { label: 'scsdv', options },
+  { label: 'thtyu', options: [{ label: 'jj', value: 'jj' }] },
+];
 
 const formSchema = z.object({
   username: z.number().min(2, {
@@ -95,18 +99,12 @@ export default function TestingForm() {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Username</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl>
-                  <SelectTrigger className="bg-colors-background-inverse-weak">
-                    <SelectValue placeholder="Select a verified email to display" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="m@example.com">m@example.com</SelectItem>
-                  <SelectItem value="m@google.com">m@google.com</SelectItem>
-                  <SelectItem value="m@support.com">m@support.com</SelectItem>
-                </SelectContent>
-              </Select>
+              <RAGFlowSelect
+                value={field.value}
+                onChange={field.onChange}
+                FormControlComponent={FormControl}
+                options={groupOptions}
+              ></RAGFlowSelect>
               <FormDescription>
                 This is your public display name.
               </FormDescription>
