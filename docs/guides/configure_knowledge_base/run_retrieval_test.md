@@ -49,11 +49,11 @@ In a knowledge graph, an entity description, a relationship description, or a co
 The switch is disabled by default. When enabled, RAGFlow performs the following during a retrieval test:
 
 1. Extract entities and entity types from your query using the LLM.
-2. Retrieve top N entities based on their PageRank values, using the extracted entity types.
+2. Retrieve top N entities from the graph based on their PageRank values, using the extracted entity types.
 3. Find similar entities and their N-hop relationships from the graph using the embeddings of the extracted query entities.
 4. Retrieve similar relationships from the graph using the query embedding.
-5. Rank these retrieved entities and relationships by multiplying each one's PageRank value with its similarity score to the query, returning the top N as the final retrieval.
-6. Use the entities in the final retrieval to retrieve the top 1 community report. Retrieve the report for the community involving the most entities in the final retrieval.  
+5. Rank these retrieved entities and relationships by multiplying each one's PageRank value with its similarity score to the query, returning the top n as the final retrieval.
+6. Retrieve the report for the community involving the most entities in the final retrieval.  
    *The retrieved entity descriptions, relationship descriptions, and the top 1 community report are sent to the LLM for content generation.*
 
 :::danger IMPORTANT
@@ -67,16 +67,16 @@ This field is where you put in your testing query.
 ## Procedure
 
 1. Navigate to the **Retrieval testing** page of your knowledge base, enter your query in **Test text**, and click **Testing** to run the test.
-2. If the results are unsatisfactory, keep tuning the options listed in the Configuration section.
+2. If the results are unsatisfactory, tune the options listed in the Configuration section and rerun the test.
 
-   *The following is a screenshot of a retrieval test conducted without using knowledge graph. It demonstrates a hybrid search combining weighted keyword similarity and weighted vector cosine similarity. The overall similarity score 28.56, calculated as 25.17 x 0.7 + 36.49 x 0.3:*  
+   *The following is a screenshot of a retrieval test conducted without using knowledge graph. It demonstrates a hybrid search combining weighted keyword similarity and weighted vector cosine similarity. The overall hybrid similarity score is 28.56, calculated as 25.17 (term similarity score) x 0.7 + 36.49 (vector similarity score) x 0.3:*  
    ![Image](https://github.com/user-attachments/assets/541554d4-3f3e-44e1-954b-0ae77d7372c6)
 
-   *The following is a screenshot of a retrieval test conducted using a knowledge graph. It shows that only vector similarity is used:*  
+   *The following is a screenshot of a retrieval test conducted using a knowledge graph. It shows that only vector similarity is used for knowledge graph-generated chunks:*  
    ![Image](https://github.com/user-attachments/assets/30a03091-0f7b-4058-901a-f4dc5ca5aa6b)
 
 ## Frequently asked questions
 
-### Is an LLM used when I the Use Knowledge Graph switch is enabled?
+### Is an LLM used when the Use Knowledge Graph switch is enabled?
 
 Yes, your LLM will be involved to analyze your query and extract the related entities and relationship from the knowledge graph. This also explains why additional tokens and time will be consumed.
