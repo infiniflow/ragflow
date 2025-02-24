@@ -236,15 +236,17 @@ def add_llm():
             msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
-        mdl = RerankModel[factory](
-            key=llm["api_key"],
-            model_name=mdl_nm,
-            base_url=llm["api_base"]
-        )
         try:
+            mdl = RerankModel[factory](
+                key=llm["api_key"],
+                model_name=mdl_nm,
+                base_url=llm["api_base"]
+            )
             arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!", "Ohh, my friend!"])
             if len(arr) == 0:
                 raise Exception("Not known.")
+        except KeyError:
+            msg += f"{factory} dose not support this model({mdl_nm})"
         except Exception as e:
             msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
