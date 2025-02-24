@@ -17,6 +17,7 @@
 import logging
 import os
 import random
+from timeit import default_timer as timer
 
 import xgboost as xgb
 from io import BytesIO
@@ -277,7 +278,11 @@ class RAGFlowPdfParser:
                 b["SP"] = ii
 
     def __ocr(self, pagenum, img, chars, ZM=3):
+        start = timer()
         bxs = self.ocr.detect(np.array(img))
+        logging.info(f"__ocr detecting boxes of a image cost ({timer() - start}s)")
+
+        start = timer()
         if not bxs:
             self.boxes.append([])
             return
@@ -308,6 +313,8 @@ class RAGFlowPdfParser:
             else:
                 bxs[ii]["text"] += c["text"]
 
+        logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
+        start = timer()
         for b in bxs:
             if not b["text"]:
                 left, right, top, bott = b["x0"] * ZM, b["x1"] * \
@@ -316,6 +323,7 @@ class RAGFlowPdfParser:
                                                np.array([[left, top], [right, top], [right, bott], [left, bott]],
                                                         dtype=np.float32))
             del b["txt"]
+        logging.info(f"__ocr recognize {len(bxs)} boxes cost {timer() - start}s")
         bxs = [b for b in bxs if b["text"]]
         if self.mean_height[-1] == 0:
             self.mean_height[-1] = np.median([b["bottom"] - b["top"]
@@ -951,6 +959,7 @@ class RAGFlowPdfParser:
         self.page_cum_height = [0]
         self.page_layout = []
         self.page_from = page_from
+        start = timer()
         try:
             self.pdf = pdfplumber.open(fnm) if isinstance(
                 fnm, str) else pdfplumber.open(BytesIO(fnm))
@@ -965,6 +974,7 @@ class RAGFlowPdfParser:
             self.total_page = len(self.pdf.pages)
         except Exception:
             logging.exception("RAGFlowPdfParser __images__")
+        logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
 
         self.outlines = []
         try:
@@ -994,7 +1004,7 @@ class RAGFlowPdfParser:
         else:
             self.is_english = False
 
-        # st = timer()
+        start = timer()
         for i, img in enumerate(self.page_images):
             chars = self.page_chars[i] if not self.is_english else []
             self.mean_height.append(
@@ -1016,7 +1026,7 @@ class RAGFlowPdfParser:
             self.__ocr(i + 1, img, chars, zoomin)
             if callback and i % 6 == 5:
                 callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
-        # print("OCR:", timer()-st)
+        logging.info(f"__images__ {len(self.page_images)} pages cost {timer() - start}s")
 
         if not self.is_english and not any(
                 [c for c in self.page_chars]) and self.boxes:
