@@ -874,18 +874,43 @@ def reasoning(chunk_info: dict, question: str, chat_mdl: LLMBundle, embd_mdl: LL
         f"Then, the system will search and analyze relevant content, then provide you with helpful information in the format {BEGIN_SEARCH_RESULT} ...search results... {END_SEARCH_RESULT}.\n\n"
         f"You can repeat the search process multiple times if necessary. The maximum number of search attempts is limited to {MAX_SEARCH_LIMIT}.\n\n"
         "Once you have all the information you need, continue your reasoning.\n\n"
-        "-- Example --\n"
-        "Question: \"Find the minimum number of vertices in a Steiner tree that includes all specified vertices in a given tree.\"\n"
+        "-- Example 1 --\n" ########################################
+        "Question: \"Are both the directors of Jaws and Casino Royale from the same country?\"\n"
         "Assistant:\n"
-        "  - I need to understand what a Steiner tree is.\n\n" 
-        f"    {BEGIN_SEARCH_QUERY}What's Steiner tree{END_SEARCH_QUERY}\n\n"
-        f"    {BEGIN_SEARCH_RESULT}\n(System returns processed information from relevant web pages)\n{END_SEARCH_RESULT}\n\n"
-        "User:\nContinues reasoning with the new information.\n\n"
+        f"    {BEGIN_SEARCH_QUERY}Who is the director of Jaws?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nThe director of Jaws is Steven Spielberg...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information.\n"
         "Assistant:\n"
-        "  - I need to understand what the difference between minimum number of vertices and edges in the Steiner tree is.\n\n" 
-        f"    {BEGIN_SEARCH_QUERY}What's the difference between minimum number of vertices and edges in the Steiner tree{END_SEARCH_QUERY}\n\n"
-        f"    {BEGIN_SEARCH_RESULT}\n(System returns processed information from relevant web pages)\n{END_SEARCH_RESULT}\n\n"
-        "User:\nContinues reasoning with the new information...\n\n"
+        f"    {BEGIN_SEARCH_QUERY}Where is Steven Spielberg from?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nSteven Allan Spielberg is an American filmmaker...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information...\n\n"
+        "Assistant:\n"
+        f"    {BEGIN_SEARCH_QUERY}Who is the director of Casino Royale?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nCasino Royale is a 2006 spy film directed by Martin Campbell...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information...\n\n"
+        "Assistant:\n"
+        f"    {BEGIN_SEARCH_QUERY}Where is Martin Campbell from?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nMartin Campbell (born 24 October 1943) is a New Zealand film and television director...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information...\n\n"
+        "Assistant:\nIt's enough to answer the question\n"
+        
+        "-- Example 2 --\n" #########################################
+        "Question: \"When was the founder of craigslist born?\"\n"
+        "Assistant:\n"
+        f"    {BEGIN_SEARCH_QUERY}Who was the founder of craigslist?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nCraigslist was founded by Craig Newmark...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information.\n"
+        "Assistant:\n"
+        f"    {BEGIN_SEARCH_QUERY} When was Craig Newmark born?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nCraig Newmark was born on December 6, 1952...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information...\n\n"
+        "Assistant:\nIt's enough to answer the question\n"
         "**Remember**:\n"
         f"- You have a dataset to search, so you just provide a proper search query.\n"
         f"- Use {BEGIN_SEARCH_QUERY} to request a dataset search and end with {END_SEARCH_QUERY}.\n"
@@ -934,7 +959,7 @@ def reasoning(chunk_info: dict, question: str, chat_mdl: LLMBundle, embd_mdl: LL
     """
 
     executed_search_queries = []
-    msg_hisotry = [{"role": "user", "content": f'Question:\n{question}\n\n'}]
+    msg_hisotry = [{"role": "user", "content": f'Question:\"{question}\"\n'}]
     all_reasoning_steps = []
     think = "<think>"
     for ii in range(MAX_SEARCH_LIMIT + 1):
@@ -948,6 +973,8 @@ def reasoning(chunk_info: dict, question: str, chat_mdl: LLMBundle, embd_mdl: LL
         query_think = ""
         if msg_hisotry[-1]["role"] != "user":
             msg_hisotry.append({"role": "user", "content": "Continues reasoning with the new information.\n"})
+        else:
+            msg_hisotry[-1]["content"] += "\n\nContinues reasoning with the new information.\n"
         for ans in chat_mdl.chat_streamly(reason_prompt, msg_hisotry, {"temperature": 0.7}):
             ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
             if not ans:
@@ -957,7 +984,6 @@ def reasoning(chunk_info: dict, question: str, chat_mdl: LLMBundle, embd_mdl: LL
 
         think += rm_query_tags(query_think)
         all_reasoning_steps.append(query_think)
-        msg_hisotry.append({"role": "assistant", "content": query_think})
         queries = extract_between(query_think, BEGIN_SEARCH_QUERY, END_SEARCH_QUERY)
         if not queries:
             if ii > 0:
@@ -966,6 +992,7 @@ def reasoning(chunk_info: dict, question: str, chat_mdl: LLMBundle, embd_mdl: LL
 
         for search_query in queries:
             logging.info(f"[THINK]Query: {ii}. {search_query}")
+            msg_hisotry.append({"role": "assistant", "content": search_query})
             think += f"\n\n> {ii+1}. {search_query}\n\n"
             yield {"answer": think + "</think>", "reference": {}, "audio_binary": None}
 
@@ -975,7 +1002,7 @@ def reasoning(chunk_info: dict, question: str, chat_mdl: LLMBundle, embd_mdl: LL
                 summary_think = f"\n{BEGIN_SEARCH_RESULT}\nYou have searched this query. Please refer to previous results.\n{END_SEARCH_RESULT}\n"
                 yield {"answer": think + summary_think + "</think>", "reference": {}, "audio_binary": None}
                 all_reasoning_steps.append(summary_think)
-                msg_hisotry.append({"role": "assistant", "content": summary_think})
+                msg_hisotry.append({"role": "user", "content": summary_think})
                 think += summary_think
                 continue
 
@@ -1034,7 +1061,7 @@ def reasoning(chunk_info: dict, question: str, chat_mdl: LLMBundle, embd_mdl: LL
 
             all_reasoning_steps.append(summary_think)
             msg_hisotry.append(
-                {"role": "assistant", "content": f"\n\n{BEGIN_SEARCH_RESULT}{summary_think}{END_SEARCH_RESULT}\n\n"})
+                {"role": "user", "content": f"\n\n{BEGIN_SEARCH_RESULT}{summary_think}{END_SEARCH_RESULT}\n\n"})
             think += rm_result_tags(summary_think)
             logging.info(f"[THINK]Summary: {ii}. {summary_think}")
 
