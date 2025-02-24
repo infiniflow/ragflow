@@ -13,22 +13,17 @@ import React, {
   useState,
 } from 'react';
 // import { shallow } from 'zustand/shallow';
-import { variableEnabledFieldMap } from '@/constants/chat';
-import {
-  ModelVariableType,
-  settledModelVariableMap,
-} from '@/constants/knowledge';
+import { settledModelVariableMap } from '@/constants/knowledge';
 import { useFetchModelId } from '@/hooks/logic-hooks';
-import { Variable } from '@/interfaces/database/chat';
 import {
   ICategorizeForm,
   IRelevantForm,
   ISwitchForm,
   RAGFlowNodeType,
 } from '@/interfaces/database/flow';
-import { FormInstance, message } from 'antd';
+import { message } from 'antd';
 import { humanId } from 'human-id';
-import { get, isEmpty, lowerFirst, pick } from 'lodash';
+import { get, lowerFirst } from 'lodash';
 import trim from 'lodash/trim';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
@@ -289,38 +284,6 @@ export const useHandleFormValuesChange = (id?: string) => {
   );
 
   return { handleValuesChange };
-};
-
-export const useSetLlmSetting = (
-  form?: FormInstance,
-  formData?: Record<string, any>,
-) => {
-  const initialLlmSetting = pick(
-    formData,
-    Object.values(variableEnabledFieldMap),
-  );
-  useEffect(() => {
-    const switchBoxValues = Object.keys(variableEnabledFieldMap).reduce<
-      Record<string, boolean>
-    >((pre, field) => {
-      pre[field] = isEmpty(initialLlmSetting)
-        ? true
-        : !!initialLlmSetting[
-            variableEnabledFieldMap[
-              field as keyof typeof variableEnabledFieldMap
-            ] as keyof Variable
-          ];
-      return pre;
-    }, {});
-    let otherValues = settledModelVariableMap[ModelVariableType.Precise];
-    if (!isEmpty(initialLlmSetting)) {
-      otherValues = initialLlmSetting;
-    }
-    form?.setFieldsValue({
-      ...switchBoxValues,
-      ...otherValues,
-    });
-  }, [form, initialLlmSetting]);
 };
 
 export const useValidateConnection = () => {
