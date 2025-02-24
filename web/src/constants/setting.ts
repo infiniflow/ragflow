@@ -33,6 +33,7 @@ export const IconMap = {
   文心一言: 'wenxin',
   Ollama: 'ollama',
   Xinference: 'xinference',
+  ModelScope: 'modelscope',
   DeepSeek: 'deepseek',
   VolcEngine: 'volc_engine',
   BaiChuan: 'baichuan',
