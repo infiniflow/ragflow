@@ -43,7 +43,7 @@ class RetrievalParam(ComponentParamBase):
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
-        self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keywords similarity weight")
+        self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keyword similarity weight")
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
 
 

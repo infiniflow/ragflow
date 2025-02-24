@@ -17,7 +17,6 @@
 import logging
 import random
 from collections import Counter
-from typing import Optional
 
 from rag.utils import num_tokens_from_string
 from . import rag_tokenizer
@@ -604,9 +603,6 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
     return cks, images
 
 
-def extract_between(text: str, start_tag: str, end_tag: str) -> Optional[str]:
+def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
     pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)
-    matches = re.findall(pattern, text, flags=re.DOTALL)
-    if matches:
-        return matches[-1].strip()
-    return None
+    return re.findall(pattern, text, flags=re.DOTALL)
