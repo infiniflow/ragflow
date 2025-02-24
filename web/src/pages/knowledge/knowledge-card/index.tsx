@@ -8,12 +8,17 @@ import {
 } from '@ant-design/icons';
 import { Avatar, Badge, Card, Space } from 'antd';
 import classNames from 'classnames';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'umi';
 
 import OperateDropdown from '@/components/operate-dropdown';
+import RenameModal from '@/components/rename-modal';
 import { useTheme } from '@/components/theme-provider';
-import { useDeleteKnowledge } from '@/hooks/knowledge-hooks';
+import {
+  useDeleteKnowledge,
+  useUpdateKnowledgeName,
+} from '@/hooks/knowledge-hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import styles from './index.less';
 
@@ -27,6 +32,9 @@ const KnowledgeCard = ({ item }: IProps) => {
   const { data: userInfo } = useFetchUserInfo();
   const { theme } = useTheme();
   const { deleteKnowledge } = useDeleteKnowledge();
+  const { updateKnowledgeName } = useUpdateKnowledgeName();
+  const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
+  const [renameLoading, setRenameLoading] = useState(false);
 
   const removeKnowledge = async () => {
     return deleteKnowledge(item.id);
@@ -36,6 +44,26 @@ const KnowledgeCard = ({ item }: IProps) => {
     navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${item.id}`, {
       state: { from: 'list' },
     });
+  };
+
+  const handleRename = () => {
+    setIsRenameModalVisible(true);
+  };
+
+  const handleRenameOk = async (newName: string) => {
+    setRenameLoading(true);
+    try {
+      console.log('Renaming knowledge:', { id: item.id, newName });
+      const success = await updateKnowledgeName(item.id, newName);
+      console.log('Rename result:', success);
+      if (success) {
+        setIsRenameModalVisible(false);
+      }
+    } catch (error) {
+      console.error('Rename error:', error);
+    } finally {
+      setRenameLoading(false);
+    }
   };
 
   return (
@@ -50,7 +78,10 @@ const KnowledgeCard = ({ item }: IProps) => {
         <div className={styles.container}>
           <div className={styles.content}>
             <Avatar size={34} icon={<UserOutlined />} src={item.avatar} />
-            <OperateDropdown deleteItem={removeKnowledge}></OperateDropdown>
+            <OperateDropdown
+              deleteItem={removeKnowledge}
+              onUpdateName={handleRename}
+            ></OperateDropdown>
           </div>
           <div className={styles.titleWrapper}>
             <span
@@ -105,6 +136,14 @@ const KnowledgeCard = ({ item }: IProps) => {
           </div>
         </div>
       </Card>
+
+      <RenameModal
+        visible={isRenameModalVisible}
+        hideModal={() => setIsRenameModalVisible(false)}
+        loading={renameLoading}
+        initialName={item.name}
+        onOk={handleRenameOk}
+      />
     </Badge.Ribbon>
   );
 };

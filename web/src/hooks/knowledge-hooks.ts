@@ -204,6 +204,55 @@ export const useUpdateKnowledge = () => {
   return { data, loading, saveKnowledgeConfiguration: mutateAsync };
 };
 
+export const useUpdateKnowledgeName = () => {
+  const queryClient = useQueryClient();
+  const { mutateAsync } = useMutation({
+    mutationKey: ['updateKnowledgeName'],
+    mutationFn: async (params: { kb_id: string; name: string }) => {
+      // 获取当前 knowledge 的完整信息
+      const { data: kbDetail } = await kbService.get_kb_detail({
+        kb_id: params.kb_id,
+      });
+
+      const currentKnowledge = kbDetail?.data;
+
+      // 使用当前值更新名称
+      const { data = {} } = await kbService.updateKb({
+        kb_id: params.kb_id,
+        name: params.name,
+        description: currentKnowledge.description,
+        permission: currentKnowledge.permission,
+        parser_id: currentKnowledge.parser_id,
+      });
+
+      if (data.code === 0) {
+        message.success(i18n.t('message.modified'));
+        await queryClient.invalidateQueries({
+          queryKey: ['fetchKnowledgeList'],
+          refetchType: 'all',
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ['infiniteFetchKnowledgeList'],
+          refetchType: 'all',
+        });
+      }
+      return data;
+    },
+  });
+
+  return {
+    updateKnowledgeName: async (id: string, newName: string) => {
+      try {
+        const result = await mutateAsync({ kb_id: id, name: newName });
+        return result.code === 0;
+      } catch (error) {
+        message.error('Failed to update name');
+        return false;
+      }
+    },
+  };
+};
+
 //#endregion
 
 //#region Retrieval testing
