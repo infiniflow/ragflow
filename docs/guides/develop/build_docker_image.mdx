@@ -12,8 +12,8 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
 ## Target Audience
 
 - Developers who have added new features or modified the existing code and require a Docker image to view and debug their changes.
-- Developers looking to build a RAGFlow Docker image for an ARM64 platform.
-- Testers looking to explore the latest features of RAGFlow in a Docker image.
+- Developers seeking to build a RAGFlow Docker image for an ARM64 platform.
+- Testers aiming to explore the latest features of RAGFlow in a Docker image.
 
 ## Prerequisites
 
@@ -21,6 +21,7 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
 - RAM &ge; 16 GB
 - Disk &ge; 50 GB
 - Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1
+- For ARM64 platforms, please upgrade the `xgboost` version in **pyproject.toml** to `1.6.0` and ensure **unixODBC** is properly installed.
 
 ## Build a Docker image
 
