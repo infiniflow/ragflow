@@ -97,22 +97,21 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN cargo --version && rustc --version
 
-# Copy pyproject.toml and uv.lock
-COPY pyproject.toml uv.lock ./
+FROM base AS builder
+WORKDIR /ragflow
 
-# Install dependencies using uv
-RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
-    if [ "$NEED_MIRROR" == "1" ]; then \
-        sed -i 's|pypi.org|pypi.tuna.tsinghua.edu.cn|g' uv.lock; \
-    else \
-        sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
-    fi; \
-    if [ "$LIGHTEN" == "1" ]; then \
-        uv sync --python 3.10 --frozen; \
-    else \
-        uv sync --python 3.10 --frozen --all-extras; \
-    fi
+# Install production dependencies
+RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv \
+    uv pip install --no-deps -r requirements.txt
 
+FROM base AS runtime
+WORKDIR /ragflow
+
+# Copy only necessary artifacts
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 COPY . .
 
+# Worker-specific configuration
+ENV PYTHONPATH=/ragflow
 CMD ["python", "rag/svr/task_executor.py", "--worker"]
