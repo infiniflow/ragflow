@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { ControllerRenderProps } from 'react-hook-form';
 
 import { FormControl } from '@/components/ui/form';
-import { useCallback, useEffect } from 'react';
+import { forwardRef, useCallback, useEffect } from 'react';
 
 const Select = SelectPrimitive.Root;
 
@@ -20,8 +20,9 @@ const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
     onReset?: () => void;
+    allowClear?: boolean;
   }
->(({ className, children, value, onReset, ...props }, ref) => (
+>(({ className, children, value, onReset, allowClear, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
@@ -37,7 +38,7 @@ const SelectTrigger = React.forwardRef<
         event.stopPropagation();
       }}
     >
-      {value ? (
+      {value && allowClear ? (
         <X className="h-4 w-4 opacity-50 cursor-pointer" onClick={onReset} />
       ) : (
         <ChevronDown className="h-4 w-4 opacity-50" />
@@ -188,6 +189,7 @@ export type RAGFlowSelectGroupOptionType = {
 type RAGFlowSelectProps = Partial<ControllerRenderProps> & {
   FormControlComponent?: typeof FormControl;
   options?: (RAGFlowSelectOptionType | RAGFlowSelectGroupOptionType)[];
+  allowClear?: boolean;
 };
 
 /**
@@ -206,18 +208,25 @@ type RAGFlowSelectProps = Partial<ControllerRenderProps> & {
  * }
  * @return {*}
  */
-export function RAGFlowSelect({
-  value: initialValue,
-  onChange,
-  FormControlComponent,
-  options = [],
-}: RAGFlowSelectProps) {
+export const RAGFlowSelect = forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Trigger>,
+  RAGFlowSelectProps
+>(function (
+  {
+    value: initialValue,
+    onChange,
+    FormControlComponent,
+    options = [],
+    allowClear,
+  },
+  ref,
+) {
   const [key, setKey] = React.useState(+new Date());
   const [value, setValue] = React.useState<string | undefined>(undefined);
 
   const FormControlWidget = FormControlComponent
     ? FormControlComponent
-    : React.Fragment;
+    : ({ children }: React.PropsWithChildren) => <div>{children}</div>;
 
   const handleChange = useCallback(
     (val?: string) => {
@@ -248,6 +257,8 @@ export function RAGFlowSelect({
           className="bg-colors-background-inverse-weak"
           value={value}
           onReset={handleReset}
+          allowClear={allowClear}
+          ref={ref}
         >
           <SelectValue placeholder="Select a verified email to display" />
         </SelectTrigger>
@@ -280,4 +291,4 @@ export function RAGFlowSelect({
       </SelectContent>
     </Select>
   );
-}
+});

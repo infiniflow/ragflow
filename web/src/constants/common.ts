@@ -138,3 +138,10 @@ export const ExceptiveType = ['xlsx', 'xls', 'pdf', 'docx', ...Images];
 
 export const SupportedPreviewDocumentTypes = [...ExceptiveType];
 //#endregion
+
+export enum Platform {
+  RAGFlow = 'RAGFlow',
+  Dify = 'Dify',
+  FastGPT = 'FastGPT',
+  Coze = 'Coze',
+}

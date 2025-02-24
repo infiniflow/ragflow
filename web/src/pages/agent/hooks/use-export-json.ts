@@ -1,9 +1,10 @@
-import { FileMimeType } from '@/constants/common';
+import { useToast } from '@/components/hooks/use-toast';
+import { FileMimeType, Platform } from '@/constants/common';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchFlow } from '@/hooks/flow-hooks';
 import { IGraph } from '@/interfaces/database/flow';
 import { downloadJsonFile } from '@/utils/file-util';
-import { message, UploadFile } from 'antd';
+import { message } from 'antd';
 import isEmpty from 'lodash/isEmpty';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -20,13 +21,21 @@ export const useHandleExportOrImportJsonFile = () => {
   const setGraphInfo = useSetGraphInfo();
   const { data } = useFetchFlow();
   const { t } = useTranslation();
+  const { toast } = useToast();
 
   const onFileUploadOk = useCallback(
-    async (fileList: UploadFile[]) => {
+    async ({
+      fileList,
+      platform,
+    }: {
+      fileList: File[];
+      platform: Platform;
+    }) => {
+      console.log('🚀 ~ useHandleExportOrImportJsonFile ~ platform:', platform);
       if (fileList.length > 0) {
-        const file: File = fileList[0] as unknown as File;
+        const file = fileList[0];
         if (file.type !== FileMimeType.Json) {
-          message.error(t('flow.jsonUploadTypeErrorMessage'));
+          toast({ title: t('flow.jsonUploadTypeErrorMessage') });
           return;
         }
 
@@ -45,7 +54,7 @@ export const useHandleExportOrImportJsonFile = () => {
         }
       }
     },
-    [hideFileUploadModal, setGraphInfo, t],
+    [hideFileUploadModal, setGraphInfo, t, toast],
   );
 
   const handleExportJson = useCallback(() => {
