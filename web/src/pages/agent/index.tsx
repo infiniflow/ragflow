@@ -1,12 +1,22 @@
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { Trash2 } from 'lucide-react';
 import { AgentSidebar } from './agent-sidebar';
+import FlowCanvas from './canvas';
+import { useFetchDataOnMount } from './hooks/use-fetch-data';
 
 export default function Agent() {
   const { navigateToAgentList } = useNavigatePage();
+  const {
+    visible: chatDrawerVisible,
+    hideModal: hideChatDrawer,
+    showModal: showChatDrawer,
+  } = useSetModalState();
+
+  useFetchDataOnMount();
 
   return (
     <section>
@@ -33,7 +43,15 @@ export default function Agent() {
       <div>
         <SidebarProvider>
           <AgentSidebar />
-          <SidebarTrigger />
+          <div className="w-full">
+            <SidebarTrigger />
+            <div className="w-full h-full">
+              <FlowCanvas
+                drawerVisible={chatDrawerVisible}
+                hideDrawer={hideChatDrawer}
+              ></FlowCanvas>
+            </div>
+          </div>
         </SidebarProvider>
       </div>
     </section>
