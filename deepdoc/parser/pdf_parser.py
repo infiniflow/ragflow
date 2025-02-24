@@ -742,7 +742,7 @@ class RAGFlowPdfParser:
         res = []
         positions = []
 
-        def cropout(bxs, ltype, poss):
+        def cropout(bxs, ltype, poss, verbose=False):
             nonlocal ZM
             pn = set([b["page_number"] - 1 for b in bxs])
             if len(pn) < 2:
@@ -758,8 +758,9 @@ class RAGFlowPdfParser:
                 ii = Recognizer.find_overlapped(b, louts, naive=True)
                 if ii is not None:
                     b = louts[ii]
-                else:
-                    logging.warn(
+                elif verbose:
+                    #TODO(chuqing): see whether this just because the table has no border, or there are some issues
+                    logging.warning(
                         f"Missing layout match: {pn + 1},%s" %
                         (bxs[0].get(
                             "layoutno", "")))
@@ -981,7 +982,7 @@ class RAGFlowPdfParser:
             logging.warning(f"Outlines exception: {e}")
         if not self.outlines:
             logging.warning("No images found.")
-
+        #TODO(chuqing): ragflow is not that good at image recognition, see 1458082.1458123 for example
         logging.debug("Images converted.")
         # self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(
         #     random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i]))))) for i in
