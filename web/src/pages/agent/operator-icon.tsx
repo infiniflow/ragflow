@@ -1,5 +1,5 @@
 import React from 'react';
-import { Operator, operatorIconMap } from '../constant';
+import { Operator, operatorIconMap } from './constant';
 
 interface IProps {
   name: Operator;
