@@ -267,7 +267,7 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
 
    ```bash
    pipx install uv
-   export UV_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+   export UV_INDEX=https://mirrors.aliyun.com/pypi/simple
    ```
 
 2. 下载源代码并安装 Python 依赖：
