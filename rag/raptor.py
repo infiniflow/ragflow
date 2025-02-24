@@ -71,7 +71,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
         if len(chunks) <= 1:
-            return
+            return []
         chunks = [(s, a) for s, a in chunks if s and len(a) > 0]
 
         def summarize(ck_idx, lock):
