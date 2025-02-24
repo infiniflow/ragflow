@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+
 from flask import request
 from api import settings
 from api.db import StatusEnum
@@ -318,7 +320,8 @@ def list_chat(tenant_id):
         for kb_id in res["kb_ids"]:
             kb = KnowledgebaseService.query(id=kb_id)
             if not kb:
-                return get_error_data_result(message=f"Don't exist the kb {kb_id}")
+                logging.WARN(f"Don't exist the kb {kb_id}")
+                continue
             kb_list.append(kb[0].to_json())
         del res["kb_ids"]
         res["datasets"] = kb_list
