@@ -163,7 +163,7 @@ const MessageInput = ({
 
   const handleInputKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
     if (e.key === 'Enter' && !e.nativeEvent.shiftKey) {
-      if (isComposing) return;
+      if (isComposing || sendLoading) return;
       e.preventDefault();
       handlePressEnter();
     }
