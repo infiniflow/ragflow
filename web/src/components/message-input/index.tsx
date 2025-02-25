@@ -11,11 +11,14 @@ import {
   CloseCircleOutlined,
   InfoCircleOutlined,
   LoadingOutlined,
+  PaperClipOutlined,
+  SendOutlined,
 } from '@ant-design/icons';
 import type { GetProp, UploadFile } from 'antd';
 import {
   Button,
   Card,
+  Divider,
   Flex,
   Input,
   List,
@@ -25,9 +28,7 @@ import {
   Upload,
   UploadProps,
 } from 'antd';
-import classNames from 'classnames';
 import get from 'lodash/get';
-import { Paperclip } from 'lucide-react';
 import {
   ChangeEventHandler,
   memo,
@@ -35,13 +36,14 @@ import {
   useEffect,
   useRef,
   useState,
-  KeyboardEventHandler,
 } from 'react';
 import FileIcon from '../file-icon';
 import styles from './index.less';
 
 type FileType = Parameters<GetProp<UploadProps, 'beforeUpload'>>[0];
 const { Text } = Typography;
+
+const { TextArea } = Input;
 
 const getFileId = (file: UploadFile) => get(file, 'response.data.0');
 
@@ -64,7 +66,7 @@ interface IProps {
   sendDisabled: boolean;
   sendLoading: boolean;
   onPressEnter(documentIds: string[]): void;
-  onInputChange: ChangeEventHandler<HTMLInputElement>;
+  onInputChange: ChangeEventHandler<HTMLTextAreaElement>;
   conversationId: string;
   uploadMethod?: string;
   isShared?: boolean;
@@ -99,6 +101,7 @@ const MessageInput = ({
   const { data: documentInfos, setDocumentIds } = useFetchDocumentInfosByIds();
   const { uploadAndParseDocument } = useUploadAndParseDocument(uploadMethod);
   const conversationIdRef = useRef(conversationId);
+
   const [fileList, setFileList] = useState<UploadFile[]>([]);
 
   const handlePreview = async (file: UploadFile) => {
@@ -128,7 +131,6 @@ const MessageInput = ({
       });
       return [...list];
     });
-
     const ret = await uploadAndParseDocument({
       conversationId: nextConversationId,
       fileList: [file],
@@ -148,6 +150,18 @@ const MessageInput = ({
 
   const isUploadingFile = fileList.some((x) => x.status === 'uploading');
 
+  const handleKeyDown = useCallback(
+    async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // check if it was shift + enter
+      if (event.key === 'Enter' && event.shiftKey) return;
+      if (event.key !== 'Enter') return;
+
+      event.preventDefault();
+      handlePressEnter();
+    },
+    [fileList, onPressEnter, isUploadingFile],
+  );
+
   const handlePressEnter = useCallback(async () => {
     if (isUploadingFile) return;
     const ids = getFileIds(fileList.filter((x) => isUploadSuccess(x)));
@@ -155,13 +169,6 @@ const MessageInput = ({
     onPressEnter(ids);
     setFileList([]);
   }, [fileList, onPressEnter, isUploadingFile]);
-
-  const handleInputKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
-    if (e.key === 'Enter' && !e.nativeEvent.shiftKey) {
-      e.preventDefault();
-      handlePressEnter();
-    }
-  };
 
   const handleRemove = useCallback(
     async (file: UploadFile) => {
@@ -209,19 +216,112 @@ const MessageInput = ({
   }, [conversationId, setFileList]);
 
   return (
-    <Flex gap={20} vertical className={styles.messageInputWrapper}>
-      <Flex align="center" gap={8}>
-        <Input.TextArea
-          size="large"
-          placeholder={t('sendPlaceholder')}
-          value={value}
-          disabled={disabled}
-          className={classNames({ [styles.inputWrapper]: fileList.length === 0 })}
-          onKeyDown={handleInputKeyDown}
-          onChange={onInputChange}
-          autoSize={{ minRows: 1, maxRows: 6 }}
-        />
-        <Space>
+    <Flex gap={1} vertical className={styles.messageInputWrapper}>
+      <TextArea
+        size="large"
+        placeholder={t('sendPlaceholder')}
+        value={value}
+        allowClear
+        disabled={disabled}
+        style={{
+          border: 'none',
+          boxShadow: 'none',
+          padding: '0px 10px',
+          marginTop: 10,
+        }}
+        autoSize={{ minRows: 2, maxRows: 10 }}
+        onKeyDown={handleKeyDown}
+        onChange={onInputChange}
+      />
+      <Divider style={{ margin: '5px 30px 10px 0px' }} />
+      <Flex justify="space-between" align="center">
+        {fileList.length > 0 && (
+          <List
+            grid={{
+              gutter: 16,
+              xs: 1,
+              sm: 1,
+              md: 1,
+              lg: 1,
+              xl: 2,
+              xxl: 4,
+            }}
+            dataSource={fileList}
+            className={styles.listWrapper}
+            renderItem={(item) => {
+              const id = getFileId(item);
+              const documentInfo = getDocumentInfoById(id);
+              const fileExtension = getExtension(documentInfo?.name ?? '');
+              const fileName = item.originFileObj?.name ?? '';
+
+              return (
+                <List.Item>
+                  <Card className={styles.documentCard}>
+                    <Flex gap={10} align="center">
+                      {item.status === 'uploading' ? (
+                        <Spin
+                          indicator={
+                            <LoadingOutlined style={{ fontSize: 24 }} spin />
+                          }
+                        />
+                      ) : item.status === 'error' ? (
+                        <InfoCircleOutlined size={30}></InfoCircleOutlined>
+                      ) : (
+                        <FileIcon id={id} name={fileName}></FileIcon>
+                      )}
+                      <Flex vertical style={{ width: '90%' }}>
+                        <Text
+                          ellipsis={{ tooltip: fileName }}
+                          className={styles.nameText}
+                        >
+                          <b> {fileName}</b>
+                        </Text>
+                        {item.status === 'error' ? (
+                          t('uploadFailed')
+                        ) : (
+                          <>
+                            {item.percent !== 100 ? (
+                              t('uploading')
+                            ) : !item.response ? (
+                              t('parsing')
+                            ) : (
+                              <Space>
+                                <span>{fileExtension?.toUpperCase()},</span>
+                                <span>
+                                  {formatBytes(
+                                    getDocumentInfoById(id)?.size ?? 0,
+                                  )}
+                                </span>
+                              </Space>
+                            )}
+                          </>
+                        )}
+                      </Flex>
+                    </Flex>
+
+                    {item.status !== 'uploading' && (
+                      <span className={styles.deleteIcon}>
+                        <CloseCircleOutlined
+                          onClick={() => handleRemove(item)}
+                        />
+                      </span>
+                    )}
+                  </Card>
+                </List.Item>
+              );
+            }}
+          />
+        )}
+        <Flex
+          gap={5}
+          align="center"
+          justify="flex-end"
+          style={{
+            paddingRight: 10,
+            paddingBottom: 10,
+            width: fileList.length > 0 ? '50%' : '100%',
+          }}
+        >
           {showUploadIcon && (
             <Upload
               onPreview={handlePreview}
@@ -233,11 +333,9 @@ const MessageInput = ({
                 return false;
               }}
             >
-              <Button
-                type={'text'}
-                disabled={disabled}
-                icon={<Paperclip />}
-              ></Button>
+              <Button type={'primary'} disabled={disabled}>
+                <PaperClipOutlined />
+              </Button>
             </Upload>
           )}
           <Button
@@ -246,86 +344,10 @@ const MessageInput = ({
             loading={sendLoading}
             disabled={sendDisabled || isUploadingFile}
           >
-            {t('send')}
+            <SendOutlined />
           </Button>
-        </Space>
+        </Flex>
       </Flex>
-
-      {fileList.length > 0 && (
-        <List
-          grid={{
-            gutter: 16,
-            xs: 1,
-            sm: 1,
-            md: 1,
-            lg: 1,
-            xl: 2,
-            xxl: 4,
-          }}
-          dataSource={fileList}
-          className={styles.listWrapper}
-          renderItem={(item) => {
-            const id = getFileId(item);
-            const documentInfo = getDocumentInfoById(id);
-            const fileExtension = getExtension(documentInfo?.name ?? '');
-            const fileName = item.originFileObj?.name ?? '';
-
-            return (
-              <List.Item>
-                <Card className={styles.documentCard}>
-                  <Flex gap={10} align="center">
-                    {item.status === 'uploading' ? (
-                      <Spin
-                        indicator={
-                          <LoadingOutlined style={{ fontSize: 24 }} spin />
-                        }
-                      />
-                    ) : item.status === 'error' ? (
-                      <InfoCircleOutlined size={30}></InfoCircleOutlined>
-                    ) : (
-                      <FileIcon id={id} name={fileName}></FileIcon>
-                    )}
-                    <Flex vertical style={{ width: '90%' }}>
-                      <Text
-                        ellipsis={{ tooltip: fileName }}
-                        className={styles.nameText}
-                      >
-                        <b> {fileName}</b>
-                      </Text>
-                      {item.status === 'error' ? (
-                        t('uploadFailed')
-                      ) : (
-                        <>
-                          {item.percent !== 100 ? (
-                            t('uploading')
-                          ) : !item.response ? (
-                            t('parsing')
-                          ) : (
-                            <Space>
-                              <span>{fileExtension?.toUpperCase()},</span>
-                              <span>
-                                {formatBytes(
-                                  getDocumentInfoById(id)?.size ?? 0,
-                                )}
-                              </span>
-                            </Space>
-                          )}
-                        </>
-                      )}
-                    </Flex>
-                  </Flex>
-
-                  {item.status !== 'uploading' && (
-                    <span className={styles.deleteIcon}>
-                      <CloseCircleOutlined onClick={() => handleRemove(item)} />
-                    </span>
-                  )}
-                </Card>
-              </List.Item>
-            );
-          }}
-        />
-      )}
     </Flex>
   );
 };
