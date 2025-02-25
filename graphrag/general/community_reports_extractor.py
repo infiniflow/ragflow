@@ -68,7 +68,7 @@ class CommunityReportsExtractor(Extractor):
                 weight = ents["weight"]
                 ents = ents["nodes"]
                 ent_df = pd.DataFrame(self._get_entity_(ents)).dropna()#[{"entity": n, **graph.nodes[n]} for n in ents])
-                if ent_df.empty:
+                if ent_df.empty or "entity_name" not in ent_df.columns:
                     continue
                 ent_df["entity"] = ent_df["entity_name"]
                 del ent_df["entity_name"]
