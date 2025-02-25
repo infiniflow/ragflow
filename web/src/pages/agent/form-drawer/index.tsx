@@ -1,7 +1,6 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { CloseOutlined } from '@ant-design/icons';
-import { Drawer, Flex, Form, Input } from 'antd';
+import { Flex, Form, Input } from 'antd';
 import { get, isPlainObject, lowerFirst } from 'lodash';
 import { Play } from 'lucide-react';
 import { useEffect, useRef } from 'react';
@@ -30,7 +29,7 @@ import MessageForm from '../form/message-form';
 import PubMedForm from '../form/pubmed-form';
 import QWeatherForm from '../form/qweather-form';
 import RelevantForm from '../form/relevant-form';
-import RetrievalForm from '../form/retrieval-form';
+import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SwitchForm from '../form/switch-form';
 import TemplateForm from '../form/template-form';
@@ -42,15 +41,15 @@ import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import OperatorIcon from '../operator-icon';
 import {
   buildCategorizeListFromObject,
-  getDrawerWidth,
   needsSingleStepDebugging,
 } from '../utils';
-import SingleDebugDrawer from './single-debug-drawer';
 
+import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { FlowFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
 import IterationForm from '../form/iteration-from';
+
 import styles from './index.less';
 
 interface IProps {
@@ -144,72 +143,65 @@ const FormDrawer = ({
   }, [visible, form, node?.data?.form, node?.id, node, operatorName]);
 
   return (
-    <Drawer
-      title={
-        <Flex vertical>
-          <Flex gap={'middle'} align="center">
-            <OperatorIcon
-              name={operatorName}
-              color={operatorMap[operatorName]?.color}
-            ></OperatorIcon>
-            <Flex align="center" gap={'small'} flex={1}>
-              <label htmlFor="" className={styles.title}>
-                {t('title')}
-              </label>
-              {node?.id === BeginId ? (
-                <span>{t(BeginId)}</span>
-              ) : (
-                <Input
-                  value={name}
-                  onBlur={handleNameBlur}
-                  onChange={handleNameChange}
-                ></Input>
-              )}
-            </Flex>
+    <Sheet onOpenChange={hideModal} open={visible}>
+      <SheetContent>
+        <SheetHeader>
+          <Flex vertical>
+            <Flex gap={'middle'} align="center">
+              <OperatorIcon
+                name={operatorName}
+                color={operatorMap[operatorName]?.color}
+              ></OperatorIcon>
+              <Flex align="center" gap={'small'} flex={1}>
+                <label htmlFor="" className={styles.title}>
+                  {t('title')}
+                </label>
+                {node?.id === BeginId ? (
+                  <span>{t(BeginId)}</span>
+                ) : (
+                  <Input
+                    value={name}
+                    onBlur={handleNameBlur}
+                    onChange={handleNameChange}
+                  ></Input>
+                )}
+              </Flex>
 
-            {needsSingleStepDebugging(operatorName) && (
-              <RunTooltip>
-                <Play
-                  className="size-5 cursor-pointer"
-                  onClick={showSingleDebugDrawer}
-                />
-              </RunTooltip>
-            )}
-            <CloseOutlined onClick={hideModal} />
+              {needsSingleStepDebugging(operatorName) && (
+                <RunTooltip>
+                  <Play
+                    className="size-5 cursor-pointer"
+                    onClick={showSingleDebugDrawer}
+                  />
+                </RunTooltip>
+              )}
+              {/* <CloseOutlined onClick={hideModal} /> */}
+            </Flex>
+            <span className={styles.operatorDescription}>
+              {t(`${lowerFirst(operatorName)}Description`)}
+            </span>
           </Flex>
-          <span className={styles.operatorDescription}>
-            {t(`${lowerFirst(operatorName)}Description`)}
-          </span>
-        </Flex>
-      }
-      placement="right"
-      onClose={hideModal}
-      open={visible}
-      getContainer={false}
-      mask={false}
-      width={getDrawerWidth()}
-      closeIcon={null}
-      rootClassName={styles.formDrawer}
-    >
-      <section className={styles.formWrapper}>
-        {visible && (
-          <FlowFormContext.Provider value={node}>
-            <OperatorForm
-              onValuesChange={handleValuesChange}
-              form={form}
-              node={node}
-            ></OperatorForm>
-          </FlowFormContext.Provider>
-        )}
-      </section>
-      {singleDebugDrawerVisible && (
+        </SheetHeader>
+        <section className={styles.formWrapper}>
+          {visible && (
+            <FlowFormContext.Provider value={node}>
+              <OperatorForm
+                onValuesChange={handleValuesChange}
+                form={form}
+                node={node}
+              ></OperatorForm>
+            </FlowFormContext.Provider>
+          )}
+        </section>
+      </SheetContent>
+      {/* {singleDebugDrawerVisible && (
         <SingleDebugDrawer
           visible={singleDebugDrawerVisible}
           hideModal={hideSingleDebugDrawer}
           componentId={node?.id}
         ></SingleDebugDrawer>
-      )}
-    </Drawer>
+      )} */}
+    </Sheet>
   );
 };
 
