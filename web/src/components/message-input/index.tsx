@@ -155,6 +155,7 @@ const MessageInput = ({
       // check if it was shift + enter
       if (event.key === 'Enter' && event.shiftKey) return;
       if (event.key !== 'Enter') return;
+      if (sendDisabled || isUploadingFile || sendLoading) return;
 
       event.preventDefault();
       handlePressEnter();
@@ -342,7 +343,7 @@ const MessageInput = ({
             type="primary"
             onClick={handlePressEnter}
             loading={sendLoading}
-            disabled={sendDisabled || isUploadingFile}
+            disabled={sendDisabled || isUploadingFile || sendLoading}
           >
             <SendOutlined />
           </Button>
