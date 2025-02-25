@@ -165,7 +165,7 @@ COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
     cd web && npm install && npm run build
 
-COPY .git /ragflow/.git
+COPY .github /ragflow/.github
 
 RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
     if [ "$LIGHTEN" == "1" ]; then \
