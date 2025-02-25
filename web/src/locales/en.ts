@@ -528,6 +528,7 @@ This procedure will improve precision of retrieval by adding more information to
         'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
       avatarHidden: 'Hide avatar',
       locale: 'Locale',
+      selectLanguage: 'Select a language',
       reasoning: 'Reasoning',
       reasoningTip:
         'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
@@ -841,7 +842,7 @@ This procedure will improve precision of retrieval by adding more information to
       bingDescription:
         'A component that searches from https://www.bing.com/, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases. Please note that this requires an API key from microsoft.com.',
       apiKey: 'API KEY',
-      country: 'Country&Region',
+      country: 'Country & Region',
       language: 'Language',
       googleScholar: 'Google Scholar',
       googleScholarDescription:
@@ -1183,6 +1184,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
+      datatype: 'MINE type',
       insertVariableTip: `Enter / Insert variables`,
     },
     footer: {
