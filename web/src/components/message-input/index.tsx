@@ -30,12 +30,12 @@ import get from 'lodash/get';
 import { Paperclip } from 'lucide-react';
 import {
   ChangeEventHandler,
+  KeyboardEventHandler,
   memo,
   useCallback,
   useEffect,
   useRef,
   useState,
-  KeyboardEventHandler,
 } from 'react';
 import FileIcon from '../file-icon';
 import styles from './index.less';
@@ -64,7 +64,7 @@ interface IProps {
   sendDisabled: boolean;
   sendLoading: boolean;
   onPressEnter(documentIds: string[]): void;
-  onInputChange: ChangeEventHandler<HTMLInputElement>;
+  onInputChange: ChangeEventHandler<HTMLTextAreaElement>;
   conversationId: string;
   uploadMethod?: string;
   isShared?: boolean;
@@ -222,7 +222,9 @@ const MessageInput = ({
           placeholder={t('sendPlaceholder')}
           value={value}
           disabled={disabled}
-          className={classNames({ [styles.inputWrapper]: fileList.length === 0 })}
+          className={classNames({
+            [styles.inputWrapper]: fileList.length === 0,
+          })}
           onKeyDown={handleInputKeyDown}
           onChange={onInputChange}
           onCompositionStart={handleCompositionStart}

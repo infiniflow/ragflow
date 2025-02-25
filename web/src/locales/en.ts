@@ -112,7 +112,7 @@ export default {
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results.',
-      vectorSimilarityWeight: 'Keywords similarity weight',
+      vectorSimilarityWeight: 'Keyword similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
@@ -150,9 +150,9 @@ export default {
         'The current value must be greater than the previous to!',
       selectFiles: 'Select files',
       changeSpecificCategory: 'Change specific category',
-      uploadTitle: 'Click or drag file to this area to upload',
+      uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Support for a single or bulk upload. Strictly prohibited from uploading company data or other banned files.',
+        'Supports single or bulk file upload. Files must not exceed 10MB each, with a maximum of 128 files.',
       chunk: 'Chunk',
       bulk: 'Bulk',
       cancel: 'Cancel',
@@ -420,6 +420,7 @@ This procedure will improve precision of retrieval by adding more information to
       language: 'Language',
       emptyResponse: 'Empty response',
       emptyResponseTip: `Set this as a response if no results are retrieved from the knowledge bases for your query, or leave this field blank to allow the LLM to improvise when nothing is found.`,
+      emptyResponseMessage: `Empty response will be triggered when nothing relevant is retrieved from knowledge bases. Erase 'Empty response' since none of knowledge base is selected.`,
       setAnOpener: 'Opening greeting',
       setAnOpenerInitial: `Hi! I'm your assistant, what can I do for you?`,
       setAnOpenerTip: 'Set an opening greeting for users.',
@@ -527,6 +528,9 @@ This procedure will improve precision of retrieval by adding more information to
         'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
       avatarHidden: 'Hide avatar',
       locale: 'Locale',
+      reasoning: 'Reasoning',
+      reasoningTip:
+        'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
     },
     setting: {
       profile: 'Profile',
@@ -734,15 +738,15 @@ This procedure will improve precision of retrieval by adding more information to
       file: 'File',
       uploadFile: 'Upload File',
       directory: 'Directory',
-      uploadTitle: 'Click or drag file to this area to upload',
+      uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Support for a single or bulk upload. Strictly prohibited from uploading company data or other banned files.',
+        'Supports single or bulk file upload. Files must not exceed 10MB each, with a maximum of 128 files.',
       local: 'Local uploads',
       s3: 'S3 uploads',
       preview: 'Preview',
       fileError: 'File error',
       uploadLimit:
-        'The file size cannot exceed 10M, and the total number of files cannot exceed 128',
+        'Each file must not exceed 10MB, and the total number of files must not exceed 128.',
       destinationFolder: 'Destination folder',
     },
     flow: {
