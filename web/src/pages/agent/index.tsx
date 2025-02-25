@@ -10,6 +10,7 @@ import {
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { ReactFlowProvider } from '@xyflow/react';
 import { CodeXml, EllipsisVertical, Forward, Import, Key } from 'lucide-react';
 import { ComponentPropsWithoutRef } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -95,20 +96,22 @@ export default function Agent() {
           </Button>
         </div>
       </PageHeader>
-      <div>
-        <SidebarProvider>
-          <AgentSidebar />
-          <div className="w-full">
-            <SidebarTrigger />
-            <div className="w-full h-full">
-              <FlowCanvas
-                drawerVisible={chatDrawerVisible}
-                hideDrawer={hideChatDrawer}
-              ></FlowCanvas>
+      <ReactFlowProvider>
+        <div>
+          <SidebarProvider>
+            <AgentSidebar />
+            <div className="w-full">
+              <SidebarTrigger />
+              <div className="w-full h-full">
+                <FlowCanvas
+                  drawerVisible={chatDrawerVisible}
+                  hideDrawer={hideChatDrawer}
+                ></FlowCanvas>
+              </div>
             </div>
-          </div>
-        </SidebarProvider>
-      </div>
+          </SidebarProvider>
+        </div>
+      </ReactFlowProvider>
       {fileUploadVisible && (
         <UploadAgentDialog
           hideModal={hideFileUploadModal}
