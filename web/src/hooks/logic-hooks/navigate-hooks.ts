@@ -42,9 +42,12 @@ export const useNavigatePage = () => {
     navigate(Routes.Agents);
   }, [navigate]);
 
-  const navigateToAgent = useCallback(() => {
-    navigate(Routes.Agent);
-  }, [navigate]);
+  const navigateToAgent = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.Agent}/${id}`);
+    },
+    [navigate],
+  );
 
   const navigateToAgentTemplates = useCallback(() => {
     navigate(Routes.AgentTemplates);

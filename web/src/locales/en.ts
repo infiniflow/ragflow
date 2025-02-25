@@ -150,9 +150,9 @@ export default {
         'The current value must be greater than the previous to!',
       selectFiles: 'Select files',
       changeSpecificCategory: 'Change specific category',
-      uploadTitle: 'Click or drag file to this area to upload',
+      uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Support for a single or bulk upload. Strictly prohibited from uploading company data or other banned files.',
+        'Supports single or bulk file upload. Files must not exceed 10MB each, with a maximum of 128 files.',
       chunk: 'Chunk',
       bulk: 'Bulk',
       cancel: 'Cancel',
@@ -739,15 +739,15 @@ This procedure will improve precision of retrieval by adding more information to
       file: 'File',
       uploadFile: 'Upload File',
       directory: 'Directory',
-      uploadTitle: 'Click or drag file to this area to upload',
+      uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Support for a single or bulk upload. Strictly prohibited from uploading company data or other banned files.',
+        'Supports single or bulk file upload. Files must not exceed 10MB each, with a maximum of 128 files.',
       local: 'Local uploads',
       s3: 'S3 uploads',
       preview: 'Preview',
       fileError: 'File error',
       uploadLimit:
-        'The file size cannot exceed 10M, and the total number of files cannot exceed 128',
+        'Each file must not exceed 10MB, and the total number of files must not exceed 128.',
       destinationFolder: 'Destination folder',
     },
     flow: {

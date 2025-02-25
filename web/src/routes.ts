@@ -215,7 +215,7 @@ const routes = [
     ],
   },
   {
-    path: Routes.Agent,
+    path: `${Routes.Agent}/:id`,
     layout: false,
     component: `@/pages${Routes.Agent}`,
   },
@@ -239,25 +239,24 @@ const routes = [
     path: Routes.DatasetBase,
     layout: false,
     component: '@/layouts/next',
+    routes: [{ path: Routes.DatasetBase, redirect: Routes.Dataset }],
+  },
+  {
+    path: Routes.DatasetBase,
+    layout: false,
+    component: `@/pages${Routes.DatasetBase}`,
     routes: [
-      { path: Routes.DatasetBase, redirect: Routes.Dataset },
       {
-        path: Routes.DatasetBase,
-        component: `@/pages${Routes.DatasetBase}`,
-        routes: [
-          {
-            path: `${Routes.Dataset}/:id`,
-            component: `@/pages${Routes.Dataset}`,
-          },
-          {
-            path: `${Routes.DatasetBase}${Routes.DatasetSetting}/:id`,
-            component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
-          },
-          {
-            path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
-            component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
-          },
-        ],
+        path: `${Routes.Dataset}/:id`,
+        component: `@/pages${Routes.Dataset}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.DatasetSetting}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
       },
     ],
   },
