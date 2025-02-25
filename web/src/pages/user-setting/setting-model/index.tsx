@@ -330,7 +330,7 @@ const UserSettingModel = () => {
                 }
               >
                 <Flex vertical gap={'middle'}>
-                  <LlmIcon name={item.name} />
+                  <LlmIcon name={item.name} imgClass="h-12 w-auto" />
                   <Flex vertical gap={'middle'}>
                     <b>
                       <Text ellipsis={{ tooltip: item.name }}>{item.name}</Text>
