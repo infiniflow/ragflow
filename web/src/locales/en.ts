@@ -531,6 +531,10 @@ This procedure will improve precision of retrieval by adding more information to
       reasoning: 'Reasoning',
       reasoningTip:
         'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
+      tavilyApiKeyTip:
+        'If API key is set correctly, it will utilize Tavily to do web search as a supplement to knowledge bases.',
+      tavilyApiKeyMessage: 'Please enter your Tavily Api Key',
+      tavilyApiKeyHelp: 'How to get it?',
     },
     setting: {
       profile: 'Profile',
