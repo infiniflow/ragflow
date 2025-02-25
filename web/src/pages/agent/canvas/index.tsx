@@ -6,7 +6,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 // import ChatDrawer from '../chat/drawer';
-import FormDrawer from '../form-drawer';
+import FormDrawer from '../form-drawer/next';
 import {
   useHandleDrop,
   useSelectCanvasData,
