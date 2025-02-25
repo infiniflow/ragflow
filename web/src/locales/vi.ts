@@ -707,6 +707,7 @@ export default {
       newFolder: 'Thư mục mới',
       file: 'Tệp',
       uploadFile: 'Tải tệp lên',
+      parseOnCreation: 'Phân tích khi tạo',
       directory: 'Thư mục',
       uploadTitle: 'Nhấp hoặc kéo thả tệp vào khu vực này để tải lên',
       uploadDescription:
