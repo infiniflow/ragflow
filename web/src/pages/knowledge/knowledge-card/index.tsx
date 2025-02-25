@@ -46,11 +46,11 @@ const KnowledgeCard = ({ item }: IProps) => {
     });
   };
 
-  const handleRename = () => {
+  const renameKnowledge = () => {
     setIsRenameModalVisible(true);
   };
 
-  const handleRenameOk = async (newName: string) => {
+  const renameKnowledgeOk = async (newName: string) => {
     setRenameLoading(true);
     try {
       console.log('Renaming knowledge:', { id: item.id, newName });
@@ -80,7 +80,7 @@ const KnowledgeCard = ({ item }: IProps) => {
             <Avatar size={34} icon={<UserOutlined />} src={item.avatar} />
             <OperateDropdown
               deleteItem={removeKnowledge}
-              onUpdateName={handleRename}
+              updateItem={renameKnowledge}
             ></OperateDropdown>
           </div>
           <div className={styles.titleWrapper}>
@@ -142,7 +142,7 @@ const KnowledgeCard = ({ item }: IProps) => {
         hideModal={() => setIsRenameModalVisible(false)}
         loading={renameLoading}
         initialName={item.name}
-        onOk={handleRenameOk}
+        onOk={renameKnowledgeOk}
       />
     </Badge.Ribbon>
   );

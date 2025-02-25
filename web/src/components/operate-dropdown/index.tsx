@@ -8,7 +8,7 @@ import styles from './index.less';
 
 interface IProps {
   deleteItem: () => Promise<any> | void;
-  onUpdateName?: () => void;
+  updateItem?: () => void;
   iconFontSize?: number;
   iconFontColor?: string;
   items?: MenuProps['items'];
@@ -18,7 +18,7 @@ interface IProps {
 
 const OperateDropdown = ({
   deleteItem,
-  onUpdateName,
+  updateItem,
   children,
   iconFontSize = 30,
   iconFontColor = 'gray',
@@ -42,15 +42,15 @@ const OperateDropdown = ({
     domEvent.stopPropagation();
     if (key === '1') {
       handleDelete();
-    } else if (key === 'rename' && onUpdateName) {
-      onUpdateName();
+    } else if (key === '2' && updateItem) {
+      updateItem();
     }
   };
 
   const items: MenuProps['items'] = useMemo(() => {
     return [
       {
-        key: 'rename',
+        key: '2',
         label: (
           <Space>
             {t('common.rename')}

@@ -54,7 +54,7 @@ const FlowCard = ({ item }: IProps) => {
             <GraphAvatar avatar={item.avatar}></GraphAvatar>
             <OperateDropdown
               deleteItem={removeFlow}
-              onUpdateName={handleUpdateName}
+              updateItem={handleUpdateName}
             ></OperateDropdown>
           </div>
           <div className={styles.titleWrapper}>
