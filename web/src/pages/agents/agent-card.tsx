@@ -39,7 +39,11 @@ export function AgentCard({ data }: IProps) {
             </p>
           </div>
           <div className="space-x-2">
-            <Button variant="icon" size="icon" onClick={navigateToAgent}>
+            <Button
+              variant="icon"
+              size="icon"
+              onClick={navigateToAgent(data.id)}
+            >
               <ChevronRight className="h-6 w-6" />
             </Button>
             <Button variant="icon" size="icon">

@@ -64,7 +64,7 @@ interface IProps {
   sendDisabled: boolean;
   sendLoading: boolean;
   onPressEnter(documentIds: string[]): void;
-  onInputChange: ChangeEventHandler<HTMLInputElement>;
+  onInputChange: ChangeEventHandler<HTMLTextAreaElement>;
   conversationId: string;
   uploadMethod?: string;
   isShared?: boolean;
