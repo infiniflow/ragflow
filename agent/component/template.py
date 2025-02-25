@@ -18,7 +18,6 @@ import re
 from agent.component.base import ComponentBase, ComponentParamBase
 from jinja2 import Template as Jinja2Template
 
-
 class TemplateParam(ComponentParamBase):
     """
     Define the Generate component parameters.
@@ -92,7 +91,6 @@ class Template(ComponentBase):
                 continue
 
             _, out = cpn.output(allow_partial=False)
-
             result = ""
             if "content" in out.columns:
                 result = "\n".join(
@@ -100,7 +98,10 @@ class Template(ComponentBase):
                 )
 
             self.make_kwargs(para, kwargs, result)
-
+        # Replace variables in the content
+        for var_key, var_value in self._canvas.get_variables().items():
+            if var_value:
+                content = content.replace(f"{{{var_key}}}", str(var_value))
         template = Jinja2Template(content)
 
         try:
