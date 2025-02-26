@@ -17,7 +17,7 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 
 **POST** `/api/v1/chats_openai/{chat_id}/chat/completions`
 
-Createsa a model response for the given chat conversation.
+Creates a model response for a given chat conversation.
 
 This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
 
