@@ -255,6 +255,10 @@ def update_doc(tenant_id, dataset_id, document_id):
                 )
         if not DocumentService.update_by_id(document_id, {"name": req["name"]}):
             return get_error_data_result(message="Database error (Document rename)!")
+        if "meta_fields" in req:
+            if not isinstance(req["meta_fields"], dict):
+                return get_error_data_result(message="meta_fields must be a dictionary")
+            DocumentService.update_meta_fields(document_id, req["meta_fields"])
 
         informs = File2DocumentService.get_by_document_id(document_id)
         if informs:
@@ -1301,7 +1305,7 @@ def retrieval_test(tenant_id):
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    embd_nms = list(set([kb.embd_id for kb in kbs]))
+    embd_nms = list(set([TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]))  # remove vendor suffix for comparison
     if len(embd_nms) != 1:
         return get_result(
             message='Datasets use different embedding models."',

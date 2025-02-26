@@ -37,7 +37,7 @@ all_codecs = [
     'cp874', 'cp875', 'cp932', 'cp949', 'cp950', 'cp1006', 'cp1026', 'cp1125',
     'cp1140', 'cp1250', 'cp1251', 'cp1252', 'cp1253', 'cp1254', 'cp1255', 'cp1256',
     'cp1257', 'cp1258', 'euc_jp', 'euc_jis_2004', 'euc_jisx0213', 'euc_kr',
-    'gb2312', 'gb18030', 'hz', 'iso2022_jp', 'iso2022_jp_1', 'iso2022_jp_2',
+    'gb18030', 'hz', 'iso2022_jp', 'iso2022_jp_1', 'iso2022_jp_2',
     'iso2022_jp_2004', 'iso2022_jp_3', 'iso2022_jp_ext', 'iso2022_kr', 'latin_1',
     'iso8859_2', 'iso8859_3', 'iso8859_4', 'iso8859_5', 'iso8859_6', 'iso8859_7',
     'iso8859_8', 'iso8859_9', 'iso8859_10', 'iso8859_11', 'iso8859_13',
@@ -601,3 +601,8 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
         add_chunk(sec, image, '')
 
     return cks, images
+
+
+def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
+    pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)
+    return re.findall(pattern, text, flags=re.DOTALL)

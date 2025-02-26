@@ -39,6 +39,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         if response:
             return response
         response = self._llm_model.chat(system, history, gen_conf)
+        response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
         set_llm_cache(self._llm_model.llm_name, system, response, history, gen_conf)
@@ -70,7 +71,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
         if len(chunks) <= 1:
-            return
+            return []
         chunks = [(s, a) for s, a in chunks if s and len(a) > 0]
 
         def summarize(ck_idx, lock):

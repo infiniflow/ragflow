@@ -15,13 +15,13 @@
 #
 import re
 import json
-from api.db import LLMType
-from flask import request, Response
+import time
 
+from api.db import LLMType
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
 from api.db.services.canvas_service import completion as agent_completion
-from api.db.services.dialog_service import ask
+from api.db.services.dialog_service import ask, chat
 from agent.canvas import Canvas
 from api.db import StatusEnum
 from api.db.db_models import APIToken
@@ -30,11 +30,12 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import get_uuid
-from api.utils.api_utils import get_error_data_result
+from api.utils.api_utils import get_error_data_result, validate_request
 from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
+from api.db.services.file_service import FileService
 
-
+from flask import jsonify, request, Response
 
 @manager.route('/chats/<chat_id>/sessions', methods=['POST'])  # noqa: F821
 @token_required
@@ -68,6 +69,11 @@ def create(tenant_id, chat_id):
 @token_required
 def create_agent_session(tenant_id, agent_id):
     req = request.json
+    if not request.is_json:
+        req = request.form
+    files = request.files
+    user_id = request.args.get('user_id', '')
+
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
@@ -84,15 +90,33 @@ def create_agent_session(tenant_id, agent_id):
     if query:
         for ele in query:
             if not ele["optional"]:
-                if not req.get(ele["key"]):
-                    return get_error_data_result(f"`{ele['key']}` is required")
-                ele["value"] = req[ele["key"]]
-            if ele["optional"]:
-                if req.get(ele["key"]):
-                    ele["value"] = req[ele['key']]
+                if ele["type"] == "file":
+                    if files is None or not files.get(ele["key"]):
+                        return get_error_data_result(f"`{ele['key']}` with type `{ele['type']}` is required")
+                    upload_file = files.get(ele["key"])
+                    file_content = FileService.parse_docs([upload_file], user_id)
+                    file_name = upload_file.filename
+                    ele["value"] = file_name + "\n" + file_content
                 else:
-                    if "value" in ele:
-                        ele.pop("value")
+                    if req is None or not req.get(ele["key"]):
+                        return get_error_data_result(f"`{ele['key']}` with type `{ele['type']}` is required")
+                    ele["value"] = req[ele["key"]]
+            else:
+                if ele["type"] == "file":
+                    if files is not None and files.get(ele["key"]):
+                        upload_file = files.get(ele["key"])
+                        file_content = FileService.parse_docs([upload_file], user_id)
+                        file_name = upload_file.filename
+                        ele["value"] = file_name + "\n" + file_content
+                    else:
+                        if "value" in ele:
+                            ele.pop("value")
+                else:
+                    if req is not None and req.get(ele["key"]):
+                        ele["value"] = req[ele['key']]
+                    else:
+                        if "value" in ele:
+                            ele.pop("value")
     else:
         for ans in canvas.run(stream=False):
             pass
@@ -100,7 +124,7 @@ def create_agent_session(tenant_id, agent_id):
     conv = {
         "id": get_uuid(),
         "dialog_id": cvs.id,
-        "user_id": req.get("user_id", "") if isinstance(req, dict) else "",
+        "user_id": user_id,
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent",
         "dsl": cvs.dsl
@@ -136,8 +160,10 @@ def update(tenant_id, chat_id, session_id):
 @token_required
 def chat_completion(tenant_id, chat_id):
     req = request.json
-    if not req or not req.get("session_id"):
+    if not req:
         req = {"question": ""}
+    if not req.get("session_id"):
+        req["question"]=""
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(f"You don't own the chat {chat_id}")
     if req.get("session_id"):
@@ -157,6 +183,160 @@ def chat_completion(tenant_id, chat_id):
             answer = ans
             break
         return get_result(data=answer)
+
+
+@manager.route('chats_openai/<chat_id>/chat/completions', methods=['POST'])  # noqa: F821
+@validate_request("model", "messages")  # noqa: F821
+@token_required
+def chat_completion_openai_like(tenant_id, chat_id):
+    """
+    OpenAI-like chat completion API that simulates the behavior of OpenAI's completions endpoint.
+    
+    This function allows users to interact with a model and receive responses based on a series of historical messages.
+    If `stream` is set to True (by default), the response will be streamed in chunks, mimicking the OpenAI-style API.
+    Set `stream` to False explicitly, the response will be returned in a single complete answer.
+    Example usage:
+
+    curl -X POST https://ragflow_address.com/api/v1/chats_openai/<chat_id>/chat/completions \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $RAGFLOW_API_KEY" \
+        -d '{
+            "model": "model",
+            "messages": [{"role": "user", "content": "Say this is a test!"}],
+            "stream": true
+        }'
+
+    Alternatively, you can use Python's `OpenAI` client:
+
+    from openai import OpenAI
+
+    model = "model"
+    client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
+    
+    completion = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Who you are?"},
+            {"role": "assistant", "content": "I am an AI assistant named..."},
+            {"role": "user", "content": "Can you tell me how to install neovim"},
+        ],
+        stream=True
+    )
+    
+    stream = True
+    if stream:
+        for chunk in completion:
+            print(chunk)
+    else:
+        print(completion.choices[0].message.content)
+    """
+    req = request.json
+
+    messages = req.get("messages", [])
+    # To prevent empty [] input
+    if len(messages) < 1:
+        return get_error_data_result("You have to provide messages")
+
+    dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
+    if not dia:
+        return get_error_data_result(f"You don't own the chat {chat_id}")
+    dia = dia[0]
+
+    # Filter system and assistant messages
+    msg = None
+    msg = [m for m in messages if m["role"] != "system" and (m["role"] != "assistant" or msg)]
+
+    if req.get("stream", True):
+        # The value for the usage field on all chunks except for the last one will be null.
+        # The usage field on the last chunk contains token usage statistics for the entire request.
+        # The choices field on the last chunk will always be an empty array [].
+        def streamed_respose_generator(chat_id, dia, msg):
+            token_used = 0
+            response = {
+                "id": f"chatcmpl-{chat_id}",
+                "choices": [
+                    {
+                        "delta": {
+                            "content": "",
+                            "role": "assistant",
+                            "function_call": None,
+                            "tool_calls": None
+                        },
+                        "finish_reason": None,
+                        "index": 0,
+                        "logprobs": None
+                    }
+                ],
+                "created": int(time.time()),
+                "model": "model",
+                "object": "chat.completion.chunk",
+                "system_fingerprint": "",
+                "usage": None
+            }
+
+            try:
+                for ans in chat(dia, msg, True):
+                    answer = ans["answer"]
+                    incremental = answer[token_used:]
+                    token_used += len(incremental)
+                    response["choices"][0]["delta"]["content"] = incremental
+                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+            except Exception as e:
+                response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
+                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+
+            # The last chunck
+            response["choices"][0]["delta"]["content"] = None
+            response["choices"][0]["finish_reason"] = "stop"
+            response["usage"] = {
+                "prompt_tokens": len(msg),
+                "completion_tokens": token_used,
+                "total_tokens": len(msg) + token_used
+            }
+            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+
+        resp = Response(streamed_respose_generator(chat_id, dia, msg), mimetype="text/event-stream")
+        resp.headers.add_header("Cache-control", "no-cache")
+        resp.headers.add_header("Connection", "keep-alive")
+        resp.headers.add_header("X-Accel-Buffering", "no")
+        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+        return resp
+    else:
+        answer = None
+        for ans in chat(dia, msg, False):
+            # focus answer content only
+            answer = ans
+            break
+
+        response  = {
+            "id": f"chatcmpl-{chat_id}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": req.get("model", ""),
+            "usage": {
+                "prompt_tokens": len(messages),
+                "completion_tokens": len(answer),
+                "total_tokens": len(messages) + len(answer),
+                "completion_tokens_details": {
+                    "reasoning_tokens": len(answer),
+                    "accepted_prediction_tokens": len(answer),
+                    "rejected_prediction_tokens": len(answer)
+                }
+            },
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": answer["answer"]
+                    },
+                    "logprobs": None,
+                    "finish_reason": "stop",
+                    "index": 0
+                }
+            ]
+        }
+        return jsonify(response)
 
 
 @manager.route('/agents/<agent_id>/completions', methods=['POST'])  # noqa: F821

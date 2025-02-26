@@ -149,7 +149,7 @@ export default {
       changeSpecificCategory: '更改特定类别',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。 严禁上传公司数据或其他违禁文件。',
+        '支持单次或批量上传。单个文件大小不超过10MB，最多上传128份文件。严禁上传违禁文件。',
       chunk: '解析块',
       bulk: '批量',
       cancel: '取消',
@@ -419,6 +419,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       language: '语言',
       emptyResponse: '空回复',
       emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。`,
+      emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空响应。由于未选择任何知识库，因此请清除“空响应”。`,
       setAnOpener: '设置开场白',
       setAnOpenerInitial: `你好！ 我是你的助理，有什么可以帮到你的吗？`,
       setAnOpenerTip: '您想如何欢迎您的客户？',
@@ -523,6 +524,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '它将检索相关实体、关系和社区报告的描述，这将增强多跳和复杂问题的推理。',
       keyword: '关键词分析',
       keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
+      reasoning: '推理',
+      reasoningTip:
+        '它将像Deepseek-R1 / OpenAI o1一样触发推理过程。将代理搜索过程集成到推理工作流中，允许模型本身在遇到不确定信息时动态地检索外部知识。',
+      tavilyApiKeyTip:
+        '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
+      tavilyApiKeyMessage: '请输入你的 Tavily Api Key',
+      tavilyApiKeyHelp: '如何获取？',
     },
     setting: {
       profile: '概要',
@@ -719,7 +727,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       uploadFile: '上传文件',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。 严禁上传公司数据或其他违禁文件。',
+        '支持单次或批量上传。 单个文件大小不超过10MB，最多上传128份文件。严禁上传违禁文件。',
       file: '文件',
       directory: '文件夹',
       local: '本地上传',
@@ -1152,6 +1160,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       addCategory: '新增分类',
       categoryName: '分类名称',
       nextStep: '下一步',
+      insertVariableTip: `输入 / 插入变量`,
     },
     footer: {
       profile: 'All rights reserved @ React',

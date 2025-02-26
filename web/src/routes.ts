@@ -5,6 +5,9 @@ export enum Routes {
   DatasetBase = '/dataset',
   Dataset = `${Routes.DatasetBase}${Routes.DatasetBase}`,
   Agent = '/agent',
+  AgentTemplates = '/agent-templates',
+  Agents = '/agents',
+  Searches = '/next-searches',
   Search = '/next-search',
   Chats = '/next-chats',
   Chat = '/next-chat',
@@ -185,26 +188,41 @@ const routes = [
     component: `@/pages${Routes.Chats}/chat`,
   },
   {
-    path: Routes.Search,
+    path: Routes.Searches,
     layout: false,
     component: '@/layouts/next',
     routes: [
       {
-        path: Routes.Search,
-        component: `@/pages${Routes.Search}`,
+        path: Routes.Searches,
+        component: `@/pages${Routes.Searches}`,
       },
     ],
   },
   {
-    path: Routes.Agent,
+    path: Routes.Search,
+    layout: false,
+    component: `@/pages${Routes.Search}`,
+  },
+  {
+    path: Routes.Agents,
     layout: false,
     component: '@/layouts/next',
     routes: [
       {
-        path: Routes.Agent,
-        component: `@/pages${Routes.Agent}`,
+        path: Routes.Agents,
+        component: `@/pages${Routes.Agents}`,
       },
     ],
+  },
+  {
+    path: `${Routes.Agent}/:id`,
+    layout: false,
+    component: `@/pages${Routes.Agent}`,
+  },
+  {
+    path: Routes.AgentTemplates,
+    layout: false,
+    component: `@/pages${Routes.Agents}${Routes.AgentTemplates}`,
   },
   {
     path: Routes.Files,
@@ -221,25 +239,24 @@ const routes = [
     path: Routes.DatasetBase,
     layout: false,
     component: '@/layouts/next',
+    routes: [{ path: Routes.DatasetBase, redirect: Routes.Dataset }],
+  },
+  {
+    path: Routes.DatasetBase,
+    layout: false,
+    component: `@/pages${Routes.DatasetBase}`,
     routes: [
-      { path: Routes.DatasetBase, redirect: Routes.Dataset },
       {
-        path: Routes.DatasetBase,
-        component: `@/pages${Routes.DatasetBase}`,
-        routes: [
-          {
-            path: `${Routes.Dataset}/:id`,
-            component: `@/pages${Routes.Dataset}`,
-          },
-          {
-            path: `${Routes.DatasetBase}${Routes.DatasetSetting}/:id`,
-            component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
-          },
-          {
-            path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
-            component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
-          },
-        ],
+        path: `${Routes.Dataset}/:id`,
+        component: `@/pages${Routes.Dataset}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.DatasetSetting}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
       },
     ],
   },

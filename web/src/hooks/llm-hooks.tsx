@@ -5,6 +5,7 @@ import {
   IFactory,
   IMyLlmValue,
   IThirdOAIModelCollection as IThirdAiModelCollection,
+  IThirdOAIModel,
   IThirdOAIModelCollection,
 } from '@/interfaces/database/llm';
 import {
@@ -55,8 +56,47 @@ export const useSelectLlmOptions = () => {
   return embeddingModelOptions;
 };
 
+function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
+  return {
+    label: (
+      <Flex align="center" gap={6}>
+        <LlmIcon
+          name={getLLMIconName(x.fid, x.llm_name)}
+          width={26}
+          height={26}
+          size={'small'}
+        />
+        <span>{x.llm_name}</span>
+      </Flex>
+    ),
+    value: `${x.llm_name}@${x.fid}`,
+    disabled: !x.available,
+  };
+}
+
 export const useSelectLlmOptionsByModelType = () => {
   const llmInfo: IThirdOAIModelCollection = useFetchLlmList();
+
+  const groupImage2TextOptions = () => {
+    const modelType = LlmModelType.Image2text;
+    const modelTag = modelType.toUpperCase();
+
+    return Object.entries(llmInfo)
+      .map(([key, value]) => {
+        return {
+          label: key,
+          options: value
+            .filter(
+              (x) =>
+                (x.model_type.includes(modelType) ||
+                  (x.tags && x.tags.includes(modelTag))) &&
+                x.available,
+            )
+            .map(buildLlmOptionsWithIcon),
+        };
+      })
+      .filter((x) => x.options.length > 0);
+  };
 
   const groupOptionsByModelType = (modelType: LlmModelType) => {
     return Object.entries(llmInfo)
@@ -72,21 +112,7 @@ export const useSelectLlmOptionsByModelType = () => {
                 (modelType ? x.model_type.includes(modelType) : true) &&
                 x.available,
             )
-            .map((x) => ({
-              label: (
-                <Flex align="center" gap={6}>
-                  <LlmIcon
-                    name={getLLMIconName(x.fid, x.llm_name)}
-                    width={26}
-                    height={26}
-                    size={'small'}
-                  />
-                  <span>{x.llm_name}</span>
-                </Flex>
-              ),
-              value: `${x.llm_name}@${x.fid}`,
-              disabled: !x.available,
-            })),
+            .map(buildLlmOptionsWithIcon),
         };
       })
       .filter((x) => x.options.length > 0);
@@ -95,7 +121,7 @@ export const useSelectLlmOptionsByModelType = () => {
   return {
     [LlmModelType.Chat]: groupOptionsByModelType(LlmModelType.Chat),
     [LlmModelType.Embedding]: groupOptionsByModelType(LlmModelType.Embedding),
-    [LlmModelType.Image2text]: groupOptionsByModelType(LlmModelType.Image2text),
+    [LlmModelType.Image2text]: groupImage2TextOptions(),
     [LlmModelType.Speech2text]: groupOptionsByModelType(
       LlmModelType.Speech2text,
     ),

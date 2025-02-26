@@ -17,6 +17,8 @@ import logging
 import binascii
 import os
 import json
+import time
+
 import json_repair
 import re
 from collections import defaultdict
@@ -29,14 +31,16 @@ from api.db.db_models import Dialog, DB
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
+from api.db.services.llm_service import TenantLLMService, LLMBundle
 from api import settings
 from graphrag.utils import get_tags_from_cache, set_tags_to_cache
 from rag.app.resume import forbidden_select_fields4resume
+from rag.nlp import extract_between
 from rag.nlp.search import index_name
 from rag.settings import TAG_FLD
 from rag.utils import rmSpace, num_tokens_from_string, encoder
 from api.utils.file_utils import get_project_base_directory
+from rag.utils.tavily_conn import Tavily
 
 
 class DialogService(CommonService):
@@ -122,6 +126,7 @@ def kb_prompt(kbinfos, max_tokens):
         chunks_num += 1
         if max_tokens * 0.97 < used_token_count:
             knowledges = knowledges[:i]
+            logging.warning(f"Not all the retrieval into prompt: {i+1}/{len(knowledges)}")
             break
 
     docs = DocumentService.get_by_ids([ck["doc_id"] for ck in kbinfos["chunks"][:chunks_num]])
@@ -129,13 +134,13 @@ def kb_prompt(kbinfos, max_tokens):
 
     doc2chunks = defaultdict(lambda: {"chunks": [], "meta": []})
     for ck in kbinfos["chunks"][:chunks_num]:
-        doc2chunks[ck["docnm_kwd"]]["chunks"].append(ck["content_with_weight"])
+        doc2chunks[ck["docnm_kwd"]]["chunks"].append((f"URL: {ck['url']}\n" if "url" in ck else "") + ck["content_with_weight"])
         doc2chunks[ck["docnm_kwd"]]["meta"] = docs.get(ck["doc_id"], {})
 
     knowledges = []
     for nm, cks_meta in doc2chunks.items():
         txt = f"Document: {nm} \n"
-        for k,v in cks_meta["meta"].items():
+        for k, v in cks_meta["meta"].items():
             txt += f"{k}: {v}\n"
         txt += "Relevant fragments as following:\n"
         for i, chunk in enumerate(cks_meta["chunks"], 1):
@@ -167,26 +172,49 @@ def label_question(question, kbs):
     return tags
 
 
+def chat_solo(dialog, messages, stream=True):
+    if llm_id2llm_type(dialog.llm_id) == "image2text":
+        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+    else:
+        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+
+    prompt_config = dialog.prompt_config
+    tts_mdl = None
+    if prompt_config.get("tts"):
+        tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
+    msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])}
+                for m in messages if m["role"] != "system"]
+    if stream:
+        last_ans = ""
+        for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
+            answer = ans
+            delta_ans = ans[len(last_ans):]
+            if num_tokens_from_string(delta_ans) < 16:
+                continue
+            last_ans = answer
+            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt":"", "created_at": time.time()}
+    else:
+        answer = chat_mdl.chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
+        user_content = msg[-1].get("content", "[content not available]")
+        logging.debug("User: {}|Assistant: {}".format(user_content, answer))
+        yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
+
+
 def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
+    if not dialog.kb_ids:
+        for ans in chat_solo(dialog, messages, stream):
+            yield ans
+        return
 
     chat_start_ts = timer()
 
-    # Get llm model name and model provider name
-    llm_id, model_provider = TenantLLMService.split_model_name_and_factory(dialog.llm_id)
-
-    # Get llm model instance by model and provide name
-    llm = LLMService.query(llm_name=llm_id) if not model_provider else LLMService.query(llm_name=llm_id, fid=model_provider)
-
-    if not llm:
-        # Model name is provided by tenant, but not system built-in
-        llm = TenantLLMService.query(tenant_id=dialog.tenant_id, llm_name=llm_id) if not model_provider else \
-            TenantLLMService.query(tenant_id=dialog.tenant_id, llm_name=llm_id, llm_factory=model_provider)
-        if not llm:
-            raise LookupError("LLM(%s) not found" % dialog.llm_id)
-        max_tokens = 8192
+    if llm_id2llm_type(dialog.llm_id) == "image2text":
+        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
-        max_tokens = llm[0].max_tokens
+        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+
+    max_tokens = llm_model_config.get("max_tokens", 8192)
 
     check_llm_ts = timer()
 
@@ -255,9 +283,11 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     bind_reranker_ts = timer()
     generate_keyword_ts = bind_reranker_ts
+    thought = ""
+    kbinfos = {"total": 0, "chunks": [], "doc_aggs": []}
 
     if "knowledge" not in [p["key"] for p in prompt_config["parameters"]]:
-        kbinfos = {"total": 0, "chunks": [], "doc_aggs": []}
+        knowledges = []
     else:
         if prompt_config.get("keyword", False):
             questions[-1] += keyword_extraction(chat_mdl, questions[-1])
@@ -265,28 +295,42 @@ def chat(dialog, messages, stream=True, **kwargs):
 
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
-        kbinfos = retriever.retrieval(" ".join(questions), embd_mdl, tenant_ids, dialog.kb_ids, 1, dialog.top_n,
-                                      dialog.similarity_threshold,
-                                      dialog.vector_similarity_weight,
-                                      doc_ids=attachments,
-                                      top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl,
-                                      rank_feature=label_question(" ".join(questions), kbs)
-                                      )
-        if prompt_config.get("use_kg"):
-            ck = settings.kg_retrievaler.retrieval(" ".join(questions),
-                                              tenant_ids,
-                                              dialog.kb_ids,
-                                              embd_mdl,
-                                              LLMBundle(dialog.tenant_id, LLMType.CHAT))
-            if ck["content_with_weight"]:
-                kbinfos["chunks"].insert(0, ck)
+        knowledges = []
+        if prompt_config.get("reasoning", False):
+            for think in reasoning(kbinfos, " ".join(questions), chat_mdl, embd_mdl, tenant_ids, dialog.kb_ids, prompt_config, MAX_SEARCH_LIMIT=3):
+                if isinstance(think, str):
+                    thought = think
+                    knowledges = [t for t in think.split("\n") if t]
+                else:
+                    yield think
+        else:
+            kbinfos = retriever.retrieval(" ".join(questions), embd_mdl, tenant_ids, dialog.kb_ids, 1, dialog.top_n,
+                                          dialog.similarity_threshold,
+                                          dialog.vector_similarity_weight,
+                                          doc_ids=attachments,
+                                          top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl,
+                                          rank_feature=label_question(" ".join(questions), kbs)
+                                          )
+            if prompt_config.get("tavily_api_key"):
+                tav = Tavily(prompt_config["tavily_api_key"])
+                tav_res = tav.retrieve_chunks(" ".join(questions))
+                kbinfos["chunks"].extend(tav_res["chunks"])
+                kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
+            if prompt_config.get("use_kg"):
+                ck = settings.kg_retrievaler.retrieval(" ".join(questions),
+                                                       tenant_ids,
+                                                       dialog.kb_ids,
+                                                       embd_mdl,
+                                                       LLMBundle(dialog.tenant_id, LLMType.CHAT))
+                if ck["content_with_weight"]:
+                    kbinfos["chunks"].insert(0, ck)
 
-    retrieval_ts = timer()
+            knowledges = kb_prompt(kbinfos, max_tokens)
 
-    knowledges = kb_prompt(kbinfos, max_tokens)
     logging.debug(
         "{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
+    retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
         yield {"answer": empty_res, "reference": kbinfos, "audio_binary": tts(tts_mdl, empty_res)}
@@ -311,9 +355,12 @@ def chat(dialog, messages, stream=True, **kwargs):
     def decorate_answer(answer):
         nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts
 
-        finish_chat_ts = timer()
-
         refs = []
+        ans = answer.split("</think>")
+        think = ""
+        if len(ans) == 2:
+            think = ans[0] + "</think>"
+            answer = ans[1]
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
             answer, idx = retriever.insert_citations(answer,
                                                      [ck["content_ltks"]
@@ -351,22 +398,24 @@ def chat(dialog, messages, stream=True, **kwargs):
         generate_result_time_cost = (finish_chat_ts - retrieval_ts) * 1000
 
         prompt = f"{prompt}\n\n - Total: {total_time_cost:.1f}ms\n  - Check LLM: {check_llm_time_cost:.1f}ms\n  - Create retriever: {create_retriever_time_cost:.1f}ms\n  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n  - Bind LLM: {bind_llm_time_cost:.1f}ms\n  - Tune question: {refine_question_time_cost:.1f}ms\n  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n  - Retrieval: {retrieval_time_cost:.1f}ms\n  - Generate answer: {generate_result_time_cost:.1f}ms"
-        return {"answer": answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt)}
+        return {"answer": think+answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if stream:
         last_ans = ""
         answer = ""
         for ans in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
+            if thought:
+                ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
             answer = ans
             delta_ans = ans[len(last_ans):]
             if num_tokens_from_string(delta_ans) < 16:
                 continue
             last_ans = answer
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
+            yield {"answer": thought+answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
         delta_ans = answer[len(last_ans):]
         if delta_ans:
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
-        yield decorate_answer(answer)
+            yield {"answer": thought+answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
+        yield decorate_answer(thought+answer)
     else:
         answer = chat_mdl.chat(prompt, msg[1:], gen_conf)
         user_content = msg[-1].get("content", "[content not available]")
@@ -567,7 +616,7 @@ Requirements:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd)
+    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
@@ -597,7 +646,7 @@ Requirements:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd)
+    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
@@ -668,7 +717,7 @@ Output: What's the weather in Rochester on {tomorrow}?
 ###############
     """
     ans = chat_mdl.chat(prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.2})
-    ans = re.sub(r"<think>.*</think>", "", ans)
+    ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
 
@@ -793,7 +842,7 @@ Output:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.5})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd)
+    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         raise Exception(kwd)
 
@@ -807,3 +856,238 @@ Output:
         except Exception as e:
             logging.exception(f"JSON parsing error: {result} -> {e}")
             raise e
+
+
+def reasoning(chunk_info: dict, question: str, chat_mdl: LLMBundle, embd_mdl: LLMBundle,
+              tenant_ids: list[str], kb_ids: list[str], prompt_config, MAX_SEARCH_LIMIT: int = 6,
+              top_n: int = 5, similarity_threshold: float = 0.4, vector_similarity_weight: float = 0.3):
+    BEGIN_SEARCH_QUERY = "<|begin_search_query|>"
+    END_SEARCH_QUERY = "<|end_search_query|>"
+    BEGIN_SEARCH_RESULT = "<|begin_search_result|>"
+    END_SEARCH_RESULT = "<|end_search_result|>"
+
+    def rm_query_tags(line):
+        pattern = re.escape(BEGIN_SEARCH_QUERY) + r"(.*?)" + re.escape(END_SEARCH_QUERY)
+        return re.sub(pattern, "", line)
+
+    def rm_result_tags(line):
+        pattern = re.escape(BEGIN_SEARCH_RESULT) + r"(.*?)" + re.escape(END_SEARCH_RESULT)
+        return re.sub(pattern, "", line)
+
+    reason_prompt = (
+        "You are a reasoning assistant with the ability to perform dataset searches to help "
+        "you answer the user's question accurately. You have special tools:\n\n"
+        f"- To perform a search: write {BEGIN_SEARCH_QUERY} your query here {END_SEARCH_QUERY}.\n"
+        f"Then, the system will search and analyze relevant content, then provide you with helpful information in the format {BEGIN_SEARCH_RESULT} ...search results... {END_SEARCH_RESULT}.\n\n"
+        f"You can repeat the search process multiple times if necessary. The maximum number of search attempts is limited to {MAX_SEARCH_LIMIT}.\n\n"
+        "Once you have all the information you need, continue your reasoning.\n\n"
+        "-- Example 1 --\n" ########################################
+        "Question: \"Are both the directors of Jaws and Casino Royale from the same country?\"\n"
+        "Assistant:\n"
+        f"    {BEGIN_SEARCH_QUERY}Who is the director of Jaws?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nThe director of Jaws is Steven Spielberg...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information.\n"
+        "Assistant:\n"
+        f"    {BEGIN_SEARCH_QUERY}Where is Steven Spielberg from?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nSteven Allan Spielberg is an American filmmaker...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information...\n\n"
+        "Assistant:\n"
+        f"    {BEGIN_SEARCH_QUERY}Who is the director of Casino Royale?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nCasino Royale is a 2006 spy film directed by Martin Campbell...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information...\n\n"
+        "Assistant:\n"
+        f"    {BEGIN_SEARCH_QUERY}Where is Martin Campbell from?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nMartin Campbell (born 24 October 1943) is a New Zealand film and television director...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information...\n\n"
+        "Assistant:\nIt's enough to answer the question\n"
+        
+        "-- Example 2 --\n" #########################################
+        "Question: \"When was the founder of craigslist born?\"\n"
+        "Assistant:\n"
+        f"    {BEGIN_SEARCH_QUERY}Who was the founder of craigslist?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nCraigslist was founded by Craig Newmark...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information.\n"
+        "Assistant:\n"
+        f"    {BEGIN_SEARCH_QUERY} When was Craig Newmark born?{END_SEARCH_QUERY}\n\n"
+        "User:\n"
+        f"    {BEGIN_SEARCH_RESULT}\nCraig Newmark was born on December 6, 1952...\n{END_SEARCH_RESULT}\n\n"
+        "Continues reasoning with the new information...\n\n"
+        "Assistant:\nIt's enough to answer the question\n"
+        "**Remember**:\n"
+        f"- You have a dataset to search, so you just provide a proper search query.\n"
+        f"- Use {BEGIN_SEARCH_QUERY} to request a dataset search and end with {END_SEARCH_QUERY}.\n"
+        "- The language of query MUST be as the same as 'Question' or 'search result'.\n"
+        "- When done searching, continue your reasoning.\n\n"
+        'Please answer the following question. You should think step by step to solve it.\n\n'
+    )
+
+    relevant_extraction_prompt = """**Task Instruction:**
+
+    You are tasked with reading and analyzing web pages based on the following inputs: **Previous Reasoning Steps**, **Current Search Query**, and **Searched Web Pages**. Your objective is to extract relevant and helpful information for **Current Search Query** from the **Searched Web Pages** and seamlessly integrate this information into the **Previous Reasoning Steps** to continue reasoning for the original question.
+
+    **Guidelines:**
+
+    1. **Analyze the Searched Web Pages:**
+    - Carefully review the content of each searched web page.
+    - Identify factual information that is relevant to the **Current Search Query** and can aid in the reasoning process for the original question.
+
+    2. **Extract Relevant Information:**
+    - Select the information from the Searched Web Pages that directly contributes to advancing the **Previous Reasoning Steps**.
+    - Ensure that the extracted information is accurate and relevant.
+
+    3. **Output Format:**
+    - **If the web pages provide helpful information for current search query:** Present the information beginning with `**Final Information**` as shown below.
+    - The language of query **MUST BE** as the same as 'Search Query' or 'Web Pages'.\n"
+    **Final Information**
+
+    [Helpful information]
+
+    - **If the web pages do not provide any helpful information for current search query:** Output the following text.
+
+    **Final Information**
+
+    No helpful information found.
+
+    **Inputs:**
+    - **Previous Reasoning Steps:**  
+    {prev_reasoning}
+
+    - **Current Search Query:**  
+    {search_query}
+
+    - **Searched Web Pages:**  
+    {document}
+
+    """
+
+    executed_search_queries = []
+    msg_hisotry = [{"role": "user", "content": f'Question:\"{question}\"\n'}]
+    all_reasoning_steps = []
+    think = "<think>"
+    for ii in range(MAX_SEARCH_LIMIT + 1):
+        if ii == MAX_SEARCH_LIMIT - 1:
+            summary_think = f"\n{BEGIN_SEARCH_RESULT}\nThe maximum search limit is exceeded. You are not allowed to search.\n{END_SEARCH_RESULT}\n"
+            yield {"answer": think + summary_think + "</think>", "reference": {}, "audio_binary": None}
+            all_reasoning_steps.append(summary_think)
+            msg_hisotry.append({"role": "assistant", "content": summary_think})
+            break
+
+        query_think = ""
+        if msg_hisotry[-1]["role"] != "user":
+            msg_hisotry.append({"role": "user", "content": "Continues reasoning with the new information.\n"})
+        else:
+            msg_hisotry[-1]["content"] += "\n\nContinues reasoning with the new information.\n"
+        for ans in chat_mdl.chat_streamly(reason_prompt, msg_hisotry, {"temperature": 0.7}):
+            ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
+            if not ans:
+                continue
+            query_think = ans
+            yield {"answer": think + rm_query_tags(query_think) + "</think>", "reference": {}, "audio_binary": None}
+
+        think += rm_query_tags(query_think)
+        all_reasoning_steps.append(query_think)
+        queries = extract_between(query_think, BEGIN_SEARCH_QUERY, END_SEARCH_QUERY)
+        if not queries:
+            if ii > 0:
+                break
+            queries = [question]
+
+        for search_query in queries:
+            logging.info(f"[THINK]Query: {ii}. {search_query}")
+            msg_hisotry.append({"role": "assistant", "content": search_query})
+            think += f"\n\n> {ii+1}. {search_query}\n\n"
+            yield {"answer": think + "</think>", "reference": {}, "audio_binary": None}
+
+            summary_think = ""
+            # The search query has been searched in previous steps.
+            if search_query in executed_search_queries:
+                summary_think = f"\n{BEGIN_SEARCH_RESULT}\nYou have searched this query. Please refer to previous results.\n{END_SEARCH_RESULT}\n"
+                yield {"answer": think + summary_think + "</think>", "reference": {}, "audio_binary": None}
+                all_reasoning_steps.append(summary_think)
+                msg_hisotry.append({"role": "user", "content": summary_think})
+                think += summary_think
+                continue
+
+            truncated_prev_reasoning = ""
+            for i, step in enumerate(all_reasoning_steps):
+                truncated_prev_reasoning += f"Step {i + 1}: {step}\n\n"
+
+            prev_steps = truncated_prev_reasoning.split('\n\n')
+            if len(prev_steps) <= 5:
+                truncated_prev_reasoning = '\n\n'.join(prev_steps)
+            else:
+                truncated_prev_reasoning = ''
+                for i, step in enumerate(prev_steps):
+                    if i == 0 or i >= len(prev_steps) - 4 or BEGIN_SEARCH_QUERY in step or BEGIN_SEARCH_RESULT in step:
+                        truncated_prev_reasoning += step + '\n\n'
+                    else:
+                        if truncated_prev_reasoning[-len('\n\n...\n\n'):] != '\n\n...\n\n':
+                            truncated_prev_reasoning += '...\n\n'
+            truncated_prev_reasoning = truncated_prev_reasoning.strip('\n')
+
+            # Retrieval procedure:
+            # 1. KB search
+            # 2. Web search (optional)
+            # 3. KG search (optional)
+            kbinfos = settings.retrievaler.retrieval(search_query, embd_mdl, tenant_ids, kb_ids, 1, top_n,
+                                                     similarity_threshold,
+                                                     vector_similarity_weight
+                                                     )
+            if prompt_config.get("tavily_api_key", "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"):
+                tav = Tavily(prompt_config["tavily_api_key"])
+                tav_res = tav.retrieve_chunks(" ".join(search_query))
+                kbinfos["chunks"].extend(tav_res["chunks"])
+                kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
+            if prompt_config.get("use_kg"):
+                ck = settings.kg_retrievaler.retrieval(search_query,
+                                                       tenant_ids,
+                                                       kb_ids,
+                                                       embd_mdl,
+                                                       chat_mdl)
+                if ck["content_with_weight"]:
+                    kbinfos["chunks"].insert(0, ck)
+
+            # Merge chunk info for citations
+            if not chunk_info["chunks"]:
+                for k in chunk_info.keys():
+                    chunk_info[k] = kbinfos[k]
+            else:
+                cids = [c["chunk_id"] for c in chunk_info["chunks"]]
+                for c in kbinfos["chunks"]:
+                    if c["chunk_id"] in cids:
+                        continue
+                    chunk_info["chunks"].append(c)
+                dids = [d["doc_id"] for d in chunk_info["doc_aggs"]]
+                for d in kbinfos["doc_aggs"]:
+                    if d["doc_id"] in dids:
+                        continue
+                    chunk_info["doc_aggs"].append(d)
+
+            think += "\n\n"
+            for ans in chat_mdl.chat_streamly(
+                    relevant_extraction_prompt.format(
+                        prev_reasoning=truncated_prev_reasoning,
+                        search_query=search_query,
+                        document="\n".join(kb_prompt(kbinfos, 4096))
+                    ),
+                    [{"role": "user",
+                     "content": f'Now you should analyze each web page and find helpful information based on the current search query "{search_query}" and previous reasoning steps.'}],
+                    {"temperature": 0.7}):
+                ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
+                if not ans:
+                    continue
+                summary_think = ans
+                yield {"answer": think + rm_result_tags(summary_think) + "</think>", "reference": {}, "audio_binary": None}
+
+            all_reasoning_steps.append(summary_think)
+            msg_hisotry.append(
+                {"role": "user", "content": f"\n\n{BEGIN_SEARCH_RESULT}{summary_think}{END_SEARCH_RESULT}\n\n"})
+            think += rm_result_tags(summary_think)
+            logging.info(f"[THINK]Summary: {ii}. {summary_think}")
+
+    yield think + "</think>"

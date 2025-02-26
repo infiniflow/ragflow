@@ -32,6 +32,7 @@ export const LocalLlmFactories = [
   'OpenRouter',
   'HuggingFace',
   'GPUStack',
+  'ModelScope',
 ];
 
 export enum TenantRole {

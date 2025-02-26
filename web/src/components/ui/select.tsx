@@ -1,10 +1,14 @@
 'use client';
 
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, X } from 'lucide-react';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
+import { ControllerRenderProps } from 'react-hook-form';
+
+import { FormControl } from '@/components/ui/form';
+import { forwardRef, useCallback, useEffect } from 'react';
 
 const Select = SelectPrimitive.Root;
 
@@ -14,8 +18,11 @@ const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
+    onReset?: () => void;
+    allowClear?: boolean;
+  }
+>(({ className, children, value, onReset, allowClear, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
@@ -25,8 +32,17 @@ const SelectTrigger = React.forwardRef<
     {...props}
   >
     {children}
-    <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 opacity-50" />
+    <SelectPrimitive.Icon
+      asChild
+      onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      {value && allowClear ? (
+        <X className="h-4 w-4 opacity-50 cursor-pointer" onClick={onReset} />
+      ) : (
+        <ChevronDown className="h-4 w-4 opacity-50" />
+      )}
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));
@@ -158,3 +174,121 @@ export {
   SelectTrigger,
   SelectValue,
 };
+
+export type RAGFlowSelectOptionType = {
+  label: React.ReactNode;
+  value: string;
+  disabled?: boolean;
+};
+
+export type RAGFlowSelectGroupOptionType = {
+  label: React.ReactNode;
+  options: RAGFlowSelectOptionType[];
+};
+
+type RAGFlowSelectProps = Partial<ControllerRenderProps> & {
+  FormControlComponent?: typeof FormControl;
+  options?: (RAGFlowSelectOptionType | RAGFlowSelectGroupOptionType)[];
+  allowClear?: boolean;
+};
+
+/**
+ *
+ * Reference:
+ * https://github.com/shadcn-ui/ui/discussions/638
+ * https://github.com/radix-ui/primitives/discussions/2645#discussioncomment-8343397
+ *
+ * @export
+ * @param {(Partial<ControllerRenderProps> & {
+ *   FormControlComponent?: typeof FormControl;
+ * })} {
+ *   value: initialValue,
+ *   onChange,
+ *   FormControlComponent,
+ * }
+ * @return {*}
+ */
+export const RAGFlowSelect = forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Trigger>,
+  RAGFlowSelectProps
+>(function (
+  {
+    value: initialValue,
+    onChange,
+    FormControlComponent,
+    options = [],
+    allowClear,
+  },
+  ref,
+) {
+  const [key, setKey] = React.useState(+new Date());
+  const [value, setValue] = React.useState<string | undefined>(undefined);
+
+  const FormControlWidget = FormControlComponent
+    ? FormControlComponent
+    : ({ children }: React.PropsWithChildren) => <div>{children}</div>;
+
+  const handleChange = useCallback(
+    (val?: string) => {
+      setValue(val);
+      onChange?.(val);
+    },
+    [onChange],
+  );
+
+  const handleReset = useCallback(() => {
+    handleChange(undefined);
+    setKey(+new Date());
+  }, [handleChange]);
+
+  useEffect(() => {
+    setValue((preValue) => {
+      if (preValue !== initialValue) {
+        return initialValue;
+      }
+      return preValue;
+    });
+  }, [initialValue]);
+
+  return (
+    <Select onValueChange={handleChange} value={value} key={key}>
+      <FormControlWidget>
+        <SelectTrigger
+          className="bg-colors-background-inverse-weak"
+          value={value}
+          onReset={handleReset}
+          allowClear={allowClear}
+          ref={ref}
+        >
+          <SelectValue placeholder="Select a verified email to display" />
+        </SelectTrigger>
+      </FormControlWidget>
+      <SelectContent>
+        {options.map((o, idx) => {
+          if ('value' in o) {
+            return (
+              <SelectItem
+                value={o.value as RAGFlowSelectOptionType['value']}
+                key={o.value}
+                disabled={o.disabled}
+              >
+                {o.label}
+              </SelectItem>
+            );
+          }
+
+          return (
+            <SelectGroup key={idx}>
+              <SelectLabel>{o.label}</SelectLabel>
+              {o.options.map((x) => (
+                <SelectItem value={x.value} key={x.value} disabled={x.disabled}>
+                  {x.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          );
+        })}
+      </SelectContent>
+    </Select>
+  );
+});
