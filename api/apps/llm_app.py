@@ -173,7 +173,7 @@ def add_llm():
         api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
     elif factory == "VLLM":
-        llm_name = req["llm_name"] + "___OpenAI-API"
+        llm_name = req["llm_name"] + "___VLLM"
         api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
     elif factory == "XunFei Spark":
