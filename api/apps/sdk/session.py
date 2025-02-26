@@ -303,13 +303,8 @@ def chat_completion_openai_like(tenant_id, chat_id):
             yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             yield "data:[DONE]\n\n"
 
-
-        resp = Response(streamed_response_generator(chat_id, dia, msg), mimetype="text/event-stream")
-        resp.headers.add_header("Cache-control", "no-cache")
-        resp.headers.add_header("Connection", "keep-alive")
-        resp.headers.add_header("X-Accel-Buffering", "no")
-        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-        return resp
+    
+        return Response(streamed_response_generator(chat_id, dia, msg), mimetype="text/event-stream")
     else:
         answer = None
         for ans in chat(dia, msg, False):
