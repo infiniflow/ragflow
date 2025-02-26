@@ -287,10 +287,10 @@ def chat_completion_openai_like(tenant_id, chat_id):
                     incremental = answer[token_used:]
                     token_used += len(incremental)
                     response["choices"][0]["delta"]["content"] = incremental
-                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             except Exception as e:
                 response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
-                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
 
             # The last chunk
             response["choices"][0]["delta"]["content"] = None
@@ -300,7 +300,9 @@ def chat_completion_openai_like(tenant_id, chat_id):
                 "completion_tokens": token_used,
                 "total_tokens": len(prompt) + token_used
             }
-            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+            yield "data:[DONE]\n\n"
+
 
         resp = Response(streamed_response_generator(chat_id, dia, msg), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
