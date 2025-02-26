@@ -1,20 +1,12 @@
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
   Background,
   ConnectionMode,
-  ControlButton,
-  Controls,
   NodeTypes,
   ReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Book, FolderInput, FolderOutput } from 'lucide-react';
 // import ChatDrawer from '../chat/drawer';
-// import FormDrawer from '../flow-drawer';
+import FormSheet from '../form-sheet/next';
 import {
   useHandleDrop,
   useSelectCanvasData,
@@ -22,10 +14,7 @@ import {
   useWatchNodeFormDataChange,
 } from '../hooks';
 import { useBeforeDelete } from '../hooks/use-before-delete';
-import { useHandleExportOrImportJsonFile } from '../hooks/use-export-json';
-import { useOpenDocument } from '../hooks/use-open-document';
 import { useShowDrawer } from '../hooks/use-show-drawer';
-// import JsonUploadModal from '../json-upload-modal';
 // import RunDrawer from '../run-drawer';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
@@ -87,16 +76,6 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
   const isValidConnection = useValidateConnection();
 
   const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
-
-  const {
-    handleExportJson,
-    handleImportJson,
-    fileUploadVisible,
-    onFileUploadOk,
-    hideFileUploadModal,
-  } = useHandleExportOrImportJsonFile();
-
-  const openDocument = useOpenDocument();
 
   const {
     onNodeClick,
@@ -173,43 +152,17 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
         onBeforeDelete={handleBeforeDelete}
       >
         <Background />
-        <Controls className="text-black !flex-col-reverse">
-          <ControlButton onClick={handleImportJson}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <FolderInput className="!fill-none" />
-              </TooltipTrigger>
-              <TooltipContent>Import</TooltipContent>
-            </Tooltip>
-          </ControlButton>
-          <ControlButton onClick={handleExportJson}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <FolderOutput className="!fill-none" />
-              </TooltipTrigger>
-              <TooltipContent>Export</TooltipContent>
-            </Tooltip>
-          </ControlButton>
-          <ControlButton onClick={openDocument}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Book className="!fill-none" />
-              </TooltipTrigger>
-              <TooltipContent>Document</TooltipContent>
-            </Tooltip>
-          </ControlButton>
-        </Controls>
       </ReactFlow>
-      {/* {formDrawerVisible && (
-        <FormDrawer
+      {formDrawerVisible && (
+        <FormSheet
           node={clickedNode}
           visible={formDrawerVisible}
           hideModal={hideFormDrawer}
           singleDebugDrawerVisible={singleDebugDrawerVisible}
           hideSingleDebugDrawer={hideSingleDebugDrawer}
           showSingleDebugDrawer={showSingleDebugDrawer}
-        ></FormDrawer>
-      )} */}
+        ></FormSheet>
+      )}
       {/* {chatVisible && (
         <ChatDrawer
           visible={chatVisible}
@@ -222,13 +175,6 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           hideModal={hideRunOrChatDrawer}
           showModal={showChatModal}
         ></RunDrawer>
-      )}
-      {fileUploadVisible && (
-        <JsonUploadModal
-          onOk={onFileUploadOk}
-          visible={fileUploadVisible}
-          hideModal={hideFileUploadModal}
-        ></JsonUploadModal>
       )} */}
     </div>
   );

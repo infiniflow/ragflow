@@ -47,6 +47,8 @@ class Base(ABC):
                 model=self.model_name,
                 messages=history,
                 **gen_conf)
+            if not response.choices:
+                return "", 0
             ans = response.choices[0].message.content.strip()
             if response.choices[0].finish_reason == "length":
                 if is_chinese(ans):
@@ -263,7 +265,7 @@ class QWenChat(Base):
 
     def chat(self, system, history, gen_conf):
         if self.model_name.lower().find("deepseek") >= 0:
-            return super.chat(system, history, gen_conf)
+            return super().chat(system, history, gen_conf)
 
         stream_flag = str(os.environ.get('QWEN_CHAT_BY_STREAM', 'true')).lower() == 'true'
         if not stream_flag:
@@ -333,7 +335,7 @@ class QWenChat(Base):
 
     def chat_streamly(self, system, history, gen_conf):
         if self.model_name.lower().find("deepseek") >= 0:
-            return super.chat_streamly(system, history, gen_conf)
+            return super().chat_streamly(system, history, gen_conf)
 
         return self._chat_streamly(system, history, gen_conf)
 

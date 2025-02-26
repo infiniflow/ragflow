@@ -98,6 +98,7 @@ export function KnowledgeBaseFormField() {
               placeholder={t('knowledgeBasesMessage')}
               variant="inverted"
               maxCount={100}
+              defaultValue={field.value}
               {...field}
             />
           </FormControl>

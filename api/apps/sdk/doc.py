@@ -16,7 +16,6 @@
 import pathlib
 import datetime
 
-from api.db.services.dialog_service import keyword_extraction, label_question
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import rag_tokenizer
 from api.db import LLMType, ParserType
@@ -39,6 +38,8 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import construct_json_result, get_parser_config
 from rag.nlp import search
+from rag.prompts import keyword_extraction
+from rag.app.tag import label_question
 from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -733,7 +734,7 @@ def stop_parsing(tenant_id, dataset_id):
             )
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
-        settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
+        settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
     return get_result()
 
 
