@@ -75,6 +75,7 @@ export const IconMap = {
   jinaai: 'jina',
   'sentence-transformers': 'sentence-transformers',
   GPUStack: 'gpustack',
+  VLLM: 'vllm',
 };
 
 export const TimezoneList = [
