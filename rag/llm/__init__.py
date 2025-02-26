@@ -247,7 +247,7 @@ RerankModel = {
     "NVIDIA": NvidiaRerank,
     "LM-Studio": LmStudioRerank,
     "OpenAI-API-Compatible": OpenAI_APIRerank,
-    "VLLM": OpenAI_APIRerank,
+    "VLLM": CoHereRerank,
     "Cohere": CoHereRerank,
     "TogetherAI": TogetherAIRerank,
     "SILICONFLOW": SILICONFLOWRerank,
