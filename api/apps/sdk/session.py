@@ -242,7 +242,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
         return get_error_data_result(f"You don't own the chat {chat_id}")
     dia = dia[0]
     
-    # Lọc bỏ system messages, chỉ giữ lại user và assistant messages
+    # Filter system and non-sense assistant messages
     filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
     
     if req.get("stream", True):
