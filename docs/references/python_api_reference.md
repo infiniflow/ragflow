@@ -34,7 +34,7 @@ The model used to generate the response. The server will parse this automaticall
 
 ##### messages: `list[object]`, *Required*
 
-A list of historical chat messages to generate the response. This must contain at least one message with the `user` role.
+A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
 ##### stream: `boolean`
 
