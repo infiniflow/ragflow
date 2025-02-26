@@ -1184,7 +1184,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
-      datatype: 'MINE type',
+      datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
     },
     footer: {
