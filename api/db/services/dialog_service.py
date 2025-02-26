@@ -30,7 +30,7 @@ from api import settings
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
-from rag.prompts import kb_prompt, message_fit_in, llm_id2llm_type, keyword_extraction, full_question
+from rag.prompts import kb_prompt, message_fit_in, llm_id2llm_type, keyword_extraction, full_question, chunks_format
 from rag.utils import rmSpace, num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 
@@ -511,7 +511,7 @@ def ask(question, kb_ids, tenant_id):
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
-        return {"answer": answer, "reference": refs}
+        return {"answer": answer, "reference": chunks_format(refs)}
 
     answer = ""
     for ans in chat_mdl.chat_streamly(prompt, msg, {"temperature": 0.1}):

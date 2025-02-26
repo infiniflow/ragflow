@@ -28,6 +28,22 @@ from rag.settings import TAG_FLD
 from rag.utils import num_tokens_from_string, encoder
 
 
+def chunks_format(reference):
+    def get_value(d, k1, k2):
+        return d.get(k1, d.get(k2))
+
+    return [{
+        "id": get_value(chunk, "chunk_id", "id"),
+        "content": get_value(chunk, "content", "content_with_weight"),
+        "document_id": get_value(chunk, "doc_id", "document_id"),
+        "document_name": get_value(chunk, "docnm_kwd", "document_name"),
+        "dataset_id": get_value(chunk, "kb_id", "dataset_id"),
+        "image_id": get_value(chunk, "image_id", "img_id"),
+        "positions": get_value(chunk, "positions", "position_int"),
+        "url": chunk.get("url")
+    } for chunk in reference.get("chunks", [])]
+
+
 def llm_id2llm_type(llm_id):
     llm_id, _ = TenantLLMService.split_model_name_and_factory(llm_id)
     fnm = os.path.join(get_project_base_directory(), "conf")
