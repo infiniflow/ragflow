@@ -64,6 +64,7 @@ def structure_answer(conv, ans, message_id, session_id):
         "dataset_id": get_value(chunk, "kb_id", "dataset_id"),
         "image_id": get_value(chunk, "image_id", "img_id"),
         "positions": get_value(chunk, "positions", "position_int"),
+        "url": chunk.get("url")
     } for chunk in reference.get("chunks", [])]
 
     reference["chunks"] = chunk_list

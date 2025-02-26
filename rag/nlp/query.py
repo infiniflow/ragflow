@@ -206,6 +206,8 @@ class FulltextQueryer:
 
         sims = CosineSimilarity([avec], bvecs)
         tksim = self.token_similarity(atks, btkss)
+        if np.sum(sims[0]) == 0:
+            return np.array(tksim), tksim, sims[0]
         return np.array(sims[0]) * vtweight + np.array(tksim) * tkweight, tksim, sims[0]
 
     def token_similarity(self, atks, btkss):
