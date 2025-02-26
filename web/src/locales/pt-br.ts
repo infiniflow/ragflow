@@ -254,8 +254,8 @@ export default {
       presentation: `<p>Os formatos de arquivo suportados são <b>PDF</b>, <b>PPTX</b>.</p><p>
       Cada página do slide é tratada como um fragmento, com sua imagem em miniatura armazenada.</p><p>
       <i>Esse método de fragmentação é aplicado automaticamente a todos os arquivos PPT enviados, então não é necessário especificá-lo manualmente.</i></p>`,
-      qa: `<p>Este método suporta arquivos nos formatos <b>EXCEL</b> e <b>CSV/TXT</b>.</p>
-      <li>Se o arquivo estiver no formato <b>Excel</b>, ele deve conter duas colunas sem cabeçalhos: uma para perguntas e outra para respostas, com a coluna de perguntas antes da de respostas. Múltiplas planilhas são aceitas, desde que as colunas estejam corretamente estruturadas.</li>
+      qa: `<p>Este método suporta arquivos nos formatos <b>XLSX</b> e <b>CSV/TXT</b>.</p>
+      <li>Se o arquivo estiver no formato <b>XLSX</b>, ele deve conter duas colunas sem cabeçalhos: uma para perguntas e outra para respostas, com a coluna de perguntas antes da de respostas. Múltiplas planilhas são aceitas, desde que as colunas estejam corretamente estruturadas.</li>
       <li>Se o arquivo estiver no formato <b>CSV/TXT</b>, ele deve estar codificado em UTF-8 e usar TAB como delimitador para separar perguntas e respostas.</li>
       <p><i>Linhas de texto que não seguirem essas regras serão ignoradas, e cada par de Pergunta & Resposta será tratado como um fragmento distinto.</i></p>`,
       useRaptor: 'Usar RAPTOR para melhorar a recuperação',

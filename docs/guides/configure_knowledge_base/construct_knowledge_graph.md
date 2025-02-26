@@ -65,9 +65,9 @@ In a knowledge graph, a community is a cluster of entities linked by relationshi
 
 2. The knowledge graph of your knowlege base does *not* automatically update *until* a newly uploaded file is parsed.
 
-   _A **Knowledge Graph** entry appears under **Configuration** once a knowledge graph is created._
+   _A **Knowledge graph** entry appears under **Configuration** once a knowledge graph is created._
 
-3. Click **Knowledge Graph** to view the details of the generated graph.
+3. Click **Knowledge graph** to view the details of the generated graph.
 
 ## Frequently asked questions
 
@@ -81,4 +81,4 @@ Nope. The knowledge graph does *not* automatically update *until* a newly upload
 
 ### How to remove a generated knowledge graph?
 
-To remove the generated knowledge graph, delete all related files in your knowledge base. Although the **Knowledge Graph** entry will still be visible, the graph has actually been deleted.
+To remove the generated knowledge graph, delete all related files in your knowledge base. Although the **Knowledge graph** entry will still be visible, the graph has actually been deleted.

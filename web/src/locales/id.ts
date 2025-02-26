@@ -225,10 +225,10 @@ export default {
           <i>Semua file PPT yang Anda unggah akan dipotong menggunakan metode ini secara otomatis, pengaturan untuk setiap file PPT tidak diperlukan.</i></p>`,
       qa: `
           <p>
-          Metode potongan ini mendukung format file <b>EXCEL</b> dan <b>CSV/TXT</b>.
+          Metode potongan ini mendukung format file <b>XLSX</b> dan <b>CSV/TXT</b>.
         </p>
         <li>
-          Jika file dalam format <b>Excel</b>, harus terdiri dari dua kolom
+          Jika file dalam format <b>XLSX</b>, harus terdiri dari dua kolom
           tanpa header: satu untuk pertanyaan dan yang lainnya untuk jawaban, dengan
           kolom pertanyaan mendahului kolom jawaban. Lembar kerja ganda dapat diterima selama kolom terstruktur dengan benar.
         </li>
@@ -251,7 +251,7 @@ export default {
           maka Anda dapat mencantumkan semua kandidat yang memenuhi kualifikasi hanya dengan berbicara dengan <i>'assistxsuite'</i>.
           </p>
           `,
-      table: `<p>Format file yang didukung adalah <b>EXCEL</b> dan <b>CSV/TXT</b>.</p><p>
+      table: `<p>Format file yang didukung adalah <b>XLSX</b> dan <b>CSV/TXT</b>.</p><p>
           Berikut beberapa tips:
           <ul>
         <li>Untuk file csv atau txt, pembatas antara kolom adalah <em><b>TAB</b></em>.</li>
