@@ -58,7 +58,6 @@ export function DynamicVariableForm({ node }: IProps) {
               name={typeField}
               render={({ field }) => (
                 <FormItem className="w-2/5">
-                  {/* <FormLabel>City</FormLabel> */}
                   <FormDescription />
                   <FormControl>
                     <RAGFlowSelect
@@ -75,8 +74,7 @@ export function DynamicVariableForm({ node }: IProps) {
               control={form.control}
               name={`query.${index}.${getVariableName(typeValue)}`}
               render={({ field }) => (
-                <FormItem>
-                  {/* <FormLabel>State</FormLabel> */}
+                <FormItem className="flex-1">
                   <FormDescription />
                   <FormControl>
                     {typeValue === VariableType.Reference ? (
