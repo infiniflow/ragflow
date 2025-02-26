@@ -20,7 +20,7 @@ import time
 from api.db import LLMType
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
-from api.db.services.canvas_service import completion as agent_completion
+from api.db.services.canvas_service import completion as agent_completion ,completionOpenAI
 from api.db.services.dialog_service import ask, chat
 from agent.canvas import Canvas
 from api.db import StatusEnum
@@ -185,19 +185,22 @@ def chat_completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
-@manager.route('chats_openai/<chat_id>/chat/completions', methods=['POST'])  # noqa: F821
+@manager.route('openai/<chat_id>/<share>/chat/completions', methods=['POST'])  # noqa: F821
 @validate_request("model", "messages")  # noqa: F821
 @token_required
-def chat_completion_openai_like(tenant_id, chat_id):
+def chat_completion_openai_compatibility (tenant_id, chat_id, share):
     """
-    OpenAI-like chat completion API that simulates the behavior of OpenAI's completions endpoint.
+    OpenAI-Compatibility  chat completion API that simulates the behavior of OpenAI's completions endpoint.
     
     This function allows users to interact with a model and receive responses based on a series of historical messages.
     If `stream` is set to True (by default), the response will be streamed in chunks, mimicking the OpenAI-style API.
     Set `stream` to False explicitly, the response will be returned in a single complete answer.
+    share: "agent" or "chat"
+    chat_id : chat_id or agent_id
+    tenant_id : user_id
     Example usage:
-
-    curl -X POST https://ragflow_address.com/api/v1/chats_openai/<chat_id>/chat/completions \
+    
+    curl -X POST https://ragflow_address.com/api/v1/openai/<chat_id>/<share>/chat/completions \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $RAGFLOW_API_KEY" \
         -d '{
@@ -211,7 +214,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
     from openai import OpenAI
 
     model = "model"
-    client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
+    client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/openai/<chat_id>/<share>/")
     
     completion = client.chat.completions.create(
         model=model,
@@ -233,19 +236,22 @@ def chat_completion_openai_like(tenant_id, chat_id):
     """
     req = request.json
     messages = req.get("messages", [])
-    
     if not messages:
         return get_error_data_result("You must provide at least one message.")
-
-    dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
-    if not dia:
-        return get_error_data_result(f"You don't own the chat {chat_id}")
-    dia = dia[0]
+    if share == "agent":
+        if not UserCanvasService.query(user_id=tenant_id, id=chat_id):
+            return get_error_data_result(f"You don't own the agent {chat_id}")
+    else:
+        dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
+        if not dia:
+            return get_error_data_result(f"You don't own the chat {chat_id}")
+        dia = dia[0]
     
     # Filter system and non-sense assistant messages
     filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
     
     if req.get("stream", True):
+
         def streamed_response_generator():
             token_used = 0
             try:
@@ -281,36 +287,40 @@ def chat_completion_openai_like(tenant_id, chat_id):
                     ]
                 }
                 yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
-            
             yield "data: [DONE]\n\n"
-
-        return Response(streamed_response_generator(), mimetype="text/event-stream")
+        if share =="agent":
+            return Response( completionOpenAI(tenant_id, chat_id, messages,req.get("id", ""), True), mimetype="text/event-stream")
+        else:
+            return Response(streamed_response_generator(), mimetype="text/event-stream")
     
     else:
-        answer = None
-        for ans in chat(dia, filtered_messages, False):
-            answer = ans["answer"]
-            break
-        
-        response = {
-            "id": f"chatcmpl-{chat_id}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": req.get("model", ""),
-            "usage": {
-                "prompt_tokens": sum(len(m["content"]) for m in messages),
-                "completion_tokens": len(answer),
-                "total_tokens": sum(len(m["content"]) for m in messages) + len(answer)
-            },
-            "choices": [
-                {
-                    "message": {"role": "assistant", "content": answer},
-                    "index": 0,
-                    "finish_reason": "stop"
-                }
-            ]
-        }
-        return jsonify(response)
+        if share =="agent":
+            return completionOpenAI(tenant_id, chat_id, messages,req.get("id", ""), False)
+        else:
+            answer = None
+            for ans in chat(dia, filtered_messages, False):
+                answer = ans["answer"]
+                break
+            
+            response = {
+                "id": f"chatcmpl-{chat_id}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": req.get("model", ""),
+                "usage": {
+                    "prompt_tokens": sum(len(m["content"]) for m in messages),
+                    "completion_tokens": len(answer),
+                    "total_tokens": sum(len(m["content"]) for m in messages) + len(answer)
+                },
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": answer},
+                        "index": 0,
+                        "finish_reason": "stop"
+                    }
+                ]
+            }
+            return jsonify(response)
 
 
 @manager.route('/agents/<agent_id>/completions', methods=['POST'])  # noqa: F821
