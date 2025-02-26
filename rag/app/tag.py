@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import json
 import re
 import csv
 from copy import deepcopy
@@ -119,6 +119,32 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
 
     raise NotImplementedError(
         "Excel, csv(txt) format files are supported.")
+
+
+def label_question(question, kbs):
+    from api.db.services.knowledgebase_service import KnowledgebaseService
+    from graphrag.utils import get_tags_from_cache, set_tags_to_cache
+    from api import settings
+    tags = None
+    tag_kb_ids = []
+    for kb in kbs:
+        if kb.parser_config.get("tag_kb_ids"):
+            tag_kb_ids.extend(kb.parser_config["tag_kb_ids"])
+    if tag_kb_ids:
+        all_tags = get_tags_from_cache(tag_kb_ids)
+        if not all_tags:
+            all_tags = settings.retrievaler.all_tags_in_portion(kb.tenant_id, tag_kb_ids)
+            set_tags_to_cache(all_tags, tag_kb_ids)
+        else:
+            all_tags = json.loads(all_tags)
+        tag_kbs = KnowledgebaseService.get_by_ids(tag_kb_ids)
+        tags = settings.retrievaler.tag_query(question,
+                                              list(set([kb.tenant_id for kb in tag_kbs])),
+                                              tag_kb_ids,
+                                              all_tags,
+                                              kb.parser_config.get("topn_tags", 3)
+                                              )
+    return tags
 
 
 if __name__ == "__main__":

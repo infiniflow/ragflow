@@ -23,6 +23,7 @@ from graphrag.general.index import WithCommunity, WithResolution, Dealer
 from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
 from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
+from rag.prompts import keyword_extraction, question_proposal, content_tagging
 
 CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
 CONSUMER_NAME = "task_executor_" + CONSUMER_NO
@@ -49,7 +50,6 @@ import numpy as np
 from peewee import DoesNotExist
 
 from api.db import LLMType, ParserType, TaskStatus
-from api.db.services.dialog_service import keyword_extraction, question_proposal, content_tagging
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService

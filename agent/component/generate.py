@@ -18,10 +18,10 @@ from functools import partial
 import pandas as pd
 from api.db import LLMType
 from api.db.services.conversation_service import structure_answer
-from api.db.services.dialog_service import message_fit_in
 from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
+from rag.prompts import message_fit_in
 
 
 class GenerateParam(ComponentParamBase):
