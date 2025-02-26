@@ -172,6 +172,10 @@ def add_llm():
         llm_name = req["llm_name"] + "___OpenAI-API"
         api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
+    elif factory == "VLLM":
+        llm_name = req["llm_name"] + "___OpenAI-API"
+        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
+
     elif factory == "XunFei Spark":
         llm_name = req["llm_name"]
         if req["model_type"] == "chat":
