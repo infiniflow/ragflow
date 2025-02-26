@@ -59,12 +59,22 @@ const MarkdownContent = ({
   }, [reference, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
-    (documentId: string, chunk: IReferenceChunk, isPdf: boolean) => () => {
-      if (!isPdf) {
-        return;
-      }
-      clickDocumentButton?.(documentId, chunk);
-    },
+    (
+      documentId: string,
+      chunk: IReferenceChunk,
+      isPdf: boolean,
+      documentUrl?: string,
+    ) =>
+      () => {
+        if (!isPdf) {
+          if (!documentUrl) {
+            return;
+          }
+          window.open(documentUrl, '_blank');
+        } else {
+          clickDocumentButton?.(documentId, chunk);
+        }
+      },
     [clickDocumentButton],
   );
 
@@ -93,6 +103,7 @@ const MarkdownContent = ({
         (x) => x?.doc_id === chunkItem?.document_id,
       );
       const documentId = document?.doc_id;
+      const documentUrl = document?.url;
       const fileThumbnail = documentId ? fileThumbnails[documentId] : '';
       const fileExtension = documentId ? getExtension(document?.doc_name) : '';
       const imageId = chunkItem?.image_id;
@@ -146,6 +157,7 @@ const MarkdownContent = ({
                     documentId,
                     chunkItem,
                     fileExtension === 'pdf',
+                    documentUrl,
                   )}
                 >
                   {document?.doc_name}

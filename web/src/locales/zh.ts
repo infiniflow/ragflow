@@ -527,6 +527,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       reasoning: '推理',
       reasoningTip:
         '它将像Deepseek-R1 / OpenAI o1一样触发推理过程。将代理搜索过程集成到推理工作流中，允许模型本身在遇到不确定信息时动态地检索外部知识。',
+      tavilyApiKeyTip:
+        '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
+      tavilyApiKeyMessage: '请输入你的 Tavily Api Key',
+      tavilyApiKeyHelp: '如何获取？',
     },
     setting: {
       profile: '概要',

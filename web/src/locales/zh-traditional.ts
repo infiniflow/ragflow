@@ -148,7 +148,8 @@ export default {
       selectFiles: '選擇文件',
       changeSpecificCategory: '更改特定類別',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
-      uploadDescription: '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
+      uploadDescription:
+        '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
       chunk: '解析塊',
       bulk: '批量',
       cancel: '取消',
@@ -510,6 +511,10 @@ export default {
       reasoning: '推理',
       reasoningTip:
         '它將觸發類似Deepseek-R1/OpenAI o1的推理過程。將代理搜尋過程整合到推理工作流程中，使得模型本身能夠在遇到不確定資訊時動態地檢索外部知識。',
+      tavilyApiKeyTip:
+        '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
+      tavilyApiKeyMessage: '請輸入你的 Tavily Api Key',
+      tavilyApiKeyHelp: '如何獲取？',
     },
     setting: {
       profile: '概述',
@@ -703,7 +708,8 @@ export default {
       newFolder: '新建文件夾',
       uploadFile: '上傳文件',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
-      uploadDescription: '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
+      uploadDescription:
+        '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
       file: '文件',
       directory: '文件夾',
       local: '本地上傳',
