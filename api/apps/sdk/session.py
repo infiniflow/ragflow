@@ -301,6 +301,8 @@ def chat_completion_openai_like(tenant_id, chat_id):
                 "total_tokens": len(prompt) + token_used
             }
             yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+            yield f"data:[DONE]\n\n".encode("utf-8")
+
 
         resp = Response(streamed_response_generator(chat_id, dia, msg), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
