@@ -232,111 +232,81 @@ def chat_completion_openai_like(tenant_id, chat_id):
         print(completion.choices[0].message.content)
     """
     req = request.json
-
     messages = req.get("messages", [])
-    # To prevent empty [] input
-    if len(messages) < 1:
-        return get_error_data_result("You have to provide messages.")
-    if messages[-1]["role"] != "user":
-        return get_error_data_result("The last content of this conversation is not from user.")
-
-    prompt = messages[-1]["content"]
-    # Treat context tokens as reasoning tokens
-    context_token_used = sum(len(message["content"]) for message in messages)
+    
+    if not messages:
+        return get_error_data_result("You must provide at least one message.")
 
     dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
     if not dia:
         return get_error_data_result(f"You don't own the chat {chat_id}")
     dia = dia[0]
-
-    # Filter system and non-sense assistant messages
-    msg = None
-    msg = [m for m in messages if m["role"] != "system" and (m["role"] != "assistant" or msg)]
-
-    if req.get("stream", True):
-        # The value for the usage field on all chunks except for the last one will be null.
-        # The usage field on the last chunk contains token usage statistics for the entire request.
-        # The choices field on the last chunk will always be an empty array [].
-        def streamed_response_generator(chat_id, dia, msg):
-            token_used = 0
-            response = {
-                "id": f"chatcmpl-{chat_id}",
-                "choices": [
-                    {
-                        "delta": {
-                            "content": "",
-                            "role": "assistant",
-                            "function_call": None,
-                            "tool_calls": None
-                        },
-                        "finish_reason": None,
-                        "index": 0,
-                        "logprobs": None
-                    }
-                ],
-                "created": int(time.time()),
-                "model": "model",
-                "object": "chat.completion.chunk",
-                "system_fingerprint": "",
-                "usage": None
-            }
-
-            try:
-                for ans in chat(dia, msg, True):
-                    answer = ans["answer"]
-                    incremental = answer[token_used:]
-                    token_used += len(incremental)
-                    response["choices"][0]["delta"]["content"] = incremental
-                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-            except Exception as e:
-                response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
-                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-
-            # The last chunk
-            response["choices"][0]["delta"]["content"] = None
-            response["choices"][0]["finish_reason"] = "stop"
-            response["usage"] = {
-                "prompt_tokens": len(prompt),
-                "completion_tokens": token_used,
-                "total_tokens": len(prompt) + token_used
-            }
-            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-            yield "data:[DONE]\n\n"
-
     
-        return Response(streamed_response_generator(chat_id, dia, msg), mimetype="text/event-stream")
+    # Lọc bỏ system messages, chỉ giữ lại user và assistant messages
+    filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
+    
+    if req.get("stream", True):
+        def streamed_response_generator():
+            token_used = 0
+            try:
+                for ans in chat(dia, filtered_messages, True):
+                    chunk = ans["answer"][token_used:]
+                    token_used += len(chunk)
+                    response = {
+                        "id": f"chatcmpl-{chat_id}",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": req.get("model", ""),
+                        "choices": [
+                            {
+                                "delta": {"content": chunk},
+                                "index": 0,
+                                "finish_reason": None
+                            }
+                        ]
+                    }
+                    yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                response = {
+                    "id": f"chatcmpl-{chat_id}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": req.get("model", ""),
+                    "choices": [
+                        {
+                            "delta": {"content": "**ERROR**: " + str(e)},
+                            "index": 0,
+                            "finish_reason": "stop"
+                        }
+                    ]
+                }
+                yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
+            
+            yield "data: [DONE]\n\n"
+
+        return Response(streamed_response_generator(), mimetype="text/event-stream")
+    
     else:
         answer = None
-        for ans in chat(dia, msg, False):
-            # focus answer content only
-            answer = ans
+        for ans in chat(dia, filtered_messages, False):
+            answer = ans["answer"]
             break
-        content = answer["answer"]
-
-        response  = {
+        
+        response = {
             "id": f"chatcmpl-{chat_id}",
             "object": "chat.completion",
             "created": int(time.time()),
             "model": req.get("model", ""),
             "usage": {
-                "prompt_tokens": len(prompt),
-                "completion_tokens": len(content),
-                "total_tokens": len(prompt) + len(content),
-                "completion_tokens_details": {
-                    "reasoning_tokens": context_token_used,
-                    "accepted_prediction_tokens": len(content),
-                    "rejected_prediction_tokens": 0 # 0 for simplicity
-                }
+                "prompt_tokens": sum(len(m["content"]) for m in messages),
+                "completion_tokens": len(answer),
+                "total_tokens": sum(len(m["content"]) for m in messages) + len(answer)
             },
             "choices": [
                 {
-                    "message": {
-                        "role": "assistant",
-                        "content": content
-                    },
-                    "logprobs": None,
-                    "finish_reason": "stop",
-                    "index": 0
+                    "message": {"role": "assistant", "content": answer},
+                    "index": 0,
+                    "finish_reason": "stop"
                 }
             ]
         }
