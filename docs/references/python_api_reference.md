@@ -13,9 +13,62 @@ Run the following command to download the Python SDK:
 ```bash
 pip install ragflow-sdk
 ```
+
 :::
 
 ---
+
+## OpenAI-Compatible API
+
+---
+
+### Create chat completion
+
+Creates a model response for the given historical chat conversation via OpenAI's API.
+
+#### Parameters
+
+##### model: `str`, *Required*
+
+The model used to generate the response. The server will parse this automatically, so you can leave it as any for now.
+
+##### messages: `list[object]`, *Required*
+
+A list of historical chat messages to generate the response. This must contain at least one message with the `user` role.
+
+##### stream: `boolean`
+
+Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+#### Returns
+
+- Success: Respose [message](https://platform.openai.com/docs/api-reference/chat/create) like OpenAI
+- Failure: `Exception`
+
+#### Examples
+
+```python
+from openai import OpenAI
+
+model = "model"
+client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
+
+completion = client.chat.completions.create(
+    model=model,
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Who are you?"},
+    ],
+    stream=True
+)
+
+stream = True
+if stream:
+    for chunk in completion:
+        print(chunk)
+else:
+    print(completion.choices[0].message.content)
+```
 
 ## DATASET MANAGEMENT
 
