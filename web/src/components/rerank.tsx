@@ -92,7 +92,6 @@ function RerankFormField() {
           <FormControl>
             <Select onValueChange={field.onChange} {...field}>
               <SelectTrigger
-                className="w-[280px]"
                 value={field.value}
                 onReset={() => {
                   form.resetField(RerankId);

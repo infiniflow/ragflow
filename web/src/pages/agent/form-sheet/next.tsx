@@ -1,11 +1,16 @@
+import { Input } from '@/components/ui/input';
+import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { CloseOutlined } from '@ant-design/icons';
-import { Flex, Input } from 'antd';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { get, isPlainObject, lowerFirst } from 'lodash';
-import { Play } from 'lucide-react';
+import { Play, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+import { useForm } from 'react-hook-form';
 import { BeginId, Operator, operatorMap } from '../constant';
+import { FlowFormContext } from '../context';
+import { RunTooltip } from '../flow-tooltip';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import OperatorIcon from '../operator-icon';
 import {
@@ -13,14 +18,6 @@ import {
   needsSingleStepDebugging,
 } from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
-
-import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { FlowFormContext } from '../context';
-import { RunTooltip } from '../flow-tooltip';
-
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
 import { useFormConfigMap } from './use-form-config-map';
 
 interface IProps {
@@ -32,7 +29,7 @@ interface IProps {
 
 const EmptyContent = () => <div></div>;
 
-const FormDrawer = ({
+const FormSheet = ({
   visible,
   hideModal,
   node,
@@ -90,16 +87,16 @@ const FormDrawer = ({
   }, [visible, form, node?.data?.form, node?.id, node, operatorName]);
 
   return (
-    <Sheet onOpenChange={hideModal} open={visible}>
-      <SheetContent className="bg-white">
+    <Sheet onOpenChange={hideModal} open={visible} modal={false}>
+      <SheetContent className="bg-white top-20" closeIcon={false}>
         <SheetHeader>
-          <Flex vertical>
-            <Flex gap={'middle'} align="center">
+          <section className="flex-col border-b pb-2">
+            <div className="flex items-center gap-2 pb-3">
               <OperatorIcon
                 name={operatorName}
                 color={operatorMap[operatorName]?.color}
               ></OperatorIcon>
-              <Flex align="center" gap={'small'} flex={1}>
+              <div className="flex items-center gap-1 flex-1">
                 <label htmlFor="">{t('title')}</label>
                 {node?.id === BeginId ? (
                   <span>{t(BeginId)}</span>
@@ -110,7 +107,7 @@ const FormDrawer = ({
                     onChange={handleNameChange}
                   ></Input>
                 )}
-              </Flex>
+              </div>
 
               {needsSingleStepDebugging(operatorName) && (
                 <RunTooltip>
@@ -120,10 +117,10 @@ const FormDrawer = ({
                   />
                 </RunTooltip>
               )}
-              <CloseOutlined onClick={hideModal} />
-            </Flex>
+              <X onClick={hideModal} />
+            </div>
             <span>{t(`${lowerFirst(operatorName)}Description`)}</span>
-          </Flex>
+          </section>
         </SheetHeader>
         <section>
           {visible && (
@@ -148,4 +145,4 @@ const FormDrawer = ({
   );
 };
 
-export default FormDrawer;
+export default FormSheet;
