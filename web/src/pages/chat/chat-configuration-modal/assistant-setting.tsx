@@ -150,7 +150,7 @@ const AssistantSetting = ({
       <Form.Item label={'Tavily Api Key'} tooltip={t('tavilyApiKeyTip')}>
         <div className="flex flex-col gap-1">
           <Form.Item name={['prompt_config', 'tavily_api_key']} noStyle>
-            <Input placeholder={t('tavilyApiKeyMessage')} />
+            <Input.Password placeholder={t('tavilyApiKeyMessage')} />
           </Form.Item>
           <Typography.Link href="https://app.tavily.com/home" target={'_blank'}>
             {t('tavilyApiKeyHelp')}
