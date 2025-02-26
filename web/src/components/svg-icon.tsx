@@ -1,4 +1,4 @@
-import { IconMap } from '@/constants/setting';
+import { IconMap } from '@/constants/llm';
 import { cn } from '@/lib/utils';
 import Icon, { UserOutlined } from '@ant-design/icons';
 import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
