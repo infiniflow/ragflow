@@ -152,6 +152,7 @@ def add_llm():
 
     elif factory == "Tencent Cloud":
         req["api_key"] = apikey_json(["tencent_cloud_sid", "tencent_cloud_sk"])
+        return set_api_key()
 
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
