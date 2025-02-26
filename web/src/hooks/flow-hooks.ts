@@ -310,9 +310,13 @@ export const useDebugSingle = () => {
 export const useUpdateFlowName = () => {
   const { setFlow } = useSetFlow();
   const queryClient = useQueryClient();
-
   return {
     updateFlowName: async (id: string, newName: string) => {
+      const trimmedName = newName.trim();
+      if (!trimmedName) {
+        message.error('Name cannot be empty');
+        return false;
+      }
       try {
         const flowList =
           queryClient.getQueryData<IFlow[]>(['fetchFlowList']) || [];
@@ -322,14 +326,14 @@ export const useUpdateFlowName = () => {
           message.error('Failed to get flow data');
           return false;
         }
-
         const result = await setFlow({
           id,
-          title: newName,
+          title: trimmedName,
           dsl: currentFlow.dsl,
         });
         return result.code === 0;
       } catch (error) {
+        console.warn(error);
         return false;
       }
     },

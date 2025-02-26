@@ -240,8 +240,13 @@ export const useUpdateKnowledgeName = () => {
 
   return {
     updateKnowledgeName: async (id: string, newName: string) => {
+      const trimmedName = newName.trim();
+      if (!trimmedName) {
+        message.error('Name cannot be empty');
+        return false;
+      }
       try {
-        const result = await mutateAsync({ kb_id: id, name: newName });
+        const result = await mutateAsync({ kb_id: id, name: trimmedName });
         return result.code === 0;
       } catch (error) {
         message.error('Failed to update name');
