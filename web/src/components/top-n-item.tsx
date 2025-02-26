@@ -1,6 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Slider } from 'antd';
 import { useFormContext } from 'react-hook-form';
+import { SingleFormSlider } from './ui/dual-range-slider';
 import {
   FormControl,
   FormField,
@@ -8,7 +9,6 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { FormSlider } from './ui/slider';
 
 type FieldType = {
   top_n?: number;
@@ -52,7 +52,7 @@ export function TopNFormField({ max = 30 }: SimilaritySliderFormFieldProps) {
         <FormItem>
           <FormLabel>{t('topN')}</FormLabel>
           <FormControl>
-            <FormSlider {...field} max={max}></FormSlider>
+            <SingleFormSlider {...field} max={max}></SingleFormSlider>
           </FormControl>
           <FormMessage />
         </FormItem>
