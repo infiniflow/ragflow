@@ -50,7 +50,7 @@ curl --request POST \
 ##### Request Parameters
 
 - `model` (*Body parameter*) `string`, *Required*
-  The model used to generate the response. The server will parse this automatically, so you can leave it as any for now.
+  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
 - `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
