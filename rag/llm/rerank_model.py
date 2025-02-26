@@ -130,12 +130,12 @@ class DefaultRerank(Base):
 
         self._dynamic_batch_size = old_dynamic_batch_size
         return np.array(res)
-    
 
     def _compute_batch_scores(self, batch_pairs, max_length=None):
         if max_length is None:
-            max_length = self._model.max_length
-        scores = self._model.compute_score(batch_pairs, max_length=max_length)
+            scores = self._model.compute_score(batch_pairs)
+        else:
+            scores = self._model.compute_score(batch_pairs, max_length=max_length)
         scores = sigmoid(np.array(scores)).tolist()
         return scores
 
