@@ -1,1 +1,1 @@
-from .deep_research import DeepResearcher
+from .deep_research import DeepResearcher as DeepResearcher
