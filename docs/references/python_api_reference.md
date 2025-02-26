@@ -30,7 +30,7 @@ Creates a model response for the given historical chat conversation via OpenAI's
 
 ##### model: `str`, *Required*
 
-The model used to generate the response. The server will parse this automatically, so you can leave it as any for now.
+The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
 ##### messages: `list[object]`, *Required*
 
