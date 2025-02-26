@@ -859,7 +859,7 @@ Output:
 
 
 def reasoning(chunk_info: dict, question: str, chat_mdl: LLMBundle, embd_mdl: LLMBundle,
-              tenant_ids: list[str], kb_ids: list[str], prompt_config, MAX_SEARCH_LIMIT: int = 3,
+              tenant_ids: list[str], kb_ids: list[str], prompt_config, MAX_SEARCH_LIMIT: int = 6,
               top_n: int = 5, similarity_threshold: float = 0.4, vector_similarity_weight: float = 0.3):
     BEGIN_SEARCH_QUERY = "<|begin_search_query|>"
     END_SEARCH_QUERY = "<|end_search_query|>"
