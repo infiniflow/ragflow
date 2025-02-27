@@ -9,7 +9,15 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { FormControl, FormField, FormItem, FormLabel } from './ui/form';
 import { MultiSelect } from './ui/multi-select';
 
-const KnowledgeBaseItem = () => {
+interface KnowledgeBaseItemProps {
+  required?: boolean;
+  onChange?(): void;
+}
+
+const KnowledgeBaseItem = ({
+  required = true,
+  onChange,
+}: KnowledgeBaseItemProps) => {
   const { t } = useTranslate('chat');
 
   const { list: knowledgeList } = useFetchKnowledgeList(true);
@@ -35,7 +43,7 @@ const KnowledgeBaseItem = () => {
       tooltip={t('knowledgeBasesTip')}
       rules={[
         {
-          required: true,
+          required,
           message: t('knowledgeBasesMessage'),
           type: 'array',
         },
@@ -45,6 +53,7 @@ const KnowledgeBaseItem = () => {
         mode="multiple"
         options={knowledgeOptions}
         placeholder={t('knowledgeBasesMessage')}
+        onChange={onChange}
       ></Select>
     </Form.Item>
   );
@@ -89,6 +98,7 @@ export function KnowledgeBaseFormField() {
               placeholder={t('knowledgeBasesMessage')}
               variant="inverted"
               maxCount={100}
+              defaultValue={field.value}
               {...field}
             />
           </FormControl>

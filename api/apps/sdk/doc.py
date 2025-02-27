@@ -16,7 +16,6 @@
 import pathlib
 import datetime
 
-from api.db.services.dialog_service import keyword_extraction, label_question
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import rag_tokenizer
 from api.db import LLMType, ParserType
@@ -39,6 +38,8 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import construct_json_result, get_parser_config
 from rag.nlp import search
+from rag.prompts import keyword_extraction
+from rag.app.tag import label_question
 from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -255,6 +256,10 @@ def update_doc(tenant_id, dataset_id, document_id):
                 )
         if not DocumentService.update_by_id(document_id, {"name": req["name"]}):
             return get_error_data_result(message="Database error (Document rename)!")
+        if "meta_fields" in req:
+            if not isinstance(req["meta_fields"], dict):
+                return get_error_data_result(message="meta_fields must be a dictionary")
+            DocumentService.update_meta_fields(document_id, req["meta_fields"])
 
         informs = File2DocumentService.get_by_document_id(document_id)
         if informs:
@@ -472,10 +477,12 @@ def list_docs(dataset_id, tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     id = request.args.get("id")
     name = request.args.get("name")
-    if not DocumentService.query(id=id, kb_id=dataset_id):
+
+    if id and not DocumentService.query(id=id, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {id}.")
-    if not DocumentService.query(name=name, kb_id=dataset_id):
+    if name and not DocumentService.query(name=name, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {name}.")
+
     page = int(request.args.get("page", 1))
     keywords = request.args.get("keywords", "")
     page_size = int(request.args.get("page_size", 30))
@@ -729,7 +736,7 @@ def stop_parsing(tenant_id, dataset_id):
             )
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
-        settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
+        settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
     return get_result()
 
 
@@ -1301,7 +1308,7 @@ def retrieval_test(tenant_id):
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    embd_nms = list(set([kb.embd_id for kb in kbs]))
+    embd_nms = list(set([TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]))  # remove vendor suffix for comparison
     if len(embd_nms) != 1:
         return get_result(
             message='Datasets use different embedding models."',

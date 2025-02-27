@@ -169,8 +169,8 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
     > O comando abaixo baixa a edição `v0.16.0-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.16.0-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.16.0` para a edição completa `v0.16.0`.
 
     ```bash
-    $ cd ragflow
-    $ docker compose -f docker/docker-compose.yml up -d
+    $ cd ragflow/docker
+    $ docker compose -f docker-compose.yml up -d
     ```
 
     | Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                 |
@@ -196,9 +196,6 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
      /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
      * Rodando em todos os endereços (0.0.0.0)
-     * Rodando em http://127.0.0.1:9380
-     * Rodando em http://x.x.x.x:9380
-     INFO:werkzeug:Pressione CTRL+C para sair
     ```
 
     > Se você pular essa etapa de confirmação e acessar diretamente o RAGFlow, seu navegador pode exibir um erro `network anormal`, pois, nesse momento, seu RAGFlow pode não estar totalmente inicializado.
@@ -228,7 +225,7 @@ Para atualizar a porta HTTP de serviço padrão (80), vá até [docker-compose.y
 Atualizações nas configurações acima exigem um reinício de todos os contêineres para que tenham efeito:
 
 > ```bash
-> $ docker compose -f docker/docker-compose.yml up -d
+> $ docker compose -f docker-compose.yml up -d
 > ```
 
 ### Mudar o mecanismo de documentos de Elasticsearch para Infinity
@@ -240,13 +237,13 @@ O RAGFlow usa o Elasticsearch por padrão para armazenar texto completo e vetore
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
-
+   Note: `-v` irá deletar os volumes do contêiner, e os dados existentes serão apagados.
 2. Defina `DOC_ENGINE` no **docker/.env** para `infinity`.
 
 3. Inicie os contêineres:
 
    ```bash
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
 
 > [!ATENÇÃO]

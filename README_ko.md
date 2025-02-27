@@ -150,8 +150,8 @@
    > 아래 명령어는 RAGFlow Docker 이미지의 v0.16.0-slim 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.16.0-slim과 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오. 예를 들어, 전체 버전인 v0.16.0을 다운로드하려면 RAGFLOW_IMAGE=infiniflow/ragflow:v0.16.0로 설정합니다.
 
    ```bash
-   $ cd ragflow
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ cd ragflow/docker
+   $ docker compose -f docker-compose.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
@@ -177,9 +177,6 @@
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
-    * Running on http://127.0.0.1:9380
-    * Running on http://x.x.x.x:9380
-    INFO:werkzeug:Press CTRL+C to quit
    ```
 
    > 만약 확인 단계를 건너뛰고 바로 RAGFlow에 로그인하면, RAGFlow가 완전히 초기화되지 않았기 때문에 브라우저에서 `network anormal` 오류가 발생할 수 있습니다.
@@ -209,7 +206,7 @@
 > 모든 시스템 구성 업데이트는 적용되기 위해 시스템 재부팅이 필요합니다.
 >
 > ```bash
-> $ docker compose -f docker/docker-compose.yml up -d
+> $ docker compose -f docker-compose.yml up -d
 > ```
 
 ### Elasticsearch 에서 Infinity 로 문서 엔진 전환
@@ -220,6 +217,7 @@ RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 
    ```bash
    $docker compose-f docker/docker-compose.yml down -v
    ```
+   Note: `-v` 는 docker 컨테이너의 볼륨을 삭제하고 기존 데이터를 지우며, 이 작업은 컨테이너를 중지하는 것과 동일합니다.
 2. **docker/.env**의 "DOC_ENGINE" 을 "infinity" 로 설정합니다.
 3. 컨테이너 부팅:
    ```bash

@@ -372,6 +372,10 @@ class DocumentService(CommonService):
                     "progress_msg": "Task is queued...",
                     "process_begin_at": get_format_time()
                     })
+    @classmethod
+    @DB.connection_context()
+    def update_meta_fields(cls, doc_id, meta_fields):
+        return cls.update_by_id(doc_id, {"meta_fields": meta_fields})
 
     @classmethod
     @DB.connection_context()
@@ -500,6 +504,9 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     assert e, "Conversation not found!"
 
     e, dia = DialogService.get_by_id(conv.dialog_id)
+    if not dia.kb_ids:
+        raise LookupError("No knowledge base associated with this conversation. "
+                          "Please add a knowledge base before uploading documents")
     kb_id = dia.kb_ids[0]
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:

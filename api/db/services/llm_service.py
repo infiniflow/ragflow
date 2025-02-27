@@ -86,8 +86,7 @@ class TenantLLMService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def model_instance(cls, tenant_id, llm_type,
-                       llm_name=None, lang="Chinese"):
+    def get_model_config(cls, tenant_id, llm_type, llm_name=None):
         e, tenant = TenantService.get_by_id(tenant_id)
         if not e:
             raise LookupError("Tenant not found")
@@ -124,7 +123,13 @@ class TenantLLMService(CommonService):
                     if not mdlnm:
                         raise LookupError(f"Type of {llm_type} model is not set.")
                     raise LookupError("Model({}) not authorized".format(mdlnm))
+        return model_config
 
+    @classmethod
+    @DB.connection_context()
+    def model_instance(cls, tenant_id, llm_type,
+                       llm_name=None, lang="Chinese"):
+        model_config = TenantLLMService.get_model_config(tenant_id, llm_type, llm_name)
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
                 return
@@ -228,10 +233,8 @@ class LLMBundle(object):
             tenant_id, llm_type, llm_name, lang=lang)
         assert self.mdl, "Can't find model for {}/{}/{}".format(
             tenant_id, llm_type, llm_name)
-        self.max_length = 8192
-        for lm in LLMService.query(llm_name=llm_name):
-            self.max_length = lm.max_tokens
-            break
+        model_config = TenantLLMService.get_model_config(tenant_id, llm_type, llm_name)
+        self.max_length = model_config.get("max_tokens", 8192)
 
     def encode(self, texts: list):
         embeddings, used_tokens = self.mdl.encode(texts)

@@ -8,13 +8,13 @@
             "llm": [
                 {
                     "llm_name": "gpt-4o-mini",
-                    "tags": "LLM,CHAT,128K",
+                    "tags": "LLM,CHAT,128K,IMAGE2TEXT",
                     "max_tokens": 128000,
                     "model_type": "chat"
                 },
                 {
                     "llm_name": "gpt-4o",
-                    "tags": "LLM,CHAT,128K",
+                    "tags": "LLM,CHAT,128K,IMAGE2TEXT",
                     "max_tokens": 128000,
                     "model_type": "chat"
                 },
@@ -71,18 +71,6 @@
                     "tags": "LLM,CHAT,32K",
                     "max_tokens": 32768,
                     "model_type": "chat"
-                },
-                {
-                    "llm_name": "gpt-4o-2024-08-06",
-                    "tags": "LLM,CHAT,IMAGE2TEXT",
-                    "max_tokens": 128000,
-                    "model_type": "image2text"
-                },
-                 {
-                    "llm_name": "gpt-4o-mini-2024-07-18",
-                    "tags": "LLM,CHAT,IMAGE2TEXT",
-                    "max_tokens": 128000,
-                    "model_type": "image2text"
                 },
                 {
                     "llm_name": "tts-1",
@@ -308,6 +296,13 @@
             "llm": []
         },
         {
+            "name": "ModelScope",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "LocalAI",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
@@ -316,6 +311,13 @@
         },
         {
             "name": "OpenAI-API-Compatible",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "VLLM",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
