@@ -17,6 +17,8 @@ import re
 import json
 import time
 
+import tiktoken
+
 from api.db import LLMType
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
@@ -237,6 +239,8 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
         print(completion.choices[0].message.content)
     """
     req = request.json
+    tiktokenenc = tiktoken.get_encoding("cl100k_base")
+
     messages = req.get("messages", [])
     if not messages:
         return get_error_data_result("You must provide at least one message.")
@@ -256,6 +260,8 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
             messages="No valid messages found (user or assistant).",
             finish_reason="stop",
             model=req.get("model", ""), 
+            completion_tokens= len(tiktokenenc.encode("No valid messages found (user or assistant).")),
+            prompt_tokens = sum(len(tiktokenenc.encode(m["content"])) for m in messages), 
             )
     
     if req.get("stream", True):
@@ -267,8 +273,10 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
                     token_used += len(chunk)
                     response =  get_data_openai(
                         id= chat_id,
-                        messages=chunk, 
+                        content=chunk, 
                         model=req.get("model", ""),
+                        completion_tokens=len(tiktokenenc.encode(chunk)),
+                        prompt_tokens= sum(len(tiktokenenc.encode(m["content"])) for m in messages),
                         )
                     
                     yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
@@ -295,8 +303,8 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
                 id= chat_id,
                 messages=answer, 
                 model=req.get("model", ""), 
-                prompt_tokens= sum(len(m["content"]) for m in messages),
-                completion_tokens= len(answer),
+                prompt_tokens= sum(len(tiktokenenc.encode(m["content"])) for m in messages),
+                completion_tokens=len(tiktokenenc.encode(answer)),
             )
             
             

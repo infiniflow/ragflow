@@ -24,6 +24,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.conversation_service import structure_answer
 from api.utils import get_uuid
 from api.utils.api_utils import get_data_openai
+import tiktoken
 
 
 class CanvasTemplateService(CommonService):
@@ -169,6 +170,8 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
 
 def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
     e, cvs = UserCanvasService.get_by_id(agent_id)
+    tiktokenenc = tiktoken.get_encoding("cl100k_base")
+
     if not e:
         yield get_data_openai(
             id= response_id,
@@ -200,7 +203,9 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                         yield get_data_openai(
                             id= response_id,
                             model= agent_id,
-                            content= f"`{ele['key']}` is required"
+                            content= f"`{ele['key']}` is required",
+                            completion_tokens= len(tiktokenenc.encode(f"`{ele['key']}` is required")),
+                            prompt_tokens= len(tiktokenenc.encode(question))
                         )
                         return
                     ele["value"] = kwargs[ele["key"]]
@@ -260,15 +265,18 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
         try:
             for ans in canvas.run(stream=stream):
                 if ans.get("running_status"):
+                
                     yield "data: " + json.dumps(
                                             get_data_openai(
                                                 id= response_id,
                                                 model= agent_id,
                                                 content= ans["content"],
                                                 running_status= True,
-                                                object= "chat.completion.chunk"
-                                            ),
-                                               ensure_ascii=False) + "\n\n"
+                                                 object= "chat.completion.chunk",
+                                                 completion_tokens= len(tiktokenenc.encode(ans["content"])),
+                                                 prompt_tokens= len(tiktokenenc.encode(str(question)))
+                                             ),
+                                                ensure_ascii=False) + "\n\n"
                     continue
                 for k in ans.keys():
                     final_ans[k] = ans[k]
@@ -279,7 +287,9 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                                             model= agent_id,
                                             content= ans["content"],
                                             object= "chat.completion.chunk",
-                                            finish_reason= "stop" if not stream else None
+                                            finish_reason= "stop" if not stream else None,
+                                            completion_tokens= len(tiktokenenc.encode(ans["content"])),
+                                            prompt_tokens= len(tiktokenenc.encode(str(question)))
                                         ),                                       
                                         ensure_ascii=False) + "\n\n"
 
@@ -297,7 +307,9 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     id= response_id,
                     model= agent_id,
                     content= "**ERROR**: " + str(e),
-                    finish_reason= "stop"
+                    finish_reason= "stop",
+                    completion_tokens= len(tiktokenenc.encode("**ERROR**: " + str(e))),
+                    prompt_tokens= len(tiktokenenc.encode(str(question)))
                 )
             
         if stream:
@@ -328,7 +340,9 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     id= response_id,
                     model= agent_id,
                     content= final_ans["content"],
-                    finish_reason= "stop"
+                    finish_reason= "stop",
+                    completion_tokens= len(tiktokenenc.encode(final_ans["content"])),
+                    prompt_tokens= len(tiktokenenc.encode(str(question)))
                 )
            
 
@@ -341,5 +355,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     model= agent_id,
                     content= "**ERROR**: " + str(e),
                     finish_reason= "stop",
+                    completion_tokens= len(tiktokenenc.encode("**ERROR**: " + str(e))),
+                    prompt_tokens= len(tiktokenenc.encode(question))
                 )
               
