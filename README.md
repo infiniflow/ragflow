@@ -204,9 +204,6 @@ releases! 🌟
      /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
-    * Running on http://127.0.0.1:9380
-    * Running on http://x.x.x.x:9380
-    INFO:werkzeug:Press CTRL+C to quit
    ```
 
    > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anormal`
@@ -252,7 +249,9 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
-   Note: `-v` will delete the docker container volumes, and the existing data will be cleared.
+
+> [!WARNING]
+> `-v` will delete the docker container volumes, and the existing data will be cleared.
 
 2. Set `DOC_ENGINE` in **docker/.env** to `infinity`.
 
