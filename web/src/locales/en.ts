@@ -714,7 +714,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       202: 'A request has been queued in the background (asynchronous task).',
       204: 'Data deleted successfully.',
       400: 'There was an error in the request issued, and the server did not create or modify data.',
-      401: 'The user does not have permissions (wrong token, username, password).',
+      401: 'Please sign in again.',
       403: 'The user is authorized, but access is prohibited.',
       404: 'The request was made for a record that does not exist, and the server did not perform the operation.',
       406: 'The requested format is not available.',
