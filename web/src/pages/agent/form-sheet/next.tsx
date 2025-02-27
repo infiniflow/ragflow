@@ -87,7 +87,7 @@ const FormSheet = ({
   }, [visible, form, node?.data?.form, node?.id, node, operatorName]);
 
   return (
-    <Sheet onOpenChange={hideModal} open={visible} modal={false}>
+    <Sheet open={visible} modal={false}>
       <SheetContent className="bg-white top-20" closeIcon={false}>
         <SheetHeader>
           <section className="flex-col border-b pb-2">
