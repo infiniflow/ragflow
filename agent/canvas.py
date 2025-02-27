@@ -15,7 +15,6 @@
 #
 import logging
 import json
-from abc import ABC
 from copy import deepcopy
 from functools import partial
 
@@ -25,7 +24,7 @@ from agent.component import component_class
 from agent.component.base import ComponentBase
 
 
-class Canvas(ABC):
+class Canvas:
     """
     dsl = {
         "components": {
