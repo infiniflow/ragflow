@@ -1,55 +1,76 @@
 import LLMSelect from '@/components/llm-select';
-import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
+import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import { PromptEditor } from '@/components/prompt-editor';
-import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Switch } from 'antd';
-import { IOperatorForm } from '../../interface';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Switch } from '@/components/ui/switch';
+import { useTranslation } from 'react-i18next';
+import { INextOperatorForm } from '../../interface';
 
-const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
-  const { t } = useTranslate('flow');
+const GenerateForm = ({ form }: INextOperatorForm) => {
+  const { t } = useTranslation();
 
   return (
-    <Form
-      name="basic"
-      autoComplete="off"
-      form={form}
-      onValuesChange={onValuesChange}
-      layout={'vertical'}
-    >
-      <Form.Item
-        name={'llm_id'}
-        label={t('model', { keyPrefix: 'chat' })}
-        tooltip={t('modelTip', { keyPrefix: 'chat' })}
+    <Form {...form}>
+      <form
+        className="space-y-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
       >
-        <LLMSelect></LLMSelect>
-      </Form.Item>
-      <Form.Item
-        name={['prompt']}
-        label={t('systemPrompt')}
-        initialValue={t('promptText')}
-        tooltip={t('promptTip', { keyPrefix: 'knowledgeConfiguration' })}
-        rules={[
-          {
-            required: true,
-            message: t('promptMessage'),
-          },
-        ]}
-      >
-        {/* <Input.TextArea rows={8}></Input.TextArea> */}
-        <PromptEditor></PromptEditor>
-      </Form.Item>
-      <Form.Item
-        name={['cite']}
-        label={t('cite')}
-        initialValue={true}
-        valuePropName="checked"
-        tooltip={t('citeTip')}
-      >
-        <Switch />
-      </Form.Item>
-      <MessageHistoryWindowSizeItem
-        initialValue={12}
-      ></MessageHistoryWindowSizeItem>
+        <FormField
+          control={form.control}
+          name="llm_id"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel tooltip={t('chat.modelTip')}>
+                {t('chat.model')}
+              </FormLabel>
+              <FormControl>
+                <LLMSelect {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="prompt"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel tooltip={t('knowledgeConfiguration.promptTip')}>
+                {t('flow.systemPrompt')}
+              </FormLabel>
+              <FormControl>
+                <PromptEditor {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="cite"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel tooltip={t('flow.citeTip')}>
+                {t('flow.cite')}
+              </FormLabel>
+              <FormControl>
+                <Switch {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
+      </form>
     </Form>
   );
 };
