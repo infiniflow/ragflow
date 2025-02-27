@@ -202,6 +202,7 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
     share: "agent" or "chat"
     chat_id : chat_id or agent_id
     tenant_id : user_id
+    id: session_id (optional) get history of the session agent
     Example usage:
     
     curl -X POST https://ragflow_address.com/api/v1/openai/<chat_id>/<share>/chat/completions \
@@ -275,7 +276,6 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
                         completion_tokens=len(tiktokenenc.encode(ans["answer"])),
                         prompt_tokens= sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages),
                         )
-                    
                     yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
             except Exception as e:
                 response = get_data_openai(id= chat_id,messages="**ERROR**: " + str(e), finish_reason="stop" , model=req.get("model", "")) 
@@ -283,13 +283,13 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
                 yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         if share =="agent":
-            return Response(completionOpenAI(tenant_id, chat_id, messages,req.get("id", ""), True), mimetype="text/event-stream")
+            return Response(completionOpenAI(tenant_id, chat_id, messages,session_id= req.get("id", ""), stream= True), mimetype="text/event-stream")
         else:
             return Response(streamed_response_generator(), mimetype="text/event-stream")
     
     else:
         if share =="agent":
-            return completionOpenAI(tenant_id, chat_id, messages,req.get("id", ""), False)
+            return completionOpenAI(tenant_id, chat_id, messages,session_id= req.get("id", ""),stream= False)
         else:
             answer = None
             for ans in chat(dia, filtered_messages, False):

@@ -387,7 +387,7 @@ def get_data_openai(id=None,
    
     total_tokens= prompt_tokens + completion_tokens
     return {
-        "id":f"chatcmpl-{id}",
+        "id":f"{id}",
         "object": object,
         "created": int(time.time()) if created else None,
         "model": model,

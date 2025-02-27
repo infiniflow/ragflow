@@ -192,7 +192,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     canvas = Canvas(cvs.dsl, tenant_id)
     canvas.reset()
     message_id = str(uuid4())
-    response_id = str(uuid4()) # OpenAI uses unique IDs for each response
+    response_id = str(uuid4())
 
     if not session_id:
         query = canvas.get_preset_param()
@@ -228,7 +228,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
         API4ConversationService.save(**conv)
         if query:
             yield "data: " + json.dumps(get_data_openai(
-                    id= response_id,
+                    id= session_id,
                     model= agent_id,
                     content= canvas.get_prologue(),
                 ),ensure_ascii=False) + "\n\n"
@@ -259,22 +259,20 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
         if not conv.reference:
             conv.reference = []
         conv.reference.append({"chunks": [], "doc_aggs": []})
-
     final_ans = {"reference": [], "content": ""}
     if stream:
         try:
             for ans in canvas.run(stream=stream):
                 if ans.get("running_status"):
-                
+                   
                     yield "data: " + json.dumps(
                                             get_data_openai(
-                                                id= response_id,
+                                                id= session_id,
                                                 model= agent_id,
                                                 content= ans["content"],
-                                                running_status= True,
-                                                 object= "chat.completion.chunk",
-                                                 completion_tokens= len(tiktokenenc.encode(ans["content"])),
-                                                 prompt_tokens= len(tiktokenenc.encode(str(question)))
+                                                object= "chat.completion.chunk",
+                                                completion_tokens= len(tiktokenenc.encode(str(ans["content"]))),
+                                                prompt_tokens= len(tiktokenenc.encode(str(question)))
                                              ),
                                                 ensure_ascii=False) + "\n\n"
                     continue
@@ -283,12 +281,12 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
 
                 yield "data: " + json.dumps(
                                         get_data_openai(
-                                            id= response_id,
+                                            id= session_id,
                                             model= agent_id,
                                             content= ans["content"],
                                             object= "chat.completion.chunk",
                                             finish_reason= "stop" if not stream else None,
-                                            completion_tokens= len(tiktokenenc.encode(ans["content"])),
+                                            completion_tokens= len(tiktokenenc.encode(str(ans["content"]))),
                                             prompt_tokens= len(tiktokenenc.encode(str(question)))
                                         ),                                       
                                         ensure_ascii=False) + "\n\n"
@@ -304,7 +302,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             conv.dsl = json.loads(str(canvas))
             API4ConversationService.append_message(conv.id, conv.to_dict())
             yield get_data_openai(
-                    id= response_id,
+                    id= session_id,
                     model= agent_id,
                     content= "**ERROR**: " + str(e),
                     finish_reason= "stop",
@@ -337,7 +335,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             API4ConversationService.append_message(conv.id, conv.to_dict())
 
             yield get_data_openai(
-                    id= response_id,
+                    id= session_id,
                     model= agent_id,
                     content= final_ans["content"],
                     finish_reason= "stop",
@@ -351,7 +349,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             conv.dsl = json.loads(str(canvas))
             API4ConversationService.append_message(conv.id, conv.to_dict())
             yield get_data_openai(
-                    id= response_id,
+                    id= session_id,
                     model= agent_id,
                     content= "**ERROR**: " + str(e),
                     finish_reason= "stop",
