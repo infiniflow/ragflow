@@ -382,8 +382,6 @@ def get_data_openai(id=None,
                     completion_tokens=0, 
                     content = None, 
                     finish_reason= None,
-                    param=None,
-                    session_id=None,
                     object="chat.completion"
 ):
    
@@ -413,7 +411,5 @@ def get_data_openai(id=None,
                 "finish_reason": finish_reason,
                 "index": 0
             }
-        ],
-        "param": param,
-        "session_id": session_id
+        ]
     } 

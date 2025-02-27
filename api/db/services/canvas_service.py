@@ -226,8 +226,6 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     id= response_id,
                     model= agent_id,
                     content= canvas.get_prologue(),
-                    session_id= session_id,
-                    param= canvas.get_preset_param()
                 ),ensure_ascii=False) + "\n\n"
             if stream: # Only send done signal in streaming mode
                 yield "data: [DONE]\n\n"
@@ -314,7 +312,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     continue
                 final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
                 final_ans["reference"] = answer.get("reference", [])
-                all_answer_content += final_ans["content"] # Accumulate for non-streamed
+                all_answer_content += final_ans["content"]
 
             final_ans["content"] = all_answer_content
             canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
