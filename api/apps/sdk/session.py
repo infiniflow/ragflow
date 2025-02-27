@@ -30,7 +30,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import get_uuid
-from api.utils.api_utils import get_error_data_result, validate_request
+from api.utils.api_utils import get_data_openai, get_error_data_result, validate_request
 from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
 from api.db.services.file_service import FileService
@@ -185,6 +185,8 @@ def chat_completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
+
+
 @manager.route('openai/<chat_id>/<share>/chat/completions', methods=['POST'])  # noqa: F821
 @validate_request("model", "messages")  # noqa: F821
 @token_required
@@ -247,49 +249,36 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
             return get_error_data_result(f"You don't own the chat {chat_id}")
         dia = dia[0]
     
-    # Filter system and non-sense assistant messages
     filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
+    if not filtered_messages:
+        return get_data_openai( 
+            id= chat_id,
+            messages="No valid messages found (user or assistant).",
+            finish_reason="stop",
+            model=req.get("model", ""), 
+            )
     
     if req.get("stream", True):
-
         def streamed_response_generator():
             token_used = 0
             try:
                 for ans in chat(dia, filtered_messages, True):
                     chunk = ans["answer"][token_used:]
                     token_used += len(chunk)
-                    response = {
-                        "id": f"chatcmpl-{chat_id}",
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": req.get("model", ""),
-                        "choices": [
-                            {
-                                "delta": {"content": chunk},
-                                "index": 0,
-                                "finish_reason": None
-                            }
-                        ]
-                    }
+                    response =  get_data_openai(
+                        id= chat_id,
+                        messages=chunk, 
+                        model=req.get("model", ""),
+                        )
+                    
                     yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
             except Exception as e:
-                response = {
-                    "id": f"chatcmpl-{chat_id}",
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": req.get("model", ""),
-                    "choices": [
-                        {
-                            "delta": {"content": "**ERROR**: " + str(e)},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }
-                    ]
-                }
+                response = get_data_openai(id= chat_id,messages="**ERROR**: " + str(e), finish_reason="stop" , model=req.get("model", "")) 
+            
                 yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         if share =="agent":
-            return Response( completionOpenAI(tenant_id, chat_id, messages,req.get("id", ""), True), mimetype="text/event-stream")
+            return Response(completionOpenAI(tenant_id, chat_id, messages,req.get("id", ""), True), mimetype="text/event-stream")
         else:
             return Response(streamed_response_generator(), mimetype="text/event-stream")
     
@@ -302,24 +291,16 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
                 answer = ans["answer"]
                 break
             
-            response = {
-                "id": f"chatcmpl-{chat_id}",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": req.get("model", ""),
-                "usage": {
-                    "prompt_tokens": sum(len(m["content"]) for m in messages),
-                    "completion_tokens": len(answer),
-                    "total_tokens": sum(len(m["content"]) for m in messages) + len(answer)
-                },
-                "choices": [
-                    {
-                        "message": {"role": "assistant", "content": answer},
-                        "index": 0,
-                        "finish_reason": "stop"
-                    }
-                ]
-            }
+            response = get_data_openai( 
+                id= chat_id,
+                messages=answer, 
+                model=req.get("model", ""), 
+                prompt_tokens= sum(len(m["content"]) for m in messages),
+                completion_tokens= len(answer),
+            )
+            
+            
+        
             return jsonify(response)
 
 

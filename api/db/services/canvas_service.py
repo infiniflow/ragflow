@@ -23,6 +23,7 @@ from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.conversation_service import structure_answer
 from api.utils import get_uuid
+from api.utils.api_utils import get_data_openai
 
 
 class CanvasTemplateService(CommonService):
@@ -169,46 +170,18 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
 def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
-        yield { # Directly yield OpenAI-like structure for non-streaming
-                    "id": response_id,
-                    "object": "chat.completion", # Or "text_completion"
-                    "created": int(time.time()),
-                    "model": agent_id,
-                    "choices": [
-                        {
-                            "message": {"role": "assistant", "content":  "**ERROR**: Agent not found."},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }
-                    ],
-                    "usage": { # Mock usage - replace with actual if you have
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0
-                    },
-                    # Include reference if needed in OpenAI format - depends on your requirement
-                }
+        yield get_data_openai(
+            id= response_id,
+            model= agent_id,
+            content= "**ERROR**: Agent not found."
+        )
         return
     if cvs.user_id != tenant_id:
-        yield { # Directly yield OpenAI-like structure for non-streaming
-                    "id": response_id,
-                    "object": "chat.completion", # Or "text_completion"
-                    "created": int(time.time()),
-                    "model": agent_id,
-                    "choices": [
-                        {
-                            "message": {"role": "assistant", "content":  "**ERROR**: You do not own the agent."},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }
-                    ],
-                    "usage": { # Mock usage - replace with actual if you have
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0
-                    },
-                    # Include reference if needed in OpenAI format - depends on your requirement
-                }
+        yield get_data_openai(
+            id= response_id,
+            model= agent_id,
+            content= "**ERROR**: You do not own the agent"
+        )
         return
 
     if not isinstance(cvs.dsl,str):
@@ -224,19 +197,11 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             for ele in query:
                 if not ele["optional"]:
                     if not kwargs.get(ele["key"]):
-                        yield { # Directly yield OpenAI-like structure for non-streaming
-                                "id": response_id,  
-                                "object": "chat.completion", # Or "text_completion"
-                                "created": int(time.time()),
-                                "model": agent_id,
-                                "choices": [
-                                    {
-                                        "message": {"role": "assistant", "content":  f"`{ele['key']}` is required"},
-                                        "index": 0,
-                                        "finish_reason": "stop"
-                                    }
-                                ],
-                            }
+                        yield get_data_openai(
+                            id= response_id,
+                            model= agent_id,
+                            content= f"`{ele['key']}` is required"
+                        )
                         return
                     ele["value"] = kwargs[ele["key"]]
                 if ele["optional"]:
@@ -257,22 +222,13 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
         }
         API4ConversationService.save(**conv)
         if query:
-            yield "data: " + json.dumps({
-                                        "id": response_id, # Add response ID
-                                        "object": "chat.completion.chunk" if stream else "chat.completion", # Adjust object type
-                                        "created": int(time.time()),
-                                        "model": agent_id, # Or a more descriptive model name
-                                        "choices": [
-                                            {
-                                                "delta" if stream else "message": {"role": "assistant", "content": canvas.get_prologue()}, # delta for stream, message for non-stream
-                                                "index": 0,
-                                                "finish_reason": None
-                                            }
-                                        ],
-                                        "session_id": session_id, # Add session_id if needed
-                                        "param": canvas.get_preset_param() # Add param if needed
-                                        },
-                                       ensure_ascii=False) + "\n\n"
+            yield "data: " + json.dumps(get_data_openai(
+                    id= response_id,
+                    model= agent_id,
+                    content= canvas.get_prologue(),
+                    session_id= session_id,
+                    param= canvas.get_preset_param()
+                ),ensure_ascii=False) + "\n\n"
             if stream: # Only send done signal in streaming mode
                 yield "data: [DONE]\n\n"
             return
@@ -281,26 +237,11 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     else:
         e, conv = API4ConversationService.get_by_id(session_id)
         if not e:
-            yield   { # Directly yield OpenAI-like structure for non-streaming
-                
-                    "id": response_id,
-                    "object": "chat.completion", # Or "text_completion"
-                        "created": int(time.time()),
-                        "model": agent_id,
-                        "choices": [
-                            {
-                                "message": {"role": "assistant", "content":  "**ERROR**: Session not found!"},
-                                "index": 0,
-                                "finish_reason": "stop"
-                            }
-                        ],
-                        "usage": { # Mock usage - replace with actual if you have
-                            "prompt_tokens": 0,
-                            "completion_tokens": 0,
-                            "total_tokens": 0
-                        },
-                        # Include reference if needed in OpenAI format - depends on your requirement
-                }
+            yield get_data_openai(
+                id= response_id,
+                model= agent_id,
+                content= "**ERROR**: Session not found!"
+            )
             return
         canvas = Canvas(json.dumps(conv.dsl), tenant_id)
         canvas.messages.append({"role": "user", "content": question, "id": message_id})
@@ -321,42 +262,28 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
         try:
             for ans in canvas.run(stream=stream):
                 if ans.get("running_status"):
-                    yield "data: " + json.dumps({
-                                                "id": response_id,
-                                                "object": "chat.completion.chunk",
-                                                "created": int(time.time()),
-                                                "model": agent_id,
-                                                "choices": [
-                                                    {
-                                                        "delta": {"content": ans["content"]},
-                                                        "index": 0,
-                                                        "finish_reason": None
-                                                    }
-                                                ]
-                                            },
+                    yield "data: " + json.dumps(
+                                            get_data_openai(
+                                                id= response_id,
+                                                model= agent_id,
+                                                content= ans["content"],
+                                                running_status= True,
+                                                object= "chat.completion.chunk"
+                                            ),
                                                ensure_ascii=False) + "\n\n"
                     continue
                 for k in ans.keys():
                     final_ans[k] = ans[k]
-                # ans = {"answer": ans["content"], "reference": ans.get("reference", [])} # No need to restructure like original
-                # ans = structure_answer(conv, ans, message_id, session_id) # Structure answer might not be needed for OpenAI format
 
-                yield "data: " + json.dumps({
-                                            "id": response_id,
-                                            "object": "chat.completion.chunk",
-                                            "created": int(time.time()),
-                                            "model": agent_id,
-                                            "choices": [
-                                                {
-                                                    "delta": {"content": ans["content"]}, # Directly use ans["content"]
-                                                    "index": 0,
-                                                    "finish_reason": "stop" if not stream else None # mark finish_reason on last chunk
-                                                }
-                                            ],
-                                            # Include reference if needed in OpenAI format - depends on your requirement
-                                            # "usage": { ... } # Usage stats if you track them
-                                        },
-                                           ensure_ascii=False) + "\n\n"
+                yield "data: " + json.dumps(
+                                        get_data_openai(
+                                            id= response_id,
+                                            model= agent_id,
+                                            content= ans["content"],
+                                            object= "chat.completion.chunk",
+                                            finish_reason= "stop" if not stream else None
+                                        ),                                       
+                                        ensure_ascii=False) + "\n\n"
 
             canvas.messages.append({"role": "assistant", "content": final_ans["content"], "created_at": time.time(), "id": message_id})
             canvas.history.append(("assistant", final_ans["content"]))
@@ -368,21 +295,14 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             traceback.print_exc()
             conv.dsl = json.loads(str(canvas))
             API4ConversationService.append_message(conv.id, conv.to_dict())
-            yield {
-                    "id": response_id,
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": agent_id,
-                    "choices": [
-                        {
-                            "delta": {"content": "**ERROR**: " + str(e)},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }
-                    ]
-                }
+            yield get_data_openai(
+                    id= response_id,
+                    model= agent_id,
+                    content= "**ERROR**: " + str(e),
+                    finish_reason= "stop"
+                )
             
-        if stream: # Only send done signal in streaming mode
+        if stream:
             yield "data: [DONE]\n\n"
 
 
@@ -402,51 +322,26 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                 canvas.reference.append(final_ans["reference"])
             conv.dsl = json.loads(str(canvas))
 
-            # result = {"answer": final_ans["content"], "reference": final_ans.get("reference", [])} # Original structure
-            # result = structure_answer(conv, result, message_id, session_id) # Potentially remove structure_answer
+
 
             API4ConversationService.append_message(conv.id, conv.to_dict())
 
-            yield { # Directly yield OpenAI-like structure for non-streaming
-                    "id": response_id,
-                    "object": "chat.completion", # Or "text_completion"
-                    "created": int(time.time()),
-                    "model": agent_id,
-                    "choices": [
-                        {
-                            "message": {"role": "assistant", "content": final_ans["content"]},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }
-                    ],
-                    "usage": { # Mock usage - replace with actual if you have
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0
-                    },
-                    # Include reference if needed in OpenAI format - depends on your requirement
-                }
+            yield get_data_openai(
+                    id= response_id,
+                    model= agent_id,
+                    content= final_ans["content"],
+                    finish_reason= "stop"
+                )
+           
 
         except Exception as e:
             traceback.print_exc()
             conv.dsl = json.loads(str(canvas))
             API4ConversationService.append_message(conv.id, conv.to_dict())
-            yield { # Directly yield OpenAI-like structure for non-streaming
-                    "id": response_id,
-                    "object": "chat.completion", # Or "text_completion"
-                    "created": int(time.time()),
-                    "model": agent_id,
-                    "choices": [
-                        {
-                            "message": {"role": "assistant", "content":  "**ERROR**: " + str(e)},
-                            "index": 0,
-                            "finish_reason": "stop"
-                        }
-                    ],
-                    "usage": { # Mock usage - replace with actual if you have
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0
-                    },
-                    # Include reference if needed in OpenAI format - depends on your requirement
-                }
+            yield get_data_openai(
+                    id= response_id,
+                    model= agent_id,
+                    content= "**ERROR**: " + str(e),
+                    finish_reason= "stop",
+                )
+              
