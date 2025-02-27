@@ -239,10 +239,10 @@ export default {
       <i>Phương thức phân khối này được tự động áp dụng cho tất cả các tệp PPT được tải lên, do đó bạn không cần phải chỉ định thủ công.</i></p>`,
       qa: `
       <p>
-      Phương thức phân khối này hỗ trợ các định dạng tệp <b>EXCEL</b> và <b>CSV/TXT</b>.
+      Phương thức phân khối này hỗ trợ các định dạng tệp <b>XLSX</b> và <b>CSV/TXT</b>.
       </p>
       <li>
-      Nếu tệp ở định dạng <b>Excel</b>, nó phải chứa hai cột
+      Nếu tệp ở định dạng <b>XLSX</b>, nó phải chứa hai cột
       không có tiêu đề: một cột cho câu hỏi và cột còn lại cho câu trả lời, với
       cột câu hỏi đứng trước cột câu trả lời. Nhiều trang tính được chấp nhận, miễn là các cột được cấu trúc chính xác.
       </li>
@@ -260,7 +260,7 @@ export default {
       </p><p>
       Các bản lý lịch với nhiều hình thức khác nhau được phân tích cú pháp và tổ chức thành dữ liệu có cấu trúc để hỗ trợ nhà tuyển dụng tìm kiếm ứng viên.
       </p>`,
-      table: `<p>Các định dạng tệp được hỗ trợ là <b>EXCEL</b> và <b>CSV/TXT</b>.</p><p>
+      table: `<p>Các định dạng tệp được hỗ trợ là <b>XLSX</b> và <b>CSV/TXT</b>.</p><p>
       Dưới đây là một số điều kiện tiên quyết và mẹo:
       <ul>
       <li>Đối với tệp CSV hoặc TXT, dấu phân cách giữa các cột phải là <em><b>TAB</b></em>.</li>
@@ -319,8 +319,8 @@ export default {
       tag: `<p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn được cho là sẽ được sử dụng bởi các cơ sở kiến thức khác để thêm thẻ vào các đoạn của chúng, các truy vấn tới đó cũng sẽ có thẻ.</p> 
 <p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn <b>KHÔNG</b> được dự định tham gia vào quy trình RAG.</p> 
 <p>Các đoạn trong cơ sở kiến thức này là ví dụ về thẻ, thể hiện toàn bộ tập hợp thẻ và mối quan hệ giữa đoạn và thẻ.</p> 
-<p>Phương pháp phân đoạn này hỗ trợ định dạng tệp <b>EXCEL</b> và <b>CSV/TXT</b>.</p> 
-<p>Nếu tệp ở định dạng <b>Excel</b>, nó phải chứa hai cột không có tiêu đề: một cho nội dung và một cho thẻ, với cột nội dung đứng trước cột thẻ. Nhiều trang tính được chấp nhận, miễn là các cột được cấu trúc đúng.</p> 
+<p>Phương pháp phân đoạn này hỗ trợ định dạng tệp <b>XLSX</b> và <b>CSV/TXT</b>.</p> 
+<p>Nếu tệp ở định dạng <b>XLSX</b>, nó phải chứa hai cột không có tiêu đề: một cho nội dung và một cho thẻ, với cột nội dung đứng trước cột thẻ. Nhiều trang tính được chấp nhận, miễn là các cột được cấu trúc đúng.</p> 
 <p>Nếu tệp ở định dạng <b>CSV/TXT</b>, nó phải được mã hóa UTF-8 với TAB làm dấu phân cách để phân tách nội dung và thẻ.</p> 
 <p>Trong cột thẻ, có dấu <b>phẩy</b> tiếng Anh giữa các thẻ.</p> 
 <i>Các dòng văn bản không tuân theo các quy tắc trên sẽ bị bỏ qua và mỗi cặp sẽ được coi là một đoạn riêng biệt.</i>`,

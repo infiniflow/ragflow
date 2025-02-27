@@ -171,6 +171,11 @@ const MessageInput = ({
     setFileList([]);
   }, [fileList, onPressEnter, isUploadingFile]);
 
+  const [isComposing, setIsComposing] = useState(false);
+
+  const handleCompositionStart = () => setIsComposing(true);
+  const handleCompositionEnd = () => setIsComposing(false);
+
   const handleRemove = useCallback(
     async (file: UploadFile) => {
       const ids = get(file, 'response.data', []);
@@ -233,6 +238,8 @@ const MessageInput = ({
         autoSize={{ minRows: 2, maxRows: 10 }}
         onKeyDown={handleKeyDown}
         onChange={onInputChange}
+        onCompositionStart={handleCompositionStart}
+        onCompositionEnd={handleCompositionEnd}
       />
       <Divider style={{ margin: '5px 30px 10px 0px' }} />
       <Flex justify="space-between" align="center">

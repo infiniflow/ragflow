@@ -3,6 +3,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
 import { Select as AntSelect, Form, Slider } from 'antd';
 import { useFormContext } from 'react-hook-form';
+import { SingleFormSlider } from './ui/dual-range-slider';
 import {
   FormControl,
   FormField,
@@ -19,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
-import { FormSlider } from './ui/slider';
 
 type FieldType = {
   rerank_id?: string;
@@ -92,7 +92,6 @@ function RerankFormField() {
           <FormControl>
             <Select onValueChange={field.onChange} {...field}>
               <SelectTrigger
-                className="w-[280px]"
                 value={field.value}
                 onReset={() => {
                   form.resetField(RerankId);
@@ -141,7 +140,11 @@ export function RerankFormFields() {
             <FormItem>
               <FormLabel>{t('topK')}</FormLabel>
               <FormControl>
-                <FormSlider {...field} max={2048} min={1}></FormSlider>
+                <SingleFormSlider
+                  {...field}
+                  max={2048}
+                  min={1}
+                ></SingleFormSlider>
               </FormControl>
               <FormMessage />
             </FormItem>
