@@ -111,7 +111,6 @@ class ExeSQL(Generate, ABC):
                 if not single_sql:
                     break
                 try:
-                    logging.info("single_sql: ", single_sql)
                     cursor.execute(single_sql)
                     if cursor.rowcount == 0:
                         sql_res.append({"content": "No record in the database!"})
