@@ -25,7 +25,7 @@ from api.db import FileType, LLMType, ParserType, FileSource
 from api.db.db_models import APIToken, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
-from api.db.services.dialog_service import DialogService, chat, keyword_extraction, label_question
+from api.db.services.dialog_service import DialogService, chat
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -38,6 +38,8 @@ from api.utils.api_utils import server_error_response, get_data_error_result, ge
     generate_confirmation_token
 
 from api.utils.file_utils import filename_type, thumbnail
+from rag.app.tag import label_question
+from rag.prompts import keyword_extraction
 from rag.utils.storage_factory import STORAGE_IMPL
 
 from api.db.services.canvas_service import UserCanvasService

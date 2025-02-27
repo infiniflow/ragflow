@@ -6,7 +6,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 // import ChatDrawer from '../chat/drawer';
-import FormDrawer from '../form-drawer';
+import FormSheet from '../form-sheet/next';
 import {
   useHandleDrop,
   useSelectCanvasData,
@@ -154,14 +154,14 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
         <Background />
       </ReactFlow>
       {formDrawerVisible && (
-        <FormDrawer
+        <FormSheet
           node={clickedNode}
           visible={formDrawerVisible}
           hideModal={hideFormDrawer}
           singleDebugDrawerVisible={singleDebugDrawerVisible}
           hideSingleDebugDrawer={hideSingleDebugDrawer}
           showSingleDebugDrawer={showSingleDebugDrawer}
-        ></FormDrawer>
+        ></FormSheet>
       )}
       {/* {chatVisible && (
         <ChatDrawer
