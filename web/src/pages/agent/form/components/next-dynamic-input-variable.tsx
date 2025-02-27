@@ -121,7 +121,7 @@ export function DynamicInputVariable({ node }: IProps) {
   const { t } = useTranslation();
 
   return (
-    <Collapsible defaultOpen className="group/collapsible pt-4">
+    <Collapsible defaultOpen className="group/collapsible">
       <CollapsibleTrigger className="flex justify-between w-full pb-2">
         <span className="font-bold text-2xl text-colors-text-neutral-strong">
           {t('flow.input')}
