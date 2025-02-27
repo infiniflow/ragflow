@@ -165,7 +165,6 @@ export const useHandleUploadDocument = () => {
         );
 
         const ret = await uploadDocument(filesPart);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
 
         const files = ret?.data || [];
         const succesfulFilenames = files.map((file: any) => file.name);
