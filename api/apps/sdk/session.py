@@ -289,13 +289,15 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
     
     else:
         if share =="agent":
-            return completionOpenAI(tenant_id, chat_id, messages,session_id= req.get("id", ""),stream= False)
-        else:
+            answer = None
+            for ans in completionOpenAI(tenant_id, chat_id, messages,session_id= req.get("id", ""),stream= False):
+                answer = ans
+                break
+        else : # chat
             answer = None
             for ans in chat(dia, filtered_messages, False):
                 answer = ans["answer"]
                 break
-            
             response = get_data_openai( 
                 id= chat_id,
                 messages=answer, 
@@ -306,7 +308,7 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
             
             
         
-            return jsonify(response)
+        return jsonify(response)
 
 
 @manager.route('/agents/<agent_id>/completions', methods=['POST'])  # noqa: F821
