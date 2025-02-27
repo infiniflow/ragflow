@@ -261,22 +261,19 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
             finish_reason="stop",
             model=req.get("model", ""), 
             completion_tokens= len(tiktokenenc.encode("No valid messages found (user or assistant).")),
-            prompt_tokens = sum(len(tiktokenenc.encode(m["content"])) for m in messages), 
+            prompt_tokens = sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages), 
             )
     
     if req.get("stream", True):
         def streamed_response_generator():
-            token_used = 0
             try:
                 for ans in chat(dia, filtered_messages, True):
-                    chunk = ans["answer"][token_used:]
-                    token_used += len(chunk)
                     response =  get_data_openai(
                         id= chat_id,
-                        content=chunk, 
+                        content= ans["answer"], 
                         model=req.get("model", ""),
-                        completion_tokens=len(tiktokenenc.encode(chunk)),
-                        prompt_tokens= sum(len(tiktokenenc.encode(m["content"])) for m in messages),
+                        completion_tokens=len(tiktokenenc.encode(ans["answer"])),
+                        prompt_tokens= sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages),
                         )
                     
                     yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
@@ -303,7 +300,7 @@ def chat_completion_openai_compatibility (tenant_id, chat_id, share):
                 id= chat_id,
                 messages=answer, 
                 model=req.get("model", ""), 
-                prompt_tokens= sum(len(tiktokenenc.encode(m["content"])) for m in messages),
+                prompt_tokens= sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages),
                 completion_tokens=len(tiktokenenc.encode(answer)),
             )
             
