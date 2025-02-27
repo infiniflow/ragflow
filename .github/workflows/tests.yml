@@ -32,6 +32,10 @@ jobs:
       # https://github.com/hmarr/debug-action
       #- uses: hmarr/debug-action@v2
 
+      - name: Show who triggered this workflow
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+
       - name: Ensure workspace ownership
         run: echo "chown -R $USER $GITHUB_WORKSPACE" && sudo chown -R $USER $GITHUB_WORKSPACE
 
