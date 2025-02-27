@@ -26,7 +26,10 @@ const RetrievalForm = ({ form, node }: INextOperatorForm) => {
         }}
       >
         <DynamicInputVariable node={node}></DynamicInputVariable>
-        <SimilaritySliderFormField vectorSimilarityWeightName="keywords_similarity_weight"></SimilaritySliderFormField>
+        <SimilaritySliderFormField
+          vectorSimilarityWeightName="keywords_similarity_weight"
+          isTooltipShown
+        ></SimilaritySliderFormField>
         <TopNFormField></TopNFormField>
         <RerankFormFields></RerankFormFields>
         <KnowledgeBaseFormField></KnowledgeBaseFormField>

@@ -82,8 +82,15 @@ export function useFormConfigMap() {
     },
     [Operator.Generate]: {
       component: GenerateForm,
-      defaultValues: {},
-      schema: z.object({}),
+      defaultValues: {
+        cite: true,
+        prompt: t('flow.promptText'),
+      },
+      schema: z.object({
+        prompt: z.string().min(1, {
+          message: t('flow.promptMessage'),
+        }),
+      }),
     },
     [Operator.Answer]: {
       component: AnswerForm,

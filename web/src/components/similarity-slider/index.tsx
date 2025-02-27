@@ -52,10 +52,12 @@ export default SimilaritySlider;
 
 interface SimilaritySliderFormFieldProps {
   vectorSimilarityWeightName?: string;
+  isTooltipShown?: boolean;
 }
 
 export function SimilaritySliderFormField({
   vectorSimilarityWeightName = 'vector_similarity_weight',
+  isTooltipShown,
 }: SimilaritySliderFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeDetails');
@@ -67,7 +69,9 @@ export function SimilaritySliderFormField({
         name={'similarity_threshold'}
         render={({ field }) => (
           <FormItem>
-            <FormLabel>{t('similarityThreshold')}</FormLabel>
+            <FormLabel tooltip={isTooltipShown && t('similarityThresholdTip')}>
+              {t('similarityThreshold')}
+            </FormLabel>
             <FormControl>
               <SingleFormSlider
                 {...field}
@@ -84,7 +88,11 @@ export function SimilaritySliderFormField({
         name={vectorSimilarityWeightName}
         render={({ field }) => (
           <FormItem>
-            <FormLabel>{t('vectorSimilarityWeight')}</FormLabel>
+            <FormLabel
+              tooltip={isTooltipShown && t('vectorSimilarityWeightTip')}
+            >
+              {t('vectorSimilarityWeight')}
+            </FormLabel>
             <FormControl>
               <SingleFormSlider
                 {...field}

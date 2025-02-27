@@ -122,7 +122,7 @@ const FormSheet = ({
             <span>{t(`${lowerFirst(operatorName)}Description`)}</span>
           </section>
         </SheetHeader>
-        <section>
+        <section className="pt-4">
           {visible && (
             <FlowFormContext.Provider value={node}>
               <OperatorForm
