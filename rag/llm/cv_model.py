@@ -162,6 +162,7 @@ class GptV4(Base):
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
+
 class AzureGptV4(Base):
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
         api_key = json.loads(key).get('api_key', '')
