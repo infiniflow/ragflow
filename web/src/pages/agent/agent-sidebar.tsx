@@ -1,3 +1,4 @@
+import { SideDown } from '@/assets/icon/Icon';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Collapsible,
@@ -13,7 +14,6 @@ import {
   SidebarHeader,
   SidebarMenu,
 } from '@/components/ui/sidebar';
-import { ChevronDown } from 'lucide-react';
 import { useMemo } from 'react';
 import {
   AgentOperatorList,
@@ -22,12 +22,6 @@ import {
   operatorMap,
 } from './constant';
 import OperatorIcon from './operator-icon';
-
-function SideDown() {
-  return (
-    <ChevronDown className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-180" />
-  );
-}
 
 type OperatorItem = {
   name: Operator;
@@ -59,7 +53,7 @@ function OperatorCollapsible({
         <SidebarGroupLabel asChild className="mb-1">
           <CollapsibleTrigger>
             <span className="font-bold text-base">{title}</span>
-            <SideDown />
+            <SideDown className="ml-auto" />
           </CollapsibleTrigger>
         </SidebarGroupLabel>
         <CollapsibleContent className="px-2">

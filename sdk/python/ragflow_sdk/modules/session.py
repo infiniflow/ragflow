@@ -65,7 +65,7 @@ class Session(Base):
             return message
     
     def _ask_chat(self, question: str, stream: bool, **kwargs):
-        json_data = {"question": question, "stream": True, "session_id": self.id}
+        json_data = {"question": question, "stream": stream, "session_id": self.id}
         json_data.update(kwargs)
         res = self.post(f"/chats/{self.chat_id}/completions",
                         json_data, stream=stream)
@@ -73,7 +73,7 @@ class Session(Base):
 
     def _ask_agent(self, question: str, stream: bool):
         res = self.post(f"/agents/{self.agent_id}/completions",
-                        {"question": question, "stream": True, "session_id": self.id}, stream=stream)
+                        {"question": question, "stream": stream, "session_id": self.id}, stream=stream)
         return res
 
     def update(self, update_message):
