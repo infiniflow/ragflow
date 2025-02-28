@@ -78,12 +78,8 @@ Where `{source_text}` and `{target_lang}` are global variables defined by the **
 
 
 :::danger IMPORTANT
-A **Generate** component relies on keys (variables) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence.
+A **Generate** component relies on keys (variables) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence. Keys in a **Generate** component are used in conjunction with the system prompt to specify data inputs for the LLM. Use a forward slash `/` to show the keys to use.
 :::
-
-![variable_settings](https://github.com/user-attachments/assets/cb024c9e-264a-43ff-9ee7-8649afd571b0)
-
-Keys in a **Generate** component are used in conjunction with the system prompt to specify data inputs for the LLM. Use a forward slash `/` to show the keys to use.
 
 ### Cite 
 
