@@ -174,14 +174,14 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
 
     if not e:
         yield get_data_openai(
-            id= response_id,
+            id= session_id,
             model= agent_id,
             content= "**ERROR**: Agent not found."
         )
         return
     if cvs.user_id != tenant_id:
         yield get_data_openai(
-            id= response_id,
+            id= session_id,
             model= agent_id,
             content= "**ERROR**: You do not own the agent"
         )
@@ -201,7 +201,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                 if not ele["optional"]:
                     if not kwargs.get(ele["key"]):
                         yield get_data_openai(
-                            id= response_id,
+                            id= session_id,
                             model= agent_id,
                             content= f"`{ele['key']}` is required",
                             completion_tokens= len(tiktokenenc.encode(f"`{ele['key']}` is required")),
@@ -241,7 +241,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
         e, conv = API4ConversationService.get_by_id(session_id)
         if not e:
             yield get_data_openai(
-                id= response_id,
+                id= session_id,
                 model= agent_id,
                 content= "**ERROR**: Session not found!"
             )
