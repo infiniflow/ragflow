@@ -516,14 +516,14 @@ def do_handle_task(task):
     try:
         # bind embedding model
         embedding_model = LLMBundle(task_tenant_id, LLMType.EMBEDDING, llm_name=task_embedding_id, lang=task_language)
+        vts, _ = embedding_model.encode(["ok"])
+        vector_size = len(vts[0])
     except Exception as e:
         error_message = f'Fail to bind embedding model: {str(e)}'
         progress_callback(-1, msg=error_message)
         logging.exception(error_message)
         raise
 
-    vts, _ = embedding_model.encode(["ok"])
-    vector_size = len(vts[0])
     init_kb(task, vector_size)
 
     # Either using RAPTOR or Standard chunking methods
