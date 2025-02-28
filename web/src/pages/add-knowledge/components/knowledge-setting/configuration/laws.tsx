@@ -23,7 +23,7 @@ export function LawsConfiguration() {
 
       <ParseConfiguration></ParseConfiguration>
 
-      <GraphRagItems></GraphRagItems>
+      <GraphRagItems marginBottom></GraphRagItems>
 
       <TagItems></TagItems>
     </>

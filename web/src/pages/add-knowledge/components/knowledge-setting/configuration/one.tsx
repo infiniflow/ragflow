@@ -20,7 +20,7 @@ export function OneConfiguration() {
         <AutoQuestionsItem></AutoQuestionsItem>
       </>
 
-      <GraphRagItems></GraphRagItems>
+      <GraphRagItems marginBottom></GraphRagItems>
 
       <TagItems></TagItems>
     </>

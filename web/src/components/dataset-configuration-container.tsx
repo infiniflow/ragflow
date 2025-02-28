@@ -1,8 +1,21 @@
+import { cn } from '@/lib/utils';
 import { PropsWithChildren } from 'react';
 
-export function DatasetConfigurationContainer({ children }: PropsWithChildren) {
+type DatasetConfigurationContainerProps = {
+  className?: string;
+} & PropsWithChildren;
+
+export function DatasetConfigurationContainer({
+  children,
+  className,
+}: DatasetConfigurationContainerProps) {
   return (
-    <div className="border p-2 rounded-lg bg-slate-50 dark:bg-gray-600">
+    <div
+      className={cn(
+        'border p-2 rounded-lg bg-slate-50 dark:bg-gray-600',
+        className,
+      )}
+    >
       {children}
     </div>
   );

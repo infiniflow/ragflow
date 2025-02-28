@@ -1,5 +1,6 @@
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
+import { cn } from '@/lib/utils';
 import { Form, Select, Switch } from 'antd';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
@@ -34,8 +35,12 @@ export const showGraphRagItems = (parserId: DocumentParserType | undefined) => {
   return !excludedParseMethods.some((x) => x === parserId);
 };
 
+type GraphRagItemsProps = {
+  marginBottom?: boolean;
+};
+
 // The three types "table", "resume" and "one" do not display this configuration.
-const GraphRagItems = () => {
+const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
 
   const methodOptions = useMemo(() => {
@@ -56,7 +61,7 @@ const GraphRagItems = () => {
   );
 
   return (
-    <DatasetConfigurationContainer>
+    <DatasetConfigurationContainer className={cn({ 'mb-4': marginBottom })}>
       <Form.Item
         name={['parser_config', 'graphrag', 'use_graphrag']}
         label={t('useGraphRag')}
