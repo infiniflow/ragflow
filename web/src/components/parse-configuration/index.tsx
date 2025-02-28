@@ -1,3 +1,4 @@
+import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { PlusOutlined } from '@ant-design/icons';
 import {
@@ -13,22 +14,28 @@ import {
 import random from 'lodash/random';
 
 export const excludedParseMethods = [
-  'table',
-  'resume',
-  'one',
-  'picture',
-  'knowledge_graph',
-  'qa',
-  'tag',
+  DocumentParserType.Table,
+  DocumentParserType.Resume,
+  DocumentParserType.One,
+  DocumentParserType.Picture,
+  DocumentParserType.KnowledgeGraph,
+  DocumentParserType.Qa,
+  DocumentParserType.Tag,
 ];
 
-export const showRaptorParseConfiguration = (parserId: string) => {
-  return !excludedParseMethods.includes(parserId);
+export const showRaptorParseConfiguration = (
+  parserId: DocumentParserType | undefined,
+) => {
+  return !excludedParseMethods.some((x) => x === parserId);
 };
 
-export const excludedTagParseMethods = ['table', 'knowledge_graph', 'tag'];
+export const excludedTagParseMethods = [
+  DocumentParserType.Table,
+  DocumentParserType.KnowledgeGraph,
+  DocumentParserType.Tag,
+];
 
-export const showTagItems = (parserId: string) => {
+export const showTagItems = (parserId: DocumentParserType) => {
   return !excludedTagParseMethods.includes(parserId);
 };
 
