@@ -22,7 +22,7 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 ---
 
-### Where to find the version of RAGFlow? How to interprete it?
+### Where to find the version of RAGFlow? How to interpret it?
 
 You can find the RAGFlow version number on the **System** page of the UI:
 
@@ -345,13 +345,13 @@ Your IP address or port number may be incorrect. If you are using the default co
 A correct Ollama IP address and port is crucial to adding models to Ollama:
 
 - If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. Note that 127.0.0.1 is not a publicly accessible IP address.
-- If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can comunicate with each other.
+- If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can communicate with each other.
 
 See [Deploy a local LLM](../guides/deploy_local_llm.mdx) for more information.
 
 ---
 
-#### Do you offer examples of using deepdoc to parse PDF or other files?
+#### Do you offer examples of using DeepDOC to parse PDF or other files?
 
 Yes, we do. See the Python files under the **rag/app** folder.
 

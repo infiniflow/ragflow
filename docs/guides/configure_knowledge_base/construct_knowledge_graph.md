@@ -25,7 +25,7 @@ Knowledge graphs are especially useful for multi-hop question-answering involvin
 
 ## Prerequisites
 
-The system's default chat model is used to generate knowledge graph. Before proceeding, ensure that you have an chat model properly configured:
+The system's default chat model is used to generate knowledge graph. Before proceeding, ensure that you have a chat model properly configured:
 
 ![Image](https://github.com/user-attachments/assets/6bc34279-68c3-4d99-8d20-b7bd1dafc1c1)
 
@@ -60,10 +60,10 @@ In a knowledge graph, a community is a cluster of entities linked by relationshi
 
 1. On the **Configuration** page of your knowledge base, switch on **Extract knowledge graph** or adjust its settings as needed, and click **Save** to confirm your changes.
 
-   - *The default knowledge graph configurations for your knowlege base are now set and files uploaded from this point onward will automatically use these settings during parsing.*
+   - *The default knowledge graph configurations for your knowledge base are now set and files uploaded from this point onward will automatically use these settings during parsing.*
    - *Files parsed before this update will retain their original knowledge graph settings.*
 
-2. The knowledge graph of your knowlege base does *not* automatically update *until* a newly uploaded file is parsed.
+2. The knowledge graph of your knowledge base does *not* automatically update *until* a newly uploaded file is parsed.
 
    _A **Knowledge graph** entry appears under **Configuration** once a knowledge graph is created._
 
