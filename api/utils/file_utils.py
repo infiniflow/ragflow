@@ -17,6 +17,8 @@ import base64
 import json
 import os
 import re
+import sys
+import threading
 from io import BytesIO
 
 import pdfplumber
@@ -29,6 +31,10 @@ from api.constants import IMG_BASE64_PREFIX
 
 PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
 RAG_BASE = os.getenv("RAG_BASE")
+
+LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
+if LOCK_KEY_pdfplumber not in sys.modules:
+    sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
 
 def get_project_base_directory(*args):
@@ -175,19 +181,20 @@ def thumbnail_img(filename, blob):
     """
     filename = filename.lower()
     if re.match(r".*\.pdf$", filename):
-        pdf = pdfplumber.open(BytesIO(blob))
-        buffered = BytesIO()
-        resolution = 32
-        img = None
-        for _ in range(10):
-            # https://github.com/jsvine/pdfplumber?tab=readme-ov-file#creating-a-pageimage-with-to_image
-            pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
-            img = buffered.getvalue()
-            if len(img) >= 64000 and resolution >= 2:
-                resolution = resolution / 2
-                buffered = BytesIO()
-            else:
-                break
+        with sys.modules[LOCK_KEY_pdfplumber]:
+            pdf = pdfplumber.open(BytesIO(blob))
+            buffered = BytesIO()
+            resolution = 32
+            img = None
+            for _ in range(10):
+                # https://github.com/jsvine/pdfplumber?tab=readme-ov-file#creating-a-pageimage-with-to_image
+                pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
+                img = buffered.getvalue()
+                if len(img) >= 64000 and resolution >= 2:
+                    resolution = resolution / 2
+                    buffered = BytesIO()
+                else:
+                    break
         pdf.close()
         return img
 

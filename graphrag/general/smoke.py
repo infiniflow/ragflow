@@ -18,6 +18,7 @@ import argparse
 import json
 
 import networkx as nx
+import trio
 
 from api import settings
 from api.db import LLMType
@@ -54,10 +55,13 @@ if __name__ == "__main__":
     embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
 
     dealer = Dealer(GraphExtractor, args.tenant_id, kb_id, llm_bdl, chunks, "English", embed_bdl=embed_bdl)
+    trio.run(dealer())
     print(json.dumps(nx.node_link_data(dealer.graph), ensure_ascii=False, indent=2))
 
     dealer = WithResolution(args.tenant_id, kb_id, llm_bdl, embed_bdl)
+    trio.run(dealer())
     dealer = WithCommunity(args.tenant_id, kb_id, llm_bdl, embed_bdl)
+    trio.run(dealer())
 
     print("------------------ COMMUNITY REPORT ----------------------\n", dealer.community_reports)
     print(json.dumps(dealer.community_structure, ensure_ascii=False, indent=2))
