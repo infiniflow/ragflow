@@ -112,7 +112,7 @@ export default {
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results.',
-      vectorSimilarityWeight: 'Keywords similarity weight',
+      vectorSimilarityWeight: 'Keyword similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
@@ -150,9 +150,9 @@ export default {
         'The current value must be greater than the previous to!',
       selectFiles: 'Select files',
       changeSpecificCategory: 'Change specific category',
-      uploadTitle: 'Click or drag file to this area to upload',
+      uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Support for a single or bulk upload. Strictly prohibited from uploading company data or other banned files.',
+        'Supports single or bulk file upload. Files must not exceed 10MB each, with a maximum of 128 files.',
       chunk: 'Chunk',
       bulk: 'Bulk',
       cancel: 'Cancel',
@@ -160,8 +160,8 @@ export default {
       rerankPlaceholder: 'Please select',
       rerankTip: `If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time.`,
       topK: 'Top-K',
-      topKTip: `K chunks will be fed into rerank models.`,
-      delimiter: `Delimiter`,
+      topKTip: `K chunks will be sent into the rerank model.`,
+      delimiter: `Delimiters`,
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \n`##`;, then your texts will be separated at line breaks, double hash symbols (##), or semicolons.',
       html4excel: 'Excel to HTML',
@@ -202,7 +202,7 @@ export default {
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
       description: 'Description',
-      language: 'Language',
+      language: 'Document language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'Please input your language!',
       permissions: 'Permissions',
@@ -220,6 +220,7 @@ export default {
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
+      portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model',
       chunkMethodPlaceholder: 'Please select a chunk method',
       save: 'Save',
@@ -257,10 +258,10 @@ export default {
       <i>This chunk method is automatically applied to all uploaded PPT files, so you do not need to specify it manually.</i></p>`,
       qa: `
       <p>
-      This chunk method supports <b>EXCEL</b> and <b>CSV/TXT</b> file formats.
+      This chunk method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
     </p>
     <li>
-      If a file is in <b>Excel</b> format, it should contain two columns
+      If a file is in <b>XLSX</b> format, it should contain two columns
       without headers: one for questions and the other for answers, with the
       question column preceding the answer column. Multiple sheets are
       acceptable, provided the columns are properly structured.
@@ -280,7 +281,7 @@ export default {
       Résumés of various forms are parsed and organized into structured data to facilitate candidate search for recruiters.
       </p>
       `,
-      table: `<p>Supported file formats are <b>EXCEL</b> and <b>CSV/TXT</b>.</p><p>
+      table: `<p>Supported file formats are <b>XLSX</b> and <b>CSV/TXT</b>.</p><p>
       Here are some prerequisites and tips:
       <ul>
     <li>For CSV or TXT file, the delimiter between columns must be <em><b>TAB</b></em>.</li>
@@ -316,8 +317,8 @@ export default {
 <p>Knowledge base using 'Tag' as a chunking method is <b>NOT</b> supposed to be involved in RAG procedure.</p>
 <p>The chunks in this knowledge base are examples of tags, which demonstrate the entire tag set and the relevance between chunk and tags.</p>
 
-<p>This chunk method supports <b>EXCEL</b> and <b>CSV/TXT</b> file formats.</p>
-<p>If a file is in <b>Excel</b> format, it should contain two columns without headers: one for content and the other for tags, with the content column preceding the tags column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
+<p>This chunk method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.</p>
+<p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for content and the other for tags, with the content column preceding the tags column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
 <p>If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate content and tags.</p>
 <p>In tags column, there are English <b>comma</b> between tags.</p>
 <i>Lines of texts that fail to follow the above rules will be ignored, and each  pair will be considered a distinct chunk.</i>
@@ -351,16 +352,16 @@ The above is the content you need to summarize.`,
       searchTags: 'Search tags',
       tagCloud: 'Cloud',
       tagTable: 'Table',
-      tagSet: 'Tag set',
+      tagSet: 'Tag sets',
       tagSetTip: `
-     <p> Selecting the 'Tag' knowledge bases helps to tag every chunks. </p>
-<p>Query to those chunks will also be with tags too.</p>
-This procedure will improve precision of retrieval by adding more information to the dataset, especially when there's a large set of chunks.
-<p>Difference between tags and keywords:</p>
+     <p> Select one or multiple tag knowledge bases to auto-tag chunks in your knowledge base. </p>
+<p>The user query will also be auto-tagged.</p>
+This auto-tag feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
+<p>Difference between auto-tag and auto-keyword:</p>
 <ul>
-  <li>Tag is a close set which is defined and manipulated by user while keyword is an open set.</li>
-  <li>You need to upload tag sets with samples prior to use.</li>
-  <li>Keywords are generated by LLM which is expensive and time consuming.</li>
+  <li>A tag knowledge base is a user-defined close set, whereas keywords extraced by the LLM can be regarded as an open set.</li>
+  <li>You must upload tag sets in specified formats before running the auto-tag feature.</li>
+  <li>The auto-keyword feature is dependent on the LLM and consumes a significant number of tokens.</li>
 </ul>
       `,
       topnTags: 'Top-N Tags',
@@ -368,15 +369,15 @@ This procedure will improve precision of retrieval by adding more information to
       addTag: 'Add tag',
       useGraphRag: 'Extract knowledge graph',
       useGraphRagTip:
-        'After files being chunked, all the chunks will be used for Knowledge graph generation which helps inference of multi-hop and complex problems a lot.',
+        'Construct a knowledge graph over extracted file chunks to enhance multi-hop question answering.',
       graphRagMethod: 'Method',
-      graphRagMethodTip: `Light: the entity and relation extraction prompt is from GitHub - HKUDS/LightRAG: "LightRAG: Simple and Fast Retrieval-Augmented Generation"</br>
-        General: the entity and relation extraction prompt is from GitHub - microsoft/graphrag: A modular graph-based Retrieval-Augmented Generation (RAG) system`,
+      graphRagMethodTip: `Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
+        General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
       resolution: 'Entity resolution',
-      resolutionTip: `The resolution procedure would merge entities with the same meaning together which allows the graph conciser and more accurate. Entities as following should be merged:  President Trump, Donald Trump, Donald J. Trump, Donald John Trump`,
+      resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
       community: 'Community reports generation',
       communityTip:
-        'Chunks are clustered into hierarchical communities with entities and relationships connecting each segment up through higher levels of abstraction. We then use an LLM to generate a summary of each community, known as a community report. More: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+        'In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See here for more information: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: 'Chunk',
@@ -419,6 +420,7 @@ This procedure will improve precision of retrieval by adding more information to
       language: 'Language',
       emptyResponse: 'Empty response',
       emptyResponseTip: `Set this as a response if no results are retrieved from the knowledge bases for your query, or leave this field blank to allow the LLM to improvise when nothing is found.`,
+      emptyResponseMessage: `Empty response will be triggered when nothing relevant is retrieved from knowledge bases. You must clear the 'Empty response' field if no knowledge base is selected.`,
       setAnOpener: 'Opening greeting',
       setAnOpenerInitial: `Hi! I'm your assistant, what can I do for you?`,
       setAnOpenerTip: 'Set an opening greeting for users.',
@@ -522,6 +524,18 @@ This procedure will improve precision of retrieval by adding more information to
         'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
       keyword: 'Keyword analysis',
       keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphasize during the relevance computation.`,
+      languageTip:
+        'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
+      avatarHidden: 'Hide avatar',
+      locale: 'Locale',
+      selectLanguage: 'Select a language',
+      reasoning: 'Reasoning',
+      reasoningTip:
+        'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
+      tavilyApiKeyTip:
+        'If API key is set correctly, it will utilize Tavily to do web search as a supplement to knowledge bases.',
+      tavilyApiKeyMessage: 'Please enter your Tavily Api Key',
+      tavilyApiKeyHelp: 'How to get it?',
     },
     setting: {
       profile: 'Profile',
@@ -700,7 +714,7 @@ This procedure will improve precision of retrieval by adding more information to
       202: 'A request has been queued in the background (asynchronous task).',
       204: 'Data deleted successfully.',
       400: 'There was an error in the request issued, and the server did not create or modify data.',
-      401: 'The user does not have permissions (wrong token, username, password).',
+      401: 'Please sign in again.',
       403: 'The user is authorized, but access is prohibited.',
       404: 'The request was made for a record that does not exist, and the server did not perform the operation.',
       406: 'The requested format is not available.',
@@ -729,15 +743,15 @@ This procedure will improve precision of retrieval by adding more information to
       file: 'File',
       uploadFile: 'Upload File',
       directory: 'Directory',
-      uploadTitle: 'Click or drag file to this area to upload',
+      uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Support for a single or bulk upload. Strictly prohibited from uploading company data or other banned files.',
+        'Supports single or bulk file upload. Files must not exceed 10MB each, with a maximum of 128 files.',
       local: 'Local uploads',
       s3: 'S3 uploads',
       preview: 'Preview',
       fileError: 'File error',
       uploadLimit:
-        'The file size cannot exceed 10M, and the total number of files cannot exceed 128',
+        'Each file must not exceed 10MB, and the total number of files must not exceed 128.',
       destinationFolder: 'Destination folder',
     },
     flow: {
@@ -832,7 +846,7 @@ This procedure will improve precision of retrieval by adding more information to
       bingDescription:
         'A component that searches from https://www.bing.com/, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases. Please note that this requires an API key from microsoft.com.',
       apiKey: 'API KEY',
-      country: 'Country&Region',
+      country: 'Country & Region',
       language: 'Language',
       googleScholar: 'Google Scholar',
       googleScholarDescription:
@@ -1174,6 +1188,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
+      datatype: 'MINE type of the HTTP request',
+      insertVariableTip: `Enter / Insert variables`,
     },
     footer: {
       profile: 'All rights reserved @ React',

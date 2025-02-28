@@ -47,6 +47,8 @@ class Base(ABC):
                 model=self.model_name,
                 messages=history,
                 **gen_conf)
+            if not response.choices:
+                return "", 0
             ans = response.choices[0].message.content.strip()
             if response.choices[0].finish_reason == "length":
                 if is_chinese(ans):
@@ -73,7 +75,13 @@ class Base(ABC):
                     continue
                 if not resp.choices[0].delta.content:
                     resp.choices[0].delta.content = ""
-                ans += resp.choices[0].delta.content
+                if hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+                    if ans.find("<think>") < 0:
+                        ans += "<think>"
+                    ans = ans.replace("</think>", "")
+                    ans += resp.choices[0].delta.reasoning_content + "</think>"
+                else:
+                    ans += resp.choices[0].delta.content
 
                 tol = self.total_token_count(resp)
                 if not tol:
@@ -132,6 +140,16 @@ class HuggingFaceChat(Base):
     def __init__(self, key=None, model_name="", base_url=""):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
+        if base_url.split("/")[-1] != "v1":
+            base_url = os.path.join(base_url, "v1")
+        super().__init__(key, model_name.split("___")[0], base_url)
+
+
+class ModelScopeChat(Base):
+    def __init__(self, key=None, model_name="", base_url=""):
+        if not base_url:
+            raise ValueError("Local llm url cannot be None")
+        base_url = base_url.rstrip('/')
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
         super().__init__(key, model_name.split("___")[0], base_url)
@@ -242,8 +260,13 @@ class QWenChat(Base):
         import dashscope
         dashscope.api_key = key
         self.model_name = model_name
+        if model_name.lower().find("deepseek") >= 0:
+            super().__init__(key, model_name, "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
     def chat(self, system, history, gen_conf):
+        if self.model_name.lower().find("deepseek") >= 0:
+            return super().chat(system, history, gen_conf)
+
         stream_flag = str(os.environ.get('QWEN_CHAT_BY_STREAM', 'true')).lower() == 'true'
         if not stream_flag:
             from http import HTTPStatus
@@ -311,6 +334,9 @@ class QWenChat(Base):
         yield tk_count
 
     def chat_streamly(self, system, history, gen_conf):
+        if self.model_name.lower().find("deepseek") >= 0:
+            return super().chat_streamly(system, history, gen_conf)
+
         return self._chat_streamly(system, history, gen_conf)
 
 
@@ -687,7 +713,12 @@ class BedrockChat(Base):
         self.bedrock_sk = json.loads(key).get('bedrock_sk', '')
         self.bedrock_region = json.loads(key).get('bedrock_region', '')
         self.model_name = model_name
-        self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
+        
+        if self.bedrock_ak == '' or self.bedrock_sk == '' or self.bedrock_region == '':
+            # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
+            self.client = boto3.client('bedrock-runtime')
+        else:
+            self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
                                    aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
 
     def chat(self, system, history, gen_conf):
@@ -940,9 +971,14 @@ class OpenAI_APIChat(Base):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
         model_name = model_name.split("___")[0]
+        super().__init__(key, model_name, base_url)
+
+
+class PPIOChat(Base):
+    def __init__(self, key, model_name, base_url="https://api.ppinfra.com/v3/openai"):
+        if not base_url:
+            base_url = "https://api.ppinfra.com/v3/openai"
         super().__init__(key, model_name, base_url)
 
 
@@ -1358,7 +1394,7 @@ class AnthropicChat(Base):
                 stream=True,
                 **gen_conf,
             )
-            for res in response.iter_lines():
+            for res in response:
                 if res.type == 'content_block_delta':
                     text = res.delta.text
                     ans += text
@@ -1375,7 +1411,7 @@ class GoogleChat(Base):
         from google.oauth2 import service_account
         import base64
 
-        key = json.load(key)
+        key = json.loads(key)
         access_token = json.loads(
             base64.b64decode(key.get("google_service_account_key", ""))
         )

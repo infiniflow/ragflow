@@ -19,11 +19,11 @@ from abc import ABC
 import pandas as pd
 
 from api.db import LLMType
-from api.db.services.dialog_service import label_question
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
+from rag.app.tag import label_question
 
 
 class RetrievalParam(ComponentParamBase):
@@ -43,7 +43,7 @@ class RetrievalParam(ComponentParamBase):
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
-        self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keywords similarity weight")
+        self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keyword similarity weight")
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
 
 

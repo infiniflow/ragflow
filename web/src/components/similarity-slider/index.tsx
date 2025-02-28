@@ -1,5 +1,14 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Slider } from 'antd';
+import { useFormContext } from 'react-hook-form';
+import { SingleFormSlider } from '../ui/dual-range-slider';
+import {
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../ui/form';
 
 type FieldType = {
   similarity_threshold?: number;
@@ -40,3 +49,61 @@ const SimilaritySlider = ({
 };
 
 export default SimilaritySlider;
+
+interface SimilaritySliderFormFieldProps {
+  vectorSimilarityWeightName?: string;
+  isTooltipShown?: boolean;
+}
+
+export function SimilaritySliderFormField({
+  vectorSimilarityWeightName = 'vector_similarity_weight',
+  isTooltipShown,
+}: SimilaritySliderFormFieldProps) {
+  const form = useFormContext();
+  const { t } = useTranslate('knowledgeDetails');
+
+  return (
+    <>
+      <FormField
+        control={form.control}
+        name={'similarity_threshold'}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel tooltip={isTooltipShown && t('similarityThresholdTip')}>
+              {t('similarityThreshold')}
+            </FormLabel>
+            <FormControl>
+              <SingleFormSlider
+                {...field}
+                max={1}
+                step={0.01}
+              ></SingleFormSlider>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name={vectorSimilarityWeightName}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel
+              tooltip={isTooltipShown && t('vectorSimilarityWeightTip')}
+            >
+              {t('vectorSimilarityWeight')}
+            </FormLabel>
+            <FormControl>
+              <SingleFormSlider
+                {...field}
+                max={1}
+                step={0.01}
+              ></SingleFormSlider>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  );
+}

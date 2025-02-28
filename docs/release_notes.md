@@ -7,6 +7,45 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.16.0
+
+Released on February 6, 2025.
+
+### New features
+
+- Supports DeepSeek R1 and DeepSeek V3.
+- GraphRAG refactor: Knowledge graph is dynamically built on an entire knowledge base (dataset) rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph).
+- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./references/agent_component_reference/iteration.mdx).
+- New UI language: Portuguese.
+- Allows setting metadata for a specific file in a knowledge base to enhance AI-powered chats. See [here](./guides/configure_knowledge_base/set_metadata.md).
+- Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
+- Supports GPU acceleration for DeepDoc (see [docker-compose-gpu.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose-gpu.yml)).
+- Supports creating and referencing a **Tag** knowledge base as a key milestone towards bridging the semantic gap between query and response.
+
+:::danger IMPORTANT
+The **Tag knowledge base** feature is *unavailable* on the [Infinity](https://github.com/infiniflow/infinity) document engine.
+:::
+
+### Documentation
+
+#### Added documents
+
+- [Construct knowledge graph](./guides/configure_knowledge_base/construct_knowledge_graph.md)
+- [Set metadata](./guides/configure_knowledge_base/set_metadata.md)
+- [Begin component](./references/agent_component_reference/begin.mdx)
+- [Generate component](./references/agent_component_reference/generate.mdx)
+- [Interact component](./references/agent_component_reference/interact.mdx)
+- [Retrieval component](./references/agent_component_reference/retrieval.mdx)
+- [Categorize component](./references/agent_component_reference/categorize.mdx)
+- [Keyword component](./references/agent_component_reference/keyword.mdx)
+- [Message component](./references/agent_component_reference/message.mdx)
+- [Rewrite component](./references/agent_component_reference/rewrite.mdx)
+- [Switch component](./references/agent_component_reference/switch.mdx)
+- [Concentrator component](./references/agent_component_reference/concentrator.mdx)
+- [Template component](./references/agent_component_reference/template.mdx)
+- [Iteration component](./references/agent_component_reference/iteration.mdx)
+- [Note component](./references/agent_component_reference/note.mdx)
+
 ## v0.15.1
 
 Released on December 25, 2024.
@@ -60,7 +99,7 @@ Released on December 18, 2024.
 
 ### Improvements
 
-- Upgrades the Document Layout Analysis model in Deepdoc.
+- Upgrades the Document Layout Analysis model in DeepDoc.
 - Significantly enhances the retrieval performance when using [Infinity](https://github.com/infiniflow/infinity) as document engine.
 
 ### Related APIs
@@ -233,7 +272,7 @@ Released on August 26, 2024.
 - Incorporates monitoring for the task executor.
 - Introduces Agent tools **GitHub**, **DeepL**, **BaiduFanyi**, **QWeather**, and **GoogleScholar**.
 - Supports chunking of EML files.
-- Supports more LLMs or model services: **GPT-4o-mini**, **PerfXCloud**, **TogetherAI**, **Upstage**, **Novita.AI**, **01.AI**, **SiliconFlow**, **XunFei Spark**, **Baidu Yiyan**, and **Tencent Hunyuan**.
+- Supports more LLMs or model services: **GPT-4o-mini**, **PerfXCloud**, **TogetherAI**, **Upstage**, **Novita.AI**, **01.AI**, **SiliconFlow**, **PPIO**, **XunFei Spark**, **Baidu Yiyan**, and **Tencent Hunyuan**.
 
 ## v0.9.0
 
@@ -274,7 +313,7 @@ Released on May 31, 2024.
 - Supports ARM64 platforms.
 
 :::danger IMPORTANT
-While we also test RAGFlow on ARM64 platforms, we do not plan to maintain RAGFlow Docker images for ARM.
+While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM.
 
 If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
 :::

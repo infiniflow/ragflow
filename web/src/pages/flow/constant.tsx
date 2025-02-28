@@ -30,8 +30,12 @@ import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.s
 
 // 邮件功能
 
-import { variableEnabledFieldMap } from '@/constants/chat';
+import {
+  ChatVariableEnabledField,
+  variableEnabledFieldMap,
+} from '@/constants/chat';
 import i18n from '@/locales/config';
+import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -403,7 +407,9 @@ export const initialBeginValues = {
 export const variableCheckBoxFieldMap = Object.keys(
   variableEnabledFieldMap,
 ).reduce<Record<string, boolean>>((pre, cur) => {
-  pre[cur] = true;
+  pre[cur] = setInitialChatVariableEnabledFieldValue(
+    cur as ChatVariableEnabledField,
+  );
   return pre;
 }, {});
 
@@ -426,6 +432,7 @@ export const initialGenerateValues = {
 
 export const initialRewriteQuestionValues = {
   ...initialLlmBaseValues,
+  language: '',
   message_history_window_size: 6,
 };
 
@@ -599,6 +606,7 @@ export const initialInvokeValues = {
 }`,
   proxy: 'http://',
   clean_html: false,
+  datatype: 'json',
 };
 
 export const initialTemplateValues = {
@@ -669,9 +677,7 @@ export const RestrictedUpstreamMap = {
   [Operator.RewriteQuestion]: [
     Operator.Begin,
     Operator.Message,
-    Operator.Generate,
     Operator.RewriteQuestion,
-    Operator.Categorize,
     Operator.Relevant,
   ],
   [Operator.KeywordExtract]: [

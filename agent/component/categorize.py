@@ -80,6 +80,7 @@ class Categorize(Generate, ABC):
 
     def _run(self, history, **kwargs):
         input = self.get_input()
+        input = " - ".join(input["content"]) if "content" in input else ""
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         ans = chat_mdl.chat(self._param.get_prompt(input), [{"role": "user", "content": "\nCategory: "}],
                             self._param.gen_conf())
@@ -93,5 +94,5 @@ class Categorize(Generate, ABC):
     def debug(self, **kwargs):
         df = self._run([], **kwargs)
         cpn_id = df.iloc[0, 0]
-        return Categorize.be_output(self._canvas.get_compnent_name(cpn_id))
+        return Categorize.be_output(self._canvas.get_component_name(cpn_id))
 

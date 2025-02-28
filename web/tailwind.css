@@ -41,6 +41,7 @@
     --colors-background-inverse-strong: rgba(11, 10, 18, 0.8);
     --colors-background-inverse-weak: rgba(17, 16, 23, 0.1);
     --colors-background-neutral-standard: white;
+    --colors-background-neutral-strong: rgba(226, 223, 246, 1);
     --colors-background-functional-solid-danger: rgba(222, 17, 53, 1);
     --colors-background-core-strong: rgba(98, 72, 246, 1);
     --colors-background-sentiment-solid-primary: rgba(127, 105, 255, 1);
@@ -53,10 +54,21 @@
 
     --colors-text-core-standard: rgba(127, 105, 255, 1);
     --colors-text-neutral-strong: rgba(17, 16, 23, 1);
-    --colors-text-neutral-standard: rgba(53, 51, 65, 1);
+    --colors-text-neutral-standard: rgba(152, 148, 176, 1);
+    --colors-text-neutral-weak: rgba(170, 160, 197, 1);
     --colors-text-functional-danger: rgba(255, 81, 81, 1);
     --colors-text-inverse-strong: rgba(255, 255, 255, 1);
     --colors-text-persist-light: rgba(255, 255, 255, 1);
+    --colors-text-inverse-weak: rgba(184, 181, 203, 1);
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
@@ -135,9 +147,20 @@
     --colors-text-core-standard: rgba(137, 126, 255, 1);
     --colors-text-neutral-strong: rgba(255, 255, 255, 1);
     --colors-text-neutral-standard: rgba(230, 227, 246, 1);
+    --colors-text-neutral-weak: rgba(170, 160, 197, 1);
     --colors-text-functional-danger: rgba(255, 81, 81, 1);
     --colors-text-inverse-strong: rgba(17, 16, 23, 1);
     --colors-text-persist-light: rgba(255, 255, 255, 1);
+    --colors-text-inverse-weak: rgba(84, 80, 106, 1);
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 }
 
@@ -166,5 +189,10 @@
 
   h4 {
     @apply text-base font-normal;
+  }
+
+  img,
+  video {
+    max-width: none;
   }
 }

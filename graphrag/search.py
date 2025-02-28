@@ -65,9 +65,12 @@ class KGSearch(Dealer):
 
     def _ent_info_from_(self, es_res, sim_thr=0.3):
         res = {}
-        es_res = self.dataStore.getFields(es_res, ["content_with_weight", "_score", "entity_kwd", "rank_flt",
-                                                   "n_hop_with_weight"])
+        flds = ["content_with_weight", "_score", "entity_kwd", "rank_flt", "n_hop_with_weight"]
+        es_res = self.dataStore.getFields(es_res, flds)
         for _, ent in es_res.items():
+            for f in flds:
+                if f in ent and ent[f] is None:
+                    del ent[f]
             if float(ent.get("_score", 0)) < sim_thr:
                 continue
             if isinstance(ent["entity_kwd"], list):
@@ -151,7 +154,6 @@ class KGSearch(Dealer):
             tenant_ids = tenant_ids.split(",")
         idxnms = [index_name(tid) for tid in tenant_ids]
         ty_kwds = []
-        ents = []
         try:
             ty_kwds, ents = self.query_rewrite(llm, qst, [index_name(tid) for tid in tenant_ids], kb_ids)
             logging.info(f"Q: {qst}, Types: {ty_kwds}, Entities: {ents}")
@@ -166,6 +168,9 @@ class KGSearch(Dealer):
         nhop_pathes = defaultdict(dict)
         for _, ent in ents_from_query.items():
             nhops = ent.get("n_hop_ents", [])
+            if not isinstance(nhops, list):
+                logging.warning(f"Abnormal n_hop_ents: {nhops}")
+                continue
             for nbr in nhops:
                 path = nbr["path"]
                 wts = nbr["weights"]
@@ -239,11 +244,16 @@ class KGSearch(Dealer):
                 else:
                     continue
                 rel["description"] = rela["description"]
+            desc = rel["description"]
+            try:
+                desc = json.loads(desc).get("description", "")
+            except Exception:
+                pass
             relas.append({
                 "From Entity": f,
                 "To Entity": t,
                 "Score": "%.2f" % (rel["sim"] * rel["pagerank"]),
-                "Description": json.loads(ent["description"]).get("description", "")
+                "Description": desc
             })
             max_token -= num_tokens_from_string(str(relas[-1]))
             if max_token <= 0:

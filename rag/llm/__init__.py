@@ -75,6 +75,7 @@ from .chat_model import (
     UpstageChat,
     NovitaAIChat,
     SILICONFLOWChat,
+    PPIOChat,
     YiChat,
     ReplicateChat,
     HunyuanChat,
@@ -84,6 +85,7 @@ from .chat_model import (
     GoogleChat,
     HuggingFaceChat,
     GPUStackChat,
+    ModelScopeChat,
 )
 
 from .cv_model import (
@@ -158,6 +160,7 @@ EmbeddingModel = {
     "NVIDIA": NvidiaEmbed,
     "LM-Studio": LmStudioEmbed,
     "OpenAI-API-Compatible": OpenAI_APIEmbed,
+    "VLLM": OpenAI_APIEmbed,
     "Cohere": CoHereEmbed,
     "TogetherAI": TogetherAIEmbed,
     "PerfXCloud": PerfXCloudEmbed,
@@ -186,6 +189,7 @@ CvModel = {
     "LM-Studio": LmStudioCV,
     "StepFun": StepFunCV,
     "OpenAI-API-Compatible": OpenAI_APICV,
+    "VLLM": OpenAI_APICV,
     "TogetherAI": TogetherAICV,
     "01.AI": YiCV,
     "Tencent Hunyuan": HunyuanCV,
@@ -213,6 +217,7 @@ ChatModel = {
     "NVIDIA": NvidiaChat,
     "LM-Studio": LmStudioChat,
     "OpenAI-API-Compatible": OpenAI_APIChat,
+    "VLLM": OpenAI_APIChat,
     "Cohere": CoHereChat,
     "LeptonAI": LeptonAIChat,
     "TogetherAI": TogetherAIChat,
@@ -220,6 +225,7 @@ ChatModel = {
     "Upstage": UpstageChat,
     "novita.ai": NovitaAIChat,
     "SILICONFLOW": SILICONFLOWChat,
+    "PPIO": PPIOChat,
     "01.AI": YiChat,
     "Replicate": ReplicateChat,
     "Tencent Hunyuan": HunyuanChat,
@@ -229,6 +235,7 @@ ChatModel = {
     "Google Cloud": GoogleChat,
     "HuggingFace": HuggingFaceChat,
     "GPUStack": GPUStackChat,
+    "ModelScope":ModelScopeChat,
 }
 
 RerankModel = {
@@ -240,6 +247,7 @@ RerankModel = {
     "NVIDIA": NvidiaRerank,
     "LM-Studio": LmStudioRerank,
     "OpenAI-API-Compatible": OpenAI_APIRerank,
+    "VLLM": CoHereRerank,
     "Cohere": CoHereRerank,
     "TogetherAI": TogetherAIRerank,
     "SILICONFLOW": SILICONFLOWRerank,

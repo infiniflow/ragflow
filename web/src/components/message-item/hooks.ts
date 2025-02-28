@@ -67,7 +67,9 @@ export const useSpeech = (content: string, audioBinary?: string) => {
         setIsPlaying(false);
       },
       onChunkEnd: () => {},
-      mimeType: 'audio/mpeg',
+      mimeType: MediaSource.isTypeSupported('audio/mpeg')
+        ? 'audio/mpeg'
+        : 'audio/mp4; codecs="mp4a.40.2"', // https://stackoverflow.com/questions/64079424/cannot-replay-mp3-in-firefox-using-mediasource-even-though-it-works-in-chrome
     });
     await player.current.init();
   }, []);

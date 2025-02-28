@@ -15,6 +15,7 @@
 #
 import logging
 import os
+import re
 from collections import defaultdict, Counter
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -59,6 +60,7 @@ class Extractor:
         if response:
             return response
         response = self._llm.chat(system, hist, conf)
+        response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
         set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
@@ -95,10 +97,11 @@ class Extractor:
     ):
 
         results = []
-        max_workers = int(os.environ.get('GRAPH_EXTRACTOR_MAX_WORKERS', 50))
+        max_workers = int(os.environ.get('GRAPH_EXTRACTOR_MAX_WORKERS', 10))
         with ThreadPoolExecutor(max_workers=max_workers) as exe:
             threads = []
             for i, (cid, ck) in enumerate(chunks):
+                ck = truncate(ck, int(self._llm.max_length*0.8))
                 threads.append(
                     exe.submit(self._process_single_content, (cid, ck)))
 
@@ -120,12 +123,21 @@ class Extractor:
                 maybe_edges[tuple(sorted(k))].extend(v)
         logging.info("Inserting entities into storage...")
         all_entities_data = []
-        for en_nm, ents in maybe_nodes.items():
-            all_entities_data.append(self._merge_nodes(en_nm, ents))
+        with ThreadPoolExecutor(max_workers=max_workers) as exe:
+            threads = []
+            for en_nm, ents in maybe_nodes.items():
+                threads.append(
+                    exe.submit(self._merge_nodes, en_nm, ents))
+            for t in threads:
+                n = t.result()
+                if not isinstance(n, Exception):
+                    all_entities_data.append(n)
+                elif callback:
+                    callback(msg="Knowledge graph nodes merging error: {}".format(str(n)))
 
         logging.info("Inserting relationships into storage...")
         all_relationships_data = []
-        for (src,tgt), rels in maybe_edges.items():
+        for (src, tgt), rels in maybe_edges.items():
             all_relationships_data.append(self._merge_edges(src, tgt, rels))
 
         if not len(all_entities_data) and not len(all_relationships_data):
@@ -164,17 +176,20 @@ class Extractor:
             sorted(set([dp["description"] for dp in entities] + already_description))
         )
         already_source_ids = flat_uniq_list(entities, "source_id")
-        description = self._handle_entity_relation_summary(
-            entity_name, description
-        )
-        node_data = dict(
-            entity_type=entity_type,
-            description=description,
-            source_id=already_source_ids,
-        )
-        node_data["entity_name"] = entity_name
-        self._set_entity_(entity_name, node_data)
-        return node_data
+        try:
+            description = self._handle_entity_relation_summary(
+                entity_name, description
+            )
+            node_data = dict(
+                entity_type=entity_type,
+                description=description,
+                source_id=already_source_ids,
+            )
+            node_data["entity_name"] = entity_name
+            self._set_entity_(entity_name, node_data)
+            return node_data
+        except Exception as e:
+            return e
 
     def _merge_edges(
             self,
@@ -241,5 +256,5 @@ class Extractor:
         )
         use_prompt = prompt_template.format(**context_base)
         logging.info(f"Trigger summary: {entity_or_relation_name}")
-        summary = self._chat(use_prompt, [{"role": "assistant", "content": "Output: "}], {"temperature": 0.8})
+        summary = self._chat(use_prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.8})
         return summary

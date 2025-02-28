@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.15.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.15.1">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.16.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.16.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -55,6 +55,7 @@
 
 ## 🔥 近期更新
 
+- 2025-02-05 更新硅基流动的模型列表，增加了对 Deepseek-R1/DeepSeek-V3 的支持。
 - 2025-01-26 优化知识图谱的提取和应用，提供了多种配置选择。
 - 2024-12-18 升级了 Deepdoc 的文档布局分析模型。
 - 2024-12-04 支持知识库的 Pagerank 分数。
@@ -145,17 +146,17 @@
 
 3. 进入 **docker** 文件夹，利用提前编译好的 Docker 镜像启动服务器：
 
-   > 运行以下命令会自动下载 RAGFlow slim Docker 镜像 `v0.15.1-slim`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.15.1-slim` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。比如，你可以通过设置 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1` 来下载 RAGFlow 镜像的 `v0.15.1` 完整发行版。
+   > 运行以下命令会自动下载 RAGFlow slim Docker 镜像 `v0.16.0-slim`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.16.0-slim` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。比如，你可以通过设置 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.16.0` 来下载 RAGFlow 镜像的 `v0.16.0` 完整发行版。
 
    ```bash
-   $ cd ragflow
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ cd ragflow/docker
+   $ docker compose -f docker-compose.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.15.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.16.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.16.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 
@@ -181,9 +182,6 @@
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
-    * Running on http://127.0.0.1:9380
-    * Running on http://x.x.x.x:9380
-    INFO:werkzeug:Press CTRL+C to quit
    ```
 
    > 如果您跳过这一步系统确认步骤就登录 RAGFlow，你的浏览器有可能会提示 `network anormal` 或 `网络异常`，因为 RAGFlow 可能并未完全启动成功。
@@ -215,7 +213,7 @@
 > 所有系统配置都需要通过系统重启生效：
 >
 > ```bash
-> $ docker compose -f docker/docker-compose.yml up -d
+> $ docker compose -f docker-compose.yml up -d
 > ```
 
 ### 把文档引擎从 Elasticsearch 切换成为 Infinity
@@ -227,13 +225,14 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
+   Note: `-v` 将会删除 docker 容器的 volumes，已有的数据会被清空。
 
 2. 设置 **docker/.env** 目录中的 `DOC_ENGINE` 为 `infinity`.
 
 3. 启动容器:
 
    ```bash
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
 
 > [!WARNING]
@@ -265,7 +264,7 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
 
    ```bash
    pipx install uv
-   export UV_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+   export UV_INDEX=https://mirrors.aliyun.com/pypi/simple
    ```
 
 2. 下载源代码并安装 Python 依赖：

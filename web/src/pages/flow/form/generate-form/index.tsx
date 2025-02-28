@@ -1,11 +1,11 @@
 import LLMSelect from '@/components/llm-select';
 import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
+import { PromptEditor } from '@/components/prompt-editor';
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Input, Switch } from 'antd';
+import { Form, Switch } from 'antd';
 import { IOperatorForm } from '../../interface';
-import DynamicParameters from './dynamic-parameters';
 
-const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
+const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   return (
@@ -35,7 +35,8 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
           },
         ]}
       >
-        <Input.TextArea rows={8} />
+        {/* <Input.TextArea rows={8}></Input.TextArea> */}
+        <PromptEditor></PromptEditor>
       </Form.Item>
       <Form.Item
         name={['cite']}
@@ -49,7 +50,6 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       <MessageHistoryWindowSizeItem
         initialValue={12}
       ></MessageHistoryWindowSizeItem>
-      <DynamicParameters node={node}></DynamicParameters>
     </Form>
   );
 };

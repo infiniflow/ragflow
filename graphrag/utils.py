@@ -284,7 +284,7 @@ def set_entity(tenant_id, kb_id, embd_mdl, ent_name, meta):
                 logging.exception(f"Fail to embed entity: {e}")
         if ebd is not None:
             chunk["q_%d_vec" % len(ebd)] = ebd
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
@@ -347,7 +347,7 @@ def set_relation(tenant_id, kb_id, embd_mdl, from_ent_name, to_ent_name, meta):
                 logging.exception(f"Fail to embed entity relation: {e}")
         if ebd is not None:
             chunk["q_%d_vec" % len(ebd)] = ebd
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def get_graph(tenant_id, kb_id):
@@ -382,7 +382,7 @@ def set_graph(tenant_id, kb_id, graph, docids):
         settings.docStoreConn.update({"knowledge_graph_kwd": "graph"}, chunk,
                                      search.index_name(tenant_id), kb_id)
     else:
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id))
+        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
 
 def is_continuous_subsequence(subseq, seq):
@@ -524,7 +524,7 @@ def rebuild_graph(tenant_id, kb_id):
     src_ids = []
     flds = ["entity_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "weight_int", "knowledge_graph_kwd", "source_id"]
     bs = 256
-    for i in range(0, 10000000, bs):
+    for i in range(0, 39*bs, bs):
         es_res = settings.docStoreConn.search(flds, [],
                                  {"kb_id": kb_id, "knowledge_graph_kwd": ["entity", "relation"]},
                                  [],
@@ -540,7 +540,7 @@ def rebuild_graph(tenant_id, kb_id):
             src_ids.extend(d.get("source_id", []))
             if d["knowledge_graph_kwd"] == "entity":
                 graph.add_node(d["entity_kwd"], entity_type=d["entity_type_kwd"])
-            else:
+            elif "from_entity_kwd" in d and "to_entity_kwd" in d:
                 graph.add_edge(
                     d["from_entity_kwd"],
                     d["to_entity_kwd"],

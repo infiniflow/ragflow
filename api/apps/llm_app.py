@@ -152,6 +152,7 @@ def add_llm():
 
     elif factory == "Tencent Cloud":
         req["api_key"] = apikey_json(["tencent_cloud_sid", "tencent_cloud_sk"])
+        return set_api_key()
 
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
@@ -169,6 +170,10 @@ def add_llm():
 
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"] + "___OpenAI-API"
+        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
+
+    elif factory == "VLLM":
+        llm_name = req["llm_name"] + "___VLLM"
         api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
     elif factory == "XunFei Spark":
@@ -209,66 +214,69 @@ def add_llm():
     }
 
     msg = ""
+    mdl_nm = llm["llm_name"].split("___")[0]
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"])
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
             if len(arr[0]) == 0:
                 raise Exception("Fail")
         except Exception as e:
-            msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access embedding model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
             key=llm['api_key'],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"]
         )
         try:
             m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
                 "temperature": 0.9})
-            if not tc:
+            if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(
+            msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
-        mdl = RerankModel[factory](
-            key=llm["api_key"],
-            model_name=llm["llm_name"],
-            base_url=llm["api_base"]
-        )
         try:
+            mdl = RerankModel[factory](
+                key=llm["api_key"],
+                model_name=mdl_nm,
+                base_url=llm["api_base"]
+            )
             arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!", "Ohh, my friend!"])
             if len(arr) == 0:
                 raise Exception("Not known.")
+        except KeyError:
+            msg += f"{factory} dose not support this model({mdl_nm})"
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(
+            msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         mdl = CvModel[factory](
             key=llm["api_key"],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"]
         )
         try:
             with open(os.path.join(get_project_base_directory(), "web/src/assets/yay.jpg"), "rb") as f:
                 m, tc = mdl.describe(f.read())
-                if not tc:
+                if not m and not tc:
                     raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
         mdl = TTSModel[factory](
-            key=llm["api_key"], model_name=llm["llm_name"], base_url=llm["api_base"]
+            key=llm["api_key"], model_name=mdl_nm, base_url=llm["api_base"]
         )
         try:
             for resp in mdl.tts("Hello~ Ragflower!"):
                 pass
         except RuntimeError as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access model({mdl_nm})." + str(e)
     else:
         # TODO: check other type of models
         pass

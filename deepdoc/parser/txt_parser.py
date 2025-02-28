@@ -51,11 +51,13 @@ class RAGFlowTxtParser:
             s = t
         if s < len(delimiter):
             dels.extend(list(delimiter[s:]))
-        dels = [re.escape(d) for d in delimiter if d]
+        dels = [re.escape(d) for d in dels if d]
         dels = [d for d in dels if d]
         dels = "|".join(dels)
         secs = re.split(r"(%s)" % dels, txt)
         for sec in secs:
+            if re.match(f"^{dels}$", sec):
+                continue
             add_chunk(sec)
 
         return [[c, ""] for c in cks]

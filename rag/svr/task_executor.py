@@ -18,16 +18,18 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 import random
 import sys
-from api.utils.log_utils import initRootLogger
+from api.utils.log_utils import initRootLogger, get_project_base_directory
 from graphrag.general.index import WithCommunity, WithResolution, Dealer
 from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
 from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
+from rag.prompts import keyword_extraction, question_proposal, content_tagging
 
 CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
 CONSUMER_NAME = "task_executor_" + CONSUMER_NO
 initRootLogger(CONSUMER_NAME)
 
+import asyncio
 import logging
 import os
 from datetime import datetime
@@ -42,12 +44,12 @@ from io import BytesIO
 from multiprocessing.context import TimeoutError
 from timeit import default_timer as timer
 import tracemalloc
+import signal
 
 import numpy as np
 from peewee import DoesNotExist
 
 from api.db import LLMType, ParserType, TaskStatus
-from api.db.services.dialog_service import keyword_extraction, question_proposal, content_tagging
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService
@@ -96,6 +98,35 @@ DONE_TASKS = 0
 FAILED_TASKS = 0
 CURRENT_TASK = None
 
+tracemalloc_started = False
+
+# SIGUSR1 handler: start tracemalloc and take snapshot
+def start_tracemalloc_and_snapshot(signum, frame):
+    global tracemalloc_started
+    if not tracemalloc_started:
+        logging.info("got SIGUSR1, start tracemalloc")
+        tracemalloc.start()
+        tracemalloc_started = True
+    else:
+        logging.info("got SIGUSR1, tracemalloc is already running")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    snapshot_file = f"snapshot_{timestamp}.trace"
+    snapshot_file = os.path.abspath(os.path.join(get_project_base_directory(), "logs", f"{os.getpid()}_snapshot_{timestamp}.trace"))
+
+    snapshot = tracemalloc.take_snapshot()
+    snapshot.dump(snapshot_file)
+    logging.info(f"taken snapshot {snapshot_file}")
+
+# SIGUSR2 handler: stop tracemalloc
+def stop_tracemalloc(signum, frame):
+    global tracemalloc_started
+    if tracemalloc_started:
+        logging.info("go SIGUSR2, stop tracemalloc")
+        tracemalloc.stop()
+        tracemalloc_started = False
+    else:
+        logging.info("got SIGUSR2, tracemalloc not running")
 
 class TaskCanceledException(Exception):
     def __init__(self, msg):
@@ -270,36 +301,36 @@ def build_chunks(task, progress_callback):
         st = timer()
         progress_callback(msg="Start to generate keywords for every chunk ...")
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
-        for d in docs:
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords",
-                                   {"topn": task["parser_config"]["auto_keywords"]})
-            if not cached:
-                cached = keyword_extraction(chat_mdl, d["content_with_weight"],
-                                            task["parser_config"]["auto_keywords"])
-                if cached:
-                    set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords",
-                                  {"topn": task["parser_config"]["auto_keywords"]})
 
-            d["important_kwd"] = cached.split(",")
-            d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
-        progress_callback(msg="Keywords generation completed in {:.2f}s".format(timer() - st))
+        async def doc_keyword_extraction(chat_mdl, d, topn):
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords", {"topn": topn})
+            if not cached:
+                cached = await asyncio.to_thread(keyword_extraction, chat_mdl, d["content_with_weight"], topn)
+                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
+            if cached:
+                d["important_kwd"] = cached.split(",")
+                d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
+            return
+        tasks = [doc_keyword_extraction(chat_mdl, d, task["parser_config"]["auto_keywords"]) for d in docs]
+        asyncio.get_event_loop().run_until_complete(asyncio.gather(*tasks))
+        progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["parser_config"].get("auto_questions", 0):
         st = timer()
         progress_callback(msg="Start to generate questions for every chunk ...")
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
-        for d in docs:
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question",
-                                   {"topn": task["parser_config"]["auto_questions"]})
-            if not cached:
-                cached = question_proposal(chat_mdl, d["content_with_weight"], task["parser_config"]["auto_questions"])
-                if cached:
-                    set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "question",
-                                  {"topn": task["parser_config"]["auto_questions"]})
 
-            d["question_kwd"] = cached.split("\n")
-            d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
-        progress_callback(msg="Question generation completed in {:.2f}s".format(timer() - st))
+        async def doc_question_proposal(chat_mdl, d, topn):
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question", {"topn": topn})
+            if not cached:
+                cached = await asyncio.to_thread(question_proposal, chat_mdl, d["content_with_weight"], topn)
+                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "question", {"topn": topn})
+            if cached:
+                d["question_kwd"] = cached.split("\n")
+                d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
+        tasks = [doc_question_proposal(chat_mdl, d, task["parser_config"]["auto_questions"]) for d in docs]
+        asyncio.get_event_loop().run_until_complete(asyncio.gather(*tasks))
+        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
         progress_callback(msg="Start to tag for every chunk ...")
@@ -317,22 +348,27 @@ def build_chunks(task, progress_callback):
             all_tags = json.loads(all_tags)
 
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
+
+        docs_to_tag = []
         for d in docs:
             if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S):
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
-                continue
+            else:
+                docs_to_tag.append(d)
+
+        async def doc_content_tagging(chat_mdl, d, topn_tags):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], all_tags, {"topn": topn_tags})
             if not cached:
-                cached = content_tagging(chat_mdl, d["content_with_weight"], all_tags,
-                                         random.choices(examples, k=2) if len(examples)>2 else examples,
-                                         topn=topn_tags)
+                picked_examples = random.choices(examples, k=2) if len(examples)>2 else examples
+                cached = await asyncio.to_thread(content_tagging, chat_mdl, d["content_with_weight"], all_tags, picked_examples, topn=topn_tags)
                 if cached:
                     cached = json.dumps(cached)
             if cached:
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, all_tags, {"topn": topn_tags})
                 d[TAG_FLD] = json.loads(cached)
-
-        progress_callback(msg="Tagging completed in {:.2f}s".format(timer() - st))
+        tasks = [doc_content_tagging(chat_mdl, d, topn_tags) for d in docs_to_tag]
+        asyncio.get_event_loop().run_until_complete(asyncio.gather(*tasks))
+        progress_callback(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     return docs
 
@@ -712,26 +748,18 @@ def main():
     logging.info(f'TaskExecutor: RAGFlow version: {get_ragflow_version()}')
     settings.init_settings()
     print_rag_settings()
+    signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)
+    signal.signal(signal.SIGUSR2, stop_tracemalloc)
+    TRACE_MALLOC_ENABLED = int(os.environ.get('TRACE_MALLOC_ENABLED', "0"))
+    if TRACE_MALLOC_ENABLED:
+        start_tracemalloc_and_snapshot(None, None)
+
     background_thread = threading.Thread(target=report_status)
     background_thread.daemon = True
     background_thread.start()
 
-    TRACE_MALLOC_DELTA = int(os.environ.get('TRACE_MALLOC_DELTA', "0"))
-    TRACE_MALLOC_FULL = int(os.environ.get('TRACE_MALLOC_FULL', "0"))
-    if TRACE_MALLOC_DELTA > 0:
-        if TRACE_MALLOC_FULL < TRACE_MALLOC_DELTA:
-            TRACE_MALLOC_FULL = TRACE_MALLOC_DELTA
-        tracemalloc.start()
-        snapshot1 = tracemalloc.take_snapshot()
     while True:
         handle_task()
-        num_tasks = DONE_TASKS + FAILED_TASKS
-        if TRACE_MALLOC_DELTA > 0 and num_tasks > 0 and num_tasks % TRACE_MALLOC_DELTA == 0:
-            snapshot2 = tracemalloc.take_snapshot()
-            analyze_heap(snapshot1, snapshot2, int(num_tasks / TRACE_MALLOC_DELTA), num_tasks % TRACE_MALLOC_FULL == 0)
-            snapshot1 = snapshot2
-            snapshot2 = None
-
 
 if __name__ == "__main__":
     main()

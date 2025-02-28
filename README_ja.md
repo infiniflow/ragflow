@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.15.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.15.1">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.16.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.16.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -55,6 +55,7 @@
 
 ## 🔥 最新情報
 
+- 2025-02-05 シリコン フローの St およびモデル リストを更新し、Deep Seek-R1/Deep Seek-V3 のサポートを追加しました。
 - 2025-01-26 ナレッジ グラフの抽出と適用を最適化し、さまざまな構成オプションを提供します。
 - 2024-12-18 Deepdoc のドキュメント レイアウト分析モデルをアップグレードします。
 - 2024-12-04 ナレッジ ベースへのページランク スコアをサポートしました。
@@ -145,17 +146,17 @@
 
 3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
 
-   > 以下のコマンドは、RAGFlow Docker イメージの v0.15.1-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.15.1-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.15.1 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1 と設定します。
+   > 以下のコマンドは、RAGFlow Docker イメージの v0.16.0-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.16.0-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.16.0 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.16.0 と設定します。
 
    ```bash
-   $ cd ragflow
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ cd ragflow/docker
+   $ docker compose -f docker-compose.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.15.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.15.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.16.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.16.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 
@@ -175,9 +176,6 @@
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
-    * Running on http://127.0.0.1:9380
-    * Running on http://x.x.x.x:9380
-    INFO:werkzeug:Press CTRL+C to quit
    ```
 
    > もし確認ステップをスキップして直接 RAGFlow にログインした場合、その時点で RAGFlow が完全に初期化されていない可能性があるため、ブラウザーがネットワーク異常エラーを表示するかもしれません。
@@ -207,7 +205,7 @@
 > すべてのシステム設定のアップデートを有効にするには、システムの再起動が必要です:
 >
 > ```bash
-> $ docker compose -f docker/docker-compose.yml up -d
+> $ docker compose -f docker-compose.yml up -d
 > ```
 
 ### Elasticsearch から Infinity にドキュメントエンジンを切り替えます
@@ -218,11 +216,12 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
+   Note: `-v` は docker コンテナのボリュームを削除し、既存のデータをクリアします。
 2. **docker/.env** の「DOC \_ ENGINE」を「infinity」に設定します。
 
 3. 起動コンテナ：
    ```bash
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
    > [!WARNING]  
    > Linux/arm64 マシンでの Infinity への切り替えは正式にサポートされていません。

@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor, ALL_COMPLETED, wait
 from threading import Lock
@@ -39,6 +40,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         if response:
             return response
         response = self._llm_model.chat(system, history, gen_conf)
+        response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
         set_llm_cache(self._llm_model.llm_name, system, response, history, gen_conf)
@@ -46,7 +48,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
     def _embedding_encode(self, txt):
         response = get_embed_cache(self._embd_model.llm_name, txt)
-        if response:
+        if response is not None:
             return response
         embds, _ = self._embd_model.encode([txt])
         if len(embds) < 1 or len(embds[0]) < 1:
@@ -70,7 +72,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
         if len(chunks) <= 1:
-            return
+            return []
         chunks = [(s, a) for s, a in chunks if s and len(a) > 0]
 
         def summarize(ck_idx, lock):
@@ -121,7 +123,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 lbls = [np.where(prob > self._threshold)[0] for prob in probs]
                 lbls = [lbl[0] if isinstance(lbl, np.ndarray) else lbl for lbl in lbls]
             lock = Lock()
-            with ThreadPoolExecutor(max_workers=12) as executor:
+            with ThreadPoolExecutor(max_workers=int(os.environ.get('GRAPH_EXTRACTOR_MAX_WORKERS', 10))) as executor:
                 threads = []
                 for c in range(n_clusters):
                     ck_idx = [i + start for i in range(len(lbls)) if lbls[i] == c]
