@@ -3,6 +3,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Select, Switch } from 'antd';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
+import { DatasetConfigurationContainer } from '../dataset-configuration-container';
 import EntityTypesItem from '../entity-types-item';
 
 const excludedTagParseMethods = [
@@ -55,7 +56,7 @@ const GraphRagItems = () => {
   );
 
   return (
-    <div className="border p-2 rounded-lg bg-slate-50 dark:bg-gray-600">
+    <DatasetConfigurationContainer>
       <Form.Item
         name={['parser_config', 'graphrag', 'use_graphrag']}
         label={t('useGraphRag')}
@@ -117,7 +118,7 @@ const GraphRagItems = () => {
           );
         }}
       </Form.Item>
-    </div>
+    </DatasetConfigurationContainer>
   );
 };
 
