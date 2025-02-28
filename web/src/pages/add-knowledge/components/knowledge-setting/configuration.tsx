@@ -16,6 +16,7 @@ import ParseConfiguration, {
 import GraphRagItems, {
   showGraphRagItems,
 } from '@/components/parse-configuration/graph-rag-items';
+import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useHandleChunkMethodSelectChange } from '@/hooks/logic-hooks';
 import { normFile } from '@/utils/file-util';
@@ -127,7 +128,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
 
           return (
             <>
-              {parserId === 'knowledge_graph' && (
+              {parserId === DocumentParserType.KnowledgeGraph && (
                 <>
                   <EntityTypesItem></EntityTypesItem>
                   <MaxTokenNumber max={8192 * 2}></MaxTokenNumber>
@@ -140,7 +141,7 @@ const ConfigurationForm = ({ form }: { form: FormInstance }) => {
                   <AutoQuestionsItem></AutoQuestionsItem>
                 </>
               )}
-              {parserId === 'naive' && (
+              {parserId === DocumentParserType.Naive && (
                 <>
                   <MaxTokenNumber></MaxTokenNumber>
                   <Delimiter></Delimiter>
