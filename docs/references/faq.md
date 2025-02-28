@@ -351,7 +351,7 @@ See [Deploy a local LLM](../guides/deploy_local_llm.mdx) for more information.
 
 ---
 
-#### Do you offer examples of using DeepDOC to parse PDF or other files?
+#### Do you offer examples of using DeepDoc to parse PDF or other files?
 
 Yes, we do. See the Python files under the **rag/app** folder.
 
