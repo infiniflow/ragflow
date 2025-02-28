@@ -13,7 +13,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
 import { INextOperatorForm } from '../../interface';
-import { DynamicVariableForm } from '../components/next-dynamic-input-variable';
+import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
 const RetrievalForm = ({ form, node }: INextOperatorForm) => {
   const { t } = useTranslation();
@@ -25,8 +25,11 @@ const RetrievalForm = ({ form, node }: INextOperatorForm) => {
           e.preventDefault();
         }}
       >
-        <DynamicVariableForm></DynamicVariableForm>
-        <SimilaritySliderFormField vectorSimilarityWeightName="keywords_similarity_weight"></SimilaritySliderFormField>
+        <DynamicInputVariable node={node}></DynamicInputVariable>
+        <SimilaritySliderFormField
+          vectorSimilarityWeightName="keywords_similarity_weight"
+          isTooltipShown
+        ></SimilaritySliderFormField>
         <TopNFormField></TopNFormField>
         <RerankFormFields></RerankFormFields>
         <KnowledgeBaseFormField></KnowledgeBaseFormField>
