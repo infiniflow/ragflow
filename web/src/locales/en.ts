@@ -359,7 +359,7 @@ The above is the content you need to summarize.`,
 This auto-tag feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
 <p>Difference between auto-tag and auto-keyword:</p>
 <ul>
-  <li>A tag knowledge base is a user-defined close set, whereas keywords extraced by the LLM can be regarded as an open set.</li>
+  <li>A tag knowledge base is a user-defined close set, whereas keywords extracted by the LLM can be regarded as an open set.</li>
   <li>You must upload tag sets in specified formats before running the auto-tag feature.</li>
   <li>The auto-keyword feature is dependent on the LLM and consumes a significant number of tokens.</li>
 </ul>
