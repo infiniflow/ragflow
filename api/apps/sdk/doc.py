@@ -477,10 +477,12 @@ def list_docs(dataset_id, tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     id = request.args.get("id")
     name = request.args.get("name")
-    if not DocumentService.query(id=id, kb_id=dataset_id):
+
+    if id and not DocumentService.query(id=id, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {id}.")
-    if not DocumentService.query(name=name, kb_id=dataset_id):
+    if name and not DocumentService.query(name=name, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {name}.")
+
     page = int(request.args.get("page", 1))
     keywords = request.args.get("keywords", "")
     page_size = int(request.args.get("page_size", 30))

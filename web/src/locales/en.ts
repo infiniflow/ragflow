@@ -528,6 +528,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
         'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
       avatarHidden: 'Hide avatar',
       locale: 'Locale',
+      selectLanguage: 'Select a language',
       reasoning: 'Reasoning',
       reasoningTip:
         'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
@@ -713,7 +714,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       202: 'A request has been queued in the background (asynchronous task).',
       204: 'Data deleted successfully.',
       400: 'There was an error in the request issued, and the server did not create or modify data.',
-      401: 'The user does not have permissions (wrong token, username, password).',
+      401: 'Please sign in again.',
       403: 'The user is authorized, but access is prohibited.',
       404: 'The request was made for a record that does not exist, and the server did not perform the operation.',
       406: 'The requested format is not available.',
@@ -845,7 +846,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       bingDescription:
         'A component that searches from https://www.bing.com/, allowing you to specify the number of search results using TopN. It supplements the existing knowledge bases. Please note that this requires an API key from microsoft.com.',
       apiKey: 'API KEY',
-      country: 'Country&Region',
+      country: 'Country & Region',
       language: 'Language',
       googleScholar: 'Google Scholar',
       googleScholarDescription:
@@ -1196,6 +1197,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         "UserCode":"",
         "NumberPhone":""
       }`,
+      datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
     },
     footer: {

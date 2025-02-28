@@ -1,5 +1,7 @@
+import { cn } from '@/lib/utils';
 import Icon from '@ant-design/icons';
 import { CustomIconComponentProps } from '@ant-design/icons/lib/components/Icon';
+import { ChevronDown } from 'lucide-react';
 
 type IconComponentProps = CustomIconComponentProps;
 const currentColor = 'currentColor';
@@ -309,3 +311,13 @@ export const CommaIcon = (props: Partial<IconComponentProps>) => (
 export const VarsIcon = (props: Partial<IconComponentProps>) => (
   <Icon component={VarsSvg} {...props} />
 );
+export function SideDown({ className }: { className?: string }) {
+  return (
+    <ChevronDown
+      className={cn(
+        'transition-transform group-data-[state=open]/collapsible:rotate-180',
+        className,
+      )}
+    />
+  );
+}

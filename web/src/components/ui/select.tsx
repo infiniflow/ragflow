@@ -190,7 +190,8 @@ type RAGFlowSelectProps = Partial<ControllerRenderProps> & {
   FormControlComponent?: typeof FormControl;
   options?: (RAGFlowSelectOptionType | RAGFlowSelectGroupOptionType)[];
   allowClear?: boolean;
-};
+  placeholder?: React.ReactNode;
+} & SelectPrimitive.SelectProps;
 
 /**
  *
@@ -218,6 +219,7 @@ export const RAGFlowSelect = forwardRef<
     FormControlComponent,
     options = [],
     allowClear,
+    placeholder,
   },
   ref,
 ) {
@@ -260,7 +262,7 @@ export const RAGFlowSelect = forwardRef<
           allowClear={allowClear}
           ref={ref}
         >
-          <SelectValue placeholder="Select a verified email to display" />
+          <SelectValue placeholder={placeholder} />
         </SelectTrigger>
       </FormControlWidget>
       <SelectContent>
@@ -292,3 +294,5 @@ export const RAGFlowSelect = forwardRef<
     </Select>
   );
 });
+
+RAGFlowSelect.displayName = 'RAGFlowSelect';
