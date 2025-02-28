@@ -15,7 +15,7 @@ Released on February 6, 2025.
 
 - Supports DeepSeek R1 and DeepSeek V3.
 - GraphRAG refactor: Knowledge graph is dynamically built on an entire knowledge base (dataset) rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph).
-- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./references/agent_component_reference/iteration.mdx).
+- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_component_reference/iteration.mdx).
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a knowledge base to enhance AI-powered chats. See [here](./guides/configure_knowledge_base/set_metadata.md).
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
@@ -32,19 +32,19 @@ The **Tag knowledge base** feature is *unavailable* on the [Infinity](https://gi
 
 - [Construct knowledge graph](./guides/configure_knowledge_base/construct_knowledge_graph.md)
 - [Set metadata](./guides/configure_knowledge_base/set_metadata.md)
-- [Begin component](./references/agent_component_reference/begin.mdx)
-- [Generate component](./references/agent_component_reference/generate.mdx)
-- [Interact component](./references/agent_component_reference/interact.mdx)
-- [Retrieval component](./references/agent_component_reference/retrieval.mdx)
-- [Categorize component](./references/agent_component_reference/categorize.mdx)
-- [Keyword component](./references/agent_component_reference/keyword.mdx)
-- [Message component](./references/agent_component_reference/message.mdx)
-- [Rewrite component](./references/agent_component_reference/rewrite.mdx)
-- [Switch component](./references/agent_component_reference/switch.mdx)
-- [Concentrator component](./references/agent_component_reference/concentrator.mdx)
-- [Template component](./references/agent_component_reference/template.mdx)
-- [Iteration component](./references/agent_component_reference/iteration.mdx)
-- [Note component](./references/agent_component_reference/note.mdx)
+- [Begin component](./guides/agent/agent_component_reference/begin.mdx)
+- [Generate component](./guides/agent/agent_component_reference/generate.mdx)
+- [Interact component](./guides/agent/agent_component_reference/interact.mdx)
+- [Retrieval component](./guides/agent/agent_component_reference/retrieval.mdx)
+- [Categorize component](./guides/agent/agent_component_reference/categorize.mdx)
+- [Keyword component](./guides/agent/agent_component_reference/keyword.mdx)
+- [Message component](./guides/agent/agent_component_reference/message.mdx)
+- [Rewrite component](./guides/agent/agent_component_reference/rewrite.mdx)
+- [Switch component](./guides/agent/agent_component_reference/switch.mdx)
+- [Concentrator component](./guides/agent/agent_component_reference/concentrator.mdx)
+- [Template component](./guides/agent/agent_component_reference/template.mdx)
+- [Iteration component](./guides/agent/agent_component_reference/iteration.mdx)
+- [Note component](./guides/agent/agent_component_reference/note.mdx)
 
 ## v0.15.1
 
