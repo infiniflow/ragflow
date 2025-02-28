@@ -43,6 +43,7 @@ redis:
 #   endpoint_url: '${ENDPOINT}'
 #   region: '${REGION}'
 #   bucket: '${BUCKET}'
+#   prefix_path: '${OSS_PREFIX_PATH}'
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'
