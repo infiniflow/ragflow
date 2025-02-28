@@ -223,7 +223,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
                     continue
                 if not str(row[clmns[j]]):
                     continue
-                if pd.isna(row[clmns[j]]):
+                if not isinstance(row[clmns[j]], pd.Series) and pd.isna(row[clmns[j]]):
                     continue
                 fld = clmns_map[j][0]
                 d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(
