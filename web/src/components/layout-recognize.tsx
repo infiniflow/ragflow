@@ -20,7 +20,24 @@ const LayoutRecognize = () => {
       value: x,
     }));
 
-    return [...list, ...allOptions[LlmModelType.Image2text]];
+    const image2TextList = allOptions[LlmModelType.Image2text].map((x) => {
+      return {
+        ...x,
+        options: x.options.map((y) => {
+          return {
+            ...y,
+            label: (
+              <div className="flex justify-between items-center gap-2">
+                {y.label}
+                <span className="text-red-500 text-sm">Experimental</span>
+              </div>
+            ),
+          };
+        }),
+      };
+    });
+
+    return [...list, ...image2TextList];
   }, [allOptions, t]);
 
   return (
@@ -30,7 +47,7 @@ const LayoutRecognize = () => {
       initialValue={DocumentType.DeepDOC}
       tooltip={t('layoutRecognizeTip')}
     >
-      <Select options={options} />
+      <Select options={options} popupMatchSelectWidth={false} />
     </Form.Item>
   );
 };
