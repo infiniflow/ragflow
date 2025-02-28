@@ -760,7 +760,7 @@ def main():
     background_thread = threading.Thread(target=report_status)
     background_thread.daemon = True
     background_thread.start()
-    
+ 
     # Handle SIGINT (Ctrl+C)
     def signal_handler(sig, frame):
         logging.info("Received Ctrl+C, shutting down gracefully...")
@@ -770,7 +770,7 @@ def main():
             background_thread.join(timeout=5)
         logging.info("Exiting...")
         sys.exit(0)
-    
+
     signal.signal(signal.SIGINT, signal_handler)
 
     try:
