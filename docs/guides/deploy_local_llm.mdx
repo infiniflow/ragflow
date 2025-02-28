@@ -59,20 +59,20 @@ success
 
 ### 2. Ensure Ollama is accessible
 
-If RAGFlow runs in Docker and Ollama runs on the same host machine, check if ollama is accessiable from inside the RAGFlow container:
+If RAGFlow runs in Docker and Ollama runs on the same host machine, check if ollama is accessible from inside the RAGFlow container:
 ```bash
 sudo docker exec -it ragflow-server bash
 root@8136b8c3e914:/ragflow# curl  http://host.docker.internal:11434/
 Ollama is running
 ```
 
-If RAGFlow runs from source code and Ollama runs on the same host machine, check if ollama is accessiable from RAGFlow host machine:
+If RAGFlow runs from source code and Ollama runs on the same host machine, check if ollama is accessible from RAGFlow host machine:
 ```bash
 curl  http://localhost:11434/
 Ollama is running
 ```
 
-If RAGFlow and Ollama run on different machines, check if ollama is accessiable from RAGFlow host machine:
+If RAGFlow and Ollama run on different machines, check if ollama is accessible from RAGFlow host machine:
 ```bash
 curl  http://${IP_OF_OLLAMA_MACHINE}:11434/
 Ollama is running
