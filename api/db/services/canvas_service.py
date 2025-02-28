@@ -192,7 +192,6 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     canvas = Canvas(cvs.dsl, tenant_id)
     canvas.reset()
     message_id = str(uuid4())
-    response_id = str(uuid4())
 
     if not session_id:
         query = canvas.get_preset_param()
