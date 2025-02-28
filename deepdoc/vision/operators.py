@@ -145,18 +145,6 @@ class ToCHWImage(object):
         return data
 
 
-class Fasttext(object):
-    def __init__(self, path="None", **kwargs):
-        import fasttext
-        self.fast_model = fasttext.load_model(path)
-
-    def __call__(self, data):
-        label = data['label']
-        fast_label = self.fast_model[label]
-        data['fast_label'] = fast_label
-        return data
-
-
 class KeepKeys(object):
     def __init__(self, keep_keys, **kwargs):
         self.keep_keys = keep_keys
