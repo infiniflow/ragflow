@@ -76,6 +76,15 @@ When writing suggestions, pay attention to whether there are ways to improve the
 
 Where `{source_text}` and `{target_lang}` are global variables defined by the **Begin** component, while `{translation_1}` is the output of another **Generate** component with the component ID **Translate directly**.
 
+
+:::danger IMPORTANT
+A **Generate** component relies on keys (variables) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence.
+:::
+
+![variable_settings](https://github.com/user-attachments/assets/cb024c9e-264a-43ff-9ee7-8649afd571b0)
+
+Keys in a **Generate** component are used in conjunction with the system prompt to specify data inputs for the LLM. Use a forward slash `/` to show the keys to use.
+
 ### Cite 
 
 This toggle sets whether to cite the original text as reference. 
@@ -94,19 +103,6 @@ An integer specifying the number of previous dialogue rounds to input into the L
 This feature is used for multi-turn dialogue *only*.
 :::
 
-
-### Key (Variable)
-
-:::danger IMPORTANT
-A **Generate** component relies on keys (variables) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence.
-:::
-
-![variable_settings](https://github.com/user-attachments/assets/cb024c9e-264a-43ff-9ee7-8649afd571b0)
-
-Keys in a **Generate** component are used in conjunction with the system prompt to specify data inputs for the LLM. As shown in the above screenshot, the values are categorized into two groups:
-
-- **Component Output**: The value of the key should be a component ID.
-- **Begin Input**: The value of the key should be the name of a global variable defined in the **Begin** component.
 
 ## Examples
 
