@@ -18,6 +18,13 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 import random
 import sys
+import os
+
+# Add project root directory to Python path
+current_file_path = os.path.abspath(__file__)
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file_path)))
+sys.path.append(project_root)
+
 from api.utils.log_utils import initRootLogger, get_project_base_directory
 from graphrag.general.index import WithCommunity, WithResolution, Dealer
 from graphrag.light.graph_extractor import GraphExtractor as LightKGExt

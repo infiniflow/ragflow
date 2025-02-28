@@ -42,6 +42,7 @@ def init_in_out(args):
 
         for i, page in enumerate(images):
             outputs.append(os.path.split(fnm)[-1] + f"_{i}.jpg")
+        pdf.close()
 
     def images_and_outputs(fnm):
         nonlocal outputs, images
