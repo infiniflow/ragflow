@@ -41,10 +41,23 @@ export const useSubmitKnowledgeConfiguration = (form: FormInstance) => {
 // The value that does not need to be displayed in the analysis method Select
 const HiddenFields = ['email', 'picture', 'audio'];
 
-export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
+export function useSelectChunkMethodList() {
   const parserList = useSelectParserList();
-  const allOptions = useSelectLlmOptionsByModelType();
 
+  return parserList.filter((x) => !HiddenFields.some((y) => y === x.value));
+}
+
+export function useSelectEmbeddingModelOptions() {
+  const allOptions = useSelectLlmOptionsByModelType();
+  return allOptions[LlmModelType.Embedding];
+}
+
+export function useHasParsedDocument() {
+  const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
+  return knowledgeDetails.chunk_num > 0;
+}
+
+export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
   useEffect(() => {
@@ -66,13 +79,7 @@ export const useFetchKnowledgeConfigurationOnMount = (form: FormInstance) => {
     });
   }, [form, knowledgeDetails]);
 
-  return {
-    parserList: parserList.filter(
-      (x) => !HiddenFields.some((y) => y === x.value),
-    ),
-    embeddingModelOptions: allOptions[LlmModelType.Embedding],
-    disabled: knowledgeDetails.chunk_num > 0,
-  };
+  return knowledgeDetails;
 };
 
 export const useSelectKnowledgeDetailsLoading = () =>
