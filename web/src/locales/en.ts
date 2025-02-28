@@ -138,7 +138,7 @@ export default {
       fromMessage: 'Missing start page number',
       toPlaceholder: 'to',
       toMessage: 'Missing end page number (excluded)',
-      layoutRecognize: 'Layout recognition & OCR',
+      layoutRecognize: 'Document parser',
       layoutRecognizeTip:
         'Use visual models for layout analysis to better understand the structure of the document and effectively locate document titles, text blocks, images, and tables. If disabled, only the plain text in the PDF will be retrieved.',
       taskPageSize: 'Task page size',
@@ -195,6 +195,7 @@ export default {
       metaData: 'Meta data',
       deleteDocumentConfirmContent:
         'The document is associated with the knowledge graph. After deletion, the related node and relationship information will be deleted, but the graph will not be updated immediately. The update graph action is performed during the process of parsing the new document that carries the knowledge graph extraction task.',
+      plainText: 'Naive',
     },
     knowledgeConfiguration: {
       titleDescription:

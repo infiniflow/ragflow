@@ -2,6 +2,7 @@ import { LlmModelType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
 import { Form, Select } from 'antd';
+import { camelCase } from 'lodash';
 import { useMemo } from 'react';
 
 const enum DocumentType {
@@ -15,12 +16,12 @@ const LayoutRecognize = () => {
 
   const options = useMemo(() => {
     const list = [DocumentType.DeepDOC, DocumentType.PlainText].map((x) => ({
-      label: x,
+      label: x === DocumentType.PlainText ? t(camelCase(x)) : 'DeepDoc',
       value: x,
     }));
 
     return [...list, ...allOptions[LlmModelType.Image2text]];
-  }, [allOptions]);
+  }, [allOptions, t]);
 
   return (
     <Form.Item
