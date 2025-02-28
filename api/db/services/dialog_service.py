@@ -194,7 +194,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                 if isinstance(think, str):
                     thought = think
                     knowledges = [t for t in think.split("\n") if t]
-                else:
+                elif stream:
                     yield think
         else:
             kbinfos = retriever.retrieval(" ".join(questions), embd_mdl, tenant_ids, dialog.kb_ids, 1, dialog.top_n,
