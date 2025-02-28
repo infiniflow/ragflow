@@ -41,7 +41,7 @@
 </h4>
 
 <details open>
-<summary></b>📕 Daftar Isi</b></summary>
+<summary><b>📕 Daftar Isi </b> </summary>
 
 - 💡 [Apa Itu RAGFlow?](#-apa-itu-ragflow)
 - 🎮 [Demo](#-demo)
@@ -77,7 +77,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 - 2025-02-05 Memperbarui daftar model 'SILICONFLOW' dan menambahkan dukungan untuk Deepseek-R1/DeepSeek-V3.
 - 2025-01-26 Optimalkan ekstraksi dan penerapan grafik pengetahuan dan sediakan berbagai opsi konfigurasi.
-- 2024-12-18 Meningkatkan model Analisis Tata Letak Dokumen di Deepdoc.
+- 2024-12-18 Meningkatkan model Analisis Tata Letak Dokumen di DeepDoc.
 - 2024-12-04 Mendukung skor pagerank ke basis pengetahuan.
 - 2024-11-22 Peningkatan definisi dan penggunaan variabel di Agen.
 - 2024-11-01 Penambahan ekstraksi kata kunci dan pembuatan pertanyaan terkait untuk meningkatkan akurasi pengambilan.
@@ -174,11 +174,11 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   | ----------------- | --------------- | --------------------- | ------------------------ |
+   |-------------------|-----------------|-----------------------|--------------------------|
    | v0.16.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.16.0-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.16.0-slim      | &approx;2       | ❌                     | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
 4. Periksa status server setelah server aktif dan berjalan:
 
