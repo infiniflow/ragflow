@@ -1,0 +1,162 @@
+2025-03-01 15:41:26,065 INFO     23 ragflow_server log path: /ragflow/logs/ragflow_server.log, log levels: {'peewee': 'WARNING', 'pdfminer': 'WARNING', 'root': 'INFO'}
+2025-03-01 15:41:34,154 INFO     23 init database on cluster mode successfully
+2025-03-01 15:41:46,621 INFO     23 
+        ____   ___    ______ ______ __               
+       / __ \ /   |  / ____// ____// /____  _      __
+      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
+
+    
+2025-03-01 15:41:46,623 INFO     23 RAGFlow version: v0.16.0 slim
+2025-03-01 15:41:46,624 INFO     23 project base: /ragflow
+2025-03-01 15:41:46,625 INFO     23 Current configs, from /ragflow/conf/service_conf.yaml:
+	ragflow: {'host': '0.0.0.0', 'http_port': 9380}
+	mysql: {'name': 'rag_flow', 'user': 'root', 'password': '********', 'host': 'mysql', 'port': 3306, 'max_connections': 100, 'stale_timeout': 30}
+	minio: {'user': 'rag_flow', 'password': '********', 'host': 'minio:9000'}
+	es: {'hosts': 'http://es01:9200', 'username': 'elastic', 'password': '********'}
+	infinity: {'uri': 'infinity:23817', 'db_name': 'default_db'}
+	redis: {'db': 1, 'password': '********', 'host': 'redis:6379'}
+2025-03-01 15:41:46,626 INFO     23 Use Elasticsearch http://es01:9200 as the doc engine.
+2025-03-01 15:41:46,651 INFO     23 GET http://es01:9200/ [status:200 duration:0.023s]
+2025-03-01 15:41:46,656 INFO     23 HEAD http://es01:9200/ [status:200 duration:0.003s]
+2025-03-01 15:41:46,658 INFO     23 Elasticsearch http://es01:9200 is healthy.
+2025-03-01 15:41:46,662 WARNING  23 Load term.freq FAIL!
+2025-03-01 15:41:46,665 WARNING  23 Realtime synonym is disabled, since no redis connection.
+2025-03-01 15:41:46,670 WARNING  23 Load term.freq FAIL!
+2025-03-01 15:41:46,673 WARNING  23 Realtime synonym is disabled, since no redis connection.
+2025-03-01 15:41:46,674 INFO     23 MAX_CONTENT_LENGTH: 134217728
+2025-03-01 15:41:46,675 INFO     23 SERVER_QUEUE_MAX_LEN: 1024
+2025-03-01 15:41:46,675 INFO     23 SERVER_QUEUE_RETENTION: 3600
+2025-03-01 15:41:46,676 INFO     23 MAX_FILE_COUNT_PER_USER: 0
+2025-03-01 15:41:49,314 INFO     23 init web data success:2.479137659072876
+2025-03-01 15:41:49,317 INFO     23 RAGFlow HTTP server start...
+2025-03-01 15:41:49,322 INFO     23 [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:9380
+ * Running on http://172.18.0.6:9380
+2025-03-01 15:41:49,324 INFO     23 [33mPress CTRL+C to quit[0m
+2025-03-01 15:56:31,672 INFO     16 ragflow_server log path: /ragflow/logs/ragflow_server.log, log levels: {'peewee': 'WARNING', 'pdfminer': 'WARNING', 'root': 'INFO'}
+2025-03-01 15:56:41,423 INFO     16 init database on cluster mode successfully
+2025-03-01 15:56:56,469 INFO     16 
+        ____   ___    ______ ______ __               
+       / __ \ /   |  / ____// ____// /____  _      __
+      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
+
+    
+2025-03-01 15:56:56,472 INFO     16 RAGFlow version: v0.16.0 slim
+2025-03-01 15:56:56,474 INFO     16 project base: /ragflow
+2025-03-01 15:56:56,475 INFO     16 Current configs, from /ragflow/conf/service_conf.yaml:
+	ragflow: {'host': '0.0.0.0', 'http_port': 9380}
+	mysql: {'name': 'rag_flow', 'user': 'root', 'password': '********', 'host': 'mysql', 'port': 3306, 'max_connections': 100, 'stale_timeout': 30}
+	minio: {'user': 'rag_flow', 'password': '********', 'host': 'minio:9000'}
+	es: {'hosts': 'http://es01:9200', 'username': 'elastic', 'password': '********'}
+	infinity: {'uri': 'infinity:23817', 'db_name': 'default_db'}
+	redis: {'db': 1, 'password': '********', 'host': 'redis:6379'}
+2025-03-01 15:56:56,477 INFO     16 Use Elasticsearch http://es01:9200 as the doc engine.
+2025-03-01 15:56:56,570 INFO     16 GET http://es01:9200/ [status:200 duration:0.091s]
+2025-03-01 15:56:56,577 INFO     16 HEAD http://es01:9200/ [status:200 duration:0.006s]
+2025-03-01 15:56:56,580 INFO     16 Elasticsearch http://es01:9200 is healthy.
+2025-03-01 15:56:56,587 WARNING  16 Load term.freq FAIL!
+2025-03-01 15:56:56,592 WARNING  16 Realtime synonym is disabled, since no redis connection.
+2025-03-01 15:56:56,596 WARNING  16 Load term.freq FAIL!
+2025-03-01 15:56:56,599 WARNING  16 Realtime synonym is disabled, since no redis connection.
+2025-03-01 15:56:56,601 INFO     16 MAX_CONTENT_LENGTH: 134217728
+2025-03-01 15:56:56,602 INFO     16 SERVER_QUEUE_MAX_LEN: 1024
+2025-03-01 15:56:56,603 INFO     16 SERVER_QUEUE_RETENTION: 3600
+2025-03-01 15:56:56,604 INFO     16 MAX_FILE_COUNT_PER_USER: 0
+2025-03-01 15:57:04,098 INFO     16 init web data success:2.5805466175079346
+2025-03-01 15:57:04,102 INFO     16 RAGFlow HTTP server start...
+2025-03-01 15:57:04,105 INFO     16 [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:9380
+ * Running on http://172.18.0.6:9380
+2025-03-01 15:57:04,106 INFO     16 [33mPress CTRL+C to quit[0m
+2025-03-01 15:57:04,585 WARNING  16 load_user got exception Signature b'7_4W0ogQExT8P9SDICy6p9Ugu44' does not match
+2025-03-01 15:57:04,587 WARNING  16 load_user got exception Signature b'7_4W0ogQExT8P9SDICy6p9Ugu44' does not match
+2025-03-01 15:57:04,587 ERROR    16 401 Unauthorized: The server could not verify that you are authorized to access the URL requested. You either supplied the wrong credentials (e.g. a bad password), or your browser doesn't understand how to supply the credentials required.
+Traceback (most recent call last):
+  File "/ragflow/.venv/lib/python3.10/site-packages/flask/app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/ragflow/.venv/lib/python3.10/site-packages/flask/app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/ragflow/.venv/lib/python3.10/site-packages/flask_login/utils.py", line 285, in decorated_view
+    return current_app.login_manager.unauthorized()
+  File "/ragflow/.venv/lib/python3.10/site-packages/flask_login/login_manager.py", line 178, in unauthorized
+    abort(401)
+  File "/ragflow/.venv/lib/python3.10/site-packages/flask/helpers.py", line 272, in abort
+    current_app.aborter(code, *args, **kwargs)
+  File "/ragflow/.venv/lib/python3.10/site-packages/werkzeug/exceptions.py", line 863, in __call__
+    raise self.mapping[code](*args, **kwargs)
+werkzeug.exceptions.Unauthorized: 401 Unauthorized: The server could not verify that you are authorized to access the URL requested. You either supplied the wrong credentials (e.g. a bad password), or your browser doesn't understand how to supply the credentials required.
+2025-03-01 15:57:04,589 ERROR    16 401 Unauthorized: The server could not verify that you are authorized to access the URL requested. You either supplied the wrong credentials (e.g. a bad password), or your browser doesn't understand how to supply the credentials required.
+Traceback (most recent call last):
+  File "/ragflow/.venv/lib/python3.10/site-packages/flask/app.py", line 880, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/ragflow/.venv/lib/python3.10/site-packages/flask/app.py", line 865, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "/ragflow/.venv/lib/python3.10/site-packages/flask_login/utils.py", line 285, in decorated_view
+    return current_app.login_manager.unauthorized()
+  File "/ragflow/.venv/lib/python3.10/site-packages/flask_login/login_manager.py", line 178, in unauthorized
+    abort(401)
+  File "/ragflow/.venv/lib/python3.10/site-packages/flask/helpers.py", line 272, in abort
+    current_app.aborter(code, *args, **kwargs)
+  File "/ragflow/.venv/lib/python3.10/site-packages/werkzeug/exceptions.py", line 863, in __call__
+    raise self.mapping[code](*args, **kwargs)
+werkzeug.exceptions.Unauthorized: 401 Unauthorized: The server could not verify that you are authorized to access the URL requested. You either supplied the wrong credentials (e.g. a bad password), or your browser doesn't understand how to supply the credentials required.
+2025-03-01 15:57:04,593 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:04] "GET /v1/user/info HTTP/1.1" 200 -
+2025-03-01 15:57:04,595 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:04] "GET /v1/kb/list?page=1&page_size=30&keywords= HTTP/1.1" 200 -
+2025-03-01 15:57:08,081 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:08] "POST /v1/user/login HTTP/1.1" 200 -
+2025-03-01 15:57:15,433 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:15] "POST /v1/user/register HTTP/1.1" 200 -
+2025-03-01 15:57:18,368 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:18] "POST /v1/user/login HTTP/1.1" 200 -
+2025-03-01 15:57:25,345 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:25] "GET /v1/user/info HTTP/1.1" 200 -
+2025-03-01 15:57:25,352 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:25] "GET /v1/kb/list?page=1&page_size=30&keywords= HTTP/1.1" 200 -
+2025-03-01 15:57:39,887 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:39] "POST /v1/kb/create HTTP/1.1" 200 -
+2025-03-01 15:57:40,058 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:40] "GET /v1/kb/detail?kb_id=d8fa77c8f67211efbb120242ac120006 HTTP/1.1" 200 -
+2025-03-01 15:57:40,387 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:40] "GET /v1/user/tenant_info HTTP/1.1" 200 -
+2025-03-01 15:57:40,421 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:40] "GET /v1/kb/list HTTP/1.1" 200 -
+2025-03-01 15:57:40,448 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:40] "GET /v1/kb/detail?kb_id=d8fa77c8f67211efbb120242ac120006 HTTP/1.1" 200 -
+2025-03-01 15:57:40,531 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:40] "GET /v1/llm/list HTTP/1.1" 200 -
+2025-03-01 15:57:40,734 INFO     16 POST http://es01:9200/ragflow_ca473450f67211efae920242ac120006/_search [status:404 duration:0.069s]
+2025-03-01 15:57:40,736 ERROR    16 ESConnection.search ['ragflow_ca473450f67211efae920242ac120006'] query: {'query': {'bool': {'filter': [{'terms': {'knowledge_graph_kwd': ['graph']}}, {'terms': {'kb_id': ['d8fa77c8f67211efbb120242ac120006']}}]}}, 'from': 0, 'size': 1024, 'timeout': '600s', 'track_total_hits': True}
+Traceback (most recent call last):
+  File "/ragflow/rag/utils/es_conn.py", line 242, in search
+    res = self.es.search(index=indexNames,
+  File "/ragflow/.venv/lib/python3.10/site-packages/elasticsearch/_sync/client/utils.py", line 446, in wrapped
+    return api(*args, **kwargs)
+  File "/ragflow/.venv/lib/python3.10/site-packages/elasticsearch/_sync/client/__init__.py", line 3836, in search
+    return self.perform_request(  # type: ignore[return-value]
+  File "/ragflow/.venv/lib/python3.10/site-packages/elasticsearch/_sync/client/_base.py", line 320, in perform_request
+    raise HTTP_EXCEPTIONS.get(meta.status, ApiError)(
+elasticsearch.NotFoundError: NotFoundError(404, 'index_not_found_exception', 'no such index [ragflow_ca473450f67211efae920242ac120006]', ragflow_ca473450f67211efae920242ac120006, index_or_alias)
+2025-03-01 15:57:40,741 ERROR    16 NotFoundError(404, 'index_not_found_exception', 'no such index [ragflow_ca473450f67211efae920242ac120006]', ragflow_ca473450f67211efae920242ac120006, index_or_alias)
+Traceback (most recent call last):
+  File "/ragflow/api/apps/kb_app.py", line 305, in knowledge_graph
+    sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
+  File "<@beartype(rag.nlp.search.Dealer.search) at 0x7fad4645da20>", line 95, in search
+  File "/ragflow/rag/nlp/search.py", line 95, in search
+    res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
+  File "/ragflow/rag/utils/es_conn.py", line 256, in search
+    raise e
+  File "/ragflow/rag/utils/es_conn.py", line 242, in search
+    res = self.es.search(index=indexNames,
+  File "/ragflow/.venv/lib/python3.10/site-packages/elasticsearch/_sync/client/utils.py", line 446, in wrapped
+    return api(*args, **kwargs)
+  File "/ragflow/.venv/lib/python3.10/site-packages/elasticsearch/_sync/client/__init__.py", line 3836, in search
+    return self.perform_request(  # type: ignore[return-value]
+  File "/ragflow/.venv/lib/python3.10/site-packages/elasticsearch/_sync/client/_base.py", line 320, in perform_request
+    raise HTTP_EXCEPTIONS.get(meta.status, ApiError)(
+elasticsearch.NotFoundError: NotFoundError(404, 'index_not_found_exception', 'no such index [ragflow_ca473450f67211efae920242ac120006]', ragflow_ca473450f67211efae920242ac120006, index_or_alias)
+2025-03-01 15:57:40,744 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:40] "GET /v1/kb/d8fa77c8f67211efbb120242ac120006/knowledge_graph HTTP/1.1" 200 -
+2025-03-01 15:57:43,552 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:43] "GET /v1/system/version HTTP/1.1" 200 -
+2025-03-01 15:57:43,559 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:43] "GET /v1/llm/my_llms HTTP/1.1" 200 -
+2025-03-01 15:57:43,566 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:43] "GET /v1/user/tenant_info HTTP/1.1" 200 -
+2025-03-01 15:57:43,595 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:43] "GET /v1/llm/factories HTTP/1.1" 200 -
+2025-03-01 15:57:45,580 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:45] "POST /v1/user/setting HTTP/1.1" 200 -
+2025-03-01 15:57:45,592 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:45] "GET /v1/user/info HTTP/1.1" 200 -
+2025-03-01 15:57:47,940 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:47] "GET /v1/user/tenant_info HTTP/1.1" 200 -
+2025-03-01 15:57:47,968 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:47] "GET /v1/llm/list HTTP/1.1" 200 -
+2025-03-01 15:57:53,035 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:53] "GET /v1/user/tenant_info HTTP/1.1" 200 -
+2025-03-01 15:57:53,060 INFO     16 172.18.0.6 - - [01/Mar/2025 15:57:53] "GET /v1/llm/list HTTP/1.1" 200 -

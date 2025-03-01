@@ -1,0 +1,227 @@
+2025-03-01 15:41:51,896 INFO     24 task_executor_0 log path: /ragflow/logs/task_executor_0.log, log levels: {'peewee': 'WARNING', 'pdfminer': 'WARNING', 'root': 'INFO'}
+2025-03-01 15:41:52,265 INFO     24 init database on cluster mode successfully
+2025-03-01 15:42:01,060 INFO     24 TextRecognizer det uses CPU
+2025-03-01 15:42:01,205 INFO     24 TextRecognizer rec uses CPU
+2025-03-01 15:42:01,236 INFO     24 
+  ______           __      ______                     __            
+ /_  __/___ ______/ /__   / ____/  _____  _______  __/ /_____  _____
+  / / / __ `/ ___/ //_/  / __/ | |/_/ _ \/ ___/ / / / __/ __ \/ ___/
+ / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /    
+/_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/                               
+    
+2025-03-01 15:42:01,238 INFO     24 TaskExecutor: RAGFlow version: v0.16.0 slim
+2025-03-01 15:42:01,239 INFO     24 Use Elasticsearch http://es01:9200 as the doc engine.
+2025-03-01 15:42:01,250 INFO     24 GET http://es01:9200/ [status:200 duration:0.009s]
+2025-03-01 15:42:01,255 INFO     24 HEAD http://es01:9200/ [status:200 duration:0.003s]
+2025-03-01 15:42:01,256 INFO     24 Elasticsearch http://es01:9200 is healthy.
+2025-03-01 15:42:01,266 WARNING  24 Load term.freq FAIL!
+2025-03-01 15:42:01,271 WARNING  24 Realtime synonym is disabled, since no redis connection.
+2025-03-01 15:42:01,277 WARNING  24 Load term.freq FAIL!
+2025-03-01 15:42:01,281 WARNING  24 Realtime synonym is disabled, since no redis connection.
+2025-03-01 15:42:01,282 INFO     24 MAX_CONTENT_LENGTH: 134217728
+2025-03-01 15:42:01,283 INFO     24 SERVER_QUEUE_MAX_LEN: 1024
+2025-03-01 15:42:01,284 INFO     24 SERVER_QUEUE_RETENTION: 3600
+2025-03-01 15:42:01,285 INFO     24 MAX_FILE_COUNT_PER_USER: 0
+2025-03-01 15:42:01,300 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:42:01,303 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:42:01.299+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:42:31,315 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:42:31,317 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:42:31.314+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:43:01,349 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:43:01,351 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:43:01.348+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:43:31,381 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:43:31,383 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:43:31.381+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:44:01,414 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:44:01,416 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:44:01.414+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:44:31,446 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:44:31,448 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:44:31.446+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:45:01,478 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:45:01,480 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:45:01.478+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:45:31,506 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:45:31,509 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:45:31.506+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:46:01,540 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:46:01,542 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:46:01.539+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:46:31,568 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:46:31,570 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:46:31.568+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:47:01,601 WARNING  24 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:47:01,603 INFO     24 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:47:01.600+08:00", "boot_at": "2025-03-01T15:42:01.236+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:47:17,857 ERROR    24 RedisDB.get_unacked_for task_consumer_0 got exception: Error 111 connecting to redis:6379. Connection refused.
+Traceback (most recent call last):
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 1116, in get_connection
+    if connection.can_read() and connection.client_cache is None:
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 524, in can_read
+    return self._parser.can_read(timeout)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/_parsers/base.py", line 128, in can_read
+    return self._buffer and self._buffer.can_read(timeout)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/_parsers/socket.py", line 95, in can_read
+    return bool(self.unread_bytes()) or self._read_from_socket(
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/_parsers/socket.py", line 68, in _read_from_socket
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+valkey.exceptions.ConnectionError: Connection closed by server.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 302, in connect
+    sock = self.retry.call_with_retry(
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/retry.py", line 62, in call_with_retry
+    return do()
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 303, in <lambda>
+    lambda: self._connect(), lambda error: self.disconnect(error)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 728, in _connect
+    raise err
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 716, in _connect
+    sock.connect(socket_address)
+ConnectionRefusedError: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/ragflow/rag/utils/redis_conn.py", line 244, in get_unacked_for
+    group_info = self.REDIS.xinfo_groups(queue_name)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/commands/core.py", line 3810, in xinfo_groups
+    return self.execute_command("XINFO GROUPS", name)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/client.py", line 564, in execute_command
+    conn = self.connection or pool.get_connection(command_name, **options)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 1120, in get_connection
+    connection.connect()
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 308, in connect
+    raise ConnectionError(self._error_message(e))
+valkey.exceptions.ConnectionError: Error 111 connecting to redis:6379. Connection refused.
+2025-03-01 15:47:17,882 ERROR    24 RedisDB.queue_consumer rag_flow_svr_queue got exception: Error 111 connecting to redis:6379. Connection refused.
+Traceback (most recent call last):
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 302, in connect
+    sock = self.retry.call_with_retry(
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/retry.py", line 62, in call_with_retry
+    return do()
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 303, in <lambda>
+    lambda: self._connect(), lambda error: self.disconnect(error)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 728, in _connect
+    raise err
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 716, in _connect
+    sock.connect(socket_address)
+ConnectionRefusedError: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/ragflow/rag/utils/redis_conn.py", line 213, in queue_consumer
+    group_info = self.REDIS.xinfo_groups(queue_name)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/commands/core.py", line 3810, in xinfo_groups
+    return self.execute_command("XINFO GROUPS", name)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/client.py", line 564, in execute_command
+    conn = self.connection or pool.get_connection(command_name, **options)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 1107, in get_connection
+    connection.connect()
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 308, in connect
+    raise ConnectionError(self._error_message(e))
+valkey.exceptions.ConnectionError: Error 111 connecting to redis:6379. Connection refused.
+2025-03-01 15:47:22,659 ERROR    24 RedisDB.get_unacked_for task_consumer_0 got exception: Error -2 connecting to redis:6379. Name or service not known.
+Traceback (most recent call last):
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 302, in connect
+    sock = self.retry.call_with_retry(
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/retry.py", line 62, in call_with_retry
+    return do()
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 303, in <lambda>
+    lambda: self._connect(), lambda error: self.disconnect(error)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 696, in _connect
+    for res in socket.getaddrinfo(
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -2] Name or service not known
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/ragflow/rag/utils/redis_conn.py", line 244, in get_unacked_for
+    group_info = self.REDIS.xinfo_groups(queue_name)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/commands/core.py", line 3810, in xinfo_groups
+    return self.execute_command("XINFO GROUPS", name)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/client.py", line 564, in execute_command
+    conn = self.connection or pool.get_connection(command_name, **options)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 1107, in get_connection
+    connection.connect()
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 308, in connect
+    raise ConnectionError(self._error_message(e))
+valkey.exceptions.ConnectionError: Error -2 connecting to redis:6379. Name or service not known.
+2025-03-01 15:47:26,389 ERROR    24 RedisDB.queue_consumer rag_flow_svr_queue got exception: Error -2 connecting to redis:6379. Name or service not known.
+Traceback (most recent call last):
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 302, in connect
+    sock = self.retry.call_with_retry(
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/retry.py", line 62, in call_with_retry
+    return do()
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 303, in <lambda>
+    lambda: self._connect(), lambda error: self.disconnect(error)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 696, in _connect
+    for res in socket.getaddrinfo(
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -2] Name or service not known
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/ragflow/rag/utils/redis_conn.py", line 213, in queue_consumer
+    group_info = self.REDIS.xinfo_groups(queue_name)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/commands/core.py", line 3810, in xinfo_groups
+    return self.execute_command("XINFO GROUPS", name)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/client.py", line 564, in execute_command
+    conn = self.connection or pool.get_connection(command_name, **options)
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 1107, in get_connection
+    connection.connect()
+  File "/ragflow/.venv/lib/python3.10/site-packages/valkey/connection.py", line 308, in connect
+    raise ConnectionError(self._error_message(e))
+valkey.exceptions.ConnectionError: Error -2 connecting to redis:6379. Name or service not known.
+2025-03-01 15:57:00,208 INFO     17 task_executor_0 log path: /ragflow/logs/task_executor_0.log, log levels: {'peewee': 'WARNING', 'pdfminer': 'WARNING', 'root': 'INFO'}
+2025-03-01 15:57:00,687 INFO     17 init database on cluster mode successfully
+2025-03-01 15:57:09,587 INFO     17 TextRecognizer det uses CPU
+2025-03-01 15:57:09,724 INFO     17 TextRecognizer rec uses CPU
+2025-03-01 15:57:09,752 INFO     17 
+  ______           __      ______                     __            
+ /_  __/___ ______/ /__   / ____/  _____  _______  __/ /_____  _____
+  / / / __ `/ ___/ //_/  / __/ | |/_/ _ \/ ___/ / / / __/ __ \/ ___/
+ / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /    
+/_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/                               
+    
+2025-03-01 15:57:09,754 INFO     17 TaskExecutor: RAGFlow version: v0.16.0 slim
+2025-03-01 15:57:09,755 INFO     17 Use Elasticsearch http://es01:9200 as the doc engine.
+2025-03-01 15:57:09,766 INFO     17 GET http://es01:9200/ [status:200 duration:0.009s]
+2025-03-01 15:57:09,771 INFO     17 HEAD http://es01:9200/ [status:200 duration:0.003s]
+2025-03-01 15:57:09,772 INFO     17 Elasticsearch http://es01:9200 is healthy.
+2025-03-01 15:57:09,777 WARNING  17 Load term.freq FAIL!
+2025-03-01 15:57:09,781 WARNING  17 Realtime synonym is disabled, since no redis connection.
+2025-03-01 15:57:09,786 WARNING  17 Load term.freq FAIL!
+2025-03-01 15:57:09,790 WARNING  17 Realtime synonym is disabled, since no redis connection.
+2025-03-01 15:57:09,791 INFO     17 MAX_CONTENT_LENGTH: 134217728
+2025-03-01 15:57:09,793 INFO     17 SERVER_QUEUE_MAX_LEN: 1024
+2025-03-01 15:57:09,794 INFO     17 SERVER_QUEUE_RETENTION: 3600
+2025-03-01 15:57:09,794 INFO     17 MAX_FILE_COUNT_PER_USER: 0
+2025-03-01 15:57:09,822 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:57:09,825 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:57:09.822+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:57:39,852 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:57:39,854 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:57:39.851+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:58:09,885 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:58:09,886 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:58:09.884+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:58:39,909 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:58:39,911 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:58:39.908+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:59:09,941 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:59:09,943 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:59:09.941+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 15:59:39,945 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 15:59:39,947 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T15:59:39.944+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 16:00:09,974 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 16:00:09,976 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T16:00:09.973+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 16:00:40,007 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 16:00:40,010 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T16:00:40.006+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 16:01:10,042 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 16:01:10,044 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T16:01:10.041+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 16:01:40,060 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 16:01:40,062 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T16:01:40.060+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 16:02:10,093 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 16:02:10,095 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T16:02:10.092+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 16:02:40,113 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 16:02:40,115 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T16:02:40.112+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 16:03:10,123 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 16:03:10,126 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T16:03:10.122+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 16:03:40,156 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 16:03:40,159 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T16:03:40.155+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
+2025-03-01 16:04:10,187 WARNING  17 RedisDB.queue_info rag_flow_svr_queue got exception: no such key
+2025-03-01 16:04:10,189 INFO     17 task_consumer_0 reported heartbeat: {"name": "task_consumer_0", "now": "2025-03-01T16:04:10.186+08:00", "boot_at": "2025-03-01T15:57:09.752+08:00", "pending": 0, "lag": 0, "done": 0, "failed": 0, "current": null}
