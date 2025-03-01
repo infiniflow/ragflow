@@ -25,13 +25,14 @@ from flask import request, Response
 from flask_login import login_required, current_user
 
 from api.db import LLMType
-from api.db.services.dialog_service import DialogService, chat, ask, label_question
+from api.db.services.dialog_service import DialogService, chat, ask
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle, TenantService
 from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.app.tag import label_question
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821

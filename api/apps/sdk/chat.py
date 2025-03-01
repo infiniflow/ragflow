@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+
 from flask import request
 from api import settings
 from api.db import StatusEnum
@@ -41,7 +43,8 @@ def create(tenant_id):
         if kb.chunk_num == 0:
             return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
     kbs = KnowledgebaseService.get_by_ids(ids)
-    embd_count = list(set([kb.embd_id for kb in kbs]))
+    embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
+    embd_count = list(set(embd_ids))
     if len(embd_count) != 1:
         return get_result(message='Datasets use different embedding models."',
                           code=settings.RetCode.AUTHENTICATION_ERROR)
@@ -176,7 +179,8 @@ def update(tenant_id, chat_id):
                 if kb.chunk_num == 0:
                     return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
             kbs = KnowledgebaseService.get_by_ids(ids)
-            embd_count = list(set([kb.embd_id for kb in kbs]))
+            embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
+            embd_count = list(set(embd_ids))
             if len(embd_count) != 1:
                 return get_result(
                     message='Datasets use different embedding models."',
@@ -316,7 +320,8 @@ def list_chat(tenant_id):
         for kb_id in res["kb_ids"]:
             kb = KnowledgebaseService.query(id=kb_id)
             if not kb:
-                return get_error_data_result(message=f"Don't exist the kb {kb_id}")
+                logging.WARN(f"Don't exist the kb {kb_id}")
+                continue
             kb_list.append(kb[0].to_json())
         del res["kb_ids"]
         res["datasets"] = kb_list

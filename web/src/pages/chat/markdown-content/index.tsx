@@ -27,7 +27,7 @@ import { pipe } from 'lodash/fp';
 import styles from './index.less';
 
 const reg = /(~{2}\d+={2})/g;
-const curReg = /(~{2}\d+\${2})/g;
+// const curReg = /(~{2}\d+\${2})/g;
 
 const getChunkIndex = (match: string) => Number(match.slice(2, -2));
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
@@ -35,7 +35,6 @@ const MarkdownContent = ({
   reference,
   clickDocumentButton,
   content,
-  loading,
 }: {
   content: string;
   loading: boolean;
@@ -51,10 +50,8 @@ const MarkdownContent = ({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return loading
-      ? nextText?.concat('~~2$$') // TODO: The style of thinking also needs to be displayed when outputting
-      : pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
-  }, [content, loading, t]);
+    return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
+  }, [content, t]);
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -62,12 +59,22 @@ const MarkdownContent = ({
   }, [reference, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
-    (documentId: string, chunk: IReferenceChunk, isPdf: boolean) => () => {
-      if (!isPdf) {
-        return;
-      }
-      clickDocumentButton?.(documentId, chunk);
-    },
+    (
+      documentId: string,
+      chunk: IReferenceChunk,
+      isPdf: boolean,
+      documentUrl?: string,
+    ) =>
+      () => {
+        if (!isPdf) {
+          if (!documentUrl) {
+            return;
+          }
+          window.open(documentUrl, '_blank');
+        } else {
+          clickDocumentButton?.(documentId, chunk);
+        }
+      },
     [clickDocumentButton],
   );
 
@@ -96,6 +103,7 @@ const MarkdownContent = ({
         (x) => x?.doc_id === chunkItem?.document_id,
       );
       const documentId = document?.doc_id;
+      const documentUrl = document?.url;
       const fileThumbnail = documentId ? fileThumbnails[documentId] : '';
       const fileExtension = documentId ? getExtension(document?.doc_name) : '';
       const imageId = chunkItem?.image_id;
@@ -149,6 +157,7 @@ const MarkdownContent = ({
                     documentId,
                     chunkItem,
                     fileExtension === 'pdf',
+                    documentUrl,
                   )}
                 >
                   {document?.doc_name}
@@ -173,9 +182,9 @@ const MarkdownContent = ({
         );
       });
 
-      replacedText = reactStringReplace(replacedText, curReg, (match, i) => (
-        <span className={styles.cursor} key={i}></span>
-      ));
+      // replacedText = reactStringReplace(replacedText, curReg, (match, i) => (
+      //   <span className={styles.cursor} key={i}></span>
+      // ));
 
       return replacedText;
     },

@@ -1,0 +1,8 @@
+{
+  "label": "Agent Components",
+  "position": 20,
+  "link": {
+    "type": "generated-index",
+    "description": "A complete reference for RAGFlow's agent components."
+  }
+}

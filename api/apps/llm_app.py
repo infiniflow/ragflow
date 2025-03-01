@@ -152,6 +152,7 @@ def add_llm():
 
     elif factory == "Tencent Cloud":
         req["api_key"] = apikey_json(["tencent_cloud_sid", "tencent_cloud_sk"])
+        return set_api_key()
 
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
@@ -169,6 +170,10 @@ def add_llm():
 
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"] + "___OpenAI-API"
+        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
+
+    elif factory == "VLLM":
+        llm_name = req["llm_name"] + "___VLLM"
         api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
     elif factory == "XunFei Spark":
@@ -230,21 +235,23 @@ def add_llm():
         try:
             m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
                 "temperature": 0.9})
-            if not tc:
+            if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
             msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
-        mdl = RerankModel[factory](
-            key=llm["api_key"],
-            model_name=mdl_nm,
-            base_url=llm["api_base"]
-        )
         try:
+            mdl = RerankModel[factory](
+                key=llm["api_key"],
+                model_name=mdl_nm,
+                base_url=llm["api_base"]
+            )
             arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!", "Ohh, my friend!"])
             if len(arr) == 0:
                 raise Exception("Not known.")
+        except KeyError:
+            msg += f"{factory} dose not support this model({mdl_nm})"
         except Exception as e:
             msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
@@ -257,7 +264,7 @@ def add_llm():
         try:
             with open(os.path.join(get_project_base_directory(), "web/src/assets/yay.jpg"), "rb") as f:
                 m, tc = mdl.describe(f.read())
-                if not tc:
+                if not m and not tc:
                     raise Exception(m)
         except Exception as e:
             msg += f"\nFail to access model({mdl_nm})." + str(e)

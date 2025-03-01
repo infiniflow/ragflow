@@ -17,6 +17,7 @@
 import logging
 import os
 import random
+from timeit import default_timer as timer
 
 import xgboost as xgb
 from io import BytesIO
@@ -277,7 +278,11 @@ class RAGFlowPdfParser:
                 b["SP"] = ii
 
     def __ocr(self, pagenum, img, chars, ZM=3):
+        start = timer()
         bxs = self.ocr.detect(np.array(img))
+        logging.info(f"__ocr detecting boxes of a image cost ({timer() - start}s)")
+
+        start = timer()
         if not bxs:
             self.boxes.append([])
             return
@@ -308,14 +313,22 @@ class RAGFlowPdfParser:
             else:
                 bxs[ii]["text"] += c["text"]
 
+        logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
+        start = timer()
+        boxes_to_reg = []
+        img_np = np.array(img)
         for b in bxs:
             if not b["text"]:
                 left, right, top, bott = b["x0"] * ZM, b["x1"] * \
                                          ZM, b["top"] * ZM, b["bottom"] * ZM
-                b["text"] = self.ocr.recognize(np.array(img),
-                                               np.array([[left, top], [right, top], [right, bott], [left, bott]],
-                                                        dtype=np.float32))
+                b["box_image"] = self.ocr.get_rotate_crop_image(img_np, np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
+                boxes_to_reg.append(b)
             del b["txt"]
+        texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg])
+        for i in range(len(boxes_to_reg)):
+            boxes_to_reg[i]["text"] = texts[i]
+            del boxes_to_reg[i]["box_image"]
+        logging.info(f"__ocr recognize {len(bxs)} boxes cost {timer() - start}s")
         bxs = [b for b in bxs if b["text"]]
         if self.mean_height[-1] == 0:
             self.mean_height[-1] = np.median([b["bottom"] - b["top"]
@@ -951,13 +964,14 @@ class RAGFlowPdfParser:
         self.page_cum_height = [0]
         self.page_layout = []
         self.page_from = page_from
+        start = timer()
         try:
             self.pdf = pdfplumber.open(fnm) if isinstance(
                 fnm, str) else pdfplumber.open(BytesIO(fnm))
             self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
                                 enumerate(self.pdf.pages[page_from:page_to])]
             try:
-                self.page_chars = [[{**c, 'top': c['top'], 'bottom': c['bottom']} for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
+                self.page_chars = [[c for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
             except Exception as e:
                 logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
                 self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
@@ -965,6 +979,7 @@ class RAGFlowPdfParser:
             self.total_page = len(self.pdf.pages)
         except Exception:
             logging.exception("RAGFlowPdfParser __images__")
+        logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
 
         self.outlines = []
         try:
@@ -994,7 +1009,7 @@ class RAGFlowPdfParser:
         else:
             self.is_english = False
 
-        # st = timer()
+        start = timer()
         for i, img in enumerate(self.page_images):
             chars = self.page_chars[i] if not self.is_english else []
             self.mean_height.append(
@@ -1016,7 +1031,7 @@ class RAGFlowPdfParser:
             self.__ocr(i + 1, img, chars, zoomin)
             if callback and i % 6 == 5:
                 callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
-        # print("OCR:", timer()-st)
+        logging.info(f"__images__ {len(self.page_images)} pages cost {timer() - start}s")
 
         if not self.is_english and not any(
                 [c for c in self.page_chars]) and self.boxes:
