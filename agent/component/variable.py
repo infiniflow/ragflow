@@ -71,6 +71,34 @@ REQUEST: Get 'UserCode', 'Department' from the conversation.
     "Department":"HR"
 }}
 ```
+###########
+# Example 3
+REQUEST: Get 'Topic', 'The languages of the latest question' from the conversation.
+## Conversation
+    -USER: Xin chào.
+    -ASSISTANT: Chào bạn, Ngày mới tốt lành!
+    -USER: How are you?.
+## Output template: 
+```json
+{{
+    "Topic":"Greetings",
+    "The languages of the latest question":"English"
+}}
+```
+###########
+# Example 4
+REQUEST: Get 'The languages of the latest question', 'Topic' from the conversation.
+## Conversation
+    -USER: 今天是个美好的一天.
+    -ASSISTANT: 是的，如果你今天走在街上，那就太好了
+    -USER: 你知道哪里有意义吗？.
+## Output template: 
+```json
+{{
+    "Topic":"外出",
+    "The languages of the latest question":"Chinese"
+}}
+```
 ###################
 # Real Data
 REQUEST: Get '{", ".join(variables.keys())}' from the conversation.
