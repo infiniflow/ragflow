@@ -1,4 +1,5 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
+import { LLMFactory } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Modal } from 'antd';
 import { useEffect } from 'react';
@@ -18,7 +19,7 @@ type FieldType = {
   group_id?: string;
 };
 
-const modelsWithBaseUrl = ['OpenAI', 'Azure-OpenAI'];
+const modelsWithBaseUrl = [LLMFactory.OpenAI, LLMFactory.AzureOpenAI];
 
 const ApiKeyModal = ({
   visible,

@@ -15,7 +15,6 @@
 #
 import logging
 import json
-from abc import ABC
 from copy import deepcopy
 from functools import partial
 
@@ -25,7 +24,7 @@ from agent.component import component_class
 from agent.component.base import ComponentBase
 
 
-class Canvas(ABC):
+class Canvas:
     """
     dsl = {
         "components": {
@@ -162,7 +161,7 @@ class Canvas(ABC):
             self.components[k]["obj"].reset()
         self._embed_id = ""
 
-    def get_compnent_name(self, cid):
+    def get_component_name(self, cid):
         for n in self.dsl["graph"]["nodes"]:
             if cid == n["id"]:
                 return n["data"]["name"]
@@ -210,7 +209,7 @@ class Canvas(ABC):
                             if c not in waiting:
                                 waiting.append(c)
                             continue
-                    yield "*'{}'* is running...🕞".format(self.get_compnent_name(c))
+                    yield "*'{}'* is running...🕞".format(self.get_component_name(c))
 
                     if cpn.component_name.lower() == "iteration":
                         st_cpn = cpn.get_start()

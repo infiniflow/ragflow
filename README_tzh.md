@@ -56,7 +56,7 @@
 
 - 2025-02-05 更新「SILICONFLOW」的型號清單並新增 Deepseek-R1/DeepSeek-V3 的支援。
 - 2025-01-26 最佳化知識圖譜的擷取與應用，提供了多種配置選擇。
-- 2024-12-18 升級了 Deepdoc 的文檔佈局分析模型。
+- 2024-12-18 升級了 DeepDoc 的文檔佈局分析模型。
 - 2024-12-04 支援知識庫的 Pagerank 分數。
 - 2024-11-22 完善了 Agent 中的變數定義和使用。
 - 2024-11-01 對解析後的 chunk 加入關鍵字抽取和相關問題產生以提高回想的準確度。
@@ -153,11 +153,11 @@
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   | ----------------- | --------------- | --------------------- | ------------------------ |
+   |-------------------|-----------------|-----------------------|--------------------------|
    | v0.16.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.16.0-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.16.0-slim      | &approx;2       | ❌                     | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
    > [!TIP]
    > 如果你遇到 Docker 映像檔拉不下來的問題，可以在 **docker/.env** 檔案內根據變數 `RAGFLOW_IMAGE` 的註解提示選擇華為雲或阿里雲的對應映像。
@@ -181,9 +181,6 @@
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
-    * Running on http://127.0.0.1:9380
-    * Running on http://x.x.x.x:9380
-    INFO:werkzeug:Press CTRL+C to quit
    ```
 
    > 如果您跳過這一步驟系統確認步驟就登入 RAGFlow，你的瀏覽器有可能會提示 `network anormal` 或 `網路異常`，因為 RAGFlow 可能並未完全啟動成功。
@@ -200,7 +197,7 @@
 
 系統配置涉及以下三份文件：
 
-- [.env](./docker/.env)：存放一些基本的系統環境變量，例如 `SVR_HTTP_PORT`、`MYSQL_PASSWORD`、`MINIO_PASSWORD` 等。
+- [.env](./docker/.env)：存放一些系統環境變量，例如 `SVR_HTTP_PORT`、`MYSQL_PASSWORD`、`MINIO_PASSWORD` 等。
 - [service_conf.yaml.template](./docker/service_conf.yaml.template)：設定各類別後台服務。
 - [docker-compose.yml](./docker/docker-compose.yml): 系統依賴該檔案完成啟動。
 
@@ -266,7 +263,7 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
 
    ```bash
    pipx install uv
-   export UV_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+   export UV_INDEX=https://mirrors.aliyun.com/pypi/simple
    ```
 
 2. 下載原始碼並安裝 Python 依賴：

@@ -85,6 +85,7 @@ from .chat_model import (
     GoogleChat,
     HuggingFaceChat,
     GPUStackChat,
+    ModelScopeChat,
 )
 
 from .cv_model import (
@@ -159,6 +160,7 @@ EmbeddingModel = {
     "NVIDIA": NvidiaEmbed,
     "LM-Studio": LmStudioEmbed,
     "OpenAI-API-Compatible": OpenAI_APIEmbed,
+    "VLLM": OpenAI_APIEmbed,
     "Cohere": CoHereEmbed,
     "TogetherAI": TogetherAIEmbed,
     "PerfXCloud": PerfXCloudEmbed,
@@ -187,6 +189,7 @@ CvModel = {
     "LM-Studio": LmStudioCV,
     "StepFun": StepFunCV,
     "OpenAI-API-Compatible": OpenAI_APICV,
+    "VLLM": OpenAI_APICV,
     "TogetherAI": TogetherAICV,
     "01.AI": YiCV,
     "Tencent Hunyuan": HunyuanCV,
@@ -214,6 +217,7 @@ ChatModel = {
     "NVIDIA": NvidiaChat,
     "LM-Studio": LmStudioChat,
     "OpenAI-API-Compatible": OpenAI_APIChat,
+    "VLLM": OpenAI_APIChat,
     "Cohere": CoHereChat,
     "LeptonAI": LeptonAIChat,
     "TogetherAI": TogetherAIChat,
@@ -231,6 +235,7 @@ ChatModel = {
     "Google Cloud": GoogleChat,
     "HuggingFace": HuggingFaceChat,
     "GPUStack": GPUStackChat,
+    "ModelScope":ModelScopeChat,
 }
 
 RerankModel = {
@@ -242,6 +247,7 @@ RerankModel = {
     "NVIDIA": NvidiaRerank,
     "LM-Studio": LmStudioRerank,
     "OpenAI-API-Compatible": OpenAI_APIRerank,
+    "VLLM": CoHereRerank,
     "Cohere": CoHereRerank,
     "TogetherAI": TogetherAIRerank,
     "SILICONFLOW": SILICONFLOWRerank,

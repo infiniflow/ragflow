@@ -35,12 +35,14 @@ class InvokeParam(ComponentParamBase):
         self.url = ""
         self.timeout = 60
         self.clean_html = False
+        self.datatype = "json"  # New parameter to determine data posting type
 
     def check(self):
         self.check_valid_value(self.method.lower(), "Type of content from the crawler", ['get', 'post', 'put'])
         self.check_empty(self.url, "End point URL")
         self.check_positive_integer(self.timeout, "Timeout time in second")
         self.check_boolean(self.clean_html, "Clean HTML")
+        self.check_valid_value(self.datatype.lower(), "Data post type", ['json', 'formdata'])  # Check for valid datapost value
 
 
 class Invoke(ComponentBase, ABC):
@@ -94,22 +96,36 @@ class Invoke(ComponentBase, ABC):
             return Invoke.be_output(response.text)
 
         if method == 'put':
-            response = requests.put(url=url,
-                                    json=args,
-                                    headers=headers,
-                                    proxies=proxies,
-                                    timeout=self._param.timeout)
+            if self._param.datatype.lower() == 'json':
+                response = requests.put(url=url,
+                                        json=args,
+                                        headers=headers,
+                                        proxies=proxies,
+                                        timeout=self._param.timeout)
+            else:
+                response = requests.put(url=url,
+                                        data=args,
+                                        headers=headers,
+                                        proxies=proxies,
+                                        timeout=self._param.timeout)
             if self._param.clean_html:
                 sections = HtmlParser()(None, response.content)
                 return Invoke.be_output("\n".join(sections))
             return Invoke.be_output(response.text)
 
         if method == 'post':
-            response = requests.post(url=url,
-                                    json=args,
-                                    headers=headers,
-                                    proxies=proxies,
-                                    timeout=self._param.timeout)
+            if self._param.datatype.lower() == 'json':
+                response = requests.post(url=url,
+                                         json=args,
+                                         headers=headers,
+                                         proxies=proxies,
+                                         timeout=self._param.timeout)
+            else:
+                response = requests.post(url=url,
+                                         data=args,
+                                         headers=headers,
+                                         proxies=proxies,
+                                         timeout=self._param.timeout)
             if self._param.clean_html:
                 sections = HtmlParser()(None, response.content)
                 return Invoke.be_output("\n".join(sections))

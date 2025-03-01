@@ -248,27 +248,60 @@ export const useUploadNextDocument = () => {
   } = useMutation({
     mutationKey: ['uploadDocument'],
     mutationFn: async (fileList: UploadFile[]) => {
-      const formData = new FormData();
-      formData.append('kb_id', knowledgeId);
-      fileList.forEach((file: any) => {
-        formData.append('file', file);
-      });
+      const partitionedFileList = fileList.reduce<UploadFile[][]>(
+        (acc, cur, index) => {
+          const partIndex = Math.floor(index / 20); // Uploads 20 documents at a time
+          if (!acc[partIndex]) {
+            acc[partIndex] = [];
+          }
+          acc[partIndex].push(cur);
+          return acc;
+        },
+        [],
+      );
 
-      try {
-        const ret = await kbService.document_upload(formData);
-        const code = get(ret, 'data.code');
-        if (code === 0) {
-          message.success(i18n.t('message.uploaded'));
-        }
+      let allRet = [];
+      for (const listPart of partitionedFileList) {
+        const formData = new FormData();
+        formData.append('kb_id', knowledgeId);
+        listPart.forEach((file: any) => {
+          formData.append('file', file);
+        });
 
-        if (code === 0 || code === 500) {
-          queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+        try {
+          const ret = await kbService.document_upload(formData);
+          allRet.push(ret);
+        } catch (error) {
+          allRet.push({ data: { code: 500 } });
+
+          const filenames = listPart.map((file: any) => file.name).join(', ');
+          console.warn(error);
+          console.warn('Error uploading files:', filenames);
         }
-        return ret?.data;
-      } catch (error) {
-        console.warn(error);
-        return {};
       }
+
+      const succeed = allRet.every((ret) => get(ret, 'data.code') === 0);
+      const any500 = allRet.some((ret) => get(ret, 'data.code') === 500);
+
+      if (succeed) {
+        message.success(i18n.t('message.uploaded'));
+      }
+
+      if (succeed || any500) {
+        queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+      }
+
+      const allData = {
+        code: any500
+          ? 500
+          : succeed
+            ? 0
+            : allRet.filter((ret) => get(ret, 'data.code') !== 0)[0]?.data
+                ?.code,
+        data: succeed,
+        message: allRet.map((ret) => get(ret, 'data.message')).join('/n'),
+      };
+      return allData;
     },
   });
 

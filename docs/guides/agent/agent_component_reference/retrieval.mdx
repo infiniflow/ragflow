@@ -1,0 +1,75 @@
+---
+sidebar_position: 4
+slug: /retrieval_component
+---
+
+# Retrieval component
+
+A component that retrieves information from specified datasets.
+
+## Scenarios
+
+A **Retrieval** component is essential in most RAG scenarios, where information is extracted from designated knowledge bases before being sent to the LLM for content generation.
+
+## Configurations
+
+Click on a **Retrieval** component to open its configuration window.
+
+### Input
+
+The **Retrieval** component relies on input variables to specify its data inputs (queries). Click **+ Add variable** in the **Input** section to add the desired input variables. There are two types of input variables: **Reference** and **Text**.
+
+- **Reference**: Uses a component's output or a user input as the data source. You are required to select from the dropdown menu:
+  - A component ID under **Component Output**, or 
+  - A global variable under **Begin input**, which is defined in the **Begin** component.
+- **Text**: Uses fixed text as the query. You are required to enter static text.
+
+### Similarity threshold
+
+RAGFlow employs a combination of weighted keyword similarity and weighted vector cosine similarity during retrieval. This parameter sets the threshold for similarities between the user query and chunks stored in the datasets. Any chunk with a similarity score below this threshold will be excluded from the results.
+
+Defaults to 0.2.
+
+### Keyword similarity weight
+
+This parameter sets the weight of keyword similarity in the combined similarity score. The total of the two weights must equal 1.0. Its default value is 0.7, which means the weight of vector similarity in the combined search is 1 - 0.7 = 0.3.
+
+### Top N
+
+This parameter selects the "Top N" chunks from retrieved ones and feed them to the LLM.
+
+Defaults to 8.
+
+
+### Rerank model
+
+*Optional*
+
+If a rerank model is selected, a combination of weighted keyword similarity and weighted reranking score will be used for retrieval.
+
+:::caution WARNING
+Using a rerank model will *significantly* increase the system's response time.
+:::
+
+
+### Knowledge bases 
+
+*Required*
+
+You are required to select the knowledge base(s) to retrieve data from.
+
+:::danger IMPORTANT 
+If you select multiple knowledge bases, you must ensure that the knowledge bases (datasets) you select use the same embedding model; otherwise, an error message would occur.
+:::
+
+
+
+## Examples
+
+Explore our customer service agent template, where the **Retrieval** component (component ID: **Search product info**) is used to search the dataset and send the Top N results to the LLM:
+
+1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
+2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
+3. On the **agent template** page, hover over the **Customer service** card and click **Use this template**.
+4. Name your new agent and click **OK** to enter the workflow editor.
+5. Click on the **Retrieval** component to display its **Configuration** window.

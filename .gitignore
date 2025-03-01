@@ -43,3 +43,6 @@ sdk/python/dist/
 sdk/python/ragflow_sdk.egg-info/
 huggingface.co/
 nltk_data/
+
+# Exclude hash-like temporary files like 9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+*[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*
