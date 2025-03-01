@@ -57,7 +57,7 @@
 
 - 2025-02-05 更新硅基流动的模型列表，增加了对 Deepseek-R1/DeepSeek-V3 的支持。
 - 2025-01-26 优化知识图谱的提取和应用，提供了多种配置选择。
-- 2024-12-18 升级了 Deepdoc 的文档布局分析模型。
+- 2024-12-18 升级了 DeepDoc 的文档布局分析模型。
 - 2024-12-04 支持知识库的 Pagerank 分数。
 - 2024-11-22 完善了 Agent 中的变量定义和使用。
 - 2024-11-01 对解析后的 chunk 加入关键词抽取和相关问题生成以提高召回的准确度。
@@ -154,11 +154,11 @@
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   | ----------------- | --------------- | --------------------- | ------------------------ |
+   |-------------------|-----------------|-----------------------|--------------------------|
    | v0.16.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.16.0-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.16.0-slim      | &approx;2       | ❌                     | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
    > [!TIP]
    > 如果你遇到 Docker 镜像拉不下来的问题，可以在 **docker/.env** 文件内根据变量 `RAGFLOW_IMAGE` 的注释提示选择华为云或者阿里云的相应镜像。
@@ -182,12 +182,9 @@
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
-    * Running on http://127.0.0.1:9380
-    * Running on http://x.x.x.x:9380
-    INFO:werkzeug:Press CTRL+C to quit
    ```
 
-   > 如果您跳过这一步系统确认步骤就登录 RAGFlow，你的浏览器有可能会提示 `network anormal` 或 `网络异常`，因为 RAGFlow 可能并未完全启动成功。
+   > 如果您在没有看到上面的提示信息出来之前，就尝试登录 RAGFlow，你的浏览器有可能会提示 `network anormal` 或 `网络异常`。
 
 5. 在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
    > 上面这个例子中，您只需输入 http://IP_OF_YOUR_MACHINE 即可：未改动过配置则无需输入端口（默认的 HTTP 服务端口 80）。

@@ -1,29 +1,21 @@
 ---
-sidebar_position: 8
-slug: /rewrite_component
+sidebar_position: 2
+slug: /generate_component
 ---
 
-# Rewrite component
+# Generate component
 
-A component that rewrites a user query.
+The component that prompts the LLM to respond appropriately.
 
 ---
 
-A **Rewrite** component uses a specified LLM to rewrite a user query from the **Interact** component, based on the context of previous dialogues.
+A **Generate** component fine-tunes the LLM and sets its prompt.
 
 ## Scenarios
 
-A **Rewrite** component is essential when you need to optimize a user query based on the context of previous conversations. It is usually the upstream component of a **Retrieval** component.
-
-:::tip NOTE
-See also the [Keyword](https://ragflow.io/docs/dev/keyword_component) component, a similar component used for multi-turn optimization.
-:::
+A **Generate** component is essential when you need the LLM to assist with summarizing, translating, or controlling various tasks. 
 
 ## Configurations
-
-:::tip NOTE
-The **Rewrite** component uses the user-agent interaction from the **Interact** component as its data input. Therefore, there is no need to specify its data inputs in the Configurations.
-:::
 
 ### Model
 
@@ -60,23 +52,62 @@ Click the dropdown menu of **Model** to show the model configuration window.
 - If you are uncertain about the mechanism behind **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**, simply choose one of the three options of **Preset configurations**.
 :::
 
+### System prompt
+
+Typically, you use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. We do not plan to elaborate on this topic, as it can be as extensive as prompt engineering. However, please be aware that the system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. 
+
+Keys in a system prompt should be enclosed in curly braces. Below is a prompt excerpt of a **Generate** component from the **Interpreter** template (component ID: **Reflect**):
+
+```text
+Your task is to read a source text and a translation to {target_lang}, and give constructive suggestions to improve the translation. The source text and initial translation, delimited by XML tags <SOURCE_TEXT></SOURCE_TEXT> and <TRANSLATION></TRANSLATION>, are as follows:
+
+<SOURCE_TEXT>
+{source_text}
+</SOURCE_TEXT>
+
+<TRANSLATION>
+{translation_1}
+</TRANSLATION>
+
+When writing suggestions, pay attention to whether there are ways to improve the translation's fluency, by applying {target_lang} grammar, spelling and punctuation rules, and ensuring there are no unnecessary repetitions.
+- Each suggestion should address one specific part of the translation.
+- Output the suggestions only.
+```
+
+Where `{source_text}` and `{target_lang}` are global variables defined by the **Begin** component, while `{translation_1}` is the output of another **Generate** component with the component ID **Translate directly**.
+
+
+:::danger IMPORTANT
+A **Generate** component relies on keys (variables) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence. Keys in a **Generate** component are used in conjunction with the system prompt to specify data inputs for the LLM. Use a forward slash `/` to show the keys to use.
+:::
+
+### Cite 
+
+This toggle sets whether to cite the original text as reference. 
+
+
+:::tip NOTE
+This feature is used for multi-turn dialogue *only* and is applicable *only* when the original documents are uploaded to a knowledge base and have finished file parsing.
+:::
+
 
 ### Message window size
 
 An integer specifying the number of previous dialogue rounds to input into the LLM. For example, if it is set to 12, the tokens from the last 12 dialogue rounds will be fed to the LLM. This feature consumes additional tokens.
 
-Defaults to 1.
-
 :::tip IMPORTANT
-This feature is used for multi-turn dialogue *only*. If your **Categorize** component is not part of a multi-turn dialogue (i.e., it is not in a loop), leave this field as-is.
+This feature is used for multi-turn dialogue *only*.
 :::
+
 
 ## Examples
 
-Explore our customer service agent template, where the **Rewrite** component (component ID: **Refine Question**) is used to optimize a product-specific user query based on context of previous dialogues before passing it on to the **Retrieval** component.
+You can explore our three-step interpreter agent template, where a **Generate** component (component ID: **Reflect**) takes three global variables:
 
 1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
 2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
-3. On the **agent template** page, hover over the **Customer service** card and click **Use this template**.
+3. On the **agent template** page, hover over the **Interpreter** card and click **Use this template**.
 4. Name your new agent and click **OK** to enter the workflow editor.
-5. Click on the **Rewrite** component to display its **Configuration** window.
+5. Click on component **Reflect**, to display its **Configuration** window, where:
+   - `{target_lang}` and `{source_text}` are defined in the **Begin** component and require user input.
+   - `{translation_1}` is the output from the upstream component **Translate directly**.

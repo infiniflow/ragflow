@@ -217,7 +217,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
         model=model,
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Who you are?"},
+            {"role": "user", "content": "Who are you?"},
             {"role": "assistant", "content": "I am an AI assistant named..."},
             {"role": "user", "content": "Can you tell me how to install neovim"},
         ],
@@ -236,14 +236,20 @@ def chat_completion_openai_like(tenant_id, chat_id):
     messages = req.get("messages", [])
     # To prevent empty [] input
     if len(messages) < 1:
-        return get_error_data_result("You have to provide messages")
+        return get_error_data_result("You have to provide messages.")
+    if messages[-1]["role"] != "user":
+        return get_error_data_result("The last content of this conversation is not from user.")
+
+    prompt = messages[-1]["content"]
+    # Treat context tokens as reasoning tokens
+    context_token_used = sum(len(message["content"]) for message in messages)
 
     dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
     if not dia:
         return get_error_data_result(f"You don't own the chat {chat_id}")
     dia = dia[0]
 
-    # Filter system and assistant messages
+    # Filter system and non-sense assistant messages
     msg = None
     msg = [m for m in messages if m["role"] != "system" and (m["role"] != "assistant" or msg)]
 
@@ -251,7 +257,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
         # The value for the usage field on all chunks except for the last one will be null.
         # The usage field on the last chunk contains token usage statistics for the entire request.
         # The choices field on the last chunk will always be an empty array [].
-        def streamed_respose_generator(chat_id, dia, msg):
+        def streamed_response_generator(chat_id, dia, msg):
             token_used = 0
             response = {
                 "id": f"chatcmpl-{chat_id}",
@@ -281,22 +287,24 @@ def chat_completion_openai_like(tenant_id, chat_id):
                     incremental = answer[token_used:]
                     token_used += len(incremental)
                     response["choices"][0]["delta"]["content"] = incremental
-                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             except Exception as e:
                 response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
-                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
 
-            # The last chunck
+            # The last chunk
             response["choices"][0]["delta"]["content"] = None
             response["choices"][0]["finish_reason"] = "stop"
             response["usage"] = {
-                "prompt_tokens": len(msg),
+                "prompt_tokens": len(prompt),
                 "completion_tokens": token_used,
-                "total_tokens": len(msg) + token_used
+                "total_tokens": len(prompt) + token_used
             }
-            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+            yield "data:[DONE]\n\n"
 
-        resp = Response(streamed_respose_generator(chat_id, dia, msg), mimetype="text/event-stream")
+
+        resp = Response(streamed_response_generator(chat_id, dia, msg), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
@@ -308,6 +316,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
             # focus answer content only
             answer = ans
             break
+        content = answer["answer"]
 
         response  = {
             "id": f"chatcmpl-{chat_id}",
@@ -315,20 +324,20 @@ def chat_completion_openai_like(tenant_id, chat_id):
             "created": int(time.time()),
             "model": req.get("model", ""),
             "usage": {
-                "prompt_tokens": len(messages),
-                "completion_tokens": len(answer),
-                "total_tokens": len(messages) + len(answer),
+                "prompt_tokens": len(prompt),
+                "completion_tokens": len(content),
+                "total_tokens": len(prompt) + len(content),
                 "completion_tokens_details": {
-                    "reasoning_tokens": len(answer),
-                    "accepted_prediction_tokens": len(answer),
-                    "rejected_prediction_tokens": len(answer)
+                    "reasoning_tokens": context_token_used,
+                    "accepted_prediction_tokens": len(content),
+                    "rejected_prediction_tokens": 0 # 0 for simplicity
                 }
             },
             "choices": [
                 {
                     "message": {
                         "role": "assistant",
-                        "content": answer["answer"]
+                        "content": content
                     },
                     "logprobs": None,
                     "finish_reason": "stop",

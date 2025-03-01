@@ -42,9 +42,9 @@ RAGFlow offers multiple chunking template to facilitate chunking files of differ
 | **Template** | Description                                                           | File format                                          |
 |--------------|-----------------------------------------------------------------------|------------------------------------------------------|
 | General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, EXCEL, PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF |
-| Q&A          |                                                                       | EXCEL, CSV/TXT                                       |
+| Q&A          |                                                                       | XLSX, CSV/TXT                                        |
 | Manual       |                                                                       | PDF                                                  |
-| Table        |                                                                       | EXCEL, CSV/TXT                                       |
+| Table        |                                                                       | XLSX, CSV/TXT                                        |
 | Paper        |                                                                       | PDF                                                  |
 | Book         |                                                                       | DOCX, PDF, TXT                                       |
 | Laws         |                                                                       | DOCX, PDF, TXT                                       |

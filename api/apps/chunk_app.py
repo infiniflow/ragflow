@@ -19,9 +19,10 @@ import json
 from flask import request
 from flask_login import login_required, current_user
 
-from api.db.services.dialog_service import keyword_extraction, label_question
 from rag.app.qa import rmPrefix, beAdoc
+from rag.app.tag import label_question
 from rag.nlp import search, rag_tokenizer
+from rag.prompts import keyword_extraction
 from rag.settings import PAGERANK_FLD
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType

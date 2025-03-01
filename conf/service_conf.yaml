@@ -5,25 +5,25 @@ mysql:
   name: 'rag_flow'
   user: 'root'
   password: 'infini_rag_flow'
-  host: 'mysql'
+  host: 'localhost'
   port: 5455
   max_connections: 100
   stale_timeout: 30
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
-  host: 'minio:9000'
+  host: 'localhost:9000'
 es:
-  hosts: 'http://es01:1200'
+  hosts: 'http://localhost:1200'
   username: 'elastic'
   password: 'infini_rag_flow'
 infinity:
-  uri: 'infinity:23817'
+  uri: 'localhost:23817'
   db_name: 'default_db'
 redis:
   db: 1
   password: 'infini_rag_flow'
-  host: 'redis:6379'
+  host: 'localhost:6379'
 
 # postgres:
 #   name: 'rag_flow'
@@ -37,6 +37,12 @@ redis:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
 #   region: 'region'
+# oss:
+#   access_key: 'access_key'
+#   secret_key: 'secret_key'
+#   endpoint_url: 'http://oss-cn-hangzhou.aliyuncs.com'
+#   region: 'cn-hangzhou'
+#   bucket: 'bucket_name'
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'
