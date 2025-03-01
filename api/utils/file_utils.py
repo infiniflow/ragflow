@@ -20,6 +20,7 @@ import re
 from io import BytesIO
 
 import pdfplumber
+import fitz  # pymupdf
 from PIL import Image
 from cachetools import LRUCache, cached
 from ruamel.yaml import YAML
@@ -175,20 +176,18 @@ def thumbnail_img(filename, blob):
     """
     filename = filename.lower()
     if re.match(r".*\.pdf$", filename):
-        pdf = pdfplumber.open(BytesIO(blob))
+        pdf = fitz.open(stream=blob, filetype="pdf")
         buffered = BytesIO()
-        resolution = 32
-        img = None
+        resolution = 2
         for _ in range(10):
-            # https://github.com/jsvine/pdfplumber?tab=readme-ov-file#creating-a-pageimage-with-to_image
-            pdf.pages[0].to_image(resolution=resolution).annotated.save(buffered, format="png")
-            img = buffered.getvalue()
-            if len(img) >= 64000 and resolution >= 2:
-                resolution = resolution / 2
-                buffered = BytesIO()
+            pix = pdf[0].get_pixmap(matrix=fitz.Matrix(resolution, resolution))
+            img_bytes = pix.tobytes("png")
+            if len(img_bytes) >= 64000 and resolution > 0.5:
+                resolution /= 2
             else:
                 break
-        return img
+        buffered.write(img_bytes)
+        return buffered.getvalue()
 
     elif re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):
         image = Image.open(BytesIO(blob))

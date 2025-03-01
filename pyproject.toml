@@ -68,6 +68,7 @@ dependencies = [
     "ormsgpack==1.5.0",
     "pandas>=2.2.0,<3.0.0",
     "pdfplumber==0.10.4",
+    "pymupdf==1.25.3",
     "peewee==3.17.1",
     "pillow==10.4.0",
     "protobuf==5.27.2",
