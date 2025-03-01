@@ -35,6 +35,7 @@ rag/Scripts
 
 # Virtual environment
 RAG3.11/
+RAGFLOW/
 
 # Exclude sdk generated files
 sdk/python/ragflow.egg-info/

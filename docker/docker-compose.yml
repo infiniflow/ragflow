@@ -13,10 +13,11 @@ services:
       - 80:80
       - 443:443
     volumes:
-      - ./ragflow-logs:/ragflow/logs
+      - ./data/ragflow-logs:/ragflow/logs
       - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
       - ./nginx/proxy.conf:/etc/nginx/proxy.conf
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ragflow_data:/ragflow/data
     env_file: .env
     environment:
       - TZ=${TIMEZONE}
@@ -29,6 +30,13 @@ services:
     # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
   # executor:
   #   depends_on:
   #     mysql:
@@ -51,3 +59,7 @@ services:
   #   # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
   #   extra_hosts:
   #     - "host.docker.internal:host-gateway"
+
+volumes:
+  ragflow_data:
+    driver: local
