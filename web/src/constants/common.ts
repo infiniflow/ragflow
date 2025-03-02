@@ -40,10 +40,10 @@ export const fileIconMap = {
 };
 
 export const LanguageList = [
-  'English',
   'Chinese',
-  'Traditional Chinese',
+  'English',
   'Indonesia',
+  'Traditional Chinese',
   'Spanish',
   'Vietnamese',
   'Japanese',
@@ -51,8 +51,8 @@ export const LanguageList = [
 ];
 
 export const LanguageMap = {
-  English: 'English',
   Chinese: '简体中文',
+  English: 'English',
   'Traditional Chinese': '繁體中文',
   Indonesia: 'Indonesia',
   Spanish: 'Español',
@@ -84,14 +84,14 @@ export const LanguageAbbreviationMap = {
 };
 
 export const LanguageTranslationMap = {
-  English: 'en',
   Chinese: 'zh',
-  'Traditional Chinese': 'zh-TRADITIONAL',
+  English: 'en',
   Indonesia: 'id',
   Spanish: 'es',
   Vietnamese: 'vi',
   Japanese: 'ja',
   'Portuguese BR': 'pt-br',
+  'Traditional Chinese': 'zh-TRADITIONAL',
 };
 
 export enum FileMimeType {

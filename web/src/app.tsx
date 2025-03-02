@@ -41,8 +41,10 @@ type Locale = ConfigProviderProps['locale'];
 function Root({ children }: React.PropsWithChildren) {
   const { theme: themeragflow } = useTheme();
   const getLocale = (lng: string) =>
-    AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? enUS;
+    AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? zhCN;
 
+  console.log('current locale key is : ', storage.getLanguage());
+  console.log('current locale: ', getLocale(storage.getLanguage()));
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
 
   i18n.on('languageChanged', function (lng: string) {

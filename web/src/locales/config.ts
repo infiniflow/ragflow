@@ -48,10 +48,11 @@ i18n
   .init({
     detection: {
       lookupLocalStorage: 'lng',
+      order: ['localStorage'],
     },
     supportedLngs: Object.values(LanguageAbbreviation),
     resources,
-    fallbackLng: 'en',
+    fallbackLng: 'zh',
     interpolation: {
       escapeValue: false,
     },

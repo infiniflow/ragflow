@@ -15,6 +15,10 @@ export default {
       edit: 'Edit',
       upload: 'Upload',
       english: 'English',
+      indonesia: 'Indonesia',
+      spanish: 'Spanish',
+      japanese: 'Japanese',
+      vietnamese: 'Vietnamese',
       portugueseBr: 'Portuguese (Brazil)',
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
@@ -54,9 +58,10 @@ export default {
       nicknamePlaceholder: 'Please input nickname',
       register: 'Create an account',
       continue: 'Continue',
-      title: 'Start building your smart assistants.',
+      title:
+        'Build Your Customized AI Assistant for the Pulp and Paper Industrial Chain.',
       description:
-        'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
+        'Empower your forestry-pulp-paper integrated operations with AI-driven solutions. Leverage cutting-edge RAG technology to create intelligent resource management knowledge bases, optimizing precision across production, supply, and sales ecosystems.',
       review: 'from 500+ reviews',
     },
     header: {
