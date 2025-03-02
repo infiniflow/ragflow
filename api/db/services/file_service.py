@@ -329,6 +329,57 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def upload_txt_document(self, kb, filename, content, user_id):
+        root_folder = self.get_root_folder(user_id)
+        pf_id = root_folder["id"]
+        self.init_knowledgebase_docs(pf_id, user_id)
+        kb_root_folder = self.get_kb_folder(user_id)
+        kb_folder = self.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
+
+        err = []
+        if kb.tenant_id != user_id:
+            raise RuntimeError("Permission denied!")
+        try:
+            MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
+            if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
+                raise RuntimeError("Exceed the maximum file number of a free user!")
+            if len(filename) >= 128:
+                raise RuntimeError("Exceed the maximum length of file name!") 
+            filename = duplicate_name(
+                    DocumentService.query,
+                    name=filename,
+                    kb_id=kb.id)
+            filetype = FileType.DOC.value
+            while STORAGE_IMPL.obj_exist(kb.id, location):
+                location += "_"
+
+            location = filename
+            STORAGE_IMPL.put(kb.id, location, content)
+
+            doc_id = get_uuid()
+            doc = {
+                "id": doc_id,
+                "kb_id": kb.id,
+                "parser_id": self.get_parser(filetype, filename, kb.parser_id),
+                "parser_config": kb.parser_config,
+                "created_by": user_id,
+                "type": filetype,
+                "name": filename,
+                "location": location,
+                "size": content.size,
+                "thumbnail": None
+            }
+            DocumentService.insert(doc)
+
+            FileService.add_file_from_kb(doc, kb_folder["id"], kb.tenant_id)
+        except Exception as e:
+            err.append(filename + ": " + str(e))
+
+
+
+
+    @classmethod
+    @DB.connection_context()
     def upload_document(self, kb, file_objs, user_id):
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]

@@ -62,6 +62,7 @@ class Extractor:
         response = self._llm.chat(system, hist, conf)
         response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
         if response.find("**ERROR**") >= 0:
+            logging.error('LLM returned error, request info: {}'.format(system))
             raise Exception(response)
         set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
         return response
