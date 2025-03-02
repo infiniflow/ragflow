@@ -136,7 +136,7 @@ export default {
       fromMessage: '缺少起始頁碼',
       toPlaceholder: '到',
       toMessage: '缺少結束頁碼（不包含）',
-      layoutRecognize: '佈局識別和 OCR',
+      layoutRecognize: '文件解析器',
       layoutRecognizeTip:
         '使用視覺模型進行佈局分析，以更好地識別文檔結構，找到標題、文本塊、圖像和表格的位置。如果沒有此功能，則只能獲取 PDF 的純文本。',
       taskPageSize: '任務頁面大小',
@@ -148,7 +148,8 @@ export default {
       selectFiles: '選擇文件',
       changeSpecificCategory: '更改特定類別',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
-      uploadDescription: '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
+      uploadDescription:
+        '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
       chunk: '解析塊',
       bulk: '批量',
       cancel: '取消',
@@ -191,6 +192,7 @@ export default {
       metaData: '元資料',
       deleteDocumentConfirmContent:
         '該文件與知識圖譜相關聯。刪除後，相關節點和關係資訊將被刪除，但圖不會立即更新。更新圖動作是在解析承載知識圖譜提取任務的新文件的過程中執行的。 ',
+      plainText: '簡易',
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
@@ -276,7 +278,7 @@ export default {
         您只需與<i>'ragflow'</i>交談即可列出所有符合資格的候選人。
         </p>
           `,
-      table: `支持<p><b>excel</b>和<b>csv/txt</b>格式文件。</p><p>以下是一些提示： <ul> <li>对于Csv或Txt文件，列之间的分隔符为 <em><b>tab</b></em>。</li> <li>第一行必须是列标题。</li> <li>列标题必须是有意义的术语，以便我们的大語言模型能够理解。列举一些同义词时最好使用斜杠<i>'/'</i>来分隔，甚至更好使用方括号枚举值，例如 <i>“性別/性別（男性，女性）”</i>.<p>以下是标题的一些示例：<ol> <li>供应商/供货商<b>'tab'</b>顏色（黃色、紅色、棕色）<b>'tab'</b>性別（男、女）<b>'tab'</B>尺码（m、l、xl、xxl）</li> <li>姓名/名字<b>'tab'</b>電話/手機/微信<b>'tab'</b>最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，mpa，mba，emba）</li> </ol> </p> </li> <li>表中的每一行都将被视为一个块。</li> </ul>`,
+      table: `支持<p><b>XLSX</b>和<b>csv/txt</b>格式文件。</p><p>以下是一些提示： <ul> <li>对于Csv或Txt文件，列之间的分隔符为 <em><b>tab</b></em>。</li> <li>第一行必须是列标题。</li> <li>列标题必须是有意义的术语，以便我们的大語言模型能够理解。列举一些同义词时最好使用斜杠<i>'/'</i>来分隔，甚至更好使用方括号枚举值，例如 <i>“性別/性別（男性，女性）”</i>.<p>以下是标题的一些示例：<ol> <li>供应商/供货商<b>'tab'</b>顏色（黃色、紅色、棕色）<b>'tab'</b>性別（男、女）<b>'tab'</B>尺码（m、l、xl、xxl）</li> <li>姓名/名字<b>'tab'</b>電話/手機/微信<b>'tab'</b>最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，mpa，mba，emba）</li> </ol> </p> </li> <li>表中的每一行都将被视为一个块。</li> </ul>`,
       picture: `
        <p>支持圖像文件。視頻即將推出。</p><p>
         如果圖片中有文字，則應用 OCR 提取文字作為其文字描述。
@@ -301,8 +303,8 @@ export default {
 <p>使用「標籤」作為分塊方法的知識庫<b>不</b>應該參與 RAG 過程。
 <p>本知識庫中的區塊是標籤的範例，展示了整個標籤集以及區塊與標籤之間的相關性。
 
-<p>此區塊方法支援<b>EXCEL</b>和<b>CSV/TXT</b>檔案格式。
-<p>如果檔案採用 <b>Excel</b> 格式，則應包含兩列，不含標題：一列用於內容，另一列用於標籤，內容列位於標籤列之前。只要列的結構正確，多張紙也是可以接受的。
+<p>此區塊方法支援<b>XLSX</b>和<b>CSV/TXT</b>檔案格式。
+<p>如果檔案採用 <b>XLSX</b> 格式，則應包含兩列，不含標題：一列用於內容，另一列用於標籤，內容列位於標籤列之前。只要列的結構正確，多張紙也是可以接受的。
 <p>如果檔案為<b>CSV/TXT</b>格式，則必須採用UTF-8編碼，並以TAB作為分隔符號來分隔內容和標籤。
 <p>標籤欄中，標籤之間有英文<b>逗號</b>。
 <i>不符合上述規則的文字行將被忽略，並且每一對將被視為一個不同的區塊。
@@ -510,6 +512,10 @@ export default {
       reasoning: '推理',
       reasoningTip:
         '它將觸發類似Deepseek-R1/OpenAI o1的推理過程。將代理搜尋過程整合到推理工作流程中，使得模型本身能夠在遇到不確定資訊時動態地檢索外部知識。',
+      tavilyApiKeyTip:
+        '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
+      tavilyApiKeyMessage: '請輸入你的 Tavily Api Key',
+      tavilyApiKeyHelp: '如何獲取？',
     },
     setting: {
       profile: '概述',
@@ -676,7 +682,7 @@ export default {
       202: '一個請求已經進入後台排隊（異步任務）。',
       204: '刪除數據成功。',
       400: '發出的請求有錯誤，服務器沒有進行新建或修改數據的操作。',
-      401: '用戶沒有權限（Token、用戶名、密碼錯誤）。',
+      401: '請重新登入。',
       403: '用戶得到授權，但是訪問是被禁止的。',
       404: '發出的請求針對的是不存在的記錄，服務器沒有進行操作。',
       406: '請求的格式不可得。',
@@ -703,7 +709,8 @@ export default {
       newFolder: '新建文件夾',
       uploadFile: '上傳文件',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
-      uploadDescription: '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
+      uploadDescription:
+        '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
       file: '文件',
       directory: '文件夾',
       local: '本地上傳',

@@ -80,7 +80,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 - 2025-02-05 Updates the model list of 'SILICONFLOW' and adds support for Deepseek-R1/DeepSeek-V3.
 - 2025-01-26 Optimizes knowledge graph extraction and application, offering various configuration options.
-- 2024-12-18 Upgrades Document Layout Analysis model in Deepdoc.
+- 2024-12-18 Upgrades Document Layout Analysis model in DeepDoc.
 - 2024-12-04 Adds support for pagerank score in knowledge base.
 - 2024-11-22 Adds more variables to Agent.
 - 2024-11-01 Adds keyword extraction and related question generation to the parsed chunks to improve the accuracy of retrieval.
@@ -204,9 +204,6 @@ releases! 🌟
      /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     * Running on all addresses (0.0.0.0)
-    * Running on http://127.0.0.1:9380
-    * Running on http://x.x.x.x:9380
-    INFO:werkzeug:Press CTRL+C to quit
    ```
 
    > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anormal`
@@ -252,7 +249,9 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
-   Note: `-v` will delete the docker container volumes, and the existing data will be cleared.
+
+> [!WARNING]
+> `-v` will delete the docker container volumes, and the existing data will be cleared.
 
 2. Set `DOC_ENGINE` in **docker/.env** to `infinity`.
 

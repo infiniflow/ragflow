@@ -176,6 +176,7 @@ const MessageItem = ({
                           documentId={item.doc_id}
                           documentName={item.doc_name}
                           prefix="document"
+                          link={item.url}
                         >
                           {item.doc_name}
                         </NewDocumentLink>

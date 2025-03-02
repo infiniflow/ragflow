@@ -70,6 +70,12 @@ def show_configs():
             if "password" in v:
                 v = copy.deepcopy(v)
                 v["password"] = "*" * 8
+            if "access_key" in v:
+                v = copy.deepcopy(v)
+                v["access_key"] = "*" * 8
+            if "secret_key" in v:
+                v = copy.deepcopy(v)
+                v["secret_key"] = "*" * 8
         msg += f"\n\t{k}: {v}"
     logging.info(msg)
 

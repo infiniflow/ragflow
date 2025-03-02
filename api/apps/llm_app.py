@@ -152,6 +152,7 @@ def add_llm():
 
     elif factory == "Tencent Cloud":
         req["api_key"] = apikey_json(["tencent_cloud_sid", "tencent_cloud_sk"])
+        return set_api_key()
 
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
@@ -169,6 +170,10 @@ def add_llm():
 
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"] + "___OpenAI-API"
+        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
+
+    elif factory == "VLLM":
+        llm_name = req["llm_name"] + "___VLLM"
         api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
     elif factory == "XunFei Spark":
@@ -259,7 +264,7 @@ def add_llm():
         try:
             with open(os.path.join(get_project_base_directory(), "web/src/assets/yay.jpg"), "rb") as f:
                 m, tc = mdl.describe(f.read())
-                if not tc:
+                if not m and not tc:
                     raise Exception(m)
         except Exception as e:
             msg += f"\nFail to access model({mdl_nm})." + str(e)

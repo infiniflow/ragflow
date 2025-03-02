@@ -41,7 +41,7 @@
 </h4>
 
 <details open>
-<summary></b>📕 Índice</b></summary>
+<summary><b>📕 Índice</b></summary>
 
 - 💡 [O que é o RAGFlow?](#-o-que-é-o-ragflow)
 - 🎮 [Demo](#-demo)
@@ -77,7 +77,7 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 - 05-02-2025 Atualiza a lista de modelos de 'SILICONFLOW' e adiciona suporte para Deepseek-R1/DeepSeek-V3.
 - 26-01-2025 Otimize a extração e aplicação de gráficos de conhecimento e forneça uma variedade de opções de configuração.
-- 18-12-2024 Atualiza o modelo de Análise de Layout de Documentos no Deepdoc.
+- 18-12-2024 Atualiza o modelo de Análise de Layout de Documentos no DeepDoc.
 - 04-12-2024 Adiciona suporte para pontuação de pagerank na base de conhecimento.
 - 22-11-2024 Adiciona mais variáveis para o Agente.
 - 01-11-2024 Adiciona extração de palavras-chave e geração de perguntas relacionadas aos blocos analisados para melhorar a precisão da recuperação.
@@ -174,11 +174,11 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
     ```
 
     | Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                 |
-    | --------------------- | ---------------------- | ------------------------------- | ------------------------ |
+    |-----------------------|------------------------|---------------------------------|--------------------------|
     | v0.16.0               | ~9                     | :heavy_check_mark:              | Lançamento estável       |
-    | v0.16.0-slim          | ~2                     | ❌                              | Lançamento estável       |
+    | v0.16.0-slim          | ~2                     | ❌                               | Lançamento estável       |
     | nightly               | ~9                     | :heavy_check_mark:              | _Instável_ build noturno |
-    | nightly-slim          | ~2                     | ❌                              | _Instável_ build noturno |
+    | nightly-slim          | ~2                     | ❌                               | _Instável_ build noturno |
 
 4.  Verifique o status do servidor após tê-lo iniciado:
 
@@ -196,9 +196,6 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
      /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
      * Rodando em todos os endereços (0.0.0.0)
-     * Rodando em http://127.0.0.1:9380
-     * Rodando em http://x.x.x.x:9380
-     INFO:werkzeug:Pressione CTRL+C para sair
     ```
 
     > Se você pular essa etapa de confirmação e acessar diretamente o RAGFlow, seu navegador pode exibir um erro `network anormal`, pois, nesse momento, seu RAGFlow pode não estar totalmente inicializado.
