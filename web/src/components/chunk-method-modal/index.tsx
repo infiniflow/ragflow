@@ -24,6 +24,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { AutoKeywordsItem, AutoQuestionsItem } from '../auto-keywords-item';
+import { DatasetConfigurationContainer } from '../dataset-configuration-container';
 import Delimiter from '../delimiter';
 import EntityTypesItem from '../entity-types-item';
 import ExcelToHtml from '../excel-to-html';
@@ -105,10 +106,6 @@ const ChunkMethodModal: React.FC<IProps> = ({
     selectedTag === DocumentParserType.Naive ||
     selectedTag === DocumentParserType.KnowledgeGraph;
 
-  const hideDivider = [showPages, showOne, showMaxTokenNumber].every(
-    (x) => x === false,
-  );
-
   const showEntityTypes = selectedTag === DocumentParserType.KnowledgeGraph;
 
   const showExcelToHtml =
@@ -151,8 +148,13 @@ const ChunkMethodModal: React.FC<IProps> = ({
           />
         </Form.Item>
       </Space>
-      {hideDivider || <Divider></Divider>}
-      <Form name="dynamic_form_nest_item" autoComplete="off" form={form}>
+      <Divider></Divider>
+      <Form
+        name="dynamic_form_nest_item"
+        autoComplete="off"
+        form={form}
+        className="space-y-4"
+      >
         {showPages && (
           <>
             <Space>
@@ -257,7 +259,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
             </Form.List>
           </>
         )}
-        {showOne && <LayoutRecognize></LayoutRecognize>}
+
         {showPages && (
           <Form.Item
             noStyle
@@ -283,27 +285,36 @@ const ChunkMethodModal: React.FC<IProps> = ({
             }
           </Form.Item>
         )}
-        {showMaxTokenNumber && (
-          <>
-            <MaxTokenNumber
-              max={
-                selectedTag === DocumentParserType.KnowledgeGraph
-                  ? 8192 * 2
-                  : 2048
-              }
-            ></MaxTokenNumber>
-            <Delimiter></Delimiter>
-          </>
-        )}
-        {showAutoKeywords(selectedTag) && (
-          <>
-            <AutoKeywordsItem></AutoKeywordsItem>
-            <AutoQuestionsItem></AutoQuestionsItem>
-          </>
-        )}
-        {showExcelToHtml && <ExcelToHtml></ExcelToHtml>}
+        <DatasetConfigurationContainer show={showOne || showMaxTokenNumber}>
+          {showOne && <LayoutRecognize></LayoutRecognize>}
+          {showMaxTokenNumber && (
+            <>
+              <MaxTokenNumber
+                max={
+                  selectedTag === DocumentParserType.KnowledgeGraph
+                    ? 8192 * 2
+                    : 2048
+                }
+              ></MaxTokenNumber>
+              <Delimiter></Delimiter>
+            </>
+          )}
+        </DatasetConfigurationContainer>
+        <DatasetConfigurationContainer
+          show={showAutoKeywords(selectedTag) || showExcelToHtml}
+        >
+          {showAutoKeywords(selectedTag) && (
+            <>
+              <AutoKeywordsItem></AutoKeywordsItem>
+              <AutoQuestionsItem></AutoQuestionsItem>
+            </>
+          )}
+          {showExcelToHtml && <ExcelToHtml></ExcelToHtml>}
+        </DatasetConfigurationContainer>
         {showRaptorParseConfiguration(selectedTag) && (
-          <ParseConfiguration></ParseConfiguration>
+          <DatasetConfigurationContainer>
+            <ParseConfiguration></ParseConfiguration>
+          </DatasetConfigurationContainer>
         )}
         {showGraphRagItems(selectedTag) && <GraphRagItems></GraphRagItems>}
         {showEntityTypes && <EntityTypesItem></EntityTypesItem>}

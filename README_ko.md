@@ -57,7 +57,7 @@
 
 - 2025-02-05 'SILICONFLOW' 모델 목록을 업데이트하고 Deepseek-R1/DeepSeek-V3에 대한 지원을 추가합니다.
 - 2025-01-26 지식 그래프 추출 및 적용을 최적화하고 다양한 구성 옵션을 제공합니다.
-- 2024-12-18 Deepdoc의 문서 레이아웃 분석 모델 업그레이드.
+- 2024-12-18 DeepDoc의 문서 레이아웃 분석 모델 업그레이드.
 - 2024-12-04 지식베이스에 대한 페이지랭크 점수를 지원합니다.
 
 - 2024-11-22 에이전트의 변수 정의 및 사용을 개선했습니다.
@@ -159,7 +159,7 @@
    | v0.17.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
    | v0.17.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
 4. 서버가 시작된 후 서버 상태를 확인하세요:
 

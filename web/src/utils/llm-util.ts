@@ -11,3 +11,8 @@ export const getLlmNameAndFIdByLlmId = (llmId?: string) => {
 
   return { fId, llmName };
 };
+
+// The names of the large models returned by the interface are similar to "deepseek-r1___OpenAI-API"
+export function getRealModelName(llmName: string) {
+  return llmName.split('__').at(0) ?? '';
+}

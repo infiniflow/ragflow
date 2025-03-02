@@ -5,7 +5,7 @@ slug: /text2sql_agent
 
 # Create a Text2SQL agent
 
-Build a Text2SQL agent leverging RAGFlow's RAG capabilities. Contributed by @TeslaZY.
+Build a Text2SQL agent leveraging RAGFlow's RAG capabilities. Contributed by @TeslaZY.
 
 ## Scenario
 
@@ -343,7 +343,7 @@ Synonyms: laptop computer,laptop pc
 3. Create a Retrieval node and name it Thesaurus; create an ExeSQL node.
 4. Configure the Q->SQL, DDL, DB_Description, and TextSQL_Thesaurus knowledge bases. Please refer to the following:
    ![Configure Retrieval node](https://github.com/user-attachments/assets/25d67b01-954e-4eb4-87f5-c54262cf9a3e)
-5. Configure the Generate node, named LLM‘s prompt:
+5. Configure the Generate node, named LLM's prompt:
    - Add this content to the prompt provided by the template to provide the thesaurus content to the LLM:
      ```plaintext
      ## You may use the following Thesaurus statements. For example, what I ask is from Synonyms, you must use Standard noun to generate SQL. Use responses to past questions also to guide you: {sql_thesaurus}.

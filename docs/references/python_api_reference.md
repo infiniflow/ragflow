@@ -42,7 +42,7 @@ Whether to receive the response as a stream. Set this to `false` explicitly if y
 
 #### Returns
 
-- Success: Respose [message](https://platform.openai.com/docs/api-reference/chat/create) like OpenAI
+- Success: Response [message](https://platform.openai.com/docs/api-reference/chat/create) like OpenAI
 - Failure: `Exception`
 
 #### Examples

@@ -516,14 +516,14 @@ def do_handle_task(task):
     try:
         # bind embedding model
         embedding_model = LLMBundle(task_tenant_id, LLMType.EMBEDDING, llm_name=task_embedding_id, lang=task_language)
+        vts, _ = embedding_model.encode(["ok"])
+        vector_size = len(vts[0])
     except Exception as e:
         error_message = f'Fail to bind embedding model: {str(e)}'
         progress_callback(-1, msg=error_message)
         logging.exception(error_message)
         raise
 
-    vts, _ = embedding_model.encode(["ok"])
-    vector_size = len(vts[0])
     init_kb(task, vector_size)
 
     # Either using RAPTOR or Standard chunking methods
@@ -754,12 +754,33 @@ def main():
     if TRACE_MALLOC_ENABLED:
         start_tracemalloc_and_snapshot(None, None)
 
+    # Create an event to signal the background thread to exit
+    stop_event = threading.Event()
+    
     background_thread = threading.Thread(target=report_status)
     background_thread.daemon = True
     background_thread.start()
+ 
+    # Handle SIGINT (Ctrl+C)
+    def signal_handler(sig, frame):
+        logging.info("Received Ctrl+C, shutting down gracefully...")
+        stop_event.set()
+        # Give the background thread time to clean up
+        if background_thread.is_alive():
+            background_thread.join(timeout=5)
+        logging.info("Exiting...")
+        sys.exit(0)
 
-    while True:
-        handle_task()
+    signal.signal(signal.SIGINT, signal_handler)
+
+    try:
+        while not stop_event.is_set():
+            handle_task()
+    except KeyboardInterrupt:
+        logging.info("Interrupted by keyboard, shutting down...")
+        stop_event.set()
+        if background_thread.is_alive():
+            background_thread.join(timeout=5)
 
 if __name__ == "__main__":
     main()

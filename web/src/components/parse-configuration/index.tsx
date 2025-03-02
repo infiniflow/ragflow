@@ -1,16 +1,7 @@
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { PlusOutlined } from '@ant-design/icons';
-import {
-  Button,
-  Divider,
-  Flex,
-  Form,
-  Input,
-  InputNumber,
-  Slider,
-  Switch,
-} from 'antd';
+import { Button, Flex, Form, Input, InputNumber, Slider, Switch } from 'antd';
 import random from 'lodash/random';
 
 export const excludedParseMethods = [
@@ -53,7 +44,6 @@ const ParseConfiguration = () => {
 
   return (
     <>
-      <Divider></Divider>
       <Form.Item
         name={['parser_config', 'raptor', 'use_raptor']}
         label={t('useRaptor')}
