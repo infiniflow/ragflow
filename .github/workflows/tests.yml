@@ -65,7 +65,7 @@ jobs:
 
       - name: Start ragflow:nightly-slim
         run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
+          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Stop ragflow:nightly-slim
@@ -75,7 +75,7 @@ jobs:
 
       - name: Start ragflow:nightly
         run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
+          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Run sdk tests against Elasticsearch
