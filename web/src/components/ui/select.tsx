@@ -186,11 +186,12 @@ export type RAGFlowSelectGroupOptionType = {
   options: RAGFlowSelectOptionType[];
 };
 
-type RAGFlowSelectProps = Partial<ControllerRenderProps> & {
+export type RAGFlowSelectProps = Partial<ControllerRenderProps> & {
   FormControlComponent?: typeof FormControl;
   options?: (RAGFlowSelectOptionType | RAGFlowSelectGroupOptionType)[];
   allowClear?: boolean;
   placeholder?: React.ReactNode;
+  contentProps?: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>;
 } & SelectPrimitive.SelectProps;
 
 /**
@@ -220,6 +221,7 @@ export const RAGFlowSelect = forwardRef<
     options = [],
     allowClear,
     placeholder,
+    contentProps = {},
   },
   ref,
 ) {
@@ -265,7 +267,7 @@ export const RAGFlowSelect = forwardRef<
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
       </FormControlWidget>
-      <SelectContent>
+      <SelectContent {...contentProps}>
         {options.map((o, idx) => {
           if ('value' in o) {
             return (
