@@ -17,6 +17,7 @@ import json
 import re
 import traceback
 from copy import deepcopy
+import trio
 from api.db.db_models import APIToken
 
 from api.db.services.conversation_service import ConversationService, structure_answer
@@ -386,7 +387,8 @@ def mindmap():
                                            rank_feature=label_question(question, [kb])
                                            )
     mindmap = MindMapExtractor(chat_mdl)
-    mind_map = mindmap([c["content_with_weight"] for c in ranks["chunks"]]).output
+    mind_map = trio.run(mindmap, [c["content_with_weight"] for c in ranks["chunks"]])
+    mind_map = mind_map.output
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)

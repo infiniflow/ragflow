@@ -14,13 +14,19 @@
 #  limitations under the License.
 #
 import io
-
+import sys
+import threading
 import pdfplumber
 
 from .ocr import OCR
 from .recognizer import Recognizer
 from .layout_recognizer import LayoutRecognizer4YOLOv10 as LayoutRecognizer
 from .table_structure_recognizer import TableStructureRecognizer
+
+
+LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
+if LOCK_KEY_pdfplumber not in sys.modules:
+    sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
 
 def init_in_out(args):
@@ -36,9 +42,10 @@ def init_in_out(args):
 
     def pdf_pages(fnm, zoomin=3):
         nonlocal outputs, images
-        pdf = pdfplumber.open(fnm)
-        images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
-                            enumerate(pdf.pages)]
+        with sys.modules[LOCK_KEY_pdfplumber]:
+            pdf = pdfplumber.open(fnm)
+            images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
+                                enumerate(pdf.pages)]
 
         for i, page in enumerate(images):
             outputs.append(os.path.split(fnm)[-1] + f"_{i}.jpg")

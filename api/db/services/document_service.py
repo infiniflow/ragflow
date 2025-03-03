@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime
 from io import BytesIO
+import trio
 
 from peewee import fn
 
@@ -597,8 +598,8 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         if parser_ids[doc_id] != ParserType.PICTURE.value:
             mindmap = MindMapExtractor(llm_bdl)
             try:
-                mind_map = json.dumps(mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]).output,
-                                      ensure_ascii=False, indent=2)
+                mind_map = trio.run(mindmap, [c["content_with_weight"] for c in docs if c["doc_id"] == doc_id])
+                mind_map = json.dumps(mind_map.output, ensure_ascii=False, indent=2)
                 if len(mind_map) < 32:
                     raise Exception("Few content: " + mind_map)
                 cks.append({
