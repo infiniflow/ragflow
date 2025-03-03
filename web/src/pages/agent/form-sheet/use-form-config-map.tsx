@@ -135,8 +135,11 @@ export function useFormConfigMap() {
     },
     [Operator.KeywordExtract]: {
       component: KeywordExtractForm,
-      defaultValues: {},
-      schema: z.object({}),
+      defaultValues: { top_n: 3 },
+      schema: z.object({
+        llm_id: z.string(),
+        top_n: z.number(),
+      }),
     },
     [Operator.Wikipedia]: {
       component: WikipediaForm,
