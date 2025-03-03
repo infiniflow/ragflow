@@ -3,7 +3,7 @@ sidebar_position: 2
 slug: /release_notes
 ---
 
-# Release notes
+# Releases
 
 Key features, improvements and bug fixes in the latest releases.
 
@@ -17,7 +17,7 @@ Released on February 6, 2025.
 - GraphRAG refactor: Knowledge graph is dynamically built on an entire knowledge base (dataset) rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph).
 - Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_component_reference/iteration.mdx).
 - New UI language: Portuguese.
-- Allows setting metadata for a specific file in a knowledge base to enhance AI-powered chats. See [here](./guides/configure_knowledge_base/set_metadata.md).
+- Allows setting metadata for a specific file in a knowledge base to enhance AI-powered chats. See [here](./guides/dataset/set_metadata.md).
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
 - Supports GPU acceleration for DeepDoc (see [docker-compose-gpu.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose-gpu.yml)).
 - Supports creating and referencing a **Tag** knowledge base as a key milestone towards bridging the semantic gap between query and response.
@@ -30,8 +30,8 @@ The **Tag knowledge base** feature is *unavailable* on the [Infinity](https://gi
 
 #### Added documents
 
-- [Construct knowledge graph](./guides/configure_knowledge_base/construct_knowledge_graph.md)
-- [Set metadata](./guides/configure_knowledge_base/set_metadata.md)
+- [Construct knowledge graph](./guides/dataset/construct_knowledge_graph.md)
+- [Set metadata](./guides/dataset/set_metadata.md)
 - [Begin component](./guides/agent/agent_component_reference/begin.mdx)
 - [Generate component](./guides/agent/agent_component_reference/generate.mdx)
 - [Interact component](./guides/agent/agent_component_reference/interact.mdx)
