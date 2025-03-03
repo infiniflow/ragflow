@@ -3,7 +3,7 @@ sidebar_position: 5
 slug: /manage_files
 ---
 
-#  Manage files
+# Files
 
 Knowledge base, hallucination-free chat, and file management are the three pillars of RAGFlow. RAGFlow's file management allows you to upload files individually or in bulk. You can then link an uploaded file to multiple target knowledge bases. This guide showcases some basic usages of the file management feature. 
 

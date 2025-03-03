@@ -3,7 +3,7 @@ sidebar_position: 7
 slug: /run_health_check
 ---
 
-# Run dependency health check
+# Monitoring
 
 Double-check the health status of RAGFlow's dependencies.
 

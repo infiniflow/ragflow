@@ -3,7 +3,7 @@ sidebar_position: 1
 slug: /configurations
 ---
 
-# Configurations
+# Configuration
 
 Configurations for deploying RAGFlow via Docker.
 

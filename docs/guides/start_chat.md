@@ -3,9 +3,9 @@ sidebar_position: 1
 slug: /start_chat
 ---
 
-# Start an AI-powered chat
+# Chat
 
-Initiate a chat with a configured chat assistant.
+Initiate an AI-powered chat with a configured chat assistant.
 
 ---
 
@@ -80,13 +80,13 @@ Hover over an intended chat assistant **>** **Edit** to show the chat configurat
 
 RAGFlow offers HTTP and Python APIs for you to integrate RAGFlow's capabilities into your applications. Read the following documents for more information:
 
-- [Acquire a RAGFlow API key](https://ragflow.io/docs/dev/acquire_ragflow_api_key)
-- [HTTP API reference](https://ragflow.io/docs/dev/http_api_reference)
-- [Python API reference](https://ragflow.io/docs/dev/python_api_reference)
+- [Acquire a RAGFlow API key](./models/llm_api_key_setup.md)
+- [HTTP API reference](../references/http_api_reference.md)
+- [Python API reference](../references/python_api_reference.md)
 
 You can use iframe to embed the created chat assistant into a third-party webpage:
 
-1. Before proceeding, you must [acquire an API key](https://ragflow.io/docs/dev/acquire_ragflow_api_key); otherwise, an error message would appear.
+1. Before proceeding, you must [acquire an API key](./models/llm_api_key_setup.md); otherwise, an error message would appear.
 2. Hover over an intended chat assistant **>** **Edit** to show the **iframe** window:
 
    ![chat-embed](https://github.com/user-attachments/assets/13ea3021-31c4-4a14-9b32-328cd3318fb5)
