@@ -1,12 +1,20 @@
-import TopNItem from '@/components/top-n-item';
+import { TopNFormField } from '@/components/top-n-item';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { RAGFlowSelect } from '@/components/ui/select';
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Select } from 'antd';
 import { useMemo } from 'react';
 import { Channel } from '../../constant';
-import { IOperatorForm } from '../../interface';
-import DynamicInputVariable from '../components/dynamic-input-variable';
+import { INextOperatorForm } from '../../interface';
+import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
-const DuckDuckGoForm = ({ onValuesChange, form, node }: IOperatorForm) => {
+const DuckDuckGoForm = ({ form, node }: INextOperatorForm) => {
   const { t } = useTranslate('flow');
 
   const options = useMemo(() => {
@@ -14,23 +22,29 @@ const DuckDuckGoForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   }, [t]);
 
   return (
-    <Form
-      name="basic"
-      autoComplete="off"
-      form={form}
-      onValuesChange={onValuesChange}
-      layout={'vertical'}
-    >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
-      <TopNItem initialValue={10}></TopNItem>
-      <Form.Item
-        label={t('channel')}
-        name={'channel'}
-        tooltip={t('channelTip')}
-        initialValue={'text'}
+    <Form {...form}>
+      <form
+        className="space-y-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
       >
-        <Select options={options}></Select>
-      </Form.Item>
+        <DynamicInputVariable node={node}></DynamicInputVariable>
+        <TopNFormField></TopNFormField>
+        <FormField
+          control={form.control}
+          name="channel"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel tooltip={t('channelTip')}>{t('channel')}</FormLabel>
+              <FormControl>
+                <RAGFlowSelect {...field} options={options} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </form>
     </Form>
   );
 };

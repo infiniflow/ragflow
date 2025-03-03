@@ -125,13 +125,18 @@ export function useFormConfigMap() {
     },
     [Operator.Baidu]: {
       component: BaiduForm,
-      defaultValues: {},
-      schema: z.object({}),
+      defaultValues: { top_n: 10 },
+      schema: z.object({ top_n: z.number() }),
     },
     [Operator.DuckDuckGo]: {
       component: DuckDuckGoForm,
-      defaultValues: {},
-      schema: z.object({}),
+      defaultValues: {
+        top_n: 10,
+        channel: 'text',
+      },
+      schema: z.object({
+        top_n: z.number(),
+      }),
     },
     [Operator.KeywordExtract]: {
       component: KeywordExtractForm,
@@ -143,8 +148,13 @@ export function useFormConfigMap() {
     },
     [Operator.Wikipedia]: {
       component: WikipediaForm,
-      defaultValues: {},
-      schema: z.object({}),
+      defaultValues: {
+        top_n: 10,
+      },
+      schema: z.object({
+        language: z.string(),
+        top_n: z.number(),
+      }),
     },
     [Operator.PubMed]: {
       component: PubMedForm,
@@ -209,13 +219,22 @@ export function useFormConfigMap() {
     },
     [Operator.WenCai]: {
       component: WenCaiForm,
-      defaultValues: {},
-      schema: z.object({}),
+      defaultValues: {
+        top_n: 20,
+      },
+      schema: z.object({
+        top_n: z.number(),
+        query_type: z.string(),
+      }),
     },
     [Operator.AkShare]: {
       component: AkShareForm,
-      defaultValues: {},
-      schema: z.object({}),
+      defaultValues: {
+        top_n: 10,
+      },
+      schema: z.object({
+        top_n: z.number(),
+      }),
     },
     [Operator.YahooFinance]: {
       component: YahooFinanceForm,
