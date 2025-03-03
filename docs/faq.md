@@ -3,7 +3,7 @@ sidebar_position: 10
 slug: /faq
 ---
 
-# Frequently asked questions
+# FAQ
 
 Queries regarding general features, troubleshooting, usage, and more.
 
@@ -65,7 +65,7 @@ RAGFlow has a number of built-in models for document structure parsing, which ac
 
 ### Which architectures or devices does RAGFlow support?
 
-We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
+We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](./develop/build_docker_image) to build a RAGFlow Docker image.
 
 ---
 
@@ -130,7 +130,7 @@ Yes, we support enhancing user queries based on existing context of an ongoing c
 
 #### How to build the RAGFlow image from scratch?
 
-See [Build a RAGFlow Docker image](https://ragflow.io/docs/dev/build_docker_image).
+See [Build a RAGFlow Docker image](./develop/build_docker_image).
 
 ---
 
@@ -453,7 +453,7 @@ This error occurs because there are too many chunks matching your search criteri
 
 ### How to get an API key for integration with third-party applications?
 
-See [Acquire a RAGFlow API key](../guides/develop/acquire_ragflow_api_key.md).
+See [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md).
 
 ---
 
