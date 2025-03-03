@@ -186,7 +186,13 @@ export function useFormConfigMap() {
     [Operator.QWeather]: {
       component: QWeatherForm,
       defaultValues: {},
-      schema: z.object({}),
+      schema: z.object({
+        web_apikey: z.string(),
+        lang: z.string(),
+        type: z.string(),
+        user_type: z.string(),
+        time_period: z.string().optional(),
+      }),
     },
     [Operator.ExeSQL]: {
       component: ExeSQLForm,
