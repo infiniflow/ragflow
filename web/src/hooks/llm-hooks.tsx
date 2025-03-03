@@ -5,6 +5,7 @@ import {
   IFactory,
   IMyLlmValue,
   IThirdOAIModelCollection as IThirdAiModelCollection,
+  IThirdOAIModel,
   IThirdOAIModelCollection,
 } from '@/interfaces/database/llm';
 import {
@@ -13,6 +14,7 @@ import {
 } from '@/interfaces/request/llm';
 import userService from '@/services/user-service';
 import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/common-util';
+import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Flex, message } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
@@ -43,7 +45,7 @@ export const useSelectLlmOptions = () => {
       return {
         label: key,
         options: value.map((x) => ({
-          label: x.llm_name,
+          label: getRealModelName(x.llm_name),
           value: `${x.llm_name}@${x.fid}`,
           disabled: !x.available,
         })),
@@ -54,16 +56,47 @@ export const useSelectLlmOptions = () => {
   return embeddingModelOptions;
 };
 
-const getLLMIconName = (fid: string, llm_name: string) => {
-  if (fid === 'FastEmbed') {
-    return llm_name.split('/').at(0) ?? '';
-  }
-
-  return fid;
-};
+function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
+  return {
+    label: (
+      <Flex align="center" gap={6}>
+        <LlmIcon
+          name={getLLMIconName(x.fid, x.llm_name)}
+          width={26}
+          height={26}
+          size={'small'}
+        />
+        <span>{getRealModelName(x.llm_name)}</span>
+      </Flex>
+    ),
+    value: `${x.llm_name}@${x.fid}`,
+    disabled: !x.available,
+  };
+}
 
 export const useSelectLlmOptionsByModelType = () => {
   const llmInfo: IThirdOAIModelCollection = useFetchLlmList();
+
+  const groupImage2TextOptions = () => {
+    const modelType = LlmModelType.Image2text;
+    const modelTag = modelType.toUpperCase();
+
+    return Object.entries(llmInfo)
+      .map(([key, value]) => {
+        return {
+          label: key,
+          options: value
+            .filter(
+              (x) =>
+                (x.model_type.includes(modelType) ||
+                  (x.tags && x.tags.includes(modelTag))) &&
+                x.available,
+            )
+            .map(buildLlmOptionsWithIcon),
+        };
+      })
+      .filter((x) => x.options.length > 0);
+  };
 
   const groupOptionsByModelType = (modelType: LlmModelType) => {
     return Object.entries(llmInfo)
@@ -79,21 +112,7 @@ export const useSelectLlmOptionsByModelType = () => {
                 (modelType ? x.model_type.includes(modelType) : true) &&
                 x.available,
             )
-            .map((x) => ({
-              label: (
-                <Flex align="center" gap={6}>
-                  <LlmIcon
-                    name={getLLMIconName(x.fid, x.llm_name)}
-                    width={26}
-                    height={26}
-                    size={'small'}
-                  />
-                  <span>{x.llm_name}</span>
-                </Flex>
-              ),
-              value: `${x.llm_name}@${x.fid}`,
-              disabled: !x.available,
-            })),
+            .map(buildLlmOptionsWithIcon),
         };
       })
       .filter((x) => x.options.length > 0);
@@ -102,7 +121,7 @@ export const useSelectLlmOptionsByModelType = () => {
   return {
     [LlmModelType.Chat]: groupOptionsByModelType(LlmModelType.Chat),
     [LlmModelType.Embedding]: groupOptionsByModelType(LlmModelType.Embedding),
-    [LlmModelType.Image2text]: groupOptionsByModelType(LlmModelType.Image2text),
+    [LlmModelType.Image2text]: groupImage2TextOptions(),
     [LlmModelType.Speech2text]: groupOptionsByModelType(
       LlmModelType.Speech2text,
     ),
@@ -116,7 +135,11 @@ export const useComposeLlmOptionsByModelTypes = (
 ) => {
   const allOptions = useSelectLlmOptionsByModelType();
 
-  return modelTypes.reduce<DefaultOptionType[]>((pre, cur) => {
+  return modelTypes.reduce<
+    (DefaultOptionType & {
+      options: { label: JSX.Element; value: string; disabled: boolean }[];
+    })[]
+  >((pre, cur) => {
     const options = allOptions[cur];
     options.forEach((x) => {
       const item = pre.find((y) => y.label === x.label);
@@ -175,6 +198,7 @@ export const useSelectLlmList = () => {
       name: key,
       logo: factoryList.find((x) => x.name === key)?.logo ?? '',
       ...value,
+      llm: value.llm.map((x) => ({ ...x, name: getRealModelName(x.name) })),
     }));
   }, [myLlmList, factoryList]);
 

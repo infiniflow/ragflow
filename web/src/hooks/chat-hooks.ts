@@ -119,6 +119,26 @@ export const useFetchNextDialogList = () => {
   return { data, loading, refetch };
 };
 
+export const useFetchChatAppList = () => {
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IDialog[]>({
+    queryKey: ['fetchChatAppList'],
+    initialData: [],
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data } = await chatService.listDialog();
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
 export const useSetNextDialog = () => {
   const queryClient = useQueryClient();
 
@@ -233,8 +253,12 @@ export const useFetchNextConversationList = () => {
     enabled: !!dialogId,
     queryFn: async () => {
       const { data } = await chatService.listConversation({ dialogId });
-      if (data.code === 0 && data.data.length > 0) {
-        handleClickConversation(data.data[0].id, '');
+      if (data.code === 0) {
+        if (data.data.length > 0) {
+          handleClickConversation(data.data[0].id, '');
+        } else {
+          handleClickConversation('', '');
+        }
       }
       return data?.data;
     },
@@ -340,6 +364,7 @@ export const useUpdateNextConversation = () => {
       });
       if (data.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['fetchConversationList'] });
+        message.success(i18n.t(`message.modified`));
       }
       return data;
     },

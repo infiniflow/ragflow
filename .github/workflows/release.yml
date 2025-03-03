@@ -75,12 +75,6 @@ jobs:
           # The body field does not support environment variable substitution directly.
           body_path: release_body.md
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       # https://github.com/marketplace/actions/docker-login
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -113,12 +107,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cd sdk/python && \
-          poetry build
+          uv build
 
       - name: Publish package distributions to PyPI
         if: startsWith(github.ref, 'refs/tags/v')
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/
+          packages-dir: sdk/python/dist/
           password: ${{ secrets.PYPI_API_TOKEN }}
           verbose: true

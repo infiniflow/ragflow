@@ -15,6 +15,7 @@ export default {
       edit: '編輯',
       upload: '上傳',
       english: '英語',
+      portugueseBr: '葡萄牙語 (巴西)',
       chinese: '簡體中文',
       traditionalChinese: '繁體中文',
       language: '語言',
@@ -34,6 +35,8 @@ export default {
       pleaseInput: '請輸入',
       submit: '提交',
       embedIntoSite: '嵌入網站',
+      previousPage: '上一頁',
+      nextPage: '下一頁',
     },
     login: {
       login: '登入',
@@ -82,6 +85,7 @@ export default {
       dataset: '數據集',
       testing: '檢索測試',
       configuration: '配置',
+      knowledgeGraph: '知識圖譜',
       files: '文件',
       name: '名稱',
       namePlaceholder: '請輸入名稱',
@@ -119,8 +123,8 @@ export default {
       view: '看法',
       filesSelected: '選定的文件',
       upload: '上傳',
-      run: '啟動',
-      runningStatus0: '未啟動',
+      run: '解析',
+      runningStatus0: '未解析',
       runningStatus1: '解析中',
       runningStatus2: '取消',
       runningStatus3: '成功',
@@ -132,7 +136,7 @@ export default {
       fromMessage: '缺少起始頁碼',
       toPlaceholder: '到',
       toMessage: '缺少結束頁碼（不包含）',
-      layoutRecognize: '佈局識別',
+      layoutRecognize: '文件解析器',
       layoutRecognizeTip:
         '使用視覺模型進行佈局分析，以更好地識別文檔結構，找到標題、文本塊、圖像和表格的位置。如果沒有此功能，則只能獲取 PDF 的純文本。',
       taskPageSize: '任務頁面大小',
@@ -144,7 +148,8 @@ export default {
       selectFiles: '選擇文件',
       changeSpecificCategory: '更改特定類別',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
-      uploadDescription: '支持單次或批量上傳。嚴禁上傳公司數據或其他違禁文件。',
+      uploadDescription:
+        '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
       chunk: '解析塊',
       bulk: '批量',
       cancel: '取消',
@@ -163,13 +168,38 @@ export default {
       autoQuestions: '自動問題',
       autoQuestionsTip: `在查詢此類問題時，為每個區塊提取 N 個問題以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。如果發生錯誤，此功能不會破壞整個分塊過程，除了將空結果新增至原始區塊。 `,
       redo: '是否清空已有 {{chunkNum}}個 chunk？',
+      setMetaData: '設定元數據',
+      pleaseInputJson: '請輸入JSON',
+      documentMetaTips: `<p>元資料為 Json 格式（不可搜尋）。如果提示中包含該文件的任何部分，它將被添加到 LLM 提示中。
+<p>範例：</p>
+<b>元資料是：</b><br>
+<code>
+  {
+      "Author": "Alex Dowson",
+      "Date": "2024-11-12"
+  }
+</code><br>
+<b>提示將是：</b><br>
+<p>文檔：文檔名稱</p>
+<p>作者：Alex Dowson</p>
+<p>日期：2024-11-12</p>
+<p>相關片段如下：</p>
+<ul>
+<li>這是區塊內容....</li>
+<li>這是區塊內容....</li>
+</ul>
+`,
+      metaData: '元資料',
+      deleteDocumentConfirmContent:
+        '該文件與知識圖譜相關聯。刪除後，相關節點和關係資訊將被刪除，但圖不會立即更新。更新圖動作是在解析承載知識圖譜提取任務的新文件的過程中執行的。 ',
+      plainText: '簡易',
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
       name: '知識庫名稱',
       photo: '知識庫圖片',
       description: '描述',
-      language: '語言',
+      language: '文件語言',
       languageMessage: '請輸入語言',
       languagePlaceholder: '請輸入語言',
       permissions: '權限',
@@ -226,14 +256,14 @@ export default {
       此塊方法支持<b> excel </b>和<b> csv/txt </b>文件格式。
     </p>
     <li>
-      如果文件以<b> excel </b>格式，則應由兩個列組成
+      如果文件是<b> excel </b>格式，則應由兩個列組成
       沒有標題：一個提出問題，另一個用於答案，
       答案列之前的問題列。多張紙是
       只要列正確結構，就可以接受。
     </li>
     <li>
-      如果文件以<b> csv/txt </b>格式為
-      用作分開問題和答案的定界符。
+      如果文件是<b> csv/txt </b>格式
+      以 UTF-8 編碼且用 TAB 作分開問題和答案的定界符。
     </li>
     <p>
       <i>
@@ -248,7 +278,7 @@ export default {
         您只需與<i>'ragflow'</i>交談即可列出所有符合資格的候選人。
         </p>
           `,
-      table: `支持<p><b>excel</b>和<b>csv/txt</b>格式文件。</p><p>以下是一些提示： <ul> <li>对于Csv或Txt文件，列之间的分隔符为 <em><b>tab</b></em>。</li> <li>第一行必须是列标题。</li> <li>列标题必须是有意义的术语，以便我们的大語言模型能够理解。列举一些同义词时最好使用斜杠<i>'/'</i>来分隔，甚至更好使用方括号枚举值，例如 <i>“性別/性別（男性，女性）”</i>.<p>以下是标题的一些示例：<ol> <li>供应商/供货商<b>'tab'</b>顏色（黃色、紅色、棕色）<b>'tab'</b>性別（男、女）<b>'tab'</B>尺码（m、l、xl、xxl）</li> <li>姓名/名字<b>'tab'</b>電話/手機/微信<b>'tab'</b>最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，mpa，mba，emba）</li> </ol> </p> </li> <li>表中的每一行都将被视为一个块。</li> </ul>`,
+      table: `支持<p><b>XLSX</b>和<b>csv/txt</b>格式文件。</p><p>以下是一些提示： <ul> <li>对于Csv或Txt文件，列之间的分隔符为 <em><b>tab</b></em>。</li> <li>第一行必须是列标题。</li> <li>列标题必须是有意义的术语，以便我们的大語言模型能够理解。列举一些同义词时最好使用斜杠<i>'/'</i>来分隔，甚至更好使用方括号枚举值，例如 <i>“性別/性別（男性，女性）”</i>.<p>以下是标题的一些示例：<ol> <li>供应商/供货商<b>'tab'</b>顏色（黃色、紅色、棕色）<b>'tab'</b>性別（男、女）<b>'tab'</B>尺码（m、l、xl、xxl）</li> <li>姓名/名字<b>'tab'</b>電話/手機/微信<b>'tab'</b>最高学历（高中，职高，硕士，本科，博士，初中，中技，中专，专科，专升本，mpa，mba，emba）</li> </ol> </p> </li> <li>表中的每一行都将被视为一个块。</li> </ul>`,
       picture: `
        <p>支持圖像文件。視頻即將推出。</p><p>
         如果圖片中有文字，則應用 OCR 提取文字作為其文字描述。
@@ -269,6 +299,16 @@ export default {
 <p>接下來，區塊將傳送到LLM以提取知識圖譜和思維導圖的節點和關係。
 
 <p>請注意您需要指定的條目類型。</p></p>`,
+      tag: `<p>使用「標籤」作為分塊方法的知識庫應該被其他知識庫用來將標籤加入其區塊中，查詢也將帶有標籤。
+<p>使用「標籤」作為分塊方法的知識庫<b>不</b>應該參與 RAG 過程。
+<p>本知識庫中的區塊是標籤的範例，展示了整個標籤集以及區塊與標籤之間的相關性。
+
+<p>此區塊方法支援<b>XLSX</b>和<b>CSV/TXT</b>檔案格式。
+<p>如果檔案採用 <b>XLSX</b> 格式，則應包含兩列，不含標題：一列用於內容，另一列用於標籤，內容列位於標籤列之前。只要列的結構正確，多張紙也是可以接受的。
+<p>如果檔案為<b>CSV/TXT</b>格式，則必須採用UTF-8編碼，並以TAB作為分隔符號來分隔內容和標籤。
+<p>標籤欄中，標籤之間有英文<b>逗號</b>。
+<i>不符合上述規則的文字行將被忽略，並且每一對將被視為一個不同的區塊。
+`,
       useRaptor: '使用RAPTOR文件增強策略',
       useRaptorTip: '請參考 https://huggingface.co/papers/2401.18059',
       prompt: '提示詞',
@@ -292,6 +332,37 @@ export default {
       pageRank: '頁面排名',
       pageRankTip: `這用來提高相關性分數。所有檢索到的區塊的相關性得分將加上該數字。
 當您想要先搜尋給定的知識庫時，請設定比其他人更高的 pagerank 分數。`,
+      tagName: '標籤',
+      frequency: '頻次',
+      searchTags: '搜尋標籤',
+      tagCloud: '雲端',
+      tagTable: '表',
+      tagSet: '標籤庫',
+      topnTags: 'Top-N 標籤',
+      tagSetTip: `
+ <p> 選擇「標籤」知識庫有助於標記每個區塊。 </p>
+<p>對這些區塊的查詢也將帶有標籤。
+此過程將透過向資料集添加更多資訊來提高檢索精度，特別是當存在大量區塊時。
+<p>標籤和關鍵字的差異：</p>
+<ul>
+ <li>標籤是一個閉集，由使用者定義和操作，而關鍵字是一個開集。
+ <li>您需要在使用前上傳包含範例的標籤集。
+ <li>關鍵字由 LLM 生成，既昂貴又耗時。
+</ul>
+ `,
+      tags: '標籤',
+      addTag: '增加標籤',
+      useGraphRag: '提取知識圖譜',
+      useGraphRagTip:
+        '文件分塊後，所有區塊將用於知識圖譜生成，這對多跳和複雜問題的推理有很大幫助。',
+      graphRagMethod: '方法',
+      graphRagMethodTip: `Light：實體和關係提取提示來自 GitHub - HKUDS/LightRAG：“LightRAG：簡單快速的檢索增強生成”<br>
+ 一般：實體和關係擷取提示來自 GitHub - microsoft/graphrag：基於模組化圖形的檢索增強生成 (RAG) 系統，`,
+      resolution: '實體歸一化',
+      resolutionTip: `解析過程會將具有相同意義的實體合併在一起，使知識圖譜更簡潔、更準確。應合併以下實體：川普總統、唐納德·川普、唐納德·J·川普、唐納德·約翰·川普`,
+      community: '社群報告生成',
+      communityTip:
+        '區塊被聚集成層次化的社區，其中實體和關係透過更高層次的抽象將每個部分連接起來。然後，我們使用 LLM 產生每個社群的摘要，即社群報告。更多資訊：https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: '解析塊',
@@ -333,6 +404,7 @@ export default {
       language: '語言',
       emptyResponse: '空回复',
       emptyResponseTip: `如果在知識庫中沒有檢索到用戶的問題，它將使用它作為答案。如果您希望 LLM 在未檢索到任何內容時提出自己的意見，請將此留空。`,
+      emptyResponseMessage: `當知識庫中沒有檢索到任何相關內容時，將觸發空響應。由於未選擇任何知識庫，因此刪除“空響應”。`,
       setAnOpener: '設置開場白',
       setAnOpenerInitial: `你好！我是你的助理，有什麼可以幫到你的嗎？`,
       setAnOpenerTip: '您想如何歡迎您的客戶？',
@@ -432,6 +504,18 @@ export default {
         '在多輪對話的中，對去知識庫查詢的問題進行最佳化。會呼叫大模型額外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      useKnowledgeGraph: '使用知識圖譜',
+      useKnowledgeGraph提示:
+        '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
+      keyword: '關鍵字分析',
+      keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。`,
+      reasoning: '推理',
+      reasoningTip:
+        '它將觸發類似Deepseek-R1/OpenAI o1的推理過程。將代理搜尋過程整合到推理工作流程中，使得模型本身能夠在遇到不確定資訊時動態地檢索外部知識。',
+      tavilyApiKeyTip:
+        '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
+      tavilyApiKeyMessage: '請輸入你的 Tavily Api Key',
+      tavilyApiKeyHelp: '如何獲取？',
     },
     setting: {
       profile: '概述',
@@ -598,7 +682,7 @@ export default {
       202: '一個請求已經進入後台排隊（異步任務）。',
       204: '刪除數據成功。',
       400: '發出的請求有錯誤，服務器沒有進行新建或修改數據的操作。',
-      401: '用戶沒有權限（Token、用戶名、密碼錯誤）。',
+      401: '請重新登入。',
       403: '用戶得到授權，但是訪問是被禁止的。',
       404: '發出的請求針對的是不存在的記錄，服務器沒有進行操作。',
       406: '請求的格式不可得。',
@@ -625,7 +709,8 @@ export default {
       newFolder: '新建文件夾',
       uploadFile: '上傳文件',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
-      uploadDescription: '支持單次或批量上傳。嚴禁上傳公司數據或其他違禁文件。',
+      uploadDescription:
+        '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
       file: '文件',
       directory: '文件夾',
       local: '本地上傳',
@@ -667,7 +752,7 @@ export default {
       generateDescription: `此元件用於呼叫LLM生成文本，請注意提示的設定。`,
       categorizeDescription: `此組件用於對文字進行分類。請指定類別的名稱、描述和範例。每個類別都指向不同的下游組件。`,
       relevantDescription: `此元件用來判斷upstream的輸出是否與使用者最新的問題相關，『是』代表相關，『否』代表不相關。`,
-      rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。只有「檢索」可作為其下游。`,
+      rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。`,
       messageDescription:
         '此元件用於向使用者發送靜態訊息。您可以準備幾條訊息，這些訊息將隨機選擇。',
       keywordDescription: `該組件用於從用戶的問題中提取關鍵字。 Top N指定需要提取的關鍵字數量。`,
@@ -1013,9 +1098,31 @@ export default {
       pasteFileLink: '貼上文件連結',
       testRun: '試運行',
       template: '模板轉換',
-      templateDescription: '此元件用於排版各種元件的輸出。 ',
+      templateDescription:
+        '此元件用於排版各種元件的輸出。1、支持Jinja2模板，會先將輸入轉為對象後進行模板渲染2、同時保留原使用{參數}字符串替換的方式',
       jsonUploadTypeErrorMessage: '請上傳json檔',
       jsonUploadContentErrorMessage: 'json 檔案錯誤',
+      iterationDescription: `此元件首先透過「分隔符號」將輸入拆分為陣列。
+對數組中的元素依序執行相同的操作步驟，直到輸出所有結果，可以理解為任務批次處理器。
+
+例如，在長文本翻譯迭代節點內，如果所有內容都輸入到LLM節點，則可能會達到單次對話限制。上游節點可以先將長文本拆分為多個分片，並配合迭代節點對每個分片進行批次翻譯，避免達到單次對話的LLM訊息限制。`,
+      delimiterTip: `此分隔符號用於將輸入文字分割成多個文字片段，其中的回顯將作為每次迭代的輸入項執行。`,
+      delimiterOptions: {
+        comma: '逗號',
+        lineBreak: '換行',
+        tab: '製表符',
+        underline: '底線',
+        diagonal: '斜線',
+        minus: '連字符',
+        semicolon: '分號',
+      },
+      addVariable: '新增變數',
+      variableSettings: '變數設定',
+      systemPrompt: '系統提示詞',
+      addCategory: '新增分類',
+      categoryName: '分類名稱',
+      nextStep: '下一步',
+      insertVariableTip: `輸入 / 插入變數`,
     },
     footer: {
       profile: '“保留所有權利 @ react”',

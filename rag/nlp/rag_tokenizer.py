@@ -36,7 +36,7 @@ class RagTokenizer:
         return str(("DD" + (line[::-1].lower())).encode("utf-8"))[2:-1]
 
     def loadDict_(self, fnm):
-        logging.info(f"[HUQIE]:Build trie {fnm}")
+        logging.info(f"[HUQIE]:Build trie from {fnm}")
         try:
             of = open(fnm, "r", encoding='utf-8')
             while True:
@@ -50,7 +50,10 @@ class RagTokenizer:
                 if k not in self.trie_ or self.trie_[k][0] < F:
                     self.trie_[self.key_(line[0])] = (F, line[2])
                 self.trie_[self.rkey_(line[0])] = 1
-            self.trie_.save(fnm + ".trie")
+
+            dict_file_cache = fnm + ".trie"
+            logging.info(f"[HUQIE]:Build trie cache to {dict_file_cache}")
+            self.trie_.save(dict_file_cache)
             of.close()
         except Exception:
             logging.exception(f"[HUQIE]:Build trie {fnm} failed")
@@ -58,20 +61,30 @@ class RagTokenizer:
     def __init__(self, debug=False):
         self.DEBUG = debug
         self.DENOMINATOR = 1000000
-        self.trie_ = datrie.Trie(string.printable)
         self.DIR_ = os.path.join(get_project_base_directory(), "rag/res", "huqie")
 
         self.stemmer = PorterStemmer()
         self.lemmatizer = WordNetLemmatizer()
 
         self.SPLIT_CHAR = r"([ ,\.<>/?;:'\[\]\\`!@#$%^&*\(\)\{\}\|_+=《》，。？、；‘’：“”【】~！￥%……（）——-]+|[a-z\.-]+|[0-9,\.-]+)"
-        try:
-            self.trie_ = datrie.Trie.load(self.DIR_ + ".txt.trie")
-            return
-        except Exception:
-            logging.exception("[HUQIE]:Build default trie")
+
+        trie_file_name = self.DIR_ + ".txt.trie"
+        # check if trie file existence
+        if os.path.exists(trie_file_name):
+            try:
+                # load trie from file
+                self.trie_ = datrie.Trie.load(trie_file_name)
+                return
+            except Exception:
+                # fail to load trie from file, build default trie
+                logging.exception(f"[HUQIE]:Fail to load trie file {trie_file_name}, build the default trie file")
+                self.trie_ = datrie.Trie(string.printable)
+        else:
+            # file not exist, build default trie
+            logging.info(f"[HUQIE]:Trie file {trie_file_name} not found, build the default trie file")
             self.trie_ = datrie.Trie(string.printable)
 
+        # load data from dict file and save to trie file
         self.loadDict_(self.DIR_ + ".txt")
 
     def loadUserDict(self, fnm):
@@ -86,7 +99,7 @@ class RagTokenizer:
         self.loadDict_(fnm)
 
     def _strQ2B(self, ustring):
-        """把字符串全角转半角"""
+        """Convert full-width characters to half-width characters"""
         rstring = ""
         for uchar in ustring:
             inside_code = ord(uchar)
@@ -94,7 +107,7 @@ class RagTokenizer:
                 inside_code = 0x0020
             else:
                 inside_code -= 0xfee0
-            if inside_code < 0x0020 or inside_code > 0x7e:  # 转完之后不是半角字符返回原来的字符
+            if inside_code < 0x0020 or inside_code > 0x7e:  # After the conversion, if it's not a half-width character, return the original character.
                 rstring += uchar
             else:
                 rstring += chr(inside_code)
@@ -251,6 +264,7 @@ class RagTokenizer:
         return [self.stemmer.stem(self.lemmatizer.lemmatize(t)) if re.match(r"[a-zA-Z_-]+$", t) else t for t in tks]
 
     def tokenize(self, line):
+        line = re.sub(r"\W+", " ", line)
         line = self._strQ2B(line).lower()
         line = self._tradi2simp(line)
         zh_num = len([1 for c in line if is_chinese(c)])

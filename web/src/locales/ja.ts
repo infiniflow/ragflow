@@ -15,6 +15,7 @@ export default {
       edit: '編集',
       upload: 'アップロード',
       english: '英語',
+      portugueseBr: 'ポルトガル語 (ブラジル)',
       chinese: '中国語（簡体字）',
       traditionalChinese: '中国語（繁体字）',
       language: '言語',
@@ -120,8 +121,8 @@ export default {
       view: '表示',
       filesSelected: '選択されたファイル',
       upload: 'アップロード',
-      run: '実行',
-      runningStatus0: '未開始',
+      run: '解析する',
+      runningStatus0: '未解決',
       runningStatus1: 'パース中',
       runningStatus2: 'キャンセル',
       runningStatus3: '成功',
@@ -225,10 +226,10 @@ export default {
       <i>このチャンク方法はすべてのPPTファイルに自動的に適用されるため、手動で指定する必要はありません。</i></p>`,
       qa: `
       <p>
-      このチャンク方法は<b>EXCEL</b>および<b>CSV/TXT</b>ファイル形式をサポートします。
+      このチャンク方法は<b>XLSX</b>および<b>CSV/TXT</b>ファイル形式をサポートします。
     </p>
     <li>
-      <b>Excel</b>形式のファイルには、ヘッダーのない2つの
+      <b>XLSX</b>形式のファイルには、ヘッダーのない2つの
       列が必要です： 1つは質問の列でもう1つは回答の列です
       （質問列が先行）。複数のシートも可能です。
       
@@ -248,7 +249,7 @@ export default {
       さまざまな形式の履歴書を解析し、構造化データとして整理してリクルーターの候補者検索を支援します。
       </p>
       `,
-      table: `<p>対応ファイル形式は<b>EXCEL</b>および<b>CSV/TXT</b>です。</p><p>
+      table: `<p>対応ファイル形式は<b>XLSX</b>および<b>CSV/TXT</b>です。</p><p>
       いくつかの前提条件とヒントはこちらです：
       <ul>
     <li>CSVまたはTXTファイルの場合、列間の区切り文字は<b>TAB</b>である必要があります。</li>
@@ -655,7 +656,7 @@ export default {
       directory: 'ディレクトリ',
       uploadTitle: 'クリックまたはドラッグしてファイルをアップロード',
       uploadDescription:
-        '単一または一括アップロードをサポートします。企業データや禁止されたファイルのアップロードは禁止されています。',
+        '単一または一括アップロードをサポートします。各ファイルは10MBを超えないこと、最大128ファイルまでです。',
       local: 'ローカルアップロード',
       s3: 'S3アップロード',
       preview: 'プレビュー',
@@ -1048,7 +1049,7 @@ export default {
       testRun: 'テスト実行',
       template: 'テンプレート',
       templateDescription:
-        'このコンポーネントは、さまざまなコンポーネントの出力を組版するために使用されます。',
+        'このコンポーネントは、さまざまなコンポーネントの出力を組版するために使用されます。1. Jinja2テンプレートをサポートし、最初に入力をオブジェクトに変換してからテンプレートをレンダリングします。2. {parameter}文字列置換を使用する元の方法も同時に保持します',
       emailComponent: 'メール',
       emailDescription: '指定されたアドレスにメールを送信',
       smtpServer: 'SMTPサーバー',

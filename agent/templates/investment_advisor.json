@@ -4,568 +4,639 @@
     "description": "An intelligent investment advisor that answers your financial questions using real-time domestic financial data.",
     "canvas_type": "chatbot",
     "dsl": {
-          "answer": [],
-          "components": {
-            "begin": {
-              "obj": {
-                "component_name": "Begin",
-                "params": {
-                  "prologue": "Hi there!"
-                }
-              },
-              "downstream": [
-                "Answer:NeatLandsWave"
-              ],
-              "upstream": []
-            },
-            "WenCai:TenParksOpen": {
-              "obj": {
-                "component_name": "WenCai",
-                "params": {
-                  "query_type": "stock",
-                  "top_n": 5
-                }
-              },
-              "downstream": [
-                "Generate:RottenPianosUnite"
-              ],
-              "upstream": [
-                "Answer:NeatLandsWave"
-              ]
-            },
-            "AkShare:CalmHotelsKnow": {
-              "obj": {
-                "component_name": "AkShare",
-                "params": {
-                  "top_n": 10
-                }
-              },
-              "downstream": [
-                "Generate:RottenPianosUnite"
-              ],
-              "upstream": [
-                "KeywordExtract:BreezyGoatsRead"
-              ]
-            },
-            "Answer:NeatLandsWave": {
-              "obj": {
-                "component_name": "Answer",
-                "params": {}
-              },
-              "downstream": [
-                "WenCai:TenParksOpen",
-                "KeywordExtract:BreezyGoatsRead"
-              ],
-              "upstream": [
-                "begin",
-                "Generate:RottenPianosUnite"
-              ]
-            },
-            "Generate:RottenPianosUnite": {
-              "obj": {
-                "component_name": "Generate",
-                "params": {
-                  "cite": true,
-                  "frequency_penalty": 0.7,
-                  "llm_id": "deepseek-chat@DeepSeek",
-                  "max_tokens": 256,
-                  "message_history_window_size": 0,
-                  "parameters": [
-                    {
-                      "component_id": "WenCai:TenParksOpen",
-                      "id": "d35f331b-2787-4ae7-ab81-a7ea15970843",
-                      "key": "wencai_input"
-                    },
-                    {
-                      "component_id": "AkShare:CalmHotelsKnow",
-                      "id": "36c4db0b-c80d-4119-a2a6-05ed9f7efbc9",
-                      "key": "ak_input"
-                    }
-                  ],
-                  "presence_penalty": 0.4,
-                  "prompt": "Role: You are a professional financial counseling assistant.\n\nTask: Answer user's question based on content provided by Wencai and AkShare.\n\nNotice:\n- Output no more than 5 news items from AkShare if there's content provided by Wencai.\n- Items from AkShare MUST have a corresponding URL link.\n\n############\nContent provided by Wencai: \n{wencai_input}\n\n################\nContent provided by AkShare: \n{ak_input}",
-                  "temperature": 0.1,
-                  "top_p": 0.3
-                }
-              },
-              "downstream": [
-                "Answer:NeatLandsWave"
-              ],
-              "upstream": [
-                "WenCai:TenParksOpen",
-                "AkShare:CalmHotelsKnow"
-              ]
-            },
-            "KeywordExtract:BreezyGoatsRead": {
-              "obj": {
-                "component_name": "KeywordExtract",
-                "params": {
-                  "frequencyPenaltyEnabled": true,
-                  "frequency_penalty": 0.7,
-                  "llm_id": "deepseek-chat@DeepSeek",
-                  "maxTokensEnabled": true,
-                  "max_tokens": 256,
-                  "parameter": "Precise",
-                  "presencePenaltyEnabled": true,
-                  "presence_penalty": 0.4,
-                  "temperature": 0.1,
-                  "temperatureEnabled": true,
-                  "topPEnabled": true,
-                  "top_n": 2,
-                  "top_p": 0.3
-                }
-              },
-              "downstream": [
-                "AkShare:CalmHotelsKnow"
-              ],
-              "upstream": [
-                "Answer:NeatLandsWave"
-              ]
+      "answer": [],
+      "components": {
+        "AkShare:CalmHotelsKnow": {
+          "downstream": [
+            "Generate:SolidAreasRing"
+          ],
+          "obj": {
+            "component_name": "AkShare",
+            "inputs": [],
+            "output": null,
+            "params": {
+              "debug_inputs": [],
+              "inputs": [],
+              "message_history_window_size": 22,
+              "output": null,
+              "output_var_name": "output",
+              "query": [],
+              "top_n": 10
             }
           },
-          "graph": {
-            "nodes": [
-              {
-                "data": {
-                  "form": {
-                    "prologue": "Hi there!"
-                  },
-                  "label": "Begin",
-                  "name": "Opening"
-                },
-                "dragging": false,
-                "height": 44,
-                "id": "begin",
-                "position": {
-                  "x": -521.8118264317484,
-                  "y": -27.999467037576665
-                },
-                "positionAbsolute": {
-                  "x": -521.8118264317484,
-                  "y": -27.999467037576665
-                },
-                "selected": false,
-                "sourcePosition": "left",
-                "targetPosition": "right",
-                "type": "beginNode",
-                "width": 100
-              },
-              {
-                "data": {
-                  "form": {
-                    "query_type": "stock",
-                    "top_n": 5
-                  },
-                  "label": "WenCai",
-                  "name": "Wencai"
-                },
-                "dragging": false,
-                "height": 44,
-                "id": "WenCai:TenParksOpen",
-                "position": {
-                  "x": -13.030801663267397,
-                  "y": -30.557141660610256
-                },
-                "positionAbsolute": {
-                  "x": -13.030801663267397,
-                  "y": -30.557141660610256
-                },
-                "selected": false,
-                "sourcePosition": "right",
-                "targetPosition": "left",
-                "type": "ragNode",
-                "width": 200
-              },
-              {
-                "data": {
-                  "form": {
-                    "top_n": 10
-                  },
-                  "label": "AkShare",
-                  "name": "AKShare"
-                },
-                "dragging": false,
-                "height": 44,
-                "id": "AkShare:CalmHotelsKnow",
-                "position": {
-                  "x": 267.17349571786156,
-                  "y": 100.01281266803943
-                },
-                "positionAbsolute": {
-                  "x": 267.17349571786156,
-                  "y": 100.01281266803943
-                },
-                "selected": false,
-                "sourcePosition": "right",
-                "targetPosition": "left",
-                "type": "ragNode",
-                "width": 200
-              },
-              {
-                "data": {
-                  "form": {},
-                  "label": "Answer",
-                  "name": "Interact"
-                },
-                "dragging": false,
-                "height": 44,
-                "id": "Answer:NeatLandsWave",
-                "position": {
-                  "x": -304.0612563145512,
-                  "y": -29.054278091837944
-                },
-                "positionAbsolute": {
-                  "x": -304.0612563145512,
-                  "y": -29.054278091837944
-                },
-                "selected": false,
-                "sourcePosition": "right",
-                "targetPosition": "left",
-                "type": "logicNode",
-                "width": 200
-              },
-              {
-                "data": {
-                  "form": {
-                    "cite": true,
-                    "frequencyPenaltyEnabled": true,
-                    "frequency_penalty": 0.7,
-                    "llm_id": "deepseek-chat@DeepSeek",
-                    "maxTokensEnabled": true,
-                    "max_tokens": 256,
-                    "message_history_window_size": 0,
-                    "parameter": "Precise",
-                    "parameters": [
-                      {
-                        "component_id": "WenCai:TenParksOpen",
-                        "id": "d35f331b-2787-4ae7-ab81-a7ea15970843",
-                        "key": "wencai_input"
-                      },
-                      {
-                        "component_id": "AkShare:CalmHotelsKnow",
-                        "id": "36c4db0b-c80d-4119-a2a6-05ed9f7efbc9",
-                        "key": "ak_input"
-                      }
-                    ],
-                    "presencePenaltyEnabled": true,
-                    "presence_penalty": 0.4,
-                    "prompt": "Role: You are a professional financial counseling assistant.\n\nTask: Answer user's question based on content provided by Wencai and AkShare.\n\nNotice:\n- Output no more than 5 news items from AkShare if there's content provided by Wencai.\n- Items from AkShare MUST have a corresponding URL link.\n\n############\nContent provided by Wencai: \n{wencai_input}\n\n################\nContent provided by AkShare: \n{ak_input}",
-                    "temperature": 0.1,
-                    "temperatureEnabled": true,
-                    "topPEnabled": true,
-                    "top_p": 0.3
-                  },
-                  "label": "Generate",
-                  "name": "LLM"
-                },
-                "dragging": false,
-                "height": 170,
-                "id": "Generate:RottenPianosUnite",
-                "position": {
-                  "x": -16.477598988611703,
-                  "y": -251.90091743639417
-                },
-                "positionAbsolute": {
-                  "x": -16.477598988611703,
-                  "y": -251.90091743639417
-                },
-                "selected": false,
-                "sourcePosition": "right",
-                "targetPosition": "left",
-                "type": "generateNode",
-                "width": 200
-              },
-              {
-                "data": {
-                  "form": {
-                    "frequencyPenaltyEnabled": true,
-                    "frequency_penalty": 0.7,
-                    "llm_id": "deepseek-chat@DeepSeek",
-                    "maxTokensEnabled": true,
-                    "max_tokens": 256,
-                    "parameter": "Precise",
-                    "presencePenaltyEnabled": true,
-                    "presence_penalty": 0.4,
-                    "temperature": 0.1,
-                    "temperatureEnabled": true,
-                    "topPEnabled": true,
-                    "top_n": 2,
-                    "top_p": 0.3
-                  },
-                  "label": "KeywordExtract",
-                  "name": "Keywords"
-                },
-                "dragging": false,
-                "height": 86,
-                "id": "KeywordExtract:BreezyGoatsRead",
-                "position": {
-                  "x": -17.690374759999543,
-                  "y": 80.39964392387697
-                },
-                "positionAbsolute": {
-                  "x": -17.690374759999543,
-                  "y": 80.39964392387697
-                },
-                "selected": false,
-                "sourcePosition": "right",
-                "targetPosition": "left",
-                "type": "keywordNode",
-                "width": 200
-              },
-              {
-                "data": {
-                  "form": {
-                    "text": "Receives the user's financial inquiries and displays the large model's response to financial questions."
-                  },
-                  "label": "Note",
-                  "name": "N: Interact"
-                },
-                "dragging": false,
-                "height": 162,
-                "id": "Note:FuzzyPoetsLearn",
-                "position": {
-                  "x": -296.5982116419186,
-                  "y": 38.77567426067935
-                },
-                "positionAbsolute": {
-                  "x": -296.5982116419186,
-                  "y": 38.77567426067935
-                },
-                "resizing": false,
-                "selected": false,
-                "sourcePosition": "right",
-                "style": {
-                  "height": 162,
-                  "width": 214
-                },
-                "targetPosition": "left",
-                "type": "noteNode",
-                "width": 214,
-                "dragHandle": ".note-drag-handle"
-              },
-              {
-                "data": {
-                  "form": {
-                    "text": "Extracts keywords based on the user's financial questions for better retrieval."
-                  },
-                  "label": "Note",
-                  "name": "N: Keywords"
-                },
-                "dragging": false,
-                "height": 155,
-                "id": "Note:FlatBagsRun",
-                "position": {
-                  "x": -14.82895160277127,
-                  "y": 186.52508153680787
-                },
-                "positionAbsolute": {
-                  "x": -14.82895160277127,
-                  "y": 186.52508153680787
-                },
-                "resizing": false,
-                "selected": false,
-                "sourcePosition": "right",
-                "style": {
-                  "height": 155,
-                  "width": 213
-                },
-                "targetPosition": "left",
-                "type": "noteNode",
-                "width": 213,
-                "dragHandle": ".note-drag-handle"
-              },
-              {
-                "data": {
-                  "form": {
-                    "text": "Searches on akshare for the latest news about economics based on the keywords and returns the results."
-                  },
-                  "label": "Note",
-                  "name": "N: AKShare"
-                },
-                "dragging": false,
-                "height": 128,
-                "id": "Note:WarmClothsSort",
-                "position": {
-                  "x": 573.7653319987893,
-                  "y": 102.64512355369035
-                },
-                "positionAbsolute": {
-                  "x": 573.7653319987893,
-                  "y": 102.64512355369035
-                },
-                "resizing": false,
-                "selected": false,
-                "sourcePosition": "right",
-                "style": {
-                  "height": 128,
-                  "width": 283
-                },
-                "targetPosition": "left",
-                "type": "noteNode",
-                "width": 283,
-                "dragHandle": ".note-drag-handle"
-              },
-              {
-                "data": {
-                  "form": {
-                    "text": "Searches by Wencai to select stocks that satisfy user mentioned conditions."
-                  },
-                  "label": "Note",
-                  "name": "N: Wencai"
-                },
-                "dragging": false,
-                "height": 128,
-                "id": "Note:TiredReadersWash",
-                "position": {
-                  "x": 571.4274792499875,
-                  "y": -37.07105560150117
-                },
-                "positionAbsolute": {
-                  "x": 571.4274792499875,
-                  "y": -37.07105560150117
-                },
-                "resizing": false,
-                "selected": false,
-                "sourcePosition": "right",
-                "style": {
-                  "height": 128,
-                  "width": 285
-                },
-                "targetPosition": "left",
-                "type": "noteNode",
-                "width": 285,
-                "dragHandle": ".note-drag-handle"
-              },
-              {
-                "data": {
-                  "form": {
-                    "text": "The large model answers the user's medical health questions based on the searched and retrieved content."
-                  },
-                  "label": "Note",
-                  "name": "N: LLM"
-                },
-                "dragging": false,
-                "height": 163,
-                "id": "Note:TameBoatsType",
-                "position": {
-                  "x": -7.849538042569293,
-                  "y": -427.90526378748035
-                },
-                "positionAbsolute": {
-                  "x": -7.849538042569293,
-                  "y": -427.90526378748035
-                },
-                "resizing": false,
-                "selected": false,
-                "sourcePosition": "right",
-                "style": {
-                  "height": 163,
-                  "width": 212
-                },
-                "targetPosition": "left",
-                "type": "noteNode",
-                "width": 212,
-                "dragHandle": ".note-drag-handle"
-              }
-            ],
-            "edges": [
-              {
-                "id": "reactflow__edge-begin-Answer:NeatLandsWavec",
-                "markerEnd": "logo",
-                "source": "begin",
-                "sourceHandle": null,
-                "style": {
-                  "stroke": "rgb(202 197 245)",
-                  "strokeWidth": 2
-                },
-                "target": "Answer:NeatLandsWave",
-                "targetHandle": "c",
-                "type": "buttonEdge"
-              },
-              {
-                "id": "reactflow__edge-Answer:NeatLandsWaveb-WenCai:TenParksOpenc",
-                "markerEnd": "logo",
-                "source": "Answer:NeatLandsWave",
-                "sourceHandle": "b",
-                "style": {
-                  "stroke": "rgb(202 197 245)",
-                  "strokeWidth": 2
-                },
-                "target": "WenCai:TenParksOpen",
-                "targetHandle": "c",
-                "type": "buttonEdge"
-              },
-              {
-                "id": "reactflow__edge-KeywordExtract:BreezyGoatsReadb-AkShare:CalmHotelsKnowc",
-                "markerEnd": "logo",
-                "source": "KeywordExtract:BreezyGoatsRead",
-                "sourceHandle": "b",
-                "style": {
-                  "stroke": "rgb(202 197 245)",
-                  "strokeWidth": 2
-                },
-                "target": "AkShare:CalmHotelsKnow",
-                "targetHandle": "c",
-                "type": "buttonEdge"
-              },
-              {
-                "id": "reactflow__edge-WenCai:TenParksOpenb-Generate:RottenPianosUniteb",
-                "markerEnd": "logo",
-                "source": "WenCai:TenParksOpen",
-                "sourceHandle": "b",
-                "style": {
-                  "stroke": "rgb(202 197 245)",
-                  "strokeWidth": 2
-                },
-                "target": "Generate:RottenPianosUnite",
-                "targetHandle": "b",
-                "type": "buttonEdge"
-              },
-              {
-                "id": "reactflow__edge-AkShare:CalmHotelsKnowb-Generate:RottenPianosUniteb",
-                "markerEnd": "logo",
-                "source": "AkShare:CalmHotelsKnow",
-                "sourceHandle": "b",
-                "style": {
-                  "stroke": "rgb(202 197 245)",
-                  "strokeWidth": 2
-                },
-                "target": "Generate:RottenPianosUnite",
-                "targetHandle": "b",
-                "type": "buttonEdge"
-              },
-              {
-                "id": "reactflow__edge-Generate:RottenPianosUnitec-Answer:NeatLandsWavec",
-                "markerEnd": "logo",
-                "source": "Generate:RottenPianosUnite",
-                "sourceHandle": "c",
-                "style": {
-                  "stroke": "rgb(202 197 245)",
-                  "strokeWidth": 2
-                },
-                "target": "Answer:NeatLandsWave",
-                "targetHandle": "c",
-                "type": "buttonEdge"
-              },
-              {
-                "id": "reactflow__edge-Answer:NeatLandsWaveb-KeywordExtract:BreezyGoatsReadc",
-                "markerEnd": "logo",
-                "source": "Answer:NeatLandsWave",
-                "sourceHandle": "b",
-                "style": {
-                  "stroke": "rgb(202 197 245)",
-                  "strokeWidth": 2
-                },
-                "target": "KeywordExtract:BreezyGoatsRead",
-                "targetHandle": "c",
-                "type": "buttonEdge"
-              }
-            ]
-          },
-          "history": [],
-          "messages": [],
-          "path": [],
-          "reference": []
+          "upstream": [
+            "KeywordExtract:BreezyGoatsRead"
+          ]
         },
+        "Answer:NeatLandsWave": {
+          "downstream": [
+            "WenCai:TenParksOpen",
+            "KeywordExtract:BreezyGoatsRead"
+          ],
+          "obj": {
+            "component_name": "Answer",
+            "inputs": [],
+            "output": null,
+            "params": {
+              "debug_inputs": [],
+              "inputs": [],
+              "message_history_window_size": 22,
+              "output": null,
+              "output_var_name": "output",
+              "post_answers": [],
+              "query": []
+            }
+          },
+          "upstream": [
+            "begin",
+            "Generate:SolidAreasRing"
+          ]
+        },
+        "Generate:SolidAreasRing": {
+          "downstream": [
+            "Answer:NeatLandsWave"
+          ],
+          "obj": {
+            "component_name": "Generate",
+            "inputs": [],
+            "output": null,
+            "params": {
+              "cite": true,
+              "debug_inputs": [],
+              "frequency_penalty": 0.7,
+              "inputs": [],
+              "llm_id": "deepseek-chat@DeepSeek",
+              "max_tokens": 0,
+              "message_history_window_size": 1,
+              "output": null,
+              "output_var_name": "output",
+              "parameters": [],
+              "presence_penalty": 0.4,
+              "prompt": "Role: You are a professional financial counseling assistant.\n\nTask: Answer user's question based on content provided by Wencai and AkShare.\n\nNotice:\n- Output no more than 5 news items from AkShare if there's content provided by Wencai.\n- Items from AkShare MUST have a corresponding URL link.\n\n############\nContent provided by Wencai: \n{WenCai:TenParksOpen}\n\n################\nContent provided by AkShare: \n\n{AkShare:CalmHotelsKnow}\n\n\n",
+              "query": [],
+              "temperature": 0.1,
+              "top_p": 0.3
+            }
+          },
+          "upstream": [
+            "WenCai:TenParksOpen",
+            "AkShare:CalmHotelsKnow"
+          ]
+        },
+        "KeywordExtract:BreezyGoatsRead": {
+          "downstream": [
+            "AkShare:CalmHotelsKnow"
+          ],
+          "obj": {
+            "component_name": "KeywordExtract",
+            "inputs": [],
+            "output": null,
+            "params": {
+              "cite": true,
+              "debug_inputs": [],
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "inputs": [],
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 22,
+              "output": null,
+              "output_var_name": "output",
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "",
+              "query": [],
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_n": 2,
+              "top_p": 0.3
+            }
+          },
+          "upstream": [
+            "Answer:NeatLandsWave"
+          ]
+        },
+        "WenCai:TenParksOpen": {
+          "downstream": [
+            "Generate:SolidAreasRing"
+          ],
+          "obj": {
+            "component_name": "WenCai",
+            "inputs": [],
+            "output": null,
+            "params": {
+              "debug_inputs": [],
+              "inputs": [],
+              "message_history_window_size": 22,
+              "output": null,
+              "output_var_name": "output",
+              "query": [],
+              "query_type": "stock",
+              "top_n": 5
+            }
+          },
+          "upstream": [
+            "Answer:NeatLandsWave"
+          ]
+        },
+        "begin": {
+          "downstream": [
+            "Answer:NeatLandsWave"
+          ],
+          "obj": {
+            "component_name": "Begin",
+            "inputs": [],
+            "output": null,
+            "params": {
+              "debug_inputs": [],
+              "inputs": [],
+              "message_history_window_size": 22,
+              "output": null,
+              "output_var_name": "output",
+              "prologue": "Hi there!",
+              "query": []
+            }
+          },
+          "upstream": []
+        }
+      },
+      "embed_id": "",
+      "graph": {
+        "edges": [
+          {
+            "id": "reactflow__edge-begin-Answer:NeatLandsWavec",
+            "markerEnd": "logo",
+            "source": "begin",
+            "sourceHandle": null,
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Answer:NeatLandsWave",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Answer:NeatLandsWaveb-WenCai:TenParksOpenc",
+            "markerEnd": "logo",
+            "source": "Answer:NeatLandsWave",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "WenCai:TenParksOpen",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-KeywordExtract:BreezyGoatsReadb-AkShare:CalmHotelsKnowc",
+            "markerEnd": "logo",
+            "source": "KeywordExtract:BreezyGoatsRead",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "AkShare:CalmHotelsKnow",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "reactflow__edge-Answer:NeatLandsWaveb-KeywordExtract:BreezyGoatsReadc",
+            "markerEnd": "logo",
+            "source": "Answer:NeatLandsWave",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "KeywordExtract:BreezyGoatsRead",
+            "targetHandle": "c",
+            "type": "buttonEdge"
+          },
+          {
+            "id": "xy-edge__WenCai:TenParksOpenb-Generate:SolidAreasRingb",
+            "markerEnd": "logo",
+            "source": "WenCai:TenParksOpen",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:SolidAreasRing",
+            "targetHandle": "b",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__AkShare:CalmHotelsKnowb-Generate:SolidAreasRingb",
+            "markerEnd": "logo",
+            "source": "AkShare:CalmHotelsKnow",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:SolidAreasRing",
+            "targetHandle": "b",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__Generate:SolidAreasRingc-Answer:NeatLandsWavec",
+            "markerEnd": "logo",
+            "source": "Generate:SolidAreasRing",
+            "sourceHandle": "c",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Answer:NeatLandsWave",
+            "targetHandle": "c",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          }
+        ],
+        "nodes": [
+          {
+            "data": {
+              "form": {
+                "prologue": "Hi there!"
+              },
+              "label": "Begin",
+              "name": "Opening"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "begin",
+            "measured": {
+              "height": 44,
+              "width": 100
+            },
+            "position": {
+              "x": -609.7949690891593,
+              "y": -29.12385224725604
+            },
+            "positionAbsolute": {
+              "x": -521.8118264317484,
+              "y": -27.999467037576665
+            },
+            "selected": false,
+            "sourcePosition": "left",
+            "targetPosition": "right",
+            "type": "beginNode"
+          },
+          {
+            "data": {
+              "form": {
+                "query_type": "stock",
+                "top_n": 5
+              },
+              "label": "WenCai",
+              "name": "Wencai"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "WenCai:TenParksOpen",
+            "measured": {
+              "height": 44,
+              "width": 200
+            },
+            "position": {
+              "x": -13.030801663267397,
+              "y": -30.557141660610256
+            },
+            "positionAbsolute": {
+              "x": -13.030801663267397,
+              "y": -30.557141660610256
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "ragNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "top_n": 10
+              },
+              "label": "AkShare",
+              "name": "AKShare"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "AkShare:CalmHotelsKnow",
+            "measured": {
+              "height": 44,
+              "width": 200
+            },
+            "position": {
+              "x": 250.32227681412806,
+              "y": 74.24036022703525
+            },
+            "positionAbsolute": {
+              "x": 267.17349571786156,
+              "y": 100.01281266803943
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "ragNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {},
+              "label": "Answer",
+              "name": "Interact"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "Answer:NeatLandsWave",
+            "measured": {
+              "height": 44,
+              "width": 200
+            },
+            "position": {
+              "x": -304.0612563145512,
+              "y": -29.054278091837944
+            },
+            "positionAbsolute": {
+              "x": -304.0612563145512,
+              "y": -29.054278091837944
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "logicNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 256,
+                "parameter": "Precise",
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_n": 2,
+                "top_p": 0.3
+              },
+              "label": "KeywordExtract",
+              "name": "Keywords"
+            },
+            "dragging": false,
+            "height": 86,
+            "id": "KeywordExtract:BreezyGoatsRead",
+            "measured": {
+              "height": 86,
+              "width": 200
+            },
+            "position": {
+              "x": -12.734133905960277,
+              "y": 53.63594331206494
+            },
+            "positionAbsolute": {
+              "x": -17.690374759999543,
+              "y": 80.39964392387697
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "keywordNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "text": "Receives the user's financial inquiries and displays the large model's response to financial questions."
+              },
+              "label": "Note",
+              "name": "N: Interact"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 187,
+            "id": "Note:FuzzyPoetsLearn",
+            "measured": {
+              "height": 187,
+              "width": 214
+            },
+            "position": {
+              "x": -296.5982116419186,
+              "y": 38.77567426067935
+            },
+            "positionAbsolute": {
+              "x": -296.5982116419186,
+              "y": 38.77567426067935
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 162,
+              "width": 214
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 214
+          },
+          {
+            "data": {
+              "form": {
+                "text": "Extracts keywords based on the user's financial questions for better retrieval."
+              },
+              "label": "Note",
+              "name": "N: Keywords"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 155,
+            "id": "Note:FlatBagsRun",
+            "measured": {
+              "height": 155,
+              "width": 213
+            },
+            "position": {
+              "x": -14.82895160277127,
+              "y": 186.52508153680787
+            },
+            "positionAbsolute": {
+              "x": -14.82895160277127,
+              "y": 186.52508153680787
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 155,
+              "width": 213
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 213
+          },
+          {
+            "data": {
+              "form": {
+                "text": "Searches on akshare for the latest news about economics based on the keywords and returns the results."
+              },
+              "label": "Note",
+              "name": "N: AKShare"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:WarmClothsSort",
+            "measured": {
+              "height": 128,
+              "width": 283
+            },
+            "position": {
+              "x": 259.53966185269985,
+              "y": 209.6999260009385
+            },
+            "positionAbsolute": {
+              "x": 573.7653319987893,
+              "y": 102.64512355369035
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 283
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 283
+          },
+          {
+            "data": {
+              "form": {
+                "text": "Searches by Wencai to select stocks that satisfy user mentioned conditions."
+              },
+              "label": "Note",
+              "name": "N: Wencai"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 143,
+            "id": "Note:TiredReadersWash",
+            "measured": {
+              "height": 143,
+              "width": 285
+            },
+            "position": {
+              "x": 251.25432007905098,
+              "y": -97.53719402078019
+            },
+            "positionAbsolute": {
+              "x": 571.4274792499875,
+              "y": -37.07105560150117
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 285
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 285
+          },
+          {
+            "data": {
+              "form": {
+                "text": "The large model answers the user's medical health questions based on the searched and retrieved content."
+              },
+              "label": "Note",
+              "name": "N: LLM"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 179,
+            "id": "Note:TameBoatsType",
+            "measured": {
+              "height": 179,
+              "width": 260
+            },
+            "position": {
+              "x": -167.45710806024056,
+              "y": -372.5606558391346
+            },
+            "positionAbsolute": {
+              "x": -7.849538042569293,
+              "y": -427.90526378748035
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 163,
+              "width": 212
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 260
+          },
+          {
+            "data": {
+              "form": {
+                "cite": true,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": false,
+                "max_tokens": 256,
+                "message_history_window_size": 1,
+                "parameter": "Precise",
+                "parameters": [],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "Role: You are a professional financial counseling assistant.\n\nTask: Answer user's question based on content provided by Wencai and AkShare.\n\nNotice:\n- Output no more than 5 news items from AkShare if there's content provided by Wencai.\n- Items from AkShare MUST have a corresponding URL link.\n\n############\nContent provided by Wencai: \n{WenCai:TenParksOpen}\n\n################\nContent provided by AkShare: \n\n{AkShare:CalmHotelsKnow}\n\n\n",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "LLM"
+            },
+            "dragging": false,
+            "id": "Generate:SolidAreasRing",
+            "measured": {
+              "height": 106,
+              "width": 200
+            },
+            "position": {
+              "x": -161.00840949957603,
+              "y": -180.04918322565015
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode"
+          }
+        ]
+      },
+      "history": [],
+      "messages": [],
+      "path": [],
+      "reference": []
+    },
     "avatar": "data:image/png;base64,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"
 }

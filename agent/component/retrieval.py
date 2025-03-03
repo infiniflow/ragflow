@@ -23,6 +23,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
+from rag.app.tag import label_question
 
 
 class RetrievalParam(ComponentParamBase):
@@ -42,7 +43,7 @@ class RetrievalParam(ComponentParamBase):
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
-        self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keywords similarity weight")
+        self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keyword similarity weight")
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
 
 
@@ -70,7 +71,8 @@ class Retrieval(ComponentBase, ABC):
         kbinfos = settings.retrievaler.retrieval(query, embd_mdl, kbs[0].tenant_id, self._param.kb_ids,
                                         1, self._param.top_n,
                                         self._param.similarity_threshold, 1 - self._param.keywords_similarity_weight,
-                                        aggs=False, rerank_mdl=rerank_mdl)
+                                        aggs=False, rerank_mdl=rerank_mdl,
+                                        rank_feature=label_question(query, kbs))
 
         if not kbinfos["chunks"]:
             df = Retrieval.be_output("")

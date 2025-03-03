@@ -15,6 +15,7 @@ export default {
       edit: 'Sửa',
       upload: 'Tải lên',
       english: 'Tiếng Anh',
+      portugueseBr: 'Tiếng Bồ Đào Nha (Brazil)',
       chinese: 'Tiếng Trung giản thể',
       traditionalChinese: 'Tiếng Trung phồn thể',
       language: 'Ngôn ngữ',
@@ -36,6 +37,9 @@ export default {
       vietnamese: 'Tiếng  việt',
       spanish: 'Tiếng Tây Ban Nha',
       japanese: 'Tiếng Nhật',
+      embedIntoSite: 'Nhúng vào trang web',
+      nextPage: 'Tới',
+      previousPage: 'Lùi',
     },
     login: {
       login: 'Đăng nhập',
@@ -123,8 +127,8 @@ export default {
       view: 'Xem',
       filesSelected: 'Các tệp được chọn',
       upload: 'Tải lên',
-      run: 'Chạy',
-      runningStatus0: 'UNSTART',
+      run: 'Phân tích cú pháp',
+      runningStatus0: 'Chưa được giải quyết',
       runningStatus1: 'Parsing',
       runningStatus2: 'CANCEL',
       runningStatus3: 'SUCCESS',
@@ -166,6 +170,14 @@ export default {
       autoQuestions: 'Câu hỏi tự động',
       autoQuestionsTip: `Trích xuất N câu hỏi cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các câu hỏi đó. Bạn có thể kiểm tra hoặc cập nhật các câu hỏi đã thêm cho một khối từ danh sách khối. Tính năng này sẽ không làm gián đoạn quá trình phân khối nếu xảy ra lỗi, ngoại trừ việc nó có thể thêm kết quả trống vào khối gốc. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
       delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token".`,
+      redo: `Bạn có muốn xóa các đoạn {{chunkNum}} hiện có không?`,
+      knowledgeGraph: 'Đồ thị tri thức',
+      setMetaData: 'Đặt dữ liệu Meta',
+      pleaseInputJson: 'Vui lòng nhập dữ liệu JSON',
+      metaData: 'Dữ liệu Meta',
+      deleteDocumentConfirmContent:
+        'Tài liệu này được liên kết với đồ thị tri thức. Sau khi xóa, các thông tin về nút và quan hệ liên quan sẽ bị xóa theo, nhưng đồ thị sẽ không được cập nhật ngay lập tức. Việc cập nhật đồ thị được thực hiện trong quá trình phân tích tài liệu mới chứa tác vụ trích xuất đồ thị tri thức.',
+      documentMetaTips: `<p>Dữ liệu meta ở định dạng Json (không thể tìm kiếm). Nó sẽ được thêm vào prompt cho LLM nếu bất kỳ đoạn nào của tài liệu này được đưa vào prompt.</p> <p>Ví dụ:</p> <b>Dữ liệu meta là:</b><br> <code> { "Author": "Alex Dowson", "Date": "2024-11-12" } </code><br><b>Prompt sẽ là:</b><br> <p>Tài liệu: the_name_of_document</p> <p>Tác giả: Alex Dowson</p> <p>Ngày: 2024-11-12</p> <p>Các đoạn liên quan như sau:</p> <ul> <li> Đây là nội dung của đoạn...</li> <li> Đây là nội dung của đoạn...</li> </ul>`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -227,10 +239,10 @@ export default {
       <i>Phương thức phân khối này được tự động áp dụng cho tất cả các tệp PPT được tải lên, do đó bạn không cần phải chỉ định thủ công.</i></p>`,
       qa: `
       <p>
-      Phương thức phân khối này hỗ trợ các định dạng tệp <b>EXCEL</b> và <b>CSV/TXT</b>.
+      Phương thức phân khối này hỗ trợ các định dạng tệp <b>XLSX</b> và <b>CSV/TXT</b>.
       </p>
       <li>
-      Nếu tệp ở định dạng <b>Excel</b>, nó phải chứa hai cột
+      Nếu tệp ở định dạng <b>XLSX</b>, nó phải chứa hai cột
       không có tiêu đề: một cột cho câu hỏi và cột còn lại cho câu trả lời, với
       cột câu hỏi đứng trước cột câu trả lời. Nhiều trang tính được chấp nhận, miễn là các cột được cấu trúc chính xác.
       </li>
@@ -248,7 +260,7 @@ export default {
       </p><p>
       Các bản lý lịch với nhiều hình thức khác nhau được phân tích cú pháp và tổ chức thành dữ liệu có cấu trúc để hỗ trợ nhà tuyển dụng tìm kiếm ứng viên.
       </p>`,
-      table: `<p>Các định dạng tệp được hỗ trợ là <b>EXCEL</b> và <b>CSV/TXT</b>.</p><p>
+      table: `<p>Các định dạng tệp được hỗ trợ là <b>XLSX</b> và <b>CSV/TXT</b>.</p><p>
       Dưới đây là một số điều kiện tiên quyết và mẹo:
       <ul>
       <li>Đối với tệp CSV hoặc TXT, dấu phân cách giữa các cột phải là <em><b>TAB</b></em>.</li>
@@ -303,7 +315,38 @@ export default {
       entityTypes: 'Loại thực thể',
       vietnamese: 'Tiếng Việt',
       pageRank: 'Xếp hạng trang',
-      pageRankTip: `Điều này được sử dụng để tăng điểm liên quan. Điểm liên quan với tất cả các khối được truy xuất sẽ cộng với số này, Khi bạn muốn tìm kiếm cơ sở kiến ​​thức đã cho ở vị trí đầu tiên, hãy đặt điểm "Page Rank" cao hơn những điểm khác.`,
+      pageRankTip: `Điều này được sử dụng để tăng điểm liên quan. Điểm liên quan với tất cả các khối được truy xuất sẽ cộng với số này, Khi bạn muốn tìm kiếm cơ sở kiến thức đã cho ở vị trí đầu tiên, hãy đặt điểm "Page Rank" cao hơn những điểm khác.`,
+      tag: `<p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn được cho là sẽ được sử dụng bởi các cơ sở kiến thức khác để thêm thẻ vào các đoạn của chúng, các truy vấn tới đó cũng sẽ có thẻ.</p> 
+<p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn <b>KHÔNG</b> được dự định tham gia vào quy trình RAG.</p> 
+<p>Các đoạn trong cơ sở kiến thức này là ví dụ về thẻ, thể hiện toàn bộ tập hợp thẻ và mối quan hệ giữa đoạn và thẻ.</p> 
+<p>Phương pháp phân đoạn này hỗ trợ định dạng tệp <b>XLSX</b> và <b>CSV/TXT</b>.</p> 
+<p>Nếu tệp ở định dạng <b>XLSX</b>, nó phải chứa hai cột không có tiêu đề: một cho nội dung và một cho thẻ, với cột nội dung đứng trước cột thẻ. Nhiều trang tính được chấp nhận, miễn là các cột được cấu trúc đúng.</p> 
+<p>Nếu tệp ở định dạng <b>CSV/TXT</b>, nó phải được mã hóa UTF-8 với TAB làm dấu phân cách để phân tách nội dung và thẻ.</p> 
+<p>Trong cột thẻ, có dấu <b>phẩy</b> tiếng Anh giữa các thẻ.</p> 
+<i>Các dòng văn bản không tuân theo các quy tắc trên sẽ bị bỏ qua và mỗi cặp sẽ được coi là một đoạn riêng biệt.</i>`,
+      tagName: 'Thẻ',
+      frequency: 'Tần số',
+      searchTags: 'Thẻ tìm kiếm',
+      tagTable: 'Bảng',
+      tagSet: 'Thư viện',
+      tagSetTip: `<p>Việc chọn các cơ sở kiến thức 'Tag' giúp gắn thẻ cho từng đoạn.</p> <p>Truy vấn đến các đoạn đó cũng sẽ kèm theo thẻ.</p> Quy trình này sẽ cải thiện độ chính xác của việc truy xuất bằng cách thêm nhiều thông tin hơn vào bộ dữ liệu, đặc biệt là khi có một tập hợp lớn các đoạn. <p>Sự khác biệt giữa thẻ và từ khóa:</p> <ul> <li>Thẻ là một tập hợp khép kín được người dùng định nghĩa và thao tác trong khi từ khóa là một tập hợp mở.</li> <li>Bạn cần tải lên các tập hợp thẻ với các mẫu trước khi sử dụng.</li> <li>Từ khóa được tạo bởi LLM, tốn kém và mất thời gian.</li> </ul>`,
+      topnTags: 'Thẻ Top-N',
+      tags: 'Thẻ',
+      addTag: 'Thêm thẻ',
+      useGraphRag: 'Trích xuất đồ thị tri thức',
+      portugueseBr: 'Tiếng Bồ Đào Nha',
+      tagCloud: 'Đám mây',
+      graphRagMethod: 'Phương pháp',
+      graphRagMethodTip: `Light: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - HKUDS/LightRAG: "LightRAG: Tạo sinh tăng cường truy xuất đơn giản và nhanh chóng".
+      General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.`,
+      useGraphRagTip:
+        'Sau khi các tệp được chia thành các đoạn nhỏ, tất cả các đoạn này sẽ được sử dụng để tạo biểu đồ tri thức, từ đó hỗ trợ suy luận cho các bài toán phức tạp và nhiều bước.',
+      resolution: 'Hợp nhất thực thể',
+      resolutionTip:
+        'Quy trình phân giải sẽ hợp nhất các thực thể có cùng ý nghĩa lại với nhau, giúp đồ thị trở nên cô đọng và chính xác hơn. Các thực thể sau đây nên được hợp nhất: President Trump, Donald Trump, Donald J. Trump, Donald John Trump.',
+      community: 'Xây dựng mối quan hệ cộng đồng',
+      communityTip:
+        'Các liên kết được nhóm lại thành các cộng đồng phân cấp, với các thực thể và mối quan hệ kết nối từng phân đoạn lên các cấp độ trừu tượng cao hơn. Sau đó, chúng tôi sử dụng một LLM để tạo ra bản tóm tắt cho mỗi cộng đồng, được gọi là báo cáo cộng đồng. Xem thêm: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
     },
     chunk: {
       chunk: 'Khối',
@@ -449,6 +492,14 @@ export default {
       howUseId: 'Làm thế nào để sử dụng ID cuộc trò chuyện?',
       description: 'Mô tả về trợ lý',
       betaError: `"Beta API Token" không được để trống!`,
+      useKnowledgeGraph: 'Sử dụng đồ thị tri thức',
+      useKnowledgeGraphTip:
+        'Nó sẽ truy xuất các mô tả về các thực thể, quan hệ và cộng đồng liên quan, điều này sẽ tăng cường khả năng suy luận các câu hỏi phức tạp và nhiều bước.',
+      keyword: 'Phân tích từ khóa',
+      keywordTip:
+        'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan.',
+      languageTip:
+        'Cho phép viết lại câu với ngôn ngữ được chỉ định, hoặc sử dụng câu hỏi mới nhất nếu không chọn ngôn ngữ nào.',
     },
     setting: {
       profile: 'Hồ sơ',
@@ -1051,7 +1102,7 @@ export default {
       pasteFileLink: 'Dán liên kết tệp',
       testRun: 'Chạy thử nghiệm',
       template: 'Mẫu',
-      templateDescription: `Thành phần này được sử dụng để sắp chữ đầu ra của nhiều thành phần khác nhau.`,
+      templateDescription: `Thành phần này được sử dụng để sắp chữ đầu ra của nhiều thành phần khác nhau.1. Hỗ trợ mẫu Jinja2, trước tiên chuyển đầu vào thành đối tượng và sau đó kết xuất mẫu. 2. Phương pháp ban đầu sử dụng thay thế chuỗi {parameter} cũng được giữ lại đồng thời`,
       arXivTip: `Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://arxiv.org/. Thông thường, nó hoạt động như một phần bổ sung cho cơ sở tri thức. Top N chỉ định số lượng kết quả tìm kiếm bạn cần điều chỉnh.`,
       googleTip: `Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.google.com/. Thông thường, nó hoạt động như một phần bổ sung cho cơ sở tri thức. Top N và khóa API SerpApi chỉ định số lượng kết quả tìm kiếm bạn cần điều chỉnh.`,
       bingTip: `Thành phần này được sử dụng để lấy kết quả tìm kiếm từ https://www.bing.com/. Thông thường, nó hoạt động như một phần bổ sung cho cơ sở tri thức. Top N và khóa đăng ký Bing chỉ định số lượng kết quả tìm kiếm bạn cần điều chỉnh.`,
@@ -1084,6 +1135,18 @@ export default {
       ccEmail: 'Email CC',
       toEmailTip: 'to_email: Email người nhận (Bắt buộc)',
       ccEmailTip: 'cc_email: Email CC (Tùy chọn)',
+      iteration: 'Khối lặp',
+      iterationDescription: `Thành phần này trước tiên chia đầu vào thành mảng bằng "dấu phân cách". Thực hiện các bước thao tác tương tự trên các phần tử trong mảng theo trình tự cho đến khi tất cả các kết quả được xuất ra, có thể được hiểu là bộ xử lý hàng loạt tác vụ. Ví dụ: trong nút lặp lại bản dịch văn bản dài, nếu tất cả nội dung được nhập vào nút LLM, có thể đạt đến giới hạn hội thoại duy nhất. Trước tiên, nút ngược dòng có thể chia văn bản dài thành nhiều mảnh và hợp tác với nút lặp đi lặp lại để thực hiện dịch hàng loạt trên mỗi phân đoạn để tránh đạt đến giới hạn tin nhắn LLM cho một cuộc hội thoại.`,
+      delimiterTip: `Dấu phân cách này được sử dụng để chia văn bản đầu vào thành nhiều đoạn văn bản, tiếng vang sẽ được thực hiện dưới dạng mục đầu vào của mỗi lần lặp.`,
+      delimiterOptions: {
+        comma: 'Dấu phẩy',
+        lineBreak: 'Ngắt dòng',
+        tab: 'Tab',
+        underline: 'Gạch chân',
+        diagonal: 'Forward slash',
+        minus: 'Dash',
+        semicolon: 'Semicolon',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',

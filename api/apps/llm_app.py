@@ -15,7 +15,7 @@
 #
 import logging
 import json
-
+import os
 from flask import request
 from flask_login import login_required, current_user
 from api.db.services.llm_service import LLMFactoriesService, TenantLLMService, LLMService
@@ -24,8 +24,8 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from api.db import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
+from api.utils.file_utils import get_project_base_directory
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
-import requests
 
 
 @manager.route('/factories', methods=['GET'])  # noqa: F821
@@ -152,6 +152,7 @@ def add_llm():
 
     elif factory == "Tencent Cloud":
         req["api_key"] = apikey_json(["tencent_cloud_sid", "tencent_cloud_sk"])
+        return set_api_key()
 
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
@@ -169,6 +170,10 @@ def add_llm():
 
     elif factory == "OpenAI-API-Compatible":
         llm_name = req["llm_name"] + "___OpenAI-API"
+        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
+
+    elif factory == "VLLM":
+        llm_name = req["llm_name"] + "___VLLM"
         api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
     elif factory == "XunFei Spark":
@@ -209,72 +214,69 @@ def add_llm():
     }
 
     msg = ""
+    mdl_nm = llm["llm_name"].split("___")[0]
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"])
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
             if len(arr[0]) == 0:
                 raise Exception("Fail")
         except Exception as e:
-            msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access embedding model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
             key=llm['api_key'],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"]
         )
         try:
             m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
                 "temperature": 0.9})
-            if not tc:
+            if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(
+            msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
-        mdl = RerankModel[factory](
-            key=llm["api_key"],
-            model_name=llm["llm_name"],
-            base_url=llm["api_base"]
-        )
         try:
+            mdl = RerankModel[factory](
+                key=llm["api_key"],
+                model_name=mdl_nm,
+                base_url=llm["api_base"]
+            )
             arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!", "Ohh, my friend!"])
             if len(arr) == 0:
                 raise Exception("Not known.")
+        except KeyError:
+            msg += f"{factory} dose not support this model({mdl_nm})"
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(
+            msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         mdl = CvModel[factory](
             key=llm["api_key"],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"]
         )
         try:
-            img_url = (
-                "https://www.8848seo.cn/zb_users/upload/2022/07/20220705101240_99378.jpg"
-            )
-            res = requests.get(img_url)
-            if res.status_code == 200:
-                m, tc = mdl.describe(res.content)
-                if not tc:
+            with open(os.path.join(get_project_base_directory(), "web/src/assets/yay.jpg"), "rb") as f:
+                m, tc = mdl.describe(f.read())
+                if not m and not tc:
                     raise Exception(m)
-            else:
-                pass
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
         mdl = TTSModel[factory](
-            key=llm["api_key"], model_name=llm["llm_name"], base_url=llm["api_base"]
+            key=llm["api_key"], model_name=mdl_nm, base_url=llm["api_base"]
         )
         try:
             for resp in mdl.tts("Hello~ Ragflower!"):
                 pass
         except RuntimeError as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access model({mdl_nm})." + str(e)
     else:
         # TODO: check other type of models
         pass
@@ -335,7 +337,7 @@ def my_llms():
 @manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def list_app():
-    self_deploied = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio"]
+    self_deployed = ["Youdao", "FastEmbed", "BAAI", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
     weighted = ["Youdao", "FastEmbed", "BAAI"] if settings.LIGHTEN != 0 else []
     model_type = request.args.get("model_type")
     try:
@@ -345,7 +347,7 @@ def list_app():
         llms = [m.to_dict()
                 for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted]
         for m in llms:
-            m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deploied
+            m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deployed
 
         llm_set = set([m["llm_name"] + "@" + m["fid"] for m in llms])
         for o in objs:

@@ -6,212 +6,348 @@
   "dsl": {
       "answer": [],
       "components": {
-        "begin": {
-          "obj": {
-            "component_name": "Begin",
-            "params": {}
-          },
-          "downstream": [
-            "Answer:SocialAdsWonder"
-          ],
-          "upstream": []
-        },
         "Answer:SocialAdsWonder": {
+          "downstream": [
+            "RewriteQuestion:WildIdeasTell"
+          ],
           "obj": {
             "component_name": "Answer",
+            "inputs": [],
+            "output": {},
             "params": {}
           },
-          "downstream": [
-            "Retrieval:SillyPartsCheer",
-            "Retrieval:BrownStreetsRhyme",
-            "Retrieval:OddSingersRefuse"
-          ],
           "upstream": [
-            "begin",
-            "Switch:HotPartsTap"
+            "ExeSQL:QuietRosesRun",
+            "begin"
           ]
         },
-        "ExeSQL:CoolFactsChew": {
+        "ExeSQL:QuietRosesRun": {
+          "downstream": [
+            "Answer:SocialAdsWonder"
+          ],
           "obj": {
             "component_name": "ExeSQL",
+            "inputs": [],
+            "output": {},
             "params": {
-              "database": "Your DB name",
+              "database": "",
               "db_type": "mysql",
-              "host": "Your IP Port",
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "host": "",
+              "llm_id": "deepseek-chat@DeepSeek",
               "loop": 3,
-              "password": "Your Password",
-              "port": 3306,
-              "top_n": 9,
-              "username": "Your username"
+              "maxTokensEnabled": true,
+              "max_tokens": 512,
+              "password": "",
+              "port": 6630,
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "query": [],
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_n": 30,
+              "top_p": 0.3,
+              "username": "root"
             }
           },
-          "downstream": [
-            "Switch:HotPartsTap"
-          ],
           "upstream": [
-            "Generate:SmoothWombatsRemain",
-            "Generate:CuteSidesBuy"
+            "Generate:BlueShirtsLaugh"
           ]
         },
-        "Switch:HotPartsTap": {
-          "obj": {
-            "component_name": "Switch",
-            "params": {
-              "conditions": [
-                {
-                  "items": [
-                    {
-                      "cpn_id": "ExeSQL:CoolFactsChew",
-                      "operator": "contains",
-                      "value": "Error"
-                    },
-                    {
-                      "cpn_id": "ExeSQL:CoolFactsChew",
-                      "operator": "contains",
-                      "value": "**Error**"
-                    }
-                  ],
-                  "logical_operator": "or",
-                  "to": "Generate:SmoothWombatsRemain"
-                }
-              ],
-              "end_cpn_id": "Answer:SocialAdsWonder"
-            }
-          },
+        "Generate:BlueShirtsLaugh": {
           "downstream": [
-            "Answer:SocialAdsWonder",
-            "Generate:SmoothWombatsRemain"
+            "ExeSQL:QuietRosesRun"
           ],
-          "upstream": [
-            "ExeSQL:CoolFactsChew"
-          ]
-        },
-        "Generate:SmoothWombatsRemain": {
           "obj": {
             "component_name": "Generate",
             "params": {
-              "cite": true,
+              "cite": false,
               "frequency_penalty": 0.7,
               "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 12,
-              "parameters": [
-                {
-                  "component_id": "ExeSQL:CoolFactsChew",
-                  "id": "9c452513-6ab9-4ffb-8676-d7475363bb70",
-                  "key": "exesql_input"
-                }
-              ],
+              "message_history_window_size": 1,
+              "parameters": [],
               "presence_penalty": 0.4,
-              "prompt": "## You are the Repair SQL Statement Helper, please modify the original SQL statement based on the SQL query error report.\n\n## The contents of the SQL query error report and the original SQL statement are as follows:\n{exesql_input}\n\n## Answer only the modified SQL statement. Please do not give any explanation, just answer the code.",
+              "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:SillyPartsCheer}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:OddSingersRefuse}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:BrownStreetsRhyme}.\n\n##Respond with only SQL code. Do not answer with any explanations -- just the code.",
               "temperature": 0.1,
               "top_p": 0.3
             }
           },
-          "downstream": [
-            "ExeSQL:CoolFactsChew"
-          ],
-          "upstream": [
-            "Switch:HotPartsTap"
-          ]
-        },
-        "Generate:CuteSidesBuy": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
-              "cite": true,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 12,
-              "parameters": [
-                {
-                  "component_id": "Retrieval:SillyPartsCheer",
-                  "id": "2a77e574-a0a6-4a1a-af39-cb192f1d21f5",
-                  "key": "ddl_input"
-                },
-                {
-                  "component_id": "Retrieval:OddSingersRefuse",
-                  "id": "83941a85-0b59-408e-97e5-504964b0e090",
-                  "key": "db_input"
-                },
-                {
-                  "component_id": "Retrieval:BrownStreetsRhyme",
-                  "id": "c63d0ae6-7ee2-44a2-8a95-69d03c90cb44",
-                  "key": "sql_input"
-                }
-              ],
-              "presence_penalty": 0.4,
-              "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {ddl_input}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {db_input}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {sql_input}.\n\n##Respond with only SQL code. Do not answer with any explanations -- just the code.",
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "downstream": [
-            "ExeSQL:CoolFactsChew"
-          ],
           "upstream": [
             "Retrieval:SillyPartsCheer",
             "Retrieval:BrownStreetsRhyme",
             "Retrieval:OddSingersRefuse"
-          ]
-        },
-        "Retrieval:SillyPartsCheer": {
-          "obj": {
-            "component_name": "Retrieval",
-            "params": {
-              "empty_response": "Nothing found in DDL!",
-              "kb_ids": [],
-              "keywords_similarity_weight": 0.1,
-              "similarity_threshold": 0.02,
-              "top_n": 18
-            }
-          },
-          "downstream": [
-            "Generate:CuteSidesBuy"
-          ],
-          "upstream": [
-            "Answer:SocialAdsWonder"
           ]
         },
         "Retrieval:BrownStreetsRhyme": {
+          "downstream": [
+            "Generate:BlueShirtsLaugh"
+          ],
           "obj": {
             "component_name": "Retrieval",
+            "inputs": [],
+            "output": {},
             "params": {
               "empty_response": "Nothing found in Q->SQL!",
               "kb_ids": [],
               "keywords_similarity_weight": 0.3,
+              "query": [
+                {
+                  "component_id": "Answer:SocialAdsWonder",
+                  "type": "reference"
+                }
+              ],
               "similarity_threshold": 0.2,
               "top_n": 8
             }
           },
-          "downstream": [
-            "Generate:CuteSidesBuy"
-          ],
           "upstream": [
-            "Answer:SocialAdsWonder"
+            "RewriteQuestion:WildIdeasTell"
           ]
         },
         "Retrieval:OddSingersRefuse": {
+          "downstream": [
+            "Generate:BlueShirtsLaugh"
+          ],
           "obj": {
             "component_name": "Retrieval",
+            "inputs": [],
+            "output": {},
             "params": {
               "empty_response": "Nothing found in DB-Description!",
               "kb_ids": [],
               "keywords_similarity_weight": 0.3,
+              "query": [
+                {
+                  "component_id": "Answer:SocialAdsWonder",
+                  "type": "reference"
+                }
+              ],
               "similarity_threshold": 0.2,
               "top_n": 8
             }
           },
+          "upstream": [
+            "RewriteQuestion:WildIdeasTell"
+          ]
+        },
+        "Retrieval:SillyPartsCheer": {
           "downstream": [
-            "Generate:CuteSidesBuy"
+            "Generate:BlueShirtsLaugh"
           ],
+          "obj": {
+            "component_name": "Retrieval",
+            "inputs": [],
+            "output": {},
+            "params": {
+              "empty_response": "Nothing found in DDL!",
+              "kb_ids": [],
+              "keywords_similarity_weight": 0.1,
+              "query": [
+                {
+                  "component_id": "Answer:SocialAdsWonder",
+                  "type": "reference"
+                }
+              ],
+              "similarity_threshold": 0.02,
+              "top_n": 18
+            }
+          },
+          "upstream": [
+            "RewriteQuestion:WildIdeasTell"
+          ]
+        },
+        "RewriteQuestion:WildIdeasTell": {
+          "downstream": [
+            "Retrieval:OddSingersRefuse",
+            "Retrieval:BrownStreetsRhyme",
+            "Retrieval:SillyPartsCheer"
+          ],
+          "obj": {
+            "component_name": "RewriteQuestion",
+            "params": {
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 6,
+              "parameter": "Precise",
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            }
+          },
           "upstream": [
             "Answer:SocialAdsWonder"
           ]
+        },
+        "begin": {
+          "downstream": [
+            "Answer:SocialAdsWonder"
+          ],
+          "obj": {
+            "component_name": "Begin",
+            "inputs": [],
+            "output": {
+              "content": {
+                "0": {
+                  "content": "Hi! I'm your smart assistant. What can I do for you?"
+                }
+              }
+            },
+            "params": {}
+          },
+          "upstream": []
         }
       },
+      "embed_id": "BAAI/bge-large-zh-v1.5",
       "graph": {
+        "edges": [
+          {
+            "id": "xy-edge__ExeSQL:QuietRosesRunc-Answer:SocialAdsWonderc",
+            "markerEnd": "logo",
+            "source": "ExeSQL:QuietRosesRun",
+            "sourceHandle": "c",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Answer:SocialAdsWonder",
+            "targetHandle": "c",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__begin-Answer:SocialAdsWonderc",
+            "markerEnd": "logo",
+            "source": "begin",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Answer:SocialAdsWonder",
+            "targetHandle": "c",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__Answer:SocialAdsWonderb-RewriteQuestion:WildIdeasTellc",
+            "markerEnd": "logo",
+            "source": "Answer:SocialAdsWonder",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "RewriteQuestion:WildIdeasTell",
+            "targetHandle": "c",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__RewriteQuestion:WildIdeasTellb-Retrieval:OddSingersRefusec",
+            "markerEnd": "logo",
+            "source": "RewriteQuestion:WildIdeasTell",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Retrieval:OddSingersRefuse",
+            "targetHandle": "c",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__RewriteQuestion:WildIdeasTellb-Retrieval:BrownStreetsRhymec",
+            "markerEnd": "logo",
+            "source": "RewriteQuestion:WildIdeasTell",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Retrieval:BrownStreetsRhyme",
+            "targetHandle": "c",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__RewriteQuestion:WildIdeasTellb-Retrieval:SillyPartsCheerc",
+            "markerEnd": "logo",
+            "source": "RewriteQuestion:WildIdeasTell",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Retrieval:SillyPartsCheer",
+            "targetHandle": "c",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__Generate:BlueShirtsLaughc-ExeSQL:QuietRosesRunb",
+            "markerEnd": "logo",
+            "source": "Generate:BlueShirtsLaugh",
+            "sourceHandle": "c",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "ExeSQL:QuietRosesRun",
+            "targetHandle": "b",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__Retrieval:SillyPartsCheerb-Generate:BlueShirtsLaughb",
+            "markerEnd": "logo",
+            "source": "Retrieval:SillyPartsCheer",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:BlueShirtsLaugh",
+            "targetHandle": "b",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__Retrieval:BrownStreetsRhymeb-Generate:BlueShirtsLaughb",
+            "markerEnd": "logo",
+            "source": "Retrieval:BrownStreetsRhyme",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:BlueShirtsLaugh",
+            "targetHandle": "b",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__Retrieval:OddSingersRefuseb-Generate:BlueShirtsLaughb",
+            "markerEnd": "logo",
+            "source": "Retrieval:OddSingersRefuse",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:BlueShirtsLaugh",
+            "targetHandle": "b",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          }
+        ],
         "nodes": [
           {
             "data": {
@@ -221,6 +357,10 @@
             "dragging": false,
             "height": 44,
             "id": "begin",
+            "measured": {
+              "height": 44,
+              "width": 200
+            },
             "position": {
               "x": -707.997699967585,
               "y": 271.71609546793474
@@ -233,7 +373,7 @@
             "sourcePosition": "left",
             "targetPosition": "right",
             "type": "beginNode",
-            "width": 100
+            "width": 200
           },
           {
             "data": {
@@ -244,9 +384,13 @@
             "dragging": false,
             "height": 44,
             "id": "Answer:SocialAdsWonder",
+            "measured": {
+              "height": 44,
+              "width": 200
+            },
             "position": {
-              "x": -58.36886074370702,
-              "y": 272.1213623212045
+              "x": -265.59460323639587,
+              "y": 271.1879130306969
             },
             "positionAbsolute": {
               "x": -58.36886074370702,
@@ -261,216 +405,15 @@
           {
             "data": {
               "form": {
-                "database": "Your DB name",
-                "db_type": "mysql",
-                "host": "Your IP Port",
-                "loop": 3,
-                "password": "Your Password",
-                "port": 3306,
-                "top_n": 9,
-                "username": "Your username"
-              },
-              "label": "ExeSQL",
-              "name": "Execute SQL"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "ExeSQL:CoolFactsChew",
-            "position": {
-              "x": -328.98563704574315,
-              "y": -177.64593432501485
-            },
-            "positionAbsolute": {
-              "x": -328.98563704574315,
-              "y": -177.64593432501485
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "conditions": [
-                  {
-                    "items": [
-                      {
-                        "cpn_id": "ExeSQL:CoolFactsChew",
-                        "operator": "contains",
-                        "value": "Error"
-                      },
-                      {
-                        "cpn_id": "ExeSQL:CoolFactsChew",
-                        "operator": "contains",
-                        "value": "**Error**"
-                      }
-                    ],
-                    "logical_operator": "or",
-                    "to": "Generate:SmoothWombatsRemain"
-                  }
-                ],
-                "end_cpn_id": "Answer:SocialAdsWonder"
-              },
-              "label": "Switch",
-              "name": "Analyze SQL Result"
-            },
-            "dragging": false,
-            "height": 191,
-            "id": "Switch:HotPartsTap",
-            "position": {
-              "x": -333.34292578536326,
-              "y": -51.66578195568452
-            },
-            "positionAbsolute": {
-              "x": -333.34292578536326,
-              "y": -51.66578195568452
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "switchNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "text": "The large model modifies the original SQL statement based on the error message and returns the modified SQL statement."
-              },
-              "label": "Note",
-              "name": "N: Fix SQL Statement"
-            },
-            "dragging": false,
-            "height": 172,
-            "id": "Note:SevenDancersMarry",
-            "position": {
-              "x": -52.470761864810754,
-              "y": 81.77236559091028
-            },
-            "positionAbsolute": {
-              "x": -52.470761864810754,
-              "y": 81.77236559091028
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 172,
-              "width": 228
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 228
-          },
-          {
-            "data": {
-              "form": {
-                "cite": true,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [
-                  {
-                    "component_id": "ExeSQL:CoolFactsChew",
-                    "id": "9c452513-6ab9-4ffb-8676-d7475363bb70",
-                    "key": "exesql_input"
-                  }
-                ],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "## You are the Repair SQL Statement Helper, please modify the original SQL statement based on the SQL query error report.\n\n## The contents of the SQL query error report and the original SQL statement are as follows:\n{exesql_input}\n\n## Answer only the modified SQL statement. Please do not give any explanation, just answer the code.",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Fix SQL Statement LLM"
-            },
-            "dragging": false,
-            "height": 128,
-            "id": "Generate:SmoothWombatsRemain",
-            "position": {
-              "x": -63.964315620743946,
-              "y": -56.53893429100532
-            },
-            "positionAbsolute": {
-              "x": -63.964315620743946,
-              "y": -56.53893429100532
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": true,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [
-                  {
-                    "component_id": "Retrieval:SillyPartsCheer",
-                    "id": "2a77e574-a0a6-4a1a-af39-cb192f1d21f5",
-                    "key": "ddl_input"
-                  },
-                  {
-                    "component_id": "Retrieval:OddSingersRefuse",
-                    "id": "83941a85-0b59-408e-97e5-504964b0e090",
-                    "key": "db_input"
-                  },
-                  {
-                    "component_id": "Retrieval:BrownStreetsRhyme",
-                    "id": "c63d0ae6-7ee2-44a2-8a95-69d03c90cb44",
-                    "key": "sql_input"
-                  }
-                ],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {ddl_input}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {db_input}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {sql_input}.\n\n##Respond with only SQL code. Do not answer with any explanations -- just the code.",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Generate SQL Statement LLM"
-            },
-            "dragging": false,
-            "height": 212,
-            "id": "Generate:CuteSidesBuy",
-            "position": {
-              "x": 191.98081287844155,
-              "y": -255.36496490928363
-            },
-            "positionAbsolute": {
-              "x": 191.98081287844155,
-              "y": -255.36496490928363
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
                 "empty_response": "Nothing found in DDL!",
                 "kb_ids": [],
                 "keywords_similarity_weight": 0.1,
+                "query": [
+                  {
+                    "component_id": "Answer:SocialAdsWonder",
+                    "type": "reference"
+                  }
+                ],
                 "similarity_threshold": 0.02,
                 "top_n": 18
               },
@@ -478,14 +421,18 @@
               "name": "DDL"
             },
             "dragging": false,
-            "height": 44,
+            "height": 106,
             "id": "Retrieval:SillyPartsCheer",
+            "measured": {
+              "height": 106,
+              "width": 200
+            },
             "position": {
-              "x": 199.0075429691716,
-              "y": -0.9595420072386389
+              "x": 194.69889765569846,
+              "y": 61.49435233230193
             },
             "positionAbsolute": {
-              "x": 199.0075429691716,
+              "x": 198.3020069445181,
               "y": -0.9595420072386389
             },
             "selected": false,
@@ -500,6 +447,12 @@
                 "empty_response": "Nothing found in Q->SQL!",
                 "kb_ids": [],
                 "keywords_similarity_weight": 0.3,
+                "query": [
+                  {
+                    "component_id": "Answer:SocialAdsWonder",
+                    "type": "reference"
+                  }
+                ],
                 "similarity_threshold": 0.2,
                 "top_n": 8
               },
@@ -507,15 +460,19 @@
               "name": "Q->SQL"
             },
             "dragging": false,
-            "height": 44,
+            "height": 106,
             "id": "Retrieval:BrownStreetsRhyme",
+            "measured": {
+              "height": 106,
+              "width": 200
+            },
             "position": {
-              "x": 219.1804193484379,
-              "y": 113.85464274901977
+              "x": 240.78282320440022,
+              "y": 162.66081324653166
             },
             "positionAbsolute": {
-              "x": 219.1804193484379,
-              "y": 113.85464274901977
+              "x": 231.17453176754782,
+              "y": 123.02661106951555
             },
             "selected": false,
             "sourcePosition": "right",
@@ -529,6 +486,12 @@
                 "empty_response": "Nothing found in DB-Description!",
                 "kb_ids": [],
                 "keywords_similarity_weight": 0.3,
+                "query": [
+                  {
+                    "component_id": "Answer:SocialAdsWonder",
+                    "type": "reference"
+                  }
+                ],
                 "similarity_threshold": 0.2,
                 "top_n": 8
               },
@@ -536,11 +499,15 @@
               "name": "DB Description"
             },
             "dragging": false,
-            "height": 44,
+            "height": 106,
             "id": "Retrieval:OddSingersRefuse",
+            "measured": {
+              "height": 106,
+              "width": 200
+            },
             "position": {
-              "x": 267.7575479510707,
-              "y": 249.15603226400776
+              "x": 284.5720579655624,
+              "y": 246.75395940479467
             },
             "positionAbsolute": {
               "x": 267.7575479510707,
@@ -560,12 +527,17 @@
               "label": "Note",
               "name": "N: Analyze SQL"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
-            "height": 176,
+            "height": 165,
             "id": "Note:HeavyIconsFollow",
+            "measured": {
+              "height": 165,
+              "width": 347
+            },
             "position": {
-              "x": -626.6563777191027,
-              "y": -48.82220889683933
+              "x": -709.8631299685773,
+              "y": 96.50319908555313
             },
             "positionAbsolute": {
               "x": -626.6563777191027,
@@ -580,8 +552,7 @@
             },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 266,
-            "dragHandle": ".note-drag-handle"
+            "width": 347
           },
           {
             "data": {
@@ -591,12 +562,17 @@
               "label": "Note",
               "name": "N: Interface"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
-            "height": 162,
+            "height": 159,
             "id": "Note:PinkTaxesClean",
+            "measured": {
+              "height": 159,
+              "width": 259
+            },
             "position": {
-              "x": -52.004609812312424,
-              "y": 336.95180237635077
+              "x": -253.39933811515345,
+              "y": 353.7538896054877
             },
             "positionAbsolute": {
               "x": -52.004609812312424,
@@ -611,8 +587,7 @@
             },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 210,
-            "dragHandle": ".note-drag-handle"
+            "width": 259
           },
           {
             "data": {
@@ -622,16 +597,21 @@
               "label": "Note",
               "name": "N:DB Description"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
             "height": 128,
             "id": "Note:IcyTreesPeel",
+            "measured": {
+              "height": 128,
+              "width": 251
+            },
             "position": {
-              "x": 283.6653421557703,
-              "y": 336.29235267887395
+              "x": 280.8431980571563,
+              "y": 394.1463067004627
             },
             "positionAbsolute": {
-              "x": 283.6653421557703,
-              "y": 336.29235267887395
+              "x": 280.8431980571563,
+              "y": 394.1463067004627
             },
             "resizing": false,
             "selected": false,
@@ -642,8 +622,7 @@
             },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 251,
-            "dragHandle": ".note-drag-handle"
+            "width": 251
           },
           {
             "data": {
@@ -653,12 +632,17 @@
               "label": "Note",
               "name": "N: Q->SQL"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
-            "height": 131,
+            "height": 143,
             "id": "Note:HugeGroupsScream",
+            "measured": {
+              "height": 143,
+              "width": 390
+            },
             "position": {
-              "x": 606.1206536213404,
-              "y": 113.09441734894426
+              "x": 612.8793199038756,
+              "y": 169.1868576959871
             },
             "positionAbsolute": {
               "x": 606.1206536213404,
@@ -673,8 +657,7 @@
             },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 387,
-            "dragHandle": ".note-drag-handle"
+            "width": 390
           },
           {
             "data": {
@@ -684,12 +667,17 @@
               "label": "Note",
               "name": "N: DDL"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
-            "height": 266,
+            "height": 208,
             "id": "Note:GreenCrewsArrive",
+            "measured": {
+              "height": 208,
+              "width": 467
+            },
             "position": {
-              "x": 545.3423934788841,
-              "y": -166.58872868890683
+              "x": 649.3481710005742,
+              "y": -87.70873445087781
             },
             "positionAbsolute": {
               "x": 545.3423934788841,
@@ -704,8 +692,7 @@
             },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 266,
-            "dragHandle": ".note-drag-handle"
+            "width": 467
           },
           {
             "data": {
@@ -715,12 +702,17 @@
               "label": "Note",
               "name": "N: Generate SQL"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
-            "height": 175,
+            "height": 196,
             "id": "Note:EightTurtlesLike",
+            "measured": {
+              "height": 196,
+              "width": 341
+            },
             "position": {
-              "x": 222.2150747084395,
-              "y": -445.32694170868734
+              "x": 134.0070839275931,
+              "y": -345.41228234051727
             },
             "positionAbsolute": {
               "x": 222.2150747084395,
@@ -735,23 +727,27 @@
             },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 265,
-            "dragHandle": ".note-drag-handle"
+            "width": 341
           },
           {
             "data": {
               "form": {
-                "text": "Executes the SQL statement in the database and returns the result.\n\nAfter configuring  an accessible database, press 'Test' to  ensure the accessibility."
+                "text": "Executes the SQL statement in the database and returns the result.\n\nAfter configuring  an accessible database, press 'Test' to  ensure the accessibility.\n\nThe large model modifies the original SQL statement based on the error message and returns the modified SQL statement."
               },
               "label": "Note",
               "name": "N: Execute SQL"
             },
+            "dragHandle": ".note-drag-handle",
             "dragging": false,
-            "height": 178,
+            "height": 276,
             "id": "Note:FreshKidsTalk",
+            "measured": {
+              "height": 276,
+              "width": 336
+            },
             "position": {
-              "x": -251.5866574377311,
-              "y": -372.2192837064241
+              "x": -304.3577648765364,
+              "y": -288.054469323955
             },
             "positionAbsolute": {
               "x": -251.5866574377311,
@@ -766,159 +762,122 @@
             },
             "targetPosition": "left",
             "type": "noteNode",
-            "width": 346,
-            "dragHandle": ".note-drag-handle"
-          }
-        ],
-        "edges": [
-          {
-            "id": "reactflow__edge-begin-Answer:SocialAdsWonderc",
-            "markerEnd": "logo",
-            "source": "begin",
-            "sourceHandle": null,
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Answer:SocialAdsWonder",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+            "width": 336
           },
           {
-            "id": "reactflow__edge-ExeSQL:CoolFactsChewc-Switch:HotPartsTapa",
-            "markerEnd": "logo",
-            "source": "ExeSQL:CoolFactsChew",
-            "sourceHandle": "c",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+            "data": {
+              "form": {
+                "database": "",
+                "db_type": "mysql",
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "host": "",
+                "llm_id": "deepseek-chat@DeepSeek",
+                "loop": 3,
+                "maxTokensEnabled": true,
+                "max_tokens": 512,
+                "password": "",
+                "port": 6630,
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "query": [],
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_n": 30,
+                "top_p": 0.3,
+                "username": "root"
+              },
+              "label": "ExeSQL",
+              "name": "ExeSQL"
             },
-            "target": "Switch:HotPartsTap",
-            "targetHandle": "a",
-            "type": "buttonEdge"
+            "dragging": false,
+            "id": "ExeSQL:QuietRosesRun",
+            "measured": {
+              "height": 64,
+              "width": 200
+            },
+            "position": {
+              "x": -318.61920731731163,
+              "y": 3.5145731711609436
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "ragNode"
           },
           {
-            "id": "24dc76bf-2030-465e-9dd8-f4a784fd2b49",
-            "source": "Switch:HotPartsTap",
-            "sourceHandle": "end_cpn_id",
-            "target": "Answer:SocialAdsWonder"
+            "data": {
+              "form": {
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 256,
+                "message_history_window_size": 6,
+                "parameter": "Precise",
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "RewriteQuestion",
+              "name": "RefineQuestion"
+            },
+            "dragging": false,
+            "id": "RewriteQuestion:WildIdeasTell",
+            "measured": {
+              "height": 106,
+              "width": 200
+            },
+            "position": {
+              "x": -7.734116293705583,
+              "y": 236.92372325779243
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "rewriteNode"
           },
           {
-            "id": "reactflow__edge-Switch:HotPartsTapCase 1-Generate:SmoothWombatsRemainc",
-            "markerEnd": "logo",
-            "source": "Switch:HotPartsTap",
-            "sourceHandle": "Case 1",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+            "data": {
+              "form": {
+                "cite": false,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": false,
+                "max_tokens": 256,
+                "message_history_window_size": 1,
+                "parameter": "Precise",
+                "parameters": [],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "\n##The user provides a question and you provide SQL. You will only respond with SQL code and not with any explanations.\n\n##You may use the following DDL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:SillyPartsCheer}.\n\n##You may use the following documentation as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:OddSingersRefuse}.\n\n##You may use the following SQL statements as a reference for what tables might be available. Use responses to past questions also to guide you: {Retrieval:BrownStreetsRhyme}.\n\n##Respond with only SQL code. Do not answer with any explanations -- just the code.",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "Generate SQL Statement LLM"
             },
-            "target": "Generate:SmoothWombatsRemain",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Generate:SmoothWombatsRemainb-ExeSQL:CoolFactsChewb",
-            "markerEnd": "logo",
-            "source": "Generate:SmoothWombatsRemain",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+            "dragging": false,
+            "id": "Generate:BlueShirtsLaugh",
+            "measured": {
+              "height": 106,
+              "width": 200
             },
-            "target": "ExeSQL:CoolFactsChew",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Answer:SocialAdsWonderb-Retrieval:SillyPartsCheerc",
-            "markerEnd": "logo",
-            "source": "Answer:SocialAdsWonder",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+            "position": {
+              "x": 147.62383788095065,
+              "y": -116.47462293167156
             },
-            "target": "Retrieval:SillyPartsCheer",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Answer:SocialAdsWonderb-Retrieval:BrownStreetsRhymec",
-            "markerEnd": "logo",
-            "source": "Answer:SocialAdsWonder",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Retrieval:BrownStreetsRhyme",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Answer:SocialAdsWonderb-Retrieval:OddSingersRefusec",
-            "markerEnd": "logo",
-            "source": "Answer:SocialAdsWonder",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Retrieval:OddSingersRefuse",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Generate:CuteSidesBuyc-ExeSQL:CoolFactsChewb",
-            "markerEnd": "logo",
-            "source": "Generate:CuteSidesBuy",
-            "sourceHandle": "c",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "ExeSQL:CoolFactsChew",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Retrieval:SillyPartsCheerb-Generate:CuteSidesBuyb",
-            "markerEnd": "logo",
-            "source": "Retrieval:SillyPartsCheer",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:CuteSidesBuy",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Retrieval:BrownStreetsRhymeb-Generate:CuteSidesBuyb",
-            "markerEnd": "logo",
-            "source": "Retrieval:BrownStreetsRhyme",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:CuteSidesBuy",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Retrieval:OddSingersRefuseb-Generate:CuteSidesBuyb",
-            "markerEnd": "logo",
-            "source": "Retrieval:OddSingersRefuse",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:CuteSidesBuy",
-            "targetHandle": "b",
-            "type": "buttonEdge"
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode"
           }
         ]
       },

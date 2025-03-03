@@ -2,11 +2,10 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { CloseOutlined } from '@ant-design/icons';
 import { Drawer, Flex, Form, Input } from 'antd';
-import { lowerFirst } from 'lodash';
+import { get, isPlainObject, lowerFirst } from 'lodash';
 import { Play } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { Node } from 'reactflow';
-import { Operator, operatorMap } from '../constant';
+import { BeginId, Operator, operatorMap } from '../constant';
 import AkShareForm from '../form/akshare-form';
 import AnswerForm from '../form/answer-form';
 import ArXivForm from '../form/arxiv-form';
@@ -41,14 +40,21 @@ import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
 import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
 import OperatorIcon from '../operator-icon';
-import { getDrawerWidth, needsSingleStepDebugging } from '../utils';
+import {
+  buildCategorizeListFromObject,
+  getDrawerWidth,
+  needsSingleStepDebugging,
+} from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
 
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { FlowFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
+import IterationForm from '../form/iteration-from';
 import styles from './index.less';
 
 interface IProps {
-  node?: Node;
+  node?: RAGFlowNodeType;
   singleDebugDrawerVisible: IModalProps<any>['visible'];
   hideSingleDebugDrawer: IModalProps<any>['hideModal'];
   showSingleDebugDrawer: IModalProps<any>['showModal'];
@@ -89,6 +95,8 @@ const FormMap = {
   [Operator.Note]: () => <></>,
   [Operator.Template]: TemplateForm,
   [Operator.Email]: EmailForm,
+  [Operator.Iteration]: IterationForm,
+  [Operator.IterationStart]: () => <></>,
 };
 
 const EmptyContent = () => <div></div>;
@@ -101,7 +109,7 @@ const FormDrawer = ({
   hideSingleDebugDrawer,
   showSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
-  const operatorName: Operator = node?.data.label;
+  const operatorName: Operator = node?.data.label as Operator;
   const OperatorForm = FormMap[operatorName] ?? EmptyContent;
   const [form] = Form.useForm();
   const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
@@ -119,10 +127,21 @@ const FormDrawer = ({
       if (node?.id !== previousId.current) {
         form.resetFields();
       }
-      form.setFieldsValue(node?.data?.form);
+
+      if (operatorName === Operator.Categorize) {
+        const items = buildCategorizeListFromObject(
+          get(node, 'data.form.category_description', {}),
+        );
+        const formData = node?.data?.form;
+        if (isPlainObject(formData)) {
+          form.setFieldsValue({ ...formData, items });
+        }
+      } else {
+        form.setFieldsValue(node?.data?.form);
+      }
       previousId.current = node?.id;
     }
-  }, [visible, form, node?.data?.form, node?.id]);
+  }, [visible, form, node?.data?.form, node?.id, node, operatorName]);
 
   return (
     <Drawer
@@ -137,12 +156,17 @@ const FormDrawer = ({
               <label htmlFor="" className={styles.title}>
                 {t('title')}
               </label>
-              <Input
-                value={name}
-                onBlur={handleNameBlur}
-                onChange={handleNameChange}
-              ></Input>
+              {node?.id === BeginId ? (
+                <span>{t(BeginId)}</span>
+              ) : (
+                <Input
+                  value={name}
+                  onBlur={handleNameBlur}
+                  onChange={handleNameChange}
+                ></Input>
+              )}
             </Flex>
+
             {needsSingleStepDebugging(operatorName) && (
               <RunTooltip>
                 <Play
@@ -169,11 +193,13 @@ const FormDrawer = ({
     >
       <section className={styles.formWrapper}>
         {visible && (
-          <OperatorForm
-            onValuesChange={handleValuesChange}
-            form={form}
-            node={node}
-          ></OperatorForm>
+          <FlowFormContext.Provider value={node}>
+            <OperatorForm
+              onValuesChange={handleValuesChange}
+              form={form}
+              node={node}
+            ></OperatorForm>
+          </FlowFormContext.Provider>
         )}
       </section>
       {singleDebugDrawerVisible && (

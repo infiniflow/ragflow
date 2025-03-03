@@ -65,7 +65,7 @@ def save():
     req["dsl"] = json.loads(req["dsl"])
     if "id" not in req:
         if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip()):
-            return get_data_error_result(f"{req['title'].strip()} already exists.")
+            return get_data_error_result(message=f"{req['title'].strip()} already exists.")
         req["id"] = get_uuid()
         if not UserCanvasService.save(**req):
             return get_data_error_result(message="Fail to save canvas.")
@@ -94,7 +94,7 @@ def getsse(canvas_id):
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
-        return get_data_error_result(message='Token is not valid!"')
+        return get_data_error_result(message='Authentication error: API key is invalid!"')
     e, c = UserCanvasService.get_by_id(canvas_id)
     if not e:
         return get_data_error_result(message="canvas not found.")
@@ -146,12 +146,16 @@ def run():
 
                 canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
                 canvas.history.append(("assistant", final_ans["content"]))
+                if not canvas.path[-1]:
+                    canvas.path.pop(-1)
                 if final_ans.get("reference"):
                     canvas.reference.append(final_ans["reference"])
                 cvs.dsl = json.loads(str(canvas))
                 UserCanvasService.update_by_id(req["id"], cvs.to_dict())
             except Exception as e:
                 cvs.dsl = json.loads(str(canvas))
+                if not canvas.path[-1]:
+                    canvas.path.pop(-1)
                 UserCanvasService.update_by_id(req["id"], cvs.to_dict())
                 traceback.print_exc()
                 yield "data:" + json.dumps({"code": 500, "message": str(e),

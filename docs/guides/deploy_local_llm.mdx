@@ -9,6 +9,8 @@ import TabItem from '@theme/TabItem';
 
 Run models locally using Ollama, Xinference, or other frameworks.
 
+---
+
 RAGFlow supports deploying models locally using Ollama, Xinference, IPEX-LLM, or jina. If you have locally deployed models to leverage or wish to enable GPU or CUDA for inference acceleration, you can bind Ollama or Xinference into RAGFlow and use either of them as a local "server" for interacting with your local models.
 
 RAGFlow seamlessly integrates with Ollama and Xinference, without the need for further environment configurations. You can use them to deploy two types of local models in RAGFlow: chat models and embedding models.
@@ -37,7 +39,7 @@ time=2024-12-02T02:20:21.360Z level=INFO source=common.go:49 msg="Dynamic LLM li
 
 Ensure ollama is listening on all IP address:
 ```bash
-sudo ss -tunlp|grep 11434
+sudo ss -tunlp | grep 11434
 tcp   LISTEN 0      4096                  0.0.0.0:11434      0.0.0.0:*    users:(("docker-proxy",pid=794507,fd=4))
 tcp   LISTEN 0      4096                     [::]:11434         [::]:*    users:(("docker-proxy",pid=794513,fd=4))
 ```
@@ -57,20 +59,20 @@ success
 
 ### 2. Ensure Ollama is accessible
 
-If RAGFlow runs in Docker and Ollama runs on the same host machine, check if ollama is accessiable from inside the RAGFlow container:
+If RAGFlow runs in Docker and Ollama runs on the same host machine, check if ollama is accessible from inside the RAGFlow container:
 ```bash
 sudo docker exec -it ragflow-server bash
 root@8136b8c3e914:/ragflow# curl  http://host.docker.internal:11434/
 Ollama is running
 ```
 
-If RAGFlow runs from source code and Ollama runs on the same host machine, check if ollama is accessiable from RAGFlow host machine:
+If RAGFlow runs from source code and Ollama runs on the same host machine, check if ollama is accessible from RAGFlow host machine:
 ```bash
 curl  http://localhost:11434/
 Ollama is running
 ```
 
-If RAGFlow and Ollama run on different machines, check if ollama is accessiable from RAGFlow host machine:
+If RAGFlow and Ollama run on different machines, check if ollama is accessible from RAGFlow host machine:
 ```bash
 curl  http://${IP_OF_OLLAMA_MACHINE}:11434/
 Ollama is running

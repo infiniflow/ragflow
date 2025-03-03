@@ -98,14 +98,10 @@ def get_exponential_backoff_interval(retries, full_jitter=False):
 
 def get_data_error_result(code=settings.RetCode.DATA_ERROR,
                           message='Sorry! Data missing!'):
-    import re
+    logging.exception(Exception(message))
     result_dict = {
         "code": code,
-        "message": re.sub(
-            r"rag",
-            "seceum",
-            message,
-            flags=re.IGNORECASE)}
+        "message": message}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
@@ -125,6 +121,10 @@ def server_error_response(e):
     if len(e.args) > 1:
         return get_json_result(
             code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+    if repr(e).find("index_not_found_exception") >= 0:
+        return get_json_result(code=settings.RetCode.EXCEPTION_ERROR,
+                               message="No chunk found, please upload file and parse it.")
+
     return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
 
 
@@ -173,6 +173,7 @@ def validate_request(*args, **kwargs):
 
     return wrapper
 
+
 def not_allowed_parameters(*params):
     def decorator(f):
         def wrapper(*args, **kwargs):
@@ -182,7 +183,9 @@ def not_allowed_parameters(*params):
                     return get_json_result(
                         code=settings.RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
             return f(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -206,6 +209,7 @@ def send_file_in_mem(data, filename):
 def get_json_result(code=settings.RetCode.SUCCESS, message='success', data=None):
     response = {"code": code, "message": message, "data": data}
     return jsonify(response)
+
 
 def apikey_required(func):
     @wraps(func)
@@ -250,8 +254,7 @@ def construct_response(code=settings.RetCode.SUCCESS,
 
 
 def construct_result(code=settings.RetCode.DATA_ERROR, message='data is missing'):
-    import re
-    result_dict = {"code": code, "message": re.sub(r"rag", "seceum", message, flags=re.IGNORECASE)}
+    result_dict = {"code": code, "message": message}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
@@ -283,14 +286,18 @@ def construct_error_response(e):
 def token_required(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
-        authorization_list=flask_request.headers.get('Authorization').split()
+        authorization_str = flask_request.headers.get('Authorization')
+        if not authorization_str:
+            return get_json_result(data=False, message="`Authorization` can't be empty")
+        authorization_list = authorization_str.split()
         if len(authorization_list) < 2:
-            return get_json_result(data=False,message="Please check your authorization format.")
+            return get_json_result(data=False, message="Please check your authorization format.")
         token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
             return get_json_result(
-                data=False, message='Token is not valid!', code=settings.RetCode.AUTHENTICATION_ERROR
+                data=False, message='Authentication error: API key is invalid!',
+                code=settings.RetCode.AUTHENTICATION_ERROR
             )
         kwargs['tenant_id'] = objs[0].tenant_id
         return func(*args, **kwargs)
@@ -311,14 +318,9 @@ def get_result(code=settings.RetCode.SUCCESS, message="", data=None):
 
 def get_error_data_result(message='Sorry! Data missing!', code=settings.RetCode.DATA_ERROR,
                           ):
-    import re
     result_dict = {
         "code": code,
-        "message": re.sub(
-            r"rag",
-            "seceum",
-            message,
-            flags=re.IGNORECASE)}
+        "message": message}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
@@ -333,35 +335,41 @@ def generate_confirmation_token(tenent_id):
     return "ragflow-" + serializer.dumps(get_uuid(), salt=tenent_id)[2:34]
 
 
-def valid(permission,valid_permission,language,valid_language,chunk_method,valid_chunk_method):
-    if valid_parameter(permission,valid_permission):
-        return valid_parameter(permission,valid_permission)
-    if valid_parameter(language,valid_language):
-        return valid_parameter(language,valid_language)
-    if valid_parameter(chunk_method,valid_chunk_method):
-        return valid_parameter(chunk_method,valid_chunk_method)
+def valid(permission, valid_permission, language, valid_language, chunk_method, valid_chunk_method):
+    if valid_parameter(permission, valid_permission):
+        return valid_parameter(permission, valid_permission)
+    if valid_parameter(language, valid_language):
+        return valid_parameter(language, valid_language)
+    if valid_parameter(chunk_method, valid_chunk_method):
+        return valid_parameter(chunk_method, valid_chunk_method)
 
-def valid_parameter(parameter,valid_values):
+
+def valid_parameter(parameter, valid_values):
     if parameter and parameter not in valid_values:
-       return get_error_data_result(f"'{parameter}' is not in {valid_values}")
+        return get_error_data_result(f"'{parameter}' is not in {valid_values}")
 
-def get_parser_config(chunk_method,parser_config):
+
+def get_parser_config(chunk_method, parser_config):
     if parser_config:
         return parser_config
     if not chunk_method:
         chunk_method = "naive"
-    key_mapping={"naive":{"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False,"layout_recognize": True, "raptor": {"use_raptor": False}},
-                 "qa":{"raptor":{"use_raptor":False}},
-                 "resume":None,
-                 "manual":{"raptor":{"use_raptor":False}},
-                 "table":None,
-                 "paper":{"raptor":{"use_raptor":False}},
-                 "book":{"raptor":{"use_raptor":False}},
-                 "laws":{"raptor":{"use_raptor":False}},
-                 "presentation":{"raptor":{"use_raptor":False}},
-                 "one":None,
-                 "knowledge_graph":{"chunk_token_num":8192,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]},
-                 "email":None,
-                 "picture":None}
-    parser_config=key_mapping[chunk_method]
+    key_mapping = {
+        "naive": {"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False, "layout_recognize": "DeepDOC",
+                  "raptor": {"use_raptor": False}},
+        "qa": {"raptor": {"use_raptor": False}},
+        "tag": None,
+        "resume": None,
+        "manual": {"raptor": {"use_raptor": False}},
+        "table": None,
+        "paper": {"raptor": {"use_raptor": False}},
+        "book": {"raptor": {"use_raptor": False}},
+        "laws": {"raptor": {"use_raptor": False}},
+        "presentation": {"raptor": {"use_raptor": False}},
+        "one": None,
+        "knowledge_graph": {"chunk_token_num": 8192, "delimiter": "\\n!?;。；！？",
+                            "entity_types": ["organization", "person", "location", "event", "time"]},
+        "email": None,
+        "picture": None}
+    parser_config = key_mapping[chunk_method]
     return parser_config

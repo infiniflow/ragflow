@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -70,7 +70,7 @@ class Pdf(PdfParser):
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
 
-        return [(b["text"], b.get("layout_no", ""), self.get_position(b, zoomin))
+        return [(b["text"], b.get("layoutno", ""), self.get_position(b, zoomin))
                 for i, b in enumerate(self.boxes)], tbls
 
 
@@ -184,16 +184,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if kwargs.get(
-            "parser_config", {}).get(
-            "layout_recognize", True) else PlainParser()
+        pdf_parser = Pdf()
+        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         if sections and len(sections[0]) < 3:
             sections = [(t, lvl, [[0] * 5]) for t, lvl in sections]
         # set pivot using the most frequent type of title,
         # then merge between 2 pivot
-        if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.1:
+        if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.03:
             max_lvl = max([lvl for _, lvl in pdf_parser.outlines])
             most_level = max(0, max_lvl - 1)
             levels = []
@@ -256,7 +256,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
         return res
 
-    if re.search(r"\.docx$", filename, re.IGNORECASE):
+    elif re.search(r"\.docx?$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary,
                                     from_page=0, to_page=10000, callback=callback)

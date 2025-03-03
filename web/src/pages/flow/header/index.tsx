@@ -9,12 +9,15 @@ import { useCallback } from 'react';
 import { Link, useParams } from 'umi';
 import {
   useGetBeginNodeDataQuery,
-  useGetBeginNodeDataQueryIsEmpty,
+  useGetBeginNodeDataQueryIsSafe,
+} from '../hooks/use-get-begin-query';
+import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
   useWatchAgentChange,
-} from '../hooks';
+} from '../hooks/use-save-graph';
 import { BeginQuery } from '../interface';
+
 import styles from './index.less';
 
 interface IProps {
@@ -32,7 +35,7 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
-  const isBeginNodeDataQueryEmpty = useGetBeginNodeDataQueryIsEmpty();
+  const isBeginNodeDataQuerySafe = useGetBeginNodeDataQueryIsSafe();
 
   const handleShowEmbedModal = useCallback(() => {
     showEmbedModal();
@@ -76,7 +79,7 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
           <Button
             type="primary"
             onClick={handleShowEmbedModal}
-            disabled={!isBeginNodeDataQueryEmpty}
+            disabled={!isBeginNodeDataQuerySafe}
           >
             <b>{t('embedIntoSite', { keyPrefix: 'common' })}</b>
           </Button>

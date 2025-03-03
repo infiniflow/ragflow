@@ -1,6 +1,5 @@
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/page-header';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { ArrowLeft } from 'lucide-react';
 import { Outlet } from 'umi';
 import { SideBar } from './sidebar';
 
@@ -9,7 +8,7 @@ export default function ProfileSetting() {
 
   return (
     <div className="flex flex-col w-full h-screen bg-background text-foreground">
-      <header className="flex items-center border-b">
+      {/* <header className="flex items-center border-b">
         <div className="flex items-center border-r p-1.5">
           <Button variant="ghost" size="icon" onClick={navigateToHome}>
             <ArrowLeft className="w-5 h-5" />
@@ -20,7 +19,9 @@ export default function ProfileSetting() {
             Profile & settings
           </h1>
         </div>
-      </header>
+      </header> */}
+
+      <PageHeader title="Profile & settings" back={navigateToHome}></PageHeader>
 
       <div className="flex flex-1 bg-muted/50">
         <SideBar></SideBar>

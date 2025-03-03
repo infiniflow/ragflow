@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import logging
 from tika import parser
 from io import BytesIO
@@ -112,6 +116,8 @@ class Docx(DocxParser):
                         if c.text == r.cells[j].text:
                             span += 1
                             i = j
+                        else:
+                            break
                     i += 1
                     html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                 html += "</tr>"
@@ -198,7 +204,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
-            "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": True})
+            "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -227,8 +233,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf() if parser_config.get("layout_recognize", True) else PlainParser()
-        sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+        pdf_parser = Pdf()
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
+            pdf_parser = PlainParser()
+        sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
+                                      callback=callback)
         res = tokenize_table(tables, doc, is_english)
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):

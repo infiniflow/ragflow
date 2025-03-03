@@ -27,11 +27,13 @@ from flask_login import login_required, current_user
 from api.db import LLMType
 from api.db.services.dialog_service import DialogService, chat, ask
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMBundle, TenantService, TenantLLMService
+from api.db.services.llm_service import LLMBundle, TenantService
 from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from graphrag.mind_map_extractor import MindMapExtractor
+from graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.app.tag import label_question
+
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @login_required
@@ -65,10 +67,6 @@ def set_conversation():
             "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
         }
         ConversationService.save(**conv)
-        e, conv = ConversationService.get_by_id(conv["id"])
-        if not e:
-            return get_data_error_result(message="Fail to new a conversation!")
-        conv = conv.to_dict()
         return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
@@ -126,7 +124,7 @@ def getsse(dialog_id):
     token = token[1]
     objs = APIToken.query(beta=token)
     if not objs:
-        return get_data_error_result(message='Token is not valid!"')
+        return get_data_error_result(message='Authentication error: API key is invalid!"')
     try:
         e, conv = DialogService.get_by_id(dialog_id)
         if not e:
@@ -380,11 +378,13 @@ def mindmap():
     if not e:
         return get_data_error_result(message="Knowledgebase not found!")
 
-    embd_mdl = TenantLLMService.model_instance(
-        kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
+    embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id)
     chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
-    ranks = settings.retrievaler.retrieval(req["question"], embd_mdl, kb.tenant_id, kb_ids, 1, 12,
-                                           0.3, 0.3, aggs=False)
+    question = req["question"]
+    ranks = settings.retrievaler.retrieval(question, embd_mdl, kb.tenant_id, kb_ids, 1, 12,
+                                           0.3, 0.3, aggs=False,
+                                           rank_feature=label_question(question, [kb])
+                                           )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = mindmap([c["content_with_weight"] for c in ranks["chunks"]]).output
     if "error" in mind_map:

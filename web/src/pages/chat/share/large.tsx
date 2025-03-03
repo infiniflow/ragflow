@@ -1,10 +1,10 @@
 import MessageInput from '@/components/message-input';
 import MessageItem from '@/components/message-item';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
-import { MessageType } from '@/constants/chat';
+import { MessageType, SharedFrom } from '@/constants/chat';
 import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { Flex, Spin } from 'antd';
-import { forwardRef, useMemo } from 'react';
+import React, { forwardRef, useMemo } from 'react';
 import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
@@ -14,10 +14,17 @@ import { buildMessageItemReference } from '../utils';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
 import { useFetchFlowSSE } from '@/hooks/flow-hooks';
+import i18n from '@/locales/config';
+import { buildMessageUuidWithRole } from '@/utils/chat';
 import styles from './index.less';
 
 const ChatContainer = () => {
-  const { sharedId: conversationId } = useGetSharedChatSearchParams();
+  const {
+    sharedId: conversationId,
+    from,
+    locale,
+    visibleAvatar,
+  } = useGetSharedChatSearchParams();
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -32,14 +39,18 @@ const ChatContainer = () => {
     hasError,
   } = useSendSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
-  const useData = (from: SharedFrom) =>
-    useMemo(() => {
-      return from === SharedFrom.Agent
-        ? useFetchFlowSSE
-        : useFetchNextConversationSSE;
-    }, [from]);
 
-  const { data: InforForm } = useData(from)();
+  const useFetchAvatar = useMemo(() => {
+    return from === SharedFrom.Agent
+      ? useFetchFlowSSE
+      : useFetchNextConversationSSE;
+  }, [from]);
+  React.useEffect(() => {
+    if (locale && i18n.language !== locale) {
+      i18n.changeLanguage(locale);
+    }
+  }, [locale, visibleAvatar]);
+  const { data: avatarData } = useFetchAvatar();
 
   if (!conversationId) {
     return <div>empty</div>;
@@ -54,8 +65,9 @@ const ChatContainer = () => {
               {derivedMessages?.map((message, i) => {
                 return (
                   <MessageItem
-                    key={message.id}
-                    avatardialog={InforForm?.avatar}
+                    visibleAvatar={visibleAvatar}
+                    key={buildMessageUuidWithRole(message)}
+                    avatarDialog={avatarData?.avatar}
                     item={message}
                     nickname="You"
                     reference={buildMessageItemReference(
@@ -72,6 +84,8 @@ const ChatContainer = () => {
                     }
                     index={i}
                     clickDocumentButton={clickDocumentButton}
+                    showLikeButton={false}
+                    showLoudspeaker={false}
                   ></MessageItem>
                 );
               })}

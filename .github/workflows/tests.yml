@@ -32,12 +32,9 @@ jobs:
       # https://github.com/hmarr/debug-action
       #- uses: hmarr/debug-action@v2
 
-      - name: Show PR labels
+      - name: Show who triggered this workflow
         run: |
           echo "Workflow triggered by ${{ github.event_name }}"
-          if [[ ${{ github.event_name }} == 'pull_request' ]]; then
-            echo "PR labels: ${{ join(github.event.pull_request.labels.*.name, ', ') }}"
-          fi
 
       - name: Ensure workspace ownership
         run: echo "chown -R $USER $GITHUB_WORKSPACE" && sudo chown -R $USER $GITHUB_WORKSPACE
@@ -68,7 +65,7 @@ jobs:
 
       - name: Start ragflow:nightly-slim
         run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
+          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Stop ragflow:nightly-slim
@@ -78,7 +75,7 @@ jobs:
 
       - name: Start ragflow:nightly
         run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
+          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Run sdk tests against Elasticsearch
@@ -89,7 +86,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
 
       - name: Run frontend api tests against Elasticsearch
         run: |
@@ -99,7 +96,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py 
+          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py 
           
 
       - name: Stop ragflow:nightly
@@ -119,7 +116,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
 
       - name: Run frontend api tests against Infinity
         run: |
@@ -129,7 +126,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && poetry install && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
+          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed

@@ -23,9 +23,10 @@ import {
 } from '@/components/ui/select';
 import { FormSlider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
+import ChunkMethodCard from './chunk-method-card';
 
 const formSchema = z.object({
-  username: z.number().min(2, {
+  parser_id: z.string().min(1, {
     message: 'Username must be at least 2 characters.',
   }),
   a: z.number().min(2, {
@@ -46,7 +47,7 @@ export default function AdvancedSettingForm() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      username: 0,
+      parser_id: '',
     },
   });
 
@@ -59,9 +60,9 @@ export default function AdvancedSettingForm() {
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
         <FormField
           control={form.control}
-          name="username"
+          name="a"
           render={({ field }) => (
-            <FormItem>
+            <FormItem className="w-2/5">
               <FormLabel>Username</FormLabel>
               <FormControl>
                 <FormSlider {...field}></FormSlider>
@@ -73,11 +74,12 @@ export default function AdvancedSettingForm() {
             </FormItem>
           )}
         />
+        <ChunkMethodCard></ChunkMethodCard>
         <FormField
           control={form.control}
           name="a"
           render={({ field }) => (
-            <FormItem>
+            <FormItem className="w-2/5">
               <FormLabel>Username</FormLabel>
               <FormControl>
                 <FormSlider {...field}></FormSlider>
@@ -93,11 +95,11 @@ export default function AdvancedSettingForm() {
           control={form.control}
           name="b"
           render={({ field }) => (
-            <FormItem>
+            <FormItem className="w-2/5">
               <FormLabel>Username</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
-                  <SelectTrigger className="bg-colors-background-inverse-weak">
+                  <SelectTrigger>
                     <SelectValue placeholder="Select a verified email to display" />
                   </SelectTrigger>
                 </FormControl>
@@ -118,7 +120,7 @@ export default function AdvancedSettingForm() {
           control={form.control}
           name="c"
           render={({ field }) => (
-            <FormItem>
+            <FormItem className="w-2/5">
               <FormLabel>Username</FormLabel>
               <FormControl>
                 <FormSlider {...field}></FormSlider>
@@ -134,13 +136,10 @@ export default function AdvancedSettingForm() {
           control={form.control}
           name="d"
           render={({ field }) => (
-            <FormItem>
+            <FormItem className="w-2/5">
               <FormLabel>Username</FormLabel>
               <FormControl>
-                <Textarea
-                  {...field}
-                  className="bg-colors-background-inverse-weak"
-                ></Textarea>
+                <Textarea {...field}></Textarea>
               </FormControl>
               <FormDescription>
                 This is your public display name.
@@ -153,7 +152,7 @@ export default function AdvancedSettingForm() {
           variant={'tertiary'}
           size={'sm'}
           type="submit"
-          className="w-full"
+          className="w-2/5"
         >
           Test
         </Button>

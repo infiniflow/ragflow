@@ -31,6 +31,7 @@ def collect():
         return
     return doc_locations
 
+
 def main():
     locations = collect()
     if not locations:
@@ -50,7 +51,6 @@ def main():
                     traceback.print_stack(e)
         except Exception as e:
             traceback.print_stack(e)
-
 
 
 if __name__ == "__main__":

@@ -1,17 +1,39 @@
-import { PlusOutlined } from '@ant-design/icons';
-import { Form, Input, message, Select, Switch, Upload } from 'antd';
-import classNames from 'classnames';
-import { ISegmentedContentProps } from '../interface';
-
 import KnowledgeBaseItem from '@/components/knowledge-base-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
+import { PlusOutlined } from '@ant-design/icons';
+import { Form, Input, message, Select, Switch, Typography, Upload } from 'antd';
+import classNames from 'classnames';
 import { useCallback } from 'react';
+import { ISegmentedContentProps } from '../interface';
+
 import styles from './index.less';
 
-const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
+const emptyResponseField = ['prompt_config', 'empty_response'];
+
+const AssistantSetting = ({
+  show,
+  form,
+  setHasError,
+}: ISegmentedContentProps) => {
   const { t } = useTranslate('chat');
-  const { data } = useFetchTenantInfo();
+  const { data } = useFetchTenantInfo(true);
+
+  const handleChange = useCallback(() => {
+    const kbIds = form.getFieldValue('kb_ids');
+    const emptyResponse = form.getFieldValue(emptyResponseField);
+
+    const required =
+      emptyResponse && ((Array.isArray(kbIds) && kbIds.length === 0) || !kbIds);
+
+    setHasError(required);
+    form.setFields([
+      {
+        name: emptyResponseField,
+        errors: required ? [t('emptyResponseMessage')] : [],
+      },
+    ]);
+  }, [form, setHasError, t]);
 
   const normFile = (e: any) => {
     if (Array.isArray(e)) {
@@ -31,7 +53,7 @@ const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
     [data, form],
   );
 
-  const uploadButtion = (
+  const uploadButton = (
     <button style={{ border: 0, background: 'none' }} type="button">
       <PlusOutlined />
       <div style={{ marginTop: 8 }}>{t('upload', { keyPrefix: 'common' })}</div>
@@ -66,7 +88,7 @@ const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
           beforeUpload={() => false}
           showUploadList={{ showPreviewIcon: false, showRemoveIcon: false }}
         >
-          {show ? uploadButtion : null}
+          {show ? uploadButton : null}
         </Upload>
       </Form.Item>
       <Form.Item
@@ -84,11 +106,11 @@ const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
         />
       </Form.Item>
       <Form.Item
-        name={['prompt_config', 'empty_response']}
+        name={emptyResponseField}
         label={t('emptyResponse')}
         tooltip={t('emptyResponseTip')}
       >
-        <Input placeholder="" />
+        <Input placeholder="" onChange={handleChange} />
       </Form.Item>
       <Form.Item
         name={['prompt_config', 'prologue']}
@@ -107,15 +129,15 @@ const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
       >
         <Switch />
       </Form.Item>
-      {/* <Form.Item
-        label={t('selfRag')}
+      <Form.Item
+        label={t('keyword')}
         valuePropName="checked"
-        name={['prompt_config', 'self_rag']}
-        tooltip={t('selfRagTip')}
+        name={['prompt_config', 'keyword']}
+        tooltip={t('keywordTip')}
         initialValue={false}
       >
         <Switch />
-      </Form.Item> */}
+      </Form.Item>
       <Form.Item
         label={t('tts')}
         valuePropName="checked"
@@ -125,7 +147,20 @@ const AssistantSetting = ({ show, form }: ISegmentedContentProps) => {
       >
         <Switch onChange={handleTtsChange} />
       </Form.Item>
-      <KnowledgeBaseItem></KnowledgeBaseItem>
+      <Form.Item label={'Tavily Api Key'} tooltip={t('tavilyApiKeyTip')}>
+        <div className="flex flex-col gap-1">
+          <Form.Item name={['prompt_config', 'tavily_api_key']} noStyle>
+            <Input.Password placeholder={t('tavilyApiKeyMessage')} />
+          </Form.Item>
+          <Typography.Link href="https://app.tavily.com/home" target={'_blank'}>
+            {t('tavilyApiKeyHelp')}
+          </Typography.Link>
+        </div>
+      </Form.Item>
+      <KnowledgeBaseItem
+        required={false}
+        onChange={handleChange}
+      ></KnowledgeBaseItem>
     </section>
   );
 };

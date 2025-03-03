@@ -341,7 +341,7 @@ export const useSelectNextMessages = () => {
 export const useHandleMessageInputChange = () => {
   const [value, setValue] = useState('');
 
-  const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
+  const handleInputChange: ChangeEventHandler<HTMLTextAreaElement> = (e) => {
     const value = e.target.value;
     const nextValue = value.replaceAll('\\n', '\n').replaceAll('\\t', '\t');
     setValue(nextValue);
@@ -535,7 +535,6 @@ export const useRenameConversation = () => {
   const onConversationRenameOk = useCallback(
     async (name: string) => {
       const ret = await updateConversation({
-        ...conversation,
         conversation_id: conversation.id,
         name,
         is_new: false,

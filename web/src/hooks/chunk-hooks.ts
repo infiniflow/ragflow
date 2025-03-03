@@ -194,29 +194,10 @@ export const useFetchChunk = (chunkId?: string): ResponseType<any> => {
     queryKey: ['fetchChunk'],
     enabled: !!chunkId,
     initialData: {},
+    gcTime: 0,
     queryFn: async () => {
       const data = await kbService.get_chunk({
         chunk_id: chunkId,
-      });
-
-      return data;
-    },
-  });
-
-  return data;
-};
-
-export const useFetchKnowledgeGraph = (
-  documentId: string,
-): ResponseType<any> => {
-  const { data } = useQuery({
-    queryKey: ['fetchKnowledgeGraph', documentId],
-    initialData: true,
-    enabled: !!documentId,
-    gcTime: 0,
-    queryFn: async () => {
-      const data = await kbService.knowledge_graph({
-        doc_id: documentId,
       });
 
       return data;

@@ -97,8 +97,8 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:v0.14.1-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.14.1`: The RAGFlow Docker image with embedding models including:
+  - `infiniflow/ragflow:v0.17.0-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.17.0`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
       - `BAAI/bge-reranker-v2-m3`
@@ -138,7 +138,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 ### MacOS
 
 - `MACOS`  
-  Optimizations for MacOS. It is disabled by default. You can uncomment this line if your OS is MacOS.
+  Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
 
 ## Service configuration
 
@@ -168,7 +168,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
 
-- `github`: The GitHub authentication settings for your application. Visit the [Github Developer Settings](https://github.com/settings/developers) page to obtain your client_id and secret_key.
+- `github`: The GitHub authentication settings for your application. Visit the [GitHub Developer Settings](https://github.com/settings/developers) page to obtain your client_id and secret_key.
 
 ### `user_default_llm`  
 

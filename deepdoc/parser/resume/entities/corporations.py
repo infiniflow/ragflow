@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -44,7 +47,7 @@ def baike(cid, default_v=0):
 
 def corpNorm(nm, add_region=True):
     global CORP_TKS
-    if not nm or isinstance(nm, str):
+    if not nm or not isinstance(nm, str):
         return ""
     nm = rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(nm)).lower()
     nm = re.sub(r"&amp;", "&", nm)

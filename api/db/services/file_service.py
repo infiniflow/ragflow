@@ -251,10 +251,7 @@ class FileService(CommonService):
     def insert(cls, file):
         if not cls.save(**file):
             raise RuntimeError("Database error (File)!")
-        e, file = cls.get_by_id(file["id"])
-        if not e:
-            raise RuntimeError("Database error (File retrieval)!")
-        return file
+        return File(**file)
 
     @classmethod
     @DB.connection_context()
@@ -345,6 +342,8 @@ class FileService(CommonService):
                 MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
                 if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
                     raise RuntimeError("Exceed the maximum file number of a free user!")
+                if len(file.filename) >= 128:
+                    raise RuntimeError("Exceed the maximum length of file name!")
 
                 filename = duplicate_name(
                     DocumentService.query,
@@ -402,7 +401,7 @@ class FileService(CommonService):
             ParserType.AUDIO.value: audio,
             ParserType.EMAIL.value: email
         }
-        parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": False}
+        parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text"}
         exe = ThreadPoolExecutor(max_workers=12)
         threads = []
         for file in file_objs:

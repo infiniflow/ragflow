@@ -41,16 +41,18 @@ class API4ConversationService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_list(cls,dialog_id, tenant_id,
-                 page_number, items_per_page, orderby, desc, id):
-        sessions = cls.model.select().where(cls.model.dialog_id ==dialog_id)
+    def get_list(cls, dialog_id, tenant_id,
+                 page_number, items_per_page,
+                 orderby, desc, id, user_id=None):
+        sessions = cls.model.select().where(cls.model.dialog_id == dialog_id)
         if id:
             sessions = sessions.where(cls.model.id == id)
+        if user_id:
+            sessions = sessions.where(cls.model.user_id == user_id)
         if desc:
             sessions = sessions.order_by(cls.model.getter_by(orderby).desc())
         else:
             sessions = sessions.order_by(cls.model.getter_by(orderby).asc())
-        sessions = sessions.where(cls.model.user_id == tenant_id)
         sessions = sessions.paginate(page_number, items_per_page)
 
         return list(sessions.dicts())

@@ -40,8 +40,8 @@ const KnowledgeCard = ({ item }: IProps) => {
 
   return (
     <Badge.Ribbon
-      text={item.nickname}
-      color={userInfo.nickname === item.nickname ? '#1677ff' : 'pink'}
+      text={item?.nickname}
+      color={userInfo?.nickname === item?.nickname ? '#1677ff' : 'pink'}
       className={classNames(styles.ribbon, {
         [styles.hideRibbon]: item.permission !== 'team',
       })}

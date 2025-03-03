@@ -72,10 +72,12 @@ class TenantLLMService(CommonService):
             return model_name, None
         if len(arr) > 2:
             return "@".join(arr[0:-1]), arr[-1]
+
+        # model name must be xxx@yyy
         try:
-            fact = json.load(open(os.path.join(get_project_base_directory(), "conf/llm_factories.json"), "r"))["factory_llm_infos"]
-            fact = set([f["name"] for f in fact])
-            if arr[-1] not in fact:
+            model_factories = json.load(open(os.path.join(get_project_base_directory(), "conf/llm_factories.json"), "r"))["factory_llm_infos"]
+            model_providers = set([f["name"] for f in model_factories])
+            if arr[-1] not in model_providers:
                 return model_name, None
             return arr[0], arr[-1]
         except Exception as e:
@@ -84,8 +86,7 @@ class TenantLLMService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def model_instance(cls, tenant_id, llm_type,
-                       llm_name=None, lang="Chinese"):
+    def get_model_config(cls, tenant_id, llm_type, llm_name=None):
         e, tenant = TenantService.get_by_id(tenant_id)
         if not e:
             raise LookupError("Tenant not found")
@@ -113,16 +114,22 @@ class TenantLLMService(CommonService):
             if llm_type in [LLMType.EMBEDDING, LLMType.RERANK]:
                 llm = LLMService.query(llm_name=mdlnm) if not fid else LLMService.query(llm_name=mdlnm, fid=fid)
                 if llm and llm[0].fid in ["Youdao", "FastEmbed", "BAAI"]:
-                    model_config = {"llm_factory": llm[0].fid, "api_key":"", "llm_name": mdlnm, "api_base": ""}
+                    model_config = {"llm_factory": llm[0].fid, "api_key": "", "llm_name": mdlnm, "api_base": ""}
             if not model_config:
                 if mdlnm == "flag-embedding":
                     model_config = {"llm_factory": "Tongyi-Qianwen", "api_key": "",
-                                "llm_name": llm_name, "api_base": ""}
+                                    "llm_name": llm_name, "api_base": ""}
                 else:
                     if not mdlnm:
                         raise LookupError(f"Type of {llm_type} model is not set.")
                     raise LookupError("Model({}) not authorized".format(mdlnm))
+        return model_config
 
+    @classmethod
+    @DB.connection_context()
+    def model_instance(cls, tenant_id, llm_type,
+                       llm_name=None, lang="Chinese"):
+        model_config = TenantLLMService.get_model_config(tenant_id, llm_type, llm_name)
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
                 return
@@ -171,40 +178,39 @@ class TenantLLMService(CommonService):
     def increase_usage(cls, tenant_id, llm_type, used_tokens, llm_name=None):
         e, tenant = TenantService.get_by_id(tenant_id)
         if not e:
-            raise LookupError("Tenant not found")
+            logging.error(f"Tenant not found: {tenant_id}")
+            return 0
 
-        if llm_type == LLMType.EMBEDDING.value:
-            mdlnm = tenant.embd_id
-        elif llm_type == LLMType.SPEECH2TEXT.value:
-            mdlnm = tenant.asr_id
-        elif llm_type == LLMType.IMAGE2TEXT.value:
-            mdlnm = tenant.img2txt_id
-        elif llm_type == LLMType.CHAT.value:
-            mdlnm = tenant.llm_id if not llm_name else llm_name
-        elif llm_type == LLMType.RERANK:
-            mdlnm = tenant.rerank_id if not llm_name else llm_name
-        elif llm_type == LLMType.TTS:
-            mdlnm = tenant.tts_id if not llm_name else llm_name
-        else:
-            assert False, "LLM type error"
+        llm_map = {
+            LLMType.EMBEDDING.value: tenant.embd_id,
+            LLMType.SPEECH2TEXT.value: tenant.asr_id,
+            LLMType.IMAGE2TEXT.value: tenant.img2txt_id,
+            LLMType.CHAT.value: tenant.llm_id if not llm_name else llm_name,
+            LLMType.RERANK.value: tenant.rerank_id if not llm_name else llm_name,
+            LLMType.TTS.value: tenant.tts_id if not llm_name else llm_name
+        }
+
+        mdlnm = llm_map.get(llm_type)
+        if mdlnm is None:
+            logging.error(f"LLM type error: {llm_type}")
+            return 0
 
         llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(mdlnm)
 
-        num = 0
         try:
-            if llm_factory:
-                tenant_llms = cls.query(tenant_id=tenant_id, llm_name=llm_name, llm_factory=llm_factory)
-            else:
-                tenant_llms = cls.query(tenant_id=tenant_id, llm_name=llm_name)
-            if not tenant_llms:
-                return num
-            else:
-                tenant_llm = tenant_llms[0]
-                num = cls.model.update(used_tokens=tenant_llm.used_tokens + used_tokens)\
-                    .where(cls.model.tenant_id == tenant_id, cls.model.llm_factory == tenant_llm.llm_factory, cls.model.llm_name == llm_name)\
-                    .execute()
+            num = cls.model.update(
+                used_tokens=cls.model.used_tokens + used_tokens
+            ).where(
+                cls.model.tenant_id == tenant_id,
+                cls.model.llm_name == llm_name,
+                cls.model.llm_factory == llm_factory if llm_factory else True
+            ).execute()
         except Exception:
-            logging.exception("TenantLLMService.increase_usage got exception")
+            logging.exception(
+                "TenantLLMService.increase_usage got exception,Failed to update used_tokens for tenant_id=%s, llm_name=%s",
+                tenant_id, llm_name)
+            return 0
+
         return num
 
     @classmethod
@@ -227,11 +233,9 @@ class LLMBundle(object):
             tenant_id, llm_type, llm_name, lang=lang)
         assert self.mdl, "Can't find model for {}/{}/{}".format(
             tenant_id, llm_type, llm_name)
-        self.max_length = 8192
-        for lm in LLMService.query(llm_name=llm_name):
-            self.max_length = lm.max_tokens
-            break
-    
+        model_config = TenantLLMService.get_model_config(tenant_id, llm_type, llm_name)
+        self.max_length = model_config.get("max_tokens", 8192)
+
     def encode(self, texts: list):
         embeddings, used_tokens = self.mdl.encode(texts)
         if not TenantLLMService.increase_usage(
@@ -274,11 +278,11 @@ class LLMBundle(object):
 
     def tts(self, text):
         for chunk in self.mdl.tts(text):
-            if isinstance(chunk,int):
+            if isinstance(chunk, int):
                 if not TenantLLMService.increase_usage(
-                    self.tenant_id, self.llm_type, chunk, self.llm_name):
-                        logging.error(
-                            "LLMBundle.tts can't update token usage for {}/TTS".format(self.tenant_id))
+                        self.tenant_id, self.llm_type, chunk, self.llm_name):
+                    logging.error(
+                        "LLMBundle.tts can't update token usage for {}/TTS".format(self.tenant_id))
                 return
             yield chunk
 
@@ -287,7 +291,8 @@ class LLMBundle(object):
         if isinstance(txt, int) and not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens, self.llm_name):
             logging.error(
-                "LLMBundle.chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, used_tokens))
+                "LLMBundle.chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name,
+                                                                                                           used_tokens))
         return txt
 
     def chat_streamly(self, system, history, gen_conf):
@@ -296,6 +301,7 @@ class LLMBundle(object):
                 if not TenantLLMService.increase_usage(
                         self.tenant_id, self.llm_type, txt, self.llm_name):
                     logging.error(
-                        "LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name, txt))
+                        "LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name,
+                                                                                                                        txt))
                 return
             yield txt

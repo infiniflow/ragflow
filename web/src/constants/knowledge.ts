@@ -2,6 +2,7 @@ export enum KnowledgeRouteKey {
   Dataset = 'dataset',
   Testing = 'testing',
   Configuration = 'configuration',
+  KnowledgeGraph = 'knowledgeGraph',
 }
 
 export const DatasetBaseKey = 'dataset';
@@ -61,4 +62,22 @@ export enum KnowledgeSearchParams {
 export enum DocumentType {
   Virtual = 'virtual',
   Visual = 'visual',
+}
+
+export enum DocumentParserType {
+  Naive = 'naive',
+  Qa = 'qa',
+  Resume = 'resume',
+  Manual = 'manual',
+  Table = 'table',
+  Paper = 'paper',
+  Book = 'book',
+  Laws = 'laws',
+  Presentation = 'presentation',
+  Picture = 'picture',
+  One = 'one',
+  Audio = 'audio',
+  Email = 'email',
+  Tag = 'tag',
+  KnowledgeGraph = 'knowledge_graph',
 }

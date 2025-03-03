@@ -15,24 +15,24 @@
 #
 import logging
 import binascii
-import os
-import json
+import time
+from functools import partial
 import re
-from collections import defaultdict
 from copy import deepcopy
 from timeit import default_timer as timer
-import datetime
-from datetime import timedelta
-from api.db import LLMType, ParserType,StatusEnum
+from agentic_reasoning import DeepResearcher
+from api.db import LLMType, ParserType, StatusEnum
 from api.db.db_models import Dialog, DB
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMService, TenantLLMService, LLMBundle
+from api.db.services.llm_service import TenantLLMService, LLMBundle
 from api import settings
 from rag.app.resume import forbidden_select_fields4resume
+from rag.app.tag import label_question
 from rag.nlp.search import index_name
-from rag.utils import rmSpace, num_tokens_from_string, encoder
-from api.utils.file_utils import get_project_base_directory
+from rag.prompts import kb_prompt, message_fit_in, llm_id2llm_type, keyword_extraction, full_question, chunks_format
+from rag.utils import rmSpace, num_tokens_from_string
+from rag.utils.tavily_conn import Tavily
 
 
 class DialogService(CommonService):
@@ -41,14 +41,14 @@ class DialogService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_list(cls, tenant_id,
-                 page_number, items_per_page, orderby, desc, id , name):
+                 page_number, items_per_page, orderby, desc, id, name):
         chats = cls.model.select()
         if id:
             chats = chats.where(cls.model.id == id)
         if name:
             chats = chats.where(cls.model.name == name)
         chats = chats.where(
-              (cls.model.tenant_id == tenant_id)
+            (cls.model.tenant_id == tenant_id)
             & (cls.model.status == StatusEnum.VALID.value)
         )
         if desc:
@@ -61,118 +61,81 @@ class DialogService(CommonService):
         return list(chats.dicts())
 
 
-def message_fit_in(msg, max_length=4000):
-    def count():
-        nonlocal msg
-        tks_cnts = []
-        for m in msg:
-            tks_cnts.append(
-                {"role": m["role"], "count": num_tokens_from_string(m["content"])})
-        total = 0
-        for m in tks_cnts:
-            total += m["count"]
-        return total
+def chat_solo(dialog, messages, stream=True):
+    if llm_id2llm_type(dialog.llm_id) == "image2text":
+        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+    else:
+        chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
 
-    c = count()
-    if c < max_length:
-        return c, msg
-
-    msg_ = [m for m in msg[:-1] if m["role"] == "system"]
-    if len(msg) > 1:
-        msg_.append(msg[-1])
-    msg = msg_
-    c = count()
-    if c < max_length:
-        return c, msg
-
-    ll = num_tokens_from_string(msg_[0]["content"])
-    ll2 = num_tokens_from_string(msg_[-1]["content"])
-    if ll / (ll + ll2) > 0.8:
-        m = msg_[0]["content"]
-        m = encoder.decode(encoder.encode(m)[:max_length - ll2])
-        msg[0]["content"] = m
-        return max_length, msg
-
-    m = msg_[1]["content"]
-    m = encoder.decode(encoder.encode(m)[:max_length - ll2])
-    msg[1]["content"] = m
-    return max_length, msg
-
-
-def llm_id2llm_type(llm_id):
-    llm_id, _ = TenantLLMService.split_model_name_and_factory(llm_id)
-    fnm = os.path.join(get_project_base_directory(), "conf")
-    llm_factories = json.load(open(os.path.join(fnm, "llm_factories.json"), "r"))
-    for llm_factory in llm_factories["factory_llm_infos"]:
-        for llm in llm_factory["llm"]:
-            if llm_id == llm["llm_name"]:
-                return llm["model_type"].strip(",")[-1]
-
-
-def kb_prompt(kbinfos, max_tokens):
-    knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
-    used_token_count = 0
-    chunks_num = 0
-    for i, c in enumerate(knowledges):
-        used_token_count += num_tokens_from_string(c)
-        chunks_num += 1
-        if max_tokens * 0.97 < used_token_count:
-            knowledges = knowledges[:i]
-            break
-
-    doc2chunks = defaultdict(list)
-    for i, ck in enumerate(kbinfos["chunks"]):
-        if i >= chunks_num:
-            break
-        doc2chunks["docnm_kwd"].append(ck["content_with_weight"])
-
-    knowledges = []
-    for nm, chunks in doc2chunks.items():
-        txt = f"Document: {nm} \nContains the following relevant fragments:\n"
-        for i, chunk in enumerate(chunks, 1):
-            txt += f"{i}. {chunk}\n"
-        knowledges.append(txt)
-    return knowledges
+    prompt_config = dialog.prompt_config
+    tts_mdl = None
+    if prompt_config.get("tts"):
+        tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
+    msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])}
+                for m in messages if m["role"] != "system"]
+    if stream:
+        last_ans = ""
+        for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
+            answer = ans
+            delta_ans = ans[len(last_ans):]
+            if num_tokens_from_string(delta_ans) < 16:
+                continue
+            last_ans = answer
+            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt":"", "created_at": time.time()}
+    else:
+        answer = chat_mdl.chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
+        user_content = msg[-1].get("content", "[content not available]")
+        logging.debug("User: {}|Assistant: {}".format(user_content, answer))
+        yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
 
 
 def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
-    st = timer()
-    llm_id, fid = TenantLLMService.split_model_name_and_factory(dialog.llm_id)
-    llm = LLMService.query(llm_name=llm_id) if not fid else LLMService.query(llm_name=llm_id, fid=fid)
-    if not llm:
-        llm = TenantLLMService.query(tenant_id=dialog.tenant_id, llm_name=llm_id) if not fid else \
-            TenantLLMService.query(tenant_id=dialog.tenant_id, llm_name=llm_id, llm_factory=fid)
-        if not llm:
-            raise LookupError("LLM(%s) not found" % dialog.llm_id)
-        max_tokens = 8192
+    if not dialog.kb_ids:
+        for ans in chat_solo(dialog, messages, stream):
+            yield ans
+        return
+
+    chat_start_ts = timer()
+
+    if llm_id2llm_type(dialog.llm_id) == "image2text":
+        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
-        max_tokens = llm[0].max_tokens
+        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+
+    max_tokens = llm_model_config.get("max_tokens", 8192)
+
+    check_llm_ts = timer()
+
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
-    embd_nms = list(set([kb.embd_id for kb in kbs]))
-    if len(embd_nms) != 1:
+    embedding_list = list(set([kb.embd_id for kb in kbs]))
+    if len(embedding_list) != 1:
         yield {"answer": "**ERROR**: Knowledge bases use different embedding models.", "reference": []}
         return {"answer": "**ERROR**: Knowledge bases use different embedding models.", "reference": []}
 
-    is_kg = all([kb.parser_id == ParserType.KG for kb in kbs])
-    retr = settings.retrievaler if not is_kg else settings.kg_retrievaler
+    embedding_model_name = embedding_list[0]
+
+    retriever = settings.retrievaler
 
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else None
     if "doc_ids" in messages[-1]:
         attachments = messages[-1]["doc_ids"]
-        for m in messages[:-1]:
-            if "doc_ids" in m:
-                attachments.extend(m["doc_ids"])
 
-    embd_mdl = LLMBundle(dialog.tenant_id, LLMType.EMBEDDING, embd_nms[0])
+    create_retriever_ts = timer()
+
+    embd_mdl = LLMBundle(dialog.tenant_id, LLMType.EMBEDDING, embedding_model_name)
     if not embd_mdl:
-        raise LookupError("Embedding model(%s) not found" % embd_nms[0])
+        raise LookupError("Embedding model(%s) not found" % embedding_model_name)
+
+    bind_embedding_ts = timer()
 
     if llm_id2llm_type(dialog.llm_id) == "image2text":
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+
+    bind_llm_ts = timer()
 
     prompt_config = dialog.prompt_config
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
@@ -200,39 +163,73 @@ def chat(dialog, messages, stream=True, **kwargs):
         questions = [full_question(dialog.tenant_id, dialog.llm_id, messages)]
     else:
         questions = questions[-1:]
-    refineQ_tm = timer()
-    keyword_tm = timer()
+
+    refine_question_ts = timer()
 
     rerank_mdl = None
     if dialog.rerank_id:
         rerank_mdl = LLMBundle(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
 
-    for _ in range(len(questions) // 2):
-        questions.append(questions[-1])
+    bind_reranker_ts = timer()
+    generate_keyword_ts = bind_reranker_ts
+    thought = ""
+    kbinfos = {"total": 0, "chunks": [], "doc_aggs": []}
+
     if "knowledge" not in [p["key"] for p in prompt_config["parameters"]]:
-        kbinfos = {"total": 0, "chunks": [], "doc_aggs": []}
+        knowledges = []
     else:
         if prompt_config.get("keyword", False):
             questions[-1] += keyword_extraction(chat_mdl, questions[-1])
-            keyword_tm = timer()
+            generate_keyword_ts = timer()
 
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
-        kbinfos = retr.retrieval(" ".join(questions), embd_mdl, tenant_ids, dialog.kb_ids, 1, dialog.top_n,
-                                        dialog.similarity_threshold,
-                                        dialog.vector_similarity_weight,
-                                        doc_ids=attachments,
-                                        top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl)
-    knowledges = kb_prompt(kbinfos, max_tokens)
+
+        knowledges = []
+        if prompt_config.get("reasoning", False):
+            reasoner = DeepResearcher(chat_mdl,
+                                      prompt_config,
+                                      partial(retriever.retrieval, embd_mdl=embd_mdl, tenant_ids=tenant_ids, kb_ids=dialog.kb_ids, page=1, page_size=dialog.top_n, similarity_threshold=0.2, vector_similarity_weight=0.3))
+
+            for think in reasoner.thinking(kbinfos, " ".join(questions)):
+                if isinstance(think, str):
+                    thought = think
+                    knowledges = [t for t in think.split("\n") if t]
+                elif stream:
+                    yield think
+        else:
+            kbinfos = retriever.retrieval(" ".join(questions), embd_mdl, tenant_ids, dialog.kb_ids, 1, dialog.top_n,
+                                          dialog.similarity_threshold,
+                                          dialog.vector_similarity_weight,
+                                          doc_ids=attachments,
+                                          top=dialog.top_k, aggs=False, rerank_mdl=rerank_mdl,
+                                          rank_feature=label_question(" ".join(questions), kbs)
+                                          )
+            if prompt_config.get("tavily_api_key"):
+                tav = Tavily(prompt_config["tavily_api_key"])
+                tav_res = tav.retrieve_chunks(" ".join(questions))
+                kbinfos["chunks"].extend(tav_res["chunks"])
+                kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
+            if prompt_config.get("use_kg"):
+                ck = settings.kg_retrievaler.retrieval(" ".join(questions),
+                                                       tenant_ids,
+                                                       dialog.kb_ids,
+                                                       embd_mdl,
+                                                       LLMBundle(dialog.tenant_id, LLMType.CHAT))
+                if ck["content_with_weight"]:
+                    kbinfos["chunks"].insert(0, ck)
+
+            knowledges = kb_prompt(kbinfos, max_tokens)
+
     logging.debug(
         "{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
-    retrieval_tm = timer()
 
+    retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
         yield {"answer": empty_res, "reference": kbinfos, "audio_binary": tts(tts_mdl, empty_res)}
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
-    kwargs["knowledge"] = "\n\n------\n\n".join(knowledges)
+    kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
@@ -249,17 +246,23 @@ def chat(dialog, messages, stream=True, **kwargs):
             max_tokens - used_token_count)
 
     def decorate_answer(answer):
-        nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_tm
+        nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts
+
         refs = []
+        ans = answer.split("</think>")
+        think = ""
+        if len(ans) == 2:
+            think = ans[0] + "</think>"
+            answer = ans[1]
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
-            answer, idx = retr.insert_citations(answer,
-                                                       [ck["content_ltks"]
-                                                        for ck in kbinfos["chunks"]],
-                                                       [ck["vector"]
-                                                        for ck in kbinfos["chunks"]],
-                                                       embd_mdl,
-                                                       tkweight=1 - dialog.vector_similarity_weight,
-                                                       vtweight=dialog.vector_similarity_weight)
+            answer, idx = retriever.insert_citations(answer,
+                                                     [ck["content_ltks"]
+                                                      for ck in kbinfos["chunks"]],
+                                                     [ck["vector"]
+                                                      for ck in kbinfos["chunks"]],
+                                                     embd_mdl,
+                                                     tkweight=1 - dialog.vector_similarity_weight,
+                                                     vtweight=dialog.vector_similarity_weight)
             idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
             recall_docs = [
                 d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
@@ -274,45 +277,57 @@ def chat(dialog, messages, stream=True, **kwargs):
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
-        done_tm = timer()
-        prompt += "\n\n### Elapsed\n  - Refine Question: %.1f ms\n  - Keywords: %.1f ms\n  - Retrieval: %.1f ms\n  - LLM: %.1f ms" % (
-            (refineQ_tm - st) * 1000, (keyword_tm - refineQ_tm) * 1000, (retrieval_tm - keyword_tm) * 1000,
-            (done_tm - retrieval_tm) * 1000)
-        return {"answer": answer, "reference": refs, "prompt": prompt}
+        finish_chat_ts = timer()
+
+        total_time_cost = (finish_chat_ts - chat_start_ts) * 1000
+        check_llm_time_cost = (check_llm_ts - chat_start_ts) * 1000
+        create_retriever_time_cost = (create_retriever_ts - check_llm_ts) * 1000
+        bind_embedding_time_cost = (bind_embedding_ts - create_retriever_ts) * 1000
+        bind_llm_time_cost = (bind_llm_ts - bind_embedding_ts) * 1000
+        refine_question_time_cost = (refine_question_ts - bind_llm_ts) * 1000
+        bind_reranker_time_cost = (bind_reranker_ts - refine_question_ts) * 1000
+        generate_keyword_time_cost = (generate_keyword_ts - bind_reranker_ts) * 1000
+        retrieval_time_cost = (retrieval_ts - generate_keyword_ts) * 1000
+        generate_result_time_cost = (finish_chat_ts - retrieval_ts) * 1000
+
+        prompt = f"{prompt}\n\n - Total: {total_time_cost:.1f}ms\n  - Check LLM: {check_llm_time_cost:.1f}ms\n  - Create retriever: {create_retriever_time_cost:.1f}ms\n  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n  - Bind LLM: {bind_llm_time_cost:.1f}ms\n  - Tune question: {refine_question_time_cost:.1f}ms\n  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n  - Retrieval: {retrieval_time_cost:.1f}ms\n  - Generate answer: {generate_result_time_cost:.1f}ms"
+        return {"answer": think+answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if stream:
         last_ans = ""
         answer = ""
         for ans in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
+            if thought:
+                ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
             answer = ans
             delta_ans = ans[len(last_ans):]
             if num_tokens_from_string(delta_ans) < 16:
                 continue
             last_ans = answer
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
+            yield {"answer": thought+answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
         delta_ans = answer[len(last_ans):]
         if delta_ans:
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
-        yield decorate_answer(answer)
+            yield {"answer": thought+answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
+        yield decorate_answer(thought+answer)
     else:
         answer = chat_mdl.chat(prompt, msg[1:], gen_conf)
-        logging.debug("User: {}|Assistant: {}".format(
-            msg[-1]["content"], answer))
+        user_content = msg[-1].get("content", "[content not available]")
+        logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         res = decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
         yield res
 
 
 def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
-    sys_prompt = "你是一个DBA。你需要这对以下表的字段结构，根据用户的问题列表，写出最后一个问题对应的SQL。"
-    user_promt = """
-表名：{}；
-数据库表字段说明如下：
+    sys_prompt = "You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question."
+    user_prompt = """
+Table name: {};
+Table of database fields are as follows:
 {}
 
-问题如下：
+Question are as follows:
 {}
-请写出SQL, 且只要SQL，不要有其他说明及文字。
+Please write the SQL, only SQL, without any other explanations or text.
 """.format(
         index_name(tenant_id),
         "\n".join([f"{k}: {v}" for k, v in field_map.items()]),
@@ -321,10 +336,10 @@ def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
     tried_times = 0
 
     def get_table():
-        nonlocal sys_prompt, user_promt, question, tried_times
-        sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_promt}], {
+        nonlocal sys_prompt, user_prompt, question, tried_times
+        sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}], {
             "temperature": 0.06})
-        logging.debug(f"{question} ==> {user_promt} get SQL: {sql}")
+        logging.debug(f"{question} ==> {user_prompt} get SQL: {sql}")
         sql = re.sub(r"[\r\n]+", " ", sql.lower())
         sql = re.sub(r".*select ", "select ", sql.lower())
         sql = re.sub(r" +", " ", sql)
@@ -352,21 +367,23 @@ def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
     if tbl is None:
         return None
     if tbl.get("error") and tried_times <= 2:
-        user_promt = """
-        表名：{}；
-        数据库表字段说明如下：
+        user_prompt = """
+        Table name: {};
+        Table of database fields are as follows:
+        {}
+        
+        Question are as follows:
+        {}
+        Please write the SQL, only SQL, without any other explanations or text.
+        
+
+        The SQL error you provided last time is as follows:
         {}
 
-        问题如下：
+        Error issued by database as follows:
         {}
 
-        你上一次给出的错误SQL如下：
-        {}
-
-        后台报错如下：
-        {}
-
-        请纠正SQL中的错误再写一遍，且只要SQL，不要有其他说明及文字。
+        Please correct the error and write SQL again, only SQL, without any other explanations or text.
         """.format(
             index_name(tenant_id),
             "\n".join([f"{k}: {v}" for k, v in field_map.items()]),
@@ -381,21 +398,21 @@ def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
 
     docid_idx = set([ii for ii, c in enumerate(
         tbl["columns"]) if c["name"] == "doc_id"])
-    docnm_idx = set([ii for ii, c in enumerate(
+    doc_name_idx = set([ii for ii, c in enumerate(
         tbl["columns"]) if c["name"] == "docnm_kwd"])
-    clmn_idx = [ii for ii in range(
-        len(tbl["columns"])) if ii not in (docid_idx | docnm_idx)]
+    column_idx = [ii for ii in range(
+        len(tbl["columns"])) if ii not in (docid_idx | doc_name_idx)]
 
-    # compose markdown table
-    clmns = "|" + "|".join([re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"],
-                                                                        tbl["columns"][i]["name"])) for i in
-                            clmn_idx]) + ("|Source|" if docid_idx and docid_idx else "|")
+    # compose Markdown table
+    columns = "|" + "|".join([re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"],
+                                                                          tbl["columns"][i]["name"])) for i in
+                              column_idx]) + ("|Source|" if docid_idx and docid_idx else "|")
 
-    line = "|" + "|".join(["------" for _ in range(len(clmn_idx))]) + \
+    line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + \
            ("|------|" if docid_idx and docid_idx else "")
 
     rows = ["|" +
-            "|".join([rmSpace(str(r[i])) for i in clmn_idx]).replace("None", " ") +
+            "|".join([rmSpace(str(r[i])) for i in column_idx]).replace("None", " ") +
             "|" for r in tbl["rows"]]
     rows = [r for r in rows if re.sub(r"[ |]+", "", r)]
     if quota:
@@ -404,194 +421,28 @@ def use_sql(question, field_map, tenant_id, chat_mdl, quota=True):
         rows = "\n".join([r + f" ##{ii}$$ |" for ii, r in enumerate(rows)])
     rows = re.sub(r"T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|", "|", rows)
 
-    if not docid_idx or not docnm_idx:
+    if not docid_idx or not doc_name_idx:
         logging.warning("SQL missing field: " + sql)
         return {
-            "answer": "\n".join([clmns, line, rows]),
+            "answer": "\n".join([columns, line, rows]),
             "reference": {"chunks": [], "doc_aggs": []},
             "prompt": sys_prompt
         }
 
     docid_idx = list(docid_idx)[0]
-    docnm_idx = list(docnm_idx)[0]
+    doc_name_idx = list(doc_name_idx)[0]
     doc_aggs = {}
     for r in tbl["rows"]:
         if r[docid_idx] not in doc_aggs:
-            doc_aggs[r[docid_idx]] = {"doc_name": r[docnm_idx], "count": 0}
+            doc_aggs[r[docid_idx]] = {"doc_name": r[doc_name_idx], "count": 0}
         doc_aggs[r[docid_idx]]["count"] += 1
     return {
-        "answer": "\n".join([clmns, line, rows]),
-        "reference": {"chunks": [{"doc_id": r[docid_idx], "docnm_kwd": r[docnm_idx]} for r in tbl["rows"]],
+        "answer": "\n".join([columns, line, rows]),
+        "reference": {"chunks": [{"doc_id": r[docid_idx], "docnm_kwd": r[doc_name_idx]} for r in tbl["rows"]],
                       "doc_aggs": [{"doc_id": did, "doc_name": d["doc_name"], "count": d["count"]} for did, d in
                                    doc_aggs.items()]},
         "prompt": sys_prompt
     }
-
-
-def relevant(tenant_id, llm_id, question, contents: list):
-    if llm_id2llm_type(llm_id) == "image2text":
-        chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
-    else:
-        chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
-    prompt = """
-        You are a grader assessing relevance of a retrieved document to a user question. 
-        It does not need to be a stringent test. The goal is to filter out erroneous retrievals.
-        If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. 
-        Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question.
-        No other words needed except 'yes' or 'no'.
-    """
-    if not contents:
-        return False
-    contents = "Documents: \n" + "   - ".join(contents)
-    contents = f"Question: {question}\n" + contents
-    if num_tokens_from_string(contents) >= chat_mdl.max_length - 4:
-        contents = encoder.decode(encoder.encode(contents)[:chat_mdl.max_length - 4])
-    ans = chat_mdl.chat(prompt, [{"role": "user", "content": contents}], {"temperature": 0.01})
-    if ans.lower().find("yes") >= 0:
-        return True
-    return False
-
-
-def rewrite(tenant_id, llm_id, question):
-    if llm_id2llm_type(llm_id) == "image2text":
-        chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
-    else:
-        chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
-    prompt = """
-        You are an expert at query expansion to generate a paraphrasing of a question.
-        I can't retrieval relevant information from the knowledge base by using user's question directly.     
-        You need to expand or paraphrase user's question by multiple ways such as using synonyms words/phrase, 
-        writing the abbreviation in its entirety, adding some extra descriptions or explanations, 
-        changing the way of expression, translating the original question into another language (English/Chinese), etc. 
-        And return 5 versions of question and one is from translation.
-        Just list the question. No other words are needed.
-    """
-    ans = chat_mdl.chat(prompt, [{"role": "user", "content": question}], {"temperature": 0.8})
-    return ans
-
-
-def keyword_extraction(chat_mdl, content, topn=3):
-    prompt = f"""
-Role: You're a text analyzer. 
-Task: extract the most important keywords/phrases of a given piece of text content.
-Requirements: 
-  - Summarize the text content, and give top {topn} important keywords/phrases.
-  - The keywords MUST be in language of the given piece of text content.
-  - The keywords are delimited by ENGLISH COMMA.
-  - Keywords ONLY in output.
-
-### Text Content 
-{content}
-
-"""
-    msg = [
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": "Output: "}
-    ]
-    _, msg = message_fit_in(msg, chat_mdl.max_length)
-    kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
-    if isinstance(kwd, tuple):
-        kwd = kwd[0]
-    if kwd.find("**ERROR**") >=0:
-        return ""
-    return kwd
-
-
-def question_proposal(chat_mdl, content, topn=3):
-    prompt = f"""
-Role: You're a text analyzer. 
-Task:  propose {topn} questions about a given piece of text content.
-Requirements: 
-  - Understand and summarize the text content, and propose top {topn} important questions.
-  - The questions SHOULD NOT have overlapping meanings.
-  - The questions SHOULD cover the main content of the text as much as possible.
-  - The questions MUST be in language of the given piece of text content.
-  - One question per line.
-  - Question ONLY in output.
-
-### Text Content 
-{content}
-
-"""
-    msg = [
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": "Output: "}
-    ]
-    _, msg = message_fit_in(msg, chat_mdl.max_length)
-    kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
-    if isinstance(kwd, tuple):
-        kwd = kwd[0]
-    if kwd.find("**ERROR**") >= 0:
-        return ""
-    return kwd
-
-
-def full_question(tenant_id, llm_id, messages):
-    if llm_id2llm_type(llm_id) == "image2text":
-        chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
-    else:
-        chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
-    conv = []
-    for m in messages:
-        if m["role"] not in ["user", "assistant"]:
-            continue
-        conv.append("{}: {}".format(m["role"].upper(), m["content"]))
-    conv = "\n".join(conv)
-    today = datetime.date.today().isoformat()
-    yesterday = (datetime.date.today() - timedelta(days=1)).isoformat()
-    tomorrow = (datetime.date.today() + timedelta(days=1)).isoformat()
-    prompt = f"""
-Role: A helpful assistant
-
-Task and steps: 
-    1. Generate a full user question that would follow the conversation.
-    2. If the user's question involves relative date, you need to convert it into absolute date based on the current date, which is {today}. For example: 'yesterday' would be converted to {yesterday}.
-    
-Requirements & Restrictions:
-  - Text generated MUST be in the same language of the original user's question.
-  - If the user's latest question is completely, don't do anything, just return the original question.
-  - DON'T generate anything except a refined question.
-
-######################
--Examples-
-######################
-
-# Example 1
-## Conversation
-USER: What is the name of Donald Trump's father?
-ASSISTANT:  Fred Trump.
-USER: And his mother?
-###############
-Output: What's the name of Donald Trump's mother?
-
-------------
-# Example 2
-## Conversation
-USER: What is the name of Donald Trump's father?
-ASSISTANT:  Fred Trump.
-USER: And his mother?
-ASSISTANT:  Mary Trump.
-User: What's her full name?
-###############
-Output: What's the full name of Donald Trump's mother Mary Trump?
-
-------------
-# Example 3
-## Conversation
-USER: What's the weather today in London?
-ASSISTANT:  Cloudy.
-USER: What's about tomorrow in Rochester?
-###############
-Output: What's the weather in Rochester on {tomorrow}?
-######################
-
-# Real Data
-## Conversation
-{conv}
-###############
-    """
-    ans = chat_mdl.chat(prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.2})
-    return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
 
 def tts(tts_mdl, text):
@@ -605,16 +456,19 @@ def tts(tts_mdl, text):
 
 def ask(question, kb_ids, tenant_id):
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    embd_nms = list(set([kb.embd_id for kb in kbs]))
+    embedding_list = list(set([kb.embd_id for kb in kbs]))
 
-    is_kg = all([kb.parser_id == ParserType.KG for kb in kbs])
-    retr = settings.retrievaler if not is_kg else settings.kg_retrievaler
+    is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
+    retriever = settings.retrievaler if not is_knowledge_graph else settings.kg_retrievaler
 
-    embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_nms[0])
+    embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_list[0])
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
-    kbinfos = retr.retrieval(question, embd_mdl, tenant_ids, kb_ids, 1, 12, 0.1, 0.3, aggs=False)
+    kbinfos = retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids,
+                                  1, 12, 0.1, 0.3, aggs=False,
+                                  rank_feature=label_question(question, kbs)
+                                  )
     knowledges = kb_prompt(kbinfos, max_tokens)
     prompt = """
     Role: You're a smart assistant. Your name is Miss R.
@@ -636,14 +490,14 @@ def ask(question, kb_ids, tenant_id):
 
     def decorate_answer(answer):
         nonlocal knowledges, kbinfos, prompt
-        answer, idx = retr.insert_citations(answer,
-                                            [ck["content_ltks"]
-                                             for ck in kbinfos["chunks"]],
-                                            [ck["vector"]
-                                             for ck in kbinfos["chunks"]],
-                                            embd_mdl,
-                                            tkweight=0.7,
-                                            vtweight=0.3)
+        answer, idx = retriever.insert_citations(answer,
+                                                 [ck["content_ltks"]
+                                                  for ck in kbinfos["chunks"]],
+                                                 [ck["vector"]
+                                                  for ck in kbinfos["chunks"]],
+                                                 embd_mdl,
+                                                 tkweight=0.7,
+                                                 vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [
             d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
@@ -657,11 +511,12 @@ def ask(question, kb_ids, tenant_id):
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
-        return {"answer": answer, "reference": refs}
+        return {"answer": answer, "reference": chunks_format(refs)}
 
     answer = ""
     for ans in chat_mdl.chat_streamly(prompt, msg, {"temperature": 0.1}):
         answer = ans
         yield {"answer": answer, "reference": {}}
     yield decorate_answer(answer)
+
 

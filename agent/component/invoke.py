@@ -35,12 +35,14 @@ class InvokeParam(ComponentParamBase):
         self.url = ""
         self.timeout = 60
         self.clean_html = False
+        self.datatype = "json"  # New parameter to determine data posting type
 
     def check(self):
         self.check_valid_value(self.method.lower(), "Type of content from the crawler", ['get', 'post', 'put'])
         self.check_empty(self.url, "End point URL")
         self.check_positive_integer(self.timeout, "Timeout time in second")
         self.check_boolean(self.clean_html, "Clean HTML")
+        self.check_valid_value(self.datatype.lower(), "Data post type", ['json', 'formdata'])  # Check for valid datapost value
 
 
 class Invoke(ComponentBase, ABC):
@@ -50,14 +52,24 @@ class Invoke(ComponentBase, ABC):
         args = {}
         for para in self._param.variables:
             if para.get("component_id"):
-                cpn = self._canvas.get_component(para["component_id"])["obj"]
-                if cpn.component_name.lower() == "answer":
-                    args[para["key"]] = self._canvas.get_history(1)[0]["content"]
-                    continue
-                _, out = cpn.output(allow_partial=False)
-                args[para["key"]] = "\n".join(out["content"])
+                if '@' in para["component_id"]:
+                    component = para["component_id"].split('@')[0]
+                    field = para["component_id"].split('@')[1]
+                    cpn = self._canvas.get_component(component)["obj"]
+                    for param in cpn._param.query:
+                        if param["key"] == field:
+                            if "value" in param:
+                                args[para["key"]] = param["value"]
+                else:
+                    cpn = self._canvas.get_component(para["component_id"])["obj"]
+                    if cpn.component_name.lower() == "answer":
+                        args[para["key"]] = self._canvas.get_history(1)[0]["content"]
+                        continue
+                    _, out = cpn.output(allow_partial=False)
+                    if not out.empty:
+                        args[para["key"]] = "\n".join(out["content"])
             else:
-                args[para["key"]] = "\n".join(para["value"])
+                args[para["key"]] = para["value"]
 
         url = self._param.url.strip()
         if url.find("http") != 0:
@@ -84,22 +96,36 @@ class Invoke(ComponentBase, ABC):
             return Invoke.be_output(response.text)
 
         if method == 'put':
-            response = requests.put(url=url,
-                                    data=args,
-                                    headers=headers,
-                                    proxies=proxies,
-                                    timeout=self._param.timeout)
+            if self._param.datatype.lower() == 'json':
+                response = requests.put(url=url,
+                                        json=args,
+                                        headers=headers,
+                                        proxies=proxies,
+                                        timeout=self._param.timeout)
+            else:
+                response = requests.put(url=url,
+                                        data=args,
+                                        headers=headers,
+                                        proxies=proxies,
+                                        timeout=self._param.timeout)
             if self._param.clean_html:
                 sections = HtmlParser()(None, response.content)
                 return Invoke.be_output("\n".join(sections))
             return Invoke.be_output(response.text)
 
         if method == 'post':
-            response = requests.post(url=url,
-                                    json=args,
-                                    headers=headers,
-                                    proxies=proxies,
-                                    timeout=self._param.timeout)
+            if self._param.datatype.lower() == 'json':
+                response = requests.post(url=url,
+                                         json=args,
+                                         headers=headers,
+                                         proxies=proxies,
+                                         timeout=self._param.timeout)
+            else:
+                response = requests.post(url=url,
+                                         data=args,
+                                         headers=headers,
+                                         proxies=proxies,
+                                         timeout=self._param.timeout)
             if self._param.clean_html:
                 sections = HtmlParser()(None, response.content)
                 return Invoke.be_output("\n".join(sections))

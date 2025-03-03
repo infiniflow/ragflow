@@ -30,6 +30,7 @@ import { EditableCell, EditableRow } from './editable-cell';
 
 import Rerank from '@/components/rerank';
 import TopNItem from '@/components/top-n-item';
+import { UseKnowledgeGraphItem } from '@/components/use-knowledge-graph-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectPromptConfigParameters } from '../hooks';
 import styles from './index.less';
@@ -165,6 +166,17 @@ const PromptEngine = (
         tooltip={t('multiTurnTip')}
         name={['prompt_config', 'refine_multiturn']}
         initialValue={true}
+      >
+        <Switch></Switch>
+      </Form.Item>
+      <UseKnowledgeGraphItem
+        filedName={['prompt_config', 'use_kg']}
+      ></UseKnowledgeGraphItem>
+      <Form.Item
+        label={t('reasoning')}
+        tooltip={t('reasoningTip')}
+        name={['prompt_config', 'reasoning']}
+        initialValue={false}
       >
         <Switch></Switch>
       </Form.Item>

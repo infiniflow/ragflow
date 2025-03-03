@@ -1,7 +1,22 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
 from .base import Base
-from .session import Session,Message
+from .session import Session
 import requests
-import json
 
 
 class Agent(Base):
@@ -52,8 +67,8 @@ class Agent(Base):
             super().__init__(rag,res_dict)
 
     @staticmethod
-    def create_session(id,rag) -> Session:
-        res = requests.post(f"{rag.api_url}/agents/{id}/sessions",headers={"Authorization": f"Bearer {rag.user_key}"},json={})
+    def create_session(id,rag,**kwargs) -> Session:
+        res = requests.post(f"{rag.api_url}/agents/{id}/sessions",headers={"Authorization": f"Bearer {rag.user_key}"},json=kwargs)
         res = res.json()
         if res.get("code") == 0:
             return Session(rag,res.get("data"))
@@ -74,30 +89,3 @@ class Agent(Base):
                 result_list.append(temp_agent)
             return result_list
         raise Exception(res.get("message"))
-
-    @staticmethod
-    def ask(agent_id,rag,stream=True,**kwargs):
-        url = f"{rag.api_url}/agents/{agent_id}/completions"
-        headers = {"Authorization": f"Bearer {rag.user_key}"}
-        res = requests.post(url=url, headers=headers, json=kwargs,stream=stream)
-        for line in res.iter_lines():
-            line = line.decode("utf-8")
-            if line.startswith("{"):
-                json_data = json.loads(line)
-                raise Exception(json_data["message"])
-            if line.startswith("data:"):
-                json_data = json.loads(line[5:])
-                if json_data["data"] is not True:
-                    if json_data["data"].get("running_status"):
-                        continue
-                    answer = json_data["data"]["answer"]
-                    reference = json_data["data"]["reference"]
-                    temp_dict = {
-                        "content": answer,
-                        "role": "assistant"
-                    }
-                    if "chunks" in reference:
-                        chunks = reference["chunks"]
-                        temp_dict["reference"] = chunks
-                    message = Message(rag, temp_dict)
-                    yield message

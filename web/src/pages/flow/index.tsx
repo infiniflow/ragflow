@@ -1,11 +1,12 @@
 import { useSetModalState } from '@/hooks/common-hooks';
+import { ReactFlowProvider } from '@xyflow/react';
 import { Layout } from 'antd';
 import { useState } from 'react';
-import { ReactFlowProvider } from 'reactflow';
 import FlowCanvas from './canvas';
 import Sider from './flow-sider';
 import FlowHeader from './header';
-import { useCopyPaste, useFetchDataOnMount } from './hooks';
+import { useCopyPaste } from './hooks';
+import { useFetchDataOnMount } from './hooks/use-fetch-data';
 
 const { Content } = Layout;
 

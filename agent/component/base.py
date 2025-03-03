@@ -426,10 +426,14 @@ class ComponentBase(ABC):
 
     def output(self, allow_partial=True) -> Tuple[str, Union[pd.DataFrame, partial]]:
         o = getattr(self._param, self._param.output_var_name)
-        if not isinstance(o, partial) and not isinstance(o, pd.DataFrame):
-            if not isinstance(o, list):
-                o = [o]
-            o = pd.DataFrame(o)
+        if not isinstance(o, partial):
+            if not isinstance(o, pd.DataFrame):
+                if isinstance(o, list):
+                    return self._param.output_var_name, pd.DataFrame(o)
+                if o is None:
+                    return self._param.output_var_name, pd.DataFrame()
+                return self._param.output_var_name, pd.DataFrame([{"content": str(o)}])
+            return self._param.output_var_name, o
 
         if allow_partial or not isinstance(o, partial):
             if not isinstance(o, partial) and not isinstance(o, pd.DataFrame):
@@ -453,7 +457,7 @@ class ComponentBase(ABC):
 
     def get_input(self):
         if self._param.debug_inputs:
-            return pd.DataFrame([{"content": v["value"]} for v in self._param.debug_inputs])
+            return pd.DataFrame([{"content": v["value"]} for v in self._param.debug_inputs if v.get("value")])
 
         reversed_cpnts = []
         if len(self._canvas.path) > 1:
@@ -475,6 +479,15 @@ class ComponentBase(ABC):
                                 break
                         else:
                             assert False, f"Can't find parameter '{key}' for {cpn_id}"
+                        continue
+
+                    if q["component_id"].lower().find("answer") == 0:
+                        txt = []
+                        for r, c in self._canvas.history[::-1][:self._param.message_history_window_size][::-1]:
+                            txt.append(f"{r.upper()}: {c}")
+                        txt = "\n".join(txt)
+                        self._param.inputs.append({"content": txt, "component_id": q["component_id"]})
+                        outs.append(pd.DataFrame([{"content": txt}]))
                         continue
 
                     outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
@@ -542,7 +555,7 @@ class ComponentBase(ABC):
                     eles.extend(self._canvas.get_component(cpn_id)["obj"]._param.query)
                     continue
 
-                eles.append({"name": self._canvas.get_compnent_name(cpn_id), "key": cpn_id})
+                eles.append({"name": self._canvas.get_component_name(cpn_id), "key": cpn_id})
             else:
                 eles.append({"key": q["value"], "name": q["value"], "value": q["value"]})
         return eles
@@ -567,3 +580,7 @@ class ComponentBase(ABC):
 
     def debug(self, **kwargs):
         return self._run([], **kwargs)
+
+    def get_parent(self):
+        pid = self._canvas.get_component(self._id)["parent_id"]
+        return self._canvas.get_component(pid)["obj"]

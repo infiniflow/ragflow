@@ -24,6 +24,7 @@ import time
 import uuid
 import requests
 import logging
+import copy
 from enum import Enum, IntEnum
 import importlib
 from Cryptodome.PublicKey import RSA
@@ -65,6 +66,16 @@ CONFIGS = read_config()
 def show_configs():
     msg = f"Current configs, from {conf_realpath(SERVICE_CONF)}:"
     for k, v in CONFIGS.items():
+        if isinstance(v, dict):
+            if "password" in v:
+                v = copy.deepcopy(v)
+                v["password"] = "*" * 8
+            if "access_key" in v:
+                v = copy.deepcopy(v)
+                v["access_key"] = "*" * 8
+            if "secret_key" in v:
+                v = copy.deepcopy(v)
+                v["secret_key"] = "*" * 8
         msg += f"\n\t{k}: {v}"
     logging.info(msg)
 
@@ -344,6 +355,26 @@ def decrypt(line):
     cipher = Cipher_pkcs1_v1_5.new(rsa_key)
     return cipher.decrypt(base64.b64decode(
         line), "Fail to decrypt password!").decode('utf-8')
+
+
+def decrypt2(crypt_text):
+    from base64 import b64decode, b16decode
+    from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
+    from Crypto.PublicKey import RSA
+    decode_data = b64decode(crypt_text)
+    if len(decode_data) == 127:
+        hex_fixed = '00' + decode_data.hex()
+        decode_data = b16decode(hex_fixed.upper())
+
+    file_path = os.path.join(
+        file_utils.get_project_base_directory(),
+        "conf",
+        "private.pem")
+    pem = open(file_path).read()
+    rsa_key = RSA.importKey(pem, "Welcome")
+    cipher = Cipher_PKCS1_v1_5.new(rsa_key)
+    decrypt_text = cipher.decrypt(decode_data, None)
+    return (b64decode(decrypt_text)).decode()
 
 
 def download_img(url):

@@ -1,35 +1,30 @@
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useSetModalState } from '@/hooks/common-hooks';
-import { get } from 'lodash';
-import { FolderInput, FolderOutput } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
-import ReactFlow, {
+import {
   Background,
   ConnectionMode,
   ControlButton,
   Controls,
-  NodeMouseHandler,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+  NodeTypes,
+  ReactFlow,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { Book, FolderInput, FolderOutput } from 'lucide-react';
 import ChatDrawer from '../chat/drawer';
-import { Operator } from '../constant';
 import FormDrawer from '../flow-drawer';
 import {
-  useGetBeginNodeDataQuery,
   useHandleDrop,
-  useHandleExportOrImportJsonFile,
   useSelectCanvasData,
-  useShowFormDrawer,
-  useShowSingleDebugDrawer,
   useValidateConnection,
   useWatchNodeFormDataChange,
 } from '../hooks';
-import { BeginQuery } from '../interface';
+import { useBeforeDelete } from '../hooks/use-before-delete';
+import { useHandleExportOrImportJsonFile } from '../hooks/use-export-json';
+import { useOpenDocument } from '../hooks/use-open-document';
+import { useShowDrawer } from '../hooks/use-show-drawer';
 import JsonUploadModal from '../json-upload-modal';
 import RunDrawer from '../run-drawer';
 import { ButtonEdge } from './edge';
@@ -40,6 +35,7 @@ import { CategorizeNode } from './node/categorize-node';
 import { EmailNode } from './node/email-node';
 import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
+import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
 import { LogicNode } from './node/logic-node';
 import { MessageNode } from './node/message-node';
@@ -50,7 +46,7 @@ import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
 
-const nodeTypes = {
+const nodeTypes: NodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
@@ -66,6 +62,8 @@ const nodeTypes = {
   invokeNode: InvokeNode,
   templateNode: TemplateNode,
   emailNode: EmailNode,
+  group: IterationNode,
+  iterationStartNode: IterationStartNode,
 };
 
 const edgeTypes = {
@@ -87,65 +85,8 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     onSelectionChange,
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
-  const {
-    visible: runVisible,
-    showModal: showRunModal,
-    hideModal: hideRunModal,
-  } = useSetModalState();
-  const {
-    visible: chatVisible,
-    showModal: showChatModal,
-    hideModal: hideChatModal,
-  } = useSetModalState();
-  const {
-    singleDebugDrawerVisible,
-    showSingleDebugDrawer,
-    hideSingleDebugDrawer,
-  } = useShowSingleDebugDrawer();
-
-  const controlIconClassname = 'text-black';
-
-  const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
-    useShowFormDrawer();
-
-  const onPaneClick = useCallback(() => {
-    hideFormDrawer();
-  }, [hideFormDrawer]);
 
   const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
-
-  useWatchNodeFormDataChange();
-
-  const hideRunOrChatDrawer = useCallback(() => {
-    hideChatModal();
-    hideRunModal();
-    hideDrawer();
-  }, [hideChatModal, hideDrawer, hideRunModal]);
-
-  const onNodeClick: NodeMouseHandler = useCallback(
-    (e, node) => {
-      if (node.data.label !== Operator.Note) {
-        hideSingleDebugDrawer();
-        hideRunOrChatDrawer();
-        showFormDrawer(node);
-      }
-      // handle single debug icon click
-      if (
-        get(e.target, 'dataset.play') === 'true' ||
-        get(e.target, 'parentNode.dataset.play') === 'true'
-      ) {
-        showSingleDebugDrawer();
-      }
-    },
-    [
-      hideRunOrChatDrawer,
-      hideSingleDebugDrawer,
-      showFormDrawer,
-      showSingleDebugDrawer,
-    ],
-  );
-
-  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
 
   const {
     handleExportJson,
@@ -155,25 +96,29 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideFileUploadModal,
   } = useHandleExportOrImportJsonFile();
 
-  useEffect(() => {
-    if (drawerVisible) {
-      const query: BeginQuery[] = getBeginNodeDataQuery();
-      if (query.length > 0) {
-        showRunModal();
-        hideChatModal();
-      } else {
-        showChatModal();
-        hideRunModal();
-      }
-    }
-  }, [
-    hideChatModal,
-    hideRunModal,
+  const openDocument = useOpenDocument();
+
+  const {
+    onNodeClick,
+    onPaneClick,
+    clickedNode,
+    formDrawerVisible,
+    hideFormDrawer,
+    singleDebugDrawerVisible,
+    hideSingleDebugDrawer,
+    showSingleDebugDrawer,
+    chatVisible,
+    runVisible,
+    hideRunOrChatDrawer,
     showChatModal,
-    showRunModal,
+  } = useShowDrawer({
     drawerVisible,
-    getBeginNodeDataQuery,
-  ]);
+    hideDrawer,
+  });
+
+  const { handleBeforeDelete } = useBeforeDelete();
+
+  useWatchNodeFormDataChange();
 
   return (
     <div className={styles.canvasWrapper}>
@@ -222,30 +167,36 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
             strokeWidth: 2,
             stroke: 'rgb(202 197 245)',
           },
+          zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
         }}
         deleteKeyCode={['Delete', 'Backspace']}
+        onBeforeDelete={handleBeforeDelete}
       >
         <Background />
-        <Controls>
+        <Controls className="text-black !flex-col-reverse">
           <ControlButton onClick={handleImportJson}>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <FolderInput className={controlIconClassname} />
-                </TooltipTrigger>
-                <TooltipContent>Import</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <FolderInput className="!fill-none" />
+              </TooltipTrigger>
+              <TooltipContent>Import</TooltipContent>
+            </Tooltip>
           </ControlButton>
           <ControlButton onClick={handleExportJson}>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <FolderOutput className={controlIconClassname} />
-                </TooltipTrigger>
-                <TooltipContent>Export</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <FolderOutput className="!fill-none" />
+              </TooltipTrigger>
+              <TooltipContent>Export</TooltipContent>
+            </Tooltip>
+          </ControlButton>
+          <ControlButton onClick={openDocument}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Book className="!fill-none" />
+              </TooltipTrigger>
+              <TooltipContent>Document</TooltipContent>
+            </Tooltip>
           </ControlButton>
         </Controls>
       </ReactFlow>

@@ -5,11 +5,22 @@ export enum Routes {
   DatasetBase = '/dataset',
   Dataset = `${Routes.DatasetBase}${Routes.DatasetBase}`,
   Agent = '/agent',
+  AgentTemplates = '/agent-templates',
+  Agents = '/agents',
+  Searches = '/next-searches',
   Search = '/next-search',
+  Chats = '/next-chats',
   Chat = '/next-chat',
+  Files = '/files',
   ProfileSetting = '/profile-setting',
   DatasetTesting = '/testing',
   DatasetSetting = '/setting',
+  Chunk = '/chunk',
+  ChunkResult = `${Chunk}${Chunk}`,
+  Parsed = '/parsed',
+  ParsedResult = `${Chunk}${Parsed}`,
+  Result = '/result',
+  ResultView = `${Chunk}${Result}`,
 }
 
 const routes = [
@@ -64,6 +75,10 @@ const routes = [
           {
             path: '/knowledge/testing',
             component: '@/pages/add-knowledge/components/knowledge-testing',
+          },
+          {
+            path: '/knowledge/knowledgeGraph',
+            component: '@/pages/add-knowledge/components/knowledge-graph',
           },
         ],
       },
@@ -130,11 +145,6 @@ const routes = [
     layout: false,
   },
   {
-    path: 'force',
-    component: '@/pages/force-graph',
-    layout: false,
-  },
-  {
     path: '/*',
     component: '@/pages/404',
     layout: false,
@@ -162,35 +172,66 @@ const routes = [
     ],
   },
   {
-    path: Routes.Chat,
+    path: Routes.Chats,
     layout: false,
     component: '@/layouts/next',
     routes: [
       {
-        path: Routes.Chat,
-        component: `@/pages${Routes.Chat}`,
+        path: Routes.Chats,
+        component: `@/pages${Routes.Chats}`,
+      },
+    ],
+  },
+  {
+    path: Routes.Chat,
+    layout: false,
+    component: `@/pages${Routes.Chats}/chat`,
+  },
+  {
+    path: Routes.Searches,
+    layout: false,
+    component: '@/layouts/next',
+    routes: [
+      {
+        path: Routes.Searches,
+        component: `@/pages${Routes.Searches}`,
       },
     ],
   },
   {
     path: Routes.Search,
     layout: false,
-    component: '@/layouts/next',
-    routes: [
-      {
-        path: Routes.Search,
-        component: `@/pages${Routes.Search}`,
-      },
-    ],
+    component: `@/pages${Routes.Search}`,
   },
   {
-    path: Routes.Agent,
+    path: Routes.Agents,
     layout: false,
     component: '@/layouts/next',
     routes: [
       {
-        path: Routes.Agent,
-        component: `@/pages${Routes.Agent}`,
+        path: Routes.Agents,
+        component: `@/pages${Routes.Agents}`,
+      },
+    ],
+  },
+  {
+    path: `${Routes.Agent}/:id`,
+    layout: false,
+    component: `@/pages${Routes.Agent}`,
+  },
+  {
+    path: Routes.AgentTemplates,
+    layout: false,
+    component: `@/pages${Routes.Agents}${Routes.AgentTemplates}`,
+  },
+  {
+    path: Routes.Files,
+    layout: false,
+    component: '@/layouts/next',
+    routes: [
+      {
+        path: Routes.Files,
+        component: `@/pages${Routes.Files}`,
       },
     ],
   },
@@ -198,27 +239,55 @@ const routes = [
     path: Routes.DatasetBase,
     layout: false,
     component: '@/layouts/next',
+    routes: [{ path: Routes.DatasetBase, redirect: Routes.Dataset }],
+  },
+  {
+    path: Routes.DatasetBase,
+    layout: false,
+    component: `@/pages${Routes.DatasetBase}`,
     routes: [
-      { path: Routes.DatasetBase, redirect: Routes.Dataset },
       {
-        path: Routes.DatasetBase,
-        component: `@/pages${Routes.DatasetBase}`,
+        path: `${Routes.Dataset}/:id`,
+        component: `@/pages${Routes.Dataset}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.DatasetSetting}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
+      },
+      {
+        path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
+      },
+    ],
+  },
+  {
+    path: Routes.Chunk,
+    layout: false,
+    routes: [
+      {
+        path: Routes.Chunk,
+        component: `@/pages${Routes.Chunk}`,
         routes: [
           {
-            path: Routes.Dataset,
-            component: `@/pages${Routes.Dataset}`,
+            path: `${Routes.ParsedResult}/:id`,
+            component: `@/pages${Routes.Chunk}/parsed-result`,
           },
           {
-            path: `${Routes.DatasetBase}${Routes.DatasetSetting}`,
-            component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
+            path: `${Routes.ChunkResult}/:id`,
+            component: `@/pages${Routes.Chunk}/chunk-result`,
           },
           {
-            path: `${Routes.DatasetBase}${Routes.DatasetTesting}`,
-            component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
+            path: `${Routes.ResultView}/:id`,
+            component: `@/pages${Routes.Chunk}/result-view`,
           },
         ],
       },
     ],
+  },
+  {
+    path: Routes.Chunk,
+    layout: false,
+    component: `@/pages${Routes.Chunk}`,
   },
   {
     path: Routes.ProfileSetting,

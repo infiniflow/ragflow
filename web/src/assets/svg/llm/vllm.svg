@@ -1,0 +1,59 @@
+<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 192" width="384" height="192">
+	<title>vllm</title>
+	<defs>
+		<clipPath clipPathUnits="userSpaceOnUse" id="cp1">
+			<path d="m0 0h384v192h-384z"/>
+		</clipPath>
+		<filter x="-50%" y="-50%" width="200%" height="200%" id="f1"> <feGaussianBlur stdDeviation="2"/> </filter>
+	</defs>
+	<style>
+		.s0 { fill: none } 
+		.s1 { fill: #434343 } 
+		.s2 { fill: #d9d9d9 } 
+		.s3 { filter: url(#f1);fill: #d9d9d9 } 
+		.s4 { filter: url(#f1);fill: #fdb515 } 
+		.s5 { fill: #fdb515 } 
+		.s6 { filter: url(#f1);fill: #30a2ff } 
+		.s7 { fill: #30a2ff } 
+	</style>
+	<g id="Clip-Path" clip-path="url(#cp1)">
+		<g>
+			<path fill-rule="evenodd" class="s0" d="m99.8 12.6h253.4v166.8h-253.4z"/>
+			<path class="s1" d="m172.7 136.5h-58.9v-93.1h12.4v82.1h46.5zm71.2 0h-58.9v-93.1h12.4v82.1h46.5zm95.3 0h-12.4v-80.2l-25.9 54.6h-7.4l-25.6-54.6v80.2h-11.6v-93.1h16.9l24.8 51.8 24-51.8h17.2z"/>
+			<path fill-rule="evenodd" class="s2" d="m58.5 134.8h1.9v2.4h-1.9z"/>
+			<path fill-rule="evenodd" class="s2" d="m59.6 136h1.9v2.3h-1.9z"/>
+			<g>
+				<g id="g31e21232314_0_0.1">
+					<path fill-rule="evenodd" class="s3" d="m59.6 85v55.3l-27.6-55.3z"/>
+				</g>
+			</g>
+			<g id="g31e21232314_0_0.1">
+				<path fill-rule="evenodd" class="s2" d="m59.6 83v55.3l-27.6-55.3z"/>
+			</g>
+			<g>
+				<g id="g31e21232314_0_0.2">
+					<path fill-rule="evenodd" class="s3" d="m59.6 140.3h21.8l18.6-70.4-25.6 13.5z"/>
+				</g>
+			</g>
+			<g id="g31e21232314_0_0.2">
+				<path fill-rule="evenodd" class="s2" d="m59.6 138.3h21.8l18.6-70.4-25.6 13.5z"/>
+			</g>
+			<g>
+				<g id="g31e21232314_0_0.3">
+					<path fill-rule="evenodd" class="s4" d="m58.5 83.8v55.3l-27.7-55.3z"/>
+				</g>
+			</g>
+			<g id="g31e21232314_0_0.3">
+				<path fill-rule="evenodd" class="s5" d="m58.5 81.8v55.3l-27.7-55.3z"/>
+			</g>
+			<g>
+				<g id="g31e21232314_0_0.4">
+					<path fill-rule="evenodd" class="s6" d="m58.5 139.1h21.7l18.6-70.3-25.5 13.4z"/>
+				</g>
+			</g>
+			<g id="g31e21232314_0_0.4">
+				<path fill-rule="evenodd" class="s7" d="m58.5 137.1h21.7l18.6-70.3-25.5 13.4z"/>
+			</g>
+		</g>
+	</g>
+</svg>

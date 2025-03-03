@@ -2,7 +2,6 @@ import { useDeleteMessage, useFeedback } from '@/hooks/chat-hooks';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById, useSpeechWithSse } from '@/hooks/logic-hooks';
 import { IFeedbackRequestBody } from '@/interfaces/request/chat';
-import { getMessagePureId } from '@/utils/chat';
 import { hexStringToUint8Array } from '@/utils/common-util';
 import { SpeechPlayer } from 'openai-speech-stream-player';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,7 +14,7 @@ export const useSendFeedback = (messageId: string) => {
     async (params: IFeedbackRequestBody) => {
       const ret = await feedback({
         ...params,
-        messageId: getMessagePureId(messageId),
+        messageId: messageId,
       });
 
       if (ret === 0) {
@@ -41,9 +40,8 @@ export const useRemoveMessage = (
   const { deleteMessage, loading } = useDeleteMessage();
 
   const onRemoveMessage = useCallback(async () => {
-    const pureId = getMessagePureId(messageId);
-    if (pureId) {
-      const code = await deleteMessage(pureId);
+    if (messageId) {
+      const code = await deleteMessage(messageId);
       if (code === 0) {
         removeMessageById?.(messageId);
       }
@@ -69,7 +67,9 @@ export const useSpeech = (content: string, audioBinary?: string) => {
         setIsPlaying(false);
       },
       onChunkEnd: () => {},
-      mimeType: 'audio/mpeg',
+      mimeType: MediaSource.isTypeSupported('audio/mpeg')
+        ? 'audio/mpeg'
+        : 'audio/mp4; codecs="mp4a.40.2"', // https://stackoverflow.com/questions/64079424/cannot-replay-mp3-in-firefox-using-mediasource-even-though-it-works-in-chrome
     });
     await player.current.init();
   }, []);

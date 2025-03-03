@@ -19,9 +19,11 @@ import json
 from flask import request
 from flask_login import login_required, current_user
 
-from api.db.services.dialog_service import keyword_extraction
 from rag.app.qa import rmPrefix, beAdoc
+from rag.app.tag import label_question
 from rag.nlp import search, rag_tokenizer
+from rag.prompts import keyword_extraction
+from rag.settings import PAGERANK_FLD
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -92,12 +94,14 @@ def get():
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
-        tenant_id = tenants[0].tenant_id
-
-        kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
-        chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
+        for tenant in tenants:
+            kb_ids = KnowledgebaseService.get_kb_ids(tenant.tenant_id)
+            chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant.tenant_id), kb_ids)
+            if chunk:
+                break
         if chunk is None:
             return server_error_response(Exception("Chunk not found"))
+
         k = []
         for n in chunk.keys():
             if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
@@ -115,8 +119,7 @@ def get():
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @login_required
-@validate_request("doc_id", "chunk_id", "content_with_weight",
-                  "important_kwd", "question_kwd")
+@validate_request("doc_id", "chunk_id", "content_with_weight")
 def set():
     req = request.json
     d = {
@@ -124,10 +127,16 @@ def set():
         "content_with_weight": req["content_with_weight"]}
     d["content_ltks"] = rag_tokenizer.tokenize(req["content_with_weight"])
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["important_kwd"] = req["important_kwd"]
-    d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
-    d["question_kwd"] = req["question_kwd"]
-    d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
+    if "important_kwd" in req:
+        d["important_kwd"] = req["important_kwd"]
+        d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
+    if "question_kwd" in req:
+        d["question_kwd"] = req["question_kwd"]
+        d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
+    if "tag_kwd" in req:
+        d["tag_kwd"] = req["tag_kwd"]
+    if "tag_feas" in req:
+        d["tag_feas"] = req["tag_feas"]
     if "available_int" in req:
         d["available_int"] = req["available_int"]
 
@@ -148,14 +157,11 @@ def set():
                 t for t in re.split(
                     r"[\n\t]",
                     req["content_with_weight"]) if len(t) > 1]
-            if len(arr) != 2:
-                return get_data_error_result(
-                    message="Q&A must be separated by TAB/ENTER key.")
-            q, a = rmPrefix(arr[0]), rmPrefix(arr[1])
-            d = beAdoc(d, arr[0], arr[1], not any(
+            q, a = rmPrefix(arr[0]), rmPrefix("\n".join(arr[1:]))
+            d = beAdoc(d, q, a, not any(
                 [rag_tokenizer.is_chinese(t) for t in q + a]))
 
-        v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
+        v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"])])
         v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
         settings.docStoreConn.update({"id": req["chunk_id"]}, d, search.index_name(tenant_id), doc.kb_id)
@@ -236,7 +242,7 @@ def create():
         if not e:
             return get_data_error_result(message="Knowledgebase not found!")
         if kb.pagerank:
-            d["pagerank_fea"] = kb.pagerank
+            d[PAGERANK_FLD] = kb.pagerank
 
         embd_id = DocumentService.get_embd_id(req["doc_id"])
         embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING.value, embd_id)
@@ -267,6 +273,7 @@ def retrieval_test():
     doc_ids = req.get("doc_ids", [])
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+    use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
     tenant_ids = []
 
@@ -297,12 +304,24 @@ def retrieval_test():
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
 
-        retr = settings.retrievaler if kb.parser_id != ParserType.KG else settings.kg_retrievaler
-        ranks = retr.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
+        labels = label_question(question, [kb])
+        ranks = settings.retrievaler.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
                                similarity_threshold, vector_similarity_weight, top,
-                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"))
+                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
+                               rank_feature=labels
+                               )
+        if use_kg:
+            ck = settings.kg_retrievaler.retrieval(question,
+                                                   tenant_ids,
+                                                   kb_ids,
+                                                   embd_mdl,
+                                                   LLMBundle(kb.tenant_id, LLMType.CHAT))
+            if ck["content_with_weight"]:
+                ranks["chunks"].insert(0, ck)
+
         for c in ranks["chunks"]:
             c.pop("vector", None)
+        ranks["labels"] = labels
 
         return get_json_result(data=ranks)
     except Exception as e:

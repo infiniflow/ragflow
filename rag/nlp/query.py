@@ -59,15 +59,20 @@ class FulltextQueryer:
                 "",
             ),
             (r"(^| )(what|who|how|which|where|why)('re|'s)? ", " "),
-            (r"(^| )('s|'re|is|are|were|was|do|does|did|don't|doesn't|didn't|has|have|be|there|you|me|your|my|mine|just|please|may|i|should|would|wouldn't|will|won't|done|go|for|with|so|the|a|an|by|i'm|it's|he's|she's|they|they're|you're|as|by|on|in|at|up|out|down|of) ", " ")
+            (
+                r"(^| )('s|'re|is|are|were|was|do|does|did|don't|doesn't|didn't|has|have|be|there|you|me|your|my|mine|just|please|may|i|should|would|wouldn't|will|won't|done|go|for|with|so|the|a|an|by|i'm|it's|he's|she's|they|they're|you're|as|by|on|in|at|up|out|down|of|to|or|and|if) ",
+                " ")
         ]
+        otxt = txt
         for r, p in patts:
             txt = re.sub(r, p, txt, flags=re.IGNORECASE)
+        if not otxt:
+            txt = otxt
         return txt
 
-    def question(self, txt, tbl="qa", min_match:float=0.6):
+    def question(self, txt, tbl="qa", min_match: float = 0.6):
         txt = re.sub(
-            r"[ :\r\n\t,，。？?/`!！&\^%%()^\[\]]+",
+            r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
             " ",
             rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
         ).strip()
@@ -81,16 +86,21 @@ class FulltextQueryer:
             tks_w = [(re.sub(r"[ \\\"'^]", "", tk), w) for tk, w in tks_w]
             tks_w = [(re.sub(r"^[a-z0-9]$", "", tk), w) for tk, w in tks_w if tk]
             tks_w = [(re.sub(r"^[\+-]", "", tk), w) for tk, w in tks_w if tk]
+            tks_w = [(tk.strip(), w) for tk, w in tks_w if tk.strip()]
             syns = []
-            for tk, w in tks_w:
+            for tk, w in tks_w[:256]:
                 syn = self.syn.lookup(tk)
                 syn = rag_tokenizer.tokenize(" ".join(syn)).split()
                 keywords.extend(syn)
-                syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn if s]
+                syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn if s.strip()]
                 syns.append(" ".join(syn))
 
-            q = ["({}^{:.4f}".format(tk, w) + " {})".format(syn) for (tk, w), syn in zip(tks_w, syns) if tk and not re.match(r"[.^+\(\)-]", tk)]
+            q = ["({}^{:.4f}".format(tk, w) + " {})".format(syn) for (tk, w), syn in zip(tks_w, syns) if
+                 tk and not re.match(r"[.^+\(\)-]", tk)]
             for i in range(1, len(tks_w)):
+                left, right = tks_w[i - 1][0].strip(), tks_w[i][0].strip()
+                if not left or not right:
+                    continue
                 q.append(
                     '"%s %s"^%.4f'
                     % (
@@ -151,7 +161,7 @@ class FulltextQueryer:
                 if len(keywords) < 32:
                     keywords.extend([s for s in tk_syns if s])
                 tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
-                tk_syns = [f"\"{s}\"" if s.find(" ")>0 else s for s in tk_syns]
+                tk_syns = [f"\"{s}\"" if s.find(" ") > 0 else s for s in tk_syns]
 
                 if len(keywords) >= 32:
                     break
@@ -170,8 +180,6 @@ class FulltextQueryer:
 
             if len(twts) > 1:
                 tms += ' ("%s"~2)^1.5' % rag_tokenizer.tokenize(tt)
-            if re.match(r"[0-9a-z ]+$", tt):
-                tms = f'("{tt}" OR "%s")' % rag_tokenizer.tokenize(tt)
 
             syns = " OR ".join(
                 [
@@ -180,7 +188,7 @@ class FulltextQueryer:
                     for s in syns
                 ]
             )
-            if syns:
+            if syns and tms:
                 tms = f"({tms})^5 OR ({syns})^0.7"
 
             qs.append(tms)
@@ -198,6 +206,8 @@ class FulltextQueryer:
 
         sims = CosineSimilarity([avec], bvecs)
         tksim = self.token_similarity(atks, btkss)
+        if np.sum(sims[0]) == 0:
+            return np.array(tksim), tksim, sims[0]
         return np.array(sims[0]) * vtweight + np.array(tksim) * tkweight, tksim, sims[0]
 
     def token_similarity(self, atks, btkss):
@@ -228,3 +238,25 @@ class FulltextQueryer:
         for k, v in qtwt.items():
             q += v
         return s / q
+
+    def paragraph(self, content_tks: str, keywords: list = [], keywords_topn=30):
+        if isinstance(content_tks, str):
+            content_tks = [c.strip() for c in content_tks.strip() if c.strip()]
+        tks_w = self.tw.weights(content_tks, preprocess=False)
+
+        keywords = [f'"{k.strip()}"' for k in keywords]
+        for tk, w in sorted(tks_w, key=lambda x: x[1] * -1)[:keywords_topn]:
+            tk_syns = self.syn.lookup(tk)
+            tk_syns = [FulltextQueryer.subSpecialChar(s) for s in tk_syns]
+            tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
+            tk_syns = [f"\"{s}\"" if s.find(" ") > 0 else s for s in tk_syns]
+            tk = FulltextQueryer.subSpecialChar(tk)
+            if tk.find(" ") > 0:
+                tk = '"%s"' % tk
+            if tk_syns:
+                tk = f"({tk} OR (%s)^0.2)" % " ".join(tk_syns)
+            if tk:
+                keywords.append(f"{tk}^{w}")
+
+        return MatchTextExpr(self.query_fields, " ".join(keywords), 100,
+                             {"minimum_should_match": min(3, len(keywords) / 10)})

@@ -1,3 +1,4 @@
+import { DocumentParserType } from '@/constants/knowledge';
 import { useHandleChunkMethodSelectChange } from '@/hooks/logic-hooks';
 import { useSelectParserList } from '@/hooks/user-setting-hooks';
 import { FormInstance } from 'antd';
@@ -7,69 +8,82 @@ const ParserListMap = new Map([
   [
     ['pdf'],
     [
-      'naive',
-      'resume',
-      'manual',
-      'paper',
-      'book',
-      'laws',
-      'presentation',
-      'one',
-      'qa',
-      'knowledge_graph',
+      DocumentParserType.Naive,
+      DocumentParserType.Resume,
+      DocumentParserType.Manual,
+      DocumentParserType.Paper,
+      DocumentParserType.Book,
+      DocumentParserType.Laws,
+      DocumentParserType.Presentation,
+      DocumentParserType.One,
+      DocumentParserType.Qa,
+      DocumentParserType.KnowledgeGraph,
     ],
   ],
   [
     ['doc', 'docx'],
     [
-      'naive',
-      'resume',
-      'book',
-      'laws',
-      'one',
-      'qa',
-      'manual',
-      'knowledge_graph',
+      DocumentParserType.Naive,
+      DocumentParserType.Resume,
+      DocumentParserType.Book,
+      DocumentParserType.Laws,
+      DocumentParserType.One,
+      DocumentParserType.Qa,
+      DocumentParserType.Manual,
+      DocumentParserType.KnowledgeGraph,
     ],
   ],
   [
     ['xlsx', 'xls'],
-    ['naive', 'qa', 'table', 'one', 'knowledge_graph'],
+    [
+      DocumentParserType.Naive,
+      DocumentParserType.Qa,
+      DocumentParserType.Table,
+      DocumentParserType.One,
+      DocumentParserType.KnowledgeGraph,
+    ],
   ],
-  [['ppt', 'pptx'], ['presentation']],
+  [['ppt', 'pptx'], [DocumentParserType.Presentation]],
   [
     ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tif', 'tiff', 'webp', 'svg', 'ico'],
-    ['picture'],
+    [DocumentParserType.Picture],
   ],
   [
     ['txt'],
     [
-      'naive',
-      'resume',
-      'book',
-      'laws',
-      'one',
-      'qa',
-      'table',
-      'knowledge_graph',
+      DocumentParserType.Naive,
+      DocumentParserType.Resume,
+      DocumentParserType.Book,
+      DocumentParserType.Laws,
+      DocumentParserType.One,
+      DocumentParserType.Qa,
+      DocumentParserType.Table,
+      DocumentParserType.KnowledgeGraph,
     ],
   ],
   [
     ['csv'],
     [
-      'naive',
-      'resume',
-      'book',
-      'laws',
-      'one',
-      'qa',
-      'table',
-      'knowledge_graph',
+      DocumentParserType.Naive,
+      DocumentParserType.Resume,
+      DocumentParserType.Book,
+      DocumentParserType.Laws,
+      DocumentParserType.One,
+      DocumentParserType.Qa,
+      DocumentParserType.Table,
+      DocumentParserType.KnowledgeGraph,
     ],
   ],
-  [['md'], ['naive', 'qa', 'knowledge_graph']],
-  [['json'], ['naive', 'knowledge_graph']],
-  [['eml'], ['email']],
+  [
+    ['md'],
+    [
+      DocumentParserType.Naive,
+      DocumentParserType.Qa,
+      DocumentParserType.KnowledgeGraph,
+    ],
+  ],
+  [['json'], [DocumentParserType.Naive, DocumentParserType.KnowledgeGraph]],
+  [['eml'], [DocumentParserType.Email]],
 ]);
 
 const getParserList = (
@@ -84,11 +98,11 @@ const getParserList = (
 
 export const useFetchParserListOnMount = (
   documentId: string,
-  parserId: string,
+  parserId: DocumentParserType,
   documentExtension: string,
   form: FormInstance,
 ) => {
-  const [selectedTag, setSelectedTag] = useState('');
+  const [selectedTag, setSelectedTag] = useState<DocumentParserType>();
   const parserList = useSelectParserList();
   const handleChunkMethodSelectChange = useHandleChunkMethodSelectChange(form);
 
@@ -102,7 +116,15 @@ export const useFetchParserListOnMount = (
     }
 
     return getParserList(
-      ['naive', 'resume', 'book', 'laws', 'one', 'qa', 'table'],
+      [
+        DocumentParserType.Naive,
+        DocumentParserType.Resume,
+        DocumentParserType.Book,
+        DocumentParserType.Laws,
+        DocumentParserType.One,
+        DocumentParserType.Qa,
+        DocumentParserType.Table,
+      ],
       parserList,
     );
   }, [parserList, documentExtension]);
@@ -113,18 +135,27 @@ export const useFetchParserListOnMount = (
 
   const handleChange = (tag: string) => {
     handleChunkMethodSelectChange(tag);
-    setSelectedTag(tag);
+    setSelectedTag(tag as DocumentParserType);
   };
 
   return { parserList: nextParserList, handleChange, selectedTag };
 };
 
-const hideAutoKeywords = ['qa', 'table', 'resume', 'knowledge_graph'];
+const hideAutoKeywords = [
+  DocumentParserType.Qa,
+  DocumentParserType.Table,
+  DocumentParserType.Resume,
+  DocumentParserType.KnowledgeGraph,
+  DocumentParserType.Tag,
+];
 
 export const useShowAutoKeywords = () => {
-  const showAutoKeywords = useCallback((selectedTag: string) => {
-    return hideAutoKeywords.every((x) => selectedTag !== x);
-  }, []);
+  const showAutoKeywords = useCallback(
+    (selectedTag: DocumentParserType | undefined) => {
+      return hideAutoKeywords.every((x) => selectedTag !== x);
+    },
+    [],
+  );
 
   return showAutoKeywords;
 };

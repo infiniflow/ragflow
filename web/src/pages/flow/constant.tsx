@@ -30,8 +30,12 @@ import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.s
 
 // 邮件功能
 
-import { variableEnabledFieldMap } from '@/constants/chat';
+import {
+  ChatVariableEnabledField,
+  variableEnabledFieldMap,
+} from '@/constants/chat';
 import i18n from '@/locales/config';
+import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -50,13 +54,17 @@ import {
 } from '@ant-design/icons';
 import upperFirst from 'lodash/upperFirst';
 import {
+  CirclePower,
   CloudUpload,
+  IterationCcw,
   ListOrdered,
   OptionIcon,
   TextCursorInput,
   ToggleLeft,
   WrapText,
 } from 'lucide-react';
+
+export const BeginId = 'begin';
 
 export enum Operator {
   Begin = 'Begin',
@@ -93,6 +101,8 @@ export enum Operator {
   Invoke = 'Invoke',
   Template = 'Template',
   Email = 'Email',
+  Iteration = 'Iteration',
+  IterationStart = 'IterationItem',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -134,6 +144,8 @@ export const operatorIconMap = {
   [Operator.Invoke]: InvokeIcon,
   [Operator.Template]: TemplateIcon,
   [Operator.Email]: EmailIcon,
+  [Operator.Iteration]: IterationCcw,
+  [Operator.IterationStart]: CirclePower,
 };
 
 export const operatorMap: Record<
@@ -270,6 +282,8 @@ export const operatorMap: Record<
     backgroundColor: '#dee0e2',
   },
   [Operator.Email]: { backgroundColor: '#e6f7ff' },
+  [Operator.Iteration]: { backgroundColor: '#e6f7ff' },
+  [Operator.IterationStart]: { backgroundColor: '#e6f7ff' },
 };
 
 export const componentMenuList = [
@@ -288,9 +302,7 @@ export const componentMenuList = [
   {
     name: Operator.Message,
   },
-  {
-    name: Operator.Relevant,
-  },
+
   {
     name: Operator.RewriteQuestion,
   },
@@ -305,6 +317,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Template,
+  },
+  {
+    name: Operator.Iteration,
   },
   {
     name: Operator.Note,
@@ -392,7 +407,9 @@ export const initialBeginValues = {
 export const variableCheckBoxFieldMap = Object.keys(
   variableEnabledFieldMap,
 ).reduce<Record<string, boolean>>((pre, cur) => {
-  pre[cur] = true;
+  pre[cur] = setInitialChatVariableEnabledFieldValue(
+    cur as ChatVariableEnabledField,
+  );
   return pre;
 }, {});
 
@@ -415,7 +432,8 @@ export const initialGenerateValues = {
 
 export const initialRewriteQuestionValues = {
   ...initialLlmBaseValues,
-  loop: 1,
+  language: '',
+  message_history_window_size: 6,
 };
 
 export const initialRelevantValues = {
@@ -435,7 +453,7 @@ export const initialMessageValues = {
 
 export const initialKeywordExtractValues = {
   ...initialLlmBaseValues,
-  top_n: 1,
+  top_n: 3,
   ...initialQueryBaseValues,
 };
 export const initialDuckValues = {
@@ -518,6 +536,7 @@ export const initialQWeatherValues = {
 };
 
 export const initialExeSqlValues = {
+  ...initialLlmBaseValues,
   db_type: 'mysql',
   database: '',
   username: '',
@@ -587,6 +606,7 @@ export const initialInvokeValues = {
 }`,
   proxy: 'http://',
   clean_html: false,
+  datatype: 'json',
 };
 
 export const initialTemplateValues = {
@@ -605,6 +625,11 @@ export const initialEmailValues = {
   subject: '',
   content: '',
 };
+
+export const initialIterationValues = {
+  delimiter: ',',
+};
+export const initialIterationStartValues = {};
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -652,9 +677,7 @@ export const RestrictedUpstreamMap = {
   [Operator.RewriteQuestion]: [
     Operator.Begin,
     Operator.Message,
-    Operator.Generate,
     Operator.RewriteQuestion,
-    Operator.Categorize,
     Operator.Relevant,
   ],
   [Operator.KeywordExtract]: [
@@ -687,6 +710,8 @@ export const RestrictedUpstreamMap = {
   [Operator.Invoke]: [Operator.Begin],
   [Operator.Template]: [Operator.Begin, Operator.Relevant],
   [Operator.Email]: [Operator.Begin],
+  [Operator.Iteration]: [Operator.Begin],
+  [Operator.IterationStart]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -724,6 +749,8 @@ export const NodeMap = {
   [Operator.Invoke]: 'invokeNode',
   [Operator.Template]: 'templateNode',
   [Operator.Email]: 'emailNode',
+  [Operator.Iteration]: 'group',
+  [Operator.IterationStart]: 'iterationStartNode',
 };
 
 export const LanguageOptions = [
@@ -2940,4 +2967,5 @@ export const NoDebugOperatorsList = [
   Operator.Message,
   Operator.RewriteQuestion,
   Operator.Switch,
+  Operator.Iteration,
 ];

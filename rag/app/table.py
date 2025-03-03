@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import copy
 import re
 from io import BytesIO
@@ -66,6 +70,8 @@ class Excel(ExcelParser):
                     continue
                 data.append(row)
                 done += 1
+            if np.array(data).size == 0:
+                continue
             res.append(pd.DataFrame(np.array(data), columns=headers))
 
         callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (
@@ -96,9 +102,9 @@ def column_data_type(arr):
     for a in arr:
         if a is None:
             continue
-        if re.match(r"[+-]?[0-9]+(\.0+)?$", str(a).replace("%%", "")):
+        if re.match(r"[+-]?[0-9]{,19}(\.0+)?$", str(a).replace("%%", "")):
             counts["int"] += 1
-        elif re.match(r"[+-]?[0-9.]+$", str(a).replace("%%", "")):
+        elif re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", "")):
             counts["float"] += 1
         elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", str(a), flags=re.IGNORECASE):
             counts["bool"] += 1
@@ -183,7 +189,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
         "datetime": "_dt",
         "bool": "_kwd"}
     for df in dfs:
-        for n in ["id", "index", "idx"]:
+        for n in ["id", "_id", "index", "idx"]:
             if n in df.columns:
                 del df[n]
         clmns = df.columns.values
@@ -217,7 +223,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
                     continue
                 if not str(row[clmns[j]]):
                     continue
-                if pd.isna(row[clmns[j]]):
+                if not isinstance(row[clmns[j]], pd.Series) and pd.isna(row[clmns[j]]):
                     continue
                 fld = clmns_map[j][0]
                 d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(

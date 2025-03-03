@@ -1,7 +1,10 @@
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChunk } from '@/interfaces/database/knowledge';
-import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import {
+  IChangeParserConfigRequestBody,
+  IDocumentMetaRequestBody,
+} from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import chatService from '@/services/chat-service';
 import kbService from '@/services/knowledge-service';
@@ -13,6 +16,7 @@ import { UploadFile, message } from 'antd';
 import { get } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
+import { useParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -58,6 +62,7 @@ export const useFetchNextDocumentList = () => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
+  const { id } = useParams();
 
   const { data, isFetching: loading } = useQuery<{
     docs: IDocumentInfo[];
@@ -66,9 +71,10 @@ export const useFetchNextDocumentList = () => {
     queryKey: ['fetchDocumentList', searchString, pagination],
     initialData: { docs: [], total: 0 },
     refetchInterval: 15000,
+    enabled: !!knowledgeId || !!id,
     queryFn: async () => {
       const ret = await kbService.get_document_list({
-        kb_id: knowledgeId,
+        kb_id: knowledgeId || id,
         keywords: searchString,
         page_size: pagination.pageSize,
         page: pagination.current,
@@ -242,27 +248,60 @@ export const useUploadNextDocument = () => {
   } = useMutation({
     mutationKey: ['uploadDocument'],
     mutationFn: async (fileList: UploadFile[]) => {
-      const formData = new FormData();
-      formData.append('kb_id', knowledgeId);
-      fileList.forEach((file: any) => {
-        formData.append('file', file);
-      });
+      const partitionedFileList = fileList.reduce<UploadFile[][]>(
+        (acc, cur, index) => {
+          const partIndex = Math.floor(index / 20); // Uploads 20 documents at a time
+          if (!acc[partIndex]) {
+            acc[partIndex] = [];
+          }
+          acc[partIndex].push(cur);
+          return acc;
+        },
+        [],
+      );
 
-      try {
-        const ret = await kbService.document_upload(formData);
-        const code = get(ret, 'data.code');
-        if (code === 0) {
-          message.success(i18n.t('message.uploaded'));
-        }
+      let allRet = [];
+      for (const listPart of partitionedFileList) {
+        const formData = new FormData();
+        formData.append('kb_id', knowledgeId);
+        listPart.forEach((file: any) => {
+          formData.append('file', file);
+        });
 
-        if (code === 0 || code === 500) {
-          queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+        try {
+          const ret = await kbService.document_upload(formData);
+          allRet.push(ret);
+        } catch (error) {
+          allRet.push({ data: { code: 500 } });
+
+          const filenames = listPart.map((file: any) => file.name).join(', ');
+          console.warn(error);
+          console.warn('Error uploading files:', filenames);
         }
-        return ret?.data;
-      } catch (error) {
-        console.warn(error);
-        return {};
       }
+
+      const succeed = allRet.every((ret) => get(ret, 'data.code') === 0);
+      const any500 = allRet.some((ret) => get(ret, 'data.code') === 500);
+
+      if (succeed) {
+        message.success(i18n.t('message.uploaded'));
+      }
+
+      if (succeed || any500) {
+        queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+      }
+
+      const allData = {
+        code: any500
+          ? 500
+          : succeed
+            ? 0
+            : allRet.filter((ret) => get(ret, 'data.code') !== 0)[0]?.data
+                ?.code,
+        data: succeed,
+        message: allRet.map((ret) => get(ret, 'data.message')).join('/n'),
+      };
+      return allData;
     },
   });
 
@@ -396,7 +435,6 @@ export const useRemoveNextDocument = () => {
 };
 
 export const useDeleteDocument = () => {
-  // const queryClient = useQueryClient();
   const {
     data,
     isPending: loading,
@@ -405,9 +443,7 @@ export const useDeleteDocument = () => {
     mutationKey: ['deleteDocument'],
     mutationFn: async (documentIds: string[]) => {
       const data = await kbService.document_delete({ doc_ids: documentIds });
-      // if (data.code === 0) {
-      //   queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
-      // }
+
       return data;
     },
   });
@@ -441,9 +477,7 @@ export const useUploadAndParseDocument = (uploadMethod: string) => {
         }
         const data = await chatService.uploadAndParseExternal(formData);
         return data?.data;
-      } catch (error) {
-        console.log('🚀 ~ useUploadAndParseDocument ~ error:', error);
-      }
+      } catch (error) {}
     },
   });
 
@@ -465,11 +499,41 @@ export const useParseDocument = () => {
         }
         return data;
       } catch (error) {
-        console.log('🚀 ~ mutationFn: ~ error:', error);
         message.error('error');
       }
     },
   });
 
   return { parseDocument: mutateAsync, data, loading };
+};
+
+export const useSetDocumentMeta = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['setDocumentMeta'],
+    mutationFn: async (params: IDocumentMetaRequestBody) => {
+      try {
+        const { data } = await kbService.setMeta({
+          meta: params.meta,
+          doc_id: params.documentId,
+        });
+
+        if (data?.code === 0) {
+          queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
+
+          message.success(i18n.t('message.modified'));
+        }
+        return data?.code;
+      } catch (error) {
+        message.error('error');
+      }
+    },
+  });
+
+  return { setDocumentMeta: mutateAsync, data, loading };
 };

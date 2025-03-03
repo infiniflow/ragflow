@@ -1,3 +1,6 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -10,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import re
 
 from deepdoc.parser.utils import get_text
@@ -47,11 +51,13 @@ class RAGFlowTxtParser:
             s = t
         if s < len(delimiter):
             dels.extend(list(delimiter[s:]))
-        dels = [re.escape(d) for d in delimiter if d]
+        dels = [re.escape(d) for d in dels if d]
         dels = [d for d in dels if d]
         dels = "|".join(dels)
         secs = re.split(r"(%s)" % dels, txt)
         for sec in secs:
+            if re.match(f"^{dels}$", sec):
+                continue
             add_chunk(sec)
 
         return [[c, ""] for c in cks]

@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
+import json
 import os.path
 import pathlib
 import re
@@ -593,3 +594,38 @@ def parse():
     txt = FileService.parse_docs(file_objs, current_user.id)
 
     return get_json_result(data=txt)
+
+
+@manager.route('/set_meta', methods=['POST'])  # noqa: F821
+@login_required
+@validate_request("doc_id", "meta")
+def set_meta():
+    req = request.json
+    if not DocumentService.accessible(req["doc_id"], current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    try:
+        meta = json.loads(req["meta"])
+    except Exception as e:
+        return get_json_result(
+            data=False, message=f'Json syntax error: {e}', code=settings.RetCode.ARGUMENT_ERROR)
+    if not isinstance(meta, dict):
+        return get_json_result(
+            data=False, message='Meta data should be in Json map format, like {"key": "value"}', code=settings.RetCode.ARGUMENT_ERROR)
+
+    try:
+        e, doc = DocumentService.get_by_id(req["doc_id"])
+        if not e:
+            return get_data_error_result(message="Document not found!")
+
+        if not DocumentService.update_by_id(
+                req["doc_id"], {"meta_fields": meta}):
+            return get_data_error_result(
+                message="Database error (meta updates)!")
+
+        return get_json_result(data=True)
+    except Exception as e:
+        return server_error_response(e)
