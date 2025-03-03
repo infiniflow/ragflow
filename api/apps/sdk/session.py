@@ -511,7 +511,7 @@ def delete(tenant_id, chat_id):
     return get_result()
 
 
-@manager.route('/agents/<agent_id>/sessions', methods=["DELETE"])
+@manager.route('/agents/<agent_id>/sessions', methods=["DELETE"])  # noqa: F821
 @token_required
 def delete_agent_session(tenant_id, agent_id):
     req = request.json
