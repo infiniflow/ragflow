@@ -3,7 +3,7 @@ sidebar_position: 0
 slug: /configure_knowledge_base
 ---
 
-# Configure a knowledge base
+# Configure knowledge base
 
 Knowledge base, hallucination-free chat, and file management are the three pillars of RAGFlow. RAGFlow's AI chats are based on knowledge bases. Each of RAGFlow's knowledge bases serves as a knowledge source, *parsing* files uploaded from your local machine and file references generated in **File Management** into the real 'knowledge' for future AI chats. This guide demonstrates some basic usages of the knowledge base feature, covering the following topics:
 
@@ -26,7 +26,7 @@ The following screenshot shows the configuration page of a knowledge base. A pro
 
 ![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
 
-This section covers the following topics: 
+This section covers the following topics:
 
 - Select chunk method
 - Select embedding model

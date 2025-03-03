@@ -31,10 +31,10 @@ However, traditional Text2SQL solutions often require model fine-tuning, which c
 
 A list of components required:
 
-- [Begin](https://ragflow.io/docs/dev/begin_component)
-- [Interact](https://ragflow.io/docs/dev/interact_component)
-- [Retrieval](https://ragflow.io/docs/dev/retrieval_component)
-- [Generate](https://ragflow.io/docs/dev/generate_component)
+- [Begin](./agent_component_reference/begin.mdx)
+- [Interact](./agent_component_reference/interact.mdx)
+- [Retrieval](./agent_component_reference/retrieval.mdx)
+- [Generate](./agent_component_reference/generate.mdx)
 - ExeSQL
 
 ## Procedure
