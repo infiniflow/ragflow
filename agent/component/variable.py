@@ -137,17 +137,17 @@ class VariableExtract(Generate, ABC):
             logging.debug(ans)
         if not ans:
             logging.debug(ans)
-            return VariableExtract.be_output("JSON not found!")
+            return VariableExtract.be_output("")
 
         
         logging.info(f"ans: {ans}")
         try:
             ans_json = json.loads(ans)
             self._canvas.update_variables(ans_json)
-            return VariableExtract.be_output(ans)
+            return VariableExtract.be_output("")
         except json.JSONDecodeError:
             logging.warning(f"VariableExtract: LLM returned non-JSON output: {ans}")
-            return VariableExtract.be_output("non-JSON")
+            return VariableExtract.be_output("")
 
     def debug(self, **kwargs):
         return self._run([], **kwargs)
