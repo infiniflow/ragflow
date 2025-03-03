@@ -75,10 +75,10 @@ RAGFlow现在包含一个全自动的备份和恢复系统，可以在容器生�
 
 ### 备份存储位置
 
-备份文件默认存储在 `C:\Docker_Backups` 目录下，并按以下结构组织：
+备份文件默认存储在 `D:\Docker_Backups` 目录下，并按以下结构组织：
 
 ```
-C:\Docker_Backups\
+D:\Docker_Backups\
   ├── raw_volumes\       # Docker卷的原始备份
   │   ├── ragflow_mysql_data_2023-07-30_14-30-00.tar.gz
   │   ├── ragflow_esdata01_2023-07-30_14-30-00.tar.gz
@@ -107,7 +107,7 @@ C:\Docker_Backups\
 2. 或使用Docker命令备份单个卷：
 
 ```powershell
-docker run --rm -v ragflow_mysql_data:/source -v C:/my-backups:/backup alpine tar -czf /backup/mysql-backup.tar.gz -C /source ./
+docker run --rm -v ragflow_mysql_data:/source -v D:/my-backups:/backup alpine tar -czf /backup/mysql-backup.tar.gz -C /source ./
 ```
 
 ### 手动恢复
@@ -121,7 +121,7 @@ docker run --rm -v ragflow_mysql_data:/source -v C:/my-backups:/backup alpine ta
 2. 或使用Docker命令恢复单个卷：
 
 ```powershell
-docker run --rm -v ragflow_mysql_data:/destination -v C:/my-backups/mysql-backup.tar.gz:/backup.tar.gz alpine sh -c "rm -rf /destination/* && tar -xzf /backup.tar.gz -C /destination"
+docker run --rm -v ragflow_mysql_data:/destination -v D:/my-backups/mysql-backup.tar.gz:/backup.tar.gz alpine sh -c "rm -rf /destination/* && tar -xzf /backup.tar.gz -C /destination"
 ```
 
 ## 故障排除
@@ -133,7 +133,7 @@ docker run --rm -v ragflow_mysql_data:/destination -v C:/my-backups/mysql-backup
    - 尝试使用最新备份进行恢复
 
 2. **找不到备份文件**
-   - 检查默认备份路径 `C:\Docker_Backups`
+   - 检查默认备份路径 `D:\Docker_Backups`
    - 查看备份脚本的运行日志
 
 3. **恢复失败**

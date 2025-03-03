@@ -3,7 +3,7 @@
 # Usage: ./auto_restore.ps1 [backup_dir] [project_name]
 
 # Default backup directory
-$backupDir = if ($args[0]) { $args[0] } else { "C:\Docker_Backups" }
+$backupDir = if ($args[0]) { $args[0] } else { "D:\Docker_Backups" }
 # Default project name (used as container and volume prefix)
 $projectName = if ($args[1]) { $args[1] } else { "ragflow" }
 

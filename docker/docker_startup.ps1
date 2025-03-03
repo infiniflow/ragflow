@@ -19,7 +19,7 @@ function Write-Log {
 
 # Default parameters
 $action = if ($args[0]) { $args[0].ToLower() } else { "start" }
-$backupDir = "C:\Docker_Backups"
+$backupDir = "D:\Docker_Backups"
 $projectName = "ragflow" # Default project name prefix
 
 # Check if Docker is running

@@ -25,7 +25,7 @@
 确保您已经有RAGFlow项目代码并切换到正确的目录：
 
 ```powershell
-cd C:\Users\Hippo\PycharmProjects\RAGFLOW\ragflow\docker
+cd D:\Hippo\PycharmProjects\RAGFLOW\ragflow\docker>
 ```
 
 ### 步骤 2：检查配置文件
@@ -100,7 +100,7 @@ cd C:\Users\Hippo\PycharmProjects\RAGFLOW\ragflow\docker
 
 系统使用以下策略管理数据备份：
 
-1. **默认备份位置**：`C:\Docker_Backups`
+1. **默认备份位置**：`D:\Docker_Backups`
 2. **备份组织**：
    - `raw_volumes/` - 存储原始卷备份（TAR格式）
    - `readable_data/` - 存储可读取的导出数据（如MySQL导出）
@@ -146,7 +146,7 @@ cd C:\Users\Hippo\PycharmProjects\RAGFLOW\ragflow\docker
    - 验证项目名称前缀是否正确
 
 3. **数据未恢复**
-   - 检查备份目录是否存在：`C:\Docker_Backups`
+   - 检查备份目录是否存在：`D:\Docker_Backups`
    - 检查备份元数据文件是否存在
    - 验证卷名称与备份中的匹配
 
@@ -167,8 +167,8 @@ cd C:\Users\Hippo\PycharmProjects\RAGFLOW\ragflow\docker
 ### 日志访问
 
 日志文件位于以下位置：
-- 备份日志：`C:\Docker_Backups\backup_log.txt`
-- 恢复日志：`C:\Docker_Backups\restore_log.txt`
+- 备份日志：`D:\Docker_Backups\backup_log.txt`
+- 恢复日志：`D:\Docker_Backups\restore_log.txt`
 - 应用日志：`./data/ragflow-logs/`
 
 ## 最佳实践
