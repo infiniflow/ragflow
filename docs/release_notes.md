@@ -205,9 +205,9 @@ pip install ragflow-sdk==0.13.0
 
 #### Added documents
 
-- [Acquire a RAGFlow API key](https://ragflow.io/docs/dev/acquire_ragflow_api_key)
-- [HTTP API Reference](https://ragflow.io/docs/dev/http_api_reference)
-- [Python API Reference](https://ragflow.io/docs/dev/python_api_reference)
+- [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md)
+- [HTTP API Reference](./references/http_api_reference.md)
+- [Python API Reference](./references/python_api_reference.md)
 
 ## v0.12.0
 
@@ -315,7 +315,7 @@ Released on May 31, 2024.
 :::danger IMPORTANT
 While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM.
 
-If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
+If you are on an ARM platform, follow [this guide](./develop/build_docker_image) to build a RAGFlow Docker image.
 :::
 
 ### Related APIs
