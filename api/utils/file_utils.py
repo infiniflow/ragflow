@@ -188,6 +188,7 @@ def thumbnail_img(filename, blob):
                 buffered = BytesIO()
             else:
                 break
+        pdf.close()
         return img
 
     elif re.match(r".*\.(jpg|jpeg|png|tif|gif|icon|ico|webp)$", filename):

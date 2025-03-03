@@ -950,7 +950,9 @@ class RAGFlowPdfParser:
         try:
             pdf = pdfplumber.open(
                 fnm) if not binary else pdfplumber.open(BytesIO(binary))
-            return len(pdf.pages)
+            total_page = len(pdf.pages)
+            pdf.close()
+            return total_page 
         except Exception:
             logging.exception("total_page_number")
 
@@ -996,8 +998,11 @@ class RAGFlowPdfParser:
             dfs(outlines, 0)
         except Exception as e:
             logging.warning(f"Outlines exception: {e}")
+        finally:
+            self.pdf.close()
         if not self.outlines:
             logging.warning("Miss outlines")
+        
 
         logging.debug("Images converted.")
         self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(
