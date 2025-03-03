@@ -50,7 +50,7 @@ export function TopNFormField({ max = 30 }: SimilaritySliderFormFieldProps) {
       name={'top_n'}
       render={({ field }) => (
         <FormItem>
-          <FormLabel>{t('topN')}</FormLabel>
+          <FormLabel tooltip={t('topNTip')}>{t('topN')}</FormLabel>
           <FormControl>
             <SingleFormSlider {...field} max={max}></SingleFormSlider>
           </FormControl>

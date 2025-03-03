@@ -1,34 +1,53 @@
-import TopNItem from '@/components/top-n-item';
-import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Select } from 'antd';
+import { TopNFormField } from '@/components/top-n-item';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { RAGFlowSelect } from '@/components/ui/select';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { WenCaiQueryTypeOptions } from '../../constant';
-import { IOperatorForm } from '../../interface';
-import DynamicInputVariable from '../components/dynamic-input-variable';
+import { INextOperatorForm } from '../../interface';
+import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
-const WenCaiForm = ({ onValuesChange, form, node }: IOperatorForm) => {
-  const { t } = useTranslate('flow');
+const WenCaiForm = ({ form, node }: INextOperatorForm) => {
+  const { t } = useTranslation();
 
   const wenCaiQueryTypeOptions = useMemo(() => {
     return WenCaiQueryTypeOptions.map((x) => ({
       value: x,
-      label: t(`wenCaiQueryTypeOptions.${x}`),
+      label: t(`flow.wenCaiQueryTypeOptions.${x}`),
     }));
   }, [t]);
 
   return (
-    <Form
-      name="basic"
-      autoComplete="off"
-      form={form}
-      onValuesChange={onValuesChange}
-      layout={'vertical'}
-    >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
-      <TopNItem initialValue={20} max={99}></TopNItem>
-      <Form.Item label={t('queryType')} name={'query_type'}>
-        <Select options={wenCaiQueryTypeOptions}></Select>
-      </Form.Item>
+    <Form {...form}>
+      <form
+        className="space-y-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
+      >
+        <DynamicInputVariable node={node}></DynamicInputVariable>
+        <TopNFormField max={99}></TopNFormField>
+        <FormField
+          control={form.control}
+          name="query_type"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('flow.queryType')}</FormLabel>
+              <FormControl>
+                <RAGFlowSelect {...field} options={wenCaiQueryTypeOptions} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </form>
     </Form>
   );
 };

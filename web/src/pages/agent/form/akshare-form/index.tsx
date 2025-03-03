@@ -1,19 +1,20 @@
-import TopNItem from '@/components/top-n-item';
-import { Form } from 'antd';
-import { IOperatorForm } from '../../interface';
-import DynamicInputVariable from '../components/dynamic-input-variable';
+import { TopNFormField } from '@/components/top-n-item';
+import { Form } from '@/components/ui/form';
+import { INextOperatorForm } from '../../interface';
+import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
-const AkShareForm = ({ onValuesChange, form, node }: IOperatorForm) => {
+const AkShareForm = ({ form, node }: INextOperatorForm) => {
   return (
-    <Form
-      name="basic"
-      autoComplete="off"
-      form={form}
-      onValuesChange={onValuesChange}
-      layout={'vertical'}
-    >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
-      <TopNItem initialValue={10} max={99}></TopNItem>
+    <Form {...form}>
+      <form
+        className="space-y-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
+      >
+        <DynamicInputVariable node={node}></DynamicInputVariable>
+        <TopNFormField max={99}></TopNFormField>
+      </form>
     </Form>
   );
 };
