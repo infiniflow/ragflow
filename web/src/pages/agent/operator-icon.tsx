@@ -1,4 +1,3 @@
-import React from 'react';
 import { Operator, operatorIconMap } from './constant';
 
 interface IProps {
@@ -8,8 +7,12 @@ interface IProps {
   color?: string;
 }
 
+const Empty = () => {
+  return <div className="hidden"></div>;
+};
+
 const OperatorIcon = ({ name, fontSize, width, color }: IProps) => {
-  const Icon = operatorIconMap[name] || React.Fragment;
+  const Icon = operatorIconMap[name] || Empty;
   return (
     <Icon
       className={'text-2xl max-h-6 max-w-6 text-[rgb(59, 118, 244)]'}
