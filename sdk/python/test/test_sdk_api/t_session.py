@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-from ragflow_sdk import RAGFlow, Agent
+from ragflow_sdk import RAGFlow
 from common import HOST_ADDRESS
 import pytest
 
