@@ -1,8 +1,10 @@
 import { LlmModelType } from '@/constants/knowledge';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
+import * as SelectPrimitive from '@radix-ui/react-select';
 import { Popover as AntPopover, Select as AntSelect } from 'antd';
-import { useState } from 'react';
+import { forwardRef, useState } from 'react';
 import LlmSettingItems from '../llm-setting-items';
+import { LlmSettingFieldItems } from '../llm-setting-items/next';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectTrigger, SelectValue } from '../ui/select';
 
@@ -50,11 +52,18 @@ const LLMSelect = ({ id, value, onChange, disabled }: IProps) => {
 
 export default LLMSelect;
 
-export function NextLLMSelect({ value, onChange, disabled }: IProps) {
+export const NextLLMSelect = forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Trigger>,
+  IProps
+>(({ value, disabled }, ref) => {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const modelOptions = useComposeLlmOptionsByModelTypes([
+    LlmModelType.Chat,
+    LlmModelType.Image2text,
+  ]);
 
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
+    <Select disabled={disabled} value={value}>
       <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
         <PopoverTrigger asChild>
           <SelectTrigger
@@ -62,19 +71,23 @@ export function NextLLMSelect({ value, onChange, disabled }: IProps) {
               e.preventDefault();
               setIsPopoverOpen(true);
             }}
+            ref={ref}
           >
-            <SelectValue placeholder="xxx" />
+            <SelectValue>
+              {
+                modelOptions
+                  .flatMap((x) => x.options)
+                  .find((x) => x.value === value)?.label
+              }
+            </SelectValue>
           </SelectTrigger>
         </PopoverTrigger>
         <PopoverContent side={'left'}>
-          <LlmSettingItems
-            formItemLayout={{
-              labelCol: { span: 10 },
-              wrapperCol: { span: 14 },
-            }}
-          ></LlmSettingItems>
+          <LlmSettingFieldItems></LlmSettingFieldItems>
         </PopoverContent>
       </Popover>
     </Select>
   );
-}
+});
+
+NextLLMSelect.displayName = 'LLMSelect';
