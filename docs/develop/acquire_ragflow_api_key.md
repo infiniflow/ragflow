@@ -14,5 +14,5 @@ A key is required for the RAGFlow server to authenticate your requests via HTTP 
 ![ragflow_api_key](https://github.com/user-attachments/assets/f461ed61-04c6-4faf-b3d8-6b5fa56be4e7)
 
 :::tip NOTE
-See the [RAGFlow HTTP API reference](../../references/http_api_reference.md) or the [RAGFlow Python API reference](../../references/python_api_reference.md) for a complete reference of RAGFlow's HTTP or Python APIs.
+See the [RAGFlow HTTP API reference](../references/http_api_reference.md) or the [RAGFlow Python API reference](../references/python_api_reference.md) for a complete reference of RAGFlow's HTTP or Python APIs.
 :::
