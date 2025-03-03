@@ -382,9 +382,9 @@ class DocumentService(CommonService):
     def update_progress(cls):
         MSG = {
             "raptor": "Start RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval).",
-            "graphrag": "Entities extraction progress",
-            "graph_resolution": "Start Graph Resolution",
-            "graph_community": "Start Graph Community Reports Generation"
+            "graphrag": "Entities",
+            "graph_resolution": "Resolution",
+            "graph_community": "Communities"
         }
         docs = cls.get_unfinished_docs()
         for d in docs:
