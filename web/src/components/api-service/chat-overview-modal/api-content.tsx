@@ -5,6 +5,7 @@ import { Button, Card, Flex, Space } from 'antd';
 import ChatApiKeyModal from '../chat-api-key-modal';
 import { usePreviewChat } from '../hooks';
 import BackendServiceApi from './backend-service-api';
+import MarkdownToc from './markdown-toc';
 
 const ApiContent = ({
   id,
@@ -42,6 +43,9 @@ const ApiContent = ({
             </Flex>
           </Card>
         )}
+        <div style={{ position: 'relative' }}>
+          <MarkdownToc content={apiDoc} />
+        </div>
         <MarkdownPreview source={apiDoc}></MarkdownPreview>
       </Flex>
       {apiKeyVisible && (
