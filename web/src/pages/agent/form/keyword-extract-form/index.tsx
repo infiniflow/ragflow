@@ -1,30 +1,46 @@
-import LLMSelect from '@/components/llm-select';
-import TopNItem from '@/components/top-n-item';
-import { useTranslate } from '@/hooks/common-hooks';
-import { Form } from 'antd';
-import { IOperatorForm } from '../../interface';
-import DynamicInputVariable from '../components/dynamic-input-variable';
+import { NextLLMSelect } from '@/components/llm-select';
+import { TopNFormField } from '@/components/top-n-item';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { useTranslation } from 'react-i18next';
+import { INextOperatorForm } from '../../interface';
+import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
-const KeywordExtractForm = ({ onValuesChange, form, node }: IOperatorForm) => {
-  const { t } = useTranslate('flow');
+const KeywordExtractForm = ({ form, node }: INextOperatorForm) => {
+  const { t } = useTranslation();
 
   return (
-    <Form
-      name="basic"
-      autoComplete="off"
-      form={form}
-      onValuesChange={onValuesChange}
-      layout={'vertical'}
-    >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
-      <Form.Item
-        name={'llm_id'}
-        label={t('model', { keyPrefix: 'chat' })}
-        tooltip={t('modelTip', { keyPrefix: 'chat' })}
+    <Form {...form}>
+      <form
+        className="space-y-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
       >
-        <LLMSelect></LLMSelect>
-      </Form.Item>
-      <TopNItem initialValue={3}></TopNItem>
+        <DynamicInputVariable node={node}></DynamicInputVariable>
+        <FormField
+          control={form.control}
+          name="llm_id"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel tooltip={t('chat.modelTip')}>
+                {t('chat.model')}
+              </FormLabel>
+              <FormControl>
+                <NextLLMSelect {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <TopNFormField></TopNFormField>
+      </form>
     </Form>
   );
 };

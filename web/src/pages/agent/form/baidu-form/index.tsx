@@ -1,19 +1,20 @@
-import TopNItem from '@/components/top-n-item';
-import { Form } from 'antd';
-import { IOperatorForm } from '../../interface';
-import DynamicInputVariable from '../components/dynamic-input-variable';
+import { TopNFormField } from '@/components/top-n-item';
+import { Form } from '@/components/ui/form';
+import { INextOperatorForm } from '../../interface';
+import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
-const BaiduForm = ({ onValuesChange, form, node }: IOperatorForm) => {
+const BaiduForm = ({ form, node }: INextOperatorForm) => {
   return (
-    <Form
-      name="basic"
-      autoComplete="off"
-      form={form}
-      onValuesChange={onValuesChange}
-      layout={'vertical'}
-    >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
-      <TopNItem initialValue={10}></TopNItem>
+    <Form {...form}>
+      <form
+        className="space-y-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
+      >
+        <DynamicInputVariable node={node}></DynamicInputVariable>
+        <TopNFormField></TopNFormField>
+      </form>
     </Form>
   );
 };
