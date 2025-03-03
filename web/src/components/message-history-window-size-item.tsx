@@ -41,7 +41,9 @@ export function MessageHistoryWindowSizeFormField() {
       name={'message_history_window_size'}
       render={({ field }) => (
         <FormItem>
-          <FormLabel>{t('flow.messageHistoryWindowSize')}</FormLabel>
+          <FormLabel tooltip={t('flow.messageHistoryWindowSizeTip')}>
+            {t('flow.messageHistoryWindowSize')}
+          </FormLabel>
           <FormControl>
             <Input {...field} type={'number'}></Input>
           </FormControl>

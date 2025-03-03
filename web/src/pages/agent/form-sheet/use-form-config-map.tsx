@@ -114,8 +114,14 @@ export function useFormConfigMap() {
     },
     [Operator.RewriteQuestion]: {
       component: RewriteQuestionForm,
-      defaultValues: {},
-      schema: z.object({}),
+      defaultValues: {
+        message_history_window_size: 6,
+      },
+      schema: z.object({
+        llm_id: z.string(),
+        message_history_window_size: z.number(),
+        language: z.string(),
+      }),
     },
     [Operator.Baidu]: {
       component: BaiduForm,

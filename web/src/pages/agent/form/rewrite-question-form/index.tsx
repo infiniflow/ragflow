@@ -1,39 +1,66 @@
-import LLMSelect from '@/components/llm-select';
-import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
-import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Select } from 'antd';
+import { NextLLMSelect } from '@/components/llm-select';
+import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { RAGFlowSelect } from '@/components/ui/select';
+import { useTranslation } from 'react-i18next';
 import { GoogleLanguageOptions } from '../../constant';
-import { IOperatorForm } from '../../interface';
+import { INextOperatorForm } from '../../interface';
 
-const RewriteQuestionForm = ({ onValuesChange, form }: IOperatorForm) => {
-  const { t } = useTranslate('chat');
+const RewriteQuestionForm = ({ form }: INextOperatorForm) => {
+  const { t } = useTranslation();
 
   return (
-    <Form
-      name="basic"
-      labelCol={{ span: 8 }}
-      wrapperCol={{ span: 16 }}
-      onValuesChange={onValuesChange}
-      autoComplete="off"
-      form={form}
-    >
-      <Form.Item
-        name={'llm_id'}
-        label={t('model', { keyPrefix: 'chat' })}
-        tooltip={t('modelTip', { keyPrefix: 'chat' })}
+    <Form {...form}>
+      <form
+        className="space-y-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
       >
-        <LLMSelect></LLMSelect>
-      </Form.Item>
-      <Form.Item
-        label={t('language')}
-        name={'language'}
-        tooltip={t('languageTip')}
-      >
-        <Select options={GoogleLanguageOptions} allowClear={true}></Select>
-      </Form.Item>
-      <MessageHistoryWindowSizeItem
-        initialValue={6}
-      ></MessageHistoryWindowSizeItem>
+        <FormField
+          control={form.control}
+          name="llm_id"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel tooltip={t('chat.modelTip')}>
+                {t('chat.model')}
+              </FormLabel>
+              <FormControl>
+                <NextLLMSelect {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="language"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel tooltip={t('chat.languageTip')}>
+                {t('chat.language')}
+              </FormLabel>
+              <FormControl>
+                <RAGFlowSelect
+                  options={GoogleLanguageOptions}
+                  allowClear={true}
+                  {...field}
+                ></RAGFlowSelect>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
+      </form>
     </Form>
   );
 };
