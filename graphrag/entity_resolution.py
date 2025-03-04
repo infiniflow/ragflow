@@ -99,7 +99,7 @@ class EntityResolution(Extractor):
             for candidate_resolution_i in candidate_resolution.items():
                 if not candidate_resolution_i[1]:
                     continue
-                nursery.start_soon(self._resolve_candidate(candidate_resolution_i, resolution_result))
+                nursery.start_soon(lambda: self._resolve_candidate(candidate_resolution_i, resolution_result))
 
         connect_graph = nx.Graph()
         removed_entities = []
