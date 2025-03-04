@@ -634,6 +634,7 @@ Updates configurations for a specified document.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`:`string`
+  - `"meta_fields"`:`object`
   - `"chunk_method"`:`string`
   - `"parser_config"`:`object`
 
@@ -660,6 +661,7 @@ curl --request PUT \
 - `document_id`: (*Path parameter*)  
   The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
+- `"meta_fields"`: (*Body parameter*)， `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: (*Body parameter*), `string`  
   The parsing method to apply to the document:  
   - `"naive"`: General
@@ -672,8 +674,6 @@ curl --request PUT \
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
