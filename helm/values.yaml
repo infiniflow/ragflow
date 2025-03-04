@@ -69,6 +69,10 @@ ragflow:
   service:
     # Use LoadBalancer to expose the web interface externally
     type: ClusterIP
+  api:
+    service:
+      enabled: true
+      type: ClusterIP
 
 infinity:
   image:
