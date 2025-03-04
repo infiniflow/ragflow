@@ -3,9 +3,9 @@ sidebar_position: 10
 slug: /faq
 ---
 
-# FAQ
+# FAQs
 
-Queries regarding general features, troubleshooting, usage, and more.
+Answers to questions about general features, troubleshooting, usage, and more.
 
 ---
 

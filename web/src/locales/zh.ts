@@ -106,7 +106,7 @@ export default {
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
-      testingDescription: '最后一步！ 成功后，剩下的就交给 RAGFlow 吧。',
+      testingDescription: '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。',
@@ -530,7 +530,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '它将像Deepseek-R1 / OpenAI o1一样触发推理过程。将代理搜索过程集成到推理工作流中，允许模型本身在遇到不确定信息时动态地检索外部知识。',
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
-      tavilyApiKeyMessage: '请输入你的 Tavily Api Key',
+      tavilyApiKeyMessage: '请输入你的 Tavily API Key',
       tavilyApiKeyHelp: '如何获取？',
     },
     setting: {

@@ -3,7 +3,11 @@ sidebar_position: 2
 slug: /general_purpose_chatbot
 ---
 
-# Create a general-purpose chatbot
+# Create chatbot
+
+Create a general-purpose chatbot.
+
+---
 
 Chatbot is one of the most common AI scenarios. However, effectively understanding user queries and responding appropriately remains a challenge. RAGFlow's general-purpose chatbot agent is our attempt to tackle this longstanding issue.  
 

@@ -3,7 +3,7 @@ sidebar_position: 1
 slug: /start_chat
 ---
 
-# Chat
+# Start AI chat
 
 Initiate an AI-powered chat with a configured chat assistant.
 

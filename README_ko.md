@@ -147,6 +147,10 @@
 
 3. 미리 빌드된 Docker 이미지를 생성하고 서버를 시작하세요:
 
+> [!CAUTION]
+> 모든 Docker 이미지는 x86 플랫폼을 위해 빌드되었습니다. 우리는 현재 ARM64 플랫폼을 위한 Docker 이미지를 제공하지 않습니다.
+> ARM64 플랫폼을 사용 중이라면, [시스템과 호환되는 Docker 이미지를 빌드하려면 이 가이드를 사용해 주세요](https://ragflow.io/docs/dev/build_docker_image).
+
    > 아래 명령어는 RAGFlow Docker 이미지의 v0.17.0-slim 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.17.0-slim과 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오. 예를 들어, 전체 버전인 v0.17.0을 다운로드하려면 RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.0로 설정합니다.
 
    ```bash
@@ -161,7 +165,7 @@
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
-4. 서버가 시작된 후 서버 상태를 확인하세요:
+1. 서버가 시작된 후 서버 상태를 확인하세요:
 
    ```bash
    $ docker logs -f ragflow-server
@@ -181,9 +185,9 @@
 
    > 만약 확인 단계를 건너뛰고 바로 RAGFlow에 로그인하면, RAGFlow가 완전히 초기화되지 않았기 때문에 브라우저에서 `network anormal` 오류가 발생할 수 있습니다.
 
-5. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
+2. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
    > 기본 설정을 사용할 경우, `http://IP_OF_YOUR_MACHINE`만 입력하면 됩니다 (포트 번호는 제외). 기본 HTTP 서비스 포트 `80`은 기본 구성으로 사용할 때 생략할 수 있습니다.
-6. [service_conf.yaml.template](./docker/service_conf.yaml.template) 파일에서 원하는 LLM 팩토리를 `user_default_llm`에 선택하고, `API_KEY` 필드를 해당 API 키로 업데이트하세요.
+3. [service_conf.yaml.template](./docker/service_conf.yaml.template) 파일에서 원하는 LLM 팩토리를 `user_default_llm`에 선택하고, `API_KEY` 필드를 해당 API 키로 업데이트하세요.
 
    > 자세한 내용은 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)를 참조하세요.
 

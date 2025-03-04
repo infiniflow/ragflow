@@ -134,7 +134,7 @@ As of RAGFlow v0.17.0, the search feature is still in a rudimentary form, suppor
 
 ## Delete knowledge base
 
-You are allowed to delete a knowledge base. Hover your mouse over the three dot of the intended knowledge base card and the **Delete** option appears. Once you delete a knowledge base, the associated folder under **root/.knowledge** directory is AUTOMATICALLY REMOVED. The consequence is: 
+You are allowed to delete a knowledge base. Hover your mouse over the three dot of the intended knowledge base card and the **Delete** option appears. Once you delete a knowledge base, the associated folder under **root/.knowledge** directory is AUTOMATICALLY REMOVED. The consequence is:
 
 - The files uploaded directly to the knowledge base are gone;  
 - The file references, which you created from within **File Management**, are gone, but the associated files still exist in **File Management**. 

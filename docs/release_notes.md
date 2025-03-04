@@ -7,6 +7,46 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.17.0
+
+Released on March 3, 2025.
+
+### New features
+
+1. AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt Engine** tab of your chat assistant dialogue.
+2. AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant Setting** tab of your chat assistant dialogue.
+3. AI chat: Supports initiating a chat without specifying knowledge bases.
+4. AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
+5. Dataset: Adds a **Layout recognition & OCR** dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLR (Document Layout Recognition), OCR (Optimal Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options.
+6. Agent component: **(x)** or a forward slash `/` can be used to insert available keys (variables) in the system prompt field of the **Generate** or **Template** component.
+7. Object storage: Supports using Aliyun OSS (Object Storage Service) as a file storage option.
+8. Models: Updates the supported model list for Tongyi-Qianwen, adding DeepSeek-specific models; adds ModelScope as a model provider.
+9. APIs: Document metadata can be updated through an API.
+
+The following diagram illustrates the workflow of RAGFlow's Deep Research:
+
+![Image](https://github.com/user-attachments/assets/f65d4759-4f09-4d9d-9549-c0e1fe907525)
+
+The following is a screenshot of a conversation that integrates Deep Research:
+
+![Image](https://github.com/user-attachments/assets/165b88ff-1f5d-4fb8-90e2-c836b25e32e9)
+
+### Related APIs
+
+#### HTTP APIs
+
+Adds a body parameter `"meta_fields"` to the [Update document](./references/http_api_reference.md#update-document) method.
+
+#### Python APIs
+
+Adds a key option `"meta_fields"` to the [Update document](./references/python_api_reference.md#update-document) method.
+
+### Documentation
+
+#### Added documents
+
+[Run retrieval test](./guides/dataset/run_retrieval_test.md)
+
 ## v0.16.0
 
 Released on February 6, 2025.
