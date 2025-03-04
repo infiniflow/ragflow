@@ -166,6 +166,10 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3.  Inicie o servidor usando as imagens Docker pré-compiladas:
 
+> [!CAUTION]
+> Todas as imagens Docker são construídas para plataformas x86. Atualmente, não oferecemos imagens Docker para ARM64.
+> Se você estiver usando uma plataforma ARM64, por favor, utilize [este guia](https://ragflow.io/docs/dev/build_docker_image) para construir uma imagem Docker compatível com o seu sistema.
+
     > O comando abaixo baixa a edição `v0.17.0-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.17.0-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.0` para a edição completa `v0.17.0`.
 
     ```bash

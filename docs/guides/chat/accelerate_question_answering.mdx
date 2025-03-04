@@ -3,10 +3,10 @@ sidebar_position: 2
 slug: /accelerate_question_answering
 ---
 
-# Accelerate question answering
+# Accelerate answering
 import APITable from '@site/src/components/APITable';
 
-A checklist to speed up document parsing and question answering.
+A checklist to speed up question answering.
 
 ---
 
@@ -23,18 +23,18 @@ Please note that some of your settings may consume a significant amount of time.
 <APITable>
 ```
 
-| Item name         | Description                                                  |
-| ----------------- | ------------------------------------------------------------ |
+| Item name         | Description                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------- |
 | Total             | Total time spent on this conversation round, including chunk retrieval and answer generation. |
-| Check LLM         | Time to validate the specified LLM.                          |
-| Create retriever  | Time to create a chunk retriever.                            |
-| Bind embedding    | Time to initialize an embedding model instance.              |
-| Bind LLM          | Time to initialize an LLM instance.                           |
-| Tune question     | Time to optimize the user query using the context of the mult-turn conversation. |
-| Bind reranker     | Time to initialize an reranker model instance for chunk retrieval. |
-| Generate keywords | Time to extract keywords from the user query.                |
-| Retrieval         | Time to retrieve the chunks.                                 |
-| Generate answer   | Time to generate the answer.                                 |
+| Check LLM         | Time to validate the specified LLM.                                                           |
+| Create retriever  | Time to create a chunk retriever.                                                             |
+| Bind embedding    | Time to initialize an embedding model instance.                                               |
+| Bind LLM          | Time to initialize an LLM instance.                                                           |
+| Tune question     | Time to optimize the user query using the context of the mult-turn conversation.              |
+| Bind reranker     | Time to initialize an reranker model instance for chunk retrieval.                            |
+| Generate keywords | Time to extract keywords from the user query.                                                 |
+| Retrieval         | Time to retrieve the chunks.                                                                  |
+| Generate answer   | Time to generate the answer.                                                                  |
 
 ```mdx-code-block
 </APITable>

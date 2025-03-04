@@ -3,7 +3,7 @@ sidebar_position: 3
 slug: /embed_agent_into_webpage
 ---
 
-# Embed agent into a webpage
+# Embed agent into webpage
 
 You can use iframe to embed an agent into a third-party webpage.
 
