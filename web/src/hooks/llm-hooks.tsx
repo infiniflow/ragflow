@@ -198,7 +198,7 @@ export const useSelectLlmList = () => {
       name: key,
       logo: factoryList.find((x) => x.name === key)?.logo ?? '',
       ...value,
-      llm: value.llm.map((x) => ({ ...x, name: getRealModelName(x.name) })),
+      llm: value.llm.map((x) => ({ ...x, name: x.name })),
     }));
   }, [myLlmList, factoryList]);
 
