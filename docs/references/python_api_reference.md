@@ -313,9 +313,6 @@ A dictionary representing the attributes to update, with the following keys:
   - `"picture"`: Picture
   - `"one"`: One
   - `"email"`: Email
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
-  - `"meta_fields"`: `dict[str, Any]` The meta fields of the dataset.
 
 #### Returns
 
@@ -384,6 +381,7 @@ Updates configurations for the current document.
 A dictionary representing the attributes to update, with the following keys:
 
 - `"display_name"`: `str` The name of the document to update.
+- `"meta_fields"`: `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: `str` The parsing method to apply to the document.
   - `"naive"`: General
   - `"manual`: Manual
