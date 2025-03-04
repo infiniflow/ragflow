@@ -708,6 +708,7 @@ export default {
       pleaseSelect: '請選擇',
       newFolder: '新建文件夾',
       uploadFile: '上傳文件',
+      parseOnCreation: '創建時解析',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
         '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
