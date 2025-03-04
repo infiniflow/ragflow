@@ -534,8 +534,8 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       reasoningTip:
         'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
       tavilyApiKeyTip:
-        'If API key is set correctly, it will utilize Tavily to do web search as a supplement to knowledge bases.',
-      tavilyApiKeyMessage: 'Please enter your Tavily Api Key',
+        'If an API key is correctly set here, Tavily-based web searches will be used to supplement knowledge base retrieval.',
+      tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       tavilyApiKeyHelp: 'How to get it?',
     },
     setting: {

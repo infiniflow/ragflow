@@ -106,7 +106,7 @@ export default {
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
-      testingDescription: '最後一步！成功後，剩下的就交給 RAGFlow 吧。',
+      testingDescription: '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
         '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。',
@@ -514,7 +514,7 @@ export default {
         '它將觸發類似Deepseek-R1/OpenAI o1的推理過程。將代理搜尋過程整合到推理工作流程中，使得模型本身能夠在遇到不確定資訊時動態地檢索外部知識。',
       tavilyApiKeyTip:
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
-      tavilyApiKeyMessage: '請輸入你的 Tavily Api Key',
+      tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
       tavilyApiKeyHelp: '如何獲取？',
     },
     setting: {

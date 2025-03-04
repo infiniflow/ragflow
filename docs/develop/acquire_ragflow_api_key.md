@@ -3,7 +3,7 @@ sidebar_position: 3
 slug: /acquire_ragflow_api_key
 ---
 
-# Acquire a RAGFlow API key
+# Acquire RAGFlow API key
 
 A key is required for the RAGFlow server to authenticate your requests via HTTP or a Python API. This documents provides instructions on obtaining a RAGFlow API key.
 

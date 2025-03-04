@@ -3,11 +3,11 @@ sidebar_position: 2
 slug: /launch_ragflow_from_source
 ---
 
-# Launch a RAGFlow Service from Source
+# Launch RAGFlow service from source
 
 A guide explaining how to set up a RAGFlow service from its source code. By following this guide, you'll be able to debug using the source code.
 
-## Target Audience
+## Target audience
 
 Developers who have added new features or modified existing code and wish to debug using the source code, *provided that* their machine has the target deployment environment set up.
 
@@ -22,11 +22,11 @@ Developers who have added new features or modified existing code and wish to deb
 If you have not installed Docker on your local machine (Windows, Mac, or Linux), see the [Install Docker Engine](https://docs.docker.com/engine/install/) guide.
 :::
 
-## Launch the Service from Source
+## Launch a service from source
 
-To launch the RAGFlow service from source code:
+To launch a RAGFlow service from source code:
 
-### Clone the RAGFlow Repository
+### Clone the RAGFlow repository
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -52,7 +52,7 @@ cd ragflow/
    ```
    *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 
-### Launch Third-party Services
+### Launch third-party services
 
 The following command launches the 'base' services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
 
@@ -70,7 +70,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 
 2. In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 
-### Launch the RAGFlow Backend Service
+### Launch the RAGFlow backend service
 
 1. Comment out the `nginx` line in **docker/entrypoint.sh**.
 

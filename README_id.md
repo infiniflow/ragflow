@@ -166,6 +166,10 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3. Bangun image Docker pre-built dan jalankan server:
 
+> [!CAUTION]
+> Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
+> Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
+
    > Perintah di bawah ini mengunduh edisi v0.17.0-slim dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.17.0-slim, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server. Misalnya, atur RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.0 untuk edisi lengkap v0.17.0.
 
    ```bash
@@ -178,9 +182,9 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    | v0.17.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
    | v0.17.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
+   | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 
-4. Periksa status server setelah server aktif dan berjalan:
+1. Periksa status server setelah server aktif dan berjalan:
 
    ```bash
    $ docker logs -f ragflow-server
@@ -202,10 +206,10 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    > Jika Anda melewatkan langkah ini dan langsung login ke RAGFlow, browser Anda mungkin menampilkan error `network anormal`
    > karena RAGFlow mungkin belum sepenuhnya siap.
 
-5. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
+2. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
    > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena
    > port HTTP default `80` bisa dihilangkan saat menggunakan konfigurasi default.
-6. Dalam [service_conf.yaml.template](./docker/service_conf.yaml.template), pilih LLM factory yang diinginkan di `user_default_llm` dan perbarui
+3. Dalam [service_conf.yaml.template](./docker/service_conf.yaml.template), pilih LLM factory yang diinginkan di `user_default_llm` dan perbarui
    bidang `API_KEY` dengan kunci API yang sesuai.
 
    > Lihat [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) untuk informasi lebih lanjut.
