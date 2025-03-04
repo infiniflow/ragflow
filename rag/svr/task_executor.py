@@ -297,7 +297,7 @@ async def build_chunks(task, progress_callback):
             return
         async with trio.open_nursery() as nursery:
             for d in docs:
-                nursery.start_soon(doc_keyword_extraction, chat_mdl, d, task["parser_config"]["auto_keywords"])
+                nursery.start_soon(lambda: doc_keyword_extraction(chat_mdl, d, task["parser_config"]["auto_keywords"]))
         progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["parser_config"].get("auto_questions", 0):
@@ -316,7 +316,7 @@ async def build_chunks(task, progress_callback):
                 d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
         async with trio.open_nursery() as nursery:
             for d in docs:
-                nursery.start_soon(doc_question_proposal, chat_mdl, d, task["parser_config"]["auto_questions"])
+                nursery.start_soon(lambda: doc_question_proposal(chat_mdl, d, task["parser_config"]["auto_questions"]))
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
@@ -356,7 +356,7 @@ async def build_chunks(task, progress_callback):
                 d[TAG_FLD] = json.loads(cached)
         async with trio.open_nursery() as nursery:
             for d in docs_to_tag:
-                nursery.start_soon(doc_content_tagging, chat_mdl, d, topn_tags)
+                nursery.start_soon(lambda: doc_content_tagging(chat_mdl, d, topn_tags))
         progress_callback(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     return docs
