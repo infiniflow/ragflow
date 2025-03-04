@@ -59,8 +59,13 @@ class Docx(DocxParser):
         except Exception:
             return None
 
-    def __clean(self, line):
+    def __clean(self, line, style=""):
         line = re.sub(r"\u3000", " ", line).strip()
+        if style.find("Head") >= 0:
+            try:
+                return "".join(["#" for _ in range(int(style.split(" ")[-1]))]) + " " + line + "\n"
+            except Exception:
+                pass
         return line
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000):
@@ -73,6 +78,9 @@ class Docx(DocxParser):
             if pn > to_page:
                 break
             if from_page <= pn < to_page:
+                style = p.style.name if p.style else ""
+                if all([r.bold for r in p.runs]) and style.find("Head") < 0:
+                    style = "Heading 3"
                 if p.text.strip():
                     if p.style and p.style.name == 'Caption':
                         former_image = None
@@ -81,14 +89,14 @@ class Docx(DocxParser):
                         elif last_image:
                             former_image = last_image
                             last_image = None
-                        lines.append((self.__clean(p.text), [former_image], p.style.name))
+                        lines.append((self.__clean(p.text, style), [former_image], style))
                     else:
                         current_image = self.get_picture(self.doc, p)
                         image_list = [current_image]
                         if last_image:
                             image_list.insert(0, last_image)
                             last_image = None
-                        lines.append((self.__clean(p.text), image_list, p.style.name if p.style else ""))
+                        lines.append((self.__clean(p.text, style), image_list, style))
                 else:
                     if current_image := self.get_picture(self.doc, p):
                         if lines:

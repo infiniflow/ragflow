@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 import logging
+import time
+
 import xxhash
 import json
 import random
@@ -383,9 +385,9 @@ class DocumentService(CommonService):
     def update_progress(cls):
         MSG = {
             "raptor": "Start RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval).",
-            "graphrag": "Entities",
-            "graph_resolution": "Resolution",
-            "graph_community": "Communities"
+            "graphrag": "Entity extraction started.",
+            "graph_resolution": "Entity resolution started",
+            "graph_community": "Communities reports started"
         }
         docs = cls.get_unfinished_docs()
         for d in docs:
@@ -416,19 +418,23 @@ class DocumentService(CommonService):
                     if d["parser_config"].get("raptor", {}).get("use_raptor") and m.find(MSG["raptor"]) < 0:
                         queue_raptor_o_graphrag_tasks(d, "raptor", MSG["raptor"])
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
+                        msg.append(MSG["raptor"])
                     elif d["parser_config"].get("graphrag", {}).get("use_graphrag") and m.find(MSG["graphrag"]) < 0:
                         queue_raptor_o_graphrag_tasks(d, "graphrag", MSG["graphrag"])
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
+                        msg.append(MSG["graphrag"])
                     elif d["parser_config"].get("graphrag", {}).get("use_graphrag") \
                         and d["parser_config"].get("graphrag", {}).get("resolution") \
                         and m.find(MSG["graph_resolution"]) < 0:
                         queue_raptor_o_graphrag_tasks(d, "graph_resolution", MSG["graph_resolution"])
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
+                        msg.append(MSG["graph_resolution"])
                     elif d["parser_config"].get("graphrag", {}).get("use_graphrag") \
                         and d["parser_config"].get("graphrag", {}).get("community") \
                         and m.find(MSG["graph_community"]) < 0:
                         queue_raptor_o_graphrag_tasks(d, "graph_community", MSG["graph_community"])
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
+                        msg.append(MSG["graph_community"])
                     else:
                         status = TaskStatus.DONE.value
 
@@ -443,6 +449,7 @@ class DocumentService(CommonService):
                 if msg:
                     info["progress_msg"] = msg
                 cls.update_by_id(d["id"], info)
+                time.sleep(1)
             except Exception as e:
                 if str(e).find("'0'") < 0:
                     logging.exception("fetch task exception")

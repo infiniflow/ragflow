@@ -257,7 +257,7 @@ def tokenize(d, t, eng):
 def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
     res = []
     # wrap up as es documents
-    for ck in chunks:
+    for ii, ck in enumerate(chunks):
         if len(ck.strip()) == 0:
             continue
         logging.debug("-- {}".format(ck))
@@ -269,6 +269,8 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
                 ck = pdf_parser.remove_tag(ck)
             except NotImplementedError:
                 pass
+        else:
+            add_positions(d, [(0, 0, 0, ii, 0)])
         tokenize(d, ck, eng)
         res.append(d)
     return res
@@ -277,13 +279,14 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
 def tokenize_chunks_docx(chunks, doc, eng, images):
     res = []
     # wrap up as es documents
-    for ck, image in zip(chunks, images):
+    for ii, (ck, image) in enumerate(zip(chunks, images)):
         if len(ck.strip()) == 0:
             continue
         logging.debug("-- {}".format(ck))
         d = copy.deepcopy(doc)
         d["image"] = image
         tokenize(d, ck, eng)
+        add_positions(d, [(0, 0, 0, ii, 0)])
         res.append(d)
     return res
 
@@ -540,7 +543,10 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
 
 def docx_question_level(p, bull=-1):
     txt = re.sub(r"\u3000", " ", p.text).strip()
-    if p.style.name.startswith('Heading'):
+    style = p.style.name if p.style else ""
+    if all([r.bold for r in p.runs]) and style.find("Head") < 0:
+        style = "Heading 3"
+    if style.startswith('Heading'):
         return int(p.style.name.split(' ')[-1]), txt
     else:
         if bull < 0:
