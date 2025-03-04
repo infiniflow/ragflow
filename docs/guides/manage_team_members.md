@@ -3,7 +3,7 @@ sidebar_position: 4
 slug: /manage_team_members
 ---
 
-# Manage team members
+# Team
 
 Invite or remove team members, join or leave a team.
 

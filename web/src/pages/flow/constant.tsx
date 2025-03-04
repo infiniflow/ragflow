@@ -606,6 +606,7 @@ export const initialInvokeValues = {
 }`,
   proxy: 'http://',
   clean_html: false,
+  datatype: 'json',
 };
 
 export const initialTemplateValues = {

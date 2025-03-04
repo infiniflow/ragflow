@@ -2,7 +2,7 @@ import KnowledgeBaseItem from '@/components/knowledge-base-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
 import { PlusOutlined } from '@ant-design/icons';
-import { Form, Input, message, Select, Switch, Upload } from 'antd';
+import { Form, Input, message, Select, Switch, Typography, Upload } from 'antd';
 import classNames from 'classnames';
 import { useCallback } from 'react';
 import { ISegmentedContentProps } from '../interface';
@@ -146,6 +146,16 @@ const AssistantSetting = ({
         initialValue={false}
       >
         <Switch onChange={handleTtsChange} />
+      </Form.Item>
+      <Form.Item label={'Tavily API Key'} tooltip={t('tavilyApiKeyTip')}>
+        <div className="flex flex-col gap-1">
+          <Form.Item name={['prompt_config', 'tavily_api_key']} noStyle>
+            <Input.Password placeholder={t('tavilyApiKeyMessage')} />
+          </Form.Item>
+          <Typography.Link href="https://app.tavily.com/home" target={'_blank'}>
+            {t('tavilyApiKeyHelp')}
+          </Typography.Link>
+        </div>
       </Form.Item>
       <KnowledgeBaseItem
         required={false}

@@ -49,14 +49,14 @@ export default function Agent() {
     hideFileUploadModal,
   } = useHandleExportOrImportJsonFile();
 
-  useFetchDataOnMount();
+  const { flowDetail } = useFetchDataOnMount();
 
   return (
     <section>
-      <PageHeader back={navigateToAgentList} title="Agent 01">
+      <PageHeader back={navigateToAgentList} title={flowDetail.title}>
         <div className="flex items-center gap-2">
           <DropdownMenu>
-            <DropdownMenuTrigger>
+            <DropdownMenuTrigger asChild>
               <Button variant={'icon'} size={'icon'}>
                 <EllipsisVertical />
               </Button>

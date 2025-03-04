@@ -317,6 +317,13 @@
             "llm": []
         },
         {
+            "name": "VLLM",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "Moonshot",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING",
@@ -2285,11 +2292,83 @@
         {
             "name": "novita.ai",
             "logo": "",
-            "tags": "LLM",
+            "tags": "LLM,IMAGE2TEXT",
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "meta-llama/llama-3-8b-instruct",
+                    "llm_name": "deepseek/deepseek-r1",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek/deepseek_v3",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek/deepseek-r1-distill-llama-70b",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek/deepseek-r1-distill-qwen-32b",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek/deepseek-r1-distill-qwen-14b",
+                    "tags": "LLM,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "deepseek/deepseek-r1-distill-llama-8b",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.3-70b-instruct",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.2-11b-vision-instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.2-3b-instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.2-1b-instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.1-70b-instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.1-8b-instruct",
+                    "tags": "LLM,CHAT,16k",
+                    "max_tokens": 16384,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.1-8b-instruct-bf16",
                     "tags": "LLM,CHAT,8k",
                     "max_tokens": 8192,
                     "model_type": "chat"
@@ -2301,57 +2380,33 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "meta-llama/llama-3-8b-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "qwen/qwen-2.5-72b-instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "qwen/qwen-2-vl-72b-instruct",
+                    "tags": "LLM,IMAGE2TEXT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "qwen/qwen-2-7b-instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "mistralai/mistral-nemo",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "microsoft/wizardlm-2-7b",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "openchat/openchat-7b",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3.1-8b-instruct",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3.1-70b-instruct",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta-llama/llama-3.1-405b-instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "google/gemma-2-9b-it",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "jondurbin/airoboros-l2-70b",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "nousresearch/hermes-2-pro-llama-3-8b",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
                     "model_type": "chat"
                 },
                 {
@@ -2361,19 +2416,43 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "cognitivecomputations/dolphin-mixtral-8x22b",
-                    "tags": "LLM,CHAT,15k",
-                    "max_tokens": 16000,
+                    "llm_name": "Sao10K/L3-8B-Stheno-v3.2",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
                     "model_type": "chat"
                 },
                 {
                     "llm_name": "sao10k/l3-70b-euryale-v2.1",
-                    "tags": "LLM,CHAT,15k",
-                    "max_tokens": 16000,
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "sophosympatheia/midnight-rose-70b",
+                    "llm_name": "sao10k/l3-8b-lunaris",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "sao10k/l31-70b-euryale-v2.2",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "nousresearch/hermes-2-pro-llama-3-8b",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "nousresearch/nous-hermes-llama2-13b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "openchat/openchat-7b",
                     "tags": "LLM,CHAT,4k",
                     "max_tokens": 4096,
                     "model_type": "chat"
@@ -2385,19 +2464,25 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "nousresearch/nous-hermes-llama2-13b",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
+                    "llm_name": "microsoft/wizardlm-2-8x22b",
+                    "tags": "LLM,CHAT,65k",
+                    "max_tokens": 65535,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "Nous-Hermes-2-Mixtral-8x7B-DPO",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32768,
+                    "llm_name": "google/gemma-2-9b-it",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "lzlv_70b",
+                    "llm_name": "cognitivecomputations/dolphin-mixtral-8x22b",
+                    "tags": "LLM,CHAT,16k",
+                    "max_tokens": 16000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "jondurbin/airoboros-l2-70b",
                     "tags": "LLM,CHAT,4k",
                     "max_tokens": 4096,
                     "model_type": "chat"
@@ -2409,9 +2494,9 @@
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "microsoft/wizardlm-2-8x22b",
-                    "tags": "LLM,CHAT,64k",
-                    "max_tokens": 65535,
+                    "llm_name": "sophosympatheia/midnight-rose-70b",
+                    "tags": "LLM,CHAT,4k",
+                    "max_tokens": 4096,
                     "model_type": "chat"
                 }
             ]

@@ -18,6 +18,8 @@ import logging
 import os
 import random
 from timeit import default_timer as timer
+import sys
+import threading
 
 import xgboost as xgb
 from io import BytesIO
@@ -33,6 +35,10 @@ from deepdoc.vision import OCR, Recognizer, LayoutRecognizer, TableStructureReco
 from rag.nlp import rag_tokenizer
 from copy import deepcopy
 from huggingface_hub import snapshot_download
+
+LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
+if LOCK_KEY_pdfplumber not in sys.modules:
+    sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
 class RAGFlowPdfParser:
     def __init__(self):
@@ -948,9 +954,12 @@ class RAGFlowPdfParser:
     @staticmethod
     def total_page_number(fnm, binary=None):
         try:
-            pdf = pdfplumber.open(
-                fnm) if not binary else pdfplumber.open(BytesIO(binary))
-            return len(pdf.pages)
+            with sys.modules[LOCK_KEY_pdfplumber]:
+                pdf = pdfplumber.open(
+                    fnm) if not binary else pdfplumber.open(BytesIO(binary))
+            total_page = len(pdf.pages)
+            pdf.close()
+            return total_page 
         except Exception:
             logging.exception("total_page_number")
 
@@ -966,17 +975,18 @@ class RAGFlowPdfParser:
         self.page_from = page_from
         start = timer()
         try:
-            self.pdf = pdfplumber.open(fnm) if isinstance(
-                fnm, str) else pdfplumber.open(BytesIO(fnm))
-            self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
-                                enumerate(self.pdf.pages[page_from:page_to])]
-            try:
-                self.page_chars = [[c for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
-            except Exception as e:
-                logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
-                self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
-                
-            self.total_page = len(self.pdf.pages)
+            with sys.modules[LOCK_KEY_pdfplumber]:
+                self.pdf = pdfplumber.open(fnm) if isinstance(
+                    fnm, str) else pdfplumber.open(BytesIO(fnm))
+                self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
+                                    enumerate(self.pdf.pages[page_from:page_to])]
+                try:
+                    self.page_chars = [[c for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
+                except Exception as e:
+                    logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
+                    self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
+                    
+                self.total_page = len(self.pdf.pages)
         except Exception:
             logging.exception("RAGFlowPdfParser __images__")
         logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
@@ -996,8 +1006,11 @@ class RAGFlowPdfParser:
             dfs(outlines, 0)
         except Exception as e:
             logging.warning(f"Outlines exception: {e}")
+        finally:
+            self.pdf.close()
         if not self.outlines:
             logging.warning("Miss outlines")
+        
 
         logging.debug("Images converted.")
         self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(

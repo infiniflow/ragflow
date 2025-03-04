@@ -16,7 +16,6 @@
 import pathlib
 import datetime
 
-from api.db.services.dialog_service import keyword_extraction, label_question
 from rag.app.qa import rmPrefix, beAdoc
 from rag.nlp import rag_tokenizer
 from api.db import LLMType, ParserType
@@ -39,6 +38,8 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import construct_json_result, get_parser_config
 from rag.nlp import search
+from rag.prompts import keyword_extraction
+from rag.app.tag import label_question
 from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -476,10 +477,12 @@ def list_docs(dataset_id, tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
     id = request.args.get("id")
     name = request.args.get("name")
-    if not DocumentService.query(id=id, kb_id=dataset_id):
+
+    if id and not DocumentService.query(id=id, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {id}.")
-    if not DocumentService.query(name=name, kb_id=dataset_id):
+    if name and not DocumentService.query(name=name, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {name}.")
+
     page = int(request.args.get("page", 1))
     keywords = request.args.get("keywords", "")
     page_size = int(request.args.get("page_size", 30))
@@ -733,7 +736,7 @@ def stop_parsing(tenant_id, dataset_id):
             )
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
-        settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
+        settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
     return get_result()
 
 

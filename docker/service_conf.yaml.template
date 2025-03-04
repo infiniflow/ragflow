@@ -37,6 +37,13 @@ redis:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
 #   region: 'region'
+# oss:
+#   access_key: '${ACCESS_KEY}'
+#   secret_key: '${SECRET_KEY}'
+#   endpoint_url: '${ENDPOINT}'
+#   region: '${REGION}'
+#   bucket: '${BUCKET}'
+#   prefix_path: '${OSS_PREFIX_PATH}'
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'

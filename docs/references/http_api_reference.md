@@ -5,9 +5,157 @@ slug: /http_api_reference
 
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/models/llm_api_key_setup.md).
 
 ---
+
+## OpenAI-Compatible API
+
+---
+
+### Create chat completion
+
+**POST** `/api/v1/chats_openai/{chat_id}/chat/completions`
+
+Creates a model response for a given chat conversation.
+
+This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chats_openai/{chat_id}/chat/completions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"model"`: `string`
+  - `"messages"`: `object list`
+  - `"stream"`: `boolean`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chats_openai/{chat_id}/chat/completions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+        "model": "model",
+        "messages": [{"role": "user", "content": "Say this is a test!"}],
+        "stream": true
+      }'
+```
+
+##### Request Parameters
+
+- `model` (*Body parameter*) `string`, *Required*
+  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+
+- `messages` (*Body parameter*) `list[object]`, *Required*
+  A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
+
+- `stream` (*Body parameter*) `boolean`
+  Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+#### Response
+
+Stream:
+
+```json
+{
+    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "choices": [
+        {
+            "delta": {
+                "content": "This is a test. If you have any specific questions or need information, feel",
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            },
+            "finish_reason": null,
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "created": 1740543996,
+    "model": "model",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "",
+    "usage": null
+}
+// omit duplicated information
+{"choices":[{"delta":{"content":" free to ask, and I will do my best to provide an answer based on","role":"assistant"}}]}
+{"choices":[{"delta":{"content":" the knowledge I have. If your question is unrelated to the provided knowledge base,","role":"assistant"}}]}
+{"choices":[{"delta":{"content":" I will let you know.","role":"assistant"}}]}
+// the last chunk
+{
+    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "choices": [
+        {
+            "delta": {
+                "content": null,
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            },
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "created": 1740543996,
+    "model": "model",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "",
+    "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 225,
+        "total_tokens": 243
+    }
+}
+```
+
+Non-stream:
+
+```json
+{
+    "choices":[
+        {
+            "finish_reason":"stop",
+            "index":0,
+            "logprobs":null,
+            "message":{
+                "content":"This is a test. If you have any specific questions or need information, feel free to ask, and I will do my best to provide an answer based on the knowledge I have. If your question is unrelated to the provided knowledge base, I will let you know.",
+                "role":"assistant"
+            }
+        }
+    ],
+    "created":1740543499,
+    "id":"chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "model":"model",
+    "object":"chat.completion",
+    "usage":{
+        "completion_tokens":246,
+        "completion_tokens_details":{
+            "accepted_prediction_tokens":246,
+            "reasoning_tokens":18,
+            "rejected_prediction_tokens":0
+        },
+        "prompt_tokens":18,
+        "total_tokens":264
+    }
+}
+```
+
+Failure:
+
+```json
+{
+  "code": 102,
+  "message": "The last content of this conversation is not from user."
+}
+```
 
 ## DATASET MANAGEMENT
 
@@ -486,6 +634,7 @@ Updates configurations for a specified document.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`:`string`
+  - `"meta_fields"`:`object`
   - `"chunk_method"`:`string`
   - `"parser_config"`:`object`
 
@@ -512,6 +661,7 @@ curl --request PUT \
 - `document_id`: (*Path parameter*)  
   The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
+- `"meta_fields"`: (*Body parameter*)， `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: (*Body parameter*), `string`  
   The parsing method to apply to the document:  
   - `"naive"`: General
@@ -524,8 +674,6 @@ curl --request PUT \
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
@@ -2764,6 +2912,62 @@ Failure:
 }
 ```
 
+---
+
+### Delete agent's sessions
+
+**DELETE** `/api/v1/agents/{agent_id}/sessions`
+
+Deletes sessions of a agent by ID.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/agents/{agent_id}/sessions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"ids"`: `list[string]`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '
+     {
+          "ids": ["test_1", "test_2"]
+     }'
+```
+
+##### Request Parameters
+
+- `agent_id`: (*Path parameter*)  
+  The ID of the associated agent.
+- `"ids"`: (*Body Parameter*), `list[string]`  
+  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified agent will be deleted.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "The agent doesn't own the session cbd31e52f73911ef93b232903b842af6"
+}
+```
 ---
 
 ## AGENT MANAGEMENT

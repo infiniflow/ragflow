@@ -1,6 +1,12 @@
 'use client';
 
+import { SideDown } from '@/assets/icon/Icon';
 import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import {
   FormControl,
   FormDescription,
@@ -11,7 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { CircleMinus, Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
@@ -58,13 +64,17 @@ export function DynamicVariableForm({ node }: IProps) {
               name={typeField}
               render={({ field }) => (
                 <FormItem className="w-2/5">
-                  {/* <FormLabel>City</FormLabel> */}
                   <FormDescription />
                   <FormControl>
                     <RAGFlowSelect
-                      // placeholder={t('common.pleaseSelect')}
                       {...field}
+                      placeholder={t('common.pleaseSelect')}
                       options={options}
+                      onChange={(val) => {
+                        field.onChange(val);
+                        form.resetField(`query.${index}.value`);
+                        form.resetField(`query.${index}.component_id`);
+                      }}
                     ></RAGFlowSelect>
                   </FormControl>
                   <FormMessage />
@@ -75,13 +85,12 @@ export function DynamicVariableForm({ node }: IProps) {
               control={form.control}
               name={`query.${index}.${getVariableName(typeValue)}`}
               render={({ field }) => (
-                <FormItem>
-                  {/* <FormLabel>State</FormLabel> */}
+                <FormItem className="flex-1">
                   <FormDescription />
                   <FormControl>
                     {typeValue === VariableType.Reference ? (
                       <RAGFlowSelect
-                        // placeholder={t('common.pleaseSelect')}
+                        placeholder={t('common.pleaseSelect')}
                         {...field}
                         options={valueOptions}
                       ></RAGFlowSelect>
@@ -93,17 +102,37 @@ export function DynamicVariableForm({ node }: IProps) {
                 </FormItem>
               )}
             />
-            <CircleMinus
-              className="cursor-pointer"
+            <Trash2
+              className="cursor-pointer mx-3 size-4 text-colors-text-functional-danger"
               onClick={() => remove(index)}
             />
           </div>
         );
       })}
-      <Button onClick={append} className="w-full mt-4">
+      <Button onClick={append} className="mt-4" variant={'outline'} size={'sm'}>
         <Plus />
         {t('flow.addVariable')}
       </Button>
     </div>
+  );
+}
+
+export function DynamicInputVariable({ node }: IProps) {
+  const { t } = useTranslation();
+
+  return (
+    <Collapsible defaultOpen className="group/collapsible">
+      <CollapsibleTrigger className="flex justify-between w-full pb-2">
+        <span className="font-bold text-2xl text-colors-text-neutral-strong">
+          {t('flow.input')}
+        </span>
+        <Button variant={'icon'} size={'icon'}>
+          <SideDown />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <DynamicVariableForm node={node}></DynamicVariableForm>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

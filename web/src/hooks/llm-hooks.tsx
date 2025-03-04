@@ -14,7 +14,7 @@ import {
 } from '@/interfaces/request/llm';
 import userService from '@/services/user-service';
 import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/common-util';
-import { getLLMIconName } from '@/utils/llm-util';
+import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Flex, message } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
@@ -45,7 +45,7 @@ export const useSelectLlmOptions = () => {
       return {
         label: key,
         options: value.map((x) => ({
-          label: x.llm_name,
+          label: getRealModelName(x.llm_name),
           value: `${x.llm_name}@${x.fid}`,
           disabled: !x.available,
         })),
@@ -66,7 +66,7 @@ function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
           height={26}
           size={'small'}
         />
-        <span>{x.llm_name}</span>
+        <span>{getRealModelName(x.llm_name)}</span>
       </Flex>
     ),
     value: `${x.llm_name}@${x.fid}`,
@@ -198,6 +198,7 @@ export const useSelectLlmList = () => {
       name: key,
       logo: factoryList.find((x) => x.name === key)?.logo ?? '',
       ...value,
+      llm: value.llm.map((x) => ({ ...x, name: x.name })),
     }));
   }, [myLlmList, factoryList]);
 

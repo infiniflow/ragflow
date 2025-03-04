@@ -32,12 +32,9 @@ jobs:
       # https://github.com/hmarr/debug-action
       #- uses: hmarr/debug-action@v2
 
-      - name: Show PR labels
+      - name: Show who triggered this workflow
         run: |
           echo "Workflow triggered by ${{ github.event_name }}"
-          if [[ ${{ github.event_name }} == 'pull_request' ]]; then
-            echo "PR labels: ${{ join(github.event.pull_request.labels.*.name, ', ') }}"
-          fi
 
       - name: Ensure workspace ownership
         run: echo "chown -R $USER $GITHUB_WORKSPACE" && sudo chown -R $USER $GITHUB_WORKSPACE
@@ -68,7 +65,7 @@ jobs:
 
       - name: Start ragflow:nightly-slim
         run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
+          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Stop ragflow:nightly-slim
@@ -78,7 +75,7 @@ jobs:
 
       - name: Start ragflow:nightly
         run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
+          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Run sdk tests against Elasticsearch
