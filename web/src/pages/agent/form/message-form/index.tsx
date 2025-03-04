@@ -42,6 +42,7 @@ const MessageForm = ({ form }: INextOperatorForm) => {
                         <Textarea
                           {...field}
                           placeholder={t('flow.messagePlaceholder')}
+                          rows={5}
                         />
                       </FormControl>
                     </FormItem>
