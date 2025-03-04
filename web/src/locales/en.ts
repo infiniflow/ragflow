@@ -138,7 +138,7 @@ export default {
       fromMessage: 'Missing start page number',
       toPlaceholder: 'to',
       toMessage: 'Missing end page number (excluded)',
-      layoutRecognize: 'Layout recognition & OCR',
+      layoutRecognize: 'Document parser',
       layoutRecognizeTip:
         'Use visual models for layout analysis to better understand the structure of the document and effectively locate document titles, text blocks, images, and tables. If disabled, only the plain text in the PDF will be retrieved.',
       taskPageSize: 'Task page size',
@@ -195,6 +195,7 @@ export default {
       metaData: 'Meta data',
       deleteDocumentConfirmContent:
         'The document is associated with the knowledge graph. After deletion, the related node and relationship information will be deleted, but the graph will not be updated immediately. The update graph action is performed during the process of parsing the new document that carries the knowledge graph extraction task.',
+      plainText: 'Naive',
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -282,7 +283,7 @@ export default {
       </p>
       `,
       table: `<p>Supported file formats are <b>XLSX</b> and <b>CSV/TXT</b>.</p><p>
-      Here're some prerequisites and tips:
+      Here are some prerequisites and tips:
       <ul>
     <li>For CSV or TXT file, the delimiter between columns must be <em><b>TAB</b></em>.</li>
     <li>The first row must be column headers.</li>
@@ -313,14 +314,14 @@ export default {
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number', at which point a chunk is created.</p>
 <p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
-      tag: `<p>Knowlege base using 'Tag' as a chunking method is supposed to be used by other knowledge bases to add tags to their chunks, queries to which will also be with tags too.</p>
-<p>Knowlege base using 'Tag' as a chunking method is <b>NOT</b> supposed to be involved in RAG procedure.</p>
+      tag: `<p>Knowledge base using 'Tag' as a chunking method is supposed to be used by other knowledge bases to add tags to their chunks, queries to which will also be with tags too.</p>
+<p>Knowledge base using 'Tag' as a chunking method is <b>NOT</b> supposed to be involved in RAG procedure.</p>
 <p>The chunks in this knowledge base are examples of tags, which demonstrate the entire tag set and the relevance between chunk and tags.</p>
 
 <p>This chunk method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.</p>
 <p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for content and the other for tags, with the content column preceding the tags column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
 <p>If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate content and tags.</p>
-<p>In tags column, there're English <b>comma</b> between tags.</p>
+<p>In tags column, there are English <b>comma</b> between tags.</p>
 <i>Lines of texts that fail to follow the above rules will be ignored, and each  pair will be considered a distinct chunk.</i>
 `,
       useRaptor: 'Use RAPTOR to enhance retrieval',
@@ -359,7 +360,7 @@ The above is the content you need to summarize.`,
 This auto-tag feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
 <p>Difference between auto-tag and auto-keyword:</p>
 <ul>
-  <li>A tag knowledge base is a user-defined close set, whereas keywords extraced by the LLM can be regarded as an open set.</li>
+  <li>A tag knowledge base is a user-defined close set, whereas keywords extracted by the LLM can be regarded as an open set.</li>
   <li>You must upload tag sets in specified formats before running the auto-tag feature.</li>
   <li>The auto-keyword feature is dependent on the LLM and consumes a significant number of tokens.</li>
 </ul>
@@ -398,7 +399,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       graph: 'Knowledge graph',
       mind: 'Mind map',
       question: 'Question',
-      questionTip: `If there're given questions, the embedding of the chunk will be based on them.`,
+      questionTip: `If there are given questions, the embedding of the chunk will be based on them.`,
     },
     chat: {
       newConversation: 'New conversation',
@@ -523,7 +524,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       useKnowledgeGraphTip:
         'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
       keyword: 'Keyword analysis',
-      keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphesize during the relevance omputation.`,
+      keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphasize during the relevance computation.`,
       languageTip:
         'Allows sentence rewriting with the specified language or defaults to the latest question if not selected.',
       avatarHidden: 'Hide avatar',

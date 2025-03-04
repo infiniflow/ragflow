@@ -3,7 +3,7 @@ sidebar_position: 5
 slug: /manage_files
 ---
 
-#  Manage files
+# Files
 
 Knowledge base, hallucination-free chat, and file management are the three pillars of RAGFlow. RAGFlow's file management allows you to upload files individually or in bulk. You can then link an uploaded file to multiple target knowledge bases. This guide showcases some basic usages of the file management feature. 
 
@@ -81,4 +81,4 @@ RAGFlow's file management allows you to download an uploaded file:
 
 ![download_file](https://github.com/infiniflow/ragflow/assets/93570324/cf3b297f-7d9b-4522-bf5f-4f45743e4ed5)
 
-> As of RAGFlow v0.16.0, bulk download is not supported, nor can you download an entire folder. 
+> As of RAGFlow v0.17.0, bulk download is not supported, nor can you download an entire folder. 

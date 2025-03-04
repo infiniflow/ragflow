@@ -136,7 +136,7 @@ export default {
       fromMessage: '缺少起始页码',
       toPlaceholder: '到',
       toMessage: '缺少结束页码（不包含）',
-      layoutRecognize: '布局识别和 OCR',
+      layoutRecognize: '文档解析器',
       layoutRecognizeTip:
         '使用视觉模型进行布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果没有此功能，则只能获取 PDF 的纯文本。',
       taskPageSize: '任务页面大小',
@@ -192,6 +192,7 @@ export default {
       metaData: '元数据',
       deleteDocumentConfirmContent:
         '该文档与知识图谱相关联。删除后，相关节点和关系信息将被删除，但图不会立即更新。更新图动作是在解析承载知识图谱提取任务的新文档的过程中执行的。',
+      plainText: '简易',
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',

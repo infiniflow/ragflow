@@ -1,5 +1,5 @@
 ---
-sidebar_position: 7
+sidebar_position: 2
 slug: /deploy_local_llm
 ---
 
@@ -25,7 +25,6 @@ This user guide does not intend to cover much of the installation or configurati
 
 :::note
 - For information about downloading Ollama, see [here](https://github.com/ollama/ollama?tab=readme-ov-file#ollama).
-- For information about configuring Ollama server, see [here](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-do-i-configure-ollama-server).
 - For a complete list of supported models and variants, see the [Ollama model library](https://ollama.com/library).
 :::
 
@@ -59,20 +58,20 @@ success
 
 ### 2. Ensure Ollama is accessible
 
-If RAGFlow runs in Docker and Ollama runs on the same host machine, check if ollama is accessiable from inside the RAGFlow container:
+If RAGFlow runs in Docker and Ollama runs on the same host machine, check if ollama is accessible from inside the RAGFlow container:
 ```bash
 sudo docker exec -it ragflow-server bash
 root@8136b8c3e914:/ragflow# curl  http://host.docker.internal:11434/
 Ollama is running
 ```
 
-If RAGFlow runs from source code and Ollama runs on the same host machine, check if ollama is accessiable from RAGFlow host machine:
+If RAGFlow runs from source code and Ollama runs on the same host machine, check if ollama is accessible from RAGFlow host machine:
 ```bash
 curl  http://localhost:11434/
 Ollama is running
 ```
 
-If RAGFlow and Ollama run on different machines, check if ollama is accessiable from RAGFlow host machine:
+If RAGFlow and Ollama run on different machines, check if ollama is accessible from RAGFlow host machine:
 ```bash
 curl  http://${IP_OF_OLLAMA_MACHINE}:11434/
 Ollama is running

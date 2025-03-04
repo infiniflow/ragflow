@@ -513,6 +513,38 @@ def delete(tenant_id, chat_id):
     return get_result()
 
 
+@manager.route('/agents/<agent_id>/sessions', methods=["DELETE"])  # noqa: F821
+@token_required
+def delete_agent_session(tenant_id, agent_id):
+    req = request.json
+    cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
+    if not cvs:
+        return get_error_data_result(f"You don't own the agent {agent_id}")
+    
+    convs = API4ConversationService.query(dialog_id=agent_id)
+    if not convs:
+        return get_error_data_result(f"Agent {agent_id} has no sessions")
+
+    if not req:
+        ids = None
+    else:
+        ids = req.get("ids")
+
+    if not ids:
+        conv_list = []
+        for conv in convs:
+            conv_list.append(conv.id)
+    else:
+        conv_list = ids
+    
+    for session_id in conv_list:
+        conv = API4ConversationService.query(id=session_id, dialog_id=agent_id)
+        if not conv:
+            return get_error_data_result(f"The agent doesn't own the session ${session_id}")
+        API4ConversationService.delete_by_id(session_id)
+    return get_result()
+    
+
 @manager.route('/sessions/ask', methods=['POST'])  # noqa: F821
 @token_required
 def ask_about(tenant_id):

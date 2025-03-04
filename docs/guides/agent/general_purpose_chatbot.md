@@ -13,8 +13,8 @@ This document provides guides on creating such a chatbot using our chatbot templ
 
 ## Prerequisites
 
-1. Ensure you have properly set the LLM to use. See the guides on [Configure your API key](../llm_api_key_setup.md) or [Deploy a local LLM](../deploy_local_llm.mdx) for more information.
-2. Ensure you have a knowledge base configured and the corresponding files properly parsed. See the guide on [Configure a knowledge base](../configure_knowledge_base.md) for more information.
+1. Ensure you have properly set the LLM to use. See the guides on [Configure your API key](../models/llm_api_key_setup.md) or [Deploy a local LLM](../models/deploy_local_llm.mdx) for more information.
+2. Ensure you have a knowledge base configured and the corresponding files properly parsed. See the guide on [Configure a knowledge base](../dataset/configure_knowledge_base.md) for more information.
 3. Make sure you have read the [Introduction to Agentic RAG](./agent_introduction.md).
 
 ## Create a chatbot agent from template

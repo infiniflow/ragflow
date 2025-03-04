@@ -1,5 +1,10 @@
 import { Input } from '@/components/ui/input';
-import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
@@ -88,6 +93,7 @@ const FormSheet = ({
 
   return (
     <Sheet open={visible} modal={false}>
+      <SheetTitle className="hidden"></SheetTitle>
       <SheetContent className="bg-white top-20" closeIcon={false}>
         <SheetHeader>
           <section className="flex-col border-b pb-2">

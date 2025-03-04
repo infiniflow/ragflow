@@ -14,15 +14,14 @@
 #  limitations under the License.
 #
 import logging
-import os
 import re
-from concurrent.futures import ThreadPoolExecutor, ALL_COMPLETED, wait
 from threading import Lock
 import umap
 import numpy as np
 from sklearn.mixture import GaussianMixture
+import trio
 
-from graphrag.utils import get_llm_cache, get_embed_cache, set_embed_cache, set_llm_cache
+from graphrag.utils import get_llm_cache, get_embed_cache, set_embed_cache, set_llm_cache, chat_limiter
 from rag.utils import truncate
 
 
@@ -68,24 +67,25 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         optimal_clusters = n_clusters[np.argmin(bics)]
         return optimal_clusters
 
-    def __call__(self, chunks, random_state, callback=None):
+    async def __call__(self, chunks, random_state, callback=None):
         layers = [(0, len(chunks))]
         start, end = 0, len(chunks)
         if len(chunks) <= 1:
             return []
         chunks = [(s, a) for s, a in chunks if s and len(a) > 0]
 
-        def summarize(ck_idx, lock):
+        async def summarize(ck_idx, lock):
             nonlocal chunks
             try:
                 texts = [chunks[i][0] for i in ck_idx]
                 len_per_chunk = int((self._llm_model.max_length - self._max_token) / len(texts))
                 cluster_content = "\n".join([truncate(t, max(1, len_per_chunk)) for t in texts])
-                cnt = self._chat("You're a helpful assistant.",
-                                           [{"role": "user",
-                                             "content": self._prompt.format(cluster_content=cluster_content)}],
-                                           {"temperature": 0.3, "max_tokens": self._max_token}
-                                           )
+                async with chat_limiter:
+                    cnt = await trio.to_thread.run_sync(lambda: self._chat("You're a helpful assistant.",
+                                            [{"role": "user",
+                                                "content": self._prompt.format(cluster_content=cluster_content)}],
+                                            {"temperature": 0.3, "max_tokens": self._max_token}
+                                            ))
                 cnt = re.sub("(······\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?)", "",
                              cnt)
                 logging.debug(f"SUM: {cnt}")
@@ -97,10 +97,11 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 return e
 
         labels = []
+        lock = Lock()
         while end - start > 1:
             embeddings = [embd for _, embd in chunks[start: end]]
             if len(embeddings) == 2:
-                summarize([start, start + 1], Lock())
+                await summarize([start, start + 1], lock)
                 if callback:
                     callback(msg="Cluster one layer: {} -> {}".format(end - start, len(chunks) - end))
                 labels.extend([0, 0])
@@ -122,19 +123,14 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 probs = gm.predict_proba(reduced_embeddings)
                 lbls = [np.where(prob > self._threshold)[0] for prob in probs]
                 lbls = [lbl[0] if isinstance(lbl, np.ndarray) else lbl for lbl in lbls]
-            lock = Lock()
-            with ThreadPoolExecutor(max_workers=int(os.environ.get('GRAPH_EXTRACTOR_MAX_WORKERS', 10))) as executor:
-                threads = []
+
+            async with trio.open_nursery() as nursery:
                 for c in range(n_clusters):
                     ck_idx = [i + start for i in range(len(lbls)) if lbls[i] == c]
                     if not ck_idx:
                         continue
-                    threads.append(executor.submit(summarize, ck_idx, lock))
-                wait(threads, return_when=ALL_COMPLETED)
-                for th in threads:
-                    if isinstance(th.result(), Exception):
-                        raise th.result()
-                logging.debug(str([t.result() for t in threads]))
+                    async with chat_limiter:
+                        nursery.start_soon(lambda: summarize(ck_idx, lock))
 
             assert len(chunks) - end == n_clusters, "{} vs. {}".format(len(chunks) - end, n_clusters)
             labels.extend(lbls)
