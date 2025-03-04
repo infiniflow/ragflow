@@ -1,41 +1,33 @@
-import LLMSelect from '@/components/llm-select';
-import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
-import { useTranslate } from '@/hooks/common-hooks';
-import { Form } from 'antd';
-import { IOperatorForm } from '../../interface';
-import DynamicInputVariable from '../components/dynamic-input-variable';
+import { LargeModelFormField } from '@/components/large-model-form-field';
+import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
+import { Form } from '@/components/ui/form';
+import { INextOperatorForm } from '../../interface';
+import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 import DynamicCategorize from './dynamic-categorize';
-import { useHandleFormValuesChange } from './hooks';
 
-const CategorizeForm = ({ form, onValuesChange, node }: IOperatorForm) => {
-  const { t } = useTranslate('flow');
-  const { handleValuesChange } = useHandleFormValuesChange({
-    form,
-    nodeId: node?.id,
-    onValuesChange,
-  });
+const CategorizeForm = ({ form, node }: INextOperatorForm) => {
+  // const { handleValuesChange } = useHandleFormValuesChange({
+  //   form,
+  //   nodeId: node?.id,
+  //   onValuesChange,
+  // });
 
   return (
     <Form
-      name="basic"
-      autoComplete="off"
-      form={form}
-      onValuesChange={handleValuesChange}
-      initialValues={{ items: [{}] }}
-      layout={'vertical'}
+      // onValuesChange={handleValuesChange}
+      {...form}
     >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
-      <Form.Item
-        name={'llm_id'}
-        label={t('model', { keyPrefix: 'chat' })}
-        tooltip={t('modelTip', { keyPrefix: 'chat' })}
+      <form
+        className="space-y-6 p-5 overflow-auto max-h-[76vh]"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
       >
-        <LLMSelect></LLMSelect>
-      </Form.Item>
-      <MessageHistoryWindowSizeItem
-        initialValue={1}
-      ></MessageHistoryWindowSizeItem>
-      <DynamicCategorize nodeId={node?.id}></DynamicCategorize>
+        <DynamicInputVariable node={node}></DynamicInputVariable>
+        <LargeModelFormField></LargeModelFormField>
+        <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
+        <DynamicCategorize nodeId={node?.id}></DynamicCategorize>
+      </form>
     </Form>
   );
 };

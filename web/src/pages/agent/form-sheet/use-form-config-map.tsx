@@ -99,8 +99,15 @@ export function useFormConfigMap() {
     },
     [Operator.Categorize]: {
       component: CategorizeForm,
-      defaultValues: {},
-      schema: z.object({}),
+      defaultValues: { message_history_window_size: 1 },
+      schema: z.object({
+        message_history_window_size: z.number(),
+        items: z.array(
+          z.object({
+            name: z.string().min(1, t('flow.nameMessage')).trim(),
+          }),
+        ),
+      }),
     },
     [Operator.Message]: {
       component: MessageForm,
