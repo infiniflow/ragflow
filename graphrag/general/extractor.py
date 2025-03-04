@@ -101,7 +101,7 @@ class Extractor:
         async with trio.open_nursery() as nursery:
             for i, (cid, ck) in enumerate(chunks):
                 ck = truncate(ck, int(self._llm.max_length*0.8))
-                nursery.start_soon(self._process_single_content, (cid, ck), i, len(chunks), out_results)
+                nursery.start_soon(lambda: self._process_single_content((cid, ck), i, len(chunks), out_results))
 
         maybe_nodes = defaultdict(list)
         maybe_edges = defaultdict(list)
@@ -120,7 +120,7 @@ class Extractor:
         all_entities_data = []
         async with trio.open_nursery() as nursery:
             for en_nm, ents in maybe_nodes.items():
-                nursery.start_soon(self._merge_nodes, en_nm, ents, all_entities_data)
+                nursery.start_soon(lambda: self._merge_nodes(en_nm, ents, all_entities_data))
         now = trio.current_time()
         if callback:
             callback(msg = f"Entities merging done, {now-start_ts:.2f}s.")
@@ -130,7 +130,7 @@ class Extractor:
         all_relationships_data = []
         async with trio.open_nursery() as nursery:
             for (src, tgt), rels in maybe_edges.items():
-                nursery.start_soon(self._merge_edges, src, tgt, rels, all_relationships_data)
+                nursery.start_soon(lambda: self._merge_edges(src, tgt, rels, all_relationships_data))
         now = trio.current_time()
         if callback:
             callback(msg = f"Relationships merging done, {now-start_ts:.2f}s.")
