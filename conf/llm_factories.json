@@ -2292,7 +2292,7 @@
         {
             "name": "novita.ai",
             "logo": "",
-            "tags": "LLM",
+            "tags": "LLM,IMAGE2TEXT",
             "status": "1",
             "llm": [
                 {
@@ -2393,9 +2393,9 @@
                 },
                 {
                     "llm_name": "qwen/qwen-2-vl-72b-instruct",
-                    "tags": "LLM,CHAT,32k",
+                    "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
-                    "model_type": "chat"
+                    "model_type": "image2text"
                 },
                 {
                     "llm_name": "qwen/qwen-2-7b-instruct",
