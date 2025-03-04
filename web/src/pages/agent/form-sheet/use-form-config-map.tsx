@@ -158,8 +158,11 @@ export function useFormConfigMap() {
     },
     [Operator.PubMed]: {
       component: PubMedForm,
-      defaultValues: {},
-      schema: z.object({}),
+      defaultValues: { top_n: 10 },
+      schema: z.object({
+        top_n: z.number(),
+        email: z.string(),
+      }),
     },
     [Operator.ArXiv]: {
       component: ArXivForm,

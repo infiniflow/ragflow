@@ -1,30 +1,44 @@
-import TopNItem from '@/components/top-n-item';
+import { TopNFormField } from '@/components/top-n-item';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Input } from 'antd';
-import { IOperatorForm } from '../../interface';
-import DynamicInputVariable from '../components/dynamic-input-variable';
+import { INextOperatorForm } from '../../interface';
+import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
-const PubMedForm = ({ onValuesChange, form, node }: IOperatorForm) => {
+const PubMedForm = ({ form, node }: INextOperatorForm) => {
   const { t } = useTranslate('flow');
 
   return (
-    <Form
-      name="basic"
-      autoComplete="off"
-      form={form}
-      onValuesChange={onValuesChange}
-      layout={'vertical'}
-    >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
-      <TopNItem initialValue={10}></TopNItem>
-      <Form.Item
-        label={t('email')}
-        name={'email'}
-        tooltip={t('emailTip')}
-        rules={[{ type: 'email' }]}
+    <Form {...form}>
+      <form
+        className="space-y-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
       >
-        <Input></Input>
-      </Form.Item>
+        <DynamicInputVariable node={node}></DynamicInputVariable>
+        <TopNFormField></TopNFormField>
+        <FormField
+          control={form.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel tooltip={t('emailTip')}>{t('email')}</FormLabel>
+              <FormControl>
+                <Input {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </form>
     </Form>
   );
 };
