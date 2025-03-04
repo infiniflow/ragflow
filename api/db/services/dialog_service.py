@@ -72,7 +72,7 @@ def chat_solo(dialog, messages, stream=True):
     if prompt_config.get("tts"):
         tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])}
-                for m in messages if m["role"] != "system"]
+           for m in messages if m["role"] != "system"]
     if stream:
         last_ans = ""
         for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
@@ -81,7 +81,9 @@ def chat_solo(dialog, messages, stream=True):
             if num_tokens_from_string(delta_ans) < 16:
                 continue
             last_ans = answer
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt":"", "created_at": time.time()}
+            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
+        if delta_ans:
+            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
     else:
         answer = chat_mdl.chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         user_content = msg[-1].get("content", "[content not available]")
@@ -518,5 +520,3 @@ def ask(question, kb_ids, tenant_id):
         answer = ans
         yield {"answer": answer, "reference": {}}
     yield decorate_answer(answer)
-
-
