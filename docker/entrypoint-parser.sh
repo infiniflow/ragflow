@@ -15,8 +15,9 @@ CONSUMER_NO_BEG=$1
 CONSUMER_NO_END=$2
 
 function task_exe(){
+    JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
     while [ 1 -eq 1 ]; do
-      $PY rag/svr/task_executor.py $1;
+      LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py $1;
     done
 }
 
