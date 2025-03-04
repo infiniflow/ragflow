@@ -87,7 +87,7 @@ const FileUploadModal = ({
 }: IFileUploadModalProps) => {
   const { t } = useTranslate('fileManager');
   const [value, setValue] = useState<string | number>('local');
-  const [parseOnCreation, setParseOnCreation] = useState(true);
+  const [parseOnCreation, setParseOnCreation] = useState(false);
 
   const clearFileList = () => {
     setFileList([]);
