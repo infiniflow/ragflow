@@ -107,6 +107,9 @@
 
 ## 🎬 快速开始
 
+### 💻 AutoDL镜像快速部署
+- 一键启动[一键部署企业级RAG引擎RAGFlow](https://www.codewithgpu.com/i/infiniflow/ragflow/ragflow_easy)
+
 ### 📝 前提条件
 
 - CPU >= 4 核
