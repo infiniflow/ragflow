@@ -653,6 +653,7 @@ export default {
       newFolder: '新しいフォルダ',
       file: 'ファイル',
       uploadFile: 'ファイルをアップロード',
+      parseOnCreation: '作成時に解析',
       directory: 'ディレクトリ',
       uploadTitle: 'クリックまたはドラッグしてファイルをアップロード',
       uploadDescription:
