@@ -75,6 +75,7 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Últimas Atualizações
 
+- 28/02/2025 combinado com a pesquisa na Internet (T AVI LY), suporta pesquisas profundas para qualquer LLM.
 - 05-02-2025 Atualiza a lista de modelos de 'SILICONFLOW' e adiciona suporte para Deepseek-R1/DeepSeek-V3.
 - 26-01-2025 Otimize a extração e aplicação de gráficos de conhecimento e forneça uma variedade de opções de configuração.
 - 18-12-2024 Atualiza o modelo de Análise de Layout de Documentos no DeepDoc.
