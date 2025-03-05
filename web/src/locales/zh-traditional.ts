@@ -106,8 +106,7 @@ export default {
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
-      testingDescription:
-        '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。',
+      testingDescription: '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
         '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。',

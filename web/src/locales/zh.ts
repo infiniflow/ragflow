@@ -106,8 +106,7 @@ export default {
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
-      testingDescription:
-        '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。',
+      testingDescription: '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。',
