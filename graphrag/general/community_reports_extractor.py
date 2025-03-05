@@ -95,7 +95,12 @@ class CommunityReportsExtractor(Extractor):
                 response = re.sub(r"\{\{", "{", response)
                 response = re.sub(r"\}\}", "}", response)
                 logging.debug(response)
-                response = json.loads(response)
+                try:
+                    response = json.loads(response)
+                except json.JSONDecodeError as e:
+                    logging.error(f"Failed to parse JSON response: {e}")
+                    logging.error(f"Response content: {response}")
+                    continue
                 if not dict_has_keys_with_types(response, [
                             ("title", str),
                             ("summary", str),
