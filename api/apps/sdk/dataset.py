@@ -26,6 +26,7 @@ from api.db.services.user_service import TenantService
 from api import settings
 from api.utils import get_uuid
 from api.utils.api_utils import (
+    get_json_result,
     get_result,
     token_required,
     get_error_data_result,
@@ -533,3 +534,32 @@ def list(tenant_id):
             renamed_data[new_key] = value
         renamed_list.append(renamed_data)
     return get_result(data=renamed_list)
+
+
+@manager.route('/datasets/upload_txt', methods=['POST'])  # noqa: F821
+@token_required
+def upload_txt(tenant_id):
+    kb_id = request.form.get("kb_id")
+    if not kb_id:
+        return get_json_result(
+            data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+
+    e, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not e:
+        raise LookupError("Can't find this knowledgebase!")
+
+    filename = request.form.get("filename")
+    if not filename:
+        return get_json_result(
+            data=False, message='Lack of "filename"', code=settings.RetCode.ARGUMENT_ERROR)
+    
+    content = request.form.get("content")
+    if not content:
+        return get_json_result(
+            data=False, message='Lack of "content"', code=settings.RetCode.ARGUMENT_ERROR)
+
+    err, _ = FileService.upload_txt_document(kb, filename, content, tenant_id)
+    if err:
+        return get_json_result(
+            data=False, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
+    return get_json_result(data=True)

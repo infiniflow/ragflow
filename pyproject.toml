@@ -122,7 +122,8 @@ dependencies = [
     "pyodbc>=5.2.0,<6.0.0",
     "pyicu>=2.13.1,<3.0.0",
     "flasgger>=0.9.7.1,<0.10.0",
-    "xxhash>=3.5.0,<4.0.0"
+    "xxhash>=3.5.0,<4.0.0",
+    "restrictedPython>=7.3.0,<8.0.0"
 ]
 
 [project.optional-dependencies]

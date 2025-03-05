@@ -49,36 +49,7 @@ from api.utils.web_utils import html2pdf, is_valid_url
 from api.constants import IMG_BASE64_PREFIX
 
 
-@manager.route('/upload_txt', methods=['POST'])  # noqa: F821
-@login_required
-@validate_request("kb_id")
-@validate_request("filename")
-@validate_request("content")
-def upload_txt():
-    kb_id = request.form.get("kb_id")
-    if not kb_id:
-        return get_json_result(
-            data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
 
-    e, kb = KnowledgebaseService.get_by_id(kb_id)
-    if not e:
-        raise LookupError("Can't find this knowledgebase!")
-
-    filename = request.form.get("filename")
-    if not filename:
-        return get_json_result(
-            data=False, message='Lack of "filename"', code=settings.RetCode.ARGUMENT_ERROR)
-    
-    content = request.form.get("content")
-    if not content:
-        return get_json_result(
-            data=False, message='Lack of "content"', code=settings.RetCode.ARGUMENT_ERROR)
-
-    err, _ = FileService.upload_txt_document(kb, filename, content, current_user.id)
-    if err:
-        return get_json_result(
-            data=False, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
-    return get_json_result(data=True)
 
 @manager.route('/upload', methods=['POST'])  # noqa: F821
 @login_required

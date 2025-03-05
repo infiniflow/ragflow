@@ -24,7 +24,7 @@ const MessageHistoryWindowSizeItem = ({
       initialValue={initialValue}
       tooltip={t('flow.messageHistoryWindowSizeTip')}
     >
-      <InputNumber style={{ width: '100%' }} />
+      <InputNumber style={{ width: '10%' }} />
     </Form.Item>
   );
 };

@@ -1166,6 +1166,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       categoryName: '分类名称',
       nextStep: '下一步',
       insertVariableTip: `输入 / 插入变量`,
+      coder: '代码执行器',
+      coderDescription: '代码执行器用于执行代码片段，并将执行结果作为输出项。',
+      code: '代码',
+      codeTip: `请将执行结果放到result变量中，例如：result = 'Hello World';`,
     },
     footer: {
       profile: 'All rights reserved @ React',

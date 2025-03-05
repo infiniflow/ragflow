@@ -32,6 +32,7 @@ import styles from './index.less';
 import { RagNode } from './node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import { CoderNode } from './node/coder-node';
 import { EmailNode } from './node/email-node';
 import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
@@ -64,6 +65,7 @@ const nodeTypes: NodeTypes = {
   emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,
+  CoderNode: CoderNode,
 };
 
 const edgeTypes = {

@@ -413,6 +413,7 @@ class ComponentBase(ABC):
                                                               json.dumps(kwargs, ensure_ascii=False)))
         self._param.debug_inputs = []
         try:
+            self.prase_params()
             res = self._run(history, **kwargs)
             self.set_output(res)
         except Exception as e:
@@ -574,6 +575,9 @@ class ComponentBase(ABC):
     @staticmethod
     def be_output(v):
         return pd.DataFrame([{"content": v}])
+    
+    def prase_params(self):
+        return
 
     def get_component_name(self, cpn_id):
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()

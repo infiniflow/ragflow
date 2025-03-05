@@ -143,6 +143,7 @@ export type IEmailNode = BaseNode;
 export type IIterationNode = BaseNode;
 export type IIterationStartNode = BaseNode;
 export type IKeywordNode = BaseNode;
+export type ICoderNode = BaseNode;
 
 export type RAGFlowNodeType =
   | IBeginNode
@@ -161,7 +162,8 @@ export type RAGFlowNodeType =
   | IEmailNode
   | IIterationNode
   | IIterationStartNode
-  | IKeywordNode;
+  | IKeywordNode
+  | ICoderNode;
 
 export interface IGraph {
   nodes: RAGFlowNodeType[];

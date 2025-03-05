@@ -330,6 +330,10 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def upload_txt_document(self, kb, filename, content, user_id):
+        # 如果content是字符串，转为bytes
+        if isinstance(content, str):
+            content = content.encode('utf-8')
+
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
         self.init_knowledgebase_docs(pf_id, user_id)
@@ -350,10 +354,10 @@ class FileService(CommonService):
                     name=filename,
                     kb_id=kb.id)
             filetype = FileType.DOC.value
+            location = filename
             while STORAGE_IMPL.obj_exist(kb.id, location):
                 location += "_"
 
-            location = filename
             STORAGE_IMPL.put(kb.id, location, content)
 
             doc_id = get_uuid()
@@ -366,7 +370,7 @@ class FileService(CommonService):
                 "type": filetype,
                 "name": filename,
                 "location": location,
-                "size": content.size,
+                "size": len(content),
                 "thumbnail": None
             }
             DocumentService.insert(doc)

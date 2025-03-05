@@ -10,6 +10,7 @@ import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
 import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
 import { ReactComponent as BeginIcon } from '@/assets/svg/begin.svg';
 import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
+import { ReactComponent as CoderIcon } from '@/assets/svg/coder.svg';
 import { ReactComponent as ConcentratorIcon } from '@/assets/svg/concentrator.svg';
 import { ReactComponent as CrawlerIcon } from '@/assets/svg/crawler.svg';
 import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
@@ -103,6 +104,7 @@ export enum Operator {
   Email = 'Email',
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
+  Coder = 'Coder',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -146,6 +148,7 @@ export const operatorIconMap = {
   [Operator.Email]: EmailIcon,
   [Operator.Iteration]: IterationCcw,
   [Operator.IterationStart]: CirclePower,
+  [Operator.Coder]: CoderIcon,
 };
 
 export const operatorMap: Record<
@@ -284,6 +287,9 @@ export const operatorMap: Record<
   [Operator.Email]: { backgroundColor: '#e6f7ff' },
   [Operator.Iteration]: { backgroundColor: '#e6f7ff' },
   [Operator.IterationStart]: { backgroundColor: '#e6f7ff' },
+  [Operator.Coder]: {
+    backgroundColor: '#dee0e2',
+  },
 };
 
 export const componentMenuList = [
@@ -320,6 +326,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Iteration,
+  },
+  {
+    name: Operator.Coder,
   },
   {
     name: Operator.Note,
@@ -614,6 +623,10 @@ export const initialTemplateValues = {
   parameters: [],
 };
 
+export const initialCoderValues = {
+  coder: '',
+};
+
 export const initialEmailValues = {
   smtp_server: '',
   smtp_port: 587,
@@ -712,6 +725,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Email]: [Operator.Begin],
   [Operator.Iteration]: [Operator.Begin],
   [Operator.IterationStart]: [Operator.Begin],
+  [Operator.Coder]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -724,6 +738,7 @@ export const NodeMap = {
   [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.KeywordExtract]: 'keywordNode',
+  [Operator.Coder]: 'CoderNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Baidu]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
@@ -2968,4 +2983,5 @@ export const NoDebugOperatorsList = [
   Operator.RewriteQuestion,
   Operator.Switch,
   Operator.Iteration,
+  Operator.Coder,
 ];

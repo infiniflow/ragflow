@@ -18,6 +18,7 @@ import asyncio
 from crawl4ai import AsyncWebCrawler
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.web_utils import is_valid_url
+# from markdownify import markdownify
 
 
 class CrawlerParam(ComponentParamBase):
@@ -50,18 +51,48 @@ class Crawler(ComponentBase, ABC):
         except Exception as e:
             return Crawler.be_output(f"An unexpected error occurred: {str(e)}")
 
+
     async def get_web(self, url):
-        proxy = self._param.proxy if self._param.proxy else None
-        async with AsyncWebCrawler(verbose=True, proxy=proxy) as crawler:
-            result = await crawler.arun(
-                url=url,
-                bypass_cache=True
-            )
-            
+        from playwright.async_api import async_playwright
+        
+        async with async_playwright() as p:
+            # 启动浏览器
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+
+            # 打开网页并等待
+            await page.goto(url)
+            await page.wait_for_load_state("networkidle")  # 等待网络空闲
+            await page.wait_for_timeout(2000)  # 额外等待 2 秒
+
+            # 根据 extract_type 获取内容
             if self._param.extract_type == 'html':
-                return result.cleaned_html
-            elif self._param.extract_type == 'markdown':
-                return result.markdown
+                content = await page.content()
+            # elif self._param.extract_type == 'markdown':
+            #     html = await page.content()
+            #     content = markdownify(html)
             elif self._param.extract_type == 'content':
-                result.extracted_content
-            return result.markdown
+                content = await page.evaluate("() => document.body.innerText")
+            else:
+                content = await page.content()
+
+            await browser.close()
+            return content
+
+    # async def get_web(self, url):
+    #     proxy = self._param.proxy if self._param.proxy else None
+    #     async with AsyncWebCrawler(verbose=True, proxy=proxy) as crawler:
+    #         result = await crawler.arun(
+    #             url=url,
+    #             bypass_cache=False,
+    #             wait_for_js=True,  # 等待 JavaScript 加载完成
+    #             timeout=10  # 设置超时时间（秒）
+    #         )
+            
+    #         if self._param.extract_type == 'html':
+    #             return result.cleaned_html
+    #         elif self._param.extract_type == 'markdown':
+    #             return result.markdown
+    #         elif self._param.extract_type == 'content':
+    #             result.extracted_content
+    #         return result.markdown
