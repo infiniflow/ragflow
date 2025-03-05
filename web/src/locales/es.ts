@@ -480,6 +480,7 @@ export default {
       newFolder: 'Nueva carpeta',
       file: 'Archivo',
       uploadFile: 'Subir archivo',
+      parseOnCreation: 'Ejecutar en la creación',
       directory: 'Directorio',
       uploadTitle: 'Haz clic o arrastra el archivo a esta área para subir',
       uploadDescription:

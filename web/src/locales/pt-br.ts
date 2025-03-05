@@ -639,6 +639,7 @@ export default {
       newFolder: 'Nova Pasta',
       file: 'Arquivo',
       uploadFile: 'Carregar Arquivo',
+      parseOnCreation: 'Executar na criação',
       directory: 'Diretório',
       uploadTitle:
         'Clique ou arraste o arquivo para esta área para fazer o upload',
