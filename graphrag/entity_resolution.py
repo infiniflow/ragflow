@@ -104,11 +104,14 @@ class EntityResolution(Extractor):
         connect_graph = nx.Graph()
         removed_entities = []
         connect_graph.add_edges_from(resolution_result)
+        # for issue #5600
+        all_relationships_data = []
+
         for sub_connect_graph in nx.connected_components(connect_graph):
             sub_connect_graph = connect_graph.subgraph(sub_connect_graph)
             remove_nodes = list(sub_connect_graph.nodes)
             keep_node = remove_nodes.pop()
-            self._merge_nodes(keep_node, self._get_entity_(remove_nodes))
+            await self._merge_nodes(keep_node, self._get_entity_(remove_nodes), all_relationships_data=all_relationships_data)
             for remove_node in remove_nodes:
                 removed_entities.append(remove_node)
                 remove_node_neighbors = graph[remove_node]
