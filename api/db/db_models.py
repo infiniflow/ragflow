@@ -843,8 +843,8 @@ class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
     from_page = IntegerField(default=0)
-
     to_page = IntegerField(default=100000000)
+    task_type = CharField(max_length=32, null=False, default="")
 
     begin_at = DateTimeField(null=True, index=True)
     process_duation = FloatField(default=0)
@@ -1112,6 +1112,13 @@ def migrate_db():
             migrate(
                 migrator.add_column("document", "meta_fields",
                                     JSONField(null=True, default={}))
+            )
+        except Exception:
+            pass
+        try:
+            migrate(
+                migrator.add_column("task", "task_type",
+                                    CharField(max_length=32, null=False, default=""))
             )
         except Exception:
             pass

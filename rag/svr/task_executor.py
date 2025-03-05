@@ -193,7 +193,7 @@ async def collect():
         FAILED_TASKS += 1
         logging.warning(f"collect task {msg['id']} {state}")
         redis_msg.ack()
-        return None
+        return None, None
     task["task_type"] = msg.get("task_type", "")
     return redis_msg, task
 
@@ -521,30 +521,29 @@ async def do_handle_task(task):
         chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
     # Either using graphrag or Standard chunking methods
     elif task.get("task_type", "") == "graphrag":
+        graphrag_conf = task_parser_config.get("graphrag", {})
+        if not graphrag_conf.get("use_graphrag", False):
+            return
         start_ts = timer()
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
         await run_graphrag(task, chat_model, task_language, embedding_model, progress_callback)
-        progress_callback(prog=1.0, msg="Knowledge Graph is done ({:.2f}s)".format(timer() - start_ts))
-        return
-    elif task.get("task_type", "") == "graph_resolution":
-        start_ts = timer()
-        chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-        with_res = WithResolution(
-            task["tenant_id"], str(task["kb_id"]),chat_model, embedding_model,
-            progress_callback
-        )
-        await with_res()
-        progress_callback(prog=1.0, msg="Knowledge Graph resolution is done ({:.2f}s)".format(timer() - start_ts))
-        return
-    elif task.get("task_type", "") == "graph_community":
-        start_ts = timer()
-        chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-        with_comm = WithCommunity(
-            task["tenant_id"], str(task["kb_id"]), chat_model, embedding_model,
-            progress_callback
-        )
-        await with_comm()
-        progress_callback(prog=1.0, msg="GraphRAG community reports generation is done ({:.2f}s)".format(timer() - start_ts))
+        progress_callback(prog=1.0, msg="Knowledge Graph basic is done ({:.2f}s)".format(timer() - start_ts))
+        if graphrag_conf.get("resolution", False):
+            start_ts = timer()
+            with_res = WithResolution(
+                task["tenant_id"], str(task["kb_id"]), chat_model, embedding_model,
+                progress_callback
+            )
+            await with_res()
+            progress_callback(prog=1.0, msg="Knowledge Graph resolution is done ({:.2f}s)".format(timer() - start_ts))
+        if graphrag_conf.get("community", False):
+            start_ts = timer()
+            with_comm = WithCommunity(
+                task["tenant_id"], str(task["kb_id"]), chat_model, embedding_model,
+                progress_callback
+            )
+            await with_comm()
+            progress_callback(prog=1.0, msg="Knowledge Graph community is done ({:.2f}s)".format(timer() - start_ts))
         return
     else:
         # Standard chunking methods
