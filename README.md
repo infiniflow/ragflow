@@ -78,6 +78,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2025-02-28 Combined with Internet search (Tavily), supports reasoning like Deep Research for any LLMs.
 - 2025-02-05 Updates the model list of 'SILICONFLOW' and adds support for Deepseek-R1/DeepSeek-V3.
 - 2025-01-26 Optimizes knowledge graph extraction and application, offering various configuration options.
 - 2024-12-18 Upgrades Document Layout Analysis model in DeepDoc.

@@ -75,6 +75,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2025-02-28 dikombinasikan dengan pencarian Internet (TAVILY), mendukung penelitian mendalam untuk LLM apa pun.
 - 2025-02-05 Memperbarui daftar model 'SILICONFLOW' dan menambahkan dukungan untuk Deepseek-R1/DeepSeek-V3.
 - 2025-01-26 Optimalkan ekstraksi dan penerapan grafik pengetahuan dan sediakan berbagai opsi konfigurasi.
 - 2024-12-18 Meningkatkan model Analisis Tata Letak Dokumen di DeepDoc.
