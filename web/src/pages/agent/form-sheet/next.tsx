@@ -65,12 +65,15 @@ const FormSheet = ({
 
   const { t } = useTranslate('flow');
 
-  const { handleValuesChange } = useHandleFormValuesChange(node?.id);
+  const { handleValuesChange } = useHandleFormValuesChange(
+    operatorName,
+    node?.id,
+    form,
+  );
 
   useEffect(() => {
-    if (visible) {
+    if (visible && !form.formState.isDirty) {
       if (node?.id !== previousId.current) {
-        // form.resetFields();
         form.reset();
         form.clearErrors();
       }
