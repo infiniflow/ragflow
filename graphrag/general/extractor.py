@@ -186,7 +186,7 @@ class Extractor:
             src_id: str,
             tgt_id: str,
             edges_data: list[dict],
-            all_relationships_data
+            all_relationships_data=None
     ):
         if not edges_data:
             return
@@ -229,7 +229,8 @@ class Extractor:
             source_id=source_id
         )
         self._set_relation_(src_id, tgt_id, edge_data)
-        all_relationships_data.append(edge_data)
+        if all_relationships_data is not None:
+            all_relationships_data.append(edge_data)
 
     async def _handle_entity_relation_summary(
             self,
