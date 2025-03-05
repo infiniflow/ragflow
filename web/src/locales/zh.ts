@@ -106,7 +106,8 @@ export default {
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
-      testingDescription: '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。',
+      testingDescription:
+        '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。',
@@ -520,6 +521,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      descriptionPlaceholder:
+        '例如 你是一个专业的简历助手，只能回答简历的问题。',
       useKnowledgeGraph: '使用知识图谱',
       useKnowledgeGraphTip:
         '它将检索相关实体、关系和社区报告的描述，这将增强多跳和复杂问题的推理。',

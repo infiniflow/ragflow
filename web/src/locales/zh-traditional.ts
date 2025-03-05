@@ -106,7 +106,8 @@ export default {
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
-      testingDescription: '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。',
+      testingDescription:
+        '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
         '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。',
@@ -504,6 +505,8 @@ export default {
         '在多輪對話的中，對去知識庫查詢的問題進行最佳化。會呼叫大模型額外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      descriptionPlaceholder:
+        '例如 你是一個專業的簡曆助手，隻能回答簡曆的問題。',
       useKnowledgeGraph: '使用知識圖譜',
       useKnowledgeGraph提示:
         '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
