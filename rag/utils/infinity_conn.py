@@ -29,7 +29,6 @@ from rag import settings
 from rag.settings import PAGERANK_FLD
 from rag.utils import singleton
 import pandas as pd
-from polars.series.series import Series
 from api.utils.file_utils import get_project_base_directory
 
 from rag.utils.doc_store_conn import (
