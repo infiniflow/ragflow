@@ -2,6 +2,7 @@ import {
   AutoKeywordsItem,
   AutoQuestionsItem,
 } from '@/components/auto-keywords-item';
+import LayoutRecognize from '@/components/layout-recognize';
 import PageRank from '@/components/page-rank';
 import ParseConfiguration from '@/components/parse-configuration';
 import GraphRagItems from '@/components/parse-configuration/graph-rag-items';
@@ -11,6 +12,7 @@ import { ChunkMethodItem, EmbeddingModelItem } from './common-item';
 export function BookConfiguration() {
   return (
     <>
+      <LayoutRecognize></LayoutRecognize>
       <EmbeddingModelItem></EmbeddingModelItem>
       <ChunkMethodItem></ChunkMethodItem>
 
