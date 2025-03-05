@@ -1170,7 +1170,7 @@ class RAGFlowPdfParser:
         return poss
 
 
-class PlainParser(object):
+class PlainParser:
     def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
         self.outlines = []
         lines = []

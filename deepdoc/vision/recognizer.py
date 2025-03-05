@@ -28,7 +28,7 @@ from .operators import preprocess
 from . import operators
 from .ocr import load_model
 
-class Recognizer(object):
+class Recognizer:
     def __init__(self, label_list, task_name, model_dir=None):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!

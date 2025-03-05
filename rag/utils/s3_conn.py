@@ -23,7 +23,7 @@ from rag.utils import singleton
 from rag import settings
 
 @singleton
-class RAGFlowS3(object):
+class RAGFlowS3:
     def __init__(self):
         self.conn = None
         self.s3_config = settings.S3
