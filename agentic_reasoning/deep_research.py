@@ -118,7 +118,7 @@ class DeepResearcher:
 
                 if self.prompt_config.get("tavily_api_key"):
                     tav = Tavily(self.prompt_config["tavily_api_key"])
-                    tav_res = tav.retrieve_chunks(" ".join(search_query))
+                    tav_res = tav.retrieve_chunks(search_query)
                     kbinfos["chunks"].extend(tav_res["chunks"])
                     kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
                 if self.prompt_config.get("use_kg") and self._kg_retrieve:

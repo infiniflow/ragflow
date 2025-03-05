@@ -38,6 +38,7 @@ class Tavily:
     def retrieve_chunks(self, question):
         chunks = []
         aggs = []
+        logging.info("[Tavily]Q: " + question)
         for r in self.search(question):
             id = get_uuid()
             chunks.append({
@@ -62,5 +63,5 @@ class Tavily:
                 "count": 1,
                 "url": r["url"]
             })
-            logging.info("[Tavily]: "+r["content"][:128]+"...")
+            logging.info("[Tavily]R: "+r["content"][:128]+"...")
         return {"chunks": chunks, "doc_aggs": aggs}
