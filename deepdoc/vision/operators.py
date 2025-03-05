@@ -23,7 +23,7 @@ import math
 from PIL import Image
 
 
-class DecodeImage(object):
+class DecodeImage:
     """ decode image """
 
     def __init__(self,
@@ -65,7 +65,7 @@ class DecodeImage(object):
         return data
 
 
-class StandardizeImage(object):
+class StandardizeImag:
     """normalize image
     Args:
         mean (list): im - mean
@@ -102,7 +102,7 @@ class StandardizeImage(object):
         return im, im_info
 
 
-class NormalizeImage(object):
+class NormalizeImage:
     """ normalize image such as subtract mean, divide std
     """
 
@@ -129,7 +129,7 @@ class NormalizeImage(object):
         return data
 
 
-class ToCHWImage(object):
+class ToCHWImage:
     """ convert hwc image to chw image
     """
 
@@ -145,7 +145,7 @@ class ToCHWImage(object):
         return data
 
 
-class KeepKeys(object):
+class KeepKeys:
     def __init__(self, keep_keys, **kwargs):
         self.keep_keys = keep_keys
 
@@ -156,7 +156,7 @@ class KeepKeys(object):
         return data_list
 
 
-class Pad(object):
+class Pad:
     def __init__(self, size=None, size_div=32, **kwargs):
         if size is not None and not isinstance(size, (int, list, tuple)):
             raise TypeError("Type of target_size is invalid. Now is {}".format(
@@ -194,7 +194,7 @@ class Pad(object):
         return data
 
 
-class LinearResize(object):
+class LinearResize:
     """resize image by target_size and max_size
     Args:
         target_size (int): the target size of image
@@ -261,7 +261,7 @@ class LinearResize(object):
         return im_scale_y, im_scale_x
 
 
-class Resize(object):
+class Resize:
     def __init__(self, size=(640, 640), **kwargs):
         self.size = size
 
@@ -291,7 +291,7 @@ class Resize(object):
         return data
 
 
-class DetResizeForTest(object):
+class DetResizeForTest:
     def __init__(self, **kwargs):
         super(DetResizeForTest, self).__init__()
         self.resize_type = 0
@@ -421,7 +421,7 @@ class DetResizeForTest(object):
         return img, [ratio_h, ratio_w]
 
 
-class E2EResizeForTest(object):
+class E2EResizeForTest:
     def __init__(self, **kwargs):
         super(E2EResizeForTest, self).__init__()
         self.max_side_len = kwargs['max_side_len']
@@ -489,7 +489,7 @@ class E2EResizeForTest(object):
         return im, (ratio_h, ratio_w)
 
 
-class KieResize(object):
+class KieResize:
     def __init__(self, **kwargs):
         super(KieResize, self).__init__()
         self.max_side, self.min_side = kwargs['img_scale'][0], kwargs[
@@ -539,7 +539,7 @@ class KieResize(object):
         return points
 
 
-class SRResize(object):
+class SRResize:
     def __init__(self,
                  imgH=32,
                  imgW=128,
@@ -576,7 +576,7 @@ class SRResize(object):
         return data
 
 
-class ResizeNormalize(object):
+class ResizeNormalize:
     def __init__(self, size, interpolation=Image.BICUBIC):
         self.size = size
         self.interpolation = interpolation
@@ -588,7 +588,7 @@ class ResizeNormalize(object):
         return img_numpy
 
 
-class GrayImageChannelFormat(object):
+class GrayImageChannelFormat:
     """
     format gray scale image's channel: (3,h,w) -> (1,h,w)
     Args:
@@ -612,7 +612,7 @@ class GrayImageChannelFormat(object):
         return data
 
 
-class Permute(object):
+class Permute:
     """permute image
     Args:
         to_bgr (bool): whether convert RGB to BGR
@@ -635,7 +635,7 @@ class Permute(object):
         return im, im_info
 
 
-class PadStride(object):
+class PadStride:
     """ padding image for model with FPN, instead PadBatch(pad_to_stride) in original config
     Args:
         stride (bool): model with FPN need image shape % stride == 0
