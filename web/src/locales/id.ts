@@ -648,6 +648,7 @@ export default {
       newFolder: 'Folder Baru',
       file: 'File',
       uploadFile: 'Unggah File',
+      parseOnCreation: 'Memparsing saat dibuat',
       directory: 'Direktori',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
