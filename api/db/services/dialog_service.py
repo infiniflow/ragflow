@@ -513,7 +513,8 @@ def ask(question, kb_ids, tenant_id):
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
-        return {"answer": answer, "reference": chunks_format(refs)}
+        refs["chunks"] = chunks_format(refs)
+        return {"answer": answer, "reference": refs}
 
     answer = ""
     for ans in chat_mdl.chat_streamly(prompt, msg, {"temperature": 0.1}):
