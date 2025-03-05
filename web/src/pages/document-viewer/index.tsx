@@ -1,9 +1,10 @@
 import { Images } from '@/constants/common';
 import { api_host } from '@/utils/api';
-import { Flex, Image } from 'antd';
+import { Flex } from 'antd';
 import { useParams, useSearchParams } from 'umi';
 import Docx from './docx';
 import Excel from './excel';
+import Image from './image';
 import Pdf from './pdf';
 
 import { previewHtmlFile } from '@/utils/file-util';
