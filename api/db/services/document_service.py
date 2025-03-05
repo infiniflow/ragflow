@@ -381,12 +381,6 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_progress(cls):
-        MSG = {
-            "raptor": "Start RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval).",
-            "graphrag": "Entities",
-            "graph_resolution": "Resolution",
-            "graph_community": "Communities"
-        }
         docs = cls.get_unfinished_docs()
         for d in docs:
             try:
@@ -397,37 +391,31 @@ class DocumentService(CommonService):
                 prg = 0
                 finished = True
                 bad = 0
+                has_raptor = False
+                has_graphrag = False
                 e, doc = DocumentService.get_by_id(d["id"])
                 status = doc.run  # TaskStatus.RUNNING.value
                 for t in tsks:
                     if 0 <= t.progress < 1:
                         finished = False
-                    prg += t.progress if t.progress >= 0 else 0
-                    if t.progress_msg not in msg:
-                        msg.append(t.progress_msg)
                     if t.progress == -1:
                         bad += 1
+                    prg += t.progress if t.progress >= 0 else 0
+                    msg.append(t.progress_msg)
+                    if t.task_type == "raptor":
+                        has_raptor = True
+                    elif t.task_type == "graphrag":
+                        has_graphrag = True
                 prg /= len(tsks)
                 if finished and bad:
                     prg = -1
                     status = TaskStatus.FAIL.value
                 elif finished:
-                    m = "\n".join(sorted(msg))
-                    if d["parser_config"].get("raptor", {}).get("use_raptor") and m.find(MSG["raptor"]) < 0:
-                        queue_raptor_o_graphrag_tasks(d, "raptor", MSG["raptor"])
+                    if d["parser_config"].get("raptor", {}).get("use_raptor") and not has_raptor:
+                        queue_raptor_o_graphrag_tasks(d, "raptor")
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") and m.find(MSG["graphrag"]) < 0:
-                        queue_raptor_o_graphrag_tasks(d, "graphrag", MSG["graphrag"])
-                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") \
-                        and d["parser_config"].get("graphrag", {}).get("resolution") \
-                        and m.find(MSG["graph_resolution"]) < 0:
-                        queue_raptor_o_graphrag_tasks(d, "graph_resolution", MSG["graph_resolution"])
-                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") \
-                        and d["parser_config"].get("graphrag", {}).get("community") \
-                        and m.find(MSG["graph_community"]) < 0:
-                        queue_raptor_o_graphrag_tasks(d, "graph_community", MSG["graph_community"])
+                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") and not has_graphrag:
+                        queue_raptor_o_graphrag_tasks(d, "graphrag")
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
                     else:
                         status = TaskStatus.DONE.value
@@ -464,7 +452,7 @@ class DocumentService(CommonService):
         return False
 
 
-def queue_raptor_o_graphrag_tasks(doc, ty, msg):
+def queue_raptor_o_graphrag_tasks(doc, ty):
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     hasher = xxhash.xxh64()
     for field in sorted(chunking_config.keys()):
@@ -477,7 +465,8 @@ def queue_raptor_o_graphrag_tasks(doc, ty, msg):
             "doc_id": doc["id"],
             "from_page": 100000000,
             "to_page": 100000000,
-            "progress_msg":  datetime.now().strftime("%H:%M:%S") + " " + msg
+            "task_type": ty,
+            "progress_msg":  datetime.now().strftime("%H:%M:%S") + " created task " + ty
         }
 
     task = new_task()
@@ -486,7 +475,6 @@ def queue_raptor_o_graphrag_tasks(doc, ty, msg):
     hasher.update(ty.encode("utf-8"))
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
-    task["task_type"] = ty
     assert REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=task), "Can't access Redis. Please check the Redis' status."
 
 
