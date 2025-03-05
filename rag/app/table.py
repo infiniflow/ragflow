@@ -20,7 +20,7 @@ from io import BytesIO
 from xpinyin import Pinyin
 import numpy as np
 import pandas as pd
-from openpyxl import load_workbook
+# from openpyxl import load_workbook, Workbook
 from dateutil.parser import parse as datetime_parse
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -33,9 +33,9 @@ class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, from_page=0,
                  to_page=10000000000, callback=None):
         if not binary:
-            wb = load_workbook(fnm)
+            wb = Excel._load_excel_to_workbook(fnm)
         else:
-            wb = load_workbook(BytesIO(binary))
+            wb = Excel._load_excel_to_workbook(BytesIO(binary))
         total = 0
         for sheetname in wb.sheetnames:
             total += len(list(wb[sheetname].rows))
