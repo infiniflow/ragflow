@@ -537,7 +537,8 @@ class HuggingfaceRerank(DefaultRerank):
         self.base_url = base_url
 
     def similarity(self, query: str, texts: list) -> tuple[np.ndarray, int]:
-        if not texts: return np.array([]), 0
+        if not texts:
+            return np.array([]), 0
         token_count = 0
         for t in texts:
             token_count += num_tokens_from_string(t)
