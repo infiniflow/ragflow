@@ -15,7 +15,7 @@
 #
 import re
 import threading
-from collections import Iterable
+from collections.abc import Iterable
 from urllib.parse import urljoin
 
 import requests
