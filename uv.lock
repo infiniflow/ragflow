@@ -1937,6 +1937,19 @@ grpc = [
 ]
 
 [[package]]
+name = "googlesearch-python"
+version = "1.3.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "requests" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/00/c8/3f76213025b77de23f11d3f87349ff9825cf3b0054f62156858af1bd94f3/googlesearch_python-1.3.0.tar.gz", hash = "sha256:c5729b1247c2a8f5c4b48ed73c4f8e9fd558ac4e09de67865479f0a33f2d97dc" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/60/a6/c1fe6a46a7ac2d3b08acfe88ce3d2b12cd8351c697ee4b300bfa350b7c9a/googlesearch_python-1.3.0-py3-none-any.whl", hash = "sha256:808c4dd390dc4c6a1cfba2f5151f5ef16dceb0a200d9770b388dcd39162b4e19" },
+]
+
+[[package]]
 name = "gprofiler-official"
 version = "1.0.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -4742,6 +4755,7 @@ dependencies = [
     { name = "flask-session" },
     { name = "google-generativeai" },
     { name = "google-search-results" },
+    { name = "googlesearch-python" },
     { name = "graspologic" },
     { name = "groq" },
     { name = "hanziconv" },
@@ -4875,6 +4889,7 @@ requires-dist = [
     { name = "flask-session", specifier = "==0.8.0" },
     { name = "google-generativeai", specifier = ">=0.8.1,<0.9.0" },
     { name = "google-search-results", specifier = "==2.4.2" },
+    { name = "googlesearch-python", specifier = "==1.3.0" },
     { name = "graspologic", specifier = ">=3.4.1,<4.0.0" },
     { name = "groq", specifier = "==0.9.0" },
     { name = "hanziconv", specifier = "==0.3.2" },
