@@ -529,7 +529,8 @@ class HuggingfaceRerank(DefaultRerank):
             except Exception as e:
                 exc = e
 
-        if exc: raise exc
+        if exc:
+            raise exc
         return np.array(scores)
 
     def __init__(self, key, model_name="BAAI/bge-reranker-v2-m3", base_url="http://127.0.0.1"):
