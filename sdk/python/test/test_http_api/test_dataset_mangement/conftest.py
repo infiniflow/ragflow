@@ -16,7 +16,7 @@
 
 import pytest
 
-from common import *
+from common import delete_dataset
 
 
 @pytest.fixture(scope="function", autouse=True)
