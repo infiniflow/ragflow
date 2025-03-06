@@ -66,10 +66,6 @@ def create(tenant_id):
               type: string
               enum: ['me', 'team']
               description: Dataset permission.
-            language:
-              type: string
-              enum: ['Chinese', 'English']
-              description: Language of the dataset.
             chunk_method:
               type: string
               enum: ["naive", "manual", "qa", "table", "paper", "book", "laws",
@@ -91,11 +87,9 @@ def create(tenant_id):
     req = request.json
     e, t = TenantService.get_by_id(tenant_id)
     permission = req.get("permission")
-    language = req.get("language")
     chunk_method = req.get("chunk_method")
     parser_config = req.get("parser_config")
     valid_permission = ["me", "team"]
-    valid_language = ["Chinese", "English"]
     valid_chunk_method = [
         "naive",
         "manual",
@@ -114,8 +108,6 @@ def create(tenant_id):
     check_validation = valid(
         permission,
         valid_permission,
-        language,
-        valid_language,
         chunk_method,
         valid_chunk_method,
     )
@@ -134,6 +126,10 @@ def create(tenant_id):
     req["name"] = req["name"].strip()
     if req["name"] == "":
         return get_error_data_result(message="`name` is not empty string!")
+    if len(req["name"]) >= 128:
+        return get_error_data_result(
+            message="Dataset name should not be longer than 128 characters."
+        )
     if KnowledgebaseService.query(
         name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value
     ):
@@ -297,10 +293,6 @@ def update(tenant_id, dataset_id):
               type: string
               enum: ['me', 'team']
               description: Updated permission.
-            language:
-              type: string
-              enum: ['Chinese', 'English']
-              description: Updated language.
             chunk_method:
               type: string
               enum: ["naive", "manual", "qa", "table", "paper", "book", "laws",
@@ -324,11 +316,9 @@ def update(tenant_id, dataset_id):
     if any(key in req for key in invalid_keys):
         return get_error_data_result(message="The input parameters are invalid.")
     permission = req.get("permission")
-    language = req.get("language")
     chunk_method = req.get("chunk_method")
     parser_config = req.get("parser_config")
     valid_permission = ["me", "team"]
-    valid_language = ["Chinese", "English"]
     valid_chunk_method = [
         "naive",
         "manual",
@@ -347,8 +337,6 @@ def update(tenant_id, dataset_id):
     check_validation = valid(
         permission,
         valid_permission,
-        language,
-        valid_language,
         chunk_method,
         valid_chunk_method,
     )
@@ -416,6 +404,10 @@ def update(tenant_id, dataset_id):
         req["embd_id"] = req.pop("embedding_model")
     if "name" in req:
         req["name"] = req["name"].strip()
+        if len(req["name"]) >= 128:
+            return get_error_data_result(
+                message="Dataset name should not be longer than 128 characters."
+            )
         if (
             req["name"].lower() != kb.name.lower()
             and len(

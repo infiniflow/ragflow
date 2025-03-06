@@ -335,11 +335,9 @@ def generate_confirmation_token(tenent_id):
     return "ragflow-" + serializer.dumps(get_uuid(), salt=tenent_id)[2:34]
 
 
-def valid(permission, valid_permission, language, valid_language, chunk_method, valid_chunk_method):
+def valid(permission, valid_permission, chunk_method, valid_chunk_method):
     if valid_parameter(permission, valid_permission):
         return valid_parameter(permission, valid_permission)
-    if valid_parameter(language, valid_language):
-        return valid_parameter(language, valid_language)
     if valid_parameter(chunk_method, valid_chunk_method):
         return valid_parameter(chunk_method, valid_chunk_method)
 
