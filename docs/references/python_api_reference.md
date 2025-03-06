@@ -97,11 +97,6 @@ Creates a dataset.
 
 The unique name of the dataset to create. It must adhere to the following requirements:
 
-- Permitted characters include:
-  - English letters (a-z, A-Z)
-  - Digits (0-9)
-  - "_" (underscore)
-- Must begin with an English letter or underscore.
 - Maximum 65,535 characters.
 - Case-insensitive.
 
