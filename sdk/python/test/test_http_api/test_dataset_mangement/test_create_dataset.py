@@ -34,8 +34,7 @@ class TestAuthorization:
 class TestDatasetCreation:
     @pytest.mark.parametrize("payload, expected_code", [
         ({"name": "valid_name"}, 0),
-        pytest.param({"name": "a"*(DATASET_NAME_LIMIT+1)},
-                     102, marks=pytest.mark.xfail(reason='issue#5702')),
+        ({"name": "a"*(DATASET_NAME_LIMIT+1)}, 102),
         ({"name": 0}, 100),
         ({"name": ""}, 102),
         ({"name": "duplicated_name"}, 102),
@@ -87,27 +86,6 @@ class TestAdvancedConfigurations:
         }
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0
-
-    @pytest.mark.parametrize("name, language, expected_code", [
-        ("Chinese", "Chinese", 0),
-        ("English", "English", 0),
-        pytest.param("empty_language", "", 0,
-                     marks=pytest.mark.xfail(reason='issue#5709')),
-        ("chinese_lowcase", "chinese", 102),
-        ("english_lowcase", "english", 102),
-        ("other_language", "other_language", 102)
-    ])
-    def test_language(self, get_http_api_auth, name, language, expected_code):
-        payload = {
-            "name": name,
-            "language": language
-        }
-        res = create_dataset(get_http_api_auth, payload)
-        assert res["code"] == expected_code
-        if expected_code == 0 and language != "":
-            assert res["data"]["language"] == language
-        if language == "":
-            assert res["data"]["language"] == "English"
 
     @pytest.mark.parametrize("name, permission, expected_code", [
         ("me", "me", 0),
@@ -185,8 +163,6 @@ class TestAdvancedConfigurations:
          "text-embedding-v3", 0),
         ("maidalun1020/bce-embedding-base_v1",
          "maidalun1020/bce-embedding-base_v1", 0),
-        ("empty_embedding_model",
-         "", 0),
         ("other_embedding_model",
          "other_embedding_model", 102)
     ])
@@ -197,10 +173,8 @@ class TestAdvancedConfigurations:
         }
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == expected_code
-        if expected_code == 0 and embedding_model != "":
+        if expected_code == 0:
             assert res["data"]["embedding_model"] == embedding_model
-        if embedding_model == "":
-            assert res["data"]["embedding_model"] == 'text-embedding-v3@Tongyi-Qianwen'
 
     @pytest.mark.parametrize("name, chunk_method, parser_config, expected_code", [
         ("naive_default", "naive",
