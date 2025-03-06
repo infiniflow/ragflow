@@ -1,0 +1,25 @@
+---
+sidebar_position: 14
+slug: /variable_component
+---
+# Variable component
+
+This is a component that allows users to extract data, store it, and reuse it throughout the conversation process.
+
+---
+A **Variable** component acts as a storage for variables. It is typically placed after the **Interface** component.
+
+The component will return the initial question from the user, which can be used for other components in the flow, and will also store variable values.
+
+**Variable Attributes**
+To retrieve information from the user's question, variables will be declared explicitly with empty values. 
+Here is an example of how to declare variables to extract information such as: the user's name, the language of the latest question, the topic of the question, and the question itself.
+
+```json
+{
+   "The languages of the latest question": "",
+   "Topic": "",
+   "UserName": "",
+   "Question": ""
+}
+```
