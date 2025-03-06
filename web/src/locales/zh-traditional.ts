@@ -504,6 +504,8 @@ export default {
         '在多輪對話的中，對去知識庫查詢的問題進行最佳化。會呼叫大模型額外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      descriptionPlaceholder:
+        '例如 你是一個專業的簡曆助手，隻能回答簡曆的問題。',
       useKnowledgeGraph: '使用知識圖譜',
       useKnowledgeGraph提示:
         '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
