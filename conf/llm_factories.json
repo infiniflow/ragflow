@@ -3284,7 +3284,7 @@
         {
             "name": "HuggingFace",
             "logo": "",
-            "tags": "TEXT EMBEDDING",
+            "tags": "TEXT EMBEDDING,TEXT RE-RANK",
             "status": "1",
             "llm": []
         },
