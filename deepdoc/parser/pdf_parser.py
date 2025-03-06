@@ -27,6 +27,7 @@ import re
 import pdfplumber
 from PIL import Image
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor, Future
 from pypdf import PdfReader as pdf2_read
 
 from api import settings
@@ -41,7 +42,7 @@ if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
 class RAGFlowPdfParser:
-    def __init__(self):
+    def __init__(self, parallel_devices: int | None = None):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
 
@@ -53,7 +54,13 @@ class RAGFlowPdfParser:
         ^_-
 
         """
-        self.ocr = OCR()
+        
+        self.ocr = OCR(parallel_devices = parallel_devices)
+        self.parallel_devices = parallel_devices
+        self.threadpool = None
+        if parallel_devices is not None and parallel_devices > 1:
+            self.threadpool = ThreadPoolExecutor(max_workers = parallel_devices)
+        
         if hasattr(self, "model_speciess"):
             self.layouter = LayoutRecognizer("layout." + self.model_speciess)
         else:
@@ -63,7 +70,7 @@ class RAGFlowPdfParser:
         self.updown_cnt_mdl = xgb.Booster()
         if not settings.LIGHTEN:
             try:
-                import torch
+                import torch.cuda
                 if torch.cuda.is_available():
                     self.updown_cnt_mdl.set_param({"device": "cuda"})
             except Exception:
@@ -283,9 +290,9 @@ class RAGFlowPdfParser:
                 b["H_right"] = spans[ii]["x1"]
                 b["SP"] = ii
 
-    def __ocr(self, pagenum, img, chars, ZM=3):
+    def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
-        bxs = self.ocr.detect(np.array(img))
+        bxs = self.ocr.detect(np.array(img), device_id)
         logging.info(f"__ocr detecting boxes of a image cost ({timer() - start}s)")
 
         start = timer()
@@ -330,7 +337,7 @@ class RAGFlowPdfParser:
                 b["box_image"] = self.ocr.get_rotate_crop_image(img_np, np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
                 boxes_to_reg.append(b)
             del b["txt"]
-        texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg])
+        texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
         for i in range(len(boxes_to_reg)):
             boxes_to_reg[i]["text"] = texts[i]
             del boxes_to_reg[i]["box_image"]
@@ -1022,8 +1029,7 @@ class RAGFlowPdfParser:
         else:
             self.is_english = False
 
-        start = timer()
-        for i, img in enumerate(self.page_images):
+        def __img_ocr(id, img):
             chars = self.page_chars[i] if not self.is_english else []
             self.mean_height.append(
                 np.median(sorted([c["height"] for c in chars])) if chars else 0
@@ -1041,9 +1047,19 @@ class RAGFlowPdfParser:
                     chars[j]["text"] += " "
                 j += 1
 
-            self.__ocr(i + 1, img, chars, zoomin)
+            self.__ocr(i + 1, img, chars, zoomin, id)
             if callback and i % 6 == 5:
                 callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
+
+        start = timer()
+        if self.threadpool:
+            with self.threadpool as t:
+                for i, img in enumerate(self.page_images):
+                    t.submit(__img_ocr, i % self.parallel_devices, img)
+        else:
+            for i, img in enumerate(self.page_images):
+                __img_ocr(0, img)
+            
         logging.info(f"__images__ {len(self.page_images)} pages cost {timer() - start}s")
 
         if not self.is_english and not any(
