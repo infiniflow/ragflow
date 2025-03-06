@@ -310,7 +310,18 @@ class ComponentParamBase(ABC):
             raise ValueError(
                 descr + " {} not supported, should be one of {}".format(param, types)
             )
-
+    @staticmethod
+    def check_json(param, descr=""):
+        if type(param).__name__ != "str":
+            raise ValueError(
+                descr + " {} not supported, should be string type".format(param)
+            )
+        try:
+            json.loads(param)
+        except json.JSONDecodeError:
+            raise ValueError(
+                descr + " {} not supported, should be json string".format(param)
+            )
     @staticmethod
     def check_and_change_lower(param, valid_list, descr=""):
         if type(param).__name__ != "str":
@@ -467,6 +478,7 @@ class ComponentBase(ABC):
         if self._param.query:
             self._param.inputs = []
             outs = []
+            vars =self._canvas.get_variables()
             for q in self._param.query:
                 if q.get("component_id"):
                     if q["component_id"].split("@")[0].lower().find("begin") >= 0:
@@ -480,7 +492,6 @@ class ComponentBase(ABC):
                         else:
                             assert False, f"Can't find parameter '{key}' for {cpn_id}"
                         continue
-
                     if q["component_id"].lower().find("answer") == 0:
                         txt = []
                         for r, c in self._canvas.history[::-1][:self._param.message_history_window_size][::-1]:
@@ -489,8 +500,10 @@ class ComponentBase(ABC):
                         self._param.inputs.append({"content": txt, "component_id": q["component_id"]})
                         outs.append(pd.DataFrame([{"content": txt}]))
                         continue
-
-                    outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
+                    elif q["component_id"] in vars.keys():
+                        outs.append(pd.DataFrame([{"content": vars[q["component_id"]]}]))
+                    else:
+                        outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
                     self._param.inputs.append({"component_id": q["component_id"],
                                                "content": "\n".join(
                                                    [str(d["content"]) for d in outs[-1].to_dict('records')])})

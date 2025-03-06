@@ -29,7 +29,15 @@ const RewriteQuestionForm = ({ onValuesChange, form }: IOperatorForm) => {
         name={'language'}
         tooltip={t('languageTip')}
       >
-        <Select options={GoogleLanguageOptions} allowClear={true}></Select>
+        <Select
+          showSearch
+          allowClear
+          placeholder={t('selectLanguage')}
+          filterOption={(input, option) =>
+            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+          }
+          options={GoogleLanguageOptions}
+        ></Select>
       </Form.Item>
       <MessageHistoryWindowSizeItem
         initialValue={6}

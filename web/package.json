@@ -1,5 +1,6 @@
 {
   "private": true,
+  "license": "MIT",
   "author": "bill",
   "scripts": {
     "build": "umi build",

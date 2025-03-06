@@ -29,14 +29,15 @@ export function NodeContextMenu({
       y: node?.position?.y || 0 + 50,
     };
 
-    addNodes({
-      ...(node || {}),
-      data: node?.data,
-      selected: false,
-      dragging: false,
-      id: `${node?.id}-copy`,
-      position,
-    });
+    if (node && node.data)
+      addNodes({
+        ...(node || {}),
+        data: node?.data,
+        selected: false,
+        dragging: false,
+        id: `${node?.id}-copy`,
+        position,
+      });
   }, [id, getNode, addNodes]);
 
   const deleteNode = useCallback(() => {
@@ -76,7 +77,7 @@ export const useHandleNodeContextMenu = (sideWidth: number) => {
 
       // Calculate position of the context menu. We want to make sure it
       // doesn't get positioned off-screen.
-      const pane = ref.current?.getBoundingClientRect();
+      // const pane = ref.current?.getBoundingClientRect();
       // setMenu({
       //   id: node.id,
       //   top: event.clientY < pane.height - 200 ? event.clientY : 0,

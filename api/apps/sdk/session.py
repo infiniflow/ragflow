@@ -15,12 +15,13 @@
 #
 import re
 import json
-import time
+
+import tiktoken
 
 from api.db import LLMType
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
-from api.db.services.canvas_service import completion as agent_completion
+from api.db.services.canvas_service import completion as agent_completion ,completionOpenAI
 from api.db.services.dialog_service import ask, chat
 from agent.canvas import Canvas
 from api.db import StatusEnum
@@ -30,7 +31,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import get_uuid
-from api.utils.api_utils import get_error_data_result, validate_request
+from api.utils.api_utils import get_data_openai, get_error_data_result, validate_request
 from api.utils.api_utils import get_result, token_required
 from api.db.services.llm_service import LLMBundle
 from api.db.services.file_service import FileService
@@ -127,7 +128,9 @@ def create_agent_session(tenant_id, agent_id):
         "user_id": user_id,
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent",
-        "dsl": cvs.dsl
+        "dsl": cvs.dsl,
+        "variables":canvas.get_variables(),
+
     }
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
@@ -185,19 +188,25 @@ def chat_completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
-@manager.route('chats_openai/<chat_id>/chat/completions', methods=['POST'])  # noqa: F821
+
+
+@manager.route('openai/<chat_id>/<share>/chat/completions', methods=['POST'])  # noqa: F821
 @validate_request("model", "messages")  # noqa: F821
 @token_required
-def chat_completion_openai_like(tenant_id, chat_id):
+def chat_completion_openai_compatibility (tenant_id, chat_id, share):
     """
-    OpenAI-like chat completion API that simulates the behavior of OpenAI's completions endpoint.
+    OpenAI-Compatibility  chat completion API that simulates the behavior of OpenAI's completions endpoint.
     
     This function allows users to interact with a model and receive responses based on a series of historical messages.
     If `stream` is set to True (by default), the response will be streamed in chunks, mimicking the OpenAI-style API.
     Set `stream` to False explicitly, the response will be returned in a single complete answer.
+    share: "agent" or "chat"
+    chat_id : chat_id or agent_id
+    tenant_id : user_id
+    id: session_id (optional) get history of the session agent
     Example usage:
-
-    curl -X POST https://ragflow_address.com/api/v1/chats_openai/<chat_id>/chat/completions \
+    
+    curl -X POST https://ragflow_address.com/api/v1/openai/<chat_id>/<share>/chat/completions \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $RAGFLOW_API_KEY" \
         -d '{
@@ -211,7 +220,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
     from openai import OpenAI
 
     model = "model"
-    client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
+    client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/openai/<chat_id>/<share>/")
     
     completion = client.chat.completions.create(
         model=model,
@@ -232,119 +241,81 @@ def chat_completion_openai_like(tenant_id, chat_id):
         print(completion.choices[0].message.content)
     """
     req = request.json
+    tiktokenenc = tiktoken.get_encoding("cl100k_base")
 
     messages = req.get("messages", [])
-    # To prevent empty [] input
-    if len(messages) < 1:
-        return get_error_data_result("You have to provide messages.")
-    if messages[-1]["role"] != "user":
-        return get_error_data_result("The last content of this conversation is not from user.")
-
-    prompt = messages[-1]["content"]
-    # Treat context tokens as reasoning tokens
-    context_token_used = sum(len(message["content"]) for message in messages)
-
-    dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
-    if not dia:
-        return get_error_data_result(f"You don't own the chat {chat_id}")
-    dia = dia[0]
-
-    # Filter system and non-sense assistant messages
-    msg = None
-    msg = [m for m in messages if m["role"] != "system" and (m["role"] != "assistant" or msg)]
-
+    if not messages:
+        return get_error_data_result("You must provide at least one message.")
+    if share == "agent":
+        if not UserCanvasService.query(user_id=tenant_id, id=chat_id):
+            return get_error_data_result(f"You don't own the agent {chat_id}")
+    else: # chat
+        dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
+        if not dia:
+            return get_error_data_result(f"You don't own the chat {chat_id}")
+        dia = dia[0]
+    
+    filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
+    if not filtered_messages:
+        return get_data_openai( 
+            id= chat_id,
+            content="No valid messages found (user or assistant).",
+            finish_reason="stop",
+            model=req.get("model", ""), 
+            completion_tokens= len(tiktokenenc.encode("No valid messages found (user or assistant).")),
+            prompt_tokens = sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages), 
+            )
+    
     if req.get("stream", True):
-        # The value for the usage field on all chunks except for the last one will be null.
-        # The usage field on the last chunk contains token usage statistics for the entire request.
-        # The choices field on the last chunk will always be an empty array [].
-        def streamed_response_generator(chat_id, dia, msg):
-            token_used = 0
-            response = {
-                "id": f"chatcmpl-{chat_id}",
-                "choices": [
-                    {
-                        "delta": {
-                            "content": "",
-                            "role": "assistant",
-                            "function_call": None,
-                            "tool_calls": None
-                        },
-                        "finish_reason": None,
-                        "index": 0,
-                        "logprobs": None
-                    }
-                ],
-                "created": int(time.time()),
-                "model": "model",
-                "object": "chat.completion.chunk",
-                "system_fingerprint": "",
-                "usage": None
-            }
-
+        def streamed_response_generator():
             try:
-                for ans in chat(dia, msg, True):
-                    answer = ans["answer"]
-                    incremental = answer[token_used:]
-                    token_used += len(incremental)
-                    response["choices"][0]["delta"]["content"] = incremental
-                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+                completion_tokens = 0
+                prompt_tokens = sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages)
+                for ans in chat(dia, filtered_messages, True):
+                    completion_tokens += len(tiktokenenc.encode(ans["answer"]))
+                    response =  get_data_openai(
+                        id= chat_id,
+                        content= ans["answer"], 
+                        model=req.get("model", ""),
+                        completion_tokens=completion_tokens,
+                        prompt_tokens= prompt_tokens,
+                        )
+                    yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
             except Exception as e:
-                response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
-                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-
-            # The last chunk
-            response["choices"][0]["delta"]["content"] = None
-            response["choices"][0]["finish_reason"] = "stop"
-            response["usage"] = {
-                "prompt_tokens": len(prompt),
-                "completion_tokens": token_used,
-                "total_tokens": len(prompt) + token_used
-            }
-            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
-            yield "data:[DONE]\n\n"
-
-
-        resp = Response(streamed_response_generator(chat_id, dia, msg), mimetype="text/event-stream")
-        resp.headers.add_header("Cache-control", "no-cache")
-        resp.headers.add_header("Connection", "keep-alive")
-        resp.headers.add_header("X-Accel-Buffering", "no")
-        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-        return resp
+                response = get_data_openai( id= chat_id,
+                                            content="**ERROR**: " + str(e),
+                                            finish_reason="stop" ,
+                                            model=req.get("model", "")
+                                        ) 
+            
+                yield f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        if share =="agent":
+            return Response(completionOpenAI(tenant_id, chat_id, messages,session_id= req.get("id", ""), stream= True), mimetype="text/event-stream")
+        else:
+            return Response(streamed_response_generator(), mimetype="text/event-stream")
+    
     else:
-        answer = None
-        for ans in chat(dia, msg, False):
-            # focus answer content only
-            answer = ans
-            break
-        content = answer["answer"]
-
-        response  = {
-            "id": f"chatcmpl-{chat_id}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": req.get("model", ""),
-            "usage": {
-                "prompt_tokens": len(prompt),
-                "completion_tokens": len(content),
-                "total_tokens": len(prompt) + len(content),
-                "completion_tokens_details": {
-                    "reasoning_tokens": context_token_used,
-                    "accepted_prediction_tokens": len(content),
-                    "rejected_prediction_tokens": 0 # 0 for simplicity
-                }
-            },
-            "choices": [
-                {
-                    "message": {
-                        "role": "assistant",
-                        "content": content
-                    },
-                    "logprobs": None,
-                    "finish_reason": "stop",
-                    "index": 0
-                }
-            ]
-        }
+        if share =="agent":
+            answer = None
+            for ans in completionOpenAI(tenant_id, chat_id, messages,session_id= req.get("id", ""),stream= False):
+                answer = ans
+                break
+        else : # chat
+            answer = None
+            for ans in chat(dia, filtered_messages, False):
+                answer = ans["answer"]
+                break
+            response = get_data_openai( 
+                id= chat_id,
+                content=answer, 
+                model=req.get("model", ""), 
+                prompt_tokens= sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages),
+                completion_tokens=len(tiktokenenc.encode(answer)),
+            )
+            
+            
+        
         return jsonify(response)
 
 
