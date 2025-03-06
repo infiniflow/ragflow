@@ -18,7 +18,7 @@ import os
 import pytest
 import requests
 
-from libs.auth import RAGflowHttpApiAuth
+from libs.auth import RAGFlowHttpApiAuth
 
 HOST_ADDRESS = os.getenv('HOST_ADDRESS', 'http://127.0.0.1:9380')
 
@@ -91,4 +91,4 @@ def get_email():
 
 @pytest.fixture(scope="session")
 def get_http_api_auth(get_api_key_fixture):
-    return RAGflowHttpApiAuth(get_api_key_fixture)
+    return RAGFlowHttpApiAuth(get_api_key_fixture)

@@ -16,7 +16,7 @@
 from requests.auth import AuthBase
 
 
-class RAGflowHttpApiAuth(AuthBase):
+class RAGFlowHttpApiAuth(AuthBase):
     def __init__(self, token):
         self._token = token
 

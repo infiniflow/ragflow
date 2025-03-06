@@ -19,12 +19,12 @@ import base64
 from pathlib import Path
 
 from common import create_dataset, INVALID_API_TOKEN, DATASET_NAME_LIMIT
-from libs.auth import RAGflowHttpApiAuth
+from libs.auth import RAGFlowHttpApiAuth
 
 
 class TestAuthorization:
     def test_invalid_auth(self):
-        INVALID_API_KEY = RAGflowHttpApiAuth(INVALID_API_TOKEN)
+        INVALID_API_KEY = RAGFlowHttpApiAuth(INVALID_API_TOKEN)
         res = create_dataset(INVALID_API_KEY, {"name": "auth_test"})
 
         assert res["code"] == 109
