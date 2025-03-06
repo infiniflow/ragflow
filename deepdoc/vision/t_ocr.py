@@ -28,8 +28,7 @@ from deepdoc.vision.seeit import draw_box
 from deepdoc.vision import OCR, init_in_out
 import argparse
 import numpy as np
-import time
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import ThreadPoolExecutor
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 

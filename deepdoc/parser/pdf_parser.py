@@ -27,7 +27,7 @@ import re
 import pdfplumber
 from PIL import Image
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import ThreadPoolExecutor
 from pypdf import PdfReader as pdf2_read
 
 from api import settings
