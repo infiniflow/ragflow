@@ -42,7 +42,7 @@ class Base(ABC):
     def chat(self, system, history, gen_conf):
         if system:
             history.insert(0, {"role": "system", "content": system})
-        if "max_token" in gen_conf:
+        if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         try:
             response = self.client.chat.completions.create(
