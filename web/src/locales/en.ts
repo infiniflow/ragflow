@@ -108,7 +108,7 @@ export default {
       processDuration: 'Duration',
       progressMsg: 'Progress',
       testingDescription:
-        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.',
+        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the **Retrieval** agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results.',

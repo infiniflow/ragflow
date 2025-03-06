@@ -106,7 +106,7 @@ export default {
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
-      testingDescription: '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。',
+      testingDescription: '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。',
@@ -373,7 +373,7 @@ export default {
         '文件分块后，所有块将用于知识图谱生成，这对多跳和复杂问题的推理大有帮助。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：实体和关系提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
-General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图形的模块化检索增强生成 (RAG) 系统`,
+General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统`,
       resolution: '实体归一化',
       resolutionTip: `解析过程会将具有相同含义的实体合并在一起，从而使知识图谱更简洁、更准确。应合并以下实体：特朗普总统、唐纳德·特朗普、唐纳德·J·特朗普、唐纳德·约翰·特朗普`,
       community: '社区报告生成',

@@ -75,6 +75,10 @@ This field is where you put in your testing query.
    *The following is a screenshot of a retrieval test conducted using a knowledge graph. It shows that only vector similarity is used for knowledge graph-generated chunks:*  
    ![Image](https://github.com/user-attachments/assets/30a03091-0f7b-4058-901a-f4dc5ca5aa6b)
 
+:::caution WARNING
+If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the **Retrieval** agent component settings.
+:::
+
 ## Frequently asked questions
 
 ### Is an LLM used when the Use Knowledge Graph switch is enabled?
