@@ -29,7 +29,6 @@ from peewee import fn
 from api.db.db_utils import bulk_insert_into_db
 from api import settings
 from api.utils import current_timestamp, get_format_time, get_uuid
-from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.settings import SVR_QUEUE_NAME
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search, rag_tokenizer
@@ -584,6 +583,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         cks = [c for c in docs if c["doc_id"] == doc_id]
 
         if parser_ids[doc_id] != ParserType.PICTURE.value:
+            from graphrag.general.mind_map_extractor import MindMapExtractor
             mindmap = MindMapExtractor(llm_bdl)
             try:
                 mind_map = trio.run(mindmap, [c["content_with_weight"] for c in docs if c["doc_id"] == doc_id])
