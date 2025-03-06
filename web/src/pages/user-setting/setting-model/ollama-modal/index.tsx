@@ -74,6 +74,7 @@ const OllamaModal = ({
     [LLMFactory.HuggingFace]: [
       { value: 'embedding', label: 'embedding' },
       { value: 'chat', label: 'chat' },
+      { value: 'rerank', label: 'rerank' },
     ],
     [LLMFactory.Xinference]: [
       { value: 'chat', label: 'chat' },
@@ -170,7 +171,7 @@ const OllamaModal = ({
               type: 'number',
               message: t('maxTokensInvalidMessage'),
             },
-            ({ getFieldValue }) => ({
+            ({}) => ({
               validator(_, value) {
                 if (value < 0) {
                   return Promise.reject(new Error(t('maxTokensMinMessage')));
