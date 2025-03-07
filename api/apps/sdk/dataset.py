@@ -265,7 +265,6 @@ def delete(tenant_id):
             errors.append(f"Delete dataset error for {id}")
             continue
         success_count += 1
-    # 返回结果
     if errors:
         if success_count > 0:
             return get_result(
