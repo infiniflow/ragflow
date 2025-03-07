@@ -28,7 +28,7 @@ const FileUpload = ({
   directory: boolean;
   fileList: UploadFile[];
   setFileList: Dispatch<SetStateAction<UploadFile[]>>;
-  uploadProgress: number;
+  uploadProgress?: number;
 }) => {
   const { t } = useTranslate('fileManager');
   const props: UploadProps = {
@@ -41,7 +41,6 @@ const FileUpload = ({
     },
     beforeUpload: (file: UploadFile) => {
       setFileList((pre) => {
-        console.log(file);
         return [...pre, file];
       });
 
@@ -69,12 +68,11 @@ const FileUpload = ({
   );
 };
 
-interface IFileUploadModalProps extends Omit<IModalProps<boolean>, 'onOk'> {
-  uploadFileList: UploadFile[];
-  setUploadFileList: Dispatch<SetStateAction<UploadFile[]>>;
-  uploadProgress: number;
-  setUploadProgress: Dispatch<SetStateAction<number>>;
-  onOk?: (fileList: UploadFile[]) => Promise<boolean | void> | boolean | void;
+interface IFileUploadModalProps extends IModalProps<boolean | UploadFile[]> {
+  uploadFileList?: UploadFile[];
+  setUploadFileList?: Dispatch<SetStateAction<UploadFile[]>>;
+  uploadProgress?: number;
+  setUploadProgress?: Dispatch<SetStateAction<number>>;
 }
 
 const FileUploadModal = ({
@@ -82,21 +80,26 @@ const FileUploadModal = ({
   hideModal,
   loading,
   onOk: onFileUploadOk,
+  uploadFileList: fileList,
+  setUploadFileList: setFileList,
   uploadProgress,
   setUploadProgress,
 }: IFileUploadModalProps) => {
   const { t } = useTranslate('fileManager');
   const [value, setValue] = useState<string | number>('local');
   const [parseOnCreation, setParseOnCreation] = useState(false);
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [currentFileList, setCurrentFileList] = useState<UploadFile[]>([]);
+  const [directoryFileList, setDirectoryFileList] = useState<UploadFile[]>([]);
 
   const clearFileList = () => {
-    setFileList([]);
-    if (typeof setUploadProgress === 'function') {
-      setUploadProgress(0);
+    if (setFileList) {
+      setFileList([]);
+      setUploadProgress?.(0);
+    } else {
+      setCurrentFileList([]);
     }
+    setDirectoryFileList([]);
   };
-  console.log(fileList);
 
   const onOk = async () => {
     if (uploadProgress === 100) {
@@ -104,7 +107,9 @@ const FileUploadModal = ({
       return;
     }
 
-    const ret = await onFileUploadOk?.(fileList);
+    const ret = await onFileUploadOk?.(
+      fileList ? parseOnCreation : [...currentFileList, ...directoryFileList],
+    );
     return ret;
   };
 
@@ -119,8 +124,8 @@ const FileUploadModal = ({
       children: (
         <FileUpload
           directory={false}
-          fileList={fileList}
-          setFileList={setFileList}
+          fileList={fileList ? fileList : currentFileList}
+          setFileList={setFileList ? setFileList : setCurrentFileList}
           uploadProgress={uploadProgress}
         ></FileUpload>
       ),
@@ -131,8 +136,8 @@ const FileUploadModal = ({
       children: (
         <FileUpload
           directory
-          fileList={fileList}
-          setFileList={setFileList}
+          fileList={directoryFileList}
+          setFileList={setDirectoryFileList}
           uploadProgress={uploadProgress}
         ></FileUpload>
       ),
