@@ -228,7 +228,7 @@ class KGSearch(Dealer):
             ents.append({
                 "Entity": n,
                 "Score": "%.2f" % (ent["sim"] * ent["pagerank"]),
-                "Description": json.loads(ent["description"]).get("description", "")
+                "Description": json.loads(ent["description"]).get("description", "") if ent["description"] else ""
             })
             max_token -= num_tokens_from_string(str(ents[-1]))
             if max_token <= 0:
