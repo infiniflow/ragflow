@@ -70,7 +70,7 @@ def message_fit_in(msg, max_length=4000):
     if c < max_length:
         return c, msg
 
-    msg_ = [m for m in msg[:-1] if m["role"] == "system"]
+    msg_ = [m for m in msg if m["role"] == "system"]
     if len(msg) > 1:
         msg_.append(msg[-1])
     msg = msg_
