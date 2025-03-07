@@ -15,10 +15,11 @@
 #
 
 import os
+
 import requests
 
-HOST_ADDRESS = os.getenv('HOST_ADDRESS', 'http://127.0.0.1:9380')
-API_URL = f'{HOST_ADDRESS}/api/v1/datasets'
+HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
+API_URL = f"{HOST_ADDRESS}/api/v1/datasets"
 HEADERS = {"Content-Type": "application/json"}
 
 
@@ -31,17 +32,26 @@ def create_dataset(auth, payload):
     return res.json()
 
 
-def list_dataset(auth, params):
+def list_dataset(auth, params=None):
     res = requests.get(url=API_URL, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
 def update_dataset(auth, dataset_id, payload):
-    res = requests.put(url=f"{API_URL}/{dataset_id}",
-                       headers=HEADERS, auth=auth, json=payload)
+    res = requests.put(
+        url=f"{API_URL}/{dataset_id}", headers=HEADERS, auth=auth, json=payload
+    )
     return res.json()
 
 
 def delete_dataset(auth, payload=None):
     res = requests.delete(url=API_URL, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def create_datasets(auth, num):
+    ids = []
+    for i in range(num):
+        res = create_dataset(auth, {"name": f"dataset_{i}"})
+        ids.append(res["data"]["id"])
+    return ids
