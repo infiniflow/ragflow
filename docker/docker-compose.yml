@@ -22,6 +22,7 @@ services:
       - TZ=${TIMEZONE}
       - HF_ENDPOINT=${HF_ENDPOINT}
       - MACOS=${MACOS}
+      - isRegisterEnabled=${isRegisterEnabled}
     networks:
       - ragflow
     restart: on-failure
