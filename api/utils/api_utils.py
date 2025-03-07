@@ -374,6 +374,8 @@ def get_parser_config(chunk_method, parser_config):
 
 
 def valid_parser_config(parser_config):
+    if not parser_config:
+        return
     scopes = set([
         "chunk_token_num",
         "delimiter",
