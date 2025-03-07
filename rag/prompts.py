@@ -213,7 +213,7 @@ Requirements & Restrictions:
         prompt += """
   - Text generated MUST be in the same language of the original user's question.
 """
-    prompt += """
+    prompt += f"""
 
 ######################
 -Examples-
