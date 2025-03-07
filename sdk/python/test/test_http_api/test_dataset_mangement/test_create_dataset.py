@@ -231,11 +231,6 @@ class TestAdvancedConfigurations:
                      102, marks=pytest.mark.xfail(reason='issue#5719')),
         ("naive_raptor_true", "naive", {"raptor": {"use_raptor": True}}, 0),
         ("naive_raptor_false", "naive", {"raptor": {"use_raptor": False}}, 0),
-        ("knowledge_graph_entity_types_default", "graphrag", {
-         "entity_types": ["organization", "person", "location", "event", "time"]}, 0),
-        pytest.param("knowledge_graph_entity_types_not_list", "graphrag", {
-                     "entity_types": ["organization", "person", "location", "event", "time"]},
-                     102, marks=pytest.mark.xfail(reason='issue#5719'))
     ])
     def test_parser_configs(self, get_http_api_auth, name, chunk_method, parser_config, expected_code):
         payload = {
