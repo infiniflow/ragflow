@@ -47,7 +47,6 @@ import tracemalloc
 import resource
 import signal
 import trio
-import torch.cuda
 
 import numpy as np
 from peewee import DoesNotExist
@@ -106,7 +105,12 @@ MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDER
 task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
 chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
 
-PARALLEL_DEVICES = torch.cuda.device_count() if torch.cuda.is_available() else 1
+PARALLEL_DEVICES = None
+try:
+    import torch.cuda
+    PARALLEL_DEVICES = torch.cuda.device_count()
+except:
+    pass
 
 # SIGUSR1 handler: start tracemalloc and take snapshot
 def start_tracemalloc_and_snapshot(signum, frame):

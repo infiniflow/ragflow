@@ -198,7 +198,7 @@ class Markdown(MarkdownParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
-          lang="Chinese", parallel_devices = 1, callback=None, **kwargs):
+          lang="Chinese", parallel_devices=None, callback=None, **kwargs):
     """
         Supported file formats are docx, pdf, excel, txt.
         This method apply the naive ways to chunk files.
