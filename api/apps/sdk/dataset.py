@@ -354,7 +354,6 @@ def update(tenant_id, dataset_id):
             return get_error_data_result(message="Can't change `tenant_id`.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if "parser_config" in req:
-        flds = list(req["parser_config"].keys())
         temp_dict = kb.parser_config
         temp_dict.update(req["parser_config"])
         req["parser_config"] = temp_dict
