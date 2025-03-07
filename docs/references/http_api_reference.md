@@ -2716,7 +2716,7 @@ Failure:
 
 ### List agent sessions
 
-**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}`
+**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&dsl={dsl}`
 
 Lists sessions associated with a specified agent.
 
@@ -2753,7 +2753,9 @@ curl --request GET \
   The ID of the agent session to retrieve.
 - `user_id`: (*Filter parameter*), `string`  
   The optional user-defined ID passed in when creating session.
-  
+- `dsl`: (*Filter parameter*), `boolean`  
+  Indicates whether to include the dsl field of the sessions in the response. Defaults to `true`.
+
 #### Response
 
 Success:
@@ -2761,7 +2763,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": {
+    "data": [{
         "agent_id": "e9e2b9c2b2f911ef801d0242ac120006",
         "dsl": {
             "answer": [],
@@ -2893,7 +2895,7 @@ Success:
         ],
         "source": "agent",
         "user_id": ""
-    }
+    }]
 }
 ```
 
