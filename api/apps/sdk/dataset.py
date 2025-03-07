@@ -30,7 +30,7 @@ from api.utils.api_utils import (
     token_required,
     get_error_data_result,
     valid,
-    get_parser_config,
+    get_parser_config, valid_parser_config,
 )
 
 
@@ -89,6 +89,7 @@ def create(tenant_id):
     permission = req.get("permission")
     chunk_method = req.get("chunk_method")
     parser_config = req.get("parser_config")
+    valid_parser_config(parser_config)
     valid_permission = ["me", "team"]
     valid_chunk_method = [
         "naive",
@@ -136,7 +137,8 @@ def create(tenant_id):
         return get_error_data_result(
             message="Duplicated dataset name in creating dataset."
         )
-    req["tenant_id"] = req["created_by"] = tenant_id
+    req["tenant_id"] = tenant_id
+    req["created_by"] = tenant_id
     if not req.get("embedding_model"):
         req["embedding_model"] = t.embd_id
     else:
@@ -178,6 +180,10 @@ def create(tenant_id):
         if old_key in req
     }
     req.update(mapped_keys)
+    flds = list(req.keys())
+    for f in flds:
+        if req[f] == "" and f in ["permission", "chunk_method"]:
+            del req[f]
     if not KnowledgebaseService.save(**req):
         return get_error_data_result(message="Create dataset error.(Database error)")
     renamed_data = {}
@@ -318,6 +324,7 @@ def update(tenant_id, dataset_id):
     permission = req.get("permission")
     chunk_method = req.get("chunk_method")
     parser_config = req.get("parser_config")
+    valid_parser_config(parser_config)
     valid_permission = ["me", "team"]
     valid_chunk_method = [
         "naive",
@@ -427,7 +434,7 @@ def update(tenant_id, dataset_id):
 
 @manager.route("/datasets", methods=["GET"])  # noqa: F821
 @token_required
-def list(tenant_id):
+def list_datasets(tenant_id):
     """
     List datasets.
     ---

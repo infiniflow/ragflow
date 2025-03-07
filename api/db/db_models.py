@@ -935,7 +935,7 @@ class Conversation(DataBaseModel):
 class APIToken(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, index=True)
     token = CharField(max_length=255, null=False, index=True)
-    dialog_id = CharField(max_length=32, null=False, index=True)
+    dialog_id = CharField(max_length=32, null=True, index=True)
     source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
     beta = CharField(max_length=255, null=True, index=True)
 

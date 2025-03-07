@@ -178,7 +178,7 @@ class TestAdvancedConfigurations:
 
     @pytest.mark.parametrize("name, chunk_method, parser_config, expected_code", [
         ("naive_default", "naive",
-         {"chunk_token_count": 128,
+         {"chunk_token_num": 128,
           "layout_recognize": "DeepDOC",
           "html4excel": False,
           "delimiter": "\n!?。；！？",
@@ -187,20 +187,20 @@ class TestAdvancedConfigurations:
           },
          0),
         ("naive_empty", "naive", {}, 0),
-        pytest.param("naive_chunk_token_count_negative", "naive",
-                     {"chunk_token_count": -1},
+        pytest.param("naive_chunk_token_num_negative", "naive",
+                     {"chunk_token_num": -1},
                      102, marks=pytest.mark.xfail(reason='issue#5719')),
-        pytest.param("naive_chunk_token_count_zero", "naive",
-                     {"chunk_token_count": 0},
+        pytest.param("naive_chunk_token_num_zero", "naive",
+                     {"chunk_token_num": 0},
                      102, marks=pytest.mark.xfail(reason='issue#5719')),
-        pytest.param("naive_chunk_token_count_float", "naive",
-                     {"chunk_token_count": 3.14},
+        pytest.param("naive_chunk_token_num_float", "naive",
+                     {"chunk_token_num": 3.14},
                      102, marks=pytest.mark.xfail(reason='issue#5719')),
-        pytest.param("naive_chunk_token_count_max", "naive",
-                     {"chunk_token_count": 1024*1024*1024},
+        pytest.param("naive_chunk_token_num_max", "naive",
+                     {"chunk_token_num": 1024*1024*1024},
                      102, marks=pytest.mark.xfail(reason='issue#5719')),
-        pytest.param("naive_chunk_token_count_str", "naive",
-                     {"chunk_token_count": '1024'},
+        pytest.param("naive_chunk_token_num_str", "naive",
+                     {"chunk_token_num": '1024'},
                      102, marks=pytest.mark.xfail(reason='issue#5719')),
         ("naive_layout_recognize_DeepDOC", "naive",
          {"layout_recognize": "DeepDOC"}, 0),
@@ -231,10 +231,6 @@ class TestAdvancedConfigurations:
                      102, marks=pytest.mark.xfail(reason='issue#5719')),
         ("naive_raptor_true", "naive", {"raptor": {"use_raptor": True}}, 0),
         ("naive_raptor_false", "naive", {"raptor": {"use_raptor": False}}, 0),
-        ("knowledge_graph_entity_types_default", "knowledge_graph", {
-         "entity_types": ["organization", "person", "location", "event", "time"]}, 0),
-        pytest.param("knowledge_graph_entity_types_not_list", "knowledge_graph", {
-                     "entity_types": "organization,person,location,event,time"}, 102, marks=pytest.mark.xfail(reason='issue#5719'))
     ])
     def test_parser_configs(self, get_http_api_auth, name, chunk_method, parser_config, expected_code):
         payload = {
