@@ -28,7 +28,6 @@ from deepdoc.vision.seeit import draw_box
 from deepdoc.vision import OCR, init_in_out
 import argparse
 import numpy as np
-import time
 import trio
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0,2' #2 gpus, uncontinuous

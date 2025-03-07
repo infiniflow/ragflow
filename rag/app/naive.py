@@ -15,13 +15,11 @@
 #
 
 import logging
-from unittest import async_case
 from tika import parser
 from io import BytesIO
 from docx import Document
 from timeit import default_timer as timer
 import re
-import trio
 from deepdoc.parser.pdf_parser import PlainParser
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec, concat_img, \
     naive_merge_docx, tokenize_chunks_docx
