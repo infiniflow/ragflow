@@ -272,8 +272,7 @@ def delete(tenant_id):
                 message=f"Partially deleted {success_count} datasets with {len(errors)} errors"
             )
         else:
-            return get_error_data_result(message=f"Failed to delete datasets: {'; '.join(errors)}")
-    
+            return get_error_data_result(message="; ".join(errors))
     return get_result(code=settings.RetCode.SUCCESS)
 
 
