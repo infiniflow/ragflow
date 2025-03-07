@@ -240,6 +240,11 @@ def update_doc(tenant_id, dataset_id, document_id):
         if req["progress"] != doc.progress:
             return get_error_data_result(message="Can't change `progress`.")
 
+    if "meta_fields" in req:
+        if not isinstance(req["meta_fields"], dict):
+            return get_error_data_result(message="meta_fields must be a dictionary")
+        DocumentService.update_meta_fields(document_id, req["meta_fields"])
+
     if "name" in req and req["name"] != doc.name:
         if (
                 pathlib.Path(req["name"].lower()).suffix
@@ -256,15 +261,12 @@ def update_doc(tenant_id, dataset_id, document_id):
                 )
         if not DocumentService.update_by_id(document_id, {"name": req["name"]}):
             return get_error_data_result(message="Database error (Document rename)!")
-        if "meta_fields" in req:
-            if not isinstance(req["meta_fields"], dict):
-                return get_error_data_result(message="meta_fields must be a dictionary")
-            DocumentService.update_meta_fields(document_id, req["meta_fields"])
 
         informs = File2DocumentService.get_by_document_id(document_id)
         if informs:
             e, file = FileService.get_by_id(informs[0].file_id)
             FileService.update_by_id(file.id, {"name": req["name"]})
+
     if "parser_config" in req:
         DocumentService.update_parser_config(doc.id, req["parser_config"])
     if "chunk_method" in req:
