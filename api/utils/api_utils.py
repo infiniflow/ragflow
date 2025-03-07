@@ -371,3 +371,30 @@ def get_parser_config(chunk_method, parser_config):
         "picture": None}
     parser_config = key_mapping[chunk_method]
     return parser_config
+
+
+def valid_parser_config(parser_config):
+    scopes = set([
+        "chunk_token_num",
+        "delimiter",
+        "raptor",
+        "graphrag",
+        "layout_recognize",
+        "task_page_size",
+        "pages",
+        "html4excel",
+        "auto_keywords",
+        "auto_questions",
+        "tag_kb_ids",
+        "topn_tags",
+        "filename_embd_weight"
+    ])
+    for k in parser_config.keys():
+        assert k in scopes, f"Abnormal 'parser_config'. Invalid key: {k}"
+
+    assert 1 <= parser_config.get("chunk_token_num", 1) < 100000000, "chunk_token_num should be in range from 1 to 100000000"
+    assert 1 <= parser_config.get("task_page_size", 1) < 100000000, "task_page_size should be in range from 1 to 100000000"
+    assert 0 <= parser_config.get("auto_keywords", 0) < 32, "auto_keywords should be in range from 0 to 32"
+    assert 0 <= parser_config.get("auto_questions", 0) < 10, "auto_questions should be in range from 0 to 10"
+    assert 0 <= parser_config.get("topn_tags", 0) < 10, "topn_tags should be in range from 0 to 10"
+    assert isinstance(parser_config.get("html4excel", False), bool), "html4excel should be True or False"
