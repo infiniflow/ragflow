@@ -41,7 +41,6 @@ const FileUpload = ({
     },
     beforeUpload: (file: UploadFile) => {
       setFileList((pre) => {
-        console.log(file);
         return [...pre, file];
       });
 
@@ -69,12 +68,11 @@ const FileUpload = ({
   );
 };
 
-interface IFileUploadModalProps extends Omit<IModalProps<boolean>, 'onOk'> {
+interface IFileUploadModalProps extends IModalProps<boolean> {
   uploadFileList: UploadFile[];
   setUploadFileList: Dispatch<SetStateAction<UploadFile[]>>;
   uploadProgress: number;
   setUploadProgress: Dispatch<SetStateAction<number>>;
-  onOk?: (fileList: UploadFile[]) => Promise<boolean | void> | boolean | void;
 }
 
 const FileUploadModal = ({
@@ -82,21 +80,19 @@ const FileUploadModal = ({
   hideModal,
   loading,
   onOk: onFileUploadOk,
+  uploadFileList: fileList,
+  setUploadFileList: setFileList,
   uploadProgress,
   setUploadProgress,
 }: IFileUploadModalProps) => {
   const { t } = useTranslate('fileManager');
   const [value, setValue] = useState<string | number>('local');
   const [parseOnCreation, setParseOnCreation] = useState(false);
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
 
   const clearFileList = () => {
     setFileList([]);
-    if (typeof setUploadProgress === 'function') {
-      setUploadProgress(0);
-    }
+    setUploadProgress(0);
   };
-  console.log(fileList);
 
   const onOk = async () => {
     if (uploadProgress === 100) {
@@ -104,7 +100,7 @@ const FileUploadModal = ({
       return;
     }
 
-    const ret = await onFileUploadOk?.(fileList);
+    const ret = await onFileUploadOk?.(parseOnCreation);
     return ret;
   };
 
