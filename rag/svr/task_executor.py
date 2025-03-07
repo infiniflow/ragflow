@@ -108,7 +108,7 @@ try:
     import torch.cuda
     PARALLEL_DEVICES = torch.cuda.device_count()
 except:
-    pass
+    logging.info(f"can't import package 'torch'")
 
 # SIGUSR1 handler: start tracemalloc and take snapshot
 def start_tracemalloc_and_snapshot(signum, frame):
