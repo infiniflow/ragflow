@@ -136,7 +136,8 @@ def create(tenant_id):
         return get_error_data_result(
             message="Duplicated dataset name in creating dataset."
         )
-    req["tenant_id"] = req["created_by"] = tenant_id
+    req["tenant_id"] = tenant_id
+    req["created_by"] = tenant_id
     if not req.get("embedding_model"):
         req["embedding_model"] = t.embd_id
     else:
