@@ -432,7 +432,7 @@ def update(tenant_id, dataset_id):
 
 @manager.route("/datasets", methods=["GET"])  # noqa: F821
 @token_required
-def list(tenant_id):
+def list_datasets(tenant_id):
     """
     List datasets.
     ---
