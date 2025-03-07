@@ -178,6 +178,10 @@ def create(tenant_id):
         if old_key in req
     }
     req.update(mapped_keys)
+    flds = list(req.keys())
+    for f in flds:
+        if req[f] == "":
+            del req[f]
     if not KnowledgebaseService.save(**req):
         return get_error_data_result(message="Create dataset error.(Database error)")
     renamed_data = {}
