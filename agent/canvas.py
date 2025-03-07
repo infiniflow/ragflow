@@ -74,6 +74,7 @@ class Canvas:
         self.history = []
         self.messages = []
         self.answer = []
+        self.variables = {}
         self.components = {}
         self.dsl = json.loads(dsl) if dsl else {
             "components": {
@@ -93,7 +94,8 @@ class Canvas:
             "messages": [],
             "reference": [],
             "path": [],
-            "answer": []
+            "answer": [],
+            "variables":{}
         }
         self._tenant_id = tenant_id
         self._embed_id = ""
@@ -101,6 +103,7 @@ class Canvas:
 
     def load(self):
         self.components = self.dsl["components"]
+
         cpn_nms = set([])
         for k, cpn in self.components.items():
             cpn_nms.add(cpn["obj"]["component_name"])
@@ -125,6 +128,8 @@ class Canvas:
         self.answer = self.dsl["answer"]
         self.reference = self.dsl["reference"]
         self._embed_id = self.dsl.get("embed_id", "")
+        self.variables = self.dsl.get("variables", {})
+
 
     def __str__(self):
         self.dsl["path"] = self.path
@@ -133,6 +138,7 @@ class Canvas:
         self.dsl["answer"] = self.answer
         self.dsl["reference"] = self.reference
         self.dsl["embed_id"] = self._embed_id
+        self.dsl["variables"] = self.variables
         dsl = {
             "components": {}
         }
@@ -156,10 +162,12 @@ class Canvas:
         self.history = []
         self.messages = []
         self.answer = []
+        self.variables = {}
         self.reference = []
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset()
         self._embed_id = ""
+        self.variables = {}
 
     def get_component_name(self, cid):
         for n in self.dsl["graph"]["nodes"]:
@@ -202,15 +210,15 @@ class Canvas:
                 if cpn.component_name == "Answer":
                     self.answer.append(c)
                 else:
-                    logging.debug(f"Canvas.prepare2run: {c}")
+                    logging.info(f"Canvas.prepare2run: {c}")
                     if c not in without_dependent_checking:
                         cpids = cpn.get_dependent_components()
+                        cpids = [c for c in cpids if c not in  self.variables]
                         if any([cc not in self.path[-1] for cc in cpids]):
                             if c not in waiting:
                                 waiting.append(c)
                             continue
                     yield "*'{}'* is running...🕞".format(self.get_component_name(c))
-
                     if cpn.component_name.lower() == "iteration":
                         st_cpn = cpn.get_start()
                         assert st_cpn, "Start component not found for Iteration."
@@ -308,6 +316,12 @@ class Canvas:
             else:
                 convs.append({"role": role, "content": str(obj)})
         return convs
+    def update_variables(self, variables):
+        for key, value in variables.items():
+            if not self.variables.get(key):
+                self.variables[key] = ""
+            if value:
+                self.variables[key] = value
 
     def add_user_input(self, question):
         self.history.append(("user", question))
@@ -350,6 +364,9 @@ class Canvas:
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
+    
+    def get_variables(self):
+        return self.variables
 
     def set_global_param(self, **kwargs):
         for k, v in kwargs.items():
