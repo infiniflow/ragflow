@@ -15,6 +15,7 @@
 #
 import re
 import threading
+from collections.abc import Iterable
 from urllib.parse import urljoin
 
 import requests
@@ -29,7 +30,6 @@ from api import settings
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import json
-
 
 
 def sigmoid(x):
@@ -87,10 +87,9 @@ class DefaultRerank(Base):
                                                       local_dir_use_symlinks=False)
                         DefaultRerank._model = FlagReranker(model_dir, use_fp16=torch.cuda.is_available())
         self._model = DefaultRerank._model
-        self._dynamic_batch_size = 8 
+        self._dynamic_batch_size = 8
         self._min_batch_size = 1
 
-    
     def torch_empty_cache(self):
         try:
             import torch
@@ -112,7 +111,7 @@ class DefaultRerank(Base):
             while retry_count < max_retries:
                 try:
                     # call subclass implemented batch processing calculation
-                    batch_scores = self._compute_batch_scores(pairs[i:i+current_batch])
+                    batch_scores = self._compute_batch_scores(pairs[i:i + current_batch])
                     res.extend(batch_scores)
                     i += current_batch
                     self._dynamic_batch_size = min(self._dynamic_batch_size * 2, 8)
@@ -137,6 +136,8 @@ class DefaultRerank(Base):
         else:
             scores = self._model.compute_score(batch_pairs, max_length=max_length)
         scores = sigmoid(np.array(scores)).tolist()
+        if not isinstance(scores, Iterable):
+            scores = [scores]
         return scores
 
     def similarity(self, query: str, texts: list):
@@ -281,6 +282,7 @@ class LocalAIRerank(Base):
             rank = np.zeros_like(rank)
 
         return rank, token_count
+
 
 class NvidiaRerank(Base):
     def __init__(
@@ -513,6 +515,40 @@ class QWenRerank(Base):
         else:
             raise ValueError(f"Error calling QWenRerank model {self.model_name}: {resp.status_code} - {resp.text}")
 
+
+class HuggingfaceRerank(DefaultRerank):
+    @staticmethod
+    def post(query: str, texts: list, url="127.0.0.1"):
+        exc = None
+        scores = [0 for _ in range(len(texts))]
+        batch_size = 8
+        for i in range(0, len(texts), batch_size):
+            try:
+                res = requests.post(f"http://{url}/rerank", headers={"Content-Type": "application/json"},
+                                    json={"query": query, "texts": texts[i: i + batch_size],
+                                          "raw_scores": False, "truncate": True})
+                for o in res.json():
+                    scores[o["index"] + i] = o["score"]
+            except Exception as e:
+                exc = e
+
+        if exc:
+            raise exc
+        return np.array(scores)
+
+    def __init__(self, key, model_name="BAAI/bge-reranker-v2-m3", base_url="http://127.0.0.1"):
+        self.model_name = model_name
+        self.base_url = base_url
+
+    def similarity(self, query: str, texts: list) -> tuple[np.ndarray, int]:
+        if not texts:
+            return np.array([]), 0
+        token_count = 0
+        for t in texts:
+            token_count += num_tokens_from_string(t)
+        return HuggingfaceRerank.post(query, texts, self.base_url), token_count
+
+
 class GPUStackRerank(Base):
     def __init__(
             self, key, model_name, base_url
@@ -521,7 +557,7 @@ class GPUStackRerank(Base):
             raise ValueError("url cannot be None")
 
         self.model_name = model_name
-        self.base_url = str(URL(base_url)/ "v1" / "rerank")
+        self.base_url = str(URL(base_url) / "v1" / "rerank")
         self.headers = {
             "accept": "application/json",
             "content-type": "application/json",
@@ -560,5 +596,6 @@ class GPUStackRerank(Base):
             )
 
         except httpx.HTTPStatusError as e:
-            raise ValueError(f"Error calling GPUStackRerank model {self.model_name}: {e.response.status_code} - {e.response.text}")
+            raise ValueError(
+                f"Error calling GPUStackRerank model {self.model_name}: {e.response.status_code} - {e.response.text}")
 

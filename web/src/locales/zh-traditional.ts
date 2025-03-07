@@ -98,7 +98,7 @@ export default {
       webCrawl: '網頁抓取',
       chunkNumber: '分塊數',
       uploadDate: '上傳日期',
-      chunkMethod: '解析方法',
+      chunkMethod: '切片方法',
       enabled: '啟用',
       disabled: '禁用',
       action: '動作',
@@ -106,7 +106,7 @@ export default {
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
-      testingDescription: '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。',
+      testingDescription: '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。請注意這裡的改動不會被自動保存。如果你調整了這裡的默認設置，比如關鍵詞相似度權重，請務必在聊天助手設置或者召回算子設置處同步更新相關設置。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
         '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。',
@@ -138,7 +138,7 @@ export default {
       toMessage: '缺少結束頁碼（不包含）',
       layoutRecognize: '文件解析器',
       layoutRecognizeTip:
-        '使用視覺模型進行佈局分析，以更好地識別文檔結構，找到標題、文本塊、圖像和表格的位置。如果沒有此功能，則只能獲取 PDF 的純文本。',
+        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。',
       taskPageSize: '任務頁面大小',
       taskPageSizeMessage: '請輸入您的任務頁面大小！',
       taskPageSizeTip: `如果使用佈局識別，PDF 文件將被分成連續的組。佈局分析將在組之間並行執行，以提高處理速度。“任務頁面大小”決定組的大小。頁面大小越大，將頁面之間的連續文本分割成不同塊的機會就越低。`,
@@ -192,10 +192,10 @@ export default {
       metaData: '元資料',
       deleteDocumentConfirmContent:
         '該文件與知識圖譜相關聯。刪除後，相關節點和關係資訊將被刪除，但圖不會立即更新。更新圖動作是在解析承載知識圖譜提取任務的新文件的過程中執行的。 ',
-      plainText: '簡易',
+      plainText: 'Naive',
     },
     knowledgeConfiguration: {
-      titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
+      titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       name: '知識庫名稱',
       photo: '知識庫圖片',
       description: '描述',
@@ -210,7 +210,7 @@ export default {
         '用於嵌入塊的嵌入模型。一旦知識庫有了塊，它就無法更改。如果你想改變它，你需要刪除所有的塊。',
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
       chunkTokenNumberTip: '它大致確定了一個塊的Token數量。',
-      chunkMethod: '解析方法',
+      chunkMethod: '切片方法',
       chunkMethodTip: '說明位於右側。',
       upload: '上傳',
       english: '英語',
@@ -504,6 +504,8 @@ export default {
         '在多輪對話的中，對去知識庫查詢的問題進行最佳化。會呼叫大模型額外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      descriptionPlaceholder:
+        '例如 你是一個專業的簡曆助手，隻能回答簡曆的問題。',
       useKnowledgeGraph: '使用知識圖譜',
       useKnowledgeGraph提示:
         '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
@@ -708,6 +710,7 @@ export default {
       pleaseSelect: '請選擇',
       newFolder: '新建文件夾',
       uploadFile: '上傳文件',
+      parseOnCreation: '創建時解析',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
         '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',

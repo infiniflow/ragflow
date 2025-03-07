@@ -104,7 +104,7 @@ export default {
       processDuration: '処理時間',
       progressMsg: '進行状況メッセージ',
       testingDescription:
-        '検索テストを実施して、RAGFlowがLLM向けに意図した内容を復元できるかを確認します。',
+        'この場所での変更は自動的に保存されないため、注意してください。ここでデフォルト設定を調整した場合、たとえばキーワードの類似度重みなど、チャットアシスタンの設定またはリコール演算子の設定場所で関連する設定を必ず同期して更新してください。',
       similarityThreshold: '類似度しきい値',
       similarityThresholdTip:
         'RAGFlowは、ユーザークエリとチャンク間の類似度スコアがこのしきい値を下回る場合、そのチャンクを結果から除外します。',
@@ -653,6 +653,7 @@ export default {
       newFolder: '新しいフォルダ',
       file: 'ファイル',
       uploadFile: 'ファイルをアップロード',
+      parseOnCreation: '作成時に解析',
       directory: 'ディレクトリ',
       uploadTitle: 'クリックまたはドラッグしてファイルをアップロード',
       uploadDescription:

@@ -87,7 +87,7 @@ export default {
       namePlaceholder: 'Silakan masukkan nama!',
       doc: 'Dokumen',
       datasetDescription:
-        '😉 Pertanyaan dan jawaban hanya dapat dijawab setelah parsing berhasil.',
+        '😉 Pertanyaan dan jawaban hanya dapat dijawab setelah parsing berhasil. Perhatikan bahwa perubahan yang dilakukan di sini tidak akan disimpan secara otomatis. Jika Anda menyesuaikan pengaturan default di sini, seperti bobot kesamaan kata kunci, pastikan Anda memperbarui pengaturan terkait secara sinkron di pengaturan asisten obrolan atau pengaturan operator pemanggilan kembali.',
       addFile: 'Tambah file',
       searchFiles: 'Cari file Anda',
       localFiles: 'File lokal',
@@ -104,7 +104,7 @@ export default {
       processDuration: 'Durasi Proses',
       progressMsg: 'Pesan Kemajuan',
       testingDescription:
-        'Final step! After success, leave the rest to Kecilin-Team/assistxsuite/ AI.',
+        'Lakukan tes pengambilan untuk memeriksa apakah RAGFlow dapat memulihkan konten yang diinginkan untuk LLM. ',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor. Jika kesamaan antara kueri dan potongan kurang dari ambang ini, potongan akan disaring.',
@@ -648,6 +648,7 @@ export default {
       newFolder: 'Folder Baru',
       file: 'File',
       uploadFile: 'Unggah File',
+      parseOnCreation: 'Memparsing saat dibuat',
       directory: 'Direktori',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:

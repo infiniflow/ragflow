@@ -108,7 +108,7 @@ export default {
       processDuration: 'Duration',
       progressMsg: 'Progress',
       testingDescription:
-        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.',
+        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the **Retrieval** agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results.',
@@ -126,9 +126,9 @@ export default {
       filesSelected: 'Files selected',
       upload: 'Upload',
       run: 'Parse',
-      runningStatus0: 'UNParsed',
-      runningStatus1: 'Parsing',
-      runningStatus2: 'CANCEL',
+      runningStatus0: 'PENDING',
+      runningStatus1: 'PARSING',
+      runningStatus2: 'CANCELED',
       runningStatus3: 'SUCCESS',
       runningStatus4: 'FAIL',
       pageRanges: 'Page Ranges',
@@ -140,7 +140,7 @@ export default {
       toMessage: 'Missing end page number (excluded)',
       layoutRecognize: 'Document parser',
       layoutRecognizeTip:
-        'Use visual models for layout analysis to better understand the structure of the document and effectively locate document titles, text blocks, images, and tables. If disabled, only the plain text in the PDF will be retrieved.',
+        'Use a visual model for PDF layout analysis to effectively locate document titles, text blocks, images, and tables. If the naive option is chosen, only the plain text in the PDF will be retrieved. Please note that this option currently works ONLY for PDF documents.',
       taskPageSize: 'Task page size',
       taskPageSizeMessage: 'Please input your task page size!',
       taskPageSizeTip: `During layout recognition, a PDF file is split into chunks and processed in parallel to increase processing speed. This parameter sets the size of each chunk. A larger chunk size reduces the likelihood of splitting continuous text between pages.`,
@@ -520,6 +520,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
         'This optimizes user queries using context in a multi-round conversation. When enabled, it will consume additional LLM tokens.',
       howUseId: 'How to use chat ID?',
       description: 'Description of assistant',
+      descriptionPlaceholder: 'e.g. A chat assistant for resume.',
       useKnowledgeGraph: 'Use knowledge graph',
       useKnowledgeGraphTip:
         'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
@@ -743,6 +744,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       newFolder: 'New Folder',
       file: 'File',
       uploadFile: 'Upload File',
+      parseOnCreation: 'Parse on creation',
       directory: 'Directory',
       uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:

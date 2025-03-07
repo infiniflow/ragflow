@@ -110,7 +110,7 @@ export default {
       processDuration: 'Thời gian xử lý',
       progressMsg: 'Thông báo tiến trình',
       testingDescription:
-        'Thực hiện kiểm tra truy hồi để kiểm tra xem RAGFlow có thể phục hồi nội dung mong muốn cho LLM không.',
+        'Thực hiện kiểm tra truy hồi để kiểm tra xem RAGFlow có thể phục hồi nội dung mong muốn cho LLM không.Vui lòng lưu ý rằng các thay đổi được thực hiện ở đây sẽ không được lưu tự động. Nếu bạn điều chỉnh các cài đặt mặc định ở đây, chẳng hạn như trọng số tương tự của từ khóa, hãy đảm bảo rằng bạn cập nhật các cài đặt liên quan theo cách đồng bộ trong cài đặt trợ lý trò chuyện hoặc cài đặt toán tử thu hồi.',
       similarityThreshold: 'Ngưỡng tương đồng',
       similarityThresholdTip:
         'RAGFlow sử dụng kết hợp giữa độ tương đồng từ khóa được trọng số và độ tương đồng vectơ cosin được trọng số hoặc kết hợp giữa độ tương đồng từ khóa được trọng số và điểm xếp hạng được tính lại trong quá trình truy hồi. Tham số này đặt ngưỡng cho sự tương đồng giữa truy vấn của người dùng và các khối. Bất kỳ khối nào có điểm tương đồng dưới ngưỡng này sẽ bị loại khỏi kết quả.',
@@ -707,6 +707,7 @@ export default {
       newFolder: 'Thư mục mới',
       file: 'Tệp',
       uploadFile: 'Tải tệp lên',
+      parseOnCreation: 'Phân tích khi tạo',
       directory: 'Thư mục',
       uploadTitle: 'Nhấp hoặc kéo thả tệp vào khu vực này để tải lên',
       uploadDescription:

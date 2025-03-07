@@ -24,6 +24,7 @@ from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import get_llm_cache, set_llm_cache, handle_single_entity_extraction, \
     handle_single_relationship_extraction, split_string_by_multi_markers, flat_uniq_list, chat_limiter
 from rag.llm.chat_model import Base as CompletionLLM
+from rag.prompts import message_fit_in
 from rag.utils import truncate
 
 GRAPH_FIELD_SEP = "<SEP>"
@@ -58,7 +59,8 @@ class Extractor:
         response = get_llm_cache(self._llm.llm_name, system, hist, conf)
         if response:
             return response
-        response = self._llm.chat(system, hist, conf)
+        _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.97))
+        response = self._llm.chat(system_msg[0]["content"], hist, conf)
         response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
@@ -186,7 +188,7 @@ class Extractor:
             src_id: str,
             tgt_id: str,
             edges_data: list[dict],
-            all_relationships_data
+            all_relationships_data=None
     ):
         if not edges_data:
             return
@@ -229,7 +231,8 @@ class Extractor:
             source_id=source_id
         )
         self._set_relation_(src_id, tgt_id, edge_data)
-        all_relationships_data.append(edge_data)
+        if all_relationships_data is not None:
+            all_relationships_data.append(edge_data)
 
     async def _handle_entity_relation_summary(
             self,

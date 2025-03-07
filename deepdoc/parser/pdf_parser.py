@@ -42,6 +42,17 @@ if LOCK_KEY_pdfplumber not in sys.modules:
 
 class RAGFlowPdfParser:
     def __init__(self):
+        """
+        If you have trouble downloading HuggingFace models, -_^ this might help!!
+
+        For Linux:
+        export HF_ENDPOINT=https://hf-mirror.com
+
+        For Windows:
+        Good luck
+        ^_-
+
+        """
         self.ocr = OCR()
         if hasattr(self, "model_speciess"):
             self.layouter = LayoutRecognizer("layout." + self.model_speciess)
@@ -72,17 +83,6 @@ class RAGFlowPdfParser:
                 model_dir, "updown_concat_xgb.model"))
 
         self.page_from = 0
-        """
-        If you have trouble downloading HuggingFace models, -_^ this might help!!
-
-        For Linux:
-        export HF_ENDPOINT=https://hf-mirror.com
-
-        For Windows:
-        Good luck
-        ^_-
-
-        """
 
     def __char_width(self, c):
         return (c["x1"] - c["x0"]) // max(len(c["text"]), 1)
@@ -1170,7 +1170,7 @@ class RAGFlowPdfParser:
         return poss
 
 
-class PlainParser(object):
+class PlainParser:
     def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
         self.outlines = []
         lines = []
