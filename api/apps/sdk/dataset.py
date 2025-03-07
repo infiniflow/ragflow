@@ -136,7 +136,8 @@ def create(tenant_id):
         return get_error_data_result(
             message="Duplicated dataset name in creating dataset."
         )
-    req["tenant_id"] = req["created_by"] = tenant_id
+    req["tenant_id"] = tenant_id
+    req["created_by"] = tenant_id
     if not req.get("embedding_model"):
         req["embedding_model"] = t.embd_id
     else:
@@ -178,6 +179,10 @@ def create(tenant_id):
         if old_key in req
     }
     req.update(mapped_keys)
+    flds = list(req.keys())
+    for f in flds:
+        if req[f] == "" and f in ["permission", "chunk_method"]:
+            del req[f]
     if not KnowledgebaseService.save(**req):
         return get_error_data_result(message="Create dataset error.(Database error)")
     renamed_data = {}
@@ -427,7 +432,7 @@ def update(tenant_id, dataset_id):
 
 @manager.route("/datasets", methods=["GET"])  # noqa: F821
 @token_required
-def list(tenant_id):
+def list_datasets(tenant_id):
     """
     List datasets.
     ---
