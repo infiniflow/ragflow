@@ -14,9 +14,8 @@
 #  limitations under the License.
 #
 from abc import ABC
-from api.db import LLMType
-from api.db.services.llm_service import LLMBundle
 from agent.component import GenerateParam, Generate
+from rag.prompts import full_question
 
 
 class RewriteQuestionParam(GenerateParam):
@@ -33,48 +32,6 @@ class RewriteQuestionParam(GenerateParam):
     def check(self):
         super().check()
 
-    def get_prompt(self, conv, language, query):
-        prompt = """
-Role: A helpful assistant
-Task: Generate a full user question that would follow the conversation.
-Requirements & Restrictions:
-  - Text generated MUST be in the same language of the original user's question.
-  - If the user's latest question is completely, don't do anything, just return the original question.
-  - DON'T generate anything except a refined question."""
-
-        if language:
-            prompt += f"""
-  - Text generated MUST be in {language}"""
-
-        prompt += f"""
-######################
--Examples-
-######################
-# Example 1
-## Conversation
-USER: What is the name of Donald Trump's father?
-ASSISTANT:  Fred Trump.
-USER: And his mother?
-###############
-Output: What's the name of Donald Trump's mother?
-------------
-# Example 2
-## Conversation
-USER: What is the name of Donald Trump's father?
-ASSISTANT:  Fred Trump.
-USER: And his mother?
-ASSISTANT:  Mary Trump.
-USER: What's her full name?
-###############
-Output: What's the full name of Donald Trump's mother Mary Trump?
-######################
-# Real Data
-## Conversation
-{conv}
-###############
-"""
-        return prompt
-
 
 class RewriteQuestion(Generate, ABC):
     component_name = "RewriteQuestion"
@@ -83,15 +40,10 @@ class RewriteQuestion(Generate, ABC):
         hist = self._canvas.get_history(self._param.message_history_window_size)
         query = self.get_input()
         query = str(query["content"][0]) if "content" in query else ""
-        conv = []
-        for m in hist:
-            if m["role"] not in ["user", "assistant"]:
-                continue
-            conv.append("{}: {}".format(m["role"].upper(), m["content"]))
-        conv = "\n".join(conv)
-        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
-        ans = chat_mdl.chat(self._param.get_prompt(conv, self.gen_lang(self._param.language), query),
-                            [{"role": "user", "content": "Output: "}], self._param.gen_conf())
+        messages = [h for h in hist if h["role"]!="system"]
+        if messages[-1]["role"] != "user":
+            messages.append({"role": "user", "content": query})
+        ans = full_question(self._canvas.get_tenant_id(), self._param.llm_id, messages, self.gen_lang(self._param.language))
         self._canvas.history.pop()
         self._canvas.history.append(("user", ans))
         return RewriteQuestion.be_output(ans)
