@@ -2,7 +2,7 @@ import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { normFile } from '@/utils/file-util';
 import { PlusOutlined } from '@ant-design/icons';
-import { Button, Form, Input, Radio, Select, Space, Upload } from 'antd';
+import { Button, Form, Input, Radio, Space, Upload } from 'antd';
 import { FormInstance } from 'antd/lib';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -26,8 +26,6 @@ import { TableConfiguration } from './table';
 import { TagConfiguration } from './tag';
 
 import styles from '../index.less';
-
-const { Option } = Select;
 
 const ConfigurationComponentMap = {
   [DocumentParserType.Naive]: NaiveConfiguration,
@@ -98,19 +96,6 @@ export const ConfigurationForm = ({ form }: { form: FormInstance }) => {
       </Form.Item>
       <Form.Item name="description" label={t('description')}>
         <Input />
-      </Form.Item>
-      <Form.Item
-        label={t('language')}
-        name="language"
-        initialValue={'English'}
-        rules={[{ required: true, message: t('languageMessage') }]}
-      >
-        <Select placeholder={t('languagePlaceholder')}>
-          <Option value="English">{t('english')}</Option>
-          <Option value="Chinese">{t('chinese')}</Option>
-          <Option value="Vietnamese">{t('vietnamese')}</Option>
-          <Option value="Portuguese (Brazil)">{t('portugueseBr')}</Option>
-        </Select>
       </Form.Item>
       <Form.Item
         name="permission"
