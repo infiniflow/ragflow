@@ -82,7 +82,6 @@ RAGFlow.create_dataset(
     avatar: str = "",
     description: str = "",
     embedding_model: str = "BAAI/bge-large-zh-v1.5",
-    language: str = "English",
     permission: str = "me", 
     chunk_method: str = "naive",
     parser_config: DataSet.ParserConfig = None
@@ -108,12 +107,6 @@ Base64 encoding of the avatar. Defaults to `""`
 
 A brief description of the dataset to create. Defaults to `""`.
 
-##### language: `str`
-
-The language setting of the dataset to create. Available options:
-
-- `"English"` (default)
-- `"Chinese"`
 
 ##### permission
 

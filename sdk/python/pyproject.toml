@@ -18,3 +18,8 @@ dependencies = [
 test = [
     "pytest>=8.0.0,<9.0.0"
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]

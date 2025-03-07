@@ -178,7 +178,6 @@ Creates a dataset.
   - `"name"`: `string`
   - `"avatar"`: `string`
   - `"description"`: `string`
-  - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
@@ -213,11 +212,6 @@ curl --request POST \
 
 - `"description"`: (*Body parameter*), `string`  
   A brief description of the dataset to create.
-
-- `"language"`: (*Body parameter*), `string`  
-  The language setting of the dataset to create. Available options:  
-  - `"English"` (default)
-  - `"Chinese"`
 
 - `"embedding_model"`: (*Body parameter*), `string`  
   The name of the embedding model to use. For example: `"BAAI/bge-zh-v1.5"`
