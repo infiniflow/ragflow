@@ -91,7 +91,7 @@ export default {
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
       datasetDescription:
-        '😉 Please wait for your file to finish parsing before starting an AI-powered chat.',
+        '😉 Please wait for your files to finish parsing before starting an AI-powered chat.',
       addFile: 'Add file',
       searchFiles: 'Search your files',
       localFiles: 'Local files',
