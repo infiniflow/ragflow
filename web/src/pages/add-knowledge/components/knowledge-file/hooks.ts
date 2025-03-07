@@ -238,7 +238,7 @@ export const useHandleUploadDocument = () => {
 
       return code;
     },
-    [uploadDocument, hideDocumentUploadModal, fileList],
+    [fileList, uploadDocument, hideDocumentUploadModal, runDocumentByIds],
   );
 
   return {
