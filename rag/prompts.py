@@ -182,7 +182,7 @@ Requirements:
     return kwd
 
 
-def full_question(tenant_id, llm_id, messages):
+def full_question(tenant_id, llm_id, messages, language=None):
     if llm_id2llm_type(llm_id) == "image2text":
         chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
@@ -204,9 +204,16 @@ Task and steps:
     2. If the user's question involves relative date, you need to convert it into absolute date based on the current date, which is {today}. For example: 'yesterday' would be converted to {yesterday}.
 
 Requirements & Restrictions:
-  - Text generated MUST be in the same language of the original user's question.
   - If the user's latest question is completely, don't do anything, just return the original question.
-  - DON'T generate anything except a refined question.
+  - DON'T generate anything except a refined question."""
+    if language:
+        prompt += f"""
+  - Text generated MUST be in {language}."""
+    else:
+        prompt += """
+  - Text generated MUST be in the same language of the original user's question.
+"""
+    prompt += """
 
 ######################
 -Examples-
@@ -239,8 +246,8 @@ ASSISTANT:  Cloudy.
 USER: What's about tomorrow in Rochester?
 ###############
 Output: What's the weather in Rochester on {tomorrow}?
-######################
 
+######################
 # Real Data
 ## Conversation
 {conv}
