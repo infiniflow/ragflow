@@ -30,7 +30,7 @@ from api.utils.api_utils import (
     token_required,
     get_error_data_result,
     valid,
-    get_parser_config,
+    get_parser_config, valid_parser_config,
 )
 
 
@@ -89,6 +89,7 @@ def create(tenant_id):
     permission = req.get("permission")
     chunk_method = req.get("chunk_method")
     parser_config = req.get("parser_config")
+    valid_parser_config(parser_config)
     valid_permission = ["me", "team"]
     valid_chunk_method = [
         "naive",
@@ -323,6 +324,7 @@ def update(tenant_id, dataset_id):
     permission = req.get("permission")
     chunk_method = req.get("chunk_method")
     parser_config = req.get("parser_config")
+    valid_parser_config(parser_config)
     valid_permission = ["me", "team"]
     valid_chunk_method = [
         "naive",
