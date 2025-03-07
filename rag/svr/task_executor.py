@@ -19,8 +19,6 @@
 import random
 import sys
 
-from joblib import parallel_backend
-
 from api.utils.log_utils import initRootLogger, get_project_base_directory
 from graphrag.general.index import WithCommunity, WithResolution, Dealer
 from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
