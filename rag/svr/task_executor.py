@@ -19,6 +19,8 @@
 import random
 import sys
 
+from joblib import parallel_backend
+
 from api.utils.log_utils import initRootLogger, get_project_base_directory
 from graphrag.general.index import WithCommunity, WithResolution, Dealer
 from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
@@ -45,6 +47,7 @@ import tracemalloc
 import resource
 import signal
 import trio
+import torch.cuda
 
 import numpy as np
 from peewee import DoesNotExist
@@ -102,6 +105,8 @@ MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
 task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
 chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
+
+PARALLEL_DEVICES = torch.cuda.device_count() if torch.cuda.is_available() else 1
 
 # SIGUSR1 handler: start tracemalloc and take snapshot
 def start_tracemalloc_and_snapshot(signum, frame):
@@ -230,7 +235,7 @@ async def build_chunks(task, progress_callback):
     try:
         async with chunk_limiter:
             cks = await trio.to_thread.run_sync(lambda: chunker.chunk(task["name"], binary=binary, from_page=task["from_page"],
-                                to_page=task["to_page"], lang=task["language"], callback=progress_callback,
+                                to_page=task["to_page"], lang=task["language"], parallel_devices = PARALLEL_DEVICES, callback=progress_callback,
                                 kb_id=task["kb_id"], parser_config=task["parser_config"], tenant_id=task["tenant_id"]))
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
     except TaskCanceledException:

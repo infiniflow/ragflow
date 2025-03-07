@@ -15,11 +15,13 @@
 #
 
 import logging
+from unittest import async_case
 from tika import parser
 from io import BytesIO
 from docx import Document
 from timeit import default_timer as timer
 import re
+import trio
 from deepdoc.parser.pdf_parser import PlainParser
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_table, tokenize_chunks, find_codec, concat_img, \
     naive_merge_docx, tokenize_chunks_docx
@@ -127,6 +129,9 @@ class Docx(DocxParser):
 
 
 class Pdf(PdfParser):
+    def __init__(self, parallel_devices = None):
+        super().__init__(parallel_devices)
+
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         start = timer()
@@ -193,7 +198,7 @@ class Markdown(MarkdownParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
-          lang="Chinese", callback=None, **kwargs):
+          lang="Chinese", parallel_devices = 1, callback=None, **kwargs):
     """
         Supported file formats are docx, pdf, excel, txt.
         This method apply the naive ways to chunk files.
@@ -233,7 +238,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
+        pdf_parser = Pdf(parallel_devices)
         if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
         sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,

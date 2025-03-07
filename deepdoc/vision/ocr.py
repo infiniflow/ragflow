@@ -659,7 +659,7 @@ class OCR:
             texts.append(text)
         return texts
 
-    def __call__(self, img, cls=True, device_id: int | None = None):
+    def __call__(self, img, device_id = 0, cls=True):
         time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
         if device_id is None:
             device_id = 0
