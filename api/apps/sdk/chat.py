@@ -318,7 +318,7 @@ def list_chat(tenant_id):
         for kb_id in res["kb_ids"]:
             kb = KnowledgebaseService.query(id=kb_id)
             if not kb:
-                logging.WARN(f"Don't exist the kb {kb_id}")
+                logging.warning(f"The kb {kb_id} does not exist.")
                 continue
             kb_list.append(kb[0].to_json())
         del res["kb_ids"]
