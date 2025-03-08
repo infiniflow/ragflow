@@ -20,6 +20,7 @@ import random
 from timeit import default_timer as timer
 import sys
 import threading
+import trio
 
 import xgboost as xgb
 from io import BytesIO
@@ -41,7 +42,7 @@ if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
 class RAGFlowPdfParser:
-    def __init__(self):
+    def __init__(self, parallel_devices: int | None = None):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
 
@@ -53,7 +54,13 @@ class RAGFlowPdfParser:
         ^_-
 
         """
-        self.ocr = OCR()
+        
+        self.ocr = OCR(parallel_devices = parallel_devices)
+        self.parallel_devices = parallel_devices
+        self.parallel_limiter = None
+        if parallel_devices is not None and parallel_devices > 1:
+            self.parallel_limiter = [trio.CapacityLimiter(1) for _ in range(parallel_devices)]
+        
         if hasattr(self, "model_speciess"):
             self.layouter = LayoutRecognizer("layout." + self.model_speciess)
         else:
@@ -63,7 +70,7 @@ class RAGFlowPdfParser:
         self.updown_cnt_mdl = xgb.Booster()
         if not settings.LIGHTEN:
             try:
-                import torch
+                import torch.cuda
                 if torch.cuda.is_available():
                     self.updown_cnt_mdl.set_param({"device": "cuda"})
             except Exception:
@@ -283,9 +290,9 @@ class RAGFlowPdfParser:
                 b["H_right"] = spans[ii]["x1"]
                 b["SP"] = ii
 
-    def __ocr(self, pagenum, img, chars, ZM=3):
+    def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
-        bxs = self.ocr.detect(np.array(img))
+        bxs = self.ocr.detect(np.array(img), device_id)
         logging.info(f"__ocr detecting boxes of a image cost ({timer() - start}s)")
 
         start = timer()
@@ -330,7 +337,7 @@ class RAGFlowPdfParser:
                 b["box_image"] = self.ocr.get_rotate_crop_image(img_np, np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
                 boxes_to_reg.append(b)
             del b["txt"]
-        texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg])
+        texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
         for i in range(len(boxes_to_reg)):
             boxes_to_reg[i]["text"] = texts[i]
             del boxes_to_reg[i]["box_image"]
@@ -963,7 +970,7 @@ class RAGFlowPdfParser:
         except Exception:
             logging.exception("total_page_number")
 
-    def __images__(self, fnm, zoomin=3, page_from=0,
+    async def __images__(self, fnm, zoomin=3, page_from=0,
                    page_to=299, callback=None):
         self.lefted_chars = []
         self.mean_height = []
@@ -1022,28 +1029,39 @@ class RAGFlowPdfParser:
         else:
             self.is_english = False
 
-        start = timer()
-        for i, img in enumerate(self.page_images):
-            chars = self.page_chars[i] if not self.is_english else []
-            self.mean_height.append(
-                np.median(sorted([c["height"] for c in chars])) if chars else 0
-            )
-            self.mean_width.append(
-                np.median(sorted([c["width"] for c in chars])) if chars else 8
-            )
-            self.page_cum_height.append(img.size[1] / zoomin)
-            j = 0
-            while j + 1 < len(chars):
-                if chars[j]["text"] and chars[j + 1]["text"] \
-                        and re.match(r"[0-9a-zA-Z,.:;!%]+", chars[j]["text"] + chars[j + 1]["text"]) \
-                        and chars[j + 1]["x0"] - chars[j]["x1"] >= min(chars[j + 1]["width"],
-                                                                       chars[j]["width"]) / 2:
-                    chars[j]["text"] += " "
-                j += 1
+        async def __img_ocr(id, img, limiter):
+            async with limiter:
+                chars = self.page_chars[i] if not self.is_english else []
+                self.mean_height.append(
+                    np.median(sorted([c["height"] for c in chars])) if chars else 0
+                )
+                self.mean_width.append(
+                    np.median(sorted([c["width"] for c in chars])) if chars else 8
+                )
+                self.page_cum_height.append(img.size[1] / zoomin)
+                j = 0
+                while j + 1 < len(chars):
+                    if chars[j]["text"] and chars[j + 1]["text"] \
+                            and re.match(r"[0-9a-zA-Z,.:;!%]+", chars[j]["text"] + chars[j + 1]["text"]) \
+                            and chars[j + 1]["x0"] - chars[j]["x1"] >= min(chars[j + 1]["width"],
+                                                                        chars[j]["width"]) / 2:
+                        chars[j]["text"] += " "
+                    j += 1
 
-            self.__ocr(i + 1, img, chars, zoomin)
-            if callback and i % 6 == 5:
-                callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
+                await trio.to_thread.run_sync(lambda: self.__ocr(i + 1, img, chars, zoomin, id))
+                if callback and i % 6 == 5:
+                    callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
+
+        start = timer()
+        if self.parallel_limiter:
+            async with trio.open_nursery() as nursery:
+                for i, img in enumerate(self.page_images):
+                    nursery.start_soon(__img_ocr, i % self.parallel_devices, img,
+                                       self.parallel_limiter[i % self.parallel_devices])
+        else:
+            for i, img in enumerate(self.page_images):
+                await __img_ocr(0, img)
+            
         logging.info(f"__images__ {len(self.page_images)} pages cost {timer() - start}s")
 
         if not self.is_english and not any(
