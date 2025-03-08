@@ -1,7 +1,8 @@
 #!/bin/bash
+set -x
 
 # Exit immediately if a command exits with a non-zero status
-set -e
+# set -e
 
 # Unset HTTP proxies that might be set by Docker daemon
 export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
