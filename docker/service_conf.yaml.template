@@ -6,24 +6,25 @@ mysql:
   user: '${MYSQL_USER:-root}'
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
-  port: 3306
+  port: ${MYSQL_PORT:-3306}
   max_connections: 100
   stale_timeout: 30
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
-  host: '${MINIO_HOST:-minio}:9000'
+  host: '${MINIO_HOST:-minio}:${MINIO_PORT:-9000}'
+  bucket: '${MINIO_BUCKET:-ragflow}'
 es:
-  hosts: 'http://${ES_HOST:-es01}:9200'
+  hosts: 'http://${ES_HOST:-es01}:${ES_PORT:-9200}'
   username: '${ES_USER:-elastic}'
   password: '${ELASTIC_PASSWORD:-infini_rag_flow}'
 infinity:
-  uri: '${INFINITY_HOST:-infinity}:23817'
+  uri: '${INFINITY_HOST:-infinity}:${INFINITY_PORT:-23817}'
   db_name: 'default_db'
 redis:
-  db: 1
+  db: ${REDIS_DB:-2}
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
-  host: '${REDIS_HOST:-redis}:6379'
+  host: '${REDIS_HOST:-redis}:${REDIS_PORT:-6379}'
 
 # postgres:
 #   name: '${POSTGRES_DBNAME:-rag_flow}'
@@ -37,13 +38,6 @@ redis:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
 #   region: 'region'
-# oss:
-#   access_key: '${ACCESS_KEY}'
-#   secret_key: '${SECRET_KEY}'
-#   endpoint_url: '${ENDPOINT}'
-#   region: '${REGION}'
-#   bucket: '${BUCKET}'
-#   prefix_path: '${OSS_PREFIX_PATH}'
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'
