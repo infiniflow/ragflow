@@ -381,7 +381,7 @@ class CoHereRerank(Base):
     def __init__(self, key, model_name, base_url=None):
         from cohere import Client
 
-        self.client = Client(api_key=key)
+        self.client = Client(api_key=key, base_url=base_url)
         self.model_name = model_name
 
     def similarity(self, query: str, texts: list):
