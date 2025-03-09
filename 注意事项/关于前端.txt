@@ -1,0 +1,3 @@
+界面空白，删除下缓存
+(base) root@hd1-3227:~# cd software/ragflow/web/
+(base) root@hd1-3227:~/software/ragflow/web# rm -rf node_modules/.cache

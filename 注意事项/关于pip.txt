@@ -1,0 +1,19 @@
+虚拟环境下的 pip
+
+which python
+/root/software/ragflow/.venv/bin/python
+
+which pip
+/root/miniconda3/bin/pip
+如果pip不是虚拟环境的，需要安装
+
+
+检查虚拟环境中是否安装了 pip
+* /root/software/ragflow/.venv/bin/python -m pip --version
+* pip 23.0.1 from /root/software/ragflow/.venv/lib/python3.10/site-packages/pip (python 3.10)
+*
+
+如果未安装pip，可以手动安装：
+* /root/software/ragflow/.venv/bin/python -m ensurepip --upgrade
+
+安装完后，只有pip3，没有pip

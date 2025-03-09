@@ -1,0 +1,16 @@
+/root/software/ragflow/docker/launch_backend_service.sh 文件中，修改
+
+PY=python3 -m debugpy --listen 5678
+
+如果启动后，报no permission 的异常，大概率是 debugpy 没有安装
+
+pip3 install debugpy
+
+注意，是当前venv目录下的pip3
+
+
+
+(ragflow) root@hd1-3227:~/software/ragflow# ps -ef | grep python3
+root      817497       1  0 Mar08 ?        00:01:49 /root/miniconda3/envs/liantao-vid/bin/python3.12 /root/.pycharm_helpers/pydev/pydevconsole.py --mode=client --host=localhost --port=39521
+root     1462827 1462825 99 13:59 pts/30   00:01:20 python3 -m debugpy --log-to-stderr --listen 0.0.0.0:5678 rag/svr/task_executor.py 0
+root     1462828 1462826 75 13:59 pts/30   00:00:42 python3 -m debugpy --log-to-stderr --listen 0.0.0.0:5679 api/ragflow_server.py
