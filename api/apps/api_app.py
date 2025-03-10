@@ -45,6 +45,7 @@ from rag.utils.storage_factory import STORAGE_IMPL
 from api.db.services.canvas_service import UserCanvasService
 from agent.canvas import Canvas
 from functools import partial
+import logging
 
 
 @manager.route('/new_token', methods=['POST'])  # noqa: F821
@@ -807,6 +808,7 @@ def completion_faq():
 @manager.route('/retrieval', methods=['POST'])  # noqa: F821
 @validate_request("kb_id", "question")
 def retrieval():
+    logging.info("Retrieval API endpoint called")
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:

@@ -21,13 +21,14 @@ from api.db.services.llm_service import LLMBundle
 from api import settings
 from api.utils.api_utils import validate_request, build_error_result, apikey_required
 from rag.app.tag import label_question
-
+import logging
 
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
 @validate_request("knowledge_id", "query")
 def retrieval(tenant_id):
     req = request.json
+    logging.info(f"req: {req}")
     question = req["query"]
     kb_id = req["knowledge_id"]
     use_kg = req.get("use_kg", False)
@@ -78,6 +79,7 @@ def retrieval(tenant_id):
                 "metadata": {}
             })
 
+        logging.info(f"records: {records}")
         return jsonify({"records": records})
     except Exception as e:
         if str(e).find("not_found") > 0:
