@@ -2598,6 +2598,12 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "Qwen/QwQ-32B",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "Qwen/Qwen2.5-Coder-32B-Instruct",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
