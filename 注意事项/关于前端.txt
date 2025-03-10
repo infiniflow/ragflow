@@ -1,3 +1,26 @@
 界面空白，删除下缓存
 (base) root@hd1-3227:~# cd software/ragflow/web/
 (base) root@hd1-3227:~/software/ragflow/web# rm -rf node_modules/.cache
+
+# 注意，前端应用不要用nohup来做后台启动，会报错，采用pm2的方式可以
+# 安装 pm2
+npm install -g pm2
+
+# 使用 pm2 启动
+pm2 start npm --name "ragflow-web" -- run dev
+
+# 查看日志
+pm2 logs ragflow-web
+
+# 查看状态
+pm2 status
+
+
+# 查看列表
+pm2 list
+
+# 停止
+pm2 stop ragflow-web
+
+# 删除
+pm2 remove ragflow-web
