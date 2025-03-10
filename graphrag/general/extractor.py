@@ -93,7 +93,7 @@ class Extractor:
         return dict(maybe_nodes), dict(maybe_edges)
 
     async def __call__(
-        self, chunks: list[tuple[str, str]],
+        self, doc_id: str, chunks: list[str],
             callback: Callable | None = None
     ):
 
@@ -101,9 +101,9 @@ class Extractor:
         start_ts = trio.current_time()
         out_results = []
         async with trio.open_nursery() as nursery:
-            for i, (cid, ck) in enumerate(chunks):
+            for i, ck in enumerate(chunks):
                 ck = truncate(ck, int(self._llm.max_length*0.8))
-                nursery.start_soon(lambda: self._process_single_content((cid, ck), i, len(chunks), out_results))
+                nursery.start_soon(lambda: self._process_single_content((doc_id, ck), i, len(chunks), out_results))
 
         maybe_nodes = defaultdict(list)
         maybe_edges = defaultdict(list)
@@ -241,10 +241,13 @@ class Extractor:
     ) -> str:
         summary_max_tokens = 512
         use_description = truncate(description, summary_max_tokens)
+        description_list=use_description.split(GRAPH_FIELD_SEP),
+        if len(description_list) <= 12:
+            return use_description
         prompt_template = SUMMARIZE_DESCRIPTIONS_PROMPT
         context_base = dict(
             entity_name=entity_or_relation_name,
-            description_list=use_description.split(GRAPH_FIELD_SEP),
+            description_list=description_list,
             language=self._language,
         )
         use_prompt = prompt_template.format(**context_base)
