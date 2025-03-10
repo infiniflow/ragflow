@@ -322,7 +322,6 @@ Creates a dataset.
   - `"name"`: `string`
   - `"avatar"`: `string`
   - `"description"`: `string`
-  - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
@@ -357,11 +356,6 @@ curl --request POST \
 
 - `"description"`: (*Body parameter*), `string`  
   A brief description of the dataset to create.
-
-- `"language"`: (*Body parameter*), `string`  
-  The language setting of the dataset to create. Available options:  
-  - `"English"` (default)
-  - `"Chinese"`
 
 - `"embedding_model"`: (*Body parameter*), `string`  
   The name of the embedding model to use. For example: `"BAAI/bge-zh-v1.5"`
@@ -2663,6 +2657,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"stream"`: `boolean`
   - `"session_id"`: `string`
   - `"user_id"`: `string`(optional)
+  - `"sync_dsl"`: `boolean` (optional)
   - other parameters: `string`
 ##### Request example
 If the **Begin** component does not take parameters, the following code will create a session.
@@ -2715,6 +2710,8 @@ curl --request POST \
   The ID of the session. If it is not provided, a new session will be generated.
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
+- `"sync_dsl"`: (*Body parameter*), `boolean`
+  Whether to synchronize the changes to existing sessions when an agent is modified, defaults to `false`.
 - Other parameters: (*Body Parameter*)  
   Parameters specified in the **Begin** component.
 
@@ -2866,7 +2863,7 @@ Failure:
 
 ### List agent sessions
 
-**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}`
+**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&dsl={dsl}`
 
 Lists sessions associated with a specified agent.
 
@@ -2903,7 +2900,9 @@ curl --request GET \
   The ID of the agent session to retrieve.
 - `user_id`: (*Filter parameter*), `string`  
   The optional user-defined ID passed in when creating session.
-  
+- `dsl`: (*Filter parameter*), `boolean`  
+  Indicates whether to include the dsl field of the sessions in the response. Defaults to `true`.
+
 #### Response
 
 Success:
@@ -2911,7 +2910,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": {
+    "data": [{
         "agent_id": "e9e2b9c2b2f911ef801d0242ac120006",
         "dsl": {
             "answer": [],
@@ -3043,7 +3042,7 @@ Success:
         ],
         "source": "agent",
         "user_id": ""
-    }
+    }]
 }
 ```
 

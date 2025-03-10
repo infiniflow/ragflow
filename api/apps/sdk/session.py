@@ -336,6 +336,18 @@ def agent_completions(tenant_id, agent_id):
         conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
         if not conv:
             return get_error_data_result(f"You don't own the session {req['session_id']}")
+        # If an update to UserCanvas is detected, update the API4Conversation.dsl
+        sync_dsl = req.get("sync_dsl", False)
+        if sync_dsl is True and cvs[0].update_time > conv[0].update_time:
+            current_dsl = conv[0].dsl
+            new_dsl = json.loads(dsl)
+            state_fields = ["history", "messages", "path", "reference"]
+            states = {field: current_dsl.get(field, []) for field in state_fields}
+            current_dsl.update(new_dsl)
+            current_dsl.update(states)
+            API4ConversationService.update_by_id(req["session_id"], {
+                "dsl": current_dsl
+            })
     else:
         req["question"] = ""
     if req.get("stream", True):
@@ -419,7 +431,10 @@ def list_agent_session(tenant_id, agent_id):
         desc = False
     else:
         desc = True
-    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id)
+    # dsl defaults to True in all cases except for False and false
+    include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
+    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id,
+                                             user_id, include_dsl)
     if not convs:
         return get_result(data=[])
     for conv in convs:

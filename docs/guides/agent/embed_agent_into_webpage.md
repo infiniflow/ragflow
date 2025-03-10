@@ -7,6 +7,10 @@ slug: /embed_agent_into_webpage
 
 You can use iframe to embed an agent into a third-party webpage.
 
+:::caution WARNING
+If your agent's **Begin** component takes a key of **file** type (a **file** type variable), you *cannot* embed it into a webpage.
+:::
+
 1. Before proceeding, you must [acquire an API key](../models/llm_api_key_setup.md); otherwise, an error message would appear.
 2. On the **Agent** page, click an intended agent **>** **Edit** to access its editing page.
 3. Click **Embed into webpage** on the top right corner of the canvas to show the **iframe** window:

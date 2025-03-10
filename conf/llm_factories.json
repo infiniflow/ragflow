@@ -663,80 +663,86 @@
         {
             "name": "Mistral",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING",
+            "tags": "LLM,TEXT EMBEDDING,MODERATION",
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "open-mixtral-8x22b",
-                    "tags": "LLM,CHAT,64k",
-                    "max_tokens": 64000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "open-mixtral-8x7b",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "open-mistral-7b",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "ministral-8b-latest",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "ministral-3b-latest",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
+                    "llm_name": "codestral-latest",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
                     "model_type": "chat"
                 },
                 {
                     "llm_name": "mistral-large-latest",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "mistral-small-latest",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "codestral-latest",
+                    "llm_name": "mistral-saba-latest",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "mistral-nemo",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
+                    "llm_name": "pixtral-large-latest",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "ministral-3b-latest",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "ministral-8b-latest",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
                     "model_type": "chat"
                 },
                 {
                     "llm_name": "mistral-embed",
-                    "tags": "LLM,CHAT,8k",
+                    "tags": "TEXT EMBEDDING,8k",
                     "max_tokens": 8192,
                     "model_type": "embedding"
                 },
                 {
-                    "llm_name": "pixtral-large-latest",
+                    "llm_name": "mistral-moderation-latest",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "mistral-small-latest",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "pixtral-12b-2409",
+                    "tags": "LLM,IMAGE2TEXT,131k",
+                    "max_tokens": 131000,
                     "model_type": "image2text"
                 },
                 {
-                    "llm_name": "pixtral-12b",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
+                    "llm_name": "mistral-ocr-latest",
+                    "tags": "LLM,IMAGE2TEXT,131k",
+                    "max_tokens": 131000,
                     "model_type": "image2text"
+                },
+                {
+                    "llm_name": "open-mistral-nemo",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "open-codestral-mamba",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat"
                 }
             ]
         },
@@ -2592,6 +2598,12 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "Qwen/QwQ-32B",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "Qwen/Qwen2.5-Coder-32B-Instruct",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
@@ -3284,7 +3296,7 @@
         {
             "name": "HuggingFace",
             "logo": "",
-            "tags": "TEXT EMBEDDING",
+            "tags": "TEXT EMBEDDING,TEXT RE-RANK",
             "status": "1",
             "llm": []
         },

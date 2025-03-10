@@ -82,7 +82,6 @@ RAGFlow.create_dataset(
     avatar: str = "",
     description: str = "",
     embedding_model: str = "BAAI/bge-large-zh-v1.5",
-    language: str = "English",
     permission: str = "me", 
     chunk_method: str = "naive",
     parser_config: DataSet.ParserConfig = None
@@ -97,11 +96,6 @@ Creates a dataset.
 
 The unique name of the dataset to create. It must adhere to the following requirements:
 
-- Permitted characters include:
-  - English letters (a-z, A-Z)
-  - Digits (0-9)
-  - "_" (underscore)
-- Must begin with an English letter or underscore.
 - Maximum 65,535 characters.
 - Case-insensitive.
 
@@ -113,12 +107,6 @@ Base64 encoding of the avatar. Defaults to `""`
 
 A brief description of the dataset to create. Defaults to `""`.
 
-##### language: `str`
-
-The language setting of the dataset to create. Available options:
-
-- `"English"` (default)
-- `"Chinese"`
 
 ##### permission
 

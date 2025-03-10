@@ -165,7 +165,7 @@ const PromptEngine = (
         label={t('multiTurn')}
         tooltip={t('multiTurnTip')}
         name={['prompt_config', 'refine_multiturn']}
-        initialValue={true}
+        initialValue={false}
       >
         <Switch></Switch>
       </Form.Item>

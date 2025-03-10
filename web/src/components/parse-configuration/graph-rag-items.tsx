@@ -54,7 +54,7 @@ const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
     (title: React.ReactNode | string) => {
       return {
         title: typeof title === 'string' ? t(title) : title,
-        overlayInnerStyle: { width: '50vw' },
+        overlayInnerStyle: { width: '32vw' },
       };
     },
     [t],
@@ -67,7 +67,7 @@ const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
         label={t('useGraphRag')}
         initialValue={false}
         valuePropName="checked"
-        tooltip={renderWideTooltip('useGraphRagTip')}
+        tooltip={t('useGraphRagTip')}
       >
         <Switch />
       </Form.Item>

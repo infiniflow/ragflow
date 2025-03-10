@@ -30,7 +30,7 @@ from rag.utils.redis_conn import REDIS_CONN
 
 ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
-chat_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 100)))
+chat_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
 
 def perform_variable_replacements(
     input: str, history: list[dict] | None = None, variables: dict | None = None
@@ -352,25 +352,57 @@ def set_relation(tenant_id, kb_id, embd_mdl, from_ent_name, to_ent_name, meta):
             chunk["q_%d_vec" % len(ebd)] = ebd
         settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
 
+async def does_graph_contains(tenant_id, kb_id, doc_id):
+    # Get doc_ids of graph
+    fields = ["source_id"]
+    condition = {
+        "knowledge_graph_kwd": ["graph"],
+        "removed_kwd": "N",
+    }
+    res = await trio.to_thread.run_sync(lambda: settings.docStoreConn.search(fields, [], condition, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [kb_id]))
+    fields2 = settings.docStoreConn.getFields(res, fields)
+    graph_doc_ids = set()
+    for chunk_id in fields2.keys():
+        graph_doc_ids = set(fields2[chunk_id]["source_id"])
+    return doc_id in graph_doc_ids
 
-def get_graph(tenant_id, kb_id):
+async def get_graph_doc_ids(tenant_id, kb_id) -> list[str]:
+    conds = {
+        "fields": ["source_id"],
+        "removed_kwd": "N",
+        "size": 1,
+        "knowledge_graph_kwd": ["graph"]
+    }
+    res = await trio.to_thread.run_sync(lambda: settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id]))
+    doc_ids = []
+    if res.total == 0:
+        return doc_ids
+    for id in res.ids:
+        doc_ids = res.field[id]["source_id"]
+    return doc_ids
+
+
+async def get_graph(tenant_id, kb_id):
     conds = {
         "fields": ["content_with_weight", "source_id"],
         "removed_kwd": "N",
         "size": 1,
         "knowledge_graph_kwd": ["graph"]
     }
-    res = settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id])
+    res = await trio.to_thread.run_sync(lambda: settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id]))
+    if res.total == 0:
+        return None, []
     for id in res.ids:
         try:
             return json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]), edges="edges"), \
                    res.field[id]["source_id"]
         except Exception:
             continue
-    return rebuild_graph(tenant_id, kb_id)
+    result = await rebuild_graph(tenant_id, kb_id)
+    return result
 
 
-def set_graph(tenant_id, kb_id, graph, docids):
+async def set_graph(tenant_id, kb_id, graph, docids):
     chunk = {
         "content_with_weight": json.dumps(nx.node_link_data(graph, edges="edges"), ensure_ascii=False,
                                           indent=2),
@@ -379,13 +411,13 @@ def set_graph(tenant_id, kb_id, graph, docids):
         "source_id": list(docids),
         "available_int": 0,
         "removed_kwd": "N"
-    }
-    res = settings.retrievaler.search({"knowledge_graph_kwd": "graph", "size": 1, "fields": []}, search.index_name(tenant_id), [kb_id])
+    }     
+    res = await trio.to_thread.run_sync(lambda: settings.retrievaler.search({"knowledge_graph_kwd": "graph", "size": 1, "fields": []}, search.index_name(tenant_id), [kb_id]))
     if res.ids:
-        settings.docStoreConn.update({"knowledge_graph_kwd": "graph"}, chunk,
-                                     search.index_name(tenant_id), kb_id)
+        await trio.to_thread.run_sync(lambda: settings.docStoreConn.update({"knowledge_graph_kwd": "graph"}, chunk,
+                                     search.index_name(tenant_id), kb_id))
     else:
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
+        await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id))
 
 
 def is_continuous_subsequence(subseq, seq):
@@ -430,7 +462,7 @@ def merge_tuples(list1, list2):
     return result
 
 
-def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
+async def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
     def n_neighbor(id):
         nonlocal graph, n_hop
         count = 0
@@ -460,10 +492,10 @@ def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
     for n, p in pr.items():
         graph.nodes[n]["pagerank"] = p
         try:
-            settings.docStoreConn.update({"entity_kwd": n, "kb_id": kb_id},
+            await trio.to_thread.run_sync(lambda: settings.docStoreConn.update({"entity_kwd": n, "kb_id": kb_id},
                                          {"rank_flt": p,
-                                          "n_hop_with_weight": json.dumps(n_neighbor(n), ensure_ascii=False)},
-                                         search.index_name(tenant_id), kb_id)
+                                          "n_hop_with_weight": json.dumps( (n), ensure_ascii=False)},
+                                         search.index_name(tenant_id), kb_id))
         except Exception as e:
             logging.exception(e)
 
@@ -480,21 +512,21 @@ def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
         "knowledge_graph_kwd": "ty2ents",
         "available_int": 0
     }
-    res = settings.retrievaler.search({"knowledge_graph_kwd": "ty2ents", "size": 1, "fields": []},
-                                      search.index_name(tenant_id), [kb_id])
+    res = await trio.to_thread.run_sync(lambda: settings.retrievaler.search({"knowledge_graph_kwd": "ty2ents", "size": 1, "fields": []},
+                                      search.index_name(tenant_id), [kb_id]))
     if res.ids:
-        settings.docStoreConn.update({"knowledge_graph_kwd": "ty2ents"},
+        await trio.to_thread.run_sync(lambda: settings.docStoreConn.update({"knowledge_graph_kwd": "ty2ents"},
                                      chunk,
-                                     search.index_name(tenant_id), kb_id)
+                                     search.index_name(tenant_id), kb_id))
     else:
-        settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id)
+        await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert([{"id": chunk_id(chunk), **chunk}], search.index_name(tenant_id), kb_id))
 
 
-def get_entity_type2sampels(idxnms, kb_ids: list):
-    es_res = settings.retrievaler.search({"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids,
+async def get_entity_type2sampels(idxnms, kb_ids: list):
+    es_res = await trio.to_thread.run_sync(lambda: settings.retrievaler.search({"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids,
                                        "size": 10000,
                                        "fields": ["content_with_weight"]},
-                                      idxnms, kb_ids)
+                                      idxnms, kb_ids))
 
     res = defaultdict(list)
     for id in es_res.ids:
@@ -522,18 +554,18 @@ def flat_uniq_list(arr, key):
     return list(set(res))
 
 
-def rebuild_graph(tenant_id, kb_id):
+async def rebuild_graph(tenant_id, kb_id):
     graph = nx.Graph()
     src_ids = []
     flds = ["entity_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "weight_int", "knowledge_graph_kwd", "source_id"]
     bs = 256
     for i in range(0, 39*bs, bs):
-        es_res = settings.docStoreConn.search(flds, [],
+        es_res = await trio.to_thread.run_sync(lambda: settings.docStoreConn.search(flds, [],
                                  {"kb_id": kb_id, "knowledge_graph_kwd": ["entity", "relation"]},
                                  [],
                                  OrderByExpr(),
                                  i, bs, search.index_name(tenant_id), [kb_id]
-                                 )
+                                 ))
         tot = settings.docStoreConn.getTotal(es_res)
         if tot == 0:
             return None, None
