@@ -66,7 +66,7 @@ class FulltextQueryer:
         otxt = txt
         for r, p in patts:
             txt = re.sub(r, p, txt, flags=re.IGNORECASE)
-        if not otxt:
+        if not txt:
             txt = otxt
         return txt
 
