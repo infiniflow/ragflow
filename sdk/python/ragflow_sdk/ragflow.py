@@ -129,7 +129,7 @@ class RAGFlow:
 
         temp_dict = {"name": name,
                      "avatar": avatar,
-                     "dataset_ids": dataset_list,
+                     "dataset_ids": dataset_list if dataset_list else [],
                      "llm": llm.to_json(),
                      "prompt": prompt.to_json()}
         res = self.post("/chats", temp_dict)
