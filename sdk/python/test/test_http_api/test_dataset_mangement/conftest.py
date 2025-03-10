@@ -15,7 +15,6 @@
 #
 
 import pytest
-
 from common import delete_dataset
 
 
