@@ -135,6 +135,8 @@ def set_api_key():
 def add_llm():
     req = request.json
     factory = req["llm_factory"]
+    api_key = req.get("api_key", "")
+    llm_name = req["llm_name"]
 
     def apikey_json(keys):
         nonlocal req
@@ -143,7 +145,6 @@ def add_llm():
     if factory == "VolcEngine":
         # For VolcEngine, due to its special authentication method
         # Assemble ark_api_key endpoint_id into api_key
-        llm_name = req["llm_name"]
         api_key = apikey_json(["ark_api_key", "endpoint_id"])
 
     elif factory == "Tencent Hunyuan":
@@ -157,51 +158,37 @@ def add_llm():
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
         # Assemble bedrock_ak, bedrock_sk, bedrock_region
-        llm_name = req["llm_name"]
         api_key = apikey_json(["bedrock_ak", "bedrock_sk", "bedrock_region"])
 
     elif factory == "LocalAI":
-        llm_name = req["llm_name"] + "___LocalAI"
-        api_key = "xxxxxxxxxxxxxxx"
+        llm_name += "___LocalAI"
 
     elif factory == "HuggingFace":
-        llm_name = req["llm_name"] + "___HuggingFace"
-        api_key = "xxxxxxxxxxxxxxx"
+        llm_name += "___HuggingFace"
 
     elif factory == "OpenAI-API-Compatible":
-        llm_name = req["llm_name"] + "___OpenAI-API"
-        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
+        llm_name += "___OpenAI-API"
 
     elif factory == "VLLM":
-        llm_name = req["llm_name"] + "___VLLM"
-        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
+        llm_name += "___VLLM"
 
     elif factory == "XunFei Spark":
-        llm_name = req["llm_name"]
         if req["model_type"] == "chat":
-            api_key = req.get("spark_api_password", "xxxxxxxxxxxxxxx")
+            api_key = req.get("spark_api_password", "")
         elif req["model_type"] == "tts":
             api_key = apikey_json(["spark_app_id", "spark_api_secret", "spark_api_key"])
 
     elif factory == "BaiduYiyan":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["yiyan_ak", "yiyan_sk"])
 
     elif factory == "Fish Audio":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["fish_audio_ak", "fish_audio_refid"])
 
     elif factory == "Google Cloud":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["google_project_id", "google_region", "google_service_account_key"])
 
     elif factory == "Azure-OpenAI":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["api_key", "api_version"])
-
-    else:
-        llm_name = req["llm_name"]
-        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
     llm = {
         "tenant_id": current_user.id,
