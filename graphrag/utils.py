@@ -30,7 +30,7 @@ from rag.utils.redis_conn import REDIS_CONN
 
 ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
-chat_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 100)))
+chat_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
 
 def perform_variable_replacements(
     input: str, history: list[dict] | None = None, variables: dict | None = None
