@@ -106,7 +106,8 @@ export default {
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
-      testingDescription: '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。請注意這裡的改動不會被自動保存。如果你調整了這裡的默認設置，比如關鍵詞相似度權重，請務必在聊天助手設置或者召回算子設置處同步更新相關設置。',
+      testingDescription:
+        '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。請注意這裡的改動不會被自動保存。如果你調整了這裡的默認設置，比如關鍵詞相似度權重，請務必在聊天助手設置或者召回算子設置處同步更新相關設置。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
         '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。',
@@ -193,6 +194,7 @@ export default {
       deleteDocumentConfirmContent:
         '該文件與知識圖譜相關聯。刪除後，相關節點和關係資訊將被刪除，但圖不會立即更新。更新圖動作是在解析承載知識圖譜提取任務的新文件的過程中執行的。 ',
       plainText: 'Naive',
+      reRankModelWaring: '重排序模型非常耗時。',
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
