@@ -20,10 +20,9 @@ import requests
 from deepdoc.parser import HtmlParser
 from agent.component.base import ComponentBase, ComponentParamBase
 
-
 class InvokeParam(ComponentParamBase):
     """
-    Define the Crawler component parameters.
+    Define the Invoke component parameters.
     """
 
     def __init__(self):
@@ -38,8 +37,9 @@ class InvokeParam(ComponentParamBase):
         self.datatype = "json"  # New parameter to determine data posting type
 
     def check(self):
-        self.check_valid_value(self.method.lower(), "Type of content from the crawler", ['get', 'post', 'put'])
+        self.check_valid_value(self.method.lower(), "Type of content from the invoke", ['get', 'post', 'put'])
         self.check_empty(self.url, "End point URL")
+        self.check_json(self.headers, "Header is JSON")
         self.check_positive_integer(self.timeout, "Timeout time in second")
         self.check_boolean(self.clean_html, "Clean HTML")
         self.check_valid_value(self.datatype.lower(), "Data post type", ['json', 'formdata'])  # Check for valid datapost value
@@ -50,24 +50,33 @@ class Invoke(ComponentBase, ABC):
 
     def _run(self, history, **kwargs):
         args = {}
+        vars =self._canvas.get_variables()
+
         for para in self._param.variables:
             if para.get("component_id"):
                 if '@' in para["component_id"]:
                     component = para["component_id"].split('@')[0]
                     field = para["component_id"].split('@')[1]
-                    cpn = self._canvas.get_component(component)["obj"]
-                    for param in cpn._param.query:
-                        if param["key"] == field:
-                            if "value" in param:
-                                args[para["key"]] = param["value"]
+                    component_obj = self._canvas.get_component(component)
+                    if component_obj is not None:
+                        cpn = component_obj["obj"]
+                        for param in cpn._param.query:
+                            if param["key"] == field:
+                                if "value" in param:
+                                    args[para["key"]] = param["value"]
+                elif para.get("component_id") in vars.keys():
+                    args[para["key"]] = vars[para.get("component_id")]
                 else:
-                    cpn = self._canvas.get_component(para["component_id"])["obj"]
-                    if cpn.component_name.lower() == "answer":
-                        args[para["key"]] = self._canvas.get_history(1)[0]["content"]
-                        continue
-                    _, out = cpn.output(allow_partial=False)
-                    if not out.empty:
-                        args[para["key"]] = "\n".join(out["content"])
+                    component = self._canvas.get_component(para["component_id"])
+                    if component is not None:
+                        cpn = component["obj"]
+                        if cpn.component_name.lower() == "answer":
+                            args[para["key"]] = self._canvas.get_history(1)[0]["content"]
+                            continue
+                        _, out = cpn.output(allow_partial=False)
+                        if not out.empty:
+                            args[para["key"]] = "\n".join(out["content"])
+           
             else:
                 args[para["key"]] = para["value"]
 

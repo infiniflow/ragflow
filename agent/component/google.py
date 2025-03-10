@@ -15,9 +15,11 @@
 #
 import logging
 from abc import ABC
-from serpapi import GoogleSearch
+from serpapi import GoogleSearch as SerpApiSearch
 import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
+import requests
+from googlesearch import search
 
 
 class GoogleParam(ComponentParamBase):
@@ -31,10 +33,11 @@ class GoogleParam(ComponentParamBase):
         self.api_key = "xxx"
         self.country = "cn"
         self.language = "en"
+        self.provider = "OpenSearch" 
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
-        self.check_empty(self.api_key, "SerpApi API key")
+        self.check_empty(self.api_key, "API key")
         self.check_valid_value(self.country, "Google Country",
                                ['af', 'al', 'dz', 'as', 'ad', 'ao', 'ai', 'aq', 'ag', 'ar', 'am', 'aw', 'au', 'at',
                                 'az', 'bs', 'bh', 'bd', 'bb', 'by', 'be', 'bz', 'bj', 'bm', 'bt', 'bo', 'ba', 'bw',
@@ -68,7 +71,7 @@ class GoogleParam(ComponentParamBase):
                                 'sw', 'sv', 'tg', 'ta', 'tt', 'te', 'th', 'ti', 'to', 'lua', 'tum', 'tr', 'tk', 'tw',
                                 'ug', 'uk', 'ur', 'uz', 'vu', 'vi', 'cy', 'wo', 'xh', 'yi', 'yo', 'zu']
                                )
-
+        self.check_valid_value(self.provider, "Provider type", ['SerpApi', 'GoogleCustomSearch','OpenSearch'])  
 
 class Google(ComponentBase, ABC):
     component_name = "Google"
@@ -78,15 +81,19 @@ class Google(ComponentBase, ABC):
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
             return Google.be_output("")
-
+        logging.info(f"self._param: {self._param}")
         try:
-            client = GoogleSearch(
-                {"engine": "google", "q": ans, "api_key": self._param.api_key, "gl": self._param.country,
-                 "hl": self._param.language, "num": self._param.top_n})
-            google_res = [{"content": '<a href="' + i["link"] + '">' + i["title"] + '</a>    ' + i["snippet"]} for i in
-                          client.get_dict()["organic_results"]]
-        except Exception:
-            return Google.be_output("**ERROR**: Existing Unavailable Parameters!")
+            if self._param.provider == "SerpApi":
+                google_res = self.search_serpapi(ans)
+            elif self._param.provider == "GoogleCustomSearch":
+                google_res = self.search_google_custom(ans)
+            elif self._param.provider == "OpenSearch":
+                google_res = self.search_opensearch(ans)
+            else:
+                return Google.be_output("**ERROR**: Unsupported provider!")
+        except Exception as e:
+            logging.info(f"Search error: {e}")
+            return Google.be_output(f"**ERROR**: {e}!")
 
         if not google_res:
             return Google.be_output("")
@@ -94,3 +101,46 @@ class Google(ComponentBase, ABC):
         df = pd.DataFrame(google_res)
         logging.debug(f"df: {df}")
         return df
+
+    def search_serpapi(self, query):
+        """
+        Perform a search using the SerpApi and return the results.
+        """
+        client = SerpApiSearch(
+            {"engine": "google", "q": query, "api_key": self._param.api_key, "gl": self._param.country,
+             "hl": self._param.language, "num": self._param.top_n})
+        results = [{"content": '<a href="' + i["link"] + '">' + i["title"] + '</a>    ' + i["snippet"]} for i in
+                   client.get_dict()["organic_results"]]
+        logging.info(f"{results}")
+
+        return results
+
+    def search_google_custom(self, query):
+        """
+        Perform a search using the Google Custom Search API and return the results.
+        """
+        url = f"https://www.googleapis.com/customsearch/v1?q={query}&key={self._param.api_key}&cx=YOUR_CX_ID&gl={self._param.country}&hl={self._param.language}&num={self._param.top_n}"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        results = [{"content": '<a href="' + item["link"] + '">' + item["title"] + '</a>    ' + item["snippet"]} for item in data.get("items", [])]
+        logging.info(f"{results}")
+
+        return results
+
+    def search_opensearch(self, query):
+        """
+        Perform a search using the OpenSearch and return the results.
+        """
+
+        results = []
+        for url in search(query, num_results=self._param.top_n, lang=self._param.language, advanced=True ):
+            try:
+                title = url.title
+                snippet = url.description if url.description else 'No description available'
+                results.append({"content": f'<a href="{url.url}">{title}</a>    {snippet}'})
+            except Exception as e:
+                logging.error(f"Error processing search result {url}: {e}")
+                results.append({"content": f'<a href="{url.url}">{url.url}</a>    Error processing details'})
+        logging.info(f"{results}")
+        return results

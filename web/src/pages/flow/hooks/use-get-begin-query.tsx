@@ -74,6 +74,29 @@ export const useBuildComponentIdSelectOptions = (
       .map((x) => ({ label: x.data.name, value: x.id }));
   }, [nodes, nodeId, filterChildNodesToSameParentOrExternal]);
 
+  const variableOptions = useMemo(() => {
+    const variableNode = nodes.filter(
+      (x) =>
+        x.id !== nodeId &&
+        x.id.includes('VariableExtract') === true &&
+        filterChildNodesToSameParentOrExternal(x),
+    );
+    let vars = {};
+    variableNode.forEach((x) => {
+      try {
+        const dataJson = JSON.parse(x.data.form.variables);
+        vars = { ...vars, ...dataJson };
+      } catch (e) {
+        console.log(e);
+      }
+    });
+
+    return Object.keys(vars).map((key) => ({
+      label: key,
+      value: key,
+    }));
+  }, [nodes, nodeId, filterChildNodesToSameParentOrExternal]);
+
   const groupedOptions = [
     {
       label: <span>Component Output</span>,
@@ -87,6 +110,11 @@ export const useBuildComponentIdSelectOptions = (
         label: x.name,
         value: `begin@${x.key}`,
       })),
+    },
+    {
+      label: <span>Variable Extract</span>,
+      title: 'Variable Variable',
+      options: variableOptions,
     },
   ];
 
