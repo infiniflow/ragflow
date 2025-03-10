@@ -42,16 +42,22 @@ from api.db.init_data import init_web_data
 from api.versions import get_ragflow_version
 from api.utils import show_configs
 from rag.settings import print_rag_settings
+from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
 
 def update_progress():
+    redis_lock = RedisDistributedLock("update_progress", timeout=60)
     while not stop_event.is_set():
         try:
+            if not redis_lock.acquire():
+                continue
             DocumentService.update_progress()
             stop_event.wait(6)
         except Exception:
             logging.exception("update_progress exception")
+        finally:
+            redis_lock.release()
 
 def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
