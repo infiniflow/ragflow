@@ -26,6 +26,7 @@ from api.db.db_models import Dialog, DB
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import TenantLLMService, LLMBundle
+from api.utils.api_utils import get_data_error_result
 from api import settings
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
@@ -467,10 +468,16 @@ def ask(question, kb_ids, tenant_id):
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
-    kbinfos = retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids,
-                                  1, 12, 0.1, 0.3, aggs=False,
-                                  rank_feature=label_question(question, kbs)
-                                  )
+    if is_knowledge_graph:
+        e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
+        if not e:
+            return get_data_error_result(message="Knowledgebase not found!")
+        kbinfos = retriever.retrieval(question, tenant_ids, kb_ids, embd_mdl,  LLMBundle(kb.tenant_id, LLMType.CHAT))
+    else:
+        kbinfos = retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids,
+                                    1, 12, 0.1, 0.3, aggs=False,
+                                    rank_feature=label_question(question, kbs)
+                                    )
     knowledges = kb_prompt(kbinfos, max_tokens)
     prompt = """
     Role: You're a smart assistant. Your name is Miss R.
