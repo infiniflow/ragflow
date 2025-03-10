@@ -29,47 +29,47 @@ if ls *.pid 1> /dev/null 2>&1; then
 else
     echo "未找到 .pid 文件，程序可能未启动。"
 fi
-
-# -----------------------------停止在端口上监听的Flask进程-------------------------
-echo "---------------------------------------------------------------------------"
-echo "开始关闭Flask服务器进程..."
-
-# 从 YAML 文件中读取 http_port 的值
-HTTP_PORT=$(yq -r '.ragflow.http_port' conf/service_conf.yaml 2>/dev/null)
-
-# 检查是否成功读取端口号
-if [ -z "$HTTP_PORT" ]; then
-    echo "无法从 conf/service_conf.yaml 中读取 http_port 的值"
-    exit 1
-fi
-
-# 查找运行在指定端口的进程
-PID=$(lsof -i :$HTTP_PORT -t 2>/dev/null)
-
-if [ -z "$PID" ]; then
-    echo "没有找到运行在 $HTTP_PORT 端口的进程"
-else
-    echo "找到运行在 $HTTP_PORT 端口的进程, 进程ID: $PID，正在关闭..."
-    # 先尝试正常终止进程
-    kill $PID 2>/dev/null
-    # 等待进程退出
-    sleep 2
-    # 检查进程是否仍然存在
-    if ps -p $PID > /dev/null 2>&1; then
-        echo "进程 PID: $PID 未正常关闭，尝试强制终止..."
-        kill -9 $PID 2>/dev/null
-        sleep 1
-        if ps -p $PID > /dev/null 2>&1; then
-            echo "进程 PID: $PID 强制终止失败，请手动检查"
-            exit 1
-        else
-            echo "进程 PID: $PID 已强制终止"
-        fi
-    else
-        echo "进程 PID: $PID 已正常关闭"
-    fi
-fi
-
+#
+## -----------------------------停止在端口上监听的Flask进程-------------------------
+#echo "---------------------------------------------------------------------------"
+#echo "开始关闭Flask服务器进程..."
+#
+## 从 YAML 文件中读取 http_port 的值
+#HTTP_PORT=$(yq -r '.ragflow.http_port' conf/service_conf.yaml 2>/dev/null)
+#
+## 检查是否成功读取端口号
+#if [ -z "$HTTP_PORT" ]; then
+#    echo "无法从 conf/service_conf.yaml 中读取 http_port 的值"
+#    exit 1
+#fi
+#
+## 查找运行在指定端口的进程
+#PID=$(lsof -i :$HTTP_PORT -t 2>/dev/null)
+#
+#if [ -z "$PID" ]; then
+#    echo "没有找到运行在 $HTTP_PORT 端口的进程"
+#else
+#    echo "找到运行在 $HTTP_PORT 端口的进程, 进程ID: $PID，正在关闭..."
+#    # 先尝试正常终止进程
+#    kill $PID 2>/dev/null
+#    # 等待进程退出
+#    sleep 2
+#    # 检查进程是否仍然存在
+#    if ps -p $PID > /dev/null 2>&1; then
+#        echo "进程 PID: $PID 未正常关闭，尝试强制终止..."
+#        kill -9 $PID 2>/dev/null
+#        sleep 1
+#        if ps -p $PID > /dev/null 2>&1; then
+#            echo "进程 PID: $PID 强制终止失败，请手动检查"
+#            exit 1
+#        else
+#            echo "进程 PID: $PID 已强制终止"
+#        fi
+#    else
+#        echo "进程 PID: $PID 已正常关闭"
+#    fi
+#fi
+#
 
 # -----------------------------清理孤儿进程-------------------------
 echo "---------------------------------------------------------------------------"
