@@ -31,7 +31,7 @@ from api.utils.api_utils import get_result
 @token_required
 def create(tenant_id):
     req = request.json
-    ids = [i for i in req.get("dataset_ids", []) if i]
+    ids = [i for i in req.get("dataset_ids", []) if i] 
     for kb_id in ids:
         kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
         if not kbs:
