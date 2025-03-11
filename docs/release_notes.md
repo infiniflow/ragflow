@@ -7,7 +7,7 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
-## v0.17.1
+## v0.17.0
 
 Released on March 3, 2025.
 
