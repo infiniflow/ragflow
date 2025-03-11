@@ -248,7 +248,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         else:
             sections = [(_, "") for _ in excel_parser(binary) if _]
 
-    elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
+    elif re.search(r"\.(txt|py|js|java|csv|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = TxtParser()(filename, binary,
                                parser_config.get("chunk_token_num", 128),
