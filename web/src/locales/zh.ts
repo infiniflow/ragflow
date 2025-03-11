@@ -156,7 +156,7 @@ export default {
       cancel: '取消',
       rerankModel: 'Rerank模型',
       rerankPlaceholder: '请选择',
-      rerankTip: `可选：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；若已设置 rerank 模型，则混合查询中的向量相似度部分将由 rerank 打分取代。`,
+      rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。`,
       topK: 'Top-K',
       topKTip: `K块将被送入Rerank型号。`,
       delimiter: `分段标识符`,
@@ -429,7 +429,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       knowledgeBases: '知识库',
       knowledgeBasesMessage: '请选择',
       knowledgeBasesTip: '选择关联的知识库。',
-      system: '系统',
+      system: '系统提示词',
       systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
         以下是知识库：
         {knowledge}
@@ -441,9 +441,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
       variable: '变量',
       variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
-      这些变量用于填写提示中的“系统”部分，以便给LLM一个提示。
+      这些变量用于填写提示中的“系统提示词”部分，以便给LLM一个提示。
       “知识”是一个非常特殊的变量，它将用检索到的块填充。
-      “System”中的所有变量都应该用大括号括起来。`,
+      “系统提示词”中的所有变量都应该用大括号括起来。`,
       add: '新增',
       key: '关键字',
       optional: '可选的',
@@ -451,7 +451,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       model: '模型',
       modelTip: '大语言聊天模型',
       modelMessage: '请选择',
-      freedom: '自由',
+      freedom: '自由度',
       improvise: '即兴创作',
       precise: '精确',
       balance: '平衡',

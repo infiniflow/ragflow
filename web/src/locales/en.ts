@@ -223,8 +223,8 @@ export default {
       english: 'English',
       chinese: 'Chinese',
       portugueseBr: 'Portuguese (Brazil)',
-      embeddingModelPlaceholder: 'Please select a embedding model',
-      chunkMethodPlaceholder: 'Please select a chunk method',
+      embeddingModelPlaceholder: 'Please select a embedding model.',
+      chunkMethodPlaceholder: 'Please select a chunk method.',
       save: 'Save',
       me: 'Only me',
       team: 'Team',
@@ -233,7 +233,7 @@ export default {
       methodExamples: 'Examples',
       methodExamplesDescription:
         'The following screenshots are provided for clarity.',
-      dialogueExamplesTitle: 'Dialogue examples',
+      dialogueExamplesTitle: 'view',
       methodEmpty:
         'This will display a visual explanation of the knowledge base categories',
       book: `<p>Supported file formats are <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -430,7 +430,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       knowledgeBasesMessage: 'Please select',
       knowledgeBasesTip:
         'Select the knowledge bases to associate with this chat assistant.',
-      system: 'System',
+      system: 'System prompt',
       systemInitialValue: `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
       {knowledge}
@@ -441,7 +441,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       topN: 'Top N',
       topNTip: `Not all chunks with similarity score above the 'similarity threshold' will be sent to the LLM. This selects 'Top N' chunks from the retrieved ones.`,
       variable: 'Variable',
-      variableTip: `Variables can assist in developing more flexible strategies, particularly when you are using our chat assistant management APIs. These variables will be used by 'System' as part of the prompts for the LLM. The variable {knowledge} is a reserved special variable representing your selected knowledge base(s), and all variables should be enclosed in curly braces {}.`,
+      variableTip: `Variables can assist in developing more flexible strategies, particularly when you are using our chat assistant management APIs. These variables will be used by 'System prompt' as part of the prompts for the LLM. The variable {knowledge} is a reserved special variable representing your selected knowledge base(s), and all variables should be enclosed in curly braces {}.`,
       add: 'Add',
       key: 'Key',
       optional: 'Optional',

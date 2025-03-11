@@ -413,7 +413,7 @@ export default {
       knowledgeBases: '知識庫',
       knowledgeBasesMessage: '請選擇',
       knowledgeBasesTip: '選擇關聯的知識庫。',
-      system: '系統',
+      system: '系統提示词',
       systemInitialValue: `你是一個智能助手，請總結知識庫的內容來回答問題，請列舉知識庫中的數據詳細回答。當所有知識庫內容都與問題無關時，你的回答必須包括“知識庫中未找到您要的答案！”這句話。回答需要考慮聊天歷史。
       以下是知識庫：
       {knowledge}
@@ -425,9 +425,9 @@ export default {
       topNTip: `並非所有相似度得分高於“相似度閾值”的塊都會被提供給法學碩士。LLM 只能看到這些“Top N”塊。`,
       variable: '變量',
       variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
-        这些变量用于填写提示中的“系统”部分，以便给LLM一个提示。
+        这些变量用于填写提示中的“系统提示词”部分，以便给LLM一个提示。
         “知识”是一个非常特殊的变量，它将用检索到的块填充。
-        “System”中的所有变量都应该用大括号括起来。`,
+        “系统提示词”中的所有变量都应该用大括号括起来。`,
       add: '新增',
       key: '關鍵字',
       optional: '可選的',
@@ -435,7 +435,7 @@ export default {
       model: '模型',
       modelTip: '大語言聊天模型',
       modelMessage: '請選擇',
-      freedom: '自由',
+      freedom: '自由度',
       improvise: '即興創作',
       precise: '精確',
       balance: '平衡',

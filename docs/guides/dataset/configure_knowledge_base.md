@@ -124,6 +124,8 @@ RAGFlow uses multiple recall of both full-text search and vector search in its c
 - Similarity threshold: Chunks with similarities below the threshold will be filtered. By default, it is set to 0.2.
 - Vector similarity weight: The percentage by which vector similarity contributes to the overall score. By default, it is set to 0.3.
 
+See [Run retrieval test](./run_retrieval_test.md) for details.
+
 ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
 
 ## Search for knowledge base
