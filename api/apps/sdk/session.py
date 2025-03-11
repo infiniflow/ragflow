@@ -259,6 +259,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
         # The choices field on the last chunk will always be an empty array [].
         def streamed_response_generator(chat_id, dia, msg):
             token_used = 0
+            should_split_index = 0
             response = {
                 "id": f"chatcmpl-{chat_id}",
                 "choices": [
@@ -284,8 +285,19 @@ def chat_completion_openai_like(tenant_id, chat_id):
             try:
                 for ans in chat(dia, msg, True):
                     answer = ans["answer"]
-                    incremental = answer[token_used:]
+                    incremental = answer[should_split_index:]
                     token_used += len(incremental)
+
+                    """
+                    bugfix: When calling the Create chat completion API, the response data is incoherent.
+                    bug code: token_used += len(incremental)
+                    fix author: 任奇
+                    """
+                    if incremental.endswith("</think>"):
+                        response_data_len = len(incremental.rstrip("</think>"))
+                    else:
+                        response_data_len = len(incremental)
+                    should_split_index += response_data_len
                     response["choices"][0]["delta"]["content"] = incremental
                     yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             except Exception as e:
