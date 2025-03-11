@@ -519,7 +519,7 @@ export default {
       img2txtModel: 'Model Img2txt',
       img2txtModelTip:
         'Model multi-modul default yang akan digunakan semua basis pengetahuan baru yang dibuat. Ini dapat menggambarkan gambar atau video.',
-      sequence2txtModel: 'Model Sequence2txt',
+      sequence2txtModel: 'Model Speech2txt',
       sequence2txtModelTip:
         'Model ASR default yang akan digunakan semua basis pengetahuan baru yang dibuat. Gunakan model ini untuk menerjemahkan suara ke teks yang sesuai.',
       rerankModel: 'Model Rerank',

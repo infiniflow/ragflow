@@ -507,7 +507,7 @@ export default {
       img2txtModel: 'Modelo Img2Txt',
       img2txtModelTip:
         'O modelo multimodal padrão que todos os novos bancos de conhecimento usarão. Ele pode descrever uma imagem ou vídeo.',
-      sequence2txtModel: 'Modelo Sequence2Txt',
+      sequence2txtModel: 'Modelo Speech2Txt',
       sequence2txtModelTip:
         'O modelo ASR padrão que todos os novos bancos de conhecimento usarão. Use este modelo para converter vozes em texto correspondente.',
       rerankModel: 'Modelo de Reordenação',

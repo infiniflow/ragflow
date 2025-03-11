@@ -597,7 +597,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       img2txtModel: 'Img2txt模型',
       img2txtModelTip:
         '所有新创建的知识库都将使用默认的多模块模型。 它可以描述图片或视频。',
-      sequence2txtModel: 'Sequence2txt模型',
+      sequence2txtModel: 'Speech2txt模型',
       sequence2txtModelTip:
         '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。',
       rerankModel: 'Rerank模型',

@@ -605,7 +605,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       img2txtModel: 'Img2txt model',
       img2txtModelTip:
         'The default multi-module model all the newly created knowledgebase will use. It can describe a picture or video.',
-      sequence2txtModel: 'Sequence2txt model',
+      sequence2txtModel: 'Speech2txt model',
       sequence2txtModelTip:
         'The default ASR model all the newly created knowledgebase will use. Use this model to translate voices to corresponding text.',
       rerankModel: 'Rerank model',
