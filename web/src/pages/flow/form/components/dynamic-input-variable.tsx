@@ -1,7 +1,7 @@
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Collapse, Flex, Form, Input, Select } from 'antd';
-import { PropsWithChildren, useCallback } from 'react';
+import { PropsWithChildren, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
 
@@ -42,12 +42,32 @@ const DynamicVariableForm = ({ node }: IProps) => {
     [form],
   );
 
+  // 遍历所有的name字段
+  const autoNameValue = useMemo(() => {
+    const names = form.getFieldValue('query')?.map((item: any) => item.name);
+    if (!names) return 'volume1';
+    for (let i = 1; i < 100; i++) {
+      let value = 'volume' + i;
+      if (!names.includes(value)) {
+        return value;
+      }
+    }
+    return 'volume100';
+  }, [form.getFieldValue('query')]);
+
   return (
     <Form.List name="query">
       {(fields, { add, remove }) => (
         <>
           {fields.map(({ key, name, ...restField }) => (
             <Flex key={key} gap={10} align={'baseline'}>
+              <Form.Item
+                {...restField}
+                name={[name, 'name']}
+                className={styles.variableName}
+              >
+                <Input placeholder={t('common.pleaseInput')} />
+              </Form.Item>
               <Form.Item
                 {...restField}
                 name={[name, 'type']}
@@ -85,7 +105,9 @@ const DynamicVariableForm = ({ node }: IProps) => {
           <Form.Item>
             <Button
               type="dashed"
-              onClick={() => add({ type: VariableType.Reference })}
+              onClick={() =>
+                add({ name: autoNameValue, type: VariableType.Reference })
+              }
               block
               icon={<PlusOutlined />}
               className={styles.addButton}

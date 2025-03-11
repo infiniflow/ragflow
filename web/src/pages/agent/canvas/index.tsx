@@ -16,6 +16,9 @@ import {
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useShowDrawer } from '../hooks/use-show-drawer';
 // import RunDrawer from '../run-drawer';
+import { CoderNode } from '@/pages/flow/canvas/node/coder-node';
+import { FileReaderNode } from '@/pages/flow/canvas/node/filereader-node';
+import { OcrNode } from '@/pages/flow/canvas/node/ocr-node';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
 import { RagNode } from './node';
@@ -53,6 +56,9 @@ const nodeTypes: NodeTypes = {
   emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,
+  coderNode: CoderNode,
+  fileReaderNode: FileReaderNode,
+  ocrNode: OcrNode,
 };
 
 const edgeTypes = {

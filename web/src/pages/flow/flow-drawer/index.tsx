@@ -20,6 +20,7 @@ import DeepLForm from '../form/deepl-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
 import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
+import FileReaderForm from '../form/filereader-form';
 import GenerateForm from '../form/generate-form';
 import GithubForm from '../form/github-form';
 import GoogleForm from '../form/google-form';
@@ -28,6 +29,7 @@ import InvokeForm from '../form/invoke-form';
 import Jin10Form from '../form/jin10-form';
 import KeywordExtractForm from '../form/keyword-extract-form';
 import MessageForm from '../form/message-form';
+import OcrNode from '../form/ocr-from';
 import PubMedForm from '../form/pubmed-form';
 import QWeatherForm from '../form/qweather-form';
 import RelevantForm from '../form/relevant-form';
@@ -99,6 +101,8 @@ const FormMap = {
   [Operator.Iteration]: IterationForm,
   [Operator.IterationStart]: () => <></>,
   [Operator.Coder]: CoderForm,
+  [Operator.FileReader]: FileReaderForm,
+  [Operator.Ocr]: OcrNode,
 };
 
 const EmptyContent = () => <div></div>;

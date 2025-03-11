@@ -32,6 +32,7 @@ class BeginParam(ComponentParamBase):
         return True
 
 
+
 class Begin(ComponentBase):
     component_name = "Begin"
 
@@ -44,6 +45,13 @@ class Begin(ComponentBase):
         res = {"content": self._param.prologue}
         yield res
         self.set_output(self.be_output(res))
+
+        
+    def get_content_value(self, key):
+        for p in self._param.query:
+            if p["key"] == key:
+                return p.get("value", "")
+        return None
 
 
 

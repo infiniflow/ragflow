@@ -19,7 +19,8 @@ import json
 import os
 import logging
 from functools import partial
-from typing import Tuple, Union
+import re
+from typing import Optional, Tuple, Union
 
 import pandas as pd
 
@@ -30,14 +31,22 @@ _DEPRECATED_PARAMS = "_deprecated_params"
 _USER_FEEDED_PARAMS = "_user_feeded_params"
 _IS_RAW_CONF = "_is_raw_conf"
 
+_INPUTS = 'inputs'
+_DEBUG_INPUTS = 'debug_inputs'
+_OUTPUT_VAR_NAME = 'output'
+
+_CONTENT_NAME_ = 'content'
+
 
 class ComponentParamBase(ABC):
+
     def __init__(self):
-        self.output_var_name = "output"
+        self.output_var_name = _OUTPUT_VAR_NAME
         self.message_history_window_size = 22
         self.query = []
         self.inputs = []
         self.debug_inputs = []
+        self.error = None
 
     def set_name(self, name: str):
         self._name = name
@@ -89,7 +98,15 @@ class ComponentParamBase(ABC):
         def _recursive_convert_obj_to_dict(obj):
             ret_dict = {}
             for attr_name in list(obj.__dict__):
-                if attr_name in [_FEEDED_DEPRECATED_PARAMS, _DEPRECATED_PARAMS, _USER_FEEDED_PARAMS, _IS_RAW_CONF]:
+                if attr_name in [
+                    _FEEDED_DEPRECATED_PARAMS, 
+                    _DEPRECATED_PARAMS, 
+                    _USER_FEEDED_PARAMS, 
+                    _IS_RAW_CONF, 
+                    _DEBUG_INPUTS,
+                    _INPUTS,
+                    _OUTPUT_VAR_NAME
+                    ]:
                     continue
                 # get attr
                 attr = getattr(obj, attr_name)
@@ -413,11 +430,13 @@ class ComponentBase(ABC):
                                                               json.dumps(kwargs, ensure_ascii=False)))
         self._param.debug_inputs = []
         try:
-            self.prase_params()
+            self.read_all_params()
             res = self._run(history, **kwargs)
             self.set_output(res)
+            self.set_error(None)
         except Exception as e:
-            self.set_output(pd.DataFrame([{"content": str(e)}]))
+            self.set_output(pd.DataFrame([{ _CONTENT_NAME_ : str(e)}]))
+            self.set_error(e)
             raise e
 
         return res
@@ -433,7 +452,7 @@ class ComponentBase(ABC):
                     return self._param.output_var_name, pd.DataFrame(o)
                 if o is None:
                     return self._param.output_var_name, pd.DataFrame()
-                return self._param.output_var_name, pd.DataFrame([{"content": str(o)}])
+                return self._param.output_var_name, pd.DataFrame([{_CONTENT_NAME_: str(o)}])
             return self._param.output_var_name, o
 
         if allow_partial or not isinstance(o, partial):
@@ -501,7 +520,7 @@ class ComponentBase(ABC):
             if outs:
                 df = pd.concat(outs, ignore_index=True)
                 if "content" in df:
-                    df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
+                    df = df.drop_duplicates(subset=[_CONTENT_NAME_]).reset_index(drop=True)
                 return df
 
         upstream_outs = []
@@ -537,7 +556,7 @@ class ComponentBase(ABC):
 
         df = pd.concat(upstream_outs, ignore_index=True)
         if "content" in df:
-            df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
+            df = df.drop_duplicates(subset=[_CONTENT_NAME_]).reset_index(drop=True)
 
         self._param.inputs = []
         for _, r in df.iterrows():
@@ -558,7 +577,8 @@ class ComponentBase(ABC):
 
                 eles.append({"name": self._canvas.get_component_name(cpn_id), "key": cpn_id})
             else:
-                eles.append({"key": q["value"], "name": q["value"], "value": q["value"]})
+                if not q.get("optional") or 'value' in q:
+                    eles.append({"key": q["value"], "name": q["value"], "value": q["value"]})
         return eles
 
     def get_stream_input(self):
@@ -574,10 +594,67 @@ class ComponentBase(ABC):
 
     @staticmethod
     def be_output(v):
-        return pd.DataFrame([{"content": v}])
+        return pd.DataFrame([{_CONTENT_NAME_: v}])
     
-    def prase_params(self):
-        return
+    # 获取所有需要的参数
+    def read_all_params(self):
+        if self.component_name.lower() == "begin" or self.component_name.lower() == "answer":
+            return
+        self._param.inputs = []
+        for para in self.get_input_elements():
+            cpn_id, key = ComponentBase.split_param(para["key"])
+            component = self._canvas.get_component(cpn_id)
+            if not component:
+                continue
+            cpn = component["obj"]
+            if cpn.component_name.lower() == "answer":
+                hist = self._canvas.get_history(1)
+                if hist:
+                    hist = hist[0]["content"]
+                else:
+                    hist = ""
+                self.make_inputs(para, _CONTENT_NAME_, hist)
+            else:
+                if key is None or key == '':
+                    key = _CONTENT_NAME_
+                df = cpn.get_content_value(key)
+                if df is not None: 
+                    self.make_inputs(para, key, df)
+                else:
+                    assert False, f"Can't find parameter '{key}' for {cpn_id}"
+    
+    def make_inputs(self, para, key, value):
+        self._param.inputs.append(
+            {"component_id": para["key"], key: value}
+        )
+    
+    def get_input(self, cpn_id, key = None):
+        if key is None or key == '':
+            key = _CONTENT_NAME_
+        for input in self._param.inputs:
+            if input['component_id'] == cpn_id:
+                if isinstance(input, pd.DataFrame):
+                    return input[key]
+                elif isinstance(input, dict):
+                    return input[key]
+                else:
+                    return input
+        return None
+
+    # 创建输入参数
+    def make_query_values(self):
+        for q in self._param.query:
+            if (q['type'] == 'reference') :
+                q['value'] = None
+                for input in self._param.inputs:
+                    if input['component_id'] == q['component_id']:
+                        q['value'] = input['content']
+                        break
+                assert q['value'] != None, f"Can't find parameter '{q['component_id']}' for {self._id}"
+
+
+    def set_error(self, e):
+        self._param.error = e
 
     def get_component_name(self, cpn_id):
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()
@@ -588,3 +665,55 @@ class ComponentBase(ABC):
     def get_parent(self):
         pid = self._canvas.get_component(self._id)["parent_id"]
         return self._canvas.get_component(pid)["obj"]
+    
+
+    def get_content_value(self, key: str | None = _CONTENT_NAME_):
+        # 这个判断预留未来组件可以多参数输出
+        if isinstance(self._param.output_var_name, list):
+            if self._param.output_var_name.__contains__(key): 
+                return self._param[key]
+            else:
+                return None
+        else:
+            if key is None or key == '' :
+                key = _CONTENT_NAME_
+            o = getattr(self._param, self._param.output_var_name)
+            if isinstance(o, pd.DataFrame):
+                return o[key]
+            elif isinstance(o, partial):
+                retValue = None
+                for oo in o():
+                    if isinstance(oo, pd.DataFrame):
+                        retValue = oo[key]
+                    elif isinstance(oo, dict):
+                        retValue = oo[key]
+                    else:
+                        retValue = oo
+                return retValue
+            else:
+                return o
+
+    def get_query(self, name: str):
+        for query in self._param.query:
+            if query['name'] == name:
+                # 判断query类型
+                if query['type'] == 'reference':
+                    component_id = query['component_id']
+                    cpn_id, key = self.split_param(component_id)
+                    return self.get_input(cpn_id, key)
+                else:
+                    return query['value']
+        return None
+
+    @staticmethod
+    def split_param(param: str) -> Tuple[str, Optional[str]]:
+        if '@' not in param:
+            return param, None
+        return tuple(param.split('@', 1))  # type: ignore
+    
+
+    @staticmethod
+    def get_dynamic_params(value) -> list[str]:
+        # 这里预留@符号，未来可用于非begin组件的动态参数
+        return [match.group(1) for match in re.finditer( r"\{([a-z0-9_-]+(?:(:[a-z0-9_-]+)+(?:@[a-z0-9_-]+)*|(@[a-z0-9_-]+)+))\}", value, re.IGNORECASE)]
+

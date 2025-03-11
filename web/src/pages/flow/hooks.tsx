@@ -28,10 +28,6 @@ import trim from 'lodash/trim';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
 import {
-  NodeMap,
-  Operator,
-  RestrictedUpstreamMap,
-  SwitchElseTo,
   initialAkShareValues,
   initialArXivValues,
   initialBaiduFanyiValues,
@@ -46,6 +42,7 @@ import {
   initialDuckValues,
   initialEmailValues,
   initialExeSqlValues,
+  initialFileReaderValues,
   initialGenerateValues,
   initialGithubValues,
   initialGoogleScholarValues,
@@ -56,6 +53,7 @@ import {
   initialKeywordExtractValues,
   initialMessageValues,
   initialNoteValues,
+  initialOcrValues,
   initialPubMedValues,
   initialQWeatherValues,
   initialRelevantValues,
@@ -67,6 +65,10 @@ import {
   initialWenCaiValues,
   initialWikipediaValues,
   initialYahooFinanceValues,
+  NodeMap,
+  Operator,
+  RestrictedUpstreamMap,
+  SwitchElseTo,
 } from './constant';
 import useGraphStore, { RFState } from './store';
 import {
@@ -104,6 +106,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Answer]: {},
       [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
       [Operator.Relevant]: { ...initialRelevantValues, llm_id: llmId },
+      [Operator.Ocr]: { ...initialOcrValues, llm_id: llmId },
       [Operator.RewriteQuestion]: {
         ...initialRewriteQuestionValues,
         llm_id: llmId,
@@ -141,6 +144,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Iteration]: initialIterationValues,
       [Operator.IterationStart]: initialIterationValues,
       [Operator.Coder]: initialCoderValues,
+      [Operator.FileReader]: initialFileReaderValues,
     };
   }, [llmId]);
 

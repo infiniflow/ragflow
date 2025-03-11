@@ -129,6 +129,7 @@ export type BaseNode<T = any> = Node<BaseNodeData<T>>;
 export type IBeginNode = BaseNode<IBeginForm>;
 export type IRetrievalNode = BaseNode<IRetrievalForm>;
 export type IGenerateNode = BaseNode<IGenerateForm>;
+export type IOcrNode = BaseNode<IGenerateForm>;
 export type ICategorizeNode = BaseNode<ICategorizeForm>;
 export type ISwitchNode = BaseNode<ISwitchForm>;
 export type IRagNode = BaseNode;
@@ -144,6 +145,7 @@ export type IIterationNode = BaseNode;
 export type IIterationStartNode = BaseNode;
 export type IKeywordNode = BaseNode;
 export type ICoderNode = BaseNode;
+export type IFileReaderNode = BaseNode;
 
 export type RAGFlowNodeType =
   | IBeginNode
@@ -163,7 +165,9 @@ export type RAGFlowNodeType =
   | IIterationNode
   | IIterationStartNode
   | IKeywordNode
-  | ICoderNode;
+  | ICoderNode
+  | IFileReaderNode
+  | IOcrNode;
 
 export interface IGraph {
   nodes: RAGFlowNodeType[];

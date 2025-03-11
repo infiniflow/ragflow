@@ -295,7 +295,7 @@ class Canvas:
             raise Exception("The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow.")
 
     def get_component(self, cpn_id):
-        return self.components[cpn_id]
+        return self.components.get(cpn_id, None)
 
     def get_tenant_id(self):
         return self._tenant_id

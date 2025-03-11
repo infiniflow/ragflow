@@ -20,7 +20,7 @@ from typing import Tuple, Union
 
 import pandas as pd
 
-from agent.component.base import ComponentBase, ComponentParamBase
+from agent.component.base import _CONTENT_NAME_, ComponentBase, ComponentParamBase
 
 
 class AnswerParam(ComponentParamBase):
@@ -83,7 +83,7 @@ class Answer(ComponentBase, ABC):
 
         for r, c in self._canvas.history[::-1]:
             if r == "user":
-                return self._param.output_var_name, pd.DataFrame([{"content": c}])
+                return self._param.output_var_name, pd.DataFrame([{_CONTENT_NAME_: c}])
 
         self._param.output_var_name, pd.DataFrame([])
 

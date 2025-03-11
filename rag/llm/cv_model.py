@@ -193,28 +193,67 @@ class QWenCV(Base):
         dashscope.api_key = key
         self.model_name = model_name
         self.lang = lang
+        self.api_key = key
 
-    def prompt(self, binary):
+
+
+    def detect_image_format(self, binary: bytes) -> str:
+        """通过文件头检测图片格式"""
+        if len(binary) < 16:
+            return 'jpeg'  # 默认返回jpeg格式
+        
+        signatures = {
+            b'\xFF\xD8\xFF': 'jpeg',
+            b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A': 'png',
+            b'GIF87a': 'gif',
+            b'GIF89a': 'gif',
+            b'RIFF': 'webp',  # WebP需要特殊处理
+            b'\x42\x4D': 'bmp',
+            b'\x00\x00\x01\x00': 'ico'
+        }
+
+        # 特殊处理WebP格式
+        if binary.startswith(b'RIFF') and len(binary) > 12:
+            if binary[8:12] == b'WEBP':
+                return 'webp'
+        
+        # 遍历签名进行匹配
+        for sig, fmt in signatures.items():
+            if binary.startswith(sig):
+                return fmt
+        return 'jpeg'  # 默认返回jpeg
+    
+
+    def prompt(self, image):
         # stupid as hell
-        tmp_dir = get_project_base_directory("tmp")
-        if not os.path.exists(tmp_dir):
-            os.mkdir(tmp_dir)
-        path = os.path.join(tmp_dir, "%s.jpg" % get_uuid())
-        Image.open(io.BytesIO(binary)).save(path)
-        return [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "image": f"file://{path}"
-                    },
-                    {
-                        "text": "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。" if self.lang.lower() == "chinese" else
-                        "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out.",
-                    },
-                ],
-            }
-        ]
+        imageObj = ''
+        if isinstance(image, bytes):
+            image_format = self.detect_image_format(image)
+            base64_image = base64.b64encode(image).decode('utf-8')
+            imageObj = {
+                "url": f"data:image/{image_format};base64,{base64_image}"
+                }
+        elif isinstance(image, str) and str(image).startswith("http"):
+            imageObj = image
+        return  [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            # 需要注意，传入BASE64，图像格式（即image/{format}）需要与支持的图片列表中的Content Type保持一致。"f"是字符串格式化的方法。
+                            # PNG图像：  f"data:image/png;base64,{base64_image}"
+                            # JPEG图像： f"data:image/jpeg;base64,{base64_image}"
+                            # WEBP图像： f"data:image/webp;base64,{base64_image}"
+                            "image_url": imageObj,
+                            "min_pixels": 28 * 28 * 4,
+                            "max_pixels": 28 * 28 * 1280
+                        },
+                        # 为保证识别效果，目前模型内部会统一使用"Read all the text in the image."进行识别，用户输入的文本不会生效。
+                        {"type": "text", "text": "识别图片中的所有文字"},
+                    ],
+                }
+            ]
 
     def chat_prompt(self, text, b64):
         return [
@@ -223,13 +262,25 @@ class QWenCV(Base):
         ]
     
     def describe(self, image, max_tokens=300):
-        from http import HTTPStatus
-        from dashscope import MultiModalConversation
-        response = MultiModalConversation.call(model=self.model_name,
-                                               messages=self.prompt(image))
-        if response.status_code == HTTPStatus.OK:
-            return response.output.choices[0]['message']['content'][0]["text"], response.usage.output_tokens
-        return response.message, 0
+
+        client = OpenAI(
+            # 若没有配置环境变量，请用百炼API Key将下行替换为：api_key="sk-xxx"
+            api_key= self.api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+        completion = client.chat.completions.create(
+            model=self.model_name,
+            messages=self.prompt(image),
+        )
+        return completion.choices[0].message.content, 0
+
+        # from http import HTTPStatus
+        # from dashscope import MultiModalConversation
+        # response = MultiModalConversation.call(model=self.model_name,
+        #                                        messages=self.prompt(image))
+        # if response.status_code == HTTPStatus.OK:
+        #     return response.output.choices[0]['message']['content'][0]["text"], response.usage.output_tokens
+        # return response.message, 0
 
     def chat(self, system, history, gen_conf, image=""):
         from http import HTTPStatus

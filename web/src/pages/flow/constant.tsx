@@ -17,11 +17,13 @@ import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
 import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
 import { ReactComponent as EmailIcon } from '@/assets/svg/email.svg';
 import { ReactComponent as ExeSqlIcon } from '@/assets/svg/exesql.svg';
+import { ReactComponent as FileReaderIcon } from '@/assets/svg/filereader.svg';
 import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
 import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as InvokeIcon } from '@/assets/svg/invoke-ai.svg';
 import { ReactComponent as Jin10Icon } from '@/assets/svg/jin10.svg';
 import { ReactComponent as NoteIcon } from '@/assets/svg/note.svg';
+import { ReactComponent as OcrIcon } from '@/assets/svg/ocr.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
 import { ReactComponent as TemplateIcon } from '@/assets/svg/template.svg';
@@ -105,6 +107,8 @@ export enum Operator {
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
   Coder = 'Coder',
+  FileReader = 'FileReader',
+  Ocr = 'Ocr',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -149,6 +153,8 @@ export const operatorIconMap = {
   [Operator.Iteration]: IterationCcw,
   [Operator.IterationStart]: CirclePower,
   [Operator.Coder]: CoderIcon,
+  [Operator.FileReader]: FileReaderIcon,
+  [Operator.Ocr]: OcrIcon,
 };
 
 export const operatorMap: Record<
@@ -169,6 +175,14 @@ export const operatorMap: Record<
     color: '#385974',
   },
   [Operator.Generate]: {
+    backgroundColor: '#ebd6d6',
+    width: 150,
+    height: 150,
+    fontSize: 20,
+    iconFontSize: 30,
+    color: '#996464',
+  },
+  [Operator.Ocr]: {
     backgroundColor: '#ebd6d6',
     width: 150,
     height: 150,
@@ -290,6 +304,9 @@ export const operatorMap: Record<
   [Operator.Coder]: {
     backgroundColor: '#dee0e2',
   },
+  [Operator.FileReader]: {
+    backgroundColor: '#dee0e2',
+  },
 };
 
 export const componentMenuList = [
@@ -329,6 +346,12 @@ export const componentMenuList = [
   },
   {
     name: Operator.Coder,
+  },
+  {
+    name: Operator.FileReader,
+  },
+  {
+    name: Operator.Ocr,
   },
   {
     name: Operator.Note,
@@ -400,6 +423,26 @@ export const componentMenuList = [
 
 const initialQueryBaseValues = {
   query: [],
+};
+
+const initialQueryFileReaderValues = {
+  query: [
+    {
+      name: 'path',
+      type: 'input',
+      value: 'input file path',
+    },
+  ],
+};
+
+const initialQueryOcrValues = {
+  query: [
+    {
+      name: 'datasource',
+      type: 'reference',
+      value: 'input file path',
+    },
+  ],
 };
 
 export const initialRetrievalValues = {
@@ -627,6 +670,16 @@ export const initialCoderValues = {
   coder: '',
 };
 
+export const initialFileReaderValues = {
+  type: 'local',
+  ...initialQueryFileReaderValues,
+};
+
+export const initialOcrValues = {
+  parameters: [],
+  ...initialQueryOcrValues,
+};
+
 export const initialEmailValues = {
   smtp_server: '',
   smtp_port: 587,
@@ -726,6 +779,8 @@ export const RestrictedUpstreamMap = {
   [Operator.Iteration]: [Operator.Begin],
   [Operator.IterationStart]: [Operator.Begin],
   [Operator.Coder]: [Operator.Begin],
+  [Operator.FileReader]: [Operator.Begin],
+  [Operator.Ocr]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -733,12 +788,14 @@ export const NodeMap = {
   [Operator.Categorize]: 'categorizeNode',
   [Operator.Retrieval]: 'retrievalNode',
   [Operator.Generate]: 'generateNode',
+  [Operator.Ocr]: 'ocrNode',
   [Operator.Answer]: 'logicNode',
   [Operator.Message]: 'messageNode',
   [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.KeywordExtract]: 'keywordNode',
-  [Operator.Coder]: 'CoderNode',
+  [Operator.Coder]: 'coderNode',
+  [Operator.FileReader]: 'fileReaderNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Baidu]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
@@ -2955,6 +3012,8 @@ export const TuShareSrcOptions = [
   'jinrongjie',
 ];
 export const CrawlerResultOptions = ['markdown', 'html', 'content'];
+
+export const FileSource = ['local', 'remote', 'dataset'];
 
 export enum BeginQueryType {
   Line = 'line',

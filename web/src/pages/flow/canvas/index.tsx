@@ -34,6 +34,7 @@ import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
 import { CoderNode } from './node/coder-node';
 import { EmailNode } from './node/email-node';
+import { FileReaderNode } from './node/filereader-node';
 import { GenerateNode } from './node/generate-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
@@ -41,6 +42,7 @@ import { KeywordNode } from './node/keyword-node';
 import { LogicNode } from './node/logic-node';
 import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
+import { OcrNode } from './node/ocr-node';
 import { RelevantNode } from './node/relevant-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
@@ -65,7 +67,9 @@ const nodeTypes: NodeTypes = {
   emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,
-  CoderNode: CoderNode,
+  coderNode: CoderNode,
+  fileReaderNode: FileReaderNode,
+  ocrNode: OcrNode,
 };
 
 const edgeTypes = {

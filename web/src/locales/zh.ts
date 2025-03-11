@@ -1170,6 +1170,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       coderDescription: '代码执行器用于执行代码片段，并将执行结果作为输出项。',
       code: '代码',
       codeTip: `请将执行结果放到result变量中，例如：result = 'Hello World';`,
+      fileReader: '文件读取',
+      fileReaderDescription:
+        '文件读取用于读取文件内容，并将文件内容作为输出项。可读取本地和远程(HTTP-GET)文件。',
     },
     footer: {
       profile: 'All rights reserved @ React',

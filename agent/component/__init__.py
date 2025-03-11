@@ -51,7 +51,8 @@ from .email import Email, EmailParam
 from .iteration import Iteration, IterationParam
 from .iterationitem import IterationItem, IterationItemParam
 from .coder import Coder, CoderParam
-
+from .filereader import FileReader, FileReaderParam
+from .ocr import Ocr, OcrParam
 
 def component_class(class_name):
     m = importlib.import_module("agent.component")
@@ -84,6 +85,10 @@ __all__ = [
     "ConcentratorParam",
     "Coder",
     "CoderParam",
+    "FileReader",
+    "FileReaderParam",
+    "Ocr",
+    "OcrParam",
     "Baidu",
     "BaiduParam",
     "DuckDuckGo",
