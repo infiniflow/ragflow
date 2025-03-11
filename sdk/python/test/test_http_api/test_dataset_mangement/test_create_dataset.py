@@ -101,9 +101,7 @@ class TestAdvancedConfigurations:
         [
             ("me", "me", 0),
             ("team", "team", 0),
-            pytest.param(
-                "empty_permission", "", 0, marks=pytest.mark.xfail(reason="issue#5709")
-            ),
+            ("empty_permission", "", 0),
             ("me_upercase", "ME", 102),
             ("team_upercase", "TEAM", 102),
             ("other_permission", "other_permission", 102),
@@ -134,12 +132,7 @@ class TestAdvancedConfigurations:
             ("picknowledge_graphture", "knowledge_graph", 0),
             ("email", "email", 0),
             ("tag", "tag", 0),
-            pytest.param(
-                "empty_chunk_method",
-                "",
-                0,
-                marks=pytest.mark.xfail(reason="issue#5709"),
-            ),
+            ("empty_chunk_method", "", 0),
             ("other_chunk_method", "other_chunk_method", 102),
         ],
     )
