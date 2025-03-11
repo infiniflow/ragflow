@@ -24,6 +24,7 @@ services:
       - TZ=${TIMEZONE}
       - HF_ENDPOINT=${HF_ENDPOINT}
       - MACOS=${MACOS}
+      - HIDE_SIGNUP=${HIDE_SIGNUP}
     networks:
       - ragflow
     restart: on-failure

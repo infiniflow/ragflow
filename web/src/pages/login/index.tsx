@@ -16,10 +16,12 @@ const Login = () => {
   const { register, loading: registerLoading } = useRegister();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
   const loading = signLoading || registerLoading;
+  const hide_signup = process.env.HIDE_SIGNUP === 'true';
 
   const changeTitle = () => {
     setTitle((title) => (title === 'login' ? 'register' : 'login'));
   };
+
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -54,9 +56,9 @@ const Login = () => {
       console.log('Failed:', errorInfo);
     }
   };
+
   const formItemLayout = {
     labelCol: { span: 6 },
-    // wrapperCol: { span: 8 },
   };
 
   const toGoogle = () => {
@@ -118,24 +120,28 @@ const Login = () => {
                 <Checkbox> {t('rememberMe')}</Checkbox>
               </Form.Item>
             )}
-            <div>
-              {title === 'login' && (
-                <div>
-                  {t('signInTip')}
-                  <Button type="link" onClick={changeTitle}>
-                    {t('signUp')}
-                  </Button>
-                </div>
-              )}
-              {title === 'register' && (
-                <div>
-                  {t('signUpTip')}
-                  <Button type="link" onClick={changeTitle}>
-                    {t('login')}
-                  </Button>
-                </div>
-              )}
-            </div>
+
+            {hide_signup && (
+              <>
+                {title === 'login' && (
+                  <div>
+                    {t('signInTip')}
+                    <Button type="link" onClick={changeTitle}>
+                      {t('signUp')}
+                    </Button>
+                  </div>
+                )}
+                {title === 'register' && (
+                  <div>
+                    {t('signUpTip')}
+                    <Button type="link" onClick={changeTitle}>
+                      {t('login')}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+
             <Button
               type="primary"
               block
@@ -147,20 +153,6 @@ const Login = () => {
             </Button>
             {title === 'login' && (
               <>
-                {/* <Button
-                  block
-                  size="large"
-                  onClick={toGoogle}
-                  style={{ marginTop: 15 }}
-                >
-                  <div>
-                    <Icon
-                      icon="local:google"
-                      style={{ verticalAlign: 'middle', marginRight: 5 }}
-                    />
-                    Sign in with Google
-                  </div>
-                </Button> */}
                 {location.host === Domain && (
                   <Button
                     block

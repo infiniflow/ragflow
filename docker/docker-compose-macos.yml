@@ -25,6 +25,7 @@ services:
       - HF_ENDPOINT=${HF_ENDPOINT}
       - MACOS=${MACOS:-1}
       - LIGHTEN=${LIGHTEN:-1}
+      - HIDE_SIGNUP=${HIDE_SIGNUP}
     networks:
       - ragflow
     restart: on-failure
