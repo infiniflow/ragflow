@@ -489,15 +489,16 @@ async def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
         return nbrs
 
     pr = nx.pagerank(graph)
-    for n, p in pr.items():
-        graph.nodes[n]["pagerank"] = p
-        try:
-            await trio.to_thread.run_sync(lambda: settings.docStoreConn.update({"entity_kwd": n, "kb_id": kb_id},
-                                         {"rank_flt": p,
-                                          "n_hop_with_weight": json.dumps( (n), ensure_ascii=False)},
-                                         search.index_name(tenant_id), kb_id))
-        except Exception as e:
-            logging.exception(e)
+    try:
+        async with trio.open_nursery() as nursery:
+            for n, p in pr.items():
+                graph.nodes[n]["pagerank"] = p
+                nursery.start_soon(lambda: trio.to_thread.run_sync(lambda: settings.docStoreConn.update({"entity_kwd": n, "kb_id": kb_id},
+                                                {"rank_flt": p,
+                                                "n_hop_with_weight": json.dumps((n), ensure_ascii=False)},
+                                                search.index_name(tenant_id), kb_id)))
+    except Exception as e:
+        logging.exception(e)
 
     ty2ents = defaultdict(list)
     for p, r in sorted(pr.items(), key=lambda x: x[1], reverse=True):
