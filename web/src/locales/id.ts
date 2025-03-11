@@ -355,7 +355,7 @@ export default {
       knowledgeBases: 'Basis Pengetahuan',
       knowledgeBasesMessage: 'Silakan pilih',
       knowledgeBasesTip: 'Pilih basis pengetahuan yang terkait.',
-      system: 'Sistem',
+      system: 'Prompt Sistem',
       systemInitialValue: `Anda adalah asisten cerdas. Silakan rangkum konten basis pengetahuan untuk menjawab pertanyaan. Silakan daftar data di basis pengetahuan dan jawab secara detail. Ketika semua konten basis pengetahuan tidak relevan dengan pertanyaan, jawaban Anda harus menyertakan kalimat "Jawaban yang Anda cari tidak ditemukan di basis pengetahuan!" Jawaban perlu mempertimbangkan riwayat obrolan.
           Berikut adalah basis pengetahuan:
           {knowledge}
@@ -367,9 +367,9 @@ export default {
       topNTip: `Tidak semua potongan yang skor kesamaannya di atas 'ambang kesamaan' akan diberikan ke LLM. LLM hanya dapat melihat potongan 'Top N' ini.`,
       variable: 'Variabel',
       variableTip: `Jika Anda menggunakan API dialog, variabel mungkin membantu Anda berbicara dengan klien Anda dengan strategi yang berbeda. 
-          Variabel digunakan untuk mengisi bagian 'Sistem' dalam prompt untuk memberikan petunjuk kepada LLM.
+          Variabel digunakan untuk mengisi bagian 'Prompt Sistem' dalam prompt untuk memberikan petunjuk kepada LLM.
           'knowledge' adalah variabel yang sangat khusus yang akan diisi dengan potongan yang diambil.
-          Semua variabel dalam 'Sistem' harus diberi kurung kurawal.`,
+          Semua variabel dalam 'Prompt Sistem' harus diberi kurung kurawal.`,
       add: 'Tambah',
       key: 'Kunci',
       optional: 'Opsional',

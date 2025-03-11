@@ -185,7 +185,7 @@ export default {
       knowledgeBases: 'Bases de conocimiento',
       knowledgeBasesMessage: 'Por favor selecciona',
       knowledgeBasesTip: 'Selecciona las bases de conocimiento asociadas.',
-      system: 'Sistema',
+      system: 'prompt del sistema',
       systemInitialValue: `Eres un asistente inteligente. Por favor resume el contenido de la base de conocimiento para responder la pregunta. Enumera los datos en la base de conocimiento y responde con detalle. Cuando todo el contenido de la base de conocimiento sea irrelevante para la pregunta, tu respuesta debe incluir la frase "¡La respuesta que buscas no se encuentra en la base de conocimiento!". Las respuestas necesitan considerar el historial de chat.
         Aquí está la base de conocimiento:
         {knowledge}
@@ -197,9 +197,9 @@ export default {
       topNTip: `No todos los fragmentos cuya puntuación de similitud esté por encima del "umbral de similitud" serán enviados a los LLMs. Los LLMs solo pueden ver estos "Top N" fragmentos.`,
       variable: 'Variable',
       variableTip: `Si usas APIs de diálogo, las variables pueden ayudarte a chatear con tus clientes usando diferentes estrategias.
-        Las variables se utilizan para completar la parte "Sistema" del prompt para darle una pista al LLM.
+        Las variables se utilizan para completar la parte "prompt del sistema" del prompt para darle una pista al LLM.
         La "base de conocimiento" es una variable muy especial que se completará con los fragmentos recuperados.
-        Todas las variables en "Sistema" deben estar entre llaves.`,
+        Todas las variables en "prompt del sistema" deben estar entre llaves.`,
       add: 'Agregar',
       key: 'Clave',
       optional: 'Opcional',
