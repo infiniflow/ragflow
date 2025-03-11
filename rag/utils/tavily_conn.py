@@ -27,7 +27,8 @@ class Tavily:
         try:
             response = self.tavily_client.search(
                 query=query,
-                search_depth="advanced"
+                search_depth="advanced",
+                max_results=6
             )
             return [{"url": res["url"], "title": res["title"], "content": res["content"], "score": res["score"]} for res in response["results"]]
         except Exception as e:
