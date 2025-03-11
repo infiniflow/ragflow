@@ -68,6 +68,7 @@ REASON_PROMPT = (
         f"- You have a dataset to search, so you just provide a proper search query.\n"
         f"- Use {BEGIN_SEARCH_QUERY} to request a dataset search and end with {END_SEARCH_QUERY}.\n"
         "- The language of query MUST be as the same as 'Question' or 'search result'.\n"
+        "- If no helpful information can be found, rewrite the search query to be less and precise keywords.\n"
         "- When done searching, continue your reasoning.\n\n"
         'Please answer the following question. You should think step by step to solve it.\n\n'
     )
