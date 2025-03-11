@@ -156,7 +156,7 @@ export default {
       cancel: '取消',
       rerankModel: 'Rerank模型',
       rerankPlaceholder: '请选择',
-      rerankTip: `如果是空的。它使用查询和块的嵌入来构成矢量余弦相似性。否则，它使用rerank评分代替矢量余弦相似性。`,
+      rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。`,
       topK: 'Top-K',
       topKTip: `K块将被送入Rerank型号。`,
       delimiter: `分段标识符`,
@@ -355,17 +355,17 @@ export default {
       searchTags: '搜索标签',
       tagCloud: '云',
       tagTable: '表',
-      tagSet: '标签库',
+      tagSet: '标签集',
       topnTags: 'Top-N 标签',
       tagSetTip: `
-      <p> 选择“标签”知识库有助于标记每个块。 </p>
-      <p>对这些块的查询也将带有标签。 </p>
-      此过程将通过向数据集添加更多信息来提高检索的准确性，尤其是在存在大量块的情况下。
-      <p>标签和关键字之间的区别：</p>
+      <p> 请选择一个或多个标签集或标签知识库，用于对知识库中的每个文本块进行标记。 </p>
+      <p>对这些文本块的查询也将自动关联相应标签。 </p>
+      <p>此功能基于文本相似度，能够为数据集的文本块批量添加更多领域知识，从而显著提高检索准确性。该功能还能提升大量文本块的操作效率。</p>
+      <p>为了更好地理解标签集的作用，以下是标签集和关键词之间的主要区别：</p>
       <ul>
-      <li>标签是一个由用户定义和操作的封闭集，而关键字是一个开放集。 </li>
-      <li>您需要在使用前上传带有样本的标签集。 </li>
-      <li>关键字由 LLM 生成，这既昂贵又耗时。 </li>
+      <li>标签集是一个由用户定义和管理的封闭集，而自动生成的关键词属于开放集合。 </li>
+      <li>在给你的知识库文本块批量打标签之前，你需要先生成标签集作为样本。 </li>
+      <li>自动关键词功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
       </ul>
       `,
       tags: '标签',
@@ -429,7 +429,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       knowledgeBases: '知识库',
       knowledgeBasesMessage: '请选择',
       knowledgeBasesTip: '选择关联的知识库。',
-      system: '系统',
+      system: '系统提示词',
       systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
         以下是知识库：
         {knowledge}
@@ -441,9 +441,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
       variable: '变量',
       variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
-      这些变量用于填写提示中的“系统”部分，以便给LLM一个提示。
+      这些变量用于填写提示中的“系统提示词”部分，以便给LLM一个提示。
       “知识”是一个非常特殊的变量，它将用检索到的块填充。
-      “System”中的所有变量都应该用大括号括起来。`,
+      “系统提示词”中的所有变量都应该用大括号括起来。`,
       add: '新增',
       key: '关键字',
       optional: '可选的',
@@ -451,7 +451,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       model: '模型',
       modelTip: '大语言聊天模型',
       modelMessage: '请选择',
-      freedom: '自由',
+      freedom: '自由度',
       improvise: '即兴创作',
       precise: '精确',
       balance: '平衡',
