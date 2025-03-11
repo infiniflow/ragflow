@@ -5,10 +5,14 @@ labels: [feature request]
 body:
   - type: checkboxes
     attributes:
-      label: Is there an existing issue for the same feature request?
-      description: Please check if an issue already exists for the feature you request.
+      label: Self Checks
+      description: "To make sure we get to you in time, please check the following :)"
       options:
-        - label: I have checked the existing issues.
+        - label: I have searched for existing issues [search for existing issues](https://github.com/infiniflow/ragflow/issues), including closed ones.
+          required: true
+        - label: I confirm that I am using English to submit this report ([Language Policy](https://github.com/infiniflow/ragflow/issues/5910)).
+          required: true
+        - label: "Please do not modify this template :) and fill in all the required fields."
           required: true
   - type: textarea
     attributes:
