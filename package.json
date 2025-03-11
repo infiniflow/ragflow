@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "@ant-design/icons": "^5.6.1",
+    "@types/antd": "^0.12.32",
+    "antd": "^5.24.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "typescript": "^5.8.2"
+  }
+}
