@@ -31,7 +31,7 @@ A tag set can comprise one or multiple table files in XLSX, CSV, or TXT formats.
 :::tip NOTE
 As a rule of thumb, consider including the following entries in your tag table:
 
-- Intended or *outlier* chunks, along with their corresponding tags,
+- Intended chunks, along with their corresponding tags.
 - User queries that fail to retrieve the correct responses using other methods, ensuring their tags match the intended chunks in your dataset.
 :::
 
