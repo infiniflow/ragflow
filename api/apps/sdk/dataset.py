@@ -182,7 +182,7 @@ def create(tenant_id):
     req.update(mapped_keys)
     flds = list(req.keys())
     for f in flds:
-        if req[f] == "" and f in ["permission", "chunk_method"]:
+        if req[f] == "" and f in ["permission", "parser_id", "chunk_method"]:
             del req[f]
     if not KnowledgebaseService.save(**req):
         return get_error_data_result(message="Create dataset error.(Database error)")
@@ -515,7 +515,9 @@ def list_datasets(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
+    if request.args.get("desc", "false").lower() not in ["true", "false"]:
+        return get_error_data_result("desc should be true or false")
+    if request.args.get("desc", "true").lower() == "false":
         desc = False
     else:
         desc = True

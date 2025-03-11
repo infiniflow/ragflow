@@ -228,7 +228,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
-        yield {"answer": empty_res, "reference": kbinfos, "audio_binary": tts(tts_mdl, empty_res)}
+        yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res)}
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
@@ -341,6 +341,7 @@ Please write the SQL, only SQL, without any other explanations or text.
         nonlocal sys_prompt, user_prompt, question, tried_times
         sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}], {
             "temperature": 0.06})
+        sql = re.sub(r"<think>.*</think>", "", sql, flags=re.DOTALL)
         logging.debug(f"{question} ==> {user_prompt} get SQL: {sql}")
         sql = re.sub(r"[\r\n]+", " ", sql.lower())
         sql = re.sub(r".*select ", "select ", sql.lower())

@@ -77,17 +77,8 @@ After building the infiniflow/ragflow:nightly-slim image, you are ready to launc
 
 1. Edit Docker Compose Configuration
 
-Open the `docker/docker-compose-base.yml` file. Find the `infinity.image` setting and change the image reference from `infiniflow/infinity:v0.6.0-dev3` to `infiniflow/ragflow:nightly-slim` to use the pre-built image.
+Open the `docker/.env` file. Find the `RAGFLOW_IMAGE` setting and change the image reference from `infiniflow/ragflow:v0.17.1-slim` to `infiniflow/ragflow:nightly-slim` to use the pre-built image.
 
-```yaml
-infinity:
-  container_name: ragflow-infinity
-  image: infiniflow/ragflow:nightly-slim # here
-  volumes:
-    - ...
-    - ...
-  ...
-```
 
 2. Launch the Service
 

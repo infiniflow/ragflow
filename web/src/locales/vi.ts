@@ -565,7 +565,7 @@ export default {
       img2txtModel: 'Mô hình img2txt',
       img2txtModelTip:
         'Mô hình đa mô-đun mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng. Nó có thể mô tả hình ảnh hoặc video.',
-      sequence2txtModel: 'Mô hình sequence2txt',
+      sequence2txtModel: 'Mô hình speech2txt',
       sequence2txtModelTip:
         'Mô hình ASR mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng. Sử dụng mô hình này để chuyển đổi giọng nói thành văn bản tương ứng.',
       rerankModel: 'Mô hình xếp hạng lại',
