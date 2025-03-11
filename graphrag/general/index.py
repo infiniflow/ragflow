@@ -228,7 +228,7 @@ async def resolve_entities(
         get_relation=partial(get_relation, tenant_id, kb_id),
         set_relation=partial(set_relation, tenant_id, kb_id, embed_bdl),
     )
-    reso = await er(graph)
+    reso = await er(graph, callback=callback)
     graph = reso.graph
     callback(msg=f"Graph resolution removed {len(reso.removed_entities)} nodes.")
     await update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, 2)
