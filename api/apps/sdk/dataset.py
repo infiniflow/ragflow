@@ -182,7 +182,7 @@ def create(tenant_id):
     req.update(mapped_keys)
     flds = list(req.keys())
     for f in flds:
-        if req[f] == "" and f in ["permission", "chunk_method"]:
+        if req[f] == "" and f in ["permission", "parser_id", "chunk_method"]:
             del req[f]
     if not KnowledgebaseService.save(**req):
         return get_error_data_result(message="Create dataset error.(Database error)")
