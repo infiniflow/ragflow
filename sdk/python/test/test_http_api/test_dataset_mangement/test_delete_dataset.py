@@ -69,12 +69,16 @@ class TestDatasetDeletion:
                 "AttributeError(\"'str' object has no attribute 'get'\")",
                 3,
             ),
+            (lambda r: {"ids": r[:1]}, 0, "", 2),
+            (lambda r: {"ids": r}, 0, "", 0),
         ],
     )
     def test_basic_scenarios(
         self, get_http_api_auth, payload, expected_code, expected_message, remaining
     ):
-        create_datasets(get_http_api_auth, 3)
+        ids = create_datasets(get_http_api_auth, 3)
+        if callable(payload):
+            payload = payload(ids)
         res = delete_dataset(get_http_api_auth, payload)
         assert res["code"] == expected_code
         if res["code"] != 0:
@@ -83,57 +87,25 @@ class TestDatasetDeletion:
         res = list_dataset(get_http_api_auth)
         assert len(res["data"]) == remaining
 
-    def test_delete_one(self, get_http_api_auth):
-        count = 3
-        ids = create_datasets(get_http_api_auth, count)
-        res = delete_dataset(get_http_api_auth, {"ids": ids[:1]})
-        assert res["code"] == 0
-
-        res = list_dataset(get_http_api_auth)
-        assert len(res["data"]) == count - 1
-
-    def test_delete_multi(self, get_http_api_auth):
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            lambda r: {"ids": ["invalid_id"] + r},
+            lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:3]},
+            lambda r: {"ids": r + ["invalid_id"]},
+        ],
+    )
+    def test_delete_partial_invalid_id(self, get_http_api_auth, payload):
         ids = create_datasets(get_http_api_auth, 3)
-        res = delete_dataset(get_http_api_auth, {"ids": ids})
+        if callable(payload):
+            payload = payload(ids)
+        res = delete_dataset(get_http_api_auth, payload)
         assert res["code"] == 0
+        assert res["data"]["errors"][0] == "You don't own the dataset invalid_id"
+        assert res["data"]["success_count"] == 3
 
         res = list_dataset(get_http_api_auth)
         assert len(res["data"]) == 0
-
-    @pytest.mark.xfail(reason="issue#5760")
-    def test_delete_partial_invalid_id_at_beginning(self, get_http_api_auth):
-        count = 3
-        ids = create_datasets(get_http_api_auth, count)
-        res = delete_dataset(get_http_api_auth, {"ids": ["invalid_id"] + ids})
-        assert res["code"] == 102
-        assert res["message"] == "You don't own the dataset invalid_id"
-
-        res = list_dataset(get_http_api_auth)
-        assert len(res["data"]) == 3
-
-    @pytest.mark.xfail(reason="issue#5760")
-    def test_delete_partial_invalid_id_in_middle(self, get_http_api_auth):
-        count = 3
-        ids = create_datasets(get_http_api_auth, count)
-        res = delete_dataset(
-            get_http_api_auth, {"ids": ids[:1] + ["invalid_id"] + ids[1:3]}
-        )
-        assert res["code"] == 102
-        assert res["message"] == "You don't own the dataset invalid_id"
-
-        res = list_dataset(get_http_api_auth)
-        assert len(res["data"]) == 3
-
-    @pytest.mark.xfail(reason="issue#5760")
-    def test_delete_partial_invalid_id_at_end(self, get_http_api_auth):
-        count = 3
-        ids = create_datasets(get_http_api_auth, count)
-        res = delete_dataset(get_http_api_auth, {"ids": ids + ["invalid_id"]})
-        assert res["code"] == 102
-        assert res["message"] == "You don't own the dataset invalid_id"
-
-        res = list_dataset(get_http_api_auth)
-        assert len(res["data"]) == 3
 
     def test_repeated_deletion(self, get_http_api_auth):
         ids = create_datasets(get_http_api_auth, 1)
