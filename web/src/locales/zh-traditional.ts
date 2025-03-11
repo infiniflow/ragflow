@@ -581,7 +581,7 @@ export default {
       img2txtModel: 'img2Txt模型',
       img2txtModelTip:
         '所有新創建的知識庫都將使用默認的多模塊模型。它可以描述圖片或視頻。',
-      sequence2txtModel: 'sequence2Txt模型',
+      sequence2txtModel: 'speech2Txt模型',
       sequence2txtModelTip:
         '所有新創建的知識庫都將使用默認的 ASR 模型。使用此模型將語音翻譯為相應的文本。',
       rerankModel: 'rerank模型',
