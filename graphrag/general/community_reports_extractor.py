@@ -19,7 +19,6 @@ from graphrag.general.leiden import add_community_info2graph
 from rag.llm.chat_model import Base as CompletionLLM
 from graphrag.utils import perform_variable_replacements, dict_has_keys_with_types, chat_limiter
 from rag.utils import num_tokens_from_string
-from timeit import default_timer as timer
 import trio
 
 
@@ -62,62 +61,69 @@ class CommunityReportsExtractor(Extractor):
         res_str = []
         res_dict = []
         over, token_count = 0, 0
-        st = timer()
-        for level, comm in communities.items():
-            logging.info(f"Level {level}: Community: {len(comm.keys())}")
-            for cm_id, ents in comm.items():
-                weight = ents["weight"]
-                ents = ents["nodes"]
-                ent_df = pd.DataFrame(self._get_entity_(ents)).dropna()#[{"entity": n, **graph.nodes[n]} for n in ents])
-                if ent_df.empty or "entity_name" not in ent_df.columns:
-                    continue
-                ent_df["entity"] = ent_df["entity_name"]
-                del ent_df["entity_name"]
-                rela_df = pd.DataFrame(self._get_relation_(list(ent_df["entity"]), list(ent_df["entity"]), 10000))
-                if rela_df.empty:
-                    continue
-                rela_df["source"] = rela_df["src_id"]
-                rela_df["target"] = rela_df["tgt_id"]
-                del rela_df["src_id"]
-                del rela_df["tgt_id"]
+        async def extract_community_report(community):
+            nonlocal res_str, res_dict, over, token_count
+            cm_id, ents = community
+            weight = ents["weight"]
+            ents = ents["nodes"]
+            ent_df = pd.DataFrame(self._get_entity_(ents)).dropna()
+            if ent_df.empty or "entity_name" not in ent_df.columns:
+                return
+            ent_df["entity"] = ent_df["entity_name"]
+            del ent_df["entity_name"]
+            rela_df = pd.DataFrame(self._get_relation_(list(ent_df["entity"]), list(ent_df["entity"]), 10000))
+            if rela_df.empty:
+                return
+            rela_df["source"] = rela_df["src_id"]
+            rela_df["target"] = rela_df["tgt_id"]
+            del rela_df["src_id"]
+            del rela_df["tgt_id"]
 
-                prompt_variables = {
-                    "entity_df": ent_df.to_csv(index_label="id"),
-                    "relation_df": rela_df.to_csv(index_label="id")
-                }
-                text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
-                gen_conf = {"temperature": 0.3}
-                async with chat_limiter:
-                    response = await trio.to_thread.run_sync(lambda: self._chat(text, [{"role": "user", "content": "Output:"}], gen_conf))
-                token_count += num_tokens_from_string(text + response)
-                response = re.sub(r"^[^\{]*", "", response)
-                response = re.sub(r"[^\}]*$", "", response)
-                response = re.sub(r"\{\{", "{", response)
-                response = re.sub(r"\}\}", "}", response)
-                logging.debug(response)
-                try:
-                    response = json.loads(response)
-                except json.JSONDecodeError as e:
-                    logging.error(f"Failed to parse JSON response: {e}")
-                    logging.error(f"Response content: {response}")
-                    continue
-                if not dict_has_keys_with_types(response, [
-                            ("title", str),
-                            ("summary", str),
-                            ("findings", list),
-                            ("rating", float),
-                            ("rating_explanation", str),
-                        ]):
-                    continue
-                response["weight"] = weight
-                response["entities"] = ents
+            prompt_variables = {
+                "entity_df": ent_df.to_csv(index_label="id"),
+                "relation_df": rela_df.to_csv(index_label="id")
+            }
+            text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
+            gen_conf = {"temperature": 0.3}
+            async with chat_limiter:
+                response = await trio.to_thread.run_sync(lambda: self._chat(text, [{"role": "user", "content": "Output:"}], gen_conf))
+            token_count += num_tokens_from_string(text + response)
+            response = re.sub(r"^[^\{]*", "", response)
+            response = re.sub(r"[^\}]*$", "", response)
+            response = re.sub(r"\{\{", "{", response)
+            response = re.sub(r"\}\}", "}", response)
+            logging.debug(response)
+            try:
+                response = json.loads(response)
+            except json.JSONDecodeError as e:
+                logging.error(f"Failed to parse JSON response: {e}")
+                logging.error(f"Response content: {response}")
+                return
+            if not dict_has_keys_with_types(response, [
+                        ("title", str),
+                        ("summary", str),
+                        ("findings", list),
+                        ("rating", float),
+                        ("rating_explanation", str),
+                    ]):
+                return
+            response["weight"] = weight
+            response["entities"] = ents
+            add_community_info2graph(graph, ents, response["title"])
+            res_str.append(self._get_text_output(response))
+            res_dict.append(response)
+            over += 1
+            if callback:
+                callback(msg=f"Communities: {over}/{total}, used tokens: {token_count}")
 
-                add_community_info2graph(graph, ents, response["title"])
-                res_str.append(self._get_text_output(response))
-                res_dict.append(response)
-                over += 1
-                if callback:
-                    callback(msg=f"Communities: {over}/{total}, elapsed: {timer() - st}s, used tokens: {token_count}")
+        st = trio.current_time()
+        async with trio.open_nursery() as nursery:
+            for level, comm in communities.items():
+                logging.info(f"Level {level}: Community: {len(comm.keys())}")
+                for community in comm.items():
+                    nursery.start_soon(lambda: extract_community_report(community))
+        if callback:
+            callback(msg=f"Community reports done in {trio.current_time() - st:.2f}s, used tokens: {token_count}")
 
         return CommunityReportsResult(
             structured_output=res_dict,
