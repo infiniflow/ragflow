@@ -515,7 +515,9 @@ def list_datasets(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
+    if request.args.get("desc", "false").lower() not in ["true", "false"]:
+        return get_error_data_result(f"desc should be true or false")
+    if request.args.get("desc", "true").lower() == "false":
         desc = False
     else:
         desc = True
