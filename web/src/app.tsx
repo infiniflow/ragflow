@@ -7,6 +7,7 @@ import enUS from 'antd/locale/en_US';
 import vi_VN from 'antd/locale/vi_VN';
 import zhCN from 'antd/locale/zh_CN';
 import zh_HK from 'antd/locale/zh_HK';
+import deDE from 'antd/locale/de_DE';
 import dayjs from 'dayjs';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
@@ -32,6 +33,7 @@ const AntLanguageMap = {
   'zh-TRADITIONAL': zh_HK,
   vi: vi_VN,
   'pt-BR': pt_BR,
+  de: deDE,
 };
 
 const queryClient = new QueryClient();
