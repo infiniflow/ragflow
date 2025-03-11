@@ -100,7 +100,6 @@ class TestDatasetDeletion:
         if callable(payload):
             payload = payload(ids)
         res = delete_dataset(get_http_api_auth, payload)
-        print(res)
         assert res["code"] == 0
         assert res["data"]["errors"][0] == "You don't own the dataset invalid_id"
         assert res["data"]["success_count"] == 3
