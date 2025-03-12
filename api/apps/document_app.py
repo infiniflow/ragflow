@@ -347,7 +347,7 @@ def rm():
 @manager.route('/run', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "run")
-def run():
+def run(): 
     req = request.json
     for doc_id in req["doc_ids"]:
         if not DocumentService.accessible(doc_id, current_user.id):
