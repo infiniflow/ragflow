@@ -1,1 +1,16 @@
 *.sh text eol=lf
+
+
+config/service_conf.yml merge=ours
+web/public/logo.svg merge=ours
+web/src/assets/images/login-background.jpeg merge=ours
+web/src/constants/common.ts merge=ours
+web/src/layouts/components/header/index.less merge=ours
+web/src/layouts/components/right-toolbar/index.tsx merge=ours
+web/src/locales/config.ts merge=ours
+web/src/locales/**/*.ts merge=ours
+web/src/pages/login/index.less merge=ours
+web/src/pages/login/right-panel.tsx merge=ours
+web/src/pages/user-setting/setting-locale/index.tsx merge=ours
+web/src/app.tsx merge=ours
+web/src/conf.json merge=ours
