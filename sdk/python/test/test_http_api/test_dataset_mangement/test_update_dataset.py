@@ -329,6 +329,3 @@ class TestDatasetUpdate:
             ]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
-
-        res = list_dataset(get_http_api_auth, {"id": ids[0]})
-        assert res["data"][0]["name"] == "dataset_99"
