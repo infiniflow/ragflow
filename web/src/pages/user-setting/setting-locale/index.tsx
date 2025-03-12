@@ -6,13 +6,14 @@ function UserSettingLocale() {
     <TranslationTable
       data={translationTable}
       languages={[
-        'zh',
         'English',
         'Vietnamese',
         'Spanish',
+        'zh',
         'zh-TRADITIONAL',
         'ja',
         'pt-br',
+        'German',
       ]}
     />
   );

@@ -58,10 +58,9 @@ export default {
       nicknamePlaceholder: 'Please input nickname',
       register: 'Create an account',
       continue: 'Continue',
-      title:
-        'Build Your Customized AI Assistant for the Pulp and Paper Industrial Chain.',
+      title: 'Start building your smart assistants.',
       description:
-        'Empower your forestry-pulp-paper integrated operations with AI-driven solutions. Leverage cutting-edge RAG technology to create intelligent resource management knowledge bases, optimizing precision across production, supply, and sales ecosystems.',
+        'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
       review: 'from 500+ reviews',
     },
     header: {

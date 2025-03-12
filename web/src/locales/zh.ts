@@ -58,9 +58,9 @@ export default {
       nicknamePlaceholder: '请输入名称',
       register: '创建账户',
       continue: '继续',
-      title: '构建专属浆纸产业链AI助手',
+      title: '开始构建您的智能助手',
       description:
-        '用AI辅助解决方案，基于RAG技术打造纸行业资源管理知识库，驱动产供销精准决策',
+        '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强您的业务',
       review: '来自 500 多条评论',
     },
     header: {

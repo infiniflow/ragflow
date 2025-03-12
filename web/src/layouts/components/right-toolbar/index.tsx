@@ -1,5 +1,5 @@
 import { useTranslate } from '@/hooks/common-hooks';
-import { DownOutlined } from '@ant-design/icons';
+import { DownOutlined, GithubOutlined } from '@ant-design/icons';
 import { Dropdown, MenuProps, Space } from 'antd';
 import camelCase from 'lodash/camelCase';
 import React from 'react';
@@ -9,7 +9,7 @@ import { useTheme } from '@/components/theme-provider';
 import { LanguageList, LanguageMap } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
-import { MoonIcon, SunIcon } from 'lucide-react';
+import { CircleHelp, MoonIcon, SunIcon } from 'lucide-react';
 import styled from './index.less';
 
 const Circle = ({ children, ...restProps }: React.PropsWithChildren) => {
@@ -20,9 +20,13 @@ const Circle = ({ children, ...restProps }: React.PropsWithChildren) => {
   );
 };
 
-// const handleGithubCLick = () => {
-//   window.open('https://github.com/infiniflow/ragflow', 'target');
-// };
+const handleGithubCLick = () => {
+  window.open('https://github.com/infiniflow/ragflow', 'target');
+};
+
+const handleDocHelpCLick = () => {
+  window.open('https://ragflow.io/docs/dev/category/guides', 'target');
+};
 
 const RightToolBar = () => {
   const { t } = useTranslate('common');
@@ -60,9 +64,12 @@ const RightToolBar = () => {
             <DownOutlined />
           </Space>
         </Dropdown>
-        {/* <Circle>
+        <Circle>
           <GithubOutlined onClick={handleGithubCLick} />
-        </Circle> */}
+        </Circle>
+        <Circle>
+          <CircleHelp className="size-4" onClick={handleDocHelpCLick} />
+        </Circle>
         <Circle>
           {theme === 'dark' ? (
             <MoonIcon onClick={onMoonClick} size={20} />

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
 import pt_BR from 'antd/lib/locale/pt_BR';
+import deDE from 'antd/locale/de_DE';
 import enUS from 'antd/locale/en_US';
 import vi_VN from 'antd/locale/vi_VN';
 import zhCN from 'antd/locale/zh_CN';
@@ -11,9 +12,9 @@ import dayjs from 'dayjs';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import localeData from 'dayjs/plugin/localeData';
+import weekday from 'dayjs/plugin/weekday';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
-import weekday from 'dayjs/plugin/weekday';
 import React, { ReactNode, useEffect, useState } from 'react';
 import { ThemeProvider, useTheme } from './components/theme-provider';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -32,6 +33,7 @@ const AntLanguageMap = {
   'zh-TRADITIONAL': zh_HK,
   vi: vi_VN,
   'pt-BR': pt_BR,
+  de: deDE,
 };
 
 const queryClient = new QueryClient();
@@ -41,10 +43,8 @@ type Locale = ConfigProviderProps['locale'];
 function Root({ children }: React.PropsWithChildren) {
   const { theme: themeragflow } = useTheme();
   const getLocale = (lng: string) =>
-    AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? zhCN;
+    AntLanguageMap[lng as keyof typeof AntLanguageMap] ?? enUS;
 
-  console.log('current locale key is : ', storage.getLanguage());
-  console.log('current locale: ', getLocale(storage.getLanguage()));
   const [locale, setLocal] = useState<Locale>(getLocale(storage.getLanguage()));
 
   i18n.on('languageChanged', function (lng: string) {
