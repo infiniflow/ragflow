@@ -98,7 +98,7 @@ export default {
       webCrawl: '網頁抓取',
       chunkNumber: '分塊數',
       uploadDate: '上傳日期',
-      chunkMethod: '解析方法',
+      chunkMethod: '切片方法',
       enabled: '啟用',
       disabled: '禁用',
       action: '動作',
@@ -106,7 +106,8 @@ export default {
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
-      testingDescription: '最後一步！成功後，剩下的就交給 RAGFlow 吧。',
+      testingDescription:
+        '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。請注意這裡的改動不會被自動保存。如果你調整了這裡的默認設置，比如關鍵詞相似度權重，請務必在聊天助手設置或者召回算子設置處同步更新相關設置。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
         '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。',
@@ -138,7 +139,7 @@ export default {
       toMessage: '缺少結束頁碼（不包含）',
       layoutRecognize: '文件解析器',
       layoutRecognizeTip:
-        '使用視覺模型進行佈局分析，以更好地識別文檔結構，找到標題、文本塊、圖像和表格的位置。如果沒有此功能，則只能獲取 PDF 的純文本。',
+        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。',
       taskPageSize: '任務頁面大小',
       taskPageSizeMessage: '請輸入您的任務頁面大小！',
       taskPageSizeTip: `如果使用佈局識別，PDF 文件將被分成連續的組。佈局分析將在組之間並行執行，以提高處理速度。“任務頁面大小”決定組的大小。頁面大小越大，將頁面之間的連續文本分割成不同塊的機會就越低。`,
@@ -192,10 +193,11 @@ export default {
       metaData: '元資料',
       deleteDocumentConfirmContent:
         '該文件與知識圖譜相關聯。刪除後，相關節點和關係資訊將被刪除，但圖不會立即更新。更新圖動作是在解析承載知識圖譜提取任務的新文件的過程中執行的。 ',
-      plainText: '簡易',
+      plainText: 'Naive',
+      reRankModelWaring: '重排序模型非常耗時。',
     },
     knowledgeConfiguration: {
-      titleDescription: '在這裡更新您的知識庫詳細信息，尤其是解析方法。',
+      titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       name: '知識庫名稱',
       photo: '知識庫圖片',
       description: '描述',
@@ -210,7 +212,7 @@ export default {
         '用於嵌入塊的嵌入模型。一旦知識庫有了塊，它就無法更改。如果你想改變它，你需要刪除所有的塊。',
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
       chunkTokenNumberTip: '它大致確定了一個塊的Token數量。',
-      chunkMethod: '解析方法',
+      chunkMethod: '切片方法',
       chunkMethodTip: '說明位於右側。',
       upload: '上傳',
       english: '英語',
@@ -340,15 +342,15 @@ export default {
       tagSet: '標籤庫',
       topnTags: 'Top-N 標籤',
       tagSetTip: `
- <p> 選擇「標籤」知識庫有助於標記每個區塊。 </p>
-<p>對這些區塊的查詢也將帶有標籤。
-此過程將透過向資料集添加更多資訊來提高檢索精度，特別是當存在大量區塊時。
-<p>標籤和關鍵字的差異：</p>
-<ul>
- <li>標籤是一個閉集，由使用者定義和操作，而關鍵字是一個開集。
- <li>您需要在使用前上傳包含範例的標籤集。
- <li>關鍵字由 LLM 生成，既昂貴又耗時。
-</ul>
+      <p>請選擇一個或多個標籤集或標籤知識庫，用於對知識庫中的每個文本塊進行標記。</p>
+      <p>對這些文本塊的查詢也將自動關聯相應標籤。</p>
+      <p>此功能基於文本相似度，能夠為數據集的文本塊批量添加更多領域知識，從而顯著提高檢索準確性。該功能還能提升大量文本塊的操作效率。</p>
+      <p>為了更好地理解標籤集的作用，以下是標籤集和關鍵詞之間的主要區別：</p>
+      <ul>
+        <li>標籤集是一個由用戶定義和管理的封閉集，而自動生成的關鍵詞屬於開放集合。</li>
+        <li>在給你的知識庫文本塊批量打標籤之前，你需要先生成標籤集作為樣本。</li>
+        <li>自動關鍵詞功能中的關鍵詞由 LLM 生成，此過程相對耗時，並且會產生一定的 Token 消耗。</li>
+      </ul>
  `,
       tags: '標籤',
       addTag: '增加標籤',
@@ -411,7 +413,7 @@ export default {
       knowledgeBases: '知識庫',
       knowledgeBasesMessage: '請選擇',
       knowledgeBasesTip: '選擇關聯的知識庫。',
-      system: '系統',
+      system: '系統提示词',
       systemInitialValue: `你是一個智能助手，請總結知識庫的內容來回答問題，請列舉知識庫中的數據詳細回答。當所有知識庫內容都與問題無關時，你的回答必須包括“知識庫中未找到您要的答案！”這句話。回答需要考慮聊天歷史。
       以下是知識庫：
       {knowledge}
@@ -423,9 +425,9 @@ export default {
       topNTip: `並非所有相似度得分高於“相似度閾值”的塊都會被提供給法學碩士。LLM 只能看到這些“Top N”塊。`,
       variable: '變量',
       variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
-        这些变量用于填写提示中的“系统”部分，以便给LLM一个提示。
+        这些变量用于填写提示中的“系统提示词”部分，以便给LLM一个提示。
         “知识”是一个非常特殊的变量，它将用检索到的块填充。
-        “System”中的所有变量都应该用大括号括起来。`,
+        “系统提示词”中的所有变量都应该用大括号括起来。`,
       add: '新增',
       key: '關鍵字',
       optional: '可選的',
@@ -433,7 +435,7 @@ export default {
       model: '模型',
       modelTip: '大語言聊天模型',
       modelMessage: '請選擇',
-      freedom: '自由',
+      freedom: '自由度',
       improvise: '即興創作',
       precise: '精確',
       balance: '平衡',
@@ -504,6 +506,8 @@ export default {
         '在多輪對話的中，對去知識庫查詢的問題進行最佳化。會呼叫大模型額外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      descriptionPlaceholder:
+        '例如 你是一個專業的簡曆助手，隻能回答簡曆的問題。',
       useKnowledgeGraph: '使用知識圖譜',
       useKnowledgeGraph提示:
         '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
@@ -514,7 +518,7 @@ export default {
         '它將觸發類似Deepseek-R1/OpenAI o1的推理過程。將代理搜尋過程整合到推理工作流程中，使得模型本身能夠在遇到不確定資訊時動態地檢索外部知識。',
       tavilyApiKeyTip:
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
-      tavilyApiKeyMessage: '請輸入你的 Tavily Api Key',
+      tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
       tavilyApiKeyHelp: '如何獲取？',
     },
     setting: {
@@ -577,7 +581,7 @@ export default {
       img2txtModel: 'img2Txt模型',
       img2txtModelTip:
         '所有新創建的知識庫都將使用默認的多模塊模型。它可以描述圖片或視頻。',
-      sequence2txtModel: 'sequence2Txt模型',
+      sequence2txtModel: 'speech2Txt模型',
       sequence2txtModelTip:
         '所有新創建的知識庫都將使用默認的 ASR 模型。使用此模型將語音翻譯為相應的文本。',
       rerankModel: 'rerank模型',
@@ -708,6 +712,7 @@ export default {
       pleaseSelect: '請選擇',
       newFolder: '新建文件夾',
       uploadFile: '上傳文件',
+      parseOnCreation: '創建時解析',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
         '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',

@@ -1,18 +1,25 @@
-import { useTranslate } from '@/hooks/common-hooks';
-import { CloseOutlined, PlusOutlined } from '@ant-design/icons';
-import { useUpdateNodeInternals } from '@xyflow/react';
+import { Button } from '@/components/ui/button';
 import {
-  Button,
-  Collapse,
-  Flex,
-  Form,
-  FormListFieldData,
-  Input,
-  Select,
-} from 'antd';
-import { FormInstance } from 'antd/lib';
-import { humanId } from 'human-id';
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { RAGFlowSelect } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { useTranslate } from '@/hooks/common-hooks';
+import { PlusOutlined } from '@ant-design/icons';
+import { useUpdateNodeInternals } from '@xyflow/react';
+import humanId from 'human-id';
 import trim from 'lodash/trim';
+import { ChevronsUpDown, X } from 'lucide-react';
 import {
   ChangeEventHandler,
   FocusEventHandler,
@@ -20,10 +27,9 @@ import {
   useEffect,
   useState,
 } from 'react';
+import { useFieldArray, useFormContext, UseFormReturn } from 'react-hook-form';
 import { Operator } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
-
-import styles from './index.less';
 
 interface IProps {
   nodeId?: string;
@@ -33,20 +39,20 @@ interface INameInputProps {
   value?: string;
   onChange?: (value: string) => void;
   otherNames?: string[];
-  validate(errors: string[]): void;
+  validate(error?: string): void;
 }
 
 const getOtherFieldValues = (
-  form: FormInstance,
+  form: UseFormReturn,
   formListName: string = 'items',
-  field: FormListFieldData,
+  index: number,
   latestField: string,
 ) =>
-  (form.getFieldValue([formListName]) ?? [])
+  (form.getValues(formListName) ?? [])
     .map((x: any) => x[latestField])
     .filter(
       (x: string) =>
-        x !== form.getFieldValue([formListName, field.name, latestField]),
+        x !== form.getValues(`${formListName}.${index}.${latestField}`),
     );
 
 const NameInput = ({
@@ -61,15 +67,16 @@ const NameInput = ({
   const handleNameChange: ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => {
       const val = e.target.value;
-      // trigger validation
-      if (otherNames?.some((x) => x === val)) {
-        validate([t('nameRepeatedMsg')]);
-      } else if (trim(val) === '') {
-        validate([t('nameRequiredMsg')]);
-      } else {
-        validate([]);
-      }
       setName(val);
+      const trimmedVal = trim(val);
+      // trigger validation
+      if (otherNames?.some((x) => x === trimmedVal)) {
+        validate(t('nameRepeatedMsg'));
+      } else if (trimmedVal === '') {
+        validate(t('nameRequiredMsg'));
+      } else {
+        validate('');
+      }
     },
     [otherNames, validate, t],
   );
@@ -97,128 +104,161 @@ const NameInput = ({
   );
 };
 
-const FormSet = ({ nodeId, field }: IProps & { field: FormListFieldData }) => {
-  const form = Form.useFormInstance();
+const FormSet = ({ nodeId, index }: IProps & { index: number }) => {
+  const form = useFormContext();
   const { t } = useTranslate('flow');
   const buildCategorizeToOptions = useBuildFormSelectOptions(
     Operator.Categorize,
     nodeId,
   );
 
+  const buildFieldName = useCallback(
+    (name: string) => {
+      return `items.${index}.${name}`;
+    },
+    [index],
+  );
+
   return (
-    <section>
-      <Form.Item
-        label={t('categoryName')}
-        name={[field.name, 'name']}
-        validateTrigger={['onChange', 'onBlur']}
-        rules={[
-          {
-            required: true,
-            whitespace: true,
-            message: t('nameMessage'),
-          },
-        ]}
-      >
-        <NameInput
-          otherNames={getOtherFieldValues(form, 'items', field, 'name')}
-          validate={(errors: string[]) =>
-            form.setFields([
-              {
-                name: ['items', field.name, 'name'],
-                errors,
-              },
-            ])
-          }
-        ></NameInput>
-      </Form.Item>
-      <Form.Item label={t('description')} name={[field.name, 'description']}>
-        <Input.TextArea rows={3} />
-      </Form.Item>
-      <Form.Item label={t('examples')} name={[field.name, 'examples']}>
-        <Input.TextArea rows={3} />
-      </Form.Item>
-      <Form.Item label={t('nextStep')} name={[field.name, 'to']}>
-        <Select
-          allowClear
-          options={buildCategorizeToOptions(
-            getOtherFieldValues(form, 'items', field, 'to'),
-          )}
-        />
-      </Form.Item>
-      <Form.Item hidden name={[field.name, 'index']}>
-        <Input />
-      </Form.Item>
+    <section className="space-y-4">
+      <FormField
+        control={form.control}
+        name={buildFieldName('name')}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('categoryName')}</FormLabel>
+            <FormControl>
+              <NameInput
+                {...field}
+                otherNames={getOtherFieldValues(form, 'items', index, 'name')}
+                validate={(error?: string) => {
+                  const fieldName = buildFieldName('name');
+                  if (error) {
+                    form.setError(fieldName, { message: error });
+                  } else {
+                    form.clearErrors(fieldName);
+                  }
+                }}
+              ></NameInput>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name={buildFieldName('description')}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('description')}</FormLabel>
+            <FormControl>
+              <Textarea {...field} rows={3} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name={buildFieldName('examples')}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('examples')}</FormLabel>
+            <FormControl>
+              <Textarea {...field} rows={3} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name={buildFieldName('to')}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('nextStep')}</FormLabel>
+            <FormControl>
+              <RAGFlowSelect
+                {...field}
+                allowClear
+                options={buildCategorizeToOptions(
+                  getOtherFieldValues(form, 'items', index, 'to'),
+                )}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="index"
+        render={({ field }) => (
+          <FormItem className="hidden">
+            <FormLabel>{t('examples')}</FormLabel>
+            <FormControl>
+              <Input {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </section>
   );
 };
 
 const DynamicCategorize = ({ nodeId }: IProps) => {
   const updateNodeInternals = useUpdateNodeInternals();
-  const form = Form.useFormInstance();
-
+  const form = useFormContext();
   const { t } = useTranslate('flow');
+  const { fields, remove, append } = useFieldArray({
+    name: 'items',
+    control: form.control,
+  });
+
+  const handleAdd = () => {
+    append({
+      name: humanId(),
+    });
+    if (nodeId) updateNodeInternals(nodeId);
+  };
 
   return (
-    <>
-      <Form.List name="items">
-        {(fields, { add, remove }) => {
-          const handleAdd = () => {
-            const idx = form.getFieldValue([
-              'items',
-              fields.at(-1)?.name,
-              'index',
-            ]);
-            add({
-              name: humanId(),
-              index: fields.length === 0 ? 0 : idx + 1,
-            });
-            if (nodeId) updateNodeInternals(nodeId);
-          };
+    <div className="flex flex-col gap-4 ">
+      {fields.map((field, index) => (
+        <Collapsible key={field.id}>
+          <div className="flex items-center justify-between space-x-4">
+            <h4 className="font-bold">
+              {form.getValues(`items.${index}.name`)}
+            </h4>
+            <CollapsibleTrigger asChild>
+              <div className="flex gap-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-9 p-0"
+                  onClick={() => remove(index)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" className="w-9 p-0">
+                  <ChevronsUpDown className="h-4 w-4" />
+                  <span className="sr-only">Toggle</span>
+                </Button>
+              </div>
+            </CollapsibleTrigger>
+          </div>
+          <CollapsibleContent>
+            <FormSet nodeId={nodeId} index={index}></FormSet>
+          </CollapsibleContent>
+        </Collapsible>
+      ))}
 
-          return (
-            <Flex gap={18} vertical>
-              {fields.map((field) => (
-                <Collapse
-                  size="small"
-                  key={field.key}
-                  className={styles.caseCard}
-                  items={[
-                    {
-                      key: field.key,
-                      label: (
-                        <div className="flex justify-between">
-                          <span>
-                            {form.getFieldValue(['items', field.name, 'name'])}
-                          </span>
-                          <CloseOutlined
-                            onClick={() => {
-                              remove(field.name);
-                            }}
-                          />
-                        </div>
-                      ),
-                      children: (
-                        <FormSet nodeId={nodeId} field={field}></FormSet>
-                      ),
-                    },
-                  ]}
-                ></Collapse>
-              ))}
-
-              <Button
-                type="dashed"
-                onClick={handleAdd}
-                block
-                className={styles.addButton}
-                icon={<PlusOutlined />}
-              >
-                {t('addCategory')}
-              </Button>
-            </Flex>
-          );
-        }}
-      </Form.List>
-    </>
+      <Button type={'button'} onClick={handleAdd}>
+        <PlusOutlined />
+        {t('addCategory')}
+      </Button>
+    </div>
   );
 };
 

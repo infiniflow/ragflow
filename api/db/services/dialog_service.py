@@ -30,7 +30,8 @@ from api import settings
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
-from rag.prompts import kb_prompt, message_fit_in, llm_id2llm_type, keyword_extraction, full_question, chunks_format
+from rag.prompts import kb_prompt, message_fit_in, llm_id2llm_type, keyword_extraction, full_question, chunks_format, \
+    citation_prompt
 from rag.utils import rmSpace, num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 
@@ -72,7 +73,7 @@ def chat_solo(dialog, messages, stream=True):
     if prompt_config.get("tts"):
         tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])}
-                for m in messages if m["role"] != "system"]
+           for m in messages if m["role"] != "system"]
     if stream:
         last_ans = ""
         for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
@@ -81,7 +82,9 @@ def chat_solo(dialog, messages, stream=True):
             if num_tokens_from_string(delta_ans) < 16:
                 continue
             last_ans = answer
-            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt":"", "created_at": time.time()}
+            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
+        if delta_ans:
+            yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
     else:
         answer = chat_mdl.chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         user_content = msg[-1].get("content", "[content not available]")
@@ -226,19 +229,21 @@ def chat(dialog, messages, stream=True, **kwargs):
     retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
-        yield {"answer": empty_res, "reference": kbinfos, "audio_binary": tts(tts_mdl, empty_res)}
+        yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res)}
         return {"answer": prompt_config["empty_response"], "reference": kbinfos}
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
+    prompt4citation = ""
+    if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
+        prompt4citation = citation_prompt()
     msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])}
                 for m in messages if m["role"] != "system"])
-    used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.97))
+    used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
     assert len(msg) >= 2, f"message_fit_in has bug: {msg}"
     prompt = msg[0]["content"]
-    prompt += "\n\n### Query:\n%s" % " ".join(questions)
 
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(
@@ -246,7 +251,7 @@ def chat(dialog, messages, stream=True, **kwargs):
             max_tokens - used_token_count)
 
     def decorate_answer(answer):
-        nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts
+        nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions
 
         refs = []
         ans = answer.split("</think>")
@@ -255,14 +260,23 @@ def chat(dialog, messages, stream=True, **kwargs):
             think = ans[0] + "</think>"
             answer = ans[1]
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
-            answer, idx = retriever.insert_citations(answer,
-                                                     [ck["content_ltks"]
-                                                      for ck in kbinfos["chunks"]],
-                                                     [ck["vector"]
-                                                      for ck in kbinfos["chunks"]],
-                                                     embd_mdl,
-                                                     tkweight=1 - dialog.vector_similarity_weight,
-                                                     vtweight=dialog.vector_similarity_weight)
+            answer = re.sub(r"##[ij]\$\$", "", answer, flags=re.DOTALL)
+            if not re.search(r"##[0-9]+\$\$", answer):
+                answer, idx = retriever.insert_citations(answer,
+                                                         [ck["content_ltks"]
+                                                          for ck in kbinfos["chunks"]],
+                                                         [ck["vector"]
+                                                          for ck in kbinfos["chunks"]],
+                                                         embd_mdl,
+                                                         tkweight=1 - dialog.vector_similarity_weight,
+                                                         vtweight=dialog.vector_similarity_weight)
+            else:
+                idx = set([])
+                for r in re.finditer(r"##([0-9]+)\$\$", answer):
+                    i = int(r.group(1))
+                    if i < len(kbinfos["chunks"]):
+                        idx.add(i)
+
             idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
             recall_docs = [
                 d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
@@ -290,13 +304,14 @@ def chat(dialog, messages, stream=True, **kwargs):
         retrieval_time_cost = (retrieval_ts - generate_keyword_ts) * 1000
         generate_result_time_cost = (finish_chat_ts - retrieval_ts) * 1000
 
+        prompt += "\n\n### Query:\n%s" % " ".join(questions)
         prompt = f"{prompt}\n\n - Total: {total_time_cost:.1f}ms\n  - Check LLM: {check_llm_time_cost:.1f}ms\n  - Create retriever: {create_retriever_time_cost:.1f}ms\n  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n  - Bind LLM: {bind_llm_time_cost:.1f}ms\n  - Tune question: {refine_question_time_cost:.1f}ms\n  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n  - Retrieval: {retrieval_time_cost:.1f}ms\n  - Generate answer: {generate_result_time_cost:.1f}ms"
         return {"answer": think+answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if stream:
         last_ans = ""
         answer = ""
-        for ans in chat_mdl.chat_streamly(prompt, msg[1:], gen_conf):
+        for ans in chat_mdl.chat_streamly(prompt+prompt4citation, msg[1:], gen_conf):
             if thought:
                 ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
             answer = ans
@@ -310,7 +325,7 @@ def chat(dialog, messages, stream=True, **kwargs):
             yield {"answer": thought+answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
         yield decorate_answer(thought+answer)
     else:
-        answer = chat_mdl.chat(prompt, msg[1:], gen_conf)
+        answer = chat_mdl.chat(prompt+prompt4citation, msg[1:], gen_conf)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         res = decorate_answer(answer)
@@ -339,6 +354,7 @@ Please write the SQL, only SQL, without any other explanations or text.
         nonlocal sys_prompt, user_prompt, question, tried_times
         sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}], {
             "temperature": 0.06})
+        sql = re.sub(r"<think>.*</think>", "", sql, flags=re.DOTALL)
         logging.debug(f"{question} ==> {user_prompt} get SQL: {sql}")
         sql = re.sub(r"[\r\n]+", " ", sql.lower())
         sql = re.sub(r".*select ", "select ", sql.lower())
@@ -511,12 +527,11 @@ def ask(question, kb_ids, tenant_id):
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
-        return {"answer": answer, "reference": chunks_format(refs)}
+        refs["chunks"] = chunks_format(refs)
+        return {"answer": answer, "reference": refs}
 
     answer = ""
     for ans in chat_mdl.chat_streamly(prompt, msg, {"temperature": 0.1}):
         answer = ans
         yield {"answer": answer, "reference": {}}
     yield decorate_answer(answer)
-
-

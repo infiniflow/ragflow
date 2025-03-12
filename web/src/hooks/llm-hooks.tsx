@@ -4,8 +4,8 @@ import { ResponseGetType } from '@/interfaces/database/base';
 import {
   IFactory,
   IMyLlmValue,
-  IThirdOAIModelCollection as IThirdAiModelCollection,
   IThirdOAIModel,
+  IThirdOAIModelCollection as IThirdAiModelCollection,
   IThirdOAIModelCollection,
 } from '@/interfaces/database/llm';
 import {
@@ -198,7 +198,7 @@ export const useSelectLlmList = () => {
       name: key,
       logo: factoryList.find((x) => x.name === key)?.logo ?? '',
       ...value,
-      llm: value.llm.map((x) => ({ ...x, name: getRealModelName(x.name) })),
+      llm: value.llm.map((x) => ({ ...x, name: x.name })),
     }));
   }, [myLlmList, factoryList]);
 

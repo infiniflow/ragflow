@@ -23,15 +23,12 @@ import {
 } from '@/interfaces/database/flow';
 import { message } from 'antd';
 import { humanId } from 'human-id';
-import { get, lowerFirst } from 'lodash';
+import { get, lowerFirst, omit } from 'lodash';
 import trim from 'lodash/trim';
+import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
 import {
-  NodeMap,
-  Operator,
-  RestrictedUpstreamMap,
-  SwitchElseTo,
   initialAkShareValues,
   initialArXivValues,
   initialBaiduFanyiValues,
@@ -66,9 +63,14 @@ import {
   initialWenCaiValues,
   initialWikipediaValues,
   initialYahooFinanceValues,
+  NodeMap,
+  Operator,
+  RestrictedUpstreamMap,
+  SwitchElseTo,
 } from './constant';
 import useGraphStore, { RFState } from './store';
 import {
+  buildCategorizeObjectFromList,
   generateNodeNamesWithIncreasingIndex,
   generateSwitchHandleText,
   getNodeDragHandle,
@@ -258,7 +260,11 @@ export const useHandleDrop = () => {
   return { onDrop, onDragOver, setReactFlowInstance };
 };
 
-export const useHandleFormValuesChange = (id?: string) => {
+export const useHandleFormValuesChange = (
+  operatorName: Operator,
+  id?: string,
+  form?: UseFormReturn,
+) => {
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
   const handleValuesChange = useCallback(
     (changedValues: any, values: any) => {
@@ -282,6 +288,41 @@ export const useHandleFormValuesChange = (id?: string) => {
     },
     [updateNodeForm, id],
   );
+
+  useEffect(() => {
+    const subscription = form?.watch((value, { name, type, values }) => {
+      if (id && name) {
+        console.log('🚀 ~ useEffect ~ value:', type, values);
+        let nextValues: any = value;
+
+        // Fixed the issue that the related form value does not change after selecting the freedom field of the model
+        if (
+          name === 'parameter' &&
+          value['parameter'] in settledModelVariableMap
+        ) {
+          nextValues = {
+            ...value,
+            ...settledModelVariableMap[
+              value['parameter'] as keyof typeof settledModelVariableMap
+            ],
+          };
+        }
+
+        const categoryDescriptionRegex = /items\.\d+\.name/g;
+        if (
+          operatorName === Operator.Categorize &&
+          categoryDescriptionRegex.test(name)
+        ) {
+          nextValues = {
+            ...omit(value, 'items'),
+            category_description: buildCategorizeObjectFromList(value.items),
+          };
+        }
+        updateNodeForm(id, nextValues);
+      }
+    });
+    return () => subscription?.unsubscribe();
+  }, [form, form?.watch, id, operatorName, updateNodeForm]);
 
   return { handleValuesChange };
 };

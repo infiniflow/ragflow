@@ -1,0 +1,8 @@
+{
+  "label": "Chat",
+  "position": 1,
+  "link": {
+    "type": "generated-index",
+    "description": "Chat-specific guides."
+  }
+}

@@ -11,6 +11,7 @@
 #  limitations under the License.
 #
 
+import logging
 from openpyxl import load_workbook, Workbook
 import sys
 from io import BytesIO
@@ -21,42 +22,29 @@ import pandas as pd
 
 
 class RAGFlowExcelParser:
-    def html(self, fnm, chunk_rows=256):
-
-        # if isinstance(fnm, str):
-        #     wb = load_workbook(fnm)
-        # else:
-        #     wb = load_workbook(BytesIO(fnm))++
-
-        s_fnm = fnm
-        if not isinstance(fnm, str):
-            s_fnm = BytesIO(fnm)
-        else:
-            pass
-
+    @staticmethod
+    def _load_excel_to_workbook(file_like_object):
         try:
-            wb = load_workbook(s_fnm)
+            return load_workbook(file_like_object)
         except Exception as e:
-            print(f'****wxy: file parser error: {e}, s_fnm={s_fnm}, trying convert files')
-            df = pd.read_excel(s_fnm)
-            wb = Workbook()
-            # if len(wb.worksheets) > 0:
-            #   del wb.worksheets[0]
-            # else: pass
-            ws = wb.active
-            ws.title = "Data"
-            for col_num, column_name in enumerate(df.columns, 1):
-                ws.cell(row=1, column=col_num, value=column_name)
-            else:
-                pass
-            for row_num, row in enumerate(df.values, 2):
-                for col_num, value in enumerate(row, 1):
-                    ws.cell(row=row_num, column=col_num, value=value)
-                else:
-                    pass
-            else:
-                pass
+            logging.info(f"****wxy: openpyxl load error: {e}, try pandas instead")
+            try:
+                df = pd.read_excel(file_like_object)
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Data"
+                for col_num, column_name in enumerate(df.columns, 1):
+                    ws.cell(row=1, column=col_num, value=column_name)
+                for row_num, row in enumerate(df.values, 2):
+                    for col_num, value in enumerate(row, 1):
+                        ws.cell(row=row_num, column=col_num, value=value)
+                return wb
+            except Exception as e_pandas:
+                raise Exception(f"****wxy: pandas read error: {e_pandas}, original openpyxl error: {e}")
 
+    def html(self, fnm, chunk_rows=256):
+        file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
+        wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object)
         tb_chunks = []
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
@@ -89,40 +77,8 @@ class RAGFlowExcelParser:
         return tb_chunks
 
     def __call__(self, fnm):
-        # if isinstance(fnm, str):
-        #   wb = load_workbook(fnm)
-        # else:
-        #   wb = load_workbook(BytesIO(fnm))
-
-        s_fnm = fnm
-        if not isinstance(fnm, str):
-            s_fnm = BytesIO(fnm)
-        else:
-            pass
-
-        try:
-            wb = load_workbook(s_fnm)
-        except Exception as e:
-            print(f'****wxy: file parser error: {e}, s_fnm={s_fnm}, trying convert files')
-            df = pd.read_excel(s_fnm)
-            wb = Workbook()
-            if len(wb.worksheets) > 0:
-                del wb.worksheets[0]
-            else:
-                pass
-            ws = wb.active
-            ws.title = "Data"
-            for col_num, column_name in enumerate(df.columns, 1):
-                ws.cell(row=1, column=col_num, value=column_name)
-            else:
-                pass
-            for row_num, row in enumerate(df.values, 2):
-                for col_num, value in enumerate(row, 1):
-                    ws.cell(row=row_num, column=col_num, value=value)
-                else:
-                    pass
-            else:
-                pass
+        file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
+        wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object)
 
         res = []
         for sheetname in wb.sheetnames:
@@ -148,7 +104,7 @@ class RAGFlowExcelParser:
     @staticmethod
     def row_number(fnm, binary):
         if fnm.split(".")[-1].lower().find("xls") >= 0:
-            wb = load_workbook(BytesIO(binary))
+            wb = RAGFlowExcelParser._load_excel_to_workbook(BytesIO(binary))
             total = 0
             for sheetname in wb.sheetnames:
                 ws = wb[sheetname]

@@ -4,6 +4,7 @@ import { useTheme } from '@/components/theme-provider';
 import { LLMFactory } from '@/constants/llm';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { LlmItem, useSelectLlmList } from '@/hooks/llm-hooks';
+import { getRealModelName } from '@/utils/llm-util';
 import { CloseCircleOutlined, SettingOutlined } from '@ant-design/icons';
 import {
   Button,
@@ -24,7 +25,6 @@ import {
 import { useCallback, useMemo } from 'react';
 import SettingTitle from '../components/setting-title';
 import { isLocalLlmFactory } from '../utils';
-import TencentCloudModal from './Tencent-modal';
 import ApiKeyModal from './api-key-modal';
 import AzureOpenAIModal from './azure-openai-modal';
 import BedrockModal from './bedrock-modal';
@@ -51,6 +51,7 @@ import styles from './index.less';
 import OllamaModal from './ollama-modal';
 import SparkModal from './spark-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
+import TencentCloudModal from './Tencent-modal';
 import VolcEngineModal from './volcengine-modal';
 import YiyanModal from './yiyan-modal';
 
@@ -130,7 +131,8 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
             renderItem={(item) => (
               <List.Item>
                 <Space>
-                  {item.name} <Tag color="#b8b8b8">{item.type}</Tag>
+                  {getRealModelName(item.name)}
+                  <Tag color="#b8b8b8">{item.type}</Tag>
                   <Tooltip title={t('delete', { keyPrefix: 'common' })}>
                     <Button type={'text'} onClick={handleDeleteLlm(item.name)}>
                       <CloseCircleOutlined style={{ color: '#D92D20' }} />

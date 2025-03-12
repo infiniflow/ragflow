@@ -3,9 +3,9 @@ sidebar_position: 10
 slug: /faq
 ---
 
-# Frequently asked questions
+# FAQs
 
-Queries regarding general features, troubleshooting, usage, and more.
+Answers to questions about general features, troubleshooting, usage, and more.
 
 ---
 
@@ -37,12 +37,12 @@ If you build RAGFlow from source, the version number is also in the system log:
      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
 
-2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.16.0-50-g6daae7f2 full
+2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.15.0-50-g6daae7f2 full
 ```
 
 Where:
 
-- `v0.16.0`: The officially published release.
+- `v0.15.0`: The officially published release.
 - `50`: The number of git commits since the official release.
 - `g6daae7f2`: `g` is the prefix, and `6daae7f2` is the first seven characters of the current commit ID.
 - `full`/`slim`: The RAGFlow edition.
@@ -65,16 +65,16 @@ RAGFlow has a number of built-in models for document structure parsing, which ac
 
 ### Which architectures or devices does RAGFlow support?
 
-We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
+We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](./develop/build_docker_image.mdx) to build a RAGFlow Docker image.
 
 ---
 
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.16.0-slim` and `v0.16.0`:  
+RAGFlow offers two Docker image editions, `v0.17.1-slim` and `v0.17.1`:  
   
-- `infiniflow/ragflow:v0.16.0-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.16.0`: The RAGFlow Docker image with embedding models including:
+- `infiniflow/ragflow:v0.17.1-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.17.1`: The RAGFlow Docker image with embedding models including:
   - Built-in embedding models:
     - `BAAI/bge-large-zh-v1.5`
     - `BAAI/bge-reranker-v2-m3`
@@ -94,7 +94,7 @@ RAGFlow offers two Docker image editions, `v0.16.0-slim` and `v0.16.0`:
 
 ### Do you offer an API for integration with third-party applications?
 
-The corresponding APIs are now available. See the [RAGFlow HTTP API Reference](./http_api_reference.md) or the [RAGFlow Python API Reference](./python_api_reference.md) for more information.
+The corresponding APIs are now available. See the [RAGFlow HTTP API Reference](./references/http_api_reference.md) or the [RAGFlow Python API Reference](./references/python_api_reference.md) for more information.
 
 ---
 
@@ -130,7 +130,7 @@ Yes, we support enhancing user queries based on existing context of an ongoing c
 
 #### How to build the RAGFlow image from scratch?
 
-See [Build a RAGFlow Docker image](https://ragflow.io/docs/dev/build_docker_image).
+See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
 
 ---
 
@@ -296,7 +296,7 @@ tail -f ragflow/docker/ragflow-logs/*.log
    cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
    ```
 
-2. Follow [this document](../guides/run_health_check.md) to check the health status of the Elasticsearch service.
+2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
 
 :::danger IMPORTANT
 The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
@@ -347,7 +347,7 @@ A correct Ollama IP address and port is crucial to adding models to Ollama:
 - If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. Note that 127.0.0.1 is not a publicly accessible IP address.
 - If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can communicate with each other.
 
-See [Deploy a local LLM](../guides/deploy_local_llm.mdx) for more information.
+See [Deploy a local LLM](./guides/deploy_local_llm.mdx) for more information.
 
 ---
 
@@ -453,12 +453,12 @@ This error occurs because there are too many chunks matching your search criteri
 
 ### How to get an API key for integration with third-party applications?
 
-See [Acquire a RAGFlow API key](../guides/develop/acquire_ragflow_api_key.md).
+See [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md).
 
 ---
 
 ### How to upgrade RAGFlow?
 
-See [Upgrade RAGFlow](../guides/upgrade_ragflow.mdx) for more information.
+See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
 
 ---

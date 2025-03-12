@@ -107,7 +107,7 @@ export default {
       processDuration: 'Duração',
       progressMsg: 'Progresso',
       testingDescription:
-        'Realize um teste de recuperação para verificar se o RAGFlow pode recuperar o conteúdo pretendido para o LLM.',
+        'Realize um teste de recuperação para verificar se o RAGFlow pode recuperar o conteúdo pretendido para o LLM. Por favor, note que as alterações feitas aqui não são salvas automaticamente. Se você ajustar as configurações padrão aqui, como o peso de similaridade de palavras-chave, certifique-se de atualizar as configurações relacionadas de forma sincronizada nas configurações do assistente de chat ou nas configurações do operador de recuperação.',
       similarityThreshold: 'Limite de similaridade',
       similarityThresholdTip:
         'O RAGFlow emprega uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada, ou uma combinação de similaridade de palavras-chave ponderada e pontuação de reranking ponderada durante a recuperação. Este parâmetro define o limite para similaridades entre a consulta do usuário e os fragmentos. Qualquer fragmento com uma pontuação de similaridade abaixo deste limite será excluído dos resultados.',
@@ -507,7 +507,7 @@ export default {
       img2txtModel: 'Modelo Img2Txt',
       img2txtModelTip:
         'O modelo multimodal padrão que todos os novos bancos de conhecimento usarão. Ele pode descrever uma imagem ou vídeo.',
-      sequence2txtModel: 'Modelo Sequence2Txt',
+      sequence2txtModel: 'Modelo Speech2Txt',
       sequence2txtModelTip:
         'O modelo ASR padrão que todos os novos bancos de conhecimento usarão. Use este modelo para converter vozes em texto correspondente.',
       rerankModel: 'Modelo de Reordenação',
@@ -639,6 +639,7 @@ export default {
       newFolder: 'Nova Pasta',
       file: 'Arquivo',
       uploadFile: 'Carregar Arquivo',
+      parseOnCreation: 'Executar na criação',
       directory: 'Diretório',
       uploadTitle:
         'Clique ou arraste o arquivo para esta área para fazer o upload',

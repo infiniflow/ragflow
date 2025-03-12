@@ -147,7 +147,7 @@ const AssistantSetting = ({
       >
         <Switch onChange={handleTtsChange} />
       </Form.Item>
-      <Form.Item label={'Tavily Api Key'} tooltip={t('tavilyApiKeyTip')}>
+      <Form.Item label={'Tavily API Key'} tooltip={t('tavilyApiKeyTip')}>
         <div className="flex flex-col gap-1">
           <Form.Item name={['prompt_config', 'tavily_api_key']} noStyle>
             <Input.Password placeholder={t('tavilyApiKeyMessage')} />

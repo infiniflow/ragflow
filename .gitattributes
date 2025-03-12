@@ -1,5 +1,4 @@
 *.sh text eol=lf
-
 config/service_conf.yml merge=ours
 web/public/logo.svg merge=ours
 web/src/assets/images/login-background.jpeg merge=ours
@@ -13,4 +12,3 @@ web/src/pages/login/right-panel.tsx merge=ours
 web/src/pages/user-setting/setting-locale/index.tsx merge=ours
 web/src/app.tsx merge=ours
 web/src/conf.json merge=ours
-*.json merge=ours

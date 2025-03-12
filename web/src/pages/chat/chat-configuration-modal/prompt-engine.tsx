@@ -22,9 +22,9 @@ import {
 } from 'react';
 import { v4 as uuid } from 'uuid';
 import {
-  VariableTableDataType as DataType,
   IPromptConfigParameters,
   ISegmentedContentProps,
+  VariableTableDataType as DataType,
 } from '../interface';
 import { EditableCell, EditableRow } from './editable-cell';
 
@@ -165,7 +165,7 @@ const PromptEngine = (
         label={t('multiTurn')}
         tooltip={t('multiTurnTip')}
         name={['prompt_config', 'refine_multiturn']}
-        initialValue={true}
+        initialValue={false}
       >
         <Switch></Switch>
       </Form.Item>

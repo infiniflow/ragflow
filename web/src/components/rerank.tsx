@@ -1,7 +1,8 @@
 import { LlmModelType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
-import { Select as AntSelect, Form, Slider } from 'antd';
+import { Form, message, Select as AntSelect, Slider } from 'antd';
+import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { SingleFormSlider } from './ui/dual-range-slider';
 import {
@@ -29,19 +30,36 @@ type FieldType = {
 export const RerankItem = () => {
   const { t } = useTranslate('knowledgeDetails');
   const allOptions = useSelectLlmOptionsByModelType();
+  const [messageApi, contextHolder] = message.useMessage();
+
+  const handleChange = useCallback(
+    (val: string) => {
+      if (val) {
+        messageApi.open({
+          type: 'warning',
+          content: t('reRankModelWaring'),
+        });
+      }
+    },
+    [messageApi, t],
+  );
 
   return (
-    <Form.Item
-      label={t('rerankModel')}
-      name={'rerank_id'}
-      tooltip={t('rerankTip')}
-    >
-      <AntSelect
-        options={allOptions[LlmModelType.Rerank]}
-        allowClear
-        placeholder={t('rerankPlaceholder')}
-      />
-    </Form.Item>
+    <>
+      {contextHolder}
+      <Form.Item
+        label={t('rerankModel')}
+        name={'rerank_id'}
+        tooltip={t('rerankTip')}
+      >
+        <AntSelect
+          options={allOptions[LlmModelType.Rerank]}
+          allowClear
+          placeholder={t('rerankPlaceholder')}
+          onChange={handleChange}
+        />
+      </Form.Item>
+    </>
   );
 };
 

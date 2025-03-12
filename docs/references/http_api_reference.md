@@ -5,7 +5,7 @@ slug: /http_api_reference
 
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/models/llm_api_key_setup.md).
 
 ---
 
@@ -178,7 +178,6 @@ Creates a dataset.
   - `"name"`: `string`
   - `"avatar"`: `string`
   - `"description"`: `string`
-  - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
@@ -213,11 +212,6 @@ curl --request POST \
 
 - `"description"`: (*Body parameter*), `string`  
   A brief description of the dataset to create.
-
-- `"language"`: (*Body parameter*), `string`  
-  The language setting of the dataset to create. Available options:  
-  - `"English"` (default)
-  - `"Chinese"`
 
 - `"embedding_model"`: (*Body parameter*), `string`  
   The name of the embedding model to use. For example: `"BAAI/bge-zh-v1.5"`
@@ -634,6 +628,7 @@ Updates configurations for a specified document.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`:`string`
+  - `"meta_fields"`:`object`
   - `"chunk_method"`:`string`
   - `"parser_config"`:`object`
 
@@ -660,6 +655,7 @@ curl --request PUT \
 - `document_id`: (*Path parameter*)  
   The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
+- `"meta_fields"`: (*Body parameter*)， `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: (*Body parameter*), `string`  
   The parsing method to apply to the document:  
   - `"naive"`: General
@@ -672,8 +668,6 @@ curl --request PUT \
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
@@ -2519,6 +2513,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"stream"`: `boolean`
   - `"session_id"`: `string`
   - `"user_id"`: `string`(optional)
+  - `"sync_dsl"`: `boolean` (optional)
   - other parameters: `string`
 ##### Request example
 If the **Begin** component does not take parameters, the following code will create a session.
@@ -2571,6 +2566,8 @@ curl --request POST \
   The ID of the session. If it is not provided, a new session will be generated.
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
+- `"sync_dsl"`: (*Body parameter*), `boolean`
+  Whether to synchronize the changes to existing sessions when an agent is modified, defaults to `false`.
 - Other parameters: (*Body Parameter*)  
   Parameters specified in the **Begin** component.
 
@@ -2722,7 +2719,7 @@ Failure:
 
 ### List agent sessions
 
-**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}`
+**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&dsl={dsl}`
 
 Lists sessions associated with a specified agent.
 
@@ -2759,7 +2756,9 @@ curl --request GET \
   The ID of the agent session to retrieve.
 - `user_id`: (*Filter parameter*), `string`  
   The optional user-defined ID passed in when creating session.
-  
+- `dsl`: (*Filter parameter*), `boolean`  
+  Indicates whether to include the dsl field of the sessions in the response. Defaults to `true`.
+
 #### Response
 
 Success:
@@ -2767,7 +2766,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": {
+    "data": [{
         "agent_id": "e9e2b9c2b2f911ef801d0242ac120006",
         "dsl": {
             "answer": [],
@@ -2899,7 +2898,7 @@ Success:
         ],
         "source": "agent",
         "user_id": ""
-    }
+    }]
 }
 ```
 
@@ -2912,6 +2911,62 @@ Failure:
 }
 ```
 
+---
+
+### Delete agent's sessions
+
+**DELETE** `/api/v1/agents/{agent_id}/sessions`
+
+Deletes sessions of a agent by ID.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/agents/{agent_id}/sessions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"ids"`: `list[string]`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '
+     {
+          "ids": ["test_1", "test_2"]
+     }'
+```
+
+##### Request Parameters
+
+- `agent_id`: (*Path parameter*)  
+  The ID of the associated agent.
+- `"ids"`: (*Body Parameter*), `list[string]`  
+  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified agent will be deleted.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "The agent doesn't own the session cbd31e52f73911ef93b232903b842af6"
+}
+```
 ---
 
 ## AGENT MANAGEMENT

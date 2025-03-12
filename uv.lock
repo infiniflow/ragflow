@@ -1,5 +1,4 @@
 version = 1
-revision = 1
 requires-python = ">=3.10, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'darwin'",
@@ -2440,6 +2439,7 @@ dependencies = [
     { name = "lxml" },
     { name = "lz4" },
     { name = "numpy" },
+    { name = "pyarrow" },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "tqdm" },
@@ -4704,7 +4704,7 @@ wheels = [
 
 [[package]]
 name = "ragflow"
-version = "0.16.0"
+version = "0.17.1"
 source = { virtual = "." }
 dependencies = [
     { name = "akshare" },
@@ -4808,6 +4808,7 @@ dependencies = [
     { name = "tencentcloud-sdk-python" },
     { name = "tika" },
     { name = "tiktoken" },
+    { name = "trio" },
     { name = "umap-learn" },
     { name = "valkey" },
     { name = "vertexai" },
@@ -4943,6 +4944,7 @@ requires-dist = [
     { name = "tiktoken", specifier = "==0.7.0" },
     { name = "torch", marker = "extra == 'full'", specifier = ">=2.5.0,<3.0.0" },
     { name = "transformers", marker = "extra == 'full'", specifier = ">=4.35.0,<5.0.0" },
+    { name = "trio", specifier = ">=0.29.0" },
     { name = "umap-learn", specifier = "==0.5.6" },
     { name = "valkey", specifier = "==6.0.2" },
     { name = "vertexai", specifier = "==1.64.0" },
@@ -4958,7 +4960,6 @@ requires-dist = [
     { name = "yfinance", specifier = "==0.1.96" },
     { name = "zhipuai", specifier = "==2.0.1" },
 ]
-provides-extras = ["full"]
 
 [[package]]
 name = "ranx"

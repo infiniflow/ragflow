@@ -31,7 +31,7 @@ from api.utils.api_utils import (
     token_required,
     get_error_data_result,
     valid,
-    get_parser_config,
+    get_parser_config, valid_parser_config,
 )
 
 
@@ -67,10 +67,6 @@ def create(tenant_id):
               type: string
               enum: ['me', 'team']
               description: Dataset permission.
-            language:
-              type: string
-              enum: ['Chinese', 'English']
-              description: Language of the dataset.
             chunk_method:
               type: string
               enum: ["naive", "manual", "qa", "table", "paper", "book", "laws",
@@ -92,11 +88,10 @@ def create(tenant_id):
     req = request.json
     e, t = TenantService.get_by_id(tenant_id)
     permission = req.get("permission")
-    language = req.get("language")
     chunk_method = req.get("chunk_method")
     parser_config = req.get("parser_config")
+    valid_parser_config(parser_config)
     valid_permission = ["me", "team"]
-    valid_language = ["Chinese", "English"]
     valid_chunk_method = [
         "naive",
         "manual",
@@ -115,8 +110,6 @@ def create(tenant_id):
     check_validation = valid(
         permission,
         valid_permission,
-        language,
-        valid_language,
         chunk_method,
         valid_chunk_method,
     )
@@ -135,13 +128,18 @@ def create(tenant_id):
     req["name"] = req["name"].strip()
     if req["name"] == "":
         return get_error_data_result(message="`name` is not empty string!")
+    if len(req["name"]) >= 128:
+        return get_error_data_result(
+            message="Dataset name should not be longer than 128 characters."
+        )
     if KnowledgebaseService.query(
         name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value
     ):
         return get_error_data_result(
             message="Duplicated dataset name in creating dataset."
         )
-    req["tenant_id"] = req["created_by"] = tenant_id
+    req["tenant_id"] = tenant_id
+    req["created_by"] = tenant_id
     if not req.get("embedding_model"):
         req["embedding_model"] = t.embd_id
     else:
@@ -183,6 +181,10 @@ def create(tenant_id):
         if old_key in req
     }
     req.update(mapped_keys)
+    flds = list(req.keys())
+    for f in flds:
+        if req[f] == "" and f in ["permission", "parser_id", "chunk_method"]:
+            del req[f]
     if not KnowledgebaseService.save(**req):
         return get_error_data_result(message="Create dataset error.(Database error)")
     renamed_data = {}
@@ -227,6 +229,8 @@ def delete(tenant_id):
         schema:
           type: object
     """
+    errors = []
+    success_count = 0
     req = request.json
     if not req:
         ids = None
@@ -242,12 +246,12 @@ def delete(tenant_id):
     for id in id_list:
         kbs = KnowledgebaseService.query(id=id, tenant_id=tenant_id)
         if not kbs:
-            return get_error_data_result(message=f"You don't own the dataset {id}")
+            errors.append(f"You don't own the dataset {id}")
+            continue
         for doc in DocumentService.query(kb_id=id):
             if not DocumentService.remove_document(doc, tenant_id):
-                return get_error_data_result(
-                    message="Remove document error.(Database error)"
-                )
+                errors.append(f"Remove document error for dataset {id}")
+                continue
             f2d = File2DocumentService.get_by_document_id(doc.id)
             FileService.filter_delete(
                 [
@@ -259,7 +263,17 @@ def delete(tenant_id):
         FileService.filter_delete(
             [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
         if not KnowledgebaseService.delete_by_id(id):
-            return get_error_data_result(message="Delete dataset error.(Database error)")
+            errors.append(f"Delete dataset error for {id}")
+            continue
+        success_count += 1
+    if errors:
+        if success_count > 0:
+            return get_result(
+                data={"success_count": success_count, "errors": errors},
+                message=f"Partially deleted {success_count} datasets with {len(errors)} errors"
+            )
+        else:
+            return get_error_data_result(message="; ".join(errors))
     return get_result(code=settings.RetCode.SUCCESS)
 
 
@@ -298,10 +312,6 @@ def update(tenant_id, dataset_id):
               type: string
               enum: ['me', 'team']
               description: Updated permission.
-            language:
-              type: string
-              enum: ['Chinese', 'English']
-              description: Updated language.
             chunk_method:
               type: string
               enum: ["naive", "manual", "qa", "table", "paper", "book", "laws",
@@ -325,11 +335,10 @@ def update(tenant_id, dataset_id):
     if any(key in req for key in invalid_keys):
         return get_error_data_result(message="The input parameters are invalid.")
     permission = req.get("permission")
-    language = req.get("language")
     chunk_method = req.get("chunk_method")
     parser_config = req.get("parser_config")
+    valid_parser_config(parser_config)
     valid_permission = ["me", "team"]
-    valid_language = ["Chinese", "English"]
     valid_chunk_method = [
         "naive",
         "manual",
@@ -348,8 +357,6 @@ def update(tenant_id, dataset_id):
     check_validation = valid(
         permission,
         valid_permission,
-        language,
-        valid_language,
         chunk_method,
         valid_chunk_method,
     )
@@ -417,6 +424,10 @@ def update(tenant_id, dataset_id):
         req["embd_id"] = req.pop("embedding_model")
     if "name" in req:
         req["name"] = req["name"].strip()
+        if len(req["name"]) >= 128:
+            return get_error_data_result(
+                message="Dataset name should not be longer than 128 characters."
+            )
         if (
             req["name"].lower() != kb.name.lower()
             and len(
@@ -436,7 +447,7 @@ def update(tenant_id, dataset_id):
 
 @manager.route("/datasets", methods=["GET"])  # noqa: F821
 @token_required
-def list(tenant_id):
+def list_datasets(tenant_id):
     """
     List datasets.
     ---
@@ -505,7 +516,9 @@ def list(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
+    if request.args.get("desc", "false").lower() not in ["true", "false"]:
+        return get_error_data_result("desc should be true or false")
+    if request.args.get("desc", "true").lower() == "false":
         desc = False
     else:
         desc = True
