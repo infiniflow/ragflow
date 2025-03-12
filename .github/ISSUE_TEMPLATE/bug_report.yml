@@ -5,11 +5,17 @@ labels: [bug]
 body:
 - type: checkboxes
   attributes:
-    label: Is there an existing issue for the same bug?
-    description: Please check if an issue already exists for the bug you encountered.
+    label: Self Checks
+    description: "Please check the following in order to be responded in time :)"
     options:
-    - label: I have checked the existing issues.
-      required: true
+      - label: I have searched for existing issues [search for existing issues](https://github.com/infiniflow/ragflow/issues), including closed ones.
+        required: true
+      - label: I confirm that I am using English to submit this report ([Language Policy](https://github.com/infiniflow/ragflow/issues/5910)).
+        required: true
+      - label: Non-english title submitions will be closed directly ( 非英文标题的提交将会被直接关闭 ) ([Language Policy](https://github.com/infiniflow/ragflow/issues/5910)).
+        required: true
+      - label: "Please do not modify this template :) and fill in all the required fields."
+        required: true
 - type: markdown
   attributes:
     value: "Please provide the following information to help us understand the issue."
