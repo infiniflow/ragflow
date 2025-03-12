@@ -287,12 +287,6 @@ def chat_completion_openai_like(tenant_id, chat_id):
                     answer = ans["answer"]
                     incremental = answer[should_split_index:]
                     token_used += len(incremental)
-
-                    """
-                    bugfix: When calling the Create chat completion API, the response data is incoherent.
-                    bug code: token_used += len(incremental)
-                    fix author: 任奇
-                    """
                     if incremental.endswith("</think>"):
                         response_data_len = len(incremental.rstrip("</think>"))
                     else:
