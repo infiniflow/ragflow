@@ -377,7 +377,7 @@ def update(tenant_id, dataset_id):
         if req["document_count"] != kb.doc_num:
             return get_error_data_result(message="Can't change `document_count`.")
         req.pop("document_count")
-    if "chunk_method" in req:
+    if req.get("chunk_method"):
         if kb.chunk_num != 0 and req["chunk_method"] != kb.parser_id:
             return get_error_data_result(
                 message="If `chunk_count` is not 0, `chunk_method` is not changeable."
@@ -439,6 +439,10 @@ def update(tenant_id, dataset_id):
             return get_error_data_result(
                 message="Duplicated dataset name in updating dataset."
             )
+    flds = list(req.keys())
+    for f in flds:
+        if req[f] == "" and f in ["permission", "parser_id", "chunk_method"]:
+            del req[f]
     if not KnowledgebaseService.update_by_id(kb.id, req):
         return get_error_data_result(message="Update dataset error.(Database error)")
     return get_result(code=settings.RetCode.SUCCESS)
