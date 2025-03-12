@@ -276,7 +276,7 @@ def delete(tenant_id):
     return get_result(code=settings.RetCode.SUCCESS)
 
 
-@manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821  
 @token_required
 def update(tenant_id, dataset_id):
     """
@@ -330,7 +330,7 @@ def update(tenant_id, dataset_id):
         return get_error_data_result(message="You don't own the dataset")
     req = request.json
     e, t = TenantService.get_by_id(tenant_id)
-    invalid_keys = {"id", "embd_id", "chunk_num", "doc_num", "parser_id"}
+    invalid_keys = {"id", "embd_id", "chunk_num", "doc_num", "parser_id", "create_date", "create_time", "created_by", "status","token_num","update_date","update_time"}
     if any(key in req for key in invalid_keys):
         return get_error_data_result(message="The input parameters are invalid.")
     permission = req.get("permission")
