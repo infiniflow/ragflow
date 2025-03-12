@@ -6,7 +6,7 @@ interface IProps {
   max?: number;
 }
 
-const MaxTokenNumber = ({ initialValue = 128, max = 2048 }: IProps) => {
+const MaxTokenNumber = ({ initialValue = 128, max = 8000 }: IProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
 
   return (

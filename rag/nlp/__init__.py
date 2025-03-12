@@ -504,6 +504,66 @@ def hierarchical_merge(bull, sections, depth):
     return res
 
 
+def naive_merge_bak(sections, chunk_token_num=128, delimiter="\n。；！？"):
+    """
+    将给定的文本片段合并为指定大小的块。
+
+    参数:
+    - sections: 包含文本片段的列表，每个元素可以是字符串或元组（字符串, 位置标记）。
+    - chunk_token_num: 每个块的最大token数，默认为128。
+    - delimiter: 用于分割文本的分隔符，默认为换行符和中文标点符号。
+
+    返回值:
+    - 合并后的文本块列表。
+    """
+    if not sections:
+        return []
+
+    # 如果sections中的元素是字符串，将其转换为元组形式（字符串, 位置标记）
+    if isinstance(sections[0], type("")):
+        sections = [(s, "") for s in sections]
+
+    # 初始化块列表和对应的token数列表
+    cks = [""]
+    tk_nums = [0]
+
+    def add_chunk(t, pos):
+        """
+        将文本片段添加到当前块中，确保块的大小不超过chunk_token_num。
+
+        参数:
+        - t: 要添加的文本片段。
+        - pos: 位置标记，用于标识文本片段的位置。
+        """
+        nonlocal cks, tk_nums, delimiter
+        tnum = num_tokens_from_string(t)
+        if not pos:
+            pos = ""
+
+        # 如果文本片段的token数小于8，忽略位置标记
+        if tnum < 8:
+            pos = ""
+
+        # 如果当前块的token数超过chunk_token_num，则创建新块
+        if tk_nums[-1] > chunk_token_num:
+            if t.find(pos) < 0:
+                t += pos
+            cks.append(t)
+            tk_nums.append(tnum)
+        else:
+            # 否则将文本片段添加到当前块中
+            if cks[-1].find(pos) < 0:
+                t += pos
+            cks[-1] += t
+            tk_nums[-1] += tnum
+
+    # 遍历所有文本片段，将其添加到块中
+    for sec, pos in sections:
+        add_chunk(sec, pos)
+
+    return cks
+
+
 def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
     if not sections:
         return []
@@ -519,14 +579,46 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
             pos = ""
         if tnum < 8:
             pos = ""
-        # Ensure that the length of the merged chunk does not exceed chunk_token_num  
-        if tk_nums[-1] > chunk_token_num:
-
-            if t.find(pos) < 0:
-                t += pos
-            cks.append(t)
-            tk_nums.append(tnum)
+        
+        # 检查添加新文本后是否会超过 chunk_token_num
+        if tk_nums[-1] + tnum > chunk_token_num:
+            # 如果当前块为空，但新文本本身就超过限制，需要分割新文本
+            if tk_nums[-1] == 0 and tnum > chunk_token_num:
+                # 尝试按分隔符分割文本
+                parts = []
+                for delim in delimiter:
+                    if delim in t:
+                        parts = t.split(delim)
+                        break
+                
+                # 如果无法按分隔符分割或分割后仍然过大，则按字符数量分割
+                if not parts:
+                    # 估算每个token大约对应的字符数
+                    chars_per_token = max(1, len(t) // tnum)
+                    # 计算可以包含的字符数
+                    max_chars = int(chunk_token_num * chars_per_token * 0.9)  # 留10%的余量
+                    # 分割文本
+                    parts = [t[i:i+max_chars] for i in range(0, len(t), max_chars)]
+                
+                # 处理分割后的部分
+                for i, part in enumerate(parts):
+                    part_tnum = num_tokens_from_string(part)
+                    # 如果是第一部分且当前块为空，直接添加到当前块
+                    if i == 0 and tk_nums[-1] == 0:
+                        cks[-1] += part
+                        tk_nums[-1] += part_tnum
+                    # 否则创建新块
+                    else:
+                        cks.append(part)
+                        tk_nums.append(part_tnum)
+            else:
+                # 创建新块
+                if t.find(pos) < 0:
+                    t += pos
+                cks.append(t)
+                tk_nums.append(tnum)
         else:
+            # 添加到当前块
             if cks[-1].find(pos) < 0:
                 t += pos
             cks[-1] += t
@@ -534,7 +626,10 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
 
     for sec, pos in sections:
         add_chunk(sec, pos)
-
+    
+    # 移除空块
+    cks = [ck for ck in cks if ck.strip()]
+    
     return cks
 
 
