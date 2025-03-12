@@ -10,15 +10,19 @@ import {
 } from 'lucide-react';
 import React from 'react';
 
-type Item = {
+export type TransferListItemType = {
   key: string;
   label: string;
   selected?: boolean;
 };
 
-export default function TransferList({ items }: { items: Item[] }) {
-  const [leftList, setLeftList] = React.useState<Item[]>(items);
-  const [rightList, setRightList] = React.useState<Item[]>([]);
+export default function TransferList({
+  items,
+}: {
+  items: TransferListItemType[];
+}) {
+  const [leftList, setLeftList] = React.useState<TransferListItemType[]>(items);
+  const [rightList, setRightList] = React.useState<TransferListItemType[]>([]);
   const [leftSearch, setLeftSearch] = React.useState('');
   const [rightSearch, setRightSearch] = React.useState('');
 
@@ -35,8 +39,8 @@ export default function TransferList({ items }: { items: Item[] }) {
   };
 
   const toggleSelection = (
-    list: Item[],
-    setList: React.Dispatch<React.SetStateAction<Item[]>>,
+    list: TransferListItemType[],
+    setList: React.Dispatch<React.SetStateAction<TransferListItemType[]>>,
     key: string,
   ) => {
     const updatedList = list.map((item) => {
