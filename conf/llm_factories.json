@@ -135,6 +135,18 @@
                     "model_type": "chat"
                 },
                 {
+                    "llm_name": "qwq-32b",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "qwq-plus",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat"
+                },
+                {
                     "llm_name": "qwen-long",
                     "tags": "LLM,CHAT,10000K",
                     "max_tokens": 1000000,
@@ -3259,7 +3271,7 @@
                     "tags": "TEXT EMBEDDING,32000",
                     "max_tokens": 32000,
                     "model_type": "embedding"
-                },                
+                },
                 {
                     "llm_name": "rerank-1",
                     "tags": "RE-RANK, 8000",
