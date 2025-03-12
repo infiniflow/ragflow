@@ -49,8 +49,6 @@ from api.utils.web_utils import html2pdf, is_valid_url
 from api.constants import IMG_BASE64_PREFIX
 
 
-
-
 @manager.route('/upload', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("kb_id")
