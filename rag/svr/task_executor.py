@@ -43,6 +43,7 @@ import tracemalloc
 import signal
 import trio
 import exceptiongroup
+import faulthandler
 
 import numpy as np
 from peewee import DoesNotExist
@@ -664,4 +665,5 @@ async def main():
     logging.error("BUG!!! You should not reach here!!!")
 
 if __name__ == "__main__":
+    faulthandler.enable()
     trio.run(main)
