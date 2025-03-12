@@ -41,19 +41,30 @@ class KnowledgebaseService(CommonService):
     @classmethod
     @DB.connection_context()
     def accessible4deletion(cls, kb_id, user_id):
-        """Check if a knowledge base can be deleted by a user.
-        
-        This method verifies whether a user has the necessary permissions to delete
-        a specific knowledge base. It checks if the user is the original creator
-        of the knowledge base.
-        
+        """Check if a knowledge base can be deleted by a specific user.
+    
+        This method verifies whether a user has permission to delete a knowledge base
+        by checking if they are the creator of that knowledge base.
+    
         Args:
-            kb_id: The unique identifier of the knowledge base.
-            user_id: The unique identifier of the user attempting deletion.
-            
+            kb_id (str): The unique identifier of the knowledge base to check.
+            user_id (str): The unique identifier of the user attempting the deletion.
+    
         Returns:
-            bool: True if the user can delete the knowledge base, False otherwise.
+            bool: True if the user has permission to delete the knowledge base,
+                  False if the user doesn't have permission or the knowledge base doesn't exist.
+    
+        Example:
+            >>> KnowledgebaseService.accessible4deletion("kb123", "user456")
+            True
+    
+        Note:
+            - This method only checks creator permissions
+            - A return value of False can mean either:
+                1. The knowledge base doesn't exist
+                2. The user is not the creator of the knowledge base
         """
+        # Check if a knowledge base can be deleted by a user
         docs = cls.model.select(
             cls.model.id).where(cls.model.id == kb_id, cls.model.created_by == user_id).paginate(0, 1)
         docs = docs.dicts()
@@ -369,15 +380,4 @@ class KnowledgebaseService(CommonService):
             ).where(cls.model.name == kb_name, UserTenant.user_id == user_id).paginate(0, 1)
         kbs = kbs.dicts()
         return list(kbs)
-
-    @classmethod
-    @DB.connection_context()
-    def accessible4deletion(cls, kb_id, user_id):
-        # Check if a knowledge base can be deleted by a user
-        docs = cls.model.select(
-            cls.model.id).where(cls.model.id == kb_id, cls.model.created_by == user_id).paginate(0, 1)
-        docs = docs.dicts()
-        if not docs:
-            return False
-        return True
 
