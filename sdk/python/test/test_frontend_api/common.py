@@ -68,7 +68,7 @@ def upload_file(auth, dataset_id, path):
 
 def list_document(auth, dataset_id):
     authorization = {"Authorization": auth}
-    url = f"{HOST_ADDRESS}/v1/document/list?kb_id={dataset_id}"
+    url = f"{HOST_ADDRESS}/v1/document/list?kb_id={dataset_id}" 
     res = requests.get(url=url, headers=authorization)
     return res.json()
 
@@ -85,7 +85,7 @@ def parse_docs(auth, doc_ids):
     authorization = {"Authorization": auth}
     json_req = {
         "doc_ids": doc_ids,
-        "run": 1
+        "run": 1 
     }
     url = f"{HOST_ADDRESS}/v1/document/run"
     res = requests.post(url=url, headers=authorization, json=json_req)

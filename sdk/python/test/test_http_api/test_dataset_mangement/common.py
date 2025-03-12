@@ -39,7 +39,7 @@ def list_dataset(auth, params=None):
 
 def update_dataset(auth, dataset_id, payload):
     res = requests.put(
-        url=f"{API_URL}/{dataset_id}", headers=HEADERS, auth=auth, json=payload
+        url=f"{API_URL}/{dataset_id}", headers=HEADERS, auth=auth, json=payload 
     )
     return res.json()
 
