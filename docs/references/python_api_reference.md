@@ -319,6 +319,23 @@ dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "chunk_method":"manual"})
 
 ---
 
+## Error Codes
+
+---
+
+| Code | Message | Description |
+|------|---------|-------------|
+| 400  | Bad Request | 请求参数错误 |
+| 401  | Unauthorized | 未授权访问 |
+| 403  | Forbidden | 禁止访问 |
+| 404  | Not Found | 资源未找到 |
+| 500  | Internal Server Error | 服务器内部错误 |
+| 1001 | Invalid Chunk ID | 无效的Chunk ID |
+| 1002 | Chunk Update Failed | Chunk更新失败 |
+
+
+---
+
 ## FILE MANAGEMENT WITHIN DATASET
 
 ---
@@ -1720,3 +1737,5 @@ for agent in rag_object.list_agents():
 ```
 
 ---
+
+
