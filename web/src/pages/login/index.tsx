@@ -16,7 +16,7 @@ const Login = () => {
   const { register, loading: registerLoading } = useRegister();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
   const loading = signLoading || registerLoading;
-  const hide_signup = process.env.HIDE_SIGNUP === 'true';
+  const hide_signup = process.env.HIDE_SIGNUP === '1';
 
   const changeTitle = () => {
     setTitle((title) => (title === 'login' ? 'register' : 'login'));
