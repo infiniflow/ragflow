@@ -36,6 +36,12 @@ from rag.nlp import search
 
 
 def trim_header_by_lines(text: str, max_length) -> str:
+    # Trim header text to maximum length while preserving line breaks
+    # Args:
+    #     text: Input text to trim
+    #     max_length: Maximum allowed length
+    # Returns:
+    #     Trimmed text
     len_text = len(text)
     if len_text <= max_length:
         return text
@@ -46,11 +52,37 @@ def trim_header_by_lines(text: str, max_length) -> str:
 
 
 class TaskService(CommonService):
+    """Service class for managing document processing tasks.
+    
+    This class extends CommonService to provide specialized functionality for document
+    processing task management, including task creation, progress tracking, and chunk
+    management. It handles various document types (PDF, Excel, etc.) and manages their
+    processing lifecycle.
+    
+    The class implements a robust task queue system with retry mechanisms and progress
+    tracking, supporting both synchronous and asynchronous task execution.
+    
+    Attributes:
+        model: The Task model class for database operations.
+    """
     model = Task
 
     @classmethod
     @DB.connection_context()
     def get_task(cls, task_id):
+        """Retrieve detailed task information by task ID.
+    
+        This method fetches comprehensive task details including associated document,
+        knowledge base, and tenant information. It also handles task retry logic and
+        progress updates.
+    
+        Args:
+            task_id (str): The unique identifier of the task to retrieve.
+    
+        Returns:
+            dict: Task details dictionary containing all task information and related metadata.
+                 Returns None if task is not found or has exceeded retry limit.
+        """
         fields = [
             cls.model.id,
             cls.model.doc_id,
@@ -105,6 +137,18 @@ class TaskService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_tasks(cls, doc_id: str):
+        """Retrieve all tasks associated with a document.
+    
+        This method fetches all processing tasks for a given document, ordered by page
+        number and creation time. It includes task progress and chunk information.
+    
+        Args:
+            doc_id (str): The unique identifier of the document.
+    
+        Returns:
+            list[dict]: List of task dictionaries containing task details.
+                       Returns None if no tasks are found.
+        """
         fields = [
             cls.model.id,
             cls.model.from_page,
@@ -124,11 +168,31 @@ class TaskService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_chunk_ids(cls, id: str, chunk_ids: str):
+        """Update the chunk IDs associated with a task.
+    
+        This method updates the chunk_ids field of a task, which stores the IDs of
+        processed document chunks in a space-separated string format.
+    
+        Args:
+            id (str): The unique identifier of the task.
+            chunk_ids (str): Space-separated string of chunk identifiers.
+        """
         cls.model.update(chunk_ids=chunk_ids).where(cls.model.id == id).execute()
 
     @classmethod
     @DB.connection_context()
     def get_ongoing_doc_name(cls):
+        """Get names of documents that are currently being processed.
+    
+        This method retrieves information about documents that are in the processing state,
+        including their locations and associated IDs. It uses database locking to ensure
+        thread safety when accessing the task information.
+    
+        Returns:
+            list[tuple]: A list of tuples, each containing (parent_id/kb_id, location)
+                        for documents currently being processed. Returns empty list if
+                        no documents are being processed.
+        """
         with DB.lock("get_task", -1):
             docs = (
                 cls.model.select(
@@ -172,6 +236,18 @@ class TaskService(CommonService):
     @classmethod
     @DB.connection_context()
     def do_cancel(cls, id):
+        """Check if a task should be cancelled based on its document status.
+    
+        This method determines whether a task should be cancelled by checking the
+        associated document's run status and progress. A task should be cancelled
+        if its document is marked for cancellation or has negative progress.
+    
+        Args:
+            id (str): The unique identifier of the task to check.
+    
+        Returns:
+            bool: True if the task should be cancelled, False otherwise.
+        """
         task = cls.model.get_by_id(id)
         _, doc = DocumentService.get_by_id(task.doc_id)
         return doc.run == TaskStatus.CANCEL.value or doc.progress < 0
@@ -179,6 +255,18 @@ class TaskService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_progress(cls, id, info):
+        """Update the progress information for a task.
+    
+        This method updates both the progress message and completion percentage of a task.
+        It handles platform-specific behavior (macOS vs others) and uses database locking
+        when necessary to ensure thread safety.
+    
+        Args:
+            id (str): The unique identifier of the task to update.
+            info (dict): Dictionary containing progress information with keys:
+                        - progress_msg (str, optional): Progress message to append
+                        - progress (float, optional): Progress percentage (0.0 to 1.0)
+        """
         if os.environ.get("MACOS"):
             if info["progress_msg"]:
                 task = cls.model.get_by_id(id)
@@ -202,6 +290,24 @@ class TaskService(CommonService):
 
 
 def queue_tasks(doc: dict, bucket: str, name: str):
+    """Create and queue document processing tasks.
+    
+    This function creates processing tasks for a document based on its type and configuration.
+    It handles different document types (PDF, Excel, etc.) differently and manages task
+    chunking and configuration. It also implements task reuse optimization by checking
+    for previously completed tasks.
+    
+    Args:
+        doc (dict): Document dictionary containing metadata and configuration.
+        bucket (str): Storage bucket name where the document is stored.
+        name (str): File name of the document.
+    
+    Note:
+        - For PDF documents, tasks are created per page range based on configuration
+        - For Excel documents, tasks are created per row range
+        - Task digests are calculated for optimization and reuse
+        - Previous task chunks may be reused if available
+    """
     def new_task():
         return {"id": get_uuid(), "doc_id": doc["id"], "progress": 0.0, "from_page": 0, "to_page": 100000000}
 
@@ -279,6 +385,26 @@ def queue_tasks(doc: dict, bucket: str, name: str):
 
 
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):
+    """Attempt to reuse chunks from previous tasks for optimization.
+    
+    This function checks if chunks from previously completed tasks can be reused for
+    the current task, which can significantly improve processing efficiency. It matches
+    tasks based on page ranges and configuration digests.
+    
+    Args:
+        task (dict): Current task dictionary to potentially reuse chunks for.
+        prev_tasks (list[dict]): List of previous task dictionaries to check for reuse.
+        chunking_config (dict): Configuration dictionary for chunk processing.
+    
+    Returns:
+        int: Number of chunks successfully reused. Returns 0 if no chunks could be reused.
+    
+    Note:
+        Chunks can only be reused if:
+        - A previous task exists with matching page range and configuration digest
+        - The previous task was completed successfully (progress = 1.0)
+        - The previous task has valid chunk IDs
+    """
     idx = 0
     while idx < len(prev_tasks):
         prev_task = prev_tasks[idx]
