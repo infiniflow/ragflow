@@ -1,5 +1,4 @@
 version = 1
-revision = 1
 requires-python = ">=3.10, <3.13"
 
 [[package]]
@@ -312,7 +311,7 @@ wheels = [
 
 [[package]]
 name = "ragflow-sdk"
-version = "0.17.1"
+version = "0.17.2"
 source = { virtual = "." }
 dependencies = [
     { name = "beartype" },
@@ -344,7 +343,6 @@ requires-dist = [
     { name = "requests", specifier = ">=2.30.0,<3.0.0" },
     { name = "requests-toolbelt", specifier = ">=1.0.0" },
 ]
-provides-extras = ["test"]
 
 [[package]]
 name = "reportlab"
