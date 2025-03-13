@@ -175,7 +175,10 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
     ```bash
     $ cd ragflow/docker
+    # CPU
     $ docker compose -f docker-compose.yml up -d
+    # GPU
+    $ docker compose -f docker-compose-gpu.yml up -d
     ```
 
     | Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                 |
