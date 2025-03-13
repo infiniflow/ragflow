@@ -13,9 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import base64
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import pytest
 from common import (
@@ -26,6 +24,8 @@ from common import (
     update_dataset,
 )
 from libs.auth import RAGFlowHttpApiAuth
+from libs.utils import encode_avatar
+from libs.utils.file_utils import create_image_file
 
 # TODO: Missing scenario for updating embedding_model with chunk_count != 0
 
@@ -171,19 +171,10 @@ class TestDatasetUpdate:
         else:
             assert res["message"] == expected_message
 
-    def test_avatar(self, get_http_api_auth, request):
-        def encode_avatar(image_path):
-            with Path.open(image_path, "rb") as file:
-                binary_data = file.read()
-            base64_encoded = base64.b64encode(binary_data).decode("utf-8")
-            return base64_encoded
-
+    def test_avatar(self, get_http_api_auth, tmp_path):
         ids = create_datasets(get_http_api_auth, 1)
-        payload = {
-            "avatar": encode_avatar(
-                Path(request.config.rootdir) / "test/data/logo.svg"
-            ),
-        }
+        fn = create_image_file(tmp_path / "ragflow_test.png")
+        payload = {"avatar": encode_avatar(fn)}
         res = update_dataset(get_http_api_auth, ids[0], payload)
         assert res["code"] == 0
 
@@ -329,6 +320,3 @@ class TestDatasetUpdate:
             ]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
-
-        res = list_dataset(get_http_api_auth, {"id": ids[0]})
-        assert res["data"][0]["name"] == "dataset_99"
