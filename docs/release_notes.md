@@ -13,15 +13,26 @@ Released on March 13, 2025.
 
 ### Improvements
 
+- Adds OpenAI-compatible APIs
 - Introduces a German user interface.
 - Accelerates knowledge graph extraction.
 - Enables Tavily-based web search in the **Retrieval** agent component.
-- Adds Tongyi-Qianwen QwQ models.
+- Adds Tongyi-Qianwen QwQ models (OpenAI-compatible).
 - Supports CSV files in the **General** chunk method.
 
 ### Fixed issues
 
 - Unable to add models via Ollama/Xinference, an issue introduced in v0.17.1.
+
+### Related APIs
+
+#### HTTP APIs
+
+[Create chat completion](./references/http_api_reference.md#openai-compatible-api)
+
+#### Python APIs
+
+[Create chat completion](./references/python_api_reference.md#openai-compatible-api)
 
 ## v0.17.1
 
