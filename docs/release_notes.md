@@ -13,7 +13,7 @@ Released on March 13, 2025.
 
 ### Improvements
 
-- Adds OpenAI-compatible APIs
+- Adds OpenAI-compatible APIs.
 - Introduces a German user interface.
 - Accelerates knowledge graph extraction.
 - Enables Tavily-based web search in the **Retrieval** agent component.
