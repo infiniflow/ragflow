@@ -7,6 +7,22 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.17.2
+
+Released on March 13, 2025.
+
+### Improvements
+
+- Introduces a German user interface.
+- Accelerates knowledge graph extraction.
+- Enables Tavily-based web search in the **Retrieval** agent component.
+- Supports Tongyi-Qianwen-compatible QwQ models.
+- Supports CSV files in the **General** chunk method.
+
+### Fixed issues
+
+- Unable to add models via Ollama/Xinference, an issue introduced in v0.17.1.
+
 ## v0.17.1
 
 Released on March 11, 2025.
