@@ -224,7 +224,6 @@ class TestDatasetList:
     ):
         create_datasets(get_http_api_auth, 3)
         res = list_dataset(get_http_api_auth, params=params)
-        # print(res)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
