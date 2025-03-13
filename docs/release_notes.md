@@ -26,7 +26,7 @@ Released on March 11, 2025.
 - Issues with API calling.
 - Options in the **Document parser** dropdown are missing.
 - A Tavily web search issue.
-- Unable to preview images or diagrams or images in an AI chat.
+- Unable to preview diagrams or images in an AI chat.
 
 ### Documentation
 
