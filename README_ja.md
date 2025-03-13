@@ -155,7 +155,10 @@
 
    ```bash
    $ cd ragflow/docker
+   # CPU
    $ docker compose -f docker-compose.yml up -d
+   # GPU
+   $ docker compose -f docker-compose-gpu.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
