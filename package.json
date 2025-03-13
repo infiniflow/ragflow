@@ -1,8 +1,15 @@
 {
   "dependencies": {
-    "@ant-design/icons": "^5.6.1",
+    "@ant-design/cssinjs": "^1.23.0",
+    "@ant-design/icons": "^5.3.0",
+    "@emotion/styled": "^11.14.0",
     "@types/antd": "^0.12.32",
-    "antd": "^5.24.3"
+    "antd": "^5.13.2",
+    "i18next": "^24.2.2",
+    "lucide-react": "^0.479.0",
+    "react-i18next": "^15.4.1",
+    "react-router-dom": "^7.3.0",
+    "styled-components": "^6.1.15"
   },
   "devDependencies": {
     "@types/react": "^19.0.10",
