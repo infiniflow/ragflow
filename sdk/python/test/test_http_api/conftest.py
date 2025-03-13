@@ -38,36 +38,23 @@ def clear_datasets(get_http_api_auth):
 
 
 @pytest.fixture
-def generate_test_files(tmp_path):
+def generate_test_files(request, tmp_path):
+    file_creators = {
+        "docx": (tmp_path / "ragflow_test.docx", create_docx_file),
+        "excel": (tmp_path / "ragflow_test.xlsx", create_excel_file),
+        "ppt": (tmp_path / "ragflow_test.pptx", create_ppt_file),
+        "image": (tmp_path / "ragflow_test.png", create_image_file),
+        "pdf": (tmp_path / "ragflow_test.pdf", create_pdf_file),
+        "txt": (tmp_path / "ragflow_test.txt", create_txt_file),
+        "md": (tmp_path / "ragflow_test.md", create_md_file),
+        "json": (tmp_path / "ragflow_test.json", create_json_file),
+        "eml": (tmp_path / "ragflow_test.eml", create_eml_file),
+        "html": (tmp_path / "ragflow_test.html", create_html_file),
+    }
+
     files = {}
-    files["docx"] = tmp_path / "ragflow_test.docx"
-    create_docx_file(files["docx"])
-
-    files["excel"] = tmp_path / "ragflow_test.xlsx"
-    create_excel_file(files["excel"])
-
-    files["ppt"] = tmp_path / "ragflow_test.pptx"
-    create_ppt_file(files["ppt"])
-
-    files["image"] = tmp_path / "ragflow_test.png"
-    create_image_file(files["image"])
-
-    files["pdf"] = tmp_path / "ragflow_test.pdf"
-    create_pdf_file(files["pdf"])
-
-    files["txt"] = tmp_path / "ragflow_test.txt"
-    create_txt_file(files["txt"])
-
-    files["md"] = tmp_path / "ragflow_test.md"
-    create_md_file(files["md"])
-
-    files["json"] = tmp_path / "ragflow_test.json"
-    create_json_file(files["json"])
-
-    files["eml"] = tmp_path / "ragflow_test.eml"
-    create_eml_file(files["eml"])
-
-    files["html"] = tmp_path / "ragflow_test.html"
-    create_html_file(files["html"])
-
+    for file_type, (file_path, creator_func) in file_creators.items():
+        if request.param in ["", file_type]:
+            creator_func(file_path)
+            files[file_type] = file_path
     return files

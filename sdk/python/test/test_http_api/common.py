@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 
 import requests
+from libs.utils.file_utils import create_txt_file
 from requests_toolbelt import MultipartEncoder
 
 HEADERS = {"Content-Type": "application/json"}
@@ -98,4 +99,47 @@ def upload_documnets(auth, dataset_id, files_path=None):
         auth=auth,
         data=m,
     )
+    return res.json()
+
+
+def batch_upload_documents(auth, dataset_id, num, tmp_path):
+    fps = []
+    for i in range(num):
+        fp = create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt")
+        fps.append(fp)
+    res = upload_documnets(auth, dataset_id, fps)
+    document_ids = []
+    for document in res["data"]:
+        document_ids.append(document["id"])
+    return document_ids
+
+
+def download_document(auth, dataset_id, document_id, save_path):
+    url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
+    res = requests.get(url=url, auth=auth, stream=True)
+    try:
+        if res.status_code == 200:
+            with open(save_path, "wb") as f:
+                for chunk in res.iter_content(chunk_size=8192):
+                    f.write(chunk)
+    finally:
+        res.close()
+
+    return res
+
+
+def list_documnet(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
+    res = requests.get(
+        url=url,
+        headers=HEADERS,
+        auth=auth,
+        params=params,
+    )
+    return res.json()
+
+
+def update_documnet(auth, dataset_id, document_id, payload):
+    url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
+    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
