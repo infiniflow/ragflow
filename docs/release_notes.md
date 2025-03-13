@@ -16,7 +16,7 @@ Released on March 13, 2025.
 - Introduces a German user interface.
 - Accelerates knowledge graph extraction.
 - Enables Tavily-based web search in the **Retrieval** agent component.
-- Supports Tongyi-Qianwen-compatible QwQ models.
+- Adds Tongyi-Qianwen QwQ models.
 - Supports CSV files in the **General** chunk method.
 
 ### Fixed issues
