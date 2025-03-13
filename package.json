@@ -3,10 +3,13 @@
     "@ant-design/cssinjs": "^1.23.0",
     "@ant-design/icons": "^5.3.0",
     "@emotion/styled": "^11.14.0",
+    "@tailwindcss/forms": "^0.5.10",
     "@types/antd": "^0.12.32",
     "antd": "^5.13.2",
     "i18next": "^24.2.2",
     "lucide-react": "^0.479.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "react-i18next": "^15.4.1",
     "react-router-dom": "^7.3.0",
     "styled-components": "^6.1.15"
@@ -14,6 +17,33 @@
   "devDependencies": {
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
-    "typescript": "^5.8.2"
-  }
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^4.0.13",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.1"
+  },
+  "name": "ragflow",
+  "version": "1.0.0",
+  "description": "<div align=\"center\"> <a href=\"https://demo.ragflow.io/\"> <img src=\"web/src/assets/logo-with-text.png\" width=\"520\" alt=\"ragflow logo\"> </a> </div>",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "example"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/billchizhang/ragflow.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/billchizhang/ragflow/issues"
+  },
+  "homepage": "https://github.com/billchizhang/ragflow#readme"
 }
