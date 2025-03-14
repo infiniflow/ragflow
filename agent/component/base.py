@@ -416,7 +416,8 @@ class ComponentBase(ABC):
         cpnts = set([para["component_id"].split("@")[0] for para in self._param.query \
                      if para.get("component_id") \
                      and para["component_id"].lower().find("answer") < 0 \
-                     and para["component_id"].lower().find("begin") < 0])
+                     and para["component_id"].lower().find("begin") < 0 \
+                     and para["component_id"].lower().find("variables@") < 0])
         return list(cpnts)
 
     def run(self, history, **kwargs):

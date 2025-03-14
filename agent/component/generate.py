@@ -70,7 +70,11 @@ class Generate(ComponentBase):
 
     def get_dependent_components(self):
         inputs = self.get_input_elements()
-        cpnts = set([i["key"] for i in inputs[1:] if i["key"].lower().find("answer") < 0 and i["key"].lower().find("begin") < 0])
+        cpnts = set([
+            i["key"] for i in inputs[1:] if i["key"].lower().find("answer") < 0 \
+            and i["key"].lower().find("begin") < 0  \
+            and i["key"].lower().find("variables@") < 0 \
+            ])
         return list(cpnts)
 
     def set_cite(self, retrieval_res, answer):

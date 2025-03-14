@@ -213,8 +213,6 @@ class Canvas:
                     logging.info(f"Canvas.prepare2run: {c}")
                     if c not in without_dependent_checking:
                         cpids = cpn.get_dependent_components()
-                        cpids = [c for c in cpids if '@' not in c]
-                        cpids = [c for c in cpids if ':'  in c]
                         if any([cc not in self.path[-1] for cc in cpids]):
                             if c not in waiting:
                                 waiting.append(c)
