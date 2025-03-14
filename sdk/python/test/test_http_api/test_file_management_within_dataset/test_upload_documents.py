@@ -139,7 +139,7 @@ class TestUploadDocuments:
         # filename_length = 129
         fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt")
         res = upload_documnets(get_http_api_auth, ids[0], [fp])
-        assert res["code"] == 500
+        assert res["code"] == 101
         assert (
             res["message"]
             == f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt: Exceed the maximum length of file name!"
