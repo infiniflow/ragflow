@@ -91,7 +91,7 @@ docker compose -f docker/docker-compose-base.yml up -d
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-4. Check the configuration in **conf/service_conf.yaml** to ensure all the ports and hosts are correct.
+4. Check the configuration in **conf/service_conf.yaml**, ensuring all hosts and ports are correctly set.
    
 5. Run the **entrypoint.sh** script to launch the backend service:
 
