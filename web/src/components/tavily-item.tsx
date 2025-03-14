@@ -14,7 +14,10 @@ export function TavilyItem({
     <Form.Item label={'Tavily API Key'} tooltip={t('tavilyApiKeyTip')}>
       <div className="flex flex-col gap-1">
         <Form.Item name={name} noStyle>
-          <Input.Password placeholder={t('tavilyApiKeyMessage')} />
+          <Input.Password
+            placeholder={t('tavilyApiKeyMessage')}
+            autoComplete="new-password"
+          />
         </Form.Item>
         <Typography.Link href="https://app.tavily.com/home" target={'_blank'}>
           {t('tavilyApiKeyHelp')}
