@@ -500,8 +500,12 @@ class ComponentBase(ABC):
                         self._param.inputs.append({"content": txt, "component_id": q["component_id"]})
                         outs.append(pd.DataFrame([{"content": txt}]))
                         continue
-                    elif q["component_id"] in vars.keys():
-                        outs.append(pd.DataFrame([{"content": vars[q["component_id"]]}]))
+                    if q["component_id"].split("@")[0].lower().find("variables") >= 0:
+                        key = q["component_id"].split("@")[1]
+                        if key in vars.keys():
+                            self._param.inputs.append({"component_id": q["component_id"], "content": vars[key]})
+                            outs.append(pd.DataFrame([{"content": vars[key]}]))
+                            continue
                     else:
                         outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
                     self._param.inputs.append({"component_id": q["component_id"],
@@ -567,7 +571,11 @@ class ComponentBase(ABC):
                     cpn_id, key = cpn_id.split("@")
                     eles.extend(self._canvas.get_component(cpn_id)["obj"]._param.query)
                     continue
-
+                if cpn_id.split("@")[0].lower().find("variables") >= 0:
+                    key = cpn_id.split("@")[1]
+                    if key in vars.keys():
+                        eles.append({"key": cpn_id, "name": cpn_id, "value": vars[key]})
+                    continue
                 eles.append({"name": self._canvas.get_component_name(cpn_id), "key": cpn_id})
             else:
                 eles.append({"key": q["value"], "name": q["value"], "value": q["value"]})

@@ -122,11 +122,16 @@ class Generate(ComponentBase):
                     res.append({"key": r.group(1), "name": p["name"]})
                     key_set.add(r.group(1))
                 continue
+            if cpn_id.lower().find("variables@") == 0:
+                cpn_id, key = cpn_id.split("@")
+                if key in vars.keys():
+                    res.append({"key": r.group(1), "name": key})
+                    key_set.add(r.group(1))
+                continue
             cpn_nm = self._canvas.get_component_name(cpn_id)
             if not cpn_nm:
                 continue
             res.append({"key": cpn_id, "name": cpn_nm})
-            key_set.add(cpn_id)
         return res
 
     def _run(self, history, **kwargs):
@@ -147,7 +152,12 @@ class Generate(ComponentBase):
                 else:
                     assert False, f"Can't find parameter '{key}' for {cpn_id}"
                 continue
-
+            if para["key"].lower().find("variables@") == 0:
+                cpn_id, key = para["key"].split("@")
+                if  key in vars.keys():
+                    kwargs[key] = vars[key]
+                    self._param.inputs.append({"component_id": para["key"], "content": vars[key]})
+                    continue
             component_id = para["key"]
             cpn = self._canvas.get_component(component_id)["obj"]
             if cpn.component_name.lower() == "answer":
@@ -167,10 +177,6 @@ class Generate(ComponentBase):
                 kwargs[para["key"]] = "  - " + "\n - ".join([o if isinstance(o, str) else str(o) for o in out["content"]])
             self._param.inputs.append({"component_id": para["key"], "content": kwargs[para["key"]]})
 
-        # Replace variables in the prompt
-        for var_key, var_value in self._canvas.get_variables().items():
-            if var_value:
-                prompt = prompt.replace(f"{{{var_key}}}", str(var_value))
 
         if retrieval_res:
             retrieval_res = pd.concat(retrieval_res, ignore_index=True)

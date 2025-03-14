@@ -113,8 +113,11 @@ export const useBuildComponentIdSelectOptions = (
     },
     {
       label: <span>Variable Extract</span>,
-      title: 'Variable Variable',
-      options: variableOptions,
+      title: 'Variables',
+      options: variableOptions.map((x) => ({
+        label: x.label,
+        value: `variables@${x.value}`,
+      })),
     },
   ];
 

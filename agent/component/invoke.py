@@ -64,8 +64,9 @@ class Invoke(ComponentBase, ABC):
                             if param["key"] == field:
                                 if "value" in param:
                                     args[para["key"]] = param["value"]
-                elif para.get("component_id") in vars.keys():
-                    args[para["key"]] = vars[para.get("component_id")]
+                    if field in vars.keys():
+                        args[para["key"]] = vars[field]
+              
                 else:
                     component = self._canvas.get_component(para["component_id"])
                     if component is not None:
