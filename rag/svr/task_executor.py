@@ -26,7 +26,6 @@ from rag.prompts import keyword_extraction, question_proposal, content_tagging
 
 CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
 CONSUMER_NAME = "task_executor_" + CONSUMER_NO
-initRootLogger(CONSUMER_NAME)
 
 import logging
 import os
@@ -43,6 +42,7 @@ import tracemalloc
 import signal
 import trio
 import exceptiongroup
+import faulthandler
 
 import numpy as np
 from peewee import DoesNotExist
@@ -139,30 +139,35 @@ class TaskCanceledException(Exception):
 
 
 def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
-    if prog is not None and prog < 0:
-        msg = "[ERROR]" + msg
-    cancel = TaskService.do_cancel(task_id)
+    try:
+        if prog is not None and prog < 0:
+            msg = "[ERROR]" + msg
+        cancel = TaskService.do_cancel(task_id)
 
-    if cancel:
-        msg += " [Canceled]"
-        prog = -1
+        if cancel:
+            msg += " [Canceled]"
+            prog = -1
 
-    if to_page > 0:
+        if to_page > 0:
+            if msg:
+                if from_page < to_page:
+                    msg = f"Page({from_page + 1}~{to_page + 1}): " + msg
         if msg:
-            if from_page < to_page:
-                msg = f"Page({from_page + 1}~{to_page + 1}): " + msg
-    if msg:
-        msg = datetime.now().strftime("%H:%M:%S") + " " + msg
-    d = {"progress_msg": msg}
-    if prog is not None:
-        d["progress"] = prog
+            msg = datetime.now().strftime("%H:%M:%S") + " " + msg
+        d = {"progress_msg": msg}
+        if prog is not None:
+            d["progress"] = prog
 
-    logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
-    TaskService.update_progress(task_id, d)
+        TaskService.update_progress(task_id, d)
 
-    close_connection()
-    if cancel:
-        raise TaskCanceledException(msg)
+        close_connection()
+        if cancel:
+            raise TaskCanceledException(msg)
+        logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
+    except DoesNotExist:
+        logging.warning(f"set_progress({task_id}) got exception DoesNotExist")
+    except Exception:
+        logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception")
 
 async def collect():
     global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS
@@ -664,4 +669,6 @@ async def main():
     logging.error("BUG!!! You should not reach here!!!")
 
 if __name__ == "__main__":
+    faulthandler.enable()
+    initRootLogger(CONSUMER_NAME)
     trio.run(main)

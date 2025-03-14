@@ -7,6 +7,60 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.17.2
+
+Released on March 13, 2025.
+
+### Improvements
+
+- Adds OpenAI-compatible APIs.
+- Introduces a German user interface.
+- Accelerates knowledge graph extraction.
+- Enables Tavily-based web search in the **Retrieval** agent component.
+- Adds Tongyi-Qianwen QwQ models (OpenAI-compatible).
+- Supports CSV files in the **General** chunk method.
+
+### Fixed issues
+
+- Unable to add models via Ollama/Xinference, an issue introduced in v0.17.1.
+
+### Related APIs
+
+#### HTTP APIs
+
+[Create chat completion](./references/http_api_reference.md#openai-compatible-api)
+
+#### Python APIs
+
+[Create chat completion](./references/python_api_reference.md#openai-compatible-api)
+
+## v0.17.1
+
+Released on March 11, 2025.
+
+### Improvements
+
+- Improves English tokenization quality.
+- Improves the table extraction logic in Markdown document parsing.
+- Updates SiliconFlow's model list.
+- Supports parsing XLS files (Excel97~2003) with improved corresponding error handling.
+- Supports Huggingface rerank models.
+- Enables relative time expressions ("now", "yesterday", "last week", "next year", and more) in the **Rewrite** agent component.
+
+### Fixed issues
+
+- A repetitive knowledge graph extraction issue.
+- Issues with API calling.
+- Options in the **Document parser** dropdown are missing.
+- A Tavily web search issue.
+- Unable to preview diagrams or images in an AI chat.
+
+### Documentation
+
+#### Added documents
+
+[Use tag set](./guides/dataset/use_tag_sets.md)
+
 ## v0.17.0
 
 Released on March 3, 2025.
@@ -20,7 +74,7 @@ Released on March 3, 2025.
 - Dataset: Adds a **Document parser** dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options.
 - Agent component: **(x)** or a forward slash `/` can be used to insert available keys (variables) in the system prompt field of the **Generate** or **Template** component.
 - Object storage: Supports using Aliyun OSS (Object Storage Service) as a file storage option.
-- Models: Updates the supported model list for Tongyi-Qianwen, adding DeepSeek-specific models; adds ModelScope as a model provider.
+- Models: Updates the supported model list for Tongyi-Qianwen (Qwen), adding DeepSeek-specific models; adds ModelScope as a model provider.
 - APIs: Document metadata can be updated through an API.
 
 The following diagram illustrates the workflow of RAGFlow's Deep Research:
