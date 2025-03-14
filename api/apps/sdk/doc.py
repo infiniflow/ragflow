@@ -138,7 +138,7 @@ def upload(dataset_id, tenant_id):
             )
         if len(file_obj.filename.encode("utf-8")) >= 128:
             return get_result(
-                message=f"File name should be less than 128 bytes.", code=settings.RetCode.ARGUMENT_ERROR
+                message="File name should be less than 128 bytes.", code=settings.RetCode.ARGUMENT_ERROR
             )
     '''
     # total size
