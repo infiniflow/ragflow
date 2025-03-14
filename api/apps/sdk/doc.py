@@ -363,6 +363,10 @@ def download(tenant_id, dataset_id, document_id):
         schema:
           type: object
     """
+    if not document_id:
+        return get_error_data_result(
+            message="Specify document_id please."
+        )
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message=f"You do not own the dataset {dataset_id}.")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
