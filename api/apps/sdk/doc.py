@@ -693,7 +693,7 @@ def parse(tenant_id, dataset_id):
         doc = doc.to_dict()
         doc["tenant_id"] = tenant_id
         bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
-        queue_tasks(doc, bucket, name)
+        queue_tasks(doc, bucket, name, 0)
     return get_result()
 
 
