@@ -336,6 +336,8 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_parser_config(cls, id, config):
+        if not config:
+            return
         e, d = cls.get_by_id(id)
         if not e:
             raise LookupError(f"Document({id}) not found.")
