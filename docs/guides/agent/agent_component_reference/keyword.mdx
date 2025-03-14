@@ -1,0 +1,79 @@
+---
+sidebar_position: 6
+slug: /keyword_component
+---
+
+# Keyword component
+
+A component that extracts keywords from a user query.
+
+---
+
+A **Keyword** component uses the specified LLM to extract keywords from a user query.
+
+## Scenarios
+
+A **Keyword** component is essential where you need to prepare keywords for a potential keyword search.
+
+## Configurations
+
+### Input
+
+The **Keyword** component relies on input variables to specify its data inputs (queries). Click **+ Add variable** in the **Input** section to add the desired input variables. There are two types of input variables: **Reference** and **Text**.
+
+- **Reference**: Uses a component's output or a user input as the data source. You are required to select from the dropdown menu:
+  - A component ID under **Component Output**, or 
+  - A global variable under **Begin input**, which is defined in the **Begin** component.
+- **Text**: Uses fixed text as the query. You are required to enter static text.
+
+
+### Model
+
+Click the dropdown menu of **Model** to show the model configuration window.
+
+- **Model**: The chat model to use.  
+  - Ensure you set the chat model correctly on the **Model providers** page.
+  - You can use different models for different components to increase flexibility or improve overall performance.
+- **Preset configurations**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
+  This parameter has three options:
+  - **Improvise**: Produces more creative responses.
+  - **Precise**: (Default) Produces more conservative responses.
+  - **Balance**: A middle ground between **Improvise** and **Precise**.
+- **Temperature**: The randomness level of the model's output.  
+  Defaults to 0.1.
+  - Lower values lead to more deterministic and predictable outputs.
+  - Higher values lead to more creative and varied outputs.
+  - A temperature of zero results in the same output for the same prompt.
+- **Top P**: Nucleus sampling.  
+  - Reduces the likelihood of generating repetitive or unnatural text by setting a threshold *P* and restricting the sampling to tokens with a cumulative probability exceeding *P*.
+  - Defaults to 0.3.
+- **Presence penalty**: Encourages the model to include a more diverse range of tokens in the response.  
+  - A higher **presence penalty** value results in the model being more likely to generate tokens not yet been included in the generated text.
+  - Defaults to 0.4.
+- **Frequency penalty**: Discourages the model from repeating the same words or phrases too frequently in the generated text.  
+  - A higher **frequency penalty** value results in the model being more conservative in its use of repeated tokens.
+  - Defaults to 0.7.
+- **Max tokens**: Sets the maximum length of the model's output, measured in the number of tokens.  
+  - Defaults to 512. 
+  - If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.
+
+:::tip NOTE
+- It is not necessary to stick with the same model for all components. If a specific model is not performing well for a particular task, consider using a different one.
+- If you are uncertain about the mechanism behind **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**, simply choose one of the three options of **Preset**.
+:::
+
+
+### Number of keywords
+
+An integer specifying the number of keywords to extract from the user query. Defaults to 3. Please note that the number of extracted keywords depends on the LLM's capabilities and the token count in the user query, and may *not* match the integer you set.
+
+
+## Examples
+
+Explore our general-purpose chatbot agent template, where the **Keyword** component (component ID: **keywords**) is used to extract keywords from financial inputs for a potential stock search in the **akshare** component:
+
+1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
+2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
+3. On the **agent template** page, hover over the **General-purpose chatbot** card and click **Use this template**.
+4. Name your new agent and click **OK** to enter the workflow editor.
+5. Click on the **Keyword** component to display its **Configuration** window.

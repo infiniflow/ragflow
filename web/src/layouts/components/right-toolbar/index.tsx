@@ -9,7 +9,7 @@ import { useTheme } from '@/components/theme-provider';
 import { LanguageList, LanguageMap } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
-import { MoonIcon, SunIcon } from 'lucide-react';
+import { CircleHelp, MoonIcon, SunIcon } from 'lucide-react';
 import styled from './index.less';
 
 const Circle = ({ children, ...restProps }: React.PropsWithChildren) => {
@@ -22,6 +22,10 @@ const Circle = ({ children, ...restProps }: React.PropsWithChildren) => {
 
 const handleGithubCLick = () => {
   window.open('https://github.com/infiniflow/ragflow', 'target');
+};
+
+const handleDocHelpCLick = () => {
+  window.open('https://ragflow.io/docs/dev/category/guides', 'target');
 };
 
 const RightToolBar = () => {
@@ -62,6 +66,9 @@ const RightToolBar = () => {
         </Dropdown>
         <Circle>
           <GithubOutlined onClick={handleGithubCLick} />
+        </Circle>
+        <Circle>
+          <CircleHelp className="size-4" onClick={handleDocHelpCLick} />
         </Circle>
         <Circle>
           {theme === 'dark' ? (

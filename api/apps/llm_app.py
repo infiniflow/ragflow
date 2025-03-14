@@ -135,6 +135,8 @@ def set_api_key():
 def add_llm():
     req = request.json
     factory = req["llm_factory"]
+    api_key = req.get("api_key", "x")
+    llm_name = req["llm_name"]
 
     def apikey_json(keys):
         nonlocal req
@@ -143,7 +145,6 @@ def add_llm():
     if factory == "VolcEngine":
         # For VolcEngine, due to its special authentication method
         # Assemble ark_api_key endpoint_id into api_key
-        llm_name = req["llm_name"]
         api_key = apikey_json(["ark_api_key", "endpoint_id"])
 
     elif factory == "Tencent Hunyuan":
@@ -152,51 +153,42 @@ def add_llm():
 
     elif factory == "Tencent Cloud":
         req["api_key"] = apikey_json(["tencent_cloud_sid", "tencent_cloud_sk"])
+        return set_api_key()
 
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
         # Assemble bedrock_ak, bedrock_sk, bedrock_region
-        llm_name = req["llm_name"]
         api_key = apikey_json(["bedrock_ak", "bedrock_sk", "bedrock_region"])
 
     elif factory == "LocalAI":
-        llm_name = req["llm_name"] + "___LocalAI"
-        api_key = "xxxxxxxxxxxxxxx"
+        llm_name += "___LocalAI"
 
     elif factory == "HuggingFace":
-        llm_name = req["llm_name"] + "___HuggingFace"
-        api_key = "xxxxxxxxxxxxxxx"
+        llm_name += "___HuggingFace"
 
     elif factory == "OpenAI-API-Compatible":
-        llm_name = req["llm_name"] + "___OpenAI-API"
-        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
+        llm_name += "___OpenAI-API"
+
+    elif factory == "VLLM":
+        llm_name += "___VLLM"
 
     elif factory == "XunFei Spark":
-        llm_name = req["llm_name"]
         if req["model_type"] == "chat":
-            api_key = req.get("spark_api_password", "xxxxxxxxxxxxxxx")
+            api_key = req.get("spark_api_password", "")
         elif req["model_type"] == "tts":
             api_key = apikey_json(["spark_app_id", "spark_api_secret", "spark_api_key"])
 
     elif factory == "BaiduYiyan":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["yiyan_ak", "yiyan_sk"])
 
     elif factory == "Fish Audio":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["fish_audio_ak", "fish_audio_refid"])
 
     elif factory == "Google Cloud":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["google_project_id", "google_region", "google_service_account_key"])
 
     elif factory == "Azure-OpenAI":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["api_key", "api_version"])
-
-    else:
-        llm_name = req["llm_name"]
-        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
     llm = {
         "tenant_id": current_user.id,
@@ -209,66 +201,69 @@ def add_llm():
     }
 
     msg = ""
+    mdl_nm = llm["llm_name"].split("___")[0]
     if llm["model_type"] == LLMType.EMBEDDING.value:
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"])
         try:
             arr, tc = mdl.encode(["Test if the api key is available"])
             if len(arr[0]) == 0:
                 raise Exception("Fail")
         except Exception as e:
-            msg += f"\nFail to access embedding model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access embedding model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
         mdl = ChatModel[factory](
             key=llm['api_key'],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"]
         )
         try:
             m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {
                 "temperature": 0.9})
-            if not tc:
+            if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(
+            msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
-        mdl = RerankModel[factory](
-            key=llm["api_key"],
-            model_name=llm["llm_name"],
-            base_url=llm["api_base"]
-        )
         try:
+            mdl = RerankModel[factory](
+                key=llm["api_key"],
+                model_name=mdl_nm,
+                base_url=llm["api_base"]
+            )
             arr, tc = mdl.similarity("Hello~ Ragflower!", ["Hi, there!", "Ohh, my friend!"])
             if len(arr) == 0:
                 raise Exception("Not known.")
+        except KeyError:
+            msg += f"{factory} dose not support this model({mdl_nm})"
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(
+            msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
         mdl = CvModel[factory](
             key=llm["api_key"],
-            model_name=llm["llm_name"],
+            model_name=mdl_nm,
             base_url=llm["api_base"]
         )
         try:
             with open(os.path.join(get_project_base_directory(), "web/src/assets/yay.jpg"), "rb") as f:
                 m, tc = mdl.describe(f.read())
-                if not tc:
+                if not m and not tc:
                     raise Exception(m)
         except Exception as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
         mdl = TTSModel[factory](
-            key=llm["api_key"], model_name=llm["llm_name"], base_url=llm["api_base"]
+            key=llm["api_key"], model_name=mdl_nm, base_url=llm["api_base"]
         )
         try:
             for resp in mdl.tts("Hello~ Ragflower!"):
                 pass
         except RuntimeError as e:
-            msg += f"\nFail to access model({llm['llm_name']})." + str(e)
+            msg += f"\nFail to access model({mdl_nm})." + str(e)
     else:
         # TODO: check other type of models
         pass
@@ -343,8 +338,6 @@ def list_app():
 
         llm_set = set([m["llm_name"] + "@" + m["fid"] for m in llms])
         for o in objs:
-            if not o.api_key:
-                continue
             if o.llm_name + "@" + o.llm_factory in llm_set:
                 continue
             llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True})

@@ -1,6 +1,6 @@
 [project]
 name = "ragflow-sdk"
-version = "0.15.1"
+version = "0.17.2"
 description = "Python client sdk of [RAGFlow](https://github.com/infiniflow/ragflow). RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding."
 authors = [
     { name = "Zhichang Yu", email = "yuzhichang@gmail.com" }
@@ -11,10 +11,22 @@ requires-python = ">=3.10,<3.13"
 dependencies = [
     "requests>=2.30.0,<3.0.0",
     "beartype>=0.18.5,<0.19.0",
-    "pytest>=8.0.0,<9.0.0"
+    "pytest>=8.0.0,<9.0.0",
+    "requests-toolbelt>=1.0.0",
+    "python-docx>=1.1.2",
+    "openpyxl>=3.1.5",
+    "python-pptx>=1.0.2",
+    "pillow>=11.1.0",
+    "reportlab>=4.3.1",
 ]
 
 [project.optional-dependencies]
 test = [
     "pytest>=8.0.0,<9.0.0"
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "wip: marks tests as work in progress (deselect with '-m \"not wip\"')"
 ]

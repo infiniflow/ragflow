@@ -6,558 +6,205 @@
    "dsl": {
       "answer": [],
       "components": {
-        "begin": {
-          "obj": {
-            "component_name": "Begin",
-            "params": {}
-          },
-          "downstream": [
-            "Answer:FlatRavensPush"
-          ],
-          "upstream": []
-        },
-        "PubMed:TwentyFansShake": {
-          "obj": {
-            "component_name": "PubMed",
-            "params": {
-              "email": "928018077@qq.com",
-              "top_n": 10
-            }
-          },
-          "downstream": [
-            "Generate:SolidCrewsStare"
-          ],
-          "upstream": [
-            "Generate:FortyBaboonsRule"
-          ]
-        },
         "Answer:FlatRavensPush": {
-          "obj": {
-            "component_name": "Answer",
-            "params": {}
-          },
           "downstream": [
             "Generate:QuietMelonsHear",
             "Generate:FortyBaboonsRule"
           ],
+          "obj": {
+            "component_name": "Answer",
+            "inputs": [],
+            "output": null,
+            "params": {
+              "debug_inputs": [],
+              "inputs": [],
+              "message_history_window_size": 22,
+              "output": null,
+              "output_var_name": "output",
+              "post_answers": [],
+              "query": []
+            }
+          },
           "upstream": [
             "begin",
-            "Generate:SolidCrewsStare"
+            "Generate:BrightCitiesSink"
           ]
         },
-        "Generate:QuietMelonsHear": {
+        "Generate:BrightCitiesSink": {
+          "downstream": [
+            "Answer:FlatRavensPush"
+          ],
           "obj": {
             "component_name": "Generate",
+            "inputs": [],
+            "output": null,
             "params": {
               "cite": true,
+              "debug_inputs": [],
               "frequency_penalty": 0.7,
+              "inputs": [],
               "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
+              "max_tokens": 0,
               "message_history_window_size": 12,
+              "output": null,
+              "output_var_name": "output",
               "parameters": [],
               "presence_penalty": 0.4,
-              "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into Chinese, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\nTranslation (Chinese): 医生，我这几天一直胸痛和气短。\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
+              "prompt": "Role: You are a professional medical consulting assistant\n\nTasks: Answer questions posed by users. Answer based on content provided by the knowledge base, PubMed\n\nRequirement:\n- Answers may refer to the content provided (Knowledge Base, PubMed).\n- If the provided PubMed content is referenced, a link to the corresponding URL should be given.\n-Answers should be professional and accurate; no information should be fabricated that is not relevant to the user's question.\n\nProvided knowledge base content\n{Retrieval:BeigeBagsDress}\n\nPubMed content provided\n\n{PubMed:TwentyFansShake}",
+              "query": [],
               "temperature": 0.1,
               "top_p": 0.3
             }
           },
-          "downstream": [
-            "Retrieval:BeigeBagsDress"
-          ],
           "upstream": [
-            "Answer:FlatRavensPush"
+            "Retrieval:BeigeBagsDress",
+            "PubMed:TwentyFansShake"
           ]
         },
         "Generate:FortyBaboonsRule": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
-              "cite": true,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 12,
-              "parameters": [],
-              "presence_penalty": 0.4,
-              "prompt": "Role: You are a professional Chinese-English medical question translation assistant\n\nTask: Accurately translate users' Chinese medical question content into English, ensuring accuracy of terminology and clarity of expression\n\nRequirements:\n- In-depth understanding of the terminology and disease descriptions in Chinese medical inquiries to ensure correct medical vocabulary is used in the English translation.\n- Maintain the semantic integrity and accuracy of the original text to avoid omitting important information or introducing errors.\n- Pay attention to the differences in expression habits between Chinese and English, and make appropriate adjustments to make the English translation more natural and fluent.\n- Respect the patient's privacy and the principle of medical confidentiality, and do not disclose any sensitive information during the translation process.\n\nExample：\nOriginal sentence: 我最近总是感觉胸闷，有时还会有心悸的感觉。\nTranslated: I've been feeling chest tightness recently, and sometimes I experience palpitations.\n\nNote:\nOnly the translated content should be given, do not output other irrelevant content!",
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
           "downstream": [
             "PubMed:TwentyFansShake"
           ],
-          "upstream": [
-            "Answer:FlatRavensPush"
-          ]
-        },
-        "Generate:SolidCrewsStare": {
           "obj": {
             "component_name": "Generate",
+            "inputs": [],
+            "output": null,
             "params": {
-              "cite": true,
+              "cite": false,
+              "debug_inputs": [],
               "frequency_penalty": 0.7,
+              "inputs": [],
               "llm_id": "deepseek-chat@DeepSeek",
               "max_tokens": 256,
-              "message_history_window_size": 12,
-              "parameters": [
-                {
-                  "component_id": "PubMed:TwentyFansShake",
-                  "id": "9fe5f82e-7be5-45d2-bc6c-1f9ba7e14b34",
-                  "key": "pm_input"
-                },
-                {
-                  "component_id": "Retrieval:BeigeBagsDress",
-                  "id": "d2e7b0e2-e222-4776-988c-db239581a083",
-                  "key": "kb_input"
-                }
-              ],
+              "message_history_window_size": 1,
+              "output": null,
+              "output_var_name": "output",
+              "parameters": [],
               "presence_penalty": 0.4,
-              "prompt": "Role: You are a professional medical consulting assistant\n\nTasks: Answer questions posed by users. Answer based on content provided by the knowledge base, PubMed\n\nRequirement:\n- Answers may refer to the content provided (Knowledge Base, PubMed).\n- If the provided PubMed content is referenced, a link to the corresponding URL should be given.\n-Answers should be professional and accurate; no information should be fabricated that is not relevant to the user's question.\n\nProvided knowledge base content\n{kb_input}\n\nPubMed content provided\n{pm_input}",
+              "prompt": "Role: You are a professional Chinese-English medical question translation assistant\n\nTask: Accurately translate users' Chinese medical question content into English, ensuring accuracy of terminology and clarity of expression\n\nRequirements:\n- In-depth understanding of the terminology and disease descriptions in Chinese medical inquiries to ensure correct medical vocabulary is used in the English translation.\n- Maintain the semantic integrity and accuracy of the original text to avoid omitting important information or introducing errors.\n- Pay attention to the differences in expression habits between Chinese and English, and make appropriate adjustments to make the English translation more natural and fluent.\n- Respect the patient's privacy and the principle of medical confidentiality, and do not disclose any sensitive information during the translation process.\n\nExample：\nOriginal sentence: 我最近总是感觉胸闷，有时还会有心悸的感觉。\nTranslated: I've been feeling chest tightness recently, and sometimes I experience palpitations.\n\nNote:\nOnly the translated content should be given, do not output other irrelevant content!",
+              "query": [],
               "temperature": 0.1,
               "top_p": 0.3
             }
           },
-          "downstream": [
-            "Answer:FlatRavensPush"
-          ],
           "upstream": [
-            "PubMed:TwentyFansShake",
+            "Answer:FlatRavensPush"
+          ]
+        },
+        "Generate:QuietMelonsHear": {
+          "downstream": [
             "Retrieval:BeigeBagsDress"
+          ],
+          "obj": {
+            "component_name": "Generate",
+            "inputs": [],
+            "output": null,
+            "params": {
+              "cite": true,
+              "debug_inputs": [],
+              "frequency_penalty": 0.7,
+              "inputs": [],
+              "llm_id": "deepseek-chat@DeepSeek",
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "output": null,
+              "output_var_name": "output",
+              "parameters": [],
+              "presence_penalty": 0.4,
+              "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into Chinese, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\nTranslation (Chinese): 医生，我这几天一直胸痛和气短。\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
+              "query": [],
+              "temperature": 0.1,
+              "top_p": 0.3
+            }
+          },
+          "upstream": [
+            "Answer:FlatRavensPush"
+          ]
+        },
+        "PubMed:TwentyFansShake": {
+          "downstream": [
+            "Generate:BrightCitiesSink"
+          ],
+          "obj": {
+            "component_name": "PubMed",
+            "inputs": [],
+            "output": null,
+            "params": {
+              "debug_inputs": [],
+              "email": "928018077@qq.com",
+              "inputs": [],
+              "message_history_window_size": 22,
+              "output": null,
+              "output_var_name": "output",
+              "query": [
+                {
+                  "component_id": "Generate:FortyBaboonsRule",
+                  "type": "reference"
+                }
+              ],
+              "top_n": 10
+            }
+          },
+          "upstream": [
+            "Generate:FortyBaboonsRule"
           ]
         },
         "Retrieval:BeigeBagsDress": {
+          "downstream": [
+            "Generate:BrightCitiesSink"
+          ],
           "obj": {
             "component_name": "Retrieval",
+            "inputs": [],
+            "output": null,
             "params": {
+              "debug_inputs": [],
+              "empty_response": "",
+              "inputs": [],
               "kb_ids": [],
               "keywords_similarity_weight": 0.3,
+              "message_history_window_size": 22,
+              "output": null,
+              "output_var_name": "output",
+              "query": [
+                {
+                  "component_id": "Generate:QuietMelonsHear",
+                  "type": "reference"
+                }
+              ],
+              "rerank_id": "",
               "similarity_threshold": 0.2,
+              "top_k": 1024,
               "top_n": 8
             }
           },
-          "downstream": [
-            "Generate:SolidCrewsStare"
-          ],
           "upstream": [
             "Generate:QuietMelonsHear"
           ]
+        },
+        "begin": {
+          "downstream": [
+            "Answer:FlatRavensPush"
+          ],
+          "obj": {
+            "component_name": "Begin",
+            "inputs": [],
+            "output": null,
+            "params": {
+              "debug_inputs": [],
+              "inputs": [],
+              "message_history_window_size": 22,
+              "output": null,
+              "output_var_name": "output",
+              "prologue": "Hi! I'm your smart assistant. What can I do for you?",
+              "query": []
+            }
+          },
+          "upstream": []
         }
       },
+      "embed_id": "",
       "graph": {
-        "nodes": [
-          {
-            "data": {
-              "label": "Begin",
-              "name": "opening"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "begin",
-            "position": {
-              "x": -599.8361708291377,
-              "y": 161.91688790133628
-            },
-            "positionAbsolute": {
-              "x": -599.8361708291377,
-              "y": 161.91688790133628
-            },
-            "selected": false,
-            "sourcePosition": "left",
-            "targetPosition": "right",
-            "type": "beginNode",
-            "width": 100
-          },
-          {
-            "data": {
-              "form": {
-                "email": "928018077@qq.com",
-                "top_n": 10
-              },
-              "label": "PubMed",
-              "name": "Search PubMed"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "PubMed:TwentyFansShake",
-            "position": {
-              "x": 389.7229173847695,
-              "y": 276.4372267765921
-            },
-            "positionAbsolute": {
-              "x": 389.7229173847695,
-              "y": 276.4372267765921
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {},
-              "label": "Answer",
-              "name": "Interface"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "Answer:FlatRavensPush",
-            "position": {
-              "x": -370.881803561134,
-              "y": 161.41373998842477
-            },
-            "positionAbsolute": {
-              "x": -370.881803561134,
-              "y": 161.41373998842477
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "logicNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": true,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into Chinese, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\nTranslation (Chinese): 医生，我这几天一直胸痛和气短。\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Translate to Chinese"
-            },
-            "dragging": false,
-            "height": 86,
-            "id": "Generate:QuietMelonsHear",
-            "position": {
-              "x": -2.756518132081453,
-              "y": 38.86485966020132
-            },
-            "positionAbsolute": {
-              "x": -2.756518132081453,
-              "y": 38.86485966020132
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": true,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role: You are a professional Chinese-English medical question translation assistant\n\nTask: Accurately translate users' Chinese medical question content into English, ensuring accuracy of terminology and clarity of expression\n\nRequirements:\n- In-depth understanding of the terminology and disease descriptions in Chinese medical inquiries to ensure correct medical vocabulary is used in the English translation.\n- Maintain the semantic integrity and accuracy of the original text to avoid omitting important information or introducing errors.\n- Pay attention to the differences in expression habits between Chinese and English, and make appropriate adjustments to make the English translation more natural and fluent.\n- Respect the patient's privacy and the principle of medical confidentiality, and do not disclose any sensitive information during the translation process.\n\nExample：\nOriginal sentence: 我最近总是感觉胸闷，有时还会有心悸的感觉。\nTranslated: I've been feeling chest tightness recently, and sometimes I experience palpitations.\n\nNote:\nOnly the translated content should be given, do not output other irrelevant content!",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Translate to English"
-            },
-            "dragging": false,
-            "height": 86,
-            "id": "Generate:FortyBaboonsRule",
-            "position": {
-              "x": -3.825864707727135,
-              "y": 253.2285157283701
-            },
-            "positionAbsolute": {
-              "x": -3.825864707727135,
-              "y": 253.2285157283701
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": true,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [
-                  {
-                    "component_id": "PubMed:TwentyFansShake",
-                    "id": "9fe5f82e-7be5-45d2-bc6c-1f9ba7e14b34",
-                    "key": "pm_input"
-                  },
-                  {
-                    "component_id": "Retrieval:BeigeBagsDress",
-                    "id": "d2e7b0e2-e222-4776-988c-db239581a083",
-                    "key": "kb_input"
-                  }
-                ],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role: You are a professional medical consulting assistant\n\nTasks: Answer questions posed by users. Answer based on content provided by the knowledge base, PubMed\n\nRequirement:\n- Answers may refer to the content provided (Knowledge Base, PubMed).\n- If the provided PubMed content is referenced, a link to the corresponding URL should be given.\n-Answers should be professional and accurate; no information should be fabricated that is not relevant to the user's question.\n\nProvided knowledge base content\n{kb_input}\n\nPubMed content provided\n{pm_input}",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "LLM"
-            },
-            "dragging": false,
-            "height": 172,
-            "id": "Generate:SolidCrewsStare",
-            "position": {
-              "x": 427.0382682049008,
-              "y": -221.26975391424511
-            },
-            "positionAbsolute": {
-              "x": 427.0382682049008,
-              "y": -221.26975391424511
-            },
-            "selected": true,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "kb_ids": [],
-                "keywords_similarity_weight": 0.3,
-                "similarity_threshold": 0.2,
-                "top_n": 8
-              },
-              "label": "Retrieval",
-              "name": "Search Q&A"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "Retrieval:BeigeBagsDress",
-            "position": {
-              "x": 382.25527986090765,
-              "y": 35.38705653631584
-            },
-            "positionAbsolute": {
-              "x": 382.25527986090765,
-              "y": 35.38705653631584
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "retrievalNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "text": "Receives the user's financial inquiries and displays the large model's response to financial questions."
-              },
-              "label": "Note",
-              "name": "N: Interface"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 162,
-            "id": "Note:RedZebrasEnjoy",
-            "position": {
-              "x": -374.13983303471906,
-              "y": 219.54112331790157
-            },
-            "positionAbsolute": {
-              "x": -374.13983303471906,
-              "y": 219.54112331790157
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 162,
-              "width": 200
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "text": "Translate user's question to English by LLM."
-              },
-              "label": "Note",
-              "name": "N: Translate to English"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 128,
-            "id": "Note:DarkIconsClap",
-            "position": {
-              "x": -0.453362859534991,
-              "y": 357.3687792184929
-            },
-            "positionAbsolute": {
-              "x": -0.453362859534991,
-              "y": 357.3687792184929
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 128,
-              "width": 204
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 204
-          },
-          {
-            "data": {
-              "form": {
-                "text": "Translate user's question to Chinese by LLM."
-              },
-              "label": "Note",
-              "name": "N: Translate to Chinese"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 128,
-            "id": "Note:SmallRiversTap",
-            "position": {
-              "x": -5.453362859535048,
-              "y": -105.63122078150693
-            },
-            "positionAbsolute": {
-              "x": -5.453362859535048,
-              "y": -105.63122078150693
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 128,
-              "width": 196
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 196
-          },
-          {
-            "data": {
-              "form": {
-                "text": "PubMed® comprises more than 37 million citations for biomedical literature from MEDLINE, life science journals, and online books. Citations may include links to full text content from PubMed Central and publisher web sites."
-              },
-              "label": "Note",
-              "name": "N: Search PubMed"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 220,
-            "id": "Note:MightyDeerShout",
-            "position": {
-              "x": 718.5466371404648,
-              "y": 275.36877921849293
-            },
-            "positionAbsolute": {
-              "x": 718.5466371404648,
-              "y": 275.36877921849293
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 220,
-              "width": 287
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 287
-          },
-          {
-            "data": {
-              "form": {
-                "text": "You can download the Q&A dataset at\nhttps://huggingface.co/datasets/InfiniFlow/medical_QA"
-              },
-              "label": "Note",
-              "name": "N: Search Q&A"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 128,
-            "id": "Note:VioletSuitsFlash",
-            "position": {
-              "x": 776.4332169584197,
-              "y": 32.89802610798361
-            },
-            "positionAbsolute": {
-              "x": 776.4332169584197,
-              "y": 32.89802610798361
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 128,
-              "width": 387
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 387
-          },
-          {
-            "data": {
-              "form": {
-                "text": "A prompt summarize content from search result from PubMed and Q&A dataset."
-              },
-              "label": "Note",
-              "name": "N: LLM"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 128,
-            "id": "Note:BeigeCoinsBuild",
-            "position": {
-              "x": 756.9053449234701,
-              "y": -212.92342186138177
-            },
-            "positionAbsolute": {
-              "x": 756.9053449234701,
-              "y": -212.92342186138177
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 269
-          }
-        ],
         "edges": [
           {
             "id": "reactflow__edge-begin-Answer:FlatRavensPushc",
@@ -612,32 +259,6 @@
             "type": "buttonEdge"
           },
           {
-            "id": "reactflow__edge-PubMed:TwentyFansShakeb-Generate:SolidCrewsStareb",
-            "markerEnd": "logo",
-            "source": "PubMed:TwentyFansShake",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:SolidCrewsStare",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Retrieval:BeigeBagsDressb-Generate:SolidCrewsStareb",
-            "markerEnd": "logo",
-            "source": "Retrieval:BeigeBagsDress",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:SolidCrewsStare",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
             "id": "reactflow__edge-Generate:QuietMelonsHearb-Retrieval:BeigeBagsDressc",
             "markerEnd": "logo",
             "source": "Generate:QuietMelonsHear",
@@ -651,9 +272,37 @@
             "type": "buttonEdge"
           },
           {
-            "id": "reactflow__edge-Generate:SolidCrewsStarec-Answer:FlatRavensPushc",
+            "id": "xy-edge__Retrieval:BeigeBagsDressb-Generate:BrightCitiesSinkb",
             "markerEnd": "logo",
-            "source": "Generate:SolidCrewsStare",
+            "source": "Retrieval:BeigeBagsDress",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:BrightCitiesSink",
+            "targetHandle": "b",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__PubMed:TwentyFansShakeb-Generate:BrightCitiesSinkb",
+            "markerEnd": "logo",
+            "source": "PubMed:TwentyFansShake",
+            "sourceHandle": "b",
+            "style": {
+              "stroke": "rgb(202 197 245)",
+              "strokeWidth": 2
+            },
+            "target": "Generate:BrightCitiesSink",
+            "targetHandle": "b",
+            "type": "buttonEdge",
+            "zIndex": 1001
+          },
+          {
+            "id": "xy-edge__Generate:BrightCitiesSinkc-Answer:FlatRavensPushc",
+            "markerEnd": "logo",
+            "source": "Generate:BrightCitiesSink",
             "sourceHandle": "c",
             "style": {
               "stroke": "rgb(202 197 245)",
@@ -661,7 +310,468 @@
             },
             "target": "Answer:FlatRavensPush",
             "targetHandle": "c",
-            "type": "buttonEdge"
+            "type": "buttonEdge",
+            "zIndex": 1001
+          }
+        ],
+        "nodes": [
+          {
+            "data": {
+              "label": "Begin",
+              "name": "opening"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "begin",
+            "measured": {
+              "height": 44,
+              "width": 100
+            },
+            "position": {
+              "x": -599.8361708291377,
+              "y": 161.91688790133628
+            },
+            "positionAbsolute": {
+              "x": -599.8361708291377,
+              "y": 161.91688790133628
+            },
+            "selected": false,
+            "sourcePosition": "left",
+            "targetPosition": "right",
+            "type": "beginNode"
+          },
+          {
+            "data": {
+              "form": {
+                "email": "928018077@qq.com",
+                "query": [
+                  {
+                    "component_id": "Generate:FortyBaboonsRule",
+                    "type": "reference"
+                  }
+                ],
+                "top_n": 10
+              },
+              "label": "PubMed",
+              "name": "Search PubMed"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "PubMed:TwentyFansShake",
+            "measured": {
+              "height": 44,
+              "width": 200
+            },
+            "position": {
+              "x": 388.4151716305788,
+              "y": 272.51398951401995
+            },
+            "positionAbsolute": {
+              "x": 389.7229173847695,
+              "y": 276.4372267765921
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "ragNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {},
+              "label": "Answer",
+              "name": "Interface"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "Answer:FlatRavensPush",
+            "measured": {
+              "height": 44,
+              "width": 200
+            },
+            "position": {
+              "x": -277.4280835723395,
+              "y": 162.89713236919926
+            },
+            "positionAbsolute": {
+              "x": -370.881803561134,
+              "y": 161.41373998842477
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "logicNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "cite": true,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 256,
+                "message_history_window_size": 12,
+                "parameter": "Precise",
+                "parameters": [],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into Chinese, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\nTranslation (Chinese): 医生，我这几天一直胸痛和气短。\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "Translate to Chinese"
+            },
+            "dragging": false,
+            "height": 86,
+            "id": "Generate:QuietMelonsHear",
+            "measured": {
+              "height": 86,
+              "width": 200
+            },
+            "position": {
+              "x": -2.756518132081453,
+              "y": 38.86485966020132
+            },
+            "positionAbsolute": {
+              "x": -2.756518132081453,
+              "y": 38.86485966020132
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "cite": false,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": true,
+                "max_tokens": 256,
+                "message_history_window_size": 1,
+                "parameter": "Precise",
+                "parameters": [],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "Role: You are a professional Chinese-English medical question translation assistant\n\nTask: Accurately translate users' Chinese medical question content into English, ensuring accuracy of terminology and clarity of expression\n\nRequirements:\n- In-depth understanding of the terminology and disease descriptions in Chinese medical inquiries to ensure correct medical vocabulary is used in the English translation.\n- Maintain the semantic integrity and accuracy of the original text to avoid omitting important information or introducing errors.\n- Pay attention to the differences in expression habits between Chinese and English, and make appropriate adjustments to make the English translation more natural and fluent.\n- Respect the patient's privacy and the principle of medical confidentiality, and do not disclose any sensitive information during the translation process.\n\nExample：\nOriginal sentence: 我最近总是感觉胸闷，有时还会有心悸的感觉。\nTranslated: I've been feeling chest tightness recently, and sometimes I experience palpitations.\n\nNote:\nOnly the translated content should be given, do not output other irrelevant content!",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "Translate to English"
+            },
+            "dragging": false,
+            "height": 86,
+            "id": "Generate:FortyBaboonsRule",
+            "measured": {
+              "height": 86,
+              "width": 200
+            },
+            "position": {
+              "x": -3.825864707727135,
+              "y": 253.2285157283701
+            },
+            "positionAbsolute": {
+              "x": -3.825864707727135,
+              "y": 253.2285157283701
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "kb_ids": [],
+                "keywords_similarity_weight": 0.3,
+                "query": [
+                  {
+                    "component_id": "Generate:QuietMelonsHear",
+                    "type": "reference"
+                  }
+                ],
+                "similarity_threshold": 0.2,
+                "top_n": 8
+              },
+              "label": "Retrieval",
+              "name": "Search Q&A"
+            },
+            "dragging": false,
+            "height": 44,
+            "id": "Retrieval:BeigeBagsDress",
+            "measured": {
+              "height": 44,
+              "width": 200
+            },
+            "position": {
+              "x": 316.9462115194757,
+              "y": 57.81358887451738
+            },
+            "positionAbsolute": {
+              "x": 382.25527986090765,
+              "y": 35.38705653631584
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "retrievalNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "text": "Receives the user's financial inquiries and displays the large model's response to financial questions."
+              },
+              "label": "Note",
+              "name": "N: Interface"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 162,
+            "id": "Note:RedZebrasEnjoy",
+            "measured": {
+              "height": 162,
+              "width": 200
+            },
+            "position": {
+              "x": -274.75115571622416,
+              "y": 233.92632661399952
+            },
+            "positionAbsolute": {
+              "x": -374.13983303471906,
+              "y": 219.54112331790157
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 162,
+              "width": 200
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 200
+          },
+          {
+            "data": {
+              "form": {
+                "text": "Translate user's question to English by LLM."
+              },
+              "label": "Note",
+              "name": "N: Translate to English"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:DarkIconsClap",
+            "measured": {
+              "height": 128,
+              "width": 227
+            },
+            "position": {
+              "x": -2.0308204014422273,
+              "y": 379.60045703973515
+            },
+            "positionAbsolute": {
+              "x": -0.453362859534991,
+              "y": 357.3687792184929
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 204
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 227
+          },
+          {
+            "data": {
+              "form": {
+                "text": "Translate user's question to Chinese by LLM."
+              },
+              "label": "Note",
+              "name": "N: Translate to Chinese"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:SmallRiversTap",
+            "measured": {
+              "height": 128,
+              "width": 220
+            },
+            "position": {
+              "x": -2.9326060127226583,
+              "y": -99.3117253460485
+            },
+            "positionAbsolute": {
+              "x": -5.453362859535048,
+              "y": -105.63122078150693
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 196
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 220
+          },
+          {
+            "data": {
+              "form": {
+                "text": "PubMed® comprises more than 37 million citations for biomedical literature from MEDLINE, life science journals, and online books. Citations may include links to full text content from PubMed Central and publisher web sites."
+              },
+              "label": "Note",
+              "name": "N: Search PubMed"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 220,
+            "id": "Note:MightyDeerShout",
+            "measured": {
+              "height": 220,
+              "width": 287
+            },
+            "position": {
+              "x": 718.5466371404648,
+              "y": 275.36877921849293
+            },
+            "positionAbsolute": {
+              "x": 718.5466371404648,
+              "y": 275.36877921849293
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 220,
+              "width": 287
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 287
+          },
+          {
+            "data": {
+              "form": {
+                "text": "You can download the Q&A dataset at\nhttps://huggingface.co/datasets/InfiniFlow/medical_QA"
+              },
+              "label": "Note",
+              "name": "N: Search Q&A"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 128,
+            "id": "Note:VioletSuitsFlash",
+            "measured": {
+              "height": 128,
+              "width": 387
+            },
+            "position": {
+              "x": 776.4332169584197,
+              "y": 32.89802610798361
+            },
+            "positionAbsolute": {
+              "x": 776.4332169584197,
+              "y": 32.89802610798361
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "style": {
+              "height": 128,
+              "width": 387
+            },
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 387
+          },
+          {
+            "data": {
+              "form": {
+                "text": "A prompt summarize content from search result from PubMed and Q&A dataset."
+              },
+              "label": "Note",
+              "name": "N: LLM"
+            },
+            "dragHandle": ".note-drag-handle",
+            "dragging": false,
+            "height": 140,
+            "id": "Note:BeigeCoinsBuild",
+            "measured": {
+              "height": 140,
+              "width": 281
+            },
+            "position": {
+              "x": 293.89948660403513,
+              "y": -238.31673896113236
+            },
+            "positionAbsolute": {
+              "x": 756.9053449234701,
+              "y": -212.92342186138177
+            },
+            "resizing": false,
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "noteNode",
+            "width": 281
+          },
+          {
+            "data": {
+              "form": {
+                "cite": true,
+                "frequencyPenaltyEnabled": true,
+                "frequency_penalty": 0.7,
+                "llm_id": "deepseek-chat@DeepSeek",
+                "maxTokensEnabled": false,
+                "max_tokens": 256,
+                "message_history_window_size": 12,
+                "parameter": "Precise",
+                "parameters": [],
+                "presencePenaltyEnabled": true,
+                "presence_penalty": 0.4,
+                "prompt": "Role: You are a professional medical consulting assistant\n\nTasks: Answer questions posed by users. Answer based on content provided by the knowledge base, PubMed\n\nRequirement:\n- Answers may refer to the content provided (Knowledge Base, PubMed).\n- If the provided PubMed content is referenced, a link to the corresponding URL should be given.\n-Answers should be professional and accurate; no information should be fabricated that is not relevant to the user's question.\n\nProvided knowledge base content\n{Retrieval:BeigeBagsDress}\n\nPubMed content provided\n\n{PubMed:TwentyFansShake}",
+                "temperature": 0.1,
+                "temperatureEnabled": true,
+                "topPEnabled": true,
+                "top_p": 0.3
+              },
+              "label": "Generate",
+              "name": "LLM"
+            },
+            "dragging": false,
+            "id": "Generate:BrightCitiesSink",
+            "measured": {
+              "height": 106,
+              "width": 200
+            },
+            "position": {
+              "x": 300,
+              "y": -86.3689104694316
+            },
+            "selected": false,
+            "sourcePosition": "right",
+            "targetPosition": "left",
+            "type": "generateNode"
           }
         ]
       },

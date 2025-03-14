@@ -4,65 +4,1275 @@
   "description": "A general-purpose chat bot whose fields involved include healthcare, finance, emotional communication, real-time weather, and information.",
   "canvas_type": "chatbot",
   "dsl": {
-      "answer": [],
-      "components": {
-        "begin": {
-          "obj": {
-            "component_name": "Begin",
-            "params": {
+    "answer": [],
+    "components": {
+      "AkShare:CalmHotelsKnow": {
+        "downstream": [
+          "Generate:RealFansObey"
+        ],
+        "obj": {
+          "component_name": "AkShare",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [
+              {
+                "component_id": "KeywordExtract:FineApesSmash",
+                "type": "reference"
+              }
+            ],
+            "top_n": 10
+          }
+        },
+        "upstream": [
+          "KeywordExtract:FineApesSmash"
+        ]
+      },
+      "Answer:FlatGhostsCheat": {
+        "downstream": [
+          "RewriteQuestion:WholeOwlsTurn"
+        ],
+        "obj": {
+          "component_name": "Answer",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "post_answers": [],
+            "query": []
+          }
+        },
+        "upstream": [
+          "Generate:FiveDragonsLay",
+          "Generate:FunnyHandsTickle",
+          "Generate:LazyClubsAttack",
+          "Generate:RealFansObey",
+          "Generate:KhakiCrabsGlow"
+        ]
+      },
+      "Baidu:CleanJarsMake": {
+        "downstream": [
+          "Generate:FunnyHandsTickle"
+        ],
+        "obj": {
+          "component_name": "Baidu",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [
+              {
+                "component_id": "KeywordExtract:PurpleApplesKnow",
+                "type": "reference"
+              }
+            ],
+            "top_n": 10
+          }
+        },
+        "upstream": [
+          "KeywordExtract:PurpleApplesKnow"
+        ]
+      },
+      "Categorize:KhakiTimesSmile": {
+        "downstream": [
+          "QWeather:DeepKiwisTeach",
+          "Concentrator:TrueGeckosSlide",
+          "Concentrator:DryTrainsSearch",
+          "KeywordExtract:PurpleApplesKnow",
+          "Generate:FiveDragonsLay"
+        ],
+        "obj": {
+          "component_name": "Categorize",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "category_description": {
+              "1. weather": {
+                "description": "Question is about weather.",
+                "examples": "Will it rain tomorrow?\nIs it sunny next day?\nWhat is average temperature next week?",
+                "to": "QWeather:DeepKiwisTeach"
+              },
+              "2. finance": {
+                "description": "Question is about finance/economic information, stock market, economic news.",
+                "examples": "Stocks have MACD buy signals？\nWhen is the next interest rate cut by the Federal Reserve?\n",
+                "to": "Concentrator:TrueGeckosSlide"
+              },
+              "3. medical": {
+                "description": "Question is about medical issue, health, illness or medicine etc,.",
+                "examples": "How to relieve the headache?\nCan't sleep, what to do?\nWhat the effect of coffee in terms of losing weight?",
+                "to": "Concentrator:DryTrainsSearch"
+              },
+              "4. other": {
+                "description": "",
+                "to": "KeywordExtract:PurpleApplesKnow"
+              },
+              "5. chitchatting": {
+                "description": "Regarding the issues of small talk, companionship, sharing, and emotional intimacy.",
+                "examples": "What's your name?\nWhat a bad day!\nTerrible day.\nHow are you today?",
+                "to": "Generate:FiveDragonsLay"
+              }
+            },
+            "cite": true,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "RewriteQuestion:WholeOwlsTurn"
+        ]
+      },
+      "Concentrator:DryTrainsSearch": {
+        "downstream": [
+          "Generate:OddInsectsRaise",
+          "Generate:TenderFlowersItch"
+        ],
+        "obj": {
+          "component_name": "Concentrator",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": []
+          }
+        },
+        "upstream": [
+          "Categorize:KhakiTimesSmile"
+        ]
+      },
+      "Concentrator:TrueGeckosSlide": {
+        "downstream": [
+          "WenCai:TenParksOpen",
+          "KeywordExtract:FineApesSmash"
+        ],
+        "obj": {
+          "component_name": "Concentrator",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": []
+          }
+        },
+        "upstream": [
+          "Categorize:KhakiTimesSmile"
+        ]
+      },
+      "DuckDuckGo:NiceSeasInvent": {
+        "downstream": [
+          "Generate:FunnyHandsTickle"
+        ],
+        "obj": {
+          "component_name": "DuckDuckGo",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "channel": "text",
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [
+              {
+                "component_id": "KeywordExtract:PurpleApplesKnow",
+                "type": "reference"
+              }
+            ],
+            "top_n": 10
+          }
+        },
+        "upstream": [
+          "KeywordExtract:PurpleApplesKnow"
+        ]
+      },
+      "Generate:FiveDragonsLay": {
+        "downstream": [
+          "Answer:FlatGhostsCheat"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": false,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Provide useful advice to your friend.\n- Tell jokes to make  your friend happy.\n",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Categorize:KhakiTimesSmile"
+        ]
+      },
+      "Generate:FunnyHandsTickle": {
+        "downstream": [
+          "Answer:FlatGhostsCheat"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": true,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 0,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "Role: You are an intelligent assistant. \nTask: Chat with user. Answer the question based on the provided content from: Knowledge Base, Wikipedia, Duckduckgo, Baidu.\nRequirements:\n  - Answer should be in markdown format.\n - Answer should include all sources(Knowledge Base, Wikipedia, Duckduckgo, Baidu) as long as they are relevant, and label the sources of the cited content separately.\n  - Attach URL links to the content which is quoted from Wikipedia, DuckDuckGo or Baidu.\n  - Do not make thing up when there's no relevant information to user's question. \n\n## Wikipedia content\n{Wikipedia:ThinLampsTravel}\n\n\n## Duckduckgo content\n{DuckDuckGo:NiceSeasInvent}\n\n\n## Baidu content\n{Baidu:CleanJarsMake}\n\n",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "DuckDuckGo:NiceSeasInvent",
+          "Baidu:CleanJarsMake",
+          "Wikipedia:ThinLampsTravel"
+        ]
+      },
+      "Generate:KhakiCrabsGlow": {
+        "downstream": [
+          "Answer:FlatGhostsCheat"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": false,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 256,
+            "message_history_window_size": 0,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Tell your friend the weather if there's weather information provided. If your friend did not provide region information, ask about where he/she is.\n\nThe following is the weather information:\n{QWeather:DeepKiwisTeach}\n\n\n",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "QWeather:DeepKiwisTeach"
+        ]
+      },
+      "Generate:LazyClubsAttack": {
+        "downstream": [
+          "Answer:FlatGhostsCheat"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": true,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 0,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "Role: You are a professional medical consulting assistant.\n\nTasks: Answer questions posed by users. Answer based on content provided by the knowledge base, PubMed\n\nRequirement:\n- Answers may refer to the content provided (Knowledge Base, PubMed).\n- If the provided PubMed content is referenced, a link to the corresponding URL should be given.\n-Answers should be professional and accurate; no information should be fabricated that is not relevant to the user's question.\n\nProvided knowledge base content as following:\n{Retrieval:LemonGeckosHear}\n\nPubMed content provided\n{PubMed:EasyQueensLose}\n\n\n\n",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Retrieval:LemonGeckosHear",
+          "PubMed:EasyQueensLose"
+        ]
+      },
+      "Generate:OddInsectsRaise": {
+        "downstream": [
+          "Retrieval:LemonGeckosHear"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": false,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into Chinese, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\nTranslation (Chinese): 医生，我这几天一直胸痛和气短。\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Concentrator:DryTrainsSearch"
+        ]
+      },
+      "Generate:RealFansObey": {
+        "downstream": [
+          "Answer:FlatGhostsCheat"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": true,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 0,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "Role: You are a professional financial counseling assistant.\n\nTask: Answer user's question based on content provided by Wencai and AkShare.\n\nNotice:\n- Output no more than 5 news items from AkShare if there's content provided by Wencai.\n- Items from AkShare MUST have a corresponding URL link.\n\n############\nContent provided by Wencai: \n{WenCai:TenParksOpen}\n\n################\nContent provided by AkShare: \n{AkShare:CalmHotelsKnow}\n\n",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "WenCai:TenParksOpen",
+          "AkShare:CalmHotelsKnow"
+        ]
+      },
+      "Generate:TenderFlowersItch": {
+        "downstream": [
+          "PubMed:EasyQueensLose"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": false,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into English, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (Chinese): 医生，我这几天一直胸痛和气短。\nTranslation (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Concentrator:DryTrainsSearch"
+        ]
+      },
+      "KeywordExtract:FineApesSmash": {
+        "downstream": [
+          "AkShare:CalmHotelsKnow"
+        ],
+        "obj": {
+          "component_name": "KeywordExtract",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": true,
+            "debug_inputs": [],
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "maxTokensEnabled": true,
+            "max_tokens": 256,
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "parameter": "Precise",
+            "parameters": [],
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompt": "",
+            "query": [
+              {
+                "component_id": "answer:0",
+                "type": "reference"
+              }
+            ],
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_n": 2,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Concentrator:TrueGeckosSlide"
+        ]
+      },
+      "KeywordExtract:PurpleApplesKnow": {
+        "downstream": [
+          "DuckDuckGo:NiceSeasInvent",
+          "Baidu:CleanJarsMake",
+          "Wikipedia:ThinLampsTravel"
+        ],
+        "obj": {
+          "component_name": "KeywordExtract",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": true,
+            "debug_inputs": [],
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "maxTokensEnabled": true,
+            "max_tokens": 256,
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "parameter": "Precise",
+            "parameters": [],
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompt": "",
+            "query": [],
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_n": 3,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Categorize:KhakiTimesSmile"
+        ]
+      },
+      "PubMed:EasyQueensLose": {
+        "downstream": [
+          "Generate:LazyClubsAttack"
+        ],
+        "obj": {
+          "component_name": "PubMed",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "email": "xxx@sss.com",
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [
+              {
+                "component_id": "Generate:TenderFlowersItch",
+                "type": "reference"
+              }
+            ],
+            "top_n": 10
+          }
+        },
+        "upstream": [
+          "Generate:TenderFlowersItch"
+        ]
+      },
+      "QWeather:DeepKiwisTeach": {
+        "downstream": [
+          "Generate:KhakiCrabsGlow"
+        ],
+        "obj": {
+          "component_name": "QWeather",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "error_code": {
+              "204": "The request was successful, but the region you are querying does not have the data you need at this time.",
+              "400": "Request error, may contain incorrect request parameters or missing mandatory request parameters.",
+              "401": "Authentication fails, possibly using the wrong KEY, wrong digital signature, wrong type of KEY (e.g. using the SDK's KEY to access the Web API).",
+              "402": "Exceeded the number of accesses or the balance is not enough to support continued access to the service, you can recharge, upgrade the accesses or wait for the accesses to be reset.",
+              "403": "No access, may be the binding PackageName, BundleID, domain IP address is inconsistent, or the data that requires additional payment.",
+              "404": "The queried data or region does not exist.",
+              "429": "Exceeded the limited QPM (number of accesses per minute), please refer to the QPM description",
+              "500": "No response or timeout, interface service abnormality please contact us"
+            },
+            "inputs": [],
+            "lang": "en",
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [],
+            "time_period": "7d",
+            "type": "weather",
+            "user_type": "free",
+            "web_apikey": "947e8994bc5f488f8857d618ebac1b19"
+          }
+        },
+        "upstream": [
+          "Categorize:KhakiTimesSmile"
+        ]
+      },
+      "Retrieval:LemonGeckosHear": {
+        "downstream": [
+          "Generate:LazyClubsAttack"
+        ],
+        "obj": {
+          "component_name": "Retrieval",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "empty_response": "",
+            "inputs": [],
+            "kb_ids": [],
+            "keywords_similarity_weight": 0.3,
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [
+              {
+                "component_id": "Generate:OddInsectsRaise",
+                "type": "reference"
+              }
+            ],
+            "rerank_id": "",
+            "similarity_threshold": 0.2,
+            "top_k": 1024,
+            "top_n": 8
+          }
+        },
+        "upstream": [
+          "Generate:OddInsectsRaise"
+        ]
+      },
+      "RewriteQuestion:WholeOwlsTurn": {
+        "downstream": [
+          "Categorize:KhakiTimesSmile"
+        ],
+        "obj": {
+          "component_name": "RewriteQuestion",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": true,
+            "debug_inputs": [],
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "maxTokensEnabled": true,
+            "max_tokens": 256,
+            "message_history_window_size": 6,
+            "output": null,
+            "output_var_name": "output",
+            "parameter": "Precise",
+            "parameters": [],
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompt": "",
+            "query": [],
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "answer:0",
+          "Answer:FlatGhostsCheat"
+        ]
+      },
+      "WenCai:TenParksOpen": {
+        "downstream": [
+          "Generate:RealFansObey"
+        ],
+        "obj": {
+          "component_name": "WenCai",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [],
+            "query_type": "stock",
+            "top_n": 5
+          }
+        },
+        "upstream": [
+          "Concentrator:TrueGeckosSlide"
+        ]
+      },
+      "Wikipedia:ThinLampsTravel": {
+        "downstream": [
+          "Generate:FunnyHandsTickle"
+        ],
+        "obj": {
+          "component_name": "Wikipedia",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "language": "en",
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [
+              {
+                "component_id": "KeywordExtract:PurpleApplesKnow",
+                "type": "reference"
+              }
+            ],
+            "top_n": 10
+          }
+        },
+        "upstream": [
+          "KeywordExtract:PurpleApplesKnow"
+        ]
+      },
+      "answer:0": {
+        "downstream": [
+          "RewriteQuestion:WholeOwlsTurn"
+        ],
+        "obj": {
+          "component_name": "Answer",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "post_answers": [],
+            "query": []
+          }
+        },
+        "upstream": [
+          "begin"
+        ]
+      },
+      "begin": {
+        "downstream": [
+          "answer:0"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "prologue": "Hi friend! How things going?",
+            "query": []
+          }
+        },
+        "upstream": []
+      }
+    },
+    "embed_id": "",
+    "graph": {
+      "edges": [
+        {
+          "id": "81de838d-a541-4b3f-9d68-9172ffd7c6b4",
+          "label": "",
+          "source": "begin",
+          "target": "answer:0"
+        },
+        {
+          "id": "reactflow__edge-Concentrator:TrueGeckosSlideb-WenCai:TenParksOpenc",
+          "markerEnd": "logo",
+          "source": "Concentrator:TrueGeckosSlide",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "WenCai:TenParksOpen",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "0d626427-e843-4f03-82d0-988fb56f90e0",
+          "source": "Categorize:KhakiTimesSmile",
+          "sourceHandle": "1. weather",
+          "target": "QWeather:DeepKiwisTeach"
+        },
+        {
+          "id": "51cf20cb-c9e5-4333-b284-61d9fe0f1f86",
+          "source": "Categorize:KhakiTimesSmile",
+          "sourceHandle": "2. finance",
+          "target": "Concentrator:TrueGeckosSlide"
+        },
+        {
+          "id": "f19a4dde-19ea-439c-a80f-5704e5355395",
+          "source": "Categorize:KhakiTimesSmile",
+          "sourceHandle": "3. medical",
+          "target": "Concentrator:DryTrainsSearch"
+        },
+        {
+          "id": "reactflow__edge-Categorize:KhakiTimesSmile4. other-KeywordExtract:PurpleApplesKnowc",
+          "markerEnd": "logo",
+          "source": "Categorize:KhakiTimesSmile",
+          "sourceHandle": "4. other",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "KeywordExtract:PurpleApplesKnow",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Categorize:KhakiTimesSmile5. chitchatting-Generate:FiveDragonsLayc",
+          "markerEnd": "logo",
+          "source": "Categorize:KhakiTimesSmile",
+          "sourceHandle": "5. chitchatting",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:FiveDragonsLay",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-KeywordExtract:PurpleApplesKnowb-DuckDuckGo:NiceSeasInventc",
+          "markerEnd": "logo",
+          "source": "KeywordExtract:PurpleApplesKnow",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "DuckDuckGo:NiceSeasInvent",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-KeywordExtract:PurpleApplesKnowb-Baidu:CleanJarsMakec",
+          "markerEnd": "logo",
+          "source": "KeywordExtract:PurpleApplesKnow",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Baidu:CleanJarsMake",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-KeywordExtract:PurpleApplesKnowb-Wikipedia:ThinLampsTravelc",
+          "markerEnd": "logo",
+          "source": "KeywordExtract:PurpleApplesKnow",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Wikipedia:ThinLampsTravel",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Concentrator:TrueGeckosSlideb-KeywordExtract:FineApesSmashc",
+          "markerEnd": "logo",
+          "source": "Concentrator:TrueGeckosSlide",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "KeywordExtract:FineApesSmash",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Concentrator:DryTrainsSearchb-Generate:OddInsectsRaisec",
+          "markerEnd": "logo",
+          "source": "Concentrator:DryTrainsSearch",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:OddInsectsRaise",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Concentrator:DryTrainsSearchb-Generate:TenderFlowersItchc",
+          "markerEnd": "logo",
+          "source": "Concentrator:DryTrainsSearch",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:TenderFlowersItch",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-KeywordExtract:FineApesSmashb-AkShare:CalmHotelsKnowc",
+          "markerEnd": "logo",
+          "source": "KeywordExtract:FineApesSmash",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "AkShare:CalmHotelsKnow",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Generate:TenderFlowersItchb-PubMed:EasyQueensLosec",
+          "markerEnd": "logo",
+          "source": "Generate:TenderFlowersItch",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "PubMed:EasyQueensLose",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Generate:OddInsectsRaiseb-Retrieval:LemonGeckosHearc",
+          "markerEnd": "logo",
+          "source": "Generate:OddInsectsRaise",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:LemonGeckosHear",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Generate:FiveDragonsLayb-Answer:FlatGhostsCheatb",
+          "markerEnd": "logo",
+          "source": "Generate:FiveDragonsLay",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:FlatGhostsCheat",
+          "targetHandle": "b",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "xy-edge__DuckDuckGo:NiceSeasInventb-Generate:FunnyHandsTicklec",
+          "markerEnd": "logo",
+          "source": "DuckDuckGo:NiceSeasInvent",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:FunnyHandsTickle",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Baidu:CleanJarsMakeb-Generate:FunnyHandsTicklec",
+          "markerEnd": "logo",
+          "source": "Baidu:CleanJarsMake",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:FunnyHandsTickle",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Wikipedia:ThinLampsTravelb-Generate:FunnyHandsTicklec",
+          "markerEnd": "logo",
+          "source": "Wikipedia:ThinLampsTravel",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:FunnyHandsTickle",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:FunnyHandsTickleb-Answer:FlatGhostsCheatb",
+          "markerEnd": "logo",
+          "source": "Generate:FunnyHandsTickle",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:FlatGhostsCheat",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Retrieval:LemonGeckosHearb-Generate:LazyClubsAttackc",
+          "markerEnd": "logo",
+          "source": "Retrieval:LemonGeckosHear",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:LazyClubsAttack",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__PubMed:EasyQueensLoseb-Generate:LazyClubsAttackc",
+          "markerEnd": "logo",
+          "source": "PubMed:EasyQueensLose",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:LazyClubsAttack",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:LazyClubsAttackb-Answer:FlatGhostsCheatb",
+          "markerEnd": "logo",
+          "source": "Generate:LazyClubsAttack",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:FlatGhostsCheat",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__WenCai:TenParksOpenb-Generate:RealFansObeyc",
+          "markerEnd": "logo",
+          "selected": false,
+          "source": "WenCai:TenParksOpen",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:RealFansObey",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__AkShare:CalmHotelsKnowb-Generate:RealFansObeyc",
+          "markerEnd": "logo",
+          "source": "AkShare:CalmHotelsKnow",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:RealFansObey",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:RealFansObeyb-Answer:FlatGhostsCheatb",
+          "markerEnd": "logo",
+          "source": "Generate:RealFansObey",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:FlatGhostsCheat",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__QWeather:DeepKiwisTeachb-Generate:KhakiCrabsGlowc",
+          "markerEnd": "logo",
+          "source": "QWeather:DeepKiwisTeach",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:KhakiCrabsGlow",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:KhakiCrabsGlowb-Answer:FlatGhostsCheatb",
+          "markerEnd": "logo",
+          "source": "Generate:KhakiCrabsGlow",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:FlatGhostsCheat",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__answer:0b-RewriteQuestion:WholeOwlsTurnc",
+          "markerEnd": "logo",
+          "source": "answer:0",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "RewriteQuestion:WholeOwlsTurn",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__RewriteQuestion:WholeOwlsTurnb-Categorize:KhakiTimesSmilea",
+          "markerEnd": "logo",
+          "source": "RewriteQuestion:WholeOwlsTurn",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Categorize:KhakiTimesSmile",
+          "targetHandle": "a",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Answer:FlatGhostsCheatc-RewriteQuestion:WholeOwlsTurnc",
+          "markerEnd": "logo",
+          "source": "Answer:FlatGhostsCheat",
+          "sourceHandle": "c",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "RewriteQuestion:WholeOwlsTurn",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        }
+      ],
+      "nodes": [
+        {
+          "data": {
+            "form": {
               "prologue": "Hi friend! How things going?"
-            }
+            },
+            "label": "Begin",
+            "name": "Opening"
           },
-          "downstream": [
-            "answer:0"
-          ],
-          "upstream": []
-        },
-        "answer:0": {
-          "obj": {
-            "component_name": "Answer",
-            "params": {}
+          "dragging": false,
+          "height": 44,
+          "id": "begin",
+          "measured": {
+            "height": 44,
+            "width": 100
           },
-          "downstream": [
-            "Categorize:KhakiTimesSmile"
-          ],
-          "upstream": [
-            "begin"
-          ]
+          "position": {
+            "x": -1395.0793275834214,
+            "y": 245.9566071305116
+          },
+          "positionAbsolute": {
+            "x": -1128.7777718344705,
+            "y": 244.52466633336172
+          },
+          "selected": false,
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "beginNode"
         },
-        "WenCai:TenParksOpen": {
-          "obj": {
-            "component_name": "WenCai",
-            "params": {
+        {
+          "data": {
+            "form": {},
+            "label": "Answer",
+            "name": "Interface"
+          },
+          "dragging": false,
+          "height": 44,
+          "id": "answer:0",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -1108.7963549433637,
+            "y": 245.49487573152214
+          },
+          "positionAbsolute": {
+            "x": -888.7666192056412,
+            "y": 245.72423440610623
+          },
+          "selected": false,
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "logicNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
               "query_type": "stock",
               "top_n": 5
-            }
+            },
+            "label": "WenCai",
+            "name": "wencai"
           },
-          "downstream": [
-            "Generate:ItchyFilesTake"
-          ],
-          "upstream": [
-            "Concentrator:TrueGeckosSlide"
-          ]
+          "dragging": false,
+          "height": 44,
+          "id": "WenCai:TenParksOpen",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": 12.42850532999941,
+            "y": -19.97501336317155
+          },
+          "positionAbsolute": {
+            "x": 15.623628641957595,
+            "y": 18.36646638032667
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "ragNode",
+          "width": 200
         },
-        "AkShare:CalmHotelsKnow": {
-          "obj": {
-            "component_name": "AkShare",
-            "params": {
+        {
+          "data": {
+            "form": {
+              "query": [
+                {
+                  "component_id": "KeywordExtract:FineApesSmash",
+                  "type": "reference"
+                }
+              ],
               "top_n": 10
-            }
+            },
+            "label": "AkShare",
+            "name": "akshare"
           },
-          "downstream": [
-            "Generate:ItchyFilesTake"
-          ],
-          "upstream": [
-            "KeywordExtract:FineApesSmash"
-          ]
+          "dragging": false,
+          "height": 44,
+          "id": "AkShare:CalmHotelsKnow",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": 286.23058063345974,
+            "y": 77.23621771568216
+          },
+          "positionAbsolute": {
+            "x": 287.37496746240566,
+            "y": 95.21451122612848
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "ragNode",
+          "width": 200
         },
-        "Categorize:KhakiTimesSmile": {
-          "obj": {
-            "component_name": "Categorize",
-            "params": {
+        {
+          "data": {
+            "form": {
               "category_description": {
                 "1. weather": {
                   "description": "Question is about weather.",
@@ -89,150 +1299,304 @@
                   "to": "Generate:FiveDragonsLay"
                 }
               },
+              "frequencyPenaltyEnabled": true,
               "frequency_penalty": 0.7,
               "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
               "max_tokens": 256,
               "message_history_window_size": 12,
+              "parameter": "Precise",
+              "presencePenaltyEnabled": true,
               "presence_penalty": 0.4,
               "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
               "top_p": 0.3
-            }
+            },
+            "label": "Categorize",
+            "name": "categorize"
           },
-          "downstream": [
-            "QWeather:DeepKiwisTeach",
-            "Concentrator:TrueGeckosSlide",
-            "Concentrator:DryTrainsSearch",
-            "KeywordExtract:PurpleApplesKnow",
-            "Generate:FiveDragonsLay"
-          ],
-          "upstream": [
-            "answer:0",
-            "Answer:FlatGhostsCheat"
-          ]
-        },
-        "Concentrator:DryTrainsSearch": {
-          "obj": {
-            "component_name": "Concentrator",
-            "params": {}
+          "dragging": false,
+          "height": 257,
+          "id": "Categorize:KhakiTimesSmile",
+          "measured": {
+            "height": 257,
+            "width": 200
           },
-          "downstream": [
-            "Generate:OddInsectsRaise",
-            "Generate:TenderFlowersItch"
-          ],
-          "upstream": [
-            "Categorize:KhakiTimesSmile"
-          ]
-        },
-        "Concentrator:TrueGeckosSlide": {
-          "obj": {
-            "component_name": "Concentrator",
-            "params": {}
+          "position": {
+            "x": -609.8076141214767,
+            "y": 138.97995386409644
           },
-          "downstream": [
-            "WenCai:TenParksOpen",
-            "KeywordExtract:FineApesSmash"
-          ],
-          "upstream": [
-            "Categorize:KhakiTimesSmile"
-          ]
+          "positionAbsolute": {
+            "x": -609.8076141214767,
+            "y": 138.97995386409644
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "categorizeNode",
+          "width": 200
         },
-        "PubMed:EasyQueensLose": {
-          "obj": {
-            "component_name": "PubMed",
-            "params": {
+        {
+          "data": {
+            "form": {},
+            "label": "Concentrator",
+            "name": "medical"
+          },
+          "dragging": false,
+          "height": 44,
+          "id": "Concentrator:DryTrainsSearch",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -297.50465849305726,
+            "y": 192.93248143666426
+          },
+          "positionAbsolute": {
+            "x": -297.50465849305726,
+            "y": 192.93248143666426
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {},
+            "label": "Concentrator",
+            "name": "finance"
+          },
+          "dragging": false,
+          "height": 44,
+          "id": "Concentrator:TrueGeckosSlide",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -283.7257570286697,
+            "y": 39.53087026260538
+          },
+          "positionAbsolute": {
+            "x": -291.18104475657213,
+            "y": 104.49837760575514
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
               "email": "xxx@sss.com",
+              "query": [
+                {
+                  "component_id": "Generate:TenderFlowersItch",
+                  "type": "reference"
+                }
+              ],
               "top_n": 10
-            }
+            },
+            "label": "PubMed",
+            "name": "pubmed"
           },
-          "downstream": [
-            "Generate:CuddlyWaysVisit"
-          ],
-          "upstream": [
-            "Generate:TenderFlowersItch"
-          ]
+          "dragging": false,
+          "height": 44,
+          "id": "PubMed:EasyQueensLose",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": 284.0198843702174,
+            "y": 311.1165973927743
+          },
+          "positionAbsolute": {
+            "x": 289.34508989014773,
+            "y": 303.66130966487185
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "ragNode",
+          "width": 200
         },
-        "DuckDuckGo:NiceSeasInvent": {
-          "obj": {
-            "component_name": "DuckDuckGo",
-            "params": {
+        {
+          "data": {
+            "form": {
               "channel": "text",
+              "query": [
+                {
+                  "component_id": "KeywordExtract:PurpleApplesKnow",
+                  "type": "reference"
+                }
+              ],
               "top_n": 10
-            }
+            },
+            "label": "DuckDuckGo",
+            "name": "duck"
           },
-          "downstream": [
-            "Generate:CalmWallsCheer"
-          ],
-          "upstream": [
-            "KeywordExtract:PurpleApplesKnow"
-          ]
+          "dragging": false,
+          "height": 44,
+          "id": "DuckDuckGo:NiceSeasInvent",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": 7.657335234364808,
+            "y": 400.76450914063935
+          },
+          "positionAbsolute": {
+            "x": 7.657335234364808,
+            "y": 400.76450914063935
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "ragNode",
+          "width": 200
         },
-        "Baidu:CleanJarsMake": {
-          "obj": {
-            "component_name": "Baidu",
-            "params": {
+        {
+          "data": {
+            "form": {
+              "query": [
+                {
+                  "component_id": "KeywordExtract:PurpleApplesKnow",
+                  "type": "reference"
+                }
+              ],
               "top_n": 10
-            }
+            },
+            "label": "Baidu",
+            "name": "baidu"
           },
-          "downstream": [
-            "Generate:CalmWallsCheer"
-          ],
-          "upstream": [
-            "KeywordExtract:PurpleApplesKnow"
-          ]
+          "dragging": false,
+          "height": 44,
+          "id": "Baidu:CleanJarsMake",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": 8.171790651147376,
+            "y": 474.40274063759057
+          },
+          "positionAbsolute": {
+            "x": 4.976667339189191,
+            "y": 470.1425762216463
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "ragNode",
+          "width": 200
         },
-        "Wikipedia:ThinLampsTravel": {
-          "obj": {
-            "component_name": "Wikipedia",
-            "params": {
+        {
+          "data": {
+            "form": {
               "language": "en",
+              "query": [
+                {
+                  "component_id": "KeywordExtract:PurpleApplesKnow",
+                  "type": "reference"
+                }
+              ],
               "top_n": 10
-            }
+            },
+            "label": "Wikipedia",
+            "name": "wikipedia"
           },
-          "downstream": [
-            "Generate:CalmWallsCheer"
-          ],
-          "upstream": [
-            "KeywordExtract:PurpleApplesKnow"
-          ]
+          "dragging": false,
+          "height": 44,
+          "id": "Wikipedia:ThinLampsTravel",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": 9.052450060063862,
+            "y": 552.7249071032869
+          },
+          "positionAbsolute": {
+            "x": 7.415215541604823,
+            "y": 528.2289617116074
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "ragNode",
+          "width": 200
         },
-        "QWeather:DeepKiwisTeach": {
-          "obj": {
-            "component_name": "QWeather",
-            "params": {
+        {
+          "data": {
+            "form": {
               "lang": "en",
               "time_period": "7d",
               "type": "weather",
               "user_type": "free",
               "web_apikey": "947e8994bc5f488f8857d618ebac1b19"
-            }
+            },
+            "label": "QWeather",
+            "name": "weather"
           },
-          "downstream": [
-            "Generate:SpicyChickenKneel"
-          ],
-          "upstream": [
-            "Categorize:KhakiTimesSmile"
-          ]
-        },
-        "Answer:FlatGhostsCheat": {
-          "obj": {
-            "component_name": "Answer",
-            "params": {}
+          "dragging": false,
+          "height": 44,
+          "id": "QWeather:DeepKiwisTeach",
+          "measured": {
+            "height": 44,
+            "width": 200
           },
-          "downstream": [
-            "Categorize:KhakiTimesSmile"
-          ],
-          "upstream": [
-            "Generate:CalmWallsCheer",
-            "Generate:CuddlyWaysVisit",
-            "Generate:ItchyFilesTake",
-            "Generate:SpicyChickenKneel",
-            "Generate:FiveDragonsLay"
-          ]
+          "position": {
+            "x": -279.9836447763803,
+            "y": -82.71505095397171
+          },
+          "positionAbsolute": {
+            "x": -298.10498664044485,
+            "y": -82.71505095397171
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "ragNode",
+          "width": 200
         },
-        "KeywordExtract:PurpleApplesKnow": {
-          "obj": {
-            "component_name": "KeywordExtract",
-            "params": {
+        {
+          "data": {
+            "form": {},
+            "label": "Answer",
+            "name": "interact1"
+          },
+          "dragging": false,
+          "height": 44,
+          "id": "Answer:FlatGhostsCheat",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -270.33248490121287,
+            "y": 829.1217635254768
+          },
+          "positionAbsolute": {
+            "x": -270.33248490121287,
+            "y": 829.1217635254768
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
               "frequencyPenaltyEnabled": true,
               "frequency_penalty": 0.7,
               "llm_id": "deepseek-chat@DeepSeek",
@@ -246,44 +1610,78 @@
               "topPEnabled": true,
               "top_n": 3,
               "top_p": 0.3
-            }
+            },
+            "label": "KeywordExtract",
+            "name": "websearch"
           },
-          "downstream": [
-            "DuckDuckGo:NiceSeasInvent",
-            "Baidu:CleanJarsMake",
-            "Wikipedia:ThinLampsTravel"
-          ],
-          "upstream": [
-            "Categorize:KhakiTimesSmile"
-          ]
+          "dragging": false,
+          "height": 86,
+          "id": "KeywordExtract:PurpleApplesKnow",
+          "measured": {
+            "height": 86,
+            "width": 200
+          },
+          "position": {
+            "x": -298.5102848627008,
+            "y": 317.00405006716994
+          },
+          "positionAbsolute": {
+            "x": -303.2049394929516,
+            "y": 320.75977377137053
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "keywordNode",
+          "width": 200
         },
-        "Generate:FiveDragonsLay": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
+        {
+          "data": {
+            "form": {
               "cite": false,
+              "frequencyPenaltyEnabled": true,
               "frequency_penalty": 0.7,
               "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
               "max_tokens": 256,
               "message_history_window_size": 12,
+              "parameter": "Precise",
               "parameters": [],
+              "presencePenaltyEnabled": true,
               "presence_penalty": 0.4,
-              "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Provide useful advice to your friend.\n- Tell jokes to make your friend happy.\n\nThe following is the weather information:\n{weather}",
+              "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Provide useful advice to your friend.\n- Tell jokes to make  your friend happy.\n",
               "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
               "top_p": 0.3
-            }
+            },
+            "label": "Generate",
+            "name": "smalltalk"
           },
-          "downstream": [
-            "Answer:FlatGhostsCheat"
-          ],
-          "upstream": [
-            "Categorize:KhakiTimesSmile"
-          ]
+          "dragging": false,
+          "height": 86,
+          "id": "Generate:FiveDragonsLay",
+          "measured": {
+            "height": 86,
+            "width": 200
+          },
+          "position": {
+            "x": -303.2049394929516,
+            "y": 460.205697890327
+          },
+          "positionAbsolute": {
+            "x": -303.2049394929516,
+            "y": 460.205697890327
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode",
+          "width": 200
         },
-        "KeywordExtract:FineApesSmash": {
-          "obj": {
-            "component_name": "KeywordExtract",
-            "params": {
+        {
+          "data": {
+            "form": {
               "frequencyPenaltyEnabled": true,
               "frequency_penalty": 0.7,
               "llm_id": "deepseek-chat@DeepSeek",
@@ -292,1632 +1690,626 @@
               "parameter": "Precise",
               "presencePenaltyEnabled": true,
               "presence_penalty": 0.4,
+              "query": [
+                {
+                  "component_id": "answer:0",
+                  "type": "reference"
+                }
+              ],
               "temperature": 0.1,
               "temperatureEnabled": true,
               "topPEnabled": true,
               "top_n": 2,
               "top_p": 0.3
-            }
+            },
+            "label": "KeywordExtract",
+            "name": "keywords"
           },
-          "downstream": [
-            "AkShare:CalmHotelsKnow"
-          ],
-          "upstream": [
-            "Concentrator:TrueGeckosSlide"
-          ]
+          "dragging": false,
+          "height": 86,
+          "id": "KeywordExtract:FineApesSmash",
+          "measured": {
+            "height": 86,
+            "width": 200
+          },
+          "position": {
+            "x": 11.932933139796546,
+            "y": 57.173040113879324
+          },
+          "positionAbsolute": {
+            "x": 14.063015347768669,
+            "y": 76.34377998562843
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "keywordNode",
+          "width": 200
         },
-        "Generate:OddInsectsRaise": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
+        {
+          "data": {
+            "form": {
               "cite": false,
+              "frequencyPenaltyEnabled": true,
               "frequency_penalty": 0.7,
               "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
               "max_tokens": 256,
               "message_history_window_size": 12,
+              "parameter": "Precise",
               "parameters": [],
+              "presencePenaltyEnabled": true,
               "presence_penalty": 0.4,
               "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into Chinese, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\nTranslation (Chinese): 医生，我这几天一直胸痛和气短。\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
               "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
               "top_p": 0.3
-            }
+            },
+            "label": "Generate",
+            "name": "translate to Chinese"
           },
-          "downstream": [
-            "Retrieval:LemonGeckosHear"
-          ],
-          "upstream": [
-            "Concentrator:DryTrainsSearch"
-          ]
+          "dragging": false,
+          "height": 86,
+          "id": "Generate:OddInsectsRaise",
+          "measured": {
+            "height": 86,
+            "width": 200
+          },
+          "position": {
+            "x": 8.505454221830348,
+            "y": 176.7452480823864
+          },
+          "positionAbsolute": {
+            "x": 12.765618637774594,
+            "y": 178.87533029035853
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode",
+          "width": 200
         },
-        "Generate:TenderFlowersItch": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
+        {
+          "data": {
+            "form": {
               "cite": false,
+              "frequencyPenaltyEnabled": true,
               "frequency_penalty": 0.7,
               "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
               "max_tokens": 256,
               "message_history_window_size": 12,
+              "parameter": "Precise",
               "parameters": [],
+              "presencePenaltyEnabled": true,
               "presence_penalty": 0.4,
-              "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into Chinese, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\nTranslation (Chinese): 医生，我这几天一直胸痛和气短。\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
+              "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into English, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (Chinese): 医生，我这几天一直胸痛和气短。\nTranslation (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
               "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
               "top_p": 0.3
-            }
+            },
+            "label": "Generate",
+            "name": "translate to English"
           },
-          "downstream": [
-            "PubMed:EasyQueensLose"
-          ],
-          "upstream": [
-            "Concentrator:DryTrainsSearch"
-          ]
+          "dragging": false,
+          "height": 86,
+          "id": "Generate:TenderFlowersItch",
+          "measured": {
+            "height": 86,
+            "width": 200
+          },
+          "position": {
+            "x": 6.4217969708194005,
+            "y": 289.41241706707075
+          },
+          "positionAbsolute": {
+            "x": 9.616920282777585,
+            "y": 286.21729375511256
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode",
+          "width": 200
         },
-        "Retrieval:LemonGeckosHear": {
-          "obj": {
-            "component_name": "Retrieval",
-            "params": {
+        {
+          "data": {
+            "form": {
               "kb_ids": [],
               "keywords_similarity_weight": 0.3,
+              "query": [
+                {
+                  "component_id": "Generate:OddInsectsRaise",
+                  "type": "reference"
+                }
+              ],
               "similarity_threshold": 0.2,
               "top_n": 8
-            }
+            },
+            "label": "Retrieval",
+            "name": "medical Q&A"
           },
-          "downstream": [
-            "Generate:CuddlyWaysVisit"
-          ],
-          "upstream": [
-            "Generate:OddInsectsRaise"
-          ]
+          "dragging": false,
+          "height": 44,
+          "id": "Retrieval:LemonGeckosHear",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": 285.6757005660011,
+            "y": 197.46859232883952
+          },
+          "positionAbsolute": {
+            "x": 285.6757005660011,
+            "y": 197.46859232883952
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "retrievalNode",
+          "width": 200
         },
-        "Generate:CalmWallsCheer": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
-              "cite": true,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 12,
-              "parameters": [
-                {
-                  "component_id": "Wikipedia:ThinLampsTravel",
-                  "id": "faab021e-fd99-4fe2-bbe8-aeb9f04666ca",
-                  "key": "wikipedia"
-                },
-                {
-                  "component_id": "Baidu:CleanJarsMake",
-                  "id": "3e343beb-73be-47b2-abaf-031720287160",
-                  "key": "baidu"
-                },
-                {
-                  "component_id": "DuckDuckGo:NiceSeasInvent",
-                  "id": "3ad8a3ee-aa44-46b7-bf18-e67a4f8592f2",
-                  "key": "duckduckgo"
-                }
-              ],
-              "presence_penalty": 0.4,
-              "prompt": "Role: You‘re warm-hearted lovely assistant, young girl, 22 years old, located at Shanghai in China. Your name is R. \n\nTask: Chat with user. Answer the question based on the provided content from: Knowledge Base, Wikipedia, Duckduckgo, Baidu.\n\nRequirements:\n  - Answer should be in markdown format.\n - Answer should include all sources(Wikipedia, Duckduckgo, Baidu) as long as they are relevant, and label the sources of the cited content separately.\n  - Attach URL links to the content which is quoted from Wikipedia, DuckDuckGo or Baidu.\n  - Do not make thing up when there's no relevant information to user's question. \n\n\n## Wikipedia content\n{wikipedia}\n\n\n## Duckduckgo content\n{duckduckgo}\n\n\n## Baidu content\n{baidu}",
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
+        {
+          "data": {
+            "form": {
+              "text": "Use QWeather to lookup weather."
+            },
+            "label": "Note",
+            "name": "N: weather"
           },
-          "downstream": [
-            "Answer:FlatGhostsCheat"
-          ],
-          "upstream": [
-            "DuckDuckGo:NiceSeasInvent",
-            "Baidu:CleanJarsMake",
-            "Wikipedia:ThinLampsTravel"
-          ]
-        },
-        "Generate:CuddlyWaysVisit": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
-              "cite": true,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 12,
-              "parameters": [
-                {
-                  "component_id": "Retrieval:LemonGeckosHear",
-                  "id": "b6ede15c-37a5-456e-b1ed-91de3ca45328",
-                  "key": "kb_input"
-                },
-                {
-                  "component_id": "PubMed:EasyQueensLose",
-                  "id": "35ca3088-efe8-4b6f-bbe1-54ecd90d349a",
-                  "key": "pm_input"
-                }
-              ],
-              "presence_penalty": 0.4,
-              "prompt": "Role: You are a professional medical consulting assistant\n\nTasks: Answer questions posed by users. Answer based on content provided by the knowledge base, PubMed\n\nRequirement:\n- Answers may refer to the content provided (Knowledge Base, PubMed).\n- If the provided PubMed content is referenced, a link to the corresponding URL should be given.\n-Answers should be professional and accurate; no information should be fabricated that is not relevant to the user's question.\n\nProvided knowledge base content\n{kb_input}\n\nPubMed content provided\n{pm_input}",
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "downstream": [
-            "Answer:FlatGhostsCheat"
-          ],
-          "upstream": [
-            "Retrieval:LemonGeckosHear",
-            "PubMed:EasyQueensLose"
-          ]
-        },
-        "Generate:ItchyFilesTake": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
-              "cite": false,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 3,
-              "parameters": [
-                {
-                  "component_id": "WenCai:TenParksOpen",
-                  "id": "166c90ce-6e9e-448a-b71a-194a81b42b53",
-                  "key": "wencai_input"
-                },
-                {
-                  "component_id": "AkShare:CalmHotelsKnow",
-                  "id": "3d058485-4871-4a2f-b8af-8626e13d50bf",
-                  "key": "ak_input"
-                }
-              ],
-              "presence_penalty": 0.4,
-              "prompt": "Role: You are a professional financial counseling assistant.\n\nTask: Answer user's question based on content provided by Wencai and AkShare.\n\nNotice:\n- Output no more than 5 news items from AkShare if there's content provided by Wencai.\n- Items from AkShare MUST have a corresponding URL link.\n\n############\nContent provided by Wencai: \n{wencai_input}\n\n################\nContent provided by AkShare: \n{ak_input}\n",
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "downstream": [
-            "Answer:FlatGhostsCheat"
-          ],
-          "upstream": [
-            "WenCai:TenParksOpen",
-            "AkShare:CalmHotelsKnow"
-          ]
-        },
-        "Generate:SpicyChickenKneel": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
-              "cite": false,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 0,
-              "parameters": [
-                {
-                  "component_id": "QWeather:DeepKiwisTeach",
-                  "id": "61469141-48a3-4798-a735-8237da0c0e7c",
-                  "key": "weather"
-                }
-              ],
-              "presence_penalty": 0.4,
-              "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Tell your friend the weather if there's weather information provided. If your friend did not provide region information, ask about where he/she is.\n\nThe following is the weather information:\n{weather}\n",
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "downstream": [
-            "Answer:FlatGhostsCheat"
-          ],
-          "upstream": [
-            "QWeather:DeepKiwisTeach"
-          ]
-        }
-      },
-      "embed_id": "",
-      "graph": {
-        "nodes": [
-          {
-            "data": {
-              "form": {
-                "prologue": "Hi friend! How things going?"
-              },
-              "label": "Begin",
-              "name": "Opening"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "begin",
-            "position": {
-              "x": -1128.7777718344705,
-              "y": 244.52466633336172
-            },
-            "positionAbsolute": {
-              "x": -1128.7777718344705,
-              "y": 244.52466633336172
-            },
-            "selected": false,
-            "sourcePosition": "left",
-            "targetPosition": "right",
-            "type": "beginNode",
-            "width": 100
-          },
-          {
-            "data": {
-              "form": {},
-              "label": "Answer",
-              "name": "Interface"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "answer:0",
-            "position": {
-              "x": -888.7666192056412,
-              "y": 245.72423440610623
-            },
-            "positionAbsolute": {
-              "x": -888.7666192056412,
-              "y": 245.72423440610623
-            },
-            "selected": false,
-            "sourcePosition": "left",
-            "targetPosition": "right",
-            "type": "logicNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "query_type": "stock",
-                "top_n": 5
-              },
-              "label": "WenCai",
-              "name": "wencai"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "WenCai:TenParksOpen",
-            "position": {
-              "x": 15.623628641957595,
-              "y": 18.36646638032667
-            },
-            "positionAbsolute": {
-              "x": 15.623628641957595,
-              "y": 18.36646638032667
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "top_n": 10
-              },
-              "label": "AkShare",
-              "name": "akshare"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "AkShare:CalmHotelsKnow",
-            "position": {
-              "x": 287.37496746240566,
-              "y": 95.21451122612848
-            },
-            "positionAbsolute": {
-              "x": 287.37496746240566,
-              "y": 95.21451122612848
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "category_description": {
-                  "1. weather": {
-                    "description": "Question is about weather.",
-                    "examples": "Will it rain tomorrow?\nIs it sunny next day?\nWhat is average temperature next week?",
-                    "to": "QWeather:DeepKiwisTeach"
-                  },
-                  "2. finance": {
-                    "description": "Question is about finance/economic information, stock market, economic news.",
-                    "examples": "Stocks have MACD buy signals？\nWhen is the next interest rate cut by the Federal Reserve?\n",
-                    "to": "Concentrator:TrueGeckosSlide"
-                  },
-                  "3. medical": {
-                    "description": "Question is about medical issue, health, illness or medicine etc,.",
-                    "examples": "How to relieve the headache?\nCan't sleep, what to do?\nWhat the effect of coffee in terms of losing weight?",
-                    "to": "Concentrator:DryTrainsSearch"
-                  },
-                  "4. other": {
-                    "description": "",
-                    "to": "KeywordExtract:PurpleApplesKnow"
-                  },
-                  "5. chitchatting": {
-                    "description": "Regarding the issues of small talk, companionship, sharing, and emotional intimacy.",
-                    "examples": "What's your name?\nWhat a bad day!\nTerrible day.\nHow are you today?",
-                    "to": "Generate:FiveDragonsLay"
-                  }
-                },
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Categorize",
-              "name": "categorize"
-            },
-            "dragging": false,
-            "height": 257,
-            "id": "Categorize:KhakiTimesSmile",
-            "position": {
-              "x": -609.8076141214767,
-              "y": 138.97995386409644
-            },
-            "positionAbsolute": {
-              "x": -609.8076141214767,
-              "y": 138.97995386409644
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "categorizeNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {},
-              "label": "Concentrator",
-              "name": "medical"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "Concentrator:DryTrainsSearch",
-            "position": {
-              "x": -297.50465849305726,
-              "y": 192.93248143666426
-            },
-            "positionAbsolute": {
-              "x": -297.50465849305726,
-              "y": 192.93248143666426
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "logicNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {},
-              "label": "Concentrator",
-              "name": "finance"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "Concentrator:TrueGeckosSlide",
-            "position": {
-              "x": -291.18104475657213,
-              "y": 104.49837760575514
-            },
-            "positionAbsolute": {
-              "x": -291.18104475657213,
-              "y": 104.49837760575514
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "logicNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "email": "xxx@sss.com",
-                "top_n": 10
-              },
-              "label": "PubMed",
-              "name": "pubmed"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "PubMed:EasyQueensLose",
-            "position": {
-              "x": 289.34508989014773,
-              "y": 303.66130966487185
-            },
-            "positionAbsolute": {
-              "x": 289.34508989014773,
-              "y": 303.66130966487185
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "channel": "text",
-                "top_n": 10
-              },
-              "label": "DuckDuckGo",
-              "name": "duck"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "DuckDuckGo:NiceSeasInvent",
-            "position": {
-              "x": 7.657335234364808,
-              "y": 400.76450914063935
-            },
-            "positionAbsolute": {
-              "x": 7.657335234364808,
-              "y": 400.76450914063935
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "top_n": 10
-              },
-              "label": "Baidu",
-              "name": "baidu"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "Baidu:CleanJarsMake",
-            "position": {
-              "x": 4.976667339189191,
-              "y": 470.1425762216463
-            },
-            "positionAbsolute": {
-              "x": 4.976667339189191,
-              "y": 470.1425762216463
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "language": "en",
-                "top_n": 10
-              },
-              "label": "Wikipedia",
-              "name": "wikipedia"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "Wikipedia:ThinLampsTravel",
-            "position": {
-              "x": 7.415215541604823,
-              "y": 528.2289617116074
-            },
-            "positionAbsolute": {
-              "x": 7.415215541604823,
-              "y": 528.2289617116074
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "lang": "en",
-                "time_period": "7d",
-                "type": "weather",
-                "user_type": "free",
-                "web_apikey": "947e8994bc5f488f8857d618ebac1b19"
-              },
-              "label": "QWeather",
-              "name": "weather"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "QWeather:DeepKiwisTeach",
-            "position": {
-              "x": -298.10498664044485,
-              "y": -82.71505095397171
-            },
-            "positionAbsolute": {
-              "x": -298.10498664044485,
-              "y": -82.71505095397171
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "ragNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {},
-              "label": "Answer",
-              "name": "interact1"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "Answer:FlatGhostsCheat",
-            "position": {
-              "x": -270.33248490121287,
-              "y": 829.1217635254768
-            },
-            "positionAbsolute": {
-              "x": -270.33248490121287,
-              "y": 829.1217635254768
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "logicNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "parameter": "Precise",
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_n": 3,
-                "top_p": 0.3
-              },
-              "label": "KeywordExtract",
-              "name": "websearch"
-            },
-            "dragging": false,
-            "height": 86,
-            "id": "KeywordExtract:PurpleApplesKnow",
-            "position": {
-              "x": -303.2049394929516,
-              "y": 320.75977377137053
-            },
-            "positionAbsolute": {
-              "x": -303.2049394929516,
-              "y": 320.75977377137053
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "keywordNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Provide useful advice to your friend.\n- Tell jokes to make  your friend happy.\n\nThe following is the weather information:\n{weather}",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "smalltalk"
-            },
-            "dragging": false,
-            "height": 86,
-            "id": "Generate:FiveDragonsLay",
-            "position": {
-              "x": -303.2049394929516,
-              "y": 460.205697890327
-            },
-            "positionAbsolute": {
-              "x": -303.2049394929516,
-              "y": 460.205697890327
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "parameter": "Precise",
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_n": 2,
-                "top_p": 0.3
-              },
-              "label": "KeywordExtract",
-              "name": "keywords"
-            },
-            "dragging": false,
-            "height": 86,
-            "id": "KeywordExtract:FineApesSmash",
-            "position": {
-              "x": 14.063015347768669,
-              "y": 76.34377998562843
-            },
-            "positionAbsolute": {
-              "x": 14.063015347768669,
-              "y": 76.34377998562843
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "keywordNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into Chinese, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\nTranslation (Chinese): 医生，我这几天一直胸痛和气短。\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "translate to Chinese"
-            },
-            "dragging": false,
-            "height": 86,
-            "id": "Generate:OddInsectsRaise",
-            "position": {
-              "x": 12.765618637774594,
-              "y": 178.87533029035853
-            },
-            "positionAbsolute": {
-              "x": 12.765618637774594,
-              "y": 178.87533029035853
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role: You are a professional medical consulting translation assistant\n\nTask: Translate user questions into Chinese, ensuring accuracy of medical terminology and appropriateness of context.\n\nRequirements:\n- Accurately translate medical terminology to convey the integrity and emotional color of the original message.\n- For unclear or uncertain medical terminology, the original text may be retained to ensure accuracy.\n- Respect the privacy and sensitivity of medical consultations and ensure that sensitive information is not disclosed during the translation process.\n- If the user's question is in Chinese, there is no need to translate, just output the user's question directly\n\nExample:\nOriginal (English): Doctor, I have been suffering from chest pain and shortness of breath for the past few days.\nTranslation (Chinese): 医生，我这几天一直胸痛和气短。\n\nNote:\nOnly the translated content needs to be output, no other irrelevant content!",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "translate to English"
-            },
-            "dragging": false,
-            "height": 86,
-            "id": "Generate:TenderFlowersItch",
-            "position": {
-              "x": 9.616920282777585,
-              "y": 286.21729375511256
-            },
-            "positionAbsolute": {
-              "x": 9.616920282777585,
-              "y": 286.21729375511256
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "kb_ids": [],
-                "keywords_similarity_weight": 0.3,
-                "similarity_threshold": 0.2,
-                "top_n": 8
-              },
-              "label": "Retrieval",
-              "name": "medical Q&A"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "Retrieval:LemonGeckosHear",
-            "position": {
-              "x": 285.6757005660011,
-              "y": 197.46859232883952
-            },
-            "positionAbsolute": {
-              "x": 285.6757005660011,
-              "y": 197.46859232883952
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "retrievalNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": true,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [
-                  {
-                    "component_id": "Wikipedia:ThinLampsTravel",
-                    "id": "faab021e-fd99-4fe2-bbe8-aeb9f04666ca",
-                    "key": "wikipedia"
-                  },
-                  {
-                    "component_id": "Baidu:CleanJarsMake",
-                    "id": "3e343beb-73be-47b2-abaf-031720287160",
-                    "key": "baidu"
-                  },
-                  {
-                    "component_id": "DuckDuckGo:NiceSeasInvent",
-                    "id": "3ad8a3ee-aa44-46b7-bf18-e67a4f8592f2",
-                    "key": "duckduckgo"
-                  }
-                ],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role: You‘re warm-hearted lovely assistant, young girl, 22 years old, located at Shanghai in China. Your name is R. \n\nTask: Chat with user. Answer the question based on the provided content from: Knowledge Base, Wikipedia, Duckduckgo, Baidu.\n\nRequirements:\n  - Answer should be in markdown format.\n - Answer should include all sources(Wikipedia, Duckduckgo, Baidu) as long as they are relevant, and label the sources of the cited content separately.\n  - Attach URL links to the content which is quoted from Wikipedia, DuckDuckGo or Baidu.\n  - Do not make thing up when there's no relevant information to user's question. \n\n\n## Wikipedia content\n{wikipedia}\n\n\n## Duckduckgo content\n{duckduckgo}\n\n\n## Baidu content\n{baidu}",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "websearchGen"
-            },
-            "dragging": false,
-            "height": 212,
-            "id": "Generate:CalmWallsCheer",
-            "position": {
-              "x": 287.0927265176085,
-              "y": 383.24304164357665
-            },
-            "positionAbsolute": {
-              "x": 287.0927265176085,
-              "y": 383.24304164357665
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": true,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [
-                  {
-                    "component_id": "Retrieval:LemonGeckosHear",
-                    "id": "b6ede15c-37a5-456e-b1ed-91de3ca45328",
-                    "key": "kb_input"
-                  },
-                  {
-                    "component_id": "PubMed:EasyQueensLose",
-                    "id": "35ca3088-efe8-4b6f-bbe1-54ecd90d349a",
-                    "key": "pm_input"
-                  }
-                ],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role: You are a professional medical consulting assistant\n\nTasks: Answer questions posed by users. Answer based on content provided by the knowledge base, PubMed\n\nRequirement:\n- Answers may refer to the content provided (Knowledge Base, PubMed).\n- If the provided PubMed content is referenced, a link to the corresponding URL should be given.\n-Answers should be professional and accurate; no information should be fabricated that is not relevant to the user's question.\n\nProvided knowledge base content\n{kb_input}\n\nPubMed content provided\n{pm_input}",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "medGen"
-            },
-            "dragging": false,
-            "height": 170,
-            "id": "Generate:CuddlyWaysVisit",
-            "position": {
-              "x": 550.0806166905354,
-              "y": 132.30169521573907
-            },
-            "positionAbsolute": {
-              "x": 550.0806166905354,
-              "y": 132.30169521573907
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 3,
-                "parameter": "Precise",
-                "parameters": [
-                  {
-                    "component_id": "WenCai:TenParksOpen",
-                    "id": "166c90ce-6e9e-448a-b71a-194a81b42b53",
-                    "key": "wencai_input"
-                  },
-                  {
-                    "component_id": "AkShare:CalmHotelsKnow",
-                    "id": "3d058485-4871-4a2f-b8af-8626e13d50bf",
-                    "key": "ak_input"
-                  }
-                ],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role: You are a professional financial counseling assistant.\n\nTask: Answer user's question based on content provided by Wencai and AkShare.\n\nNotice:\n- Output no more than 5 news items from AkShare if there's content provided by Wencai.\n- Items from AkShare MUST have a corresponding URL link.\n\n############\nContent provided by Wencai: \n{wencai_input}\n\n################\nContent provided by AkShare: \n{ak_input}\n",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "financeGen"
-            },
-            "dragging": false,
-            "height": 170,
-            "id": "Generate:ItchyFilesTake",
-            "position": {
-              "x": 796.8396096895193,
-              "y": -47.62416832689189
-            },
-            "positionAbsolute": {
-              "x": 796.8396096895193,
-              "y": -47.62416832689189
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 0,
-                "parameter": "Precise",
-                "parameters": [
-                  {
-                    "component_id": "QWeather:DeepKiwisTeach",
-                    "id": "61469141-48a3-4798-a735-8237da0c0e7c",
-                    "key": "weather"
-                  }
-                ],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Tell your friend the weather if there's weather information provided. If your friend did not provide region information, ask about where he/she is.\n\nThe following is the weather information:\n{weather}\n",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "weatherGen"
-            },
-            "dragging": false,
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 128,
+          "id": "Note:SilverDotsExist",
+          "measured": {
             "height": 128,
-            "id": "Generate:SpicyChickenKneel",
-            "position": {
-              "x": 1069.1927254748075,
-              "y": -126.67333220998566
-            },
-            "positionAbsolute": {
-              "x": 1069.1927254748075,
-              "y": -126.67333220998566
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "text": "Use QWeather to lookup weather."
-              },
-              "label": "Note",
-              "name": "N: weather"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 128,
-            "id": "Note:SilverDotsExist",
-            "position": {
-              "x": -298.19983400974513,
-              "y": -223.95614896125952
-            },
-            "positionAbsolute": {
-              "x": -298.19983400974513,
-              "y": -223.95614896125952
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 128,
-              "width": 201
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
             "width": 201
           },
-          {
-            "data": {
-              "form": {
-                "text": "Receives the user's first input."
-              },
-              "label": "Note",
-              "name": "N: Interface"
+          "position": {
+            "x": -298.19983400974513,
+            "y": -223.95614896125952
+          },
+          "positionAbsolute": {
+            "x": -298.19983400974513,
+            "y": -223.95614896125952
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
+            "height": 128,
+            "width": 201
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 201
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Receives the user's first input."
             },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+            "label": "Note",
+            "name": "N: Interface"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 129,
+          "id": "Note:SixApplesBuy",
+          "measured": {
             "height": 129,
-            "id": "Note:SixApplesBuy",
-            "position": {
-              "x": -891.375632399789,
-              "y": 104.17908459859171
-            },
-            "positionAbsolute": {
-              "x": -891.375632399789,
-              "y": 104.17908459859171
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 129,
-              "width": 206
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
             "width": 206
           },
-          {
-            "data": {
-              "form": {
-                "text": "The large model determines which category the user's input belongs to and passes it to different components.\n\nIt categorizes user's question into 5 kinds of requirements."
-              },
-              "label": "Note",
-              "name": "N: categorize"
+          "position": {
+            "x": -1110.7442068670325,
+            "y": 109.04326530391003
+          },
+          "positionAbsolute": {
+            "x": -891.375632399789,
+            "y": 104.17908459859171
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
+            "height": 129,
+            "width": 206
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 206
+        },
+        {
+          "data": {
+            "form": {
+              "text": "The large model determines which category the user's input belongs to and passes it to different components.\n\nIt categorizes user's question into 5 kinds of requirements."
             },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+            "label": "Note",
+            "name": "N: categorize"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 128,
+          "id": "Note:WeakSquidsSell",
+          "measured": {
             "height": 128,
-            "id": "Note:WeakSquidsSell",
-            "position": {
-              "x": -611.6360243646881,
-              "y": 2.5943909323361254
-            },
-            "positionAbsolute": {
-              "x": -611.6360243646881,
-              "y": 2.5943909323361254
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "noteNode",
             "width": 269
           },
-          {
-            "data": {
-              "form": {
-                "text": "Receives the user's subsequent inputs and displays the large model's response to the user's query."
-              },
-              "label": "Note",
-              "name": "N: Interact1"
+          "position": {
+            "x": -611.6360243646881,
+            "y": 2.5943909323361254
+          },
+          "positionAbsolute": {
+            "x": -611.6360243646881,
+            "y": 2.5943909323361254
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 269
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Receives the user's subsequent inputs and displays the large model's response to the user's query."
             },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+            "label": "Note",
+            "name": "N: Interact1"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 128,
+          "id": "Note:NastyPlanetsBet",
+          "measured": {
             "height": 128,
-            "id": "Note:NastyPlanetsBet",
-            "position": {
-              "x": -267.26820114571024,
-              "y": 895.5661251048839
-            },
-            "positionAbsolute": {
-              "x": -267.26820114571024,
-              "y": 895.5661251048839
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 128,
-              "width": 381
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
             "width": 381
           },
-          {
-            "data": {
-              "form": {
-                "text": "This part is for web search."
-              },
-              "label": "Note",
-              "name": "N: duck & baidu & wikipedia"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+          "position": {
+            "x": -267.26820114571024,
+            "y": 895.5661251048839
+          },
+          "positionAbsolute": {
+            "x": -267.26820114571024,
+            "y": 895.5661251048839
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
             "height": 128,
-            "id": "Note:AngryCloudsHear",
-            "position": {
-              "x": 9.917983533129814,
-              "y": 597.5792802038565
+            "width": 381
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 381
+        },
+        {
+          "data": {
+            "form": {
+              "text": "This part is for web search."
             },
-            "positionAbsolute": {
-              "x": 9.917983533129814,
-              "y": 597.5792802038565
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "noteNode",
+            "label": "Note",
+            "name": "N: duck & baidu & wikipedia"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 128,
+          "id": "Note:AngryCloudsHear",
+          "measured": {
+            "height": 128,
             "width": 269
           },
-          {
-            "data": {
-              "form": {
-                "text": "This part is for medial/health issue.\nCheck out this dateset for 'Med Q&A'.\nhttps://huggingface.co/datasets/InfiniFlow/medical_QA"
-              },
-              "label": "Note",
-              "name": "N: medGen"
+          "position": {
+            "x": 18.438312365018305,
+            "y": 629.5305133234383
+          },
+          "positionAbsolute": {
+            "x": 9.917983533129814,
+            "y": 597.5792802038565
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 269
+        },
+        {
+          "data": {
+            "form": {
+              "text": "This part is for medial/health issue.\nCheck out this dateset for 'Med Q&A'.\nhttps://huggingface.co/datasets/InfiniFlow/medical_QA"
             },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+            "label": "Note",
+            "name": "N: medGen"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 128,
+          "id": "Note:CommonWingsProve",
+          "measured": {
             "height": 128,
-            "id": "Note:CommonWingsProve",
-            "position": {
-              "x": 667.6086950648928,
-              "y": 320.04639793250567
-            },
-            "positionAbsolute": {
-              "x": 667.6086950648928,
-              "y": 320.04639793250567
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 128,
-              "width": 425
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
             "width": 425
           },
-          {
-            "data": {
-              "form": {
-                "text": "This part is for fiance/economic questions."
-              },
-              "label": "Note",
-              "name": "N: financeGen"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+          "position": {
+            "x": 667.6086950648928,
+            "y": 320.04639793250567
+          },
+          "positionAbsolute": {
+            "x": 667.6086950648928,
+            "y": 320.04639793250567
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
             "height": 128,
-            "id": "Note:WickedRocksMatter",
-            "position": {
-              "x": 806.2393068252843,
-              "y": 135.72131770444153
+            "width": 425
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 425
+        },
+        {
+          "data": {
+            "form": {
+              "text": "This part is for fiance/economic questions."
             },
-            "positionAbsolute": {
-              "x": 806.2393068252843,
-              "y": 135.72131770444153
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 128,
-              "width": 208
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
+            "label": "Note",
+            "name": "N: financeGen"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 128,
+          "id": "Note:WickedRocksMatter",
+          "measured": {
+            "height": 128,
             "width": 208
           },
-          {
-            "data": {
-              "form": {
-                "text": "This part is for weather consulting."
-              },
-              "label": "Note",
-              "name": "N: weatherGen"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+          "position": {
+            "x": 806.2393068252843,
+            "y": 135.72131770444153
+          },
+          "positionAbsolute": {
+            "x": 806.2393068252843,
+            "y": 135.72131770444153
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
             "height": 128,
-            "id": "Note:FiftyWebsReport",
-            "position": {
-              "x": 1104.5947767935495,
-              "y": 17.63844720518125
+            "width": 208
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 208
+        },
+        {
+          "data": {
+            "form": {
+              "text": "This part is for weather consulting."
             },
-            "positionAbsolute": {
-              "x": 1104.5947767935495,
-              "y": 17.63844720518125
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "noteNode",
+            "label": "Note",
+            "name": "N: weatherGen"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 128,
+          "id": "Note:FiftyWebsReport",
+          "measured": {
+            "height": 128,
             "width": 269
-          }
-        ],
-        "edges": [
-          {
-            "id": "81de838d-a541-4b3f-9d68-9172ffd7c6b4",
-            "label": "",
-            "source": "begin",
-            "target": "answer:0"
           },
-          {
-            "id": "reactflow__edge-Concentrator:TrueGeckosSlideb-WenCai:TenParksOpenc",
-            "markerEnd": "logo",
-            "source": "Concentrator:TrueGeckosSlide",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+          "position": {
+            "x": 988.0143050238387,
+            "y": -266.8179039129136
+          },
+          "positionAbsolute": {
+            "x": 1104.5947767935495,
+            "y": 17.63844720518125
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 269
+        },
+        {
+          "data": {
+            "form": {
+              "cite": true,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": false,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "Role: You are an intelligent assistant. \nTask: Chat with user. Answer the question based on the provided content from: Knowledge Base, Wikipedia, Duckduckgo, Baidu.\nRequirements:\n  - Answer should be in markdown format.\n - Answer should include all sources(Knowledge Base, Wikipedia, Duckduckgo, Baidu) as long as they are relevant, and label the sources of the cited content separately.\n  - Attach URL links to the content which is quoted from Wikipedia, DuckDuckGo or Baidu.\n  - Do not make thing up when there's no relevant information to user's question. \n\n## Wikipedia content\n{Wikipedia:ThinLampsTravel}\n\n\n## Duckduckgo content\n{DuckDuckGo:NiceSeasInvent}\n\n\n## Baidu content\n{Baidu:CleanJarsMake}\n\n",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
             },
-            "target": "WenCai:TenParksOpen",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+            "label": "Generate",
+            "name": "websearchGen"
           },
-          {
-            "id": "reactflow__edge-answer:0b-Categorize:KhakiTimesSmilea",
-            "markerEnd": "logo",
-            "source": "answer:0",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+          "dragging": false,
+          "id": "Generate:FunnyHandsTickle",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "position": {
+            "x": 282.8614392540758,
+            "y": 444.05759231978817
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
+        },
+        {
+          "data": {
+            "form": {
+              "cite": true,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": false,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "Role: You are a professional medical consulting assistant.\n\nTasks: Answer questions posed by users. Answer based on content provided by the knowledge base, PubMed\n\nRequirement:\n- Answers may refer to the content provided (Knowledge Base, PubMed).\n- If the provided PubMed content is referenced, a link to the corresponding URL should be given.\n-Answers should be professional and accurate; no information should be fabricated that is not relevant to the user's question.\n\nProvided knowledge base content as following:\n{Retrieval:LemonGeckosHear}\n\nPubMed content provided\n{PubMed:EasyQueensLose}\n\n\n\n",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
             },
-            "target": "Categorize:KhakiTimesSmile",
-            "targetHandle": "a",
-            "type": "buttonEdge"
+            "label": "Generate",
+            "name": "medGen"
           },
-          {
-            "id": "reactflow__edge-Answer:FlatGhostsCheatc-Categorize:KhakiTimesSmilea",
-            "markerEnd": "logo",
-            "source": "Answer:FlatGhostsCheat",
-            "sourceHandle": "c",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+          "dragging": false,
+          "id": "Generate:LazyClubsAttack",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "position": {
+            "x": 554.9441185731348,
+            "y": 166.42747693602357
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
+        },
+        {
+          "data": {
+            "form": {
+              "cite": true,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": false,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "Role: You are a professional financial counseling assistant.\n\nTask: Answer user's question based on content provided by Wencai and AkShare.\n\nNotice:\n- Output no more than 5 news items from AkShare if there's content provided by Wencai.\n- Items from AkShare MUST have a corresponding URL link.\n\n############\nContent provided by Wencai: \n{WenCai:TenParksOpen}\n\n################\nContent provided by AkShare: \n{AkShare:CalmHotelsKnow}\n\n",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
             },
-            "target": "Categorize:KhakiTimesSmile",
-            "targetHandle": "a",
-            "type": "buttonEdge"
+            "label": "Generate",
+            "name": "financeGen"
           },
-          {
-            "id": "0d626427-e843-4f03-82d0-988fb56f90e0",
-            "source": "Categorize:KhakiTimesSmile",
-            "sourceHandle": "1. weather",
-            "target": "QWeather:DeepKiwisTeach"
+          "dragging": false,
+          "id": "Generate:RealFansObey",
+          "measured": {
+            "height": 106,
+            "width": 200
           },
-          {
-            "id": "51cf20cb-c9e5-4333-b284-61d9fe0f1f86",
-            "source": "Categorize:KhakiTimesSmile",
-            "sourceHandle": "2. finance",
-            "target": "Concentrator:TrueGeckosSlide"
+          "position": {
+            "x": 766.2368307106321,
+            "y": -51.15593613458973
           },
-          {
-            "id": "f19a4dde-19ea-439c-a80f-5704e5355395",
-            "source": "Categorize:KhakiTimesSmile",
-            "sourceHandle": "3. medical",
-            "target": "Concentrator:DryTrainsSearch"
-          },
-          {
-            "id": "reactflow__edge-Categorize:KhakiTimesSmile4. other-KeywordExtract:PurpleApplesKnowc",
-            "markerEnd": "logo",
-            "source": "Categorize:KhakiTimesSmile",
-            "sourceHandle": "4. other",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
+        },
+        {
+          "data": {
+            "form": {
+              "cite": false,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 0,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "Role:  You‘re warm-hearted lovely young girl, 22 years old, located at Shanghai in China. Your name is R. Who are talking to you is your very good old friend of yours.\n\nTask: \n- Chat with the friend.\n- Ask question and care about them.\n- Tell your friend the weather if there's weather information provided. If your friend did not provide region information, ask about where he/she is.\n\nThe following is the weather information:\n{QWeather:DeepKiwisTeach}\n\n\n",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
             },
-            "target": "KeywordExtract:PurpleApplesKnow",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+            "label": "Generate",
+            "name": "weatherGen"
           },
-          {
-            "id": "reactflow__edge-Categorize:KhakiTimesSmile5. chitchatting-Generate:FiveDragonsLayc",
-            "markerEnd": "logo",
-            "source": "Categorize:KhakiTimesSmile",
-            "sourceHandle": "5. chitchatting",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:FiveDragonsLay",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+          "dragging": false,
+          "id": "Generate:KhakiCrabsGlow",
+          "measured": {
+            "height": 106,
+            "width": 200
           },
-          {
-            "id": "reactflow__edge-KeywordExtract:PurpleApplesKnowb-DuckDuckGo:NiceSeasInventc",
-            "markerEnd": "logo",
-            "source": "KeywordExtract:PurpleApplesKnow",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "DuckDuckGo:NiceSeasInvent",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+          "position": {
+            "x": 996.5291688522603,
+            "y": -114.01530807109054
           },
-          {
-            "id": "reactflow__edge-KeywordExtract:PurpleApplesKnowb-Baidu:CleanJarsMakec",
-            "markerEnd": "logo",
-            "source": "KeywordExtract:PurpleApplesKnow",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
+        },
+        {
+          "data": {
+            "form": {
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 6,
+              "parameter": "Precise",
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
             },
-            "target": "Baidu:CleanJarsMake",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+            "label": "RewriteQuestion",
+            "name": "RefineQuestion"
           },
-          {
-            "id": "reactflow__edge-KeywordExtract:PurpleApplesKnowb-Wikipedia:ThinLampsTravelc",
-            "markerEnd": "logo",
-            "source": "KeywordExtract:PurpleApplesKnow",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Wikipedia:ThinLampsTravel",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+          "dragging": false,
+          "id": "RewriteQuestion:WholeOwlsTurn",
+          "measured": {
+            "height": 106,
+            "width": 200
           },
-          {
-            "id": "reactflow__edge-Concentrator:TrueGeckosSlideb-KeywordExtract:FineApesSmashc",
-            "markerEnd": "logo",
-            "source": "Concentrator:TrueGeckosSlide",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "KeywordExtract:FineApesSmash",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+          "position": {
+            "x": -859.3797967550868,
+            "y": 214.54444107648857
           },
-          {
-            "id": "reactflow__edge-Concentrator:DryTrainsSearchb-Generate:OddInsectsRaisec",
-            "markerEnd": "logo",
-            "source": "Concentrator:DryTrainsSearch",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:OddInsectsRaise",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Concentrator:DryTrainsSearchb-Generate:TenderFlowersItchc",
-            "markerEnd": "logo",
-            "source": "Concentrator:DryTrainsSearch",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:TenderFlowersItch",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-KeywordExtract:FineApesSmashb-AkShare:CalmHotelsKnowc",
-            "markerEnd": "logo",
-            "source": "KeywordExtract:FineApesSmash",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "AkShare:CalmHotelsKnow",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Generate:TenderFlowersItchb-PubMed:EasyQueensLosec",
-            "markerEnd": "logo",
-            "source": "Generate:TenderFlowersItch",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "PubMed:EasyQueensLose",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Generate:OddInsectsRaiseb-Retrieval:LemonGeckosHearc",
-            "markerEnd": "logo",
-            "source": "Generate:OddInsectsRaise",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Retrieval:LemonGeckosHear",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-QWeather:DeepKiwisTeachb-Generate:SpicyChickenKneelc",
-            "markerEnd": "logo",
-            "source": "QWeather:DeepKiwisTeach",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:SpicyChickenKneel",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-WenCai:TenParksOpenb-Generate:ItchyFilesTakec",
-            "markerEnd": "logo",
-            "source": "WenCai:TenParksOpen",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:ItchyFilesTake",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-AkShare:CalmHotelsKnowb-Generate:ItchyFilesTakec",
-            "markerEnd": "logo",
-            "source": "AkShare:CalmHotelsKnow",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:ItchyFilesTake",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Retrieval:LemonGeckosHearb-Generate:CuddlyWaysVisitc",
-            "markerEnd": "logo",
-            "source": "Retrieval:LemonGeckosHear",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:CuddlyWaysVisit",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-PubMed:EasyQueensLoseb-Generate:CuddlyWaysVisitc",
-            "markerEnd": "logo",
-            "source": "PubMed:EasyQueensLose",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:CuddlyWaysVisit",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-DuckDuckGo:NiceSeasInventb-Generate:CalmWallsCheerc",
-            "markerEnd": "logo",
-            "source": "DuckDuckGo:NiceSeasInvent",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:CalmWallsCheer",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Baidu:CleanJarsMakeb-Generate:CalmWallsCheerc",
-            "markerEnd": "logo",
-            "source": "Baidu:CleanJarsMake",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:CalmWallsCheer",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Wikipedia:ThinLampsTravelb-Generate:CalmWallsCheerc",
-            "markerEnd": "logo",
-            "source": "Wikipedia:ThinLampsTravel",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:CalmWallsCheer",
-            "targetHandle": "c",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Generate:CalmWallsCheerb-Answer:FlatGhostsCheatb",
-            "markerEnd": "logo",
-            "source": "Generate:CalmWallsCheer",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Answer:FlatGhostsCheat",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Generate:CuddlyWaysVisitb-Answer:FlatGhostsCheatb",
-            "markerEnd": "logo",
-            "source": "Generate:CuddlyWaysVisit",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Answer:FlatGhostsCheat",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Generate:ItchyFilesTakeb-Answer:FlatGhostsCheatb",
-            "markerEnd": "logo",
-            "source": "Generate:ItchyFilesTake",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Answer:FlatGhostsCheat",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Generate:SpicyChickenKneelb-Answer:FlatGhostsCheatb",
-            "markerEnd": "logo",
-            "source": "Generate:SpicyChickenKneel",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Answer:FlatGhostsCheat",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Generate:FiveDragonsLayb-Answer:FlatGhostsCheatb",
-            "markerEnd": "logo",
-            "source": "Generate:FiveDragonsLay",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Answer:FlatGhostsCheat",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          }
-        ]
-      },
-      "history": [],
-      "messages": [],
-      "path": [],
-      "reference": []
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "rewriteNode"
+        }
+      ]
     },
+    "history": [],
+    "messages": [],
+    "path": [],
+    "reference": []
+  },
   "avatar": "data:image/jpeg;base64,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"
 }

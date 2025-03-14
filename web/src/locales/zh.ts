@@ -98,7 +98,7 @@ export default {
       webCrawl: '网页抓取',
       chunkNumber: '分块数',
       uploadDate: '上传日期',
-      chunkMethod: '解析方法',
+      chunkMethod: '切片方法',
       enabled: '启用',
       disabled: '禁用',
       action: '动作',
@@ -106,7 +106,8 @@ export default {
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
-      testingDescription: '最后一步！ 成功后，剩下的就交给 RAGFlow 吧。',
+      testingDescription:
+        '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。',
@@ -136,9 +137,9 @@ export default {
       fromMessage: '缺少起始页码',
       toPlaceholder: '到',
       toMessage: '缺少结束页码（不包含）',
-      layoutRecognize: '布局识别和 OCR',
+      layoutRecognize: '文档解析器',
       layoutRecognizeTip:
-        '使用视觉模型进行布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果没有此功能，则只能获取 PDF 的纯文本。',
+        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。',
       taskPageSize: '任务页面大小',
       taskPageSizeMessage: '请输入您的任务页面大小！',
       taskPageSizeTip: `如果使用布局识别，PDF 文件将被分成连续的组。 布局分析将在组之间并行执行，以提高处理速度。 “任务页面大小”决定组的大小。 页面大小越大，将页面之间的连续文本分割成不同块的机会就越低。`,
@@ -149,13 +150,13 @@ export default {
       changeSpecificCategory: '更改特定类别',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。 严禁上传公司数据或其他违禁文件。',
+        '支持单次或批量上传。单个文件大小不超过10MB，最多上传128份文件。严禁上传违禁文件。',
       chunk: '解析块',
       bulk: '批量',
       cancel: '取消',
       rerankModel: 'Rerank模型',
       rerankPlaceholder: '请选择',
-      rerankTip: `如果是空的。它使用查询和块的嵌入来构成矢量余弦相似性。否则，它使用rerank评分代替矢量余弦相似性。`,
+      rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。`,
       topK: 'Top-K',
       topKTip: `K块将被送入Rerank型号。`,
       delimiter: `分段标识符`,
@@ -192,13 +193,15 @@ export default {
       metaData: '元数据',
       deleteDocumentConfirmContent:
         '该文档与知识图谱相关联。删除后，相关节点和关系信息将被删除，但图不会立即更新。更新图动作是在解析承载知识图谱提取任务的新文档的过程中执行的。',
+      plainText: 'Naive',
+      reRankModelWaring: '重排序模型非常耗时。',
     },
     knowledgeConfiguration: {
-      titleDescription: '在这里更新您的知识库详细信息，尤其是解析方法。',
+      titleDescription: '在这里更新您的知识库详细信息，尤其是切片方法。',
       name: '知识库名称',
       photo: '知识库图片',
       description: '描述',
-      language: '语言',
+      language: '文档语言',
       languageMessage: '请输入语言',
       languagePlaceholder: '请输入语言',
       permissions: '权限',
@@ -209,7 +212,7 @@ export default {
         '用于嵌入块的嵌入模型。 一旦知识库有了块，它就无法更改。 如果你想改变它，你需要删除所有的块。',
       permissionsTip: '如果权限是“团队”，则所有团队成员都可以操作知识库。',
       chunkTokenNumberTip: '它大致确定了一个块的Token数量。',
-      chunkMethod: '解析方法',
+      chunkMethod: '切片方法',
       chunkMethodTip: '说明位于右侧。',
       upload: '上传',
       english: '英文',
@@ -278,7 +281,7 @@ export default {
       您只需与<i>'RAGFlow'</i>交谈即可列出所有符合资格的候选人。
       </p>
         `,
-      table: `支持<p><b>EXCEL</b>和<b>CSV/TXT</b>格式文件。</p><p>
+      table: `支持<p><b>XLSX</b>和<b>CSV/TXT</b>格式文件。</p><p>
       以下是一些提示：
       <ul>
     <li>对于 csv 或 txt 文件，列之间的分隔符为 <em><b>TAB</b></em>。</li>
@@ -318,8 +321,8 @@ export default {
 <p>使用“标签”作为分块方法的知识库<b>不</b>应该参与 RAG 过程。</p>
 <p>此知识库中的块是标签的示例，它们演示了整个标签集以及块和标签之间的相关性。</p>
 
-<p>此块方法支持<b>EXCEL</b>和<b>CSV/TXT</b>文件格式。</p>
-<p>如果文件为<b>Excel</b>格式，则它应该包含两列无标题：一列用于内容，另一列用于标签，内容列位于标签列之前。可以接受多个工作表，只要列结构正确即可。</p>
+<p>此块方法支持<b>XLSX</b>和<b>CSV/TXT</b>文件格式。</p>
+<p>如果文件为<b>XLSX</b>格式，则它应该包含两列无标题：一列用于内容，另一列用于标签，内容列位于标签列之前。可以接受多个工作表，只要列结构正确即可。</p>
 <p>如果文件为 <b>CSV/TXT</b> 格式，则必须使用 UTF-8 编码并以 TAB 作为分隔符来分隔内容和标签。</p>
 <p>在标签列中，标签之间使用英文 <b>逗号</b>。</p>
 <i>不符合上述规则的文本行将被忽略，并且每对文本将被视为一个不同的块。</i>
@@ -352,17 +355,17 @@ export default {
       searchTags: '搜索标签',
       tagCloud: '云',
       tagTable: '表',
-      tagSet: '标签库',
+      tagSet: '标签集',
       topnTags: 'Top-N 标签',
       tagSetTip: `
-      <p> 选择“标签”知识库有助于标记每个块。 </p>
-      <p>对这些块的查询也将带有标签。 </p>
-      此过程将通过向数据集添加更多信息来提高检索的准确性，尤其是在存在大量块的情况下。
-      <p>标签和关键字之间的区别：</p>
+      <p> 请选择一个或多个标签集或标签知识库，用于对知识库中的每个文本块进行标记。 </p>
+      <p>对这些文本块的查询也将自动关联相应标签。 </p>
+      <p>此功能基于文本相似度，能够为数据集的文本块批量添加更多领域知识，从而显著提高检索准确性。该功能还能提升大量文本块的操作效率。</p>
+      <p>为了更好地理解标签集的作用，以下是标签集和关键词之间的主要区别：</p>
       <ul>
-      <li>标签是一个由用户定义和操作的封闭集，而关键字是一个开放集。 </li>
-      <li>您需要在使用前上传带有样本的标签集。 </li>
-      <li>关键字由 LLM 生成，这既昂贵又耗时。 </li>
+      <li>标签集是一个由用户定义和管理的封闭集，而自动生成的关键词属于开放集合。 </li>
+      <li>在给你的知识库文本块批量打标签之前，你需要先生成标签集作为样本。 </li>
+      <li>自动关键词功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
       </ul>
       `,
       tags: '标签',
@@ -372,7 +375,7 @@ export default {
         '文件分块后，所有块将用于知识图谱生成，这对多跳和复杂问题的推理大有帮助。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：实体和关系提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
-General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图形的模块化检索增强生成 (RAG) 系统`,
+General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统`,
       resolution: '实体归一化',
       resolutionTip: `解析过程会将具有相同含义的实体合并在一起，从而使知识图谱更简洁、更准确。应合并以下实体：特朗普总统、唐纳德·特朗普、唐纳德·J·特朗普、唐纳德·约翰·特朗普`,
       community: '社区报告生成',
@@ -419,13 +422,14 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       language: '语言',
       emptyResponse: '空回复',
       emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。`,
+      emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空响应。由于未选择任何知识库，因此请清除“空响应”。`,
       setAnOpener: '设置开场白',
       setAnOpenerInitial: `你好！ 我是你的助理，有什么可以帮到你的吗？`,
       setAnOpenerTip: '您想如何欢迎您的客户？',
       knowledgeBases: '知识库',
       knowledgeBasesMessage: '请选择',
       knowledgeBasesTip: '选择关联的知识库。',
-      system: '系统',
+      system: '系统提示词',
       systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
         以下是知识库：
         {knowledge}
@@ -437,9 +441,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
       variable: '变量',
       variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
-      这些变量用于填写提示中的“系统”部分，以便给LLM一个提示。
+      这些变量用于填写提示中的“系统提示词”部分，以便给LLM一个提示。
       “知识”是一个非常特殊的变量，它将用检索到的块填充。
-      “System”中的所有变量都应该用大括号括起来。`,
+      “系统提示词”中的所有变量都应该用大括号括起来。`,
       add: '新增',
       key: '关键字',
       optional: '可选的',
@@ -447,7 +451,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       model: '模型',
       modelTip: '大语言聊天模型',
       modelMessage: '请选择',
-      freedom: '自由',
+      freedom: '自由度',
       improvise: '即兴创作',
       precise: '精确',
       balance: '平衡',
@@ -518,11 +522,20 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '在多轮对话的中，对去知识库查询的问题进行优化。会调用大模型额外消耗token。',
       howUseId: '如何使用聊天ID？',
       description: '助理描述',
+      descriptionPlaceholder:
+        '例如 你是一个专业的简历助手，只能回答简历的问题。',
       useKnowledgeGraph: '使用知识图谱',
       useKnowledgeGraphTip:
         '它将检索相关实体、关系和社区报告的描述，这将增强多跳和复杂问题的推理。',
       keyword: '关键词分析',
       keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
+      reasoning: '推理',
+      reasoningTip:
+        '它将像Deepseek-R1 / OpenAI o1一样触发推理过程。将代理搜索过程集成到推理工作流中，允许模型本身在遇到不确定信息时动态地检索外部知识。',
+      tavilyApiKeyTip:
+        '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
+      tavilyApiKeyMessage: '请输入你的 Tavily API Key',
+      tavilyApiKeyHelp: '如何获取？',
     },
     setting: {
       profile: '概要',
@@ -584,7 +597,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       img2txtModel: 'Img2txt模型',
       img2txtModelTip:
         '所有新创建的知识库都将使用默认的多模块模型。 它可以描述图片或视频。',
-      sequence2txtModel: 'Sequence2txt模型',
+      sequence2txtModel: 'Speech2txt模型',
       sequence2txtModelTip:
         '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。',
       rerankModel: 'Rerank模型',
@@ -691,7 +704,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       202: '一个请求已经进入后台排队（异步任务）。',
       204: '删除数据成功。',
       400: '发出的请求有错误，服务器没有进行新建或修改数据的操作。',
-      401: '用户没有权限（Token、用户名、密码错误）。',
+      401: '请重新登录。',
       403: '用户得到授权，但是访问是被禁止的。',
       404: '发出的请求针对的是不存在的记录，服务器没有进行操作。',
       406: '请求的格式不可得。',
@@ -717,9 +730,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseSelect: '请选择',
       newFolder: '新建文件夹',
       uploadFile: '上传文件',
+      parseOnCreation: '创建时解析',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。 严禁上传公司数据或其他违禁文件。',
+        '支持单次或批量上传。 单个文件大小不超过10MB，最多上传128份文件。严禁上传违禁文件。',
       file: '文件',
       directory: '文件夹',
       local: '本地上传',
@@ -1152,6 +1166,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       addCategory: '新增分类',
       categoryName: '分类名称',
       nextStep: '下一步',
+      insertVariableTip: `输入 / 插入变量`,
     },
     footer: {
       profile: 'All rights reserved @ React',

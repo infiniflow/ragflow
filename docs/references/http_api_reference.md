@@ -5,9 +5,157 @@ slug: /http_api_reference
 
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/models/llm_api_key_setup.md).
 
 ---
+
+## OpenAI-Compatible API
+
+---
+
+### Create chat completion
+
+**POST** `/api/v1/chats_openai/{chat_id}/chat/completions`
+
+Creates a model response for a given chat conversation.
+
+This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/chats_openai/{chat_id}/chat/completions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"model"`: `string`
+  - `"messages"`: `object list`
+  - `"stream"`: `boolean`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/chats_openai/{chat_id}/chat/completions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+        "model": "model",
+        "messages": [{"role": "user", "content": "Say this is a test!"}],
+        "stream": true
+      }'
+```
+
+##### Request Parameters
+
+- `model` (*Body parameter*) `string`, *Required*
+  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+
+- `messages` (*Body parameter*) `list[object]`, *Required*
+  A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
+
+- `stream` (*Body parameter*) `boolean`
+  Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+#### Response
+
+Stream:
+
+```json
+{
+    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "choices": [
+        {
+            "delta": {
+                "content": "This is a test. If you have any specific questions or need information, feel",
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            },
+            "finish_reason": null,
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "created": 1740543996,
+    "model": "model",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "",
+    "usage": null
+}
+// omit duplicated information
+{"choices":[{"delta":{"content":" free to ask, and I will do my best to provide an answer based on","role":"assistant"}}]}
+{"choices":[{"delta":{"content":" the knowledge I have. If your question is unrelated to the provided knowledge base,","role":"assistant"}}]}
+{"choices":[{"delta":{"content":" I will let you know.","role":"assistant"}}]}
+// the last chunk
+{
+    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "choices": [
+        {
+            "delta": {
+                "content": null,
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            },
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "created": 1740543996,
+    "model": "model",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "",
+    "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 225,
+        "total_tokens": 243
+    }
+}
+```
+
+Non-stream:
+
+```json
+{
+    "choices":[
+        {
+            "finish_reason":"stop",
+            "index":0,
+            "logprobs":null,
+            "message":{
+                "content":"This is a test. If you have any specific questions or need information, feel free to ask, and I will do my best to provide an answer based on the knowledge I have. If your question is unrelated to the provided knowledge base, I will let you know.",
+                "role":"assistant"
+            }
+        }
+    ],
+    "created":1740543499,
+    "id":"chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "model":"model",
+    "object":"chat.completion",
+    "usage":{
+        "completion_tokens":246,
+        "completion_tokens_details":{
+            "accepted_prediction_tokens":246,
+            "reasoning_tokens":18,
+            "rejected_prediction_tokens":0
+        },
+        "prompt_tokens":18,
+        "total_tokens":264
+    }
+}
+```
+
+Failure:
+
+```json
+{
+  "code": 102,
+  "message": "The last content of this conversation is not from user."
+}
+```
 
 ## DATASET MANAGEMENT
 
@@ -30,7 +178,6 @@ Creates a dataset.
   - `"name"`: `string`
   - `"avatar"`: `string`
   - `"description"`: `string`
-  - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
@@ -65,11 +212,6 @@ curl --request POST \
 
 - `"description"`: (*Body parameter*), `string`  
   A brief description of the dataset to create.
-
-- `"language"`: (*Body parameter*), `string`  
-  The language setting of the dataset to create. Available options:  
-  - `"English"` (default)
-  - `"Chinese"`
 
 - `"embedding_model"`: (*Body parameter*), `string`  
   The name of the embedding model to use. For example: `"BAAI/bge-zh-v1.5"`
@@ -389,6 +531,26 @@ Failure:
 
 ---
 
+## Error Codes
+
+---
+
+| Code | Message | Description |
+|------|---------|-------------|
+| 400  | Bad Request | Invalid request parameters |
+| 401  | Unauthorized | Unauthorized access |
+| 403  | Forbidden | Access denied |
+| 404  | Not Found | Resource not found |
+| 500  | Internal Server Error | Server internal error |
+| 1001 | Invalid Chunk ID | Invalid Chunk ID |
+| 1002 | Chunk Update Failed | Chunk update failed |
+
+
+
+---
+
+---
+
 ## FILE MANAGEMENT WITHIN DATASET
 
 ---
@@ -486,6 +648,7 @@ Updates configurations for a specified document.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`:`string`
+  - `"meta_fields"`:`object`
   - `"chunk_method"`:`string`
   - `"parser_config"`:`object`
 
@@ -512,6 +675,7 @@ curl --request PUT \
 - `document_id`: (*Path parameter*)  
   The ID of the document to update.
 - `"name"`: (*Body parameter*), `string`
+- `"meta_fields"`: (*Body parameter*)， `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: (*Body parameter*), `string`  
   The parsing method to apply to the document:  
   - `"naive"`: General
@@ -524,8 +688,6 @@ curl --request PUT \
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
@@ -2171,18 +2333,19 @@ Creates a session with an agent.
 #### Request
 
 - Method: POST
-- URL: `/api/v1/agents/{agent_id}/sessions`
+- URL: `/api/v1/agents/{agent_id}/sessions?user_id={user_id}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'content-Type: application/json' or 'multipart/form-data'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - the required parameters:`str`
-  - the optional parameters:`str`
-    - `"user_id"`: `string`  
-      The optional user-defined ID.
+  - other parameters:
+    The parameters specified in the **Begin** component.
 
 ##### Request example
-If `begin` component in the agent doesn't have required parameters:
+
+If the **Begin** component in your agent does not take required parameters:
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/sessions \
@@ -2191,7 +2354,9 @@ curl --request POST \
      --data '{
      }'
 ```
-If `begin` component in the agent has required parameters:
+
+If the **Begin** component in your agent takes required parameters:
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/sessions \
@@ -2203,10 +2368,22 @@ curl --request POST \
      }'
 ```
 
+If the **Begin** component in your agent takes required file parameters:
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions?user_id={user_id} \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form '<FILE_KEY>=@./test1.png'    
+```
+
 ##### Request parameters
 
 - `agent_id`: (*Path parameter*)  
   The ID of the associated agent.
+- `user_id`: (*Filter parameter*)
+  The optional user-defined ID for parsing docs (especially images) when creating a session while uploading files.
 
 #### Response
 
@@ -2356,9 +2533,10 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"stream"`: `boolean`
   - `"session_id"`: `string`
   - `"user_id"`: `string`(optional)
+  - `"sync_dsl"`: `boolean` (optional)
   - other parameters: `string`
 ##### Request example
-If the `begin` component doesn't have parameters, the following code will create a session.
+If the **Begin** component does not take parameters, the following code will create a session.
 ```bash 
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2368,7 +2546,7 @@ curl --request POST \
      {
      }'
 ```
-If the `begin` component have parameters, the following code will create a session.
+If the **Begin** component takes parameters, the following code will create a session.
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2394,7 +2572,6 @@ curl --request POST \
      }'
 ```
 
-
 ##### Request Parameters
 
 - `agent_id`: (*Path parameter*), `string`  
@@ -2409,10 +2586,13 @@ curl --request POST \
   The ID of the session. If it is not provided, a new session will be generated.
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
+- `"sync_dsl"`: (*Body parameter*), `boolean`
+  Whether to synchronize the changes to existing sessions when an agent is modified, defaults to `false`.
 - Other parameters: (*Body Parameter*)  
-  The parameters in the begin component.
+  Parameters specified in the **Begin** component.
+
 #### Response
-success without `session_id` provided and with no parameters in the `begin` component:
+success without `session_id` provided and with no parameters specified in the **Begin** component:
 ```json
 data:{
     "code": 0,
@@ -2430,7 +2610,8 @@ data:{
     "data": true
 }
 ```
-Success without `session_id` provided and with parameters in the `begin` component:
+
+Success without `session_id` provided and with parameters specified in the **Begin** component:
 
 ```json
 data:{
@@ -2466,7 +2647,7 @@ data:{
 }
 data:
 ```
-Success with parameters in the `begin` component:
+Success with parameters specified in the **Begin** component:
 ```json
 data:{
     "code": 0,
@@ -2545,7 +2726,6 @@ data:{
 }
 ```
 
-
 Failure:
 
 ```json
@@ -2559,7 +2739,7 @@ Failure:
 
 ### List agent sessions
 
-**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}`
+**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&dsl={dsl}`
 
 Lists sessions associated with a specified agent.
 
@@ -2596,7 +2776,9 @@ curl --request GET \
   The ID of the agent session to retrieve.
 - `user_id`: (*Filter parameter*), `string`  
   The optional user-defined ID passed in when creating session.
-  
+- `dsl`: (*Filter parameter*), `boolean`  
+  Indicates whether to include the dsl field of the sessions in the response. Defaults to `true`.
+
 #### Response
 
 Success:
@@ -2604,7 +2786,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": {
+    "data": [{
         "agent_id": "e9e2b9c2b2f911ef801d0242ac120006",
         "dsl": {
             "answer": [],
@@ -2736,7 +2918,7 @@ Success:
         ],
         "source": "agent",
         "user_id": ""
-    }
+    }]
 }
 ```
 
@@ -2749,6 +2931,62 @@ Failure:
 }
 ```
 
+---
+
+### Delete agent's sessions
+
+**DELETE** `/api/v1/agents/{agent_id}/sessions`
+
+Deletes sessions of a agent by ID.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/agents/{agent_id}/sessions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"ids"`: `list[string]`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/agents/{agent_id}/sessions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '
+     {
+          "ids": ["test_1", "test_2"]
+     }'
+```
+
+##### Request Parameters
+
+- `agent_id`: (*Path parameter*)  
+  The ID of the associated agent.
+- `"ids"`: (*Body Parameter*), `list[string]`  
+  The IDs of the sessions to delete. If it is not specified, all sessions associated with the specified agent will be deleted.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "The agent doesn't own the session cbd31e52f73911ef93b232903b842af6"
+}
+```
 ---
 
 ## AGENT MANAGEMENT

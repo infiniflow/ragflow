@@ -35,9 +35,11 @@ module.exports = {
         'colors-text-core-standard': 'var(--colors-text-core-standard)',
         'colors-text-neutral-strong': 'var(--colors-text-neutral-strong)',
         'colors-text-neutral-standard': 'var(--colors-text-neutral-standard)',
+        'colors-text-neutral-weak': 'var(--colors-text-neutral-weak)',
         'colors-text-functional-danger': 'var(--colors-text-functional-danger)',
         'colors-text-inverse-strong': 'var(--colors-text-inverse-strong)',
         'colors-text-persist-light': 'var(--colors-text-persist-light)',
+        'colors-text-inverse-weak': 'var(--colors-text-inverse-weak)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',
@@ -160,6 +162,16 @@ module.exports = {
         'colors-background-sentiment-solid-primary': {
           DEFAULT: 'var(--colors-background-sentiment-solid-primary)',
           foreground: 'var(--background-inverse-standard-foreground)',
+        },
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar-background))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          primary: 'hsl(var(--sidebar-primary))',
+          'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
+          accent: 'hsl(var(--sidebar-accent))',
+          'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
+          border: 'hsl(var(--sidebar-border))',
+          ring: 'hsl(var(--sidebar-ring))',
         },
       },
       borderRadius: {

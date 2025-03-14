@@ -5,7 +5,7 @@ slug: /text2sql_agent
 
 # Create a Text2SQL agent
 
-Build a Text2SQL agent leverging RAGFlow's RAG capabilities. Contributed by @TeslaZY.
+Build a Text2SQL agent leveraging RAGFlow's RAG capabilities. Contributed by @TeslaZY.
 
 ## Scenario
 
@@ -31,10 +31,10 @@ However, traditional Text2SQL solutions often require model fine-tuning, which c
 
 A list of components required:
 
-- [Begin](https://ragflow.io/docs/dev/begin_component)
-- [Interact](https://ragflow.io/docs/dev/interact_component)
-- [Retrieval](https://ragflow.io/docs/dev/retrieval_component)
-- [Generate](https://ragflow.io/docs/dev/generate_component)
+- [Begin](./agent_component_reference/begin.mdx)
+- [Interact](./agent_component_reference/interact.mdx)
+- [Retrieval](./agent_component_reference/retrieval.mdx)
+- [Generate](./agent_component_reference/generate.mdx)
 - ExeSQL
 
 ## Procedure
@@ -343,7 +343,7 @@ Synonyms: laptop computer,laptop pc
 3. Create a Retrieval node and name it Thesaurus; create an ExeSQL node.
 4. Configure the Q->SQL, DDL, DB_Description, and TextSQL_Thesaurus knowledge bases. Please refer to the following:
    ![Configure Retrieval node](https://github.com/user-attachments/assets/25d67b01-954e-4eb4-87f5-c54262cf9a3e)
-5. Configure the Generate node, named LLM‘s prompt:
+5. Configure the Generate node, named LLM's prompt:
    - Add this content to the prompt provided by the template to provide the thesaurus content to the LLM:
      ```plaintext
      ## You may use the following Thesaurus statements. For example, what I ask is from Synonyms, you must use Standard noun to generate SQL. Use responses to past questions also to guide you: {sql_thesaurus}.
@@ -383,7 +383,7 @@ Since version 0.15.0, ragflow has introduced step-by-step execution for Agent co
 Find all customers who has bought a mobile phone
 ```
 ![](https://github.com/user-attachments/assets/a6270188-72af-4be7-a192-efddb611f3a4)
-3. As the image shows, no matching information was retrieved from the Q->SQL knowledge base, yet a similar question exists within the database. Adjust the Rerank model, "Similarity threshold," or "Keywords similarity weight" accordingly to return relevant content.
+3. As the image shows, no matching information was retrieved from the Q->SQL knowledge base, yet a similar question exists within the database. Adjust the Rerank model, "Similarity threshold," or "Keyword similarity weight" accordingly to return relevant content.
 ![](https://github.com/user-attachments/assets/0592c45b-9276-465d-93d3-2530b2fb81c0)
 ![](https://github.com/user-attachments/assets/9e72be3a-41af-4ef2-863d-03757ddfdde6)
 

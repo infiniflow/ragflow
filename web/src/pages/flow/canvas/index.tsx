@@ -12,7 +12,7 @@ import {
   ReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { FolderInput, FolderOutput } from 'lucide-react';
+import { Book, FolderInput, FolderOutput } from 'lucide-react';
 import ChatDrawer from '../chat/drawer';
 import FormDrawer from '../flow-drawer';
 import {
@@ -23,6 +23,7 @@ import {
 } from '../hooks';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useHandleExportOrImportJsonFile } from '../hooks/use-export-json';
+import { useOpenDocument } from '../hooks/use-open-document';
 import { useShowDrawer } from '../hooks/use-show-drawer';
 import JsonUploadModal from '../json-upload-modal';
 import RunDrawer from '../run-drawer';
@@ -85,8 +86,6 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
 
-  const controlIconClassname = 'text-black';
-
   const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
 
   const {
@@ -96,6 +95,8 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
     onFileUploadOk,
     hideFileUploadModal,
   } = useHandleExportOrImportJsonFile();
+
+  const openDocument = useOpenDocument();
 
   const {
     onNodeClick,
@@ -172,11 +173,11 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
         onBeforeDelete={handleBeforeDelete}
       >
         <Background />
-        <Controls>
+        <Controls className="text-black !flex-col-reverse">
           <ControlButton onClick={handleImportJson}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <FolderInput className={controlIconClassname} />
+                <FolderInput className="!fill-none" />
               </TooltipTrigger>
               <TooltipContent>Import</TooltipContent>
             </Tooltip>
@@ -184,9 +185,17 @@ function FlowCanvas({ drawerVisible, hideDrawer }: IProps) {
           <ControlButton onClick={handleExportJson}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <FolderOutput className={controlIconClassname} />
+                <FolderOutput className="!fill-none" />
               </TooltipTrigger>
               <TooltipContent>Export</TooltipContent>
+            </Tooltip>
+          </ControlButton>
+          <ControlButton onClick={openDocument}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Book className="!fill-none" />
+              </TooltipTrigger>
+              <TooltipContent>Document</TooltipContent>
             </Tooltip>
           </ControlButton>
         </Controls>

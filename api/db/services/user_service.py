@@ -29,11 +29,27 @@ from rag.settings import MINIO
 
 
 class UserService(CommonService):
+    """Service class for managing user-related database operations.
+    
+    This class extends CommonService to provide specialized functionality for user management,
+    including authentication, user creation, updates, and deletions.
+    
+    Attributes:
+        model: The User model class for database operations.
+    """
     model = User
 
     @classmethod
     @DB.connection_context()
     def filter_by_id(cls, user_id):
+        """Retrieve a user by their ID.
+        
+        Args:
+            user_id: The unique identifier of the user.
+            
+        Returns:
+            User object if found, None otherwise.
+        """
         try:
             user = cls.model.select().where(cls.model.id == user_id).get()
             return user
@@ -43,6 +59,15 @@ class UserService(CommonService):
     @classmethod
     @DB.connection_context()
     def query_user(cls, email, password):
+        """Authenticate a user with email and password.
+        
+        Args:
+            email: User's email address.
+            password: User's password in plain text.
+            
+        Returns:
+            User object if authentication successful, None otherwise.
+        """
         user = cls.model.select().where((cls.model.email == email),
                                         (cls.model.status == StatusEnum.VALID.value)).first()
         if user and check_password_hash(str(user.password), password):
@@ -85,6 +110,14 @@ class UserService(CommonService):
 
 
 class TenantService(CommonService):
+    """Service class for managing tenant-related database operations.
+    
+    This class extends CommonService to provide functionality for tenant management,
+    including tenant information retrieval and credit management.
+    
+    Attributes:
+        model: The Tenant model class for database operations.
+    """
     model = Tenant
 
     @classmethod
@@ -136,6 +169,14 @@ class TenantService(CommonService):
 
 
 class UserTenantService(CommonService):
+    """Service class for managing user-tenant relationship operations.
+    
+    This class extends CommonService to handle the many-to-many relationship
+    between users and tenants, managing user roles and tenant memberships.
+    
+    Attributes:
+        model: The UserTenant model class for database operations.
+    """
     model = UserTenant
 
     @classmethod

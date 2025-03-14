@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import json
-import logging
+import os
 
 from flask import request
 from flask_login import login_required, current_user
@@ -24,7 +24,6 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserTenantService
-from api.settings import DOC_ENGINE
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
 from api.db import StatusEnum, FileSource
@@ -97,7 +96,7 @@ def update():
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
 
-        if req.get("parser_id", "") == "tag" and DOC_ENGINE == "infinity":
+        if req.get("parser_id", "") == "tag" and os.environ.get('DOC_ENGINE', "elasticsearch") == "infinity":
             return get_json_result(
                 data=False,
                 message='The chunk method Tag has not been supported by Infinity yet.',
@@ -300,11 +299,12 @@ def knowledge_graph(kb_id):
         "kb_id": [kb_id],
         "knowledge_graph_kwd": ["graph"]
     }
+
     obj = {"graph": {}, "mind_map": {}}
-    try:
-        sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
-    except Exception as e:
-        logging.exception(e)
+    if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
+        return get_json_result(data=obj)
+    sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
+    if not len(sres.ids):
         return get_json_result(data=obj)
 
     for id in sres.ids[:1]:
@@ -318,6 +318,8 @@ def knowledge_graph(kb_id):
 
     if "nodes" in obj["graph"]:
         obj["graph"]["nodes"] = sorted(obj["graph"]["nodes"], key=lambda x: x.get("pagerank", 0), reverse=True)[:256]
-    if "edges" in obj["graph"]:
-        obj["graph"]["edges"] = sorted(obj["graph"]["edges"], key=lambda x: x.get("weight", 0), reverse=True)[:128]
+        if "edges" in obj["graph"]:
+            node_id_set = { o["id"] for o in obj["graph"]["nodes"] }
+            filtered_edges = [o for o in obj["graph"]["edges"] if o["source"] != o["target"] and o["source"] in node_id_set and o["target"] in node_id_set]
+            obj["graph"]["edges"] = sorted(filtered_edges, key=lambda x: x.get("weight", 0), reverse=True)[:128]
     return get_json_result(data=obj)

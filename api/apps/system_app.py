@@ -201,7 +201,7 @@ def new_token():
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
 
-        tenant_id = tenants[0].tenant_id
+        tenant_id = [tenant for tenant in tenants if tenant.role == 'owner'][0].tenant_id
         obj = {
             "tenant_id": tenant_id,
             "token": generate_confirmation_token(tenant_id),
@@ -256,7 +256,7 @@ def token_list():
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
 
-        tenant_id = tenants[0].tenant_id
+        tenant_id = [tenant for tenant in tenants if tenant.role == 'owner'][0].tenant_id
         objs = APITokenService.query(tenant_id=tenant_id)
         objs = [o.to_dict() for o in objs]
         for o in objs:

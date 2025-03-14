@@ -16,7 +16,6 @@ const ChatDrawer = ({ visible, hideModal }: IModalProps<any>) => {
       getContainer={false}
       width={getDrawerWidth()}
       mask={false}
-      // zIndex={10000}
     >
       <FlowChatBox></FlowChatBox>
     </Drawer>

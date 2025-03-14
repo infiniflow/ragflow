@@ -388,14 +388,14 @@ class Dealer:
                 break
             id = sres.ids[i]
             chunk = sres.field[id]
-            dnm = chunk["docnm_kwd"]
-            did = chunk["doc_id"]
+            dnm = chunk.get("docnm_kwd", "")
+            did = chunk.get("doc_id", "")
             position_int = chunk.get("position_int", [])
             d = {
                 "chunk_id": id,
                 "content_ltks": chunk["content_ltks"],
                 "content_with_weight": chunk["content_with_weight"],
-                "doc_id": chunk["doc_id"],
+                "doc_id": did,
                 "docnm_kwd": dnm,
                 "kb_id": chunk["kb_id"],
                 "important_kwd": chunk.get("important_kwd", []),
@@ -448,6 +448,8 @@ class Dealer:
         return res
 
     def all_tags(self, tenant_id: str, kb_ids: list[str], S=1000):
+        if not self.dataStore.indexExist(index_name(tenant_id), kb_ids[0]):
+            return []
         res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, index_name(tenant_id), kb_ids, ["tag_kwd"])
         return self.dataStore.getAggregation(res, "tag_kwd")
 

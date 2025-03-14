@@ -1,0 +1,113 @@
+---
+sidebar_position: 2
+slug: /generate_component
+---
+
+# Generate component
+
+The component that prompts the LLM to respond appropriately.
+
+---
+
+A **Generate** component fine-tunes the LLM and sets its prompt.
+
+## Scenarios
+
+A **Generate** component is essential when you need the LLM to assist with summarizing, translating, or controlling various tasks. 
+
+## Configurations
+
+### Model
+
+Click the dropdown menu of **Model** to show the model configuration window.
+
+- **Model**: The chat model to use.  
+  - Ensure you set the chat model correctly on the **Model providers** page.
+  - You can use different models for different components to increase flexibility or improve overall performance.
+- **Preset configurations**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
+  This parameter has three options:
+  - **Improvise**: Produces more creative responses.
+  - **Precise**: (Default) Produces more conservative responses.
+  - **Balance**: A middle ground between **Improvise** and **Precise**.
+- **Temperature**: The randomness level of the model's output.  
+  Defaults to 0.1.
+  - Lower values lead to more deterministic and predictable outputs.
+  - Higher values lead to more creative and varied outputs.
+  - A temperature of zero results in the same output for the same prompt.
+- **Top P**: Nucleus sampling.  
+  - Reduces the likelihood of generating repetitive or unnatural text by setting a threshold *P* and restricting the sampling to tokens with a cumulative probability exceeding *P*.
+  - Defaults to 0.3.
+- **Presence penalty**: Encourages the model to include a more diverse range of tokens in the response.  
+  - A higher **presence penalty** value results in the model being more likely to generate tokens not yet been included in the generated text.
+  - Defaults to 0.4.
+- **Frequency penalty**: Discourages the model from repeating the same words or phrases too frequently in the generated text.  
+  - A higher **frequency penalty** value results in the model being more conservative in its use of repeated tokens.
+  - Defaults to 0.7.
+- **Max tokens**: Sets the maximum length of the model's output, measured in the number of tokens.  
+  - Defaults to 512. 
+  - If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.
+
+:::tip NOTE
+- It is not necessary to stick with the same model for all components. If a specific model is not performing well for a particular task, consider using a different one.
+- If you are uncertain about the mechanism behind **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**, simply choose one of the three options of **Preset configurations**.
+:::
+
+### System prompt
+
+Typically, you use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. We do not plan to elaborate on this topic, as it can be as extensive as prompt engineering. However, please be aware that the system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. 
+
+Keys in a system prompt should be enclosed in curly braces. Below is a prompt excerpt of a **Generate** component from the **Interpreter** template (component ID: **Reflect**):
+
+```text
+Your task is to read a source text and a translation to {target_lang}, and give constructive suggestions to improve the translation. The source text and initial translation, delimited by XML tags <SOURCE_TEXT></SOURCE_TEXT> and <TRANSLATION></TRANSLATION>, are as follows:
+
+<SOURCE_TEXT>
+{source_text}
+</SOURCE_TEXT>
+
+<TRANSLATION>
+{translation_1}
+</TRANSLATION>
+
+When writing suggestions, pay attention to whether there are ways to improve the translation's fluency, by applying {target_lang} grammar, spelling and punctuation rules, and ensuring there are no unnecessary repetitions.
+- Each suggestion should address one specific part of the translation.
+- Output the suggestions only.
+```
+
+Where `{source_text}` and `{target_lang}` are global variables defined by the **Begin** component, while `{translation_1}` is the output of another **Generate** component with the component ID **Translate directly**.
+
+
+:::danger IMPORTANT
+A **Generate** component relies on keys (variables) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence. Keys in a **Generate** component are used in conjunction with the system prompt to specify data inputs for the LLM. Use a forward slash `/` to show the keys to use.
+:::
+
+### Cite 
+
+This toggle sets whether to cite the original text as reference. 
+
+
+:::tip NOTE
+This feature is used for multi-turn dialogue *only* and is applicable *only* when the original documents are uploaded to a knowledge base and have finished file parsing.
+:::
+
+
+### Message window size
+
+An integer specifying the number of previous dialogue rounds to input into the LLM. For example, if it is set to 12, the tokens from the last 12 dialogue rounds will be fed to the LLM. This feature consumes additional tokens.
+
+:::tip IMPORTANT
+This feature is used for multi-turn dialogue *only*.
+:::
+
+
+## Examples
+
+You can explore our three-step interpreter agent template, where a **Generate** component (component ID: **Reflect**) takes three global variables:
+
+1. Click the **Agent** tab at the top center of the page to access the **Agent** page.
+2. Click **+ Create agent** on the top right of the page to open the **agent template** page.
+3. On the **agent template** page, hover over the **Interpreter** card and click **Use this template**.
+4. Name your new agent and click **OK** to enter the workflow editor.
+5. Click on component **Reflect**, to display its **Configuration** window, where:
+   - `{target_lang}` and `{source_text}` are defined in the **Begin** component and require user input.
+   - `{translation_1}` is the output from the upstream component **Translate directly**.

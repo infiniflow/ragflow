@@ -6,6 +6,7 @@ import {
   ProfileIcon,
   TeamIcon,
 } from '@/assets/icon/Icon';
+import { LLMFactory } from '@/constants/llm';
 import { UserSettingRouteKey } from '@/constants/setting';
 import { MonitorOutlined } from '@ant-design/icons';
 
@@ -22,16 +23,18 @@ export const UserSettingIconMap = {
 export * from '@/constants/setting';
 
 export const LocalLlmFactories = [
-  'Ollama',
-  'Xinference',
-  'LocalAI',
-  'LM-Studio',
-  'OpenAI-API-Compatible',
-  'TogetherAI',
-  'Replicate',
-  'OpenRouter',
-  'HuggingFace',
-  'GPUStack',
+  LLMFactory.Ollama,
+  LLMFactory.Xinference,
+  LLMFactory.LocalAI,
+  LLMFactory.LMStudio,
+  LLMFactory.OpenAiAPICompatible,
+  LLMFactory.TogetherAI,
+  LLMFactory.Replicate,
+  LLMFactory.OpenRouter,
+  LLMFactory.HuggingFace,
+  LLMFactory.GPUStack,
+  LLMFactory.ModelScope,
+  LLMFactory.VLLM,
 ];
 
 export enum TenantRole {

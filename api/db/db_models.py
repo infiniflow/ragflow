@@ -843,8 +843,8 @@ class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
     from_page = IntegerField(default=0)
-
     to_page = IntegerField(default=100000000)
+    task_type = CharField(max_length=32, null=False, default="")
 
     begin_at = DateTimeField(null=True, index=True)
     process_duation = FloatField(default=0)
@@ -935,7 +935,7 @@ class Conversation(DataBaseModel):
 class APIToken(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, index=True)
     token = CharField(max_length=255, null=False, index=True)
-    dialog_id = CharField(max_length=32, null=False, index=True)
+    dialog_id = CharField(max_length=32, null=True, index=True)
     source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
     beta = CharField(max_length=255, null=True, index=True)
 
@@ -1112,6 +1112,13 @@ def migrate_db():
             migrate(
                 migrator.add_column("document", "meta_fields",
                                     JSONField(null=True, default={}))
+            )
+        except Exception:
+            pass
+        try:
+            migrate(
+                migrator.add_column("task", "task_type",
+                                    CharField(max_length=32, null=False, default=""))
             )
         except Exception:
             pass

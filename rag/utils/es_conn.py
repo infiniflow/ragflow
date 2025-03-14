@@ -113,7 +113,7 @@ class ESConnection(DocStoreConnection):
         except Exception:
             logger.exception("ESConnection.deleteIdx error %s" % (indexName))
 
-    def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
+    def indexExist(self, indexName: str, knowledgebaseId: str = None) -> bool:
         s = Index(indexName, self.es)
         for i in range(ATTEMPT_TIME):
             try:
@@ -367,11 +367,13 @@ class ESConnection(DocStoreConnection):
                 continue
             if isinstance(v, str):
                 v = re.sub(r"(['\n\r]|\\.)", " ", v)
-                scripts.append(f"ctx._source.{k}='{v}';")
+                params[f"pp_{k}"] = v
+                scripts.append(f"ctx._source.{k}=params.pp_{k};")
             elif isinstance(v, int) or isinstance(v, float):
                 scripts.append(f"ctx._source.{k}={v};")
             elif isinstance(v, list):
-                scripts.append(f"ctx._source.{k}={json.dumps(v, ensure_ascii=False)};")
+                scripts.append(f"ctx._source.{k}=params.pp_{k};")
+                params[f"pp_{k}"] = json.dumps(v, ensure_ascii=False)
             else:
                 raise Exception(
                     f"newValue `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str.")

@@ -19,19 +19,16 @@ import os
 import math
 import numpy as np
 import cv2
-from copy import deepcopy
+from functools import cmp_to_key
 
-
-import onnxruntime as ort
-from huggingface_hub import snapshot_download
 
 from api.utils.file_utils import get_project_base_directory
 from .operators import *  # noqa: F403
 from .operators import preprocess
 from . import operators
+from .ocr import load_model
 
-
-class Recognizer(object):
+class Recognizer:
     def __init__(self, label_list, task_name, model_dir=None):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
@@ -48,41 +45,7 @@ class Recognizer(object):
             model_dir = os.path.join(
                         get_project_base_directory(),
                         "rag/res/deepdoc")
-            model_file_path = os.path.join(model_dir, task_name + ".onnx")
-            if not os.path.exists(model_file_path):
-                model_dir = snapshot_download(repo_id="InfiniFlow/deepdoc",
-                                              local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
-                                              local_dir_use_symlinks=False)
-                model_file_path = os.path.join(model_dir, task_name + ".onnx")
-        else:
-            model_file_path = os.path.join(model_dir, task_name + ".onnx")
-
-        if not os.path.exists(model_file_path):
-            raise ValueError("not find model file path {}".format(
-                model_file_path))
-        # https://github.com/microsoft/onnxruntime/issues/9509#issuecomment-951546580
-        # Shrink GPU memory after execution
-        self.run_options = ort.RunOptions()
-
-        if ort.get_device() == "GPU":
-            options = ort.SessionOptions()
-            options.enable_cpu_mem_arena = False
-            cuda_provider_options = {
-                "device_id": 0, # Use specific GPU
-                "gpu_mem_limit": 512 * 1024 * 1024, # Limit gpu memory
-                "arena_extend_strategy": "kNextPowerOfTwo",  # gpu memory allocation strategy
-            }
-            self.ort_sess = ort.InferenceSession(
-                model_file_path, options=options,
-                providers=['CUDAExecutionProvider'],
-                provider_options=[cuda_provider_options]
-            )
-            self.run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
-            logging.info(f"Recognizer {task_name} uses GPU")
-        else:
-            self.ort_sess = ort.InferenceSession(model_file_path, providers=['CPUExecutionProvider'])
-            self.run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "cpu")
-            logging.info(f"Recognizer {task_name} uses CPU")
+        self.ort_sess, self.run_options = load_model(model_dir, task_name)
         self.input_names = [node.name for node in self.ort_sess.get_inputs()]
         self.output_names = [node.name for node in self.ort_sess.get_outputs()]
         self.input_shape = self.ort_sess.get_inputs()[0].shape[2:4]
@@ -90,30 +53,22 @@ class Recognizer(object):
 
     @staticmethod
     def sort_Y_firstly(arr, threashold):
-        # sort using y1 first and then x1
-        arr = sorted(arr, key=lambda r: (r["top"], r["x0"]))
-        for i in range(len(arr) - 1):
-            for j in range(i, -1, -1):
-                # restore the order using th
-                if abs(arr[j + 1]["top"] - arr[j]["top"]) < threashold \
-                        and arr[j + 1]["x0"] < arr[j]["x0"]:
-                    tmp = deepcopy(arr[j])
-                    arr[j] = deepcopy(arr[j + 1])
-                    arr[j + 1] = deepcopy(tmp)
+        def cmp(c1, c2):
+            diff = c1["top"] - c2["top"]
+            if abs(diff) < threashold:
+                diff = c1["x0"] - c2["x0"]
+            return diff
+        arr = sorted(arr, key=cmp_to_key(cmp))
         return arr
 
     @staticmethod
-    def sort_X_firstly(arr, threashold, copy=True):
-        # sort using y1 first and then x1
-        arr = sorted(arr, key=lambda r: (r["x0"], r["top"]))
-        for i in range(len(arr) - 1):
-            for j in range(i, -1, -1):
-                # restore the order using th
-                if abs(arr[j + 1]["x0"] - arr[j]["x0"]) < threashold \
-                        and arr[j + 1]["top"] < arr[j]["top"]:
-                    tmp = deepcopy(arr[j]) if copy else arr[j]
-                    arr[j] = deepcopy(arr[j + 1]) if copy else arr[j + 1]
-                    arr[j + 1] = deepcopy(tmp) if copy else tmp
+    def sort_X_firstly(arr, threashold):
+        def cmp(c1, c2):
+            diff = c1["x0"] - c2["x0"]
+            if abs(diff) < threashold:
+                diff = c1["top"] - c2["top"]
+            return diff
+        arr = sorted(arr, key=cmp_to_key(cmp))
         return arr
 
     @staticmethod
@@ -135,8 +90,6 @@ class Recognizer(object):
                     arr[j] = arr[j + 1]
                     arr[j + 1] = tmp
         return arr
-
-        return sorted(arr, key=lambda r: (r.get("C", r["x0"]), r["top"]))
 
     @staticmethod
     def sort_R_firstly(arr, thr=0):

@@ -16,6 +16,7 @@ import { UploadFile, message } from 'antd';
 import { get } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
+import { useParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -61,6 +62,7 @@ export const useFetchNextDocumentList = () => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
+  const { id } = useParams();
 
   const { data, isFetching: loading } = useQuery<{
     docs: IDocumentInfo[];
@@ -69,9 +71,10 @@ export const useFetchNextDocumentList = () => {
     queryKey: ['fetchDocumentList', searchString, pagination],
     initialData: { docs: [], total: 0 },
     refetchInterval: 15000,
+    enabled: !!knowledgeId || !!id,
     queryFn: async () => {
       const ret = await kbService.get_document_list({
-        kb_id: knowledgeId,
+        kb_id: knowledgeId || id,
         keywords: searchString,
         page_size: pagination.pageSize,
         page: pagination.current,
@@ -254,9 +257,6 @@ export const useUploadNextDocument = () => {
       try {
         const ret = await kbService.document_upload(formData);
         const code = get(ret, 'data.code');
-        if (code === 0) {
-          message.success(i18n.t('message.uploaded'));
-        }
 
         if (code === 0 || code === 500) {
           queryClient.invalidateQueries({ queryKey: ['fetchDocumentList'] });
@@ -264,7 +264,10 @@ export const useUploadNextDocument = () => {
         return ret?.data;
       } catch (error) {
         console.warn(error);
-        return {};
+        return {
+          code: 500,
+          message: error + '',
+        };
       }
     },
   });

@@ -1,5 +1,5 @@
 # The RAGFlow team do not actively maintain docker-compose-gpu.yml, so use them at your own risk. 
-# However, you are welcome to file a pull request to improve it.
+# Pull requests to improve it are welcome.
 include:
   - ./docker-compose-base.yml
 

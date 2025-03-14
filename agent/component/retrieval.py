@@ -19,11 +19,12 @@ from abc import ABC
 import pandas as pd
 
 from api.db import LLMType
-from api.db.services.dialog_service import label_question
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
+from rag.app.tag import label_question
+from rag.utils.tavily_conn import Tavily
 
 
 class RetrievalParam(ComponentParamBase):
@@ -40,10 +41,12 @@ class RetrievalParam(ComponentParamBase):
         self.kb_ids = []
         self.rerank_id = ""
         self.empty_response = ""
+        self.tavily_api_key = ""
+        self.use_kg = False
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
-        self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keywords similarity weight")
+        self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keyword similarity weight")
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
 
 
@@ -53,7 +56,9 @@ class Retrieval(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         query = self.get_input()
         query = str(query["content"][0]) if "content" in query else ""
-
+        lines = query.split('\n')
+        user_queries = [line.split("USER:", 1)[1] for line in lines if line.startswith("USER:")]
+        query = user_queries[-1] if user_queries else ""
         kbs = KnowledgebaseService.get_by_ids(self._param.kb_ids)
         if not kbs:
             return Retrieval.be_output("")
@@ -73,6 +78,20 @@ class Retrieval(ComponentBase, ABC):
                                         self._param.similarity_threshold, 1 - self._param.keywords_similarity_weight,
                                         aggs=False, rerank_mdl=rerank_mdl,
                                         rank_feature=label_question(query, kbs))
+        if self._param.use_kg:
+            ck = settings.kg_retrievaler.retrieval(query,
+                                                   [kbs[0].tenant_id],
+                                                   self._param.kb_ids,
+                                                   embd_mdl,
+                                                   LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
+            if ck["content_with_weight"]:
+                kbinfos["chunks"].insert(0, ck)
+
+        if self._param.tavily_api_key:
+            tav = Tavily(self._param.tavily_api_key)
+            tav_res = tav.retrieve_chunks(query)
+            kbinfos["chunks"].extend(tav_res["chunks"])
+            kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
 
         if not kbinfos["chunks"]:
             df = Retrieval.be_output("")
