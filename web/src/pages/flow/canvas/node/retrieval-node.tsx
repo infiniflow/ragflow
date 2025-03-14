@@ -66,7 +66,7 @@ export function RetrievalNode({
         })}
       ></NodeHeader>
       <Flex vertical gap={8}>
-        {knowledgeBases.map((knowledge) => {
+        {knowledgeBases.slice(-3).map((knowledge) => {
           return (
             <div className={styles.nodeText} key={knowledge.id}>
               <Flex align={'center'} gap={6}>
@@ -82,6 +82,11 @@ export function RetrievalNode({
             </div>
           );
         })}
+        {knowledgeBases.length > 3 && (
+          <div className={styles.nodeText}>
+            ... {knowledgeBases.length - 3} more knowledge
+          </div>
+        )}
       </Flex>
     </section>
   );
