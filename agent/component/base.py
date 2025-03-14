@@ -507,8 +507,8 @@ class ComponentBase(ABC):
                             self._param.inputs.append({"component_id": q["component_id"], "content": vars[key]})
                             outs.append(pd.DataFrame([{"content": vars[key]}]))
                             continue
-                    else:
-                        outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
+                
+                    outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
                     self._param.inputs.append({"component_id": q["component_id"],
                                                "content": "\n".join(
                                                    [str(d["content"]) for d in outs[-1].to_dict('records')])})
