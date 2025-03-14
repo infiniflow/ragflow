@@ -14,7 +14,7 @@ resolution-markers = [
 
 [[package]]
 name = "accelerate"
-version = "1.4.0"
+version = "1.5.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -25,18 +25,18 @@ dependencies = [
     { name = "safetensors" },
     { name = "torch" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/8f/02/24a4c4edb9cf0f1e0bc32bb6829e2138f1cc201442e7a24f0daf93b8a15a/accelerate-1.4.0.tar.gz", hash = "sha256:37d413e1b64cb8681ccd2908ae211cf73e13e6e636a2f598a96eccaa538773a5" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/64/fb/10daafb0efbb1af95d782c9907004bd50fcfd74d6e11e6a91945df37768e/accelerate-1.5.1.tar.gz", hash = "sha256:5d936faf3a31894c6160f2f2a984a38aecbba760ef919ae298b2ecd57ea9bf87" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/0a/f6/791b9d7eb371a2f385da3b7f1769ced72ead7bf09744637ea2985c83d7ee/accelerate-1.4.0-py3-none-any.whl", hash = "sha256:f6e1e7dfaf9d799a20a1dc45efbf4b1546163eac133faa5acd0d89177c896e55" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/4b/ef/2723a3c53d06619dac38c1630bac3d9b7aec91e1a18a82a08b93696b8baf/accelerate-1.5.1-py3-none-any.whl", hash = "sha256:4838cff9ed1bb0ddc9d967530ced62a1d74ea21cdb57688400359ab32682f03e" },
 ]
 
 [[package]]
 name = "aiohappyeyeballs"
-version = "2.5.0"
+version = "2.6.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/a2/0c/458958007041f4b4de2d307e6b75d9e7554dad0baf26fe7a48b741aac126/aiohappyeyeballs-2.5.0.tar.gz", hash = "sha256:18fde6204a76deeabc97c48bdd01d5801cfda5d6b9c8bbeb1aaaee9d648ca191" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/26/30/f84a107a9c4331c14b2b586036f40965c128aa4fee4dda5d3d51cb14ad54/aiohappyeyeballs-2.6.1.tar.gz", hash = "sha256:c3f9d0113123803ccadfdf3f0faa505bc78e6a72d1cc4806cbd719826e943558" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/1b/9a/e4886864ce06e1579bd428208127fbdc0d62049c751e4e9e3b509c0059dc/aiohappyeyeballs-2.5.0-py3-none-any.whl", hash = "sha256:0850b580748c7071db98bffff6d4c94028d0d3035acc20fd721a0ce7e8cac35d" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/0f/15/5bf3b99495fb160b63f95972b81750f18f7f4e02ad051373b669d17d44f2/aiohappyeyeballs-2.6.1-py3-none-any.whl", hash = "sha256:f349ba8f4b75cb25c99c5c2d84e997e485204d2902a9597802b0371f09331fb8" },
 ]
 
 [[package]]
@@ -149,7 +149,7 @@ wheels = [
 
 [[package]]
 name = "akshare"
-version = "1.16.42"
+version = "1.16.44"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "akracer", marker = "sys_platform == 'linux'" },
@@ -168,9 +168,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "xlrd" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/59/86/2571a0ea70a352e55100cabc3c2eb46708c78d1721693f2c708a96d9ab4c/akshare-1.16.42.tar.gz", hash = "sha256:e69fb98dbeaedd287002ed79963279ad17502cb463c7d8fa8b8692d215fcc80f" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/23/39/d431fcc82ec60a48f0e658d6ef5d7e8d08a7b948435da2d40185a4f84841/akshare-1.16.44.tar.gz", hash = "sha256:11cdb794bcf349b1aea208b9f0f697642b387947617a00f61eac674520a4040d" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/3b/e7/b1a3e515f34de3416ba4e96adba8697c12b8b8fd74aa1a7bd505dd450f57/akshare-1.16.42-py3-none-any.whl", hash = "sha256:154374adb01b030ed9baed992d836887858154fbec42db7885d818119d081a71" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/ce/67/93d2f437da14c20ef04d63de7815a1171727037d173ca364323ebdbdb2a4/akshare-1.16.44-py3-none-any.whl", hash = "sha256:f22af3ab0ef85143444880f93fd62b89eb62ee1945f3cfb02cc66e44d4cfcff2" },
 ]
 
 [[package]]
@@ -327,11 +327,11 @@ wheels = [
 
 [[package]]
 name = "attrs"
-version = "25.1.0"
+version = "25.2.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/49/7c/fdf464bcc51d23881d110abd74b512a42b3d5d376a55a831b44c603ae17f/attrs-25.1.0.tar.gz", hash = "sha256:1c97078a80c814273a76b2a298a932eb681c87415c11dee0a6921de7f1b02c3e" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/69/82/3c4e1d44f3cbaa2a578127d641fe385ba3bff6c38b789447ae11a21fa413/attrs-25.2.0.tar.gz", hash = "sha256:18a06db706db43ac232cce80443fcd9f2500702059ecf53489e3c5a3f417acaf" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/fc/30/d4986a882011f9df997a55e6becd864812ccfcd821d64aac8570ee39f719/attrs-25.1.0-py3-none-any.whl", hash = "sha256:c75a69e28a550a7e93789579c22aa26b0f5b83b75dc4e08fe092980051e1090a" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/03/33/7a7388b9ef94aab40539939d94461ec682afbd895458945ed25be07f03f6/attrs-25.2.0-py3-none-any.whl", hash = "sha256:611344ff0a5fed735d86d7784610c84f8126b95e549bcad9ff61b4242f2d386b" },
 ]
 
 [[package]]
@@ -1733,7 +1733,7 @@ grpc = [
 
 [[package]]
 name = "google-api-python-client"
-version = "2.163.0"
+version = "2.164.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "google-api-core" },
@@ -1742,9 +1742,9 @@ dependencies = [
     { name = "httplib2" },
     { name = "uritemplate" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/29/9f/535346bb1469ec91139c38f0438ad70bd229a6b11452367065fe49303860/google_api_python_client-2.163.0.tar.gz", hash = "sha256:88dee87553a2d82176e2224648bf89272d536c8f04dcdda37ef0a71473886dd7" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/32/5b/4ed16fac5ef6928d0c1ca0fba42f27e73938f04729ef97e63d7a7bb5fd6d/google_api_python_client-2.164.0.tar.gz", hash = "sha256:116f5a05dfb95ed7f7ea0d0f561fc5464146709c583226cc814690f9bb221492" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/91/3d/203d1c18cb239313ac125721f284e94c01c7eee947adb2ef2d9a85ac8d66/google_api_python_client-2.163.0-py2.py3-none-any.whl", hash = "sha256:080e8bc0669cb4c1fb8efb8da2f5b91a2625d8f0e7796cfad978f33f7016c6c4" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/94/0d/4eacf5bff40a42e6be3086b85164f0624fee9724c11bb2c79305fbc2f355/google_api_python_client-2.164.0-py2.py3-none-any.whl", hash = "sha256:b2037c3d280793c8d5180b04317b16be4acd5f77af5dfa7213ace32d140a9ffe" },
 ]
 
 [[package]]
@@ -3068,16 +3068,16 @@ wheels = [
 
 [[package]]
 name = "msal"
-version = "1.31.1"
+version = "1.32.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "requests" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/3f/f3/cdf2681e83a73c3355883c2884b6ff2f2d2aadfc399c28e9ac4edc3994fd/msal-1.31.1.tar.gz", hash = "sha256:11b5e6a3f802ffd3a72107203e20c4eac6ef53401961b880af2835b723d80578" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/aa/5f/ef42ef25fba682e83a8ee326a1a788e60c25affb58d014495349e37bce50/msal-1.32.0.tar.gz", hash = "sha256:5445fe3af1da6be484991a7ab32eaa82461dc2347de105b76af92c610c3335c2" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/30/7c/489cd931a752d05753d730e848039f08f65f86237cf1b8724d0a1cbd700b/msal-1.31.1-py3-none-any.whl", hash = "sha256:29d9882de247e96db01386496d59f29035e5e841bcac892e6d7bf4390bf6bd17" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/93/5a/2e663ef56a5d89eba962941b267ebe5be8c5ea340a9929d286e2f5fac505/msal-1.32.0-py3-none-any.whl", hash = "sha256:9dbac5384a10bbbf4dae5c7ea0d707d14e087b92c5aa4954b3feaa2d1aa0bcb7" },
 ]
 
 [[package]]
@@ -4716,7 +4716,7 @@ wheels = [
 
 [[package]]
 name = "ragflow"
-version = "0.17.1"
+version = "0.17.2"
 source = { virtual = "." }
 dependencies = [
     { name = "akshare" },

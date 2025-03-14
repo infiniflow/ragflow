@@ -71,10 +71,10 @@ We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM6
 
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.17.1-slim` and `v0.17.1`:  
+RAGFlow offers two Docker image editions, `v0.17.2-slim` and `v0.17.2`:  
   
-- `infiniflow/ragflow:v0.17.1-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.17.1`: The RAGFlow Docker image with embedding models including:
+- `infiniflow/ragflow:v0.17.2-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.17.2`: The RAGFlow Docker image with embedding models including:
   - Built-in embedding models:
     - `BAAI/bge-large-zh-v1.5`
     - `BAAI/bge-reranker-v2-m3`
@@ -318,7 +318,7 @@ The status of a Docker container status does not necessarily reflect the status 
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
    ```
 
-2. Follow [this document](../guides/run_health_check.md) to check the health status of the Elasticsearch service.
+2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
 
 :::danger IMPORTANT
 The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
@@ -347,7 +347,7 @@ A correct Ollama IP address and port is crucial to adding models to Ollama:
 - If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. Note that 127.0.0.1 is not a publicly accessible IP address.
 - If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can communicate with each other.
 
-See [Deploy a local LLM](./guides/deploy_local_llm.mdx) for more information.
+See [Deploy a local LLM](./guides/models/deploy_local_llm.mdx) for more information.
 
 ---
 
@@ -395,7 +395,7 @@ Ensure that you update the **MAX_CONTENT_LENGTH** environment variable:
    cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
    ```
 
-2. Follow [this document](../guides/run_health_check.md) to check the health status of the Elasticsearch service.
+2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
 
 :::danger IMPORTANT
 The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
@@ -417,7 +417,7 @@ The status of a Docker container status does not necessarily reflect the status 
 
 ### How to run RAGFlow with a locally deployed LLM?
 
-You can use Ollama or Xinference to deploy local LLM. See [here](../guides/deploy_local_llm.mdx) for more information.
+You can use Ollama or Xinference to deploy local LLM. See [here](./guides/models/deploy_local_llm.mdx) for more information.
 
 ---
 
@@ -434,7 +434,7 @@ If your model is not currently supported but has APIs compatible with those of O
 - If RAGFlow is locally deployed, ensure that your RAGFlow and Ollama are in the same LAN.
 - If you are using our online demo, ensure that the IP address of your Ollama server is public and accessible.
 
-See [here](../guides/deploy_local_llm.mdx) for more information.
+See [here](./guides/models/deploy_local_llm.mdx) for more information.
 
 ---
 

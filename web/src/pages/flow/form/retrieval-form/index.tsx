@@ -1,7 +1,9 @@
 import KnowledgeBaseItem from '@/components/knowledge-base-item';
 import Rerank from '@/components/rerank';
 import SimilaritySlider from '@/components/similarity-slider';
+import { TavilyItem } from '@/components/tavily-item';
 import TopNItem from '@/components/top-n-item';
+import { UseKnowledgeGraphItem } from '@/components/use-knowledge-graph-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import type { FormProps } from 'antd';
 import { Form, Input } from 'antd';
@@ -39,6 +41,8 @@ const RetrievalForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       ></SimilaritySlider>
       <TopNItem></TopNItem>
       <Rerank></Rerank>
+      <TavilyItem name={'tavily_api_key'}></TavilyItem>
+      <UseKnowledgeGraphItem filedName={'use_kg'}></UseKnowledgeGraphItem>
       <KnowledgeBaseItem></KnowledgeBaseItem>
       <Form.Item
         name={'empty_response'}

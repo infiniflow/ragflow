@@ -29,8 +29,8 @@ import json
 import requests
 import asyncio
 
-LENGTH_NOTIFICATION_CN = "······\n由于长度的原因，回答被截断了，要继续吗？"
-LENGTH_NOTIFICATION_EN = "...\nFor the content length reason, it stopped, continue?"
+LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
+LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
 
 class Base(ABC):
@@ -268,13 +268,13 @@ class QWenChat(Base):
         import dashscope
         dashscope.api_key = key
         self.model_name = model_name
-        if model_name.lower().find("deepseek") >= 0:
+        if self.is_reasoning_model(self.model_name):
             super().__init__(key, model_name, "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
     def chat(self, system, history, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        if self.model_name.lower().find("deepseek") >= 0:
+        if self.is_reasoning_model(self.model_name):
             return super().chat(system, history, gen_conf)
 
         stream_flag = str(os.environ.get('QWEN_CHAT_BY_STREAM', 'true')).lower() == 'true'
@@ -348,10 +348,18 @@ class QWenChat(Base):
     def chat_streamly(self, system, history, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        if self.model_name.lower().find("deepseek") >= 0:
+        if self.is_reasoning_model(self.model_name):
             return super().chat_streamly(system, history, gen_conf)
 
         return self._chat_streamly(system, history, gen_conf)
+
+    @staticmethod
+    def is_reasoning_model(model_name: str) -> bool:
+        return any([
+            model_name.lower().find("deepseek") >= 0,
+            model_name.lower().find("qwq") >= 0 and model_name.lower() != 'qwq-32b-preview',
+        ])
+
 
 
 class ZhipuChat(Base):
@@ -740,7 +748,7 @@ class BedrockChat(Base):
         self.bedrock_sk = json.loads(key).get('bedrock_sk', '')
         self.bedrock_region = json.loads(key).get('bedrock_region', '')
         self.model_name = model_name
-        
+
         if self.bedrock_ak == '' or self.bedrock_sk == '' or self.bedrock_region == '':
             # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
             self.client = boto3.client('bedrock-runtime')
