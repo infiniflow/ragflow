@@ -845,6 +845,7 @@ class Task(DataBaseModel):
     from_page = IntegerField(default=0)
     to_page = IntegerField(default=100000000)
     task_type = CharField(max_length=32, null=False, default="")
+    priority = IntegerField(default=0)
 
     begin_at = DateTimeField(null=True, index=True)
     process_duation = FloatField(default=0)
@@ -1119,6 +1120,13 @@ def migrate_db():
             migrate(
                 migrator.add_column("task", "task_type",
                                     CharField(max_length=32, null=False, default=""))
+            )
+        except Exception:
+            pass
+        try:
+            migrate(
+                migrator.add_column("task", "priority",
+                                    IntegerField(default=0))
             )
         except Exception:
             pass

@@ -28,7 +28,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.utils import current_timestamp, get_uuid
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
-from rag.settings import SVR_QUEUE_NAME
+from rag.settings import get_svr_queue_name
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.redis_conn import REDIS_CONN
 from api import settings
@@ -289,7 +289,7 @@ class TaskService(CommonService):
                 ).execute()
 
 
-def queue_tasks(doc: dict, bucket: str, name: str):
+def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     """Create and queue document processing tasks.
     
     This function creates processing tasks for a document based on its type and configuration.
@@ -301,6 +301,7 @@ def queue_tasks(doc: dict, bucket: str, name: str):
         doc (dict): Document dictionary containing metadata and configuration.
         bucket (str): Storage bucket name where the document is stored.
         name (str): File name of the document.
+        priority (int, optional): Priority level for task queueing (default is 0).
     
     Note:
         - For PDF documents, tasks are created per page range based on configuration
@@ -358,6 +359,7 @@ def queue_tasks(doc: dict, bucket: str, name: str):
         task_digest = hasher.hexdigest()
         task["digest"] = task_digest
         task["progress"] = 0.0
+        task["priority"] = priority
 
     prev_tasks = TaskService.get_tasks(doc["id"])
     ck_num = 0
@@ -380,7 +382,7 @@ def queue_tasks(doc: dict, bucket: str, name: str):
     unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
     for unfinished_task in unfinished_task_array:
         assert REDIS_CONN.queue_product(
-            SVR_QUEUE_NAME, message=unfinished_task
+            get_svr_queue_name(priority), message=unfinished_task
         ), "Can't access Redis. Please check the Redis' status."
 
 

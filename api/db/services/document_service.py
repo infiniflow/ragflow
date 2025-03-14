@@ -34,7 +34,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import current_timestamp, get_format_time, get_uuid
 from rag.nlp import rag_tokenizer, search
-from rag.settings import SVR_QUEUE_NAME
+from rag.settings import get_svr_queue_name
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -392,6 +392,7 @@ class DocumentService(CommonService):
                 has_graphrag = False
                 e, doc = DocumentService.get_by_id(d["id"])
                 status = doc.run  # TaskStatus.RUNNING.value
+                priority = 0
                 for t in tsks:
                     if 0 <= t.progress < 1:
                         finished = False
@@ -403,16 +404,17 @@ class DocumentService(CommonService):
                         has_raptor = True
                     elif t.task_type == "graphrag":
                         has_graphrag = True
+                    priority = max(priority, t.priority)
                 prg /= len(tsks)
                 if finished and bad:
                     prg = -1
                     status = TaskStatus.FAIL.value
                 elif finished:
                     if d["parser_config"].get("raptor", {}).get("use_raptor") and not has_raptor:
-                        queue_raptor_o_graphrag_tasks(d, "raptor")
+                        queue_raptor_o_graphrag_tasks(d, "raptor", priority)
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
                     elif d["parser_config"].get("graphrag", {}).get("use_graphrag") and not has_graphrag:
-                        queue_raptor_o_graphrag_tasks(d, "graphrag")
+                        queue_raptor_o_graphrag_tasks(d, "graphrag", priority)
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
                     else:
                         status = TaskStatus.DONE.value
@@ -449,7 +451,7 @@ class DocumentService(CommonService):
         return False
 
 
-def queue_raptor_o_graphrag_tasks(doc, ty):
+def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     hasher = xxhash.xxh64()
     for field in sorted(chunking_config.keys()):
@@ -472,7 +474,7 @@ def queue_raptor_o_graphrag_tasks(doc, ty):
     hasher.update(ty.encode("utf-8"))
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
-    assert REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=task), "Can't access Redis. Please check the Redis' status."
+    assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
 
 
 def doc_upload_and_parse(conversation_id, file_objs, user_id):
