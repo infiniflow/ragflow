@@ -365,7 +365,7 @@ def download(tenant_id, dataset_id, document_id):
     """
     if not document_id:
         return get_error_data_result(
-            message=f"Specify document_id please."
+            message="Specify document_id please."
         )
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message=f"You do not own the dataset {dataset_id}.")
