@@ -103,13 +103,8 @@ def init_llm_factory():
     except Exception:
         pass
 
-    factory_llm_infos = json.load(
-        open(
-            os.path.join(get_project_base_directory(), "conf", "llm_factories.json"),
-            "r",
-        )
-    )
-    for factory_llm_info in factory_llm_infos["factory_llm_infos"]:
+    factory_llm_infos = settings.FACTORY_LLM_INFOS    
+    for factory_llm_info in factory_llm_infos:
         llm_infos = factory_llm_info.pop("llm")
         try:
             LLMFactoriesService.save(**factory_llm_info)

@@ -16,14 +16,13 @@
 import datetime
 import json
 import logging
-import os
 import re
 from collections import defaultdict
 import json_repair
+from api import settings
 from api.db import LLMType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import TenantLLMService, LLMBundle
-from api.utils.file_utils import get_project_base_directory
 from rag.settings import TAG_FLD
 from rag.utils import num_tokens_from_string, encoder
 
@@ -46,9 +45,9 @@ def chunks_format(reference):
 
 def llm_id2llm_type(llm_id):
     llm_id, _ = TenantLLMService.split_model_name_and_factory(llm_id)
-    fnm = os.path.join(get_project_base_directory(), "conf")
-    llm_factories = json.load(open(os.path.join(fnm, "llm_factories.json"), "r"))
-    for llm_factory in llm_factories["factory_llm_infos"]:
+
+    llm_factories = settings.FACTORY_LLM_INFOS  
+    for llm_factory in llm_factories:
         for llm in llm_factory["llm"]:
             if llm_id == llm["llm_name"]:
                 return llm["model_type"].strip(",")[-1]
