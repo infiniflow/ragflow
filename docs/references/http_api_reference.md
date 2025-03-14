@@ -15,7 +15,7 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 
 ### Create chat completion
 
-**POST** `/api/v1/openai/{chat_id}/chat/chat/completions`
+**POST** `/api/v1/chats_openai/{chat_id}/chat/completions`
 
 Creates a model response for a given chat conversation.
 
@@ -24,7 +24,7 @@ This API follows the same request and response format as OpenAI's API. It allows
 #### Request
 
 - Method: POST
-- URL: `/api/v1/openai/{chat_id}/chat/chat/completions`
+- URL: `/api/v1/chats_openai/{chat_id}/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -37,7 +37,7 @@ This API follows the same request and response format as OpenAI's API. It allows
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/openai/{chat_id}/chat/chat/completions \
+     --url http://{address}/api/v1/chats_openai/{chat_id}/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
@@ -159,7 +159,7 @@ Failure:
 ---
 ### Create agent completion
 
-**POST** `/api/v1/openai/{agent_id}/agent/chat/completions`
+**POST** `/api/v1/agents_openai/{agent_id}/agent/chat/completions`
 
 Creates a model response for a given chat conversation.
 
@@ -168,7 +168,7 @@ This API follows the same request and response format as OpenAI's API. It allows
 #### Request
 
 - Method: POST
-- URL: `/api/v1/openai/{agent_id}/agent/chat/completions`
+- URL: `/api/v1/agents_openai/{agent_id}/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -181,7 +181,7 @@ This API follows the same request and response format as OpenAI's API. It allows
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/openai/{agent_id}/agent/chat/completions \
+     --url http://{address}/api/v1/agents_openai/{agent_id}/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
