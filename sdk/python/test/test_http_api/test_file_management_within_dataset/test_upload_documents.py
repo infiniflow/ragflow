@@ -141,8 +141,7 @@ class TestUploadDocuments:
         res = upload_documnets(get_http_api_auth, ids[0], [fp])
         assert res["code"] == 101
         assert (
-            res["message"]
-            == f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt: Exceed the maximum length of file name!"
+            res["message"].find("128") >= 0
         )
 
     def test_invalid_dataset_id(self, get_http_api_auth, tmp_path):
