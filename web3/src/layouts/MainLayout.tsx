@@ -1,26 +1,32 @@
 import React from 'react'
 import { Routes, Route } from 'react-router-dom'
-import Sidebar from './Sidebar'
-import Header from './Header'
+import TopNav from './TopNav'
+import Greeting from '../components/Greeting'
 import Knowledge from '../pages/Knowledge'
 import Chat from '../pages/Chat'
 import Agent from '../pages/Agent'
+import AccountSettings from '../pages/AccountSettings'
+import Settings from '../pages/Settings'
 
 const MainLayout = () => {
   return (
-    <div className="flex h-screen bg-gray-100">
-      <Sidebar />
-      <div className="flex flex-col flex-1">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-4">
-          <Routes>
-            <Route path="/" element={<Knowledge />} />
-            <Route path="/knowledge" element={<Knowledge />} />
-            <Route path="/chat" element={<Chat />} />
-            <Route path="/agent" element={<Agent />} />
-          </Routes>
-        </main>
-      </div>
+    <div className="flex flex-col h-screen bg-gray-100">
+      <TopNav />
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <Greeting />
+          <div className="mt-4">
+            <Routes>
+              <Route path="/" element={<Knowledge />} />
+              <Route path="/knowledge" element={<Knowledge />} />
+              <Route path="/chat" element={<Chat />} />
+              <Route path="/agent" element={<Agent />} />
+              <Route path="/account" element={<AccountSettings />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </div>
+        </div>
+      </main>
     </div>
   )
 }
