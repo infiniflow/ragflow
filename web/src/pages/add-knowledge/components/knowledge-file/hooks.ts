@@ -148,7 +148,13 @@ export const useHandleUploadDocument = () => {
   const { runDocumentByIds, loading: _ } = useRunNextDocument();
 
   const onDocumentUploadOk = useCallback(
-    async (parseOnCreation: boolean): Promise<number | undefined> => {
+    async ({
+      parseOnCreation,
+      directoryFileList,
+    }: {
+      directoryFileList: UploadFile[];
+      parseOnCreation: boolean;
+    }): Promise<number | undefined> => {
       const processFileGroup = async (filesPart: UploadFile[]) => {
         // set status to uploading on files
         setFileList(
@@ -192,8 +198,17 @@ export const useHandleUploadDocument = () => {
           totalSuccess: succesfulFilenames.length,
         };
       };
-
       const totalFiles = fileList.length;
+
+      if (directoryFileList.length > 0) {
+        const ret = await uploadDocument(directoryFileList);
+        if (ret?.code === 0) {
+          hideDocumentUploadModal();
+        }
+        if (totalFiles === 0) {
+          return 0;
+        }
+      }
 
       if (totalFiles === 0) {
         console.log('No files to upload');
