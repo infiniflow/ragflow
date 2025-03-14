@@ -156,9 +156,9 @@
 
    ```bash
    $ cd ragflow/docker
-   # CPU
+   # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
-   # GPU
+   # To use GPU to accelerate embedding and DeepDoc tasks:
    $ docker compose -f docker-compose-gpu.yml up -d
    ```
 
