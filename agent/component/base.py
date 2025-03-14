@@ -445,7 +445,7 @@ class ComponentBase(ABC):
             if not isinstance(oo, pd.DataFrame):
                 outs = pd.DataFrame(oo if isinstance(oo, list) else [oo]).dropna()
             else:
-                outs = oo
+                outs = oo.dropna()
         return self._param.output_var_name, outs
 
     def reset(self):
