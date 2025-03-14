@@ -7,6 +7,7 @@ export enum UserSettingRouteKey {
   System = 'system',
   Api = 'api',
   Team = 'team',
+  Usermanage = 'usermanage',
   Logout = 'logout',
 }
 
@@ -19,6 +20,7 @@ export enum ProfileSettingRouteKey {
   System = 'system',
   Api = 'api',
   Team = 'team',
+  Usermanage = 'usermanage',
   Prompt = 'prompt',
   Chunk = 'chunk',
   Logout = 'logout',

@@ -112,6 +112,10 @@ const routes = [
             component: '@/pages/user-setting/setting-team',
           },
           {
+            path: '/user-setting/usermanage',
+            component: '@/pages/user-setting/setting-usermanage',
+          },
+          {
             path: '/user-setting/system',
             component: '@/pages/user-setting/setting-system',
           },
