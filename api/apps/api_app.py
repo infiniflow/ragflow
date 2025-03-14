@@ -45,7 +45,7 @@ from rag.utils.storage_factory import STORAGE_IMPL
 from api.db.services.canvas_service import UserCanvasService
 from agent.canvas import Canvas
 from functools import partial
-import logging
+import hashlib
 
 
 @manager.route('/new_token', methods=['POST'])  # noqa: F821
@@ -429,6 +429,10 @@ def upload():
         while STORAGE_IMPL.obj_exist(kb_id, location):
             location += "_"
         blob = request.files['file'].read()
+        
+        # 计算文件的MD5值
+        md5_hash = hashlib.md5(blob).hexdigest()
+        
         STORAGE_IMPL.put(kb_id, location, blob)
         doc = {
             "id": get_uuid(),
@@ -440,6 +444,7 @@ def upload():
             "name": filename,
             "location": location,
             "size": len(blob),
+            "md5": md5_hash,
             "thumbnail": thumbnail(filename, blob)
         }
 
@@ -808,7 +813,6 @@ def completion_faq():
 @manager.route('/retrieval', methods=['POST'])  # noqa: F821
 @validate_request("kb_id", "question")
 def retrieval():
-    logging.info("Retrieval API endpoint called")
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:

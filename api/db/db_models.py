@@ -751,6 +751,7 @@ class Document(DataBaseModel):
         help_text="where dose it store",
         index=True)
     size = IntegerField(default=0, index=True)
+    md5 = CharField(max_length=32, null=True, help_text="file md5 hash", index=True)
     token_num = IntegerField(default=0, index=True)
     chunk_num = IntegerField(default=0, index=True)
     progress = FloatField(default=0, index=True)

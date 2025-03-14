@@ -16,6 +16,7 @@
 import logging
 import re
 import os
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 
 from flask_login import current_user
@@ -357,6 +358,10 @@ class FileService(CommonService):
                 while STORAGE_IMPL.obj_exist(kb.id, location):
                     location += "_"
                 blob = file.read()
+                
+                # 计算文件的MD5值
+                md5_hash = hashlib.md5(blob).hexdigest()
+                
                 STORAGE_IMPL.put(kb.id, location, blob)
 
                 doc_id = get_uuid()
@@ -377,6 +382,7 @@ class FileService(CommonService):
                     "name": filename,
                     "location": location,
                     "size": len(blob),
+                    "md5": md5_hash,
                     "thumbnail": thumbnail_location
                 }
                 DocumentService.insert(doc)

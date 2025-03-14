@@ -17,6 +17,7 @@ import json
 import os.path
 import pathlib
 import re
+import hashlib
 
 import flask
 from flask import request
@@ -120,6 +121,10 @@ def web_crawl():
         while STORAGE_IMPL.obj_exist(kb_id, location):
             location += "_"
         STORAGE_IMPL.put(kb_id, location, blob)
+        
+        # 计算文件的MD5值
+        md5_hash = hashlib.md5(blob).hexdigest()
+        
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -130,6 +135,7 @@ def web_crawl():
             "name": filename,
             "location": location,
             "size": len(blob),
+            "md5": md5_hash,
             "thumbnail": thumbnail(filename, blob)
         }
         if doc["type"] == FileType.VISUAL:
