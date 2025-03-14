@@ -443,7 +443,7 @@ See [here](./guides/models/deploy_local_llm.mdx) for more information.
 For a locally deployed RAGFlow: the single file upload limit is 1GB, with a batch upload limit of 32 files and no cap on the total number of files per account. To update this file size limit:
 
 - In **docker/.env**, upcomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
-- If you update the value of `MAX_CONTENT_LENGTH` in **docker/.env**, ensure that you update `client_max_body_size` in **nginx/nginx.conf** correspondingly.
+- If you update the value of `MAX_CONTENT_LENGTH` in **docker/.env**, ensure that you update `client_max_body_size` in **nginx/nginx.conf** accordingly.
 
 :::tip NOTE
 If you use RAGFlow's HTTP API and Python SDK to upload files, the 1GB file size limit and the 32-file batch upload limit are automatically removed.
