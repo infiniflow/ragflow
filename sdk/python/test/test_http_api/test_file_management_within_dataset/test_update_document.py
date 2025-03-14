@@ -452,6 +452,7 @@ class TestupdatedDocument:
                     "delimiter": "\\n!?;。；！？",
                     "html4excel": False,
                     "layout_recognize": "DeepDOC",
+                    "raptor": {"use_raptor": False},
                 }
         if expected_code != 0 or expected_message:
             assert res["message"] == expected_message
