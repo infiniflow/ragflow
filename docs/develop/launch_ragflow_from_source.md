@@ -91,10 +91,16 @@ docker compose -f docker/docker-compose-base.yml up -d
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-4. Run the **entrypoint.sh** script to launch the backend service:
+4. Check the configuration in **conf/service_conf.yaml** to ensure all the ports and hosts are correct.
+   
+5. Run the **entrypoint.sh** script to launch the backend service:
 
+   ```shell
+   JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so;
+   LD_PRELOAD=$JEMALLOC_PATH python rag/svr/task_executor.py 1;
    ```
-   bash docker/entrypoint.sh
+   ```shell
+   python api/ragflow_server.py;
    ```
 
 ### Launch the RAGFlow frontend service
