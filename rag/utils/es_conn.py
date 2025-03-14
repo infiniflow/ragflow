@@ -284,6 +284,7 @@ class ESConnection(DocStoreConnection):
             assert "_id" not in d
             assert "id" in d
             d_copy = copy.deepcopy(d)
+            d_copy["kb_id"] = knowledgebaseId
             meta_id = d_copy.pop("id", "")
             operations.append(
                 {"index": {"_index": indexName, "_id": meta_id}})
@@ -316,6 +317,7 @@ class ESConnection(DocStoreConnection):
     def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str) -> bool:
         doc = copy.deepcopy(newValue)
         doc.pop("id", None)
+        condition["kb_id"] = knowledgebaseId
         if "id" in condition and isinstance(condition["id"], str):
             # update specific single document
             chunkId = condition["id"]
@@ -399,6 +401,7 @@ class ESConnection(DocStoreConnection):
     def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:
         qry = None
         assert "_id" not in condition
+        condition["kb_id"] = knowledgebaseId
         if "id" in condition:
             chunk_ids = condition["id"]
             if not isinstance(chunk_ids, list):
