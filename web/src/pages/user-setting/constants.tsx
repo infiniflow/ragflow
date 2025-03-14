@@ -5,6 +5,7 @@ import {
   PasswordIcon,
   ProfileIcon,
   TeamIcon,
+  UsermanageIcon,
 } from '@/assets/icon/Icon';
 import { LLMFactory } from '@/constants/llm';
 import { UserSettingRouteKey } from '@/constants/setting';
@@ -16,6 +17,7 @@ export const UserSettingIconMap = {
   [UserSettingRouteKey.Model]: <ModelProviderIcon />,
   [UserSettingRouteKey.System]: <MonitorOutlined style={{ fontSize: 24 }} />,
   [UserSettingRouteKey.Team]: <TeamIcon />,
+  [UserSettingRouteKey.Usermanage]: <UsermanageIcon />,
   [UserSettingRouteKey.Logout]: <LogOutIcon />,
   [UserSettingRouteKey.Api]: <ApiIcon />,
 };

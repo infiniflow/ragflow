@@ -1,30 +1,23 @@
-import { useLogin, useRegister } from '@/hooks/login-hooks';
+import { useLogin } from '@/hooks/login-hooks';
 import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Icon, useNavigate } from 'umi';
+import { useNavigate } from 'umi';
 import RightPanel from './right-panel';
+import SvgIcon from '@/components/svg-icon';
 
-import { Domain } from '@/constants/common';
 import styles from './index.less';
 
 const Login = () => {
-  const [title, setTitle] = useState('login');
   const navigate = useNavigate();
   const { login, loading: signLoading } = useLogin();
-  const { register, loading: registerLoading } = useRegister();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
-  const loading = signLoading || registerLoading;
+  const loading = signLoading;
 
-  const changeTitle = () => {
-    setTitle((title) => (title === 'login' ? 'register' : 'login'));
-  };
   const [form] = Form.useForm();
 
-  useEffect(() => {
-    form.validateFields(['nickname']);
-  }, [form]);
+  useEffect(() => {}, [form]);
 
   const onCheck = async () => {
     try {
@@ -32,23 +25,12 @@ const Login = () => {
 
       const rsaPassWord = rsaPsw(params.password) as string;
 
-      if (title === 'login') {
-        const code = await login({
-          email: `${params.email}`.trim(),
-          password: rsaPassWord,
-        });
-        if (code === 0) {
-          navigate('/knowledge');
-        }
-      } else {
-        const code = await register({
-          nickname: params.nickname,
-          email: params.email,
-          password: rsaPassWord,
-        });
-        if (code === 0) {
-          setTitle('login');
-        }
+      const code = await login({
+        email: `${params.email}`.trim(),
+        password: rsaPassWord,
+      });
+      if (code === 0) {
+        navigate('/knowledge');
       }
     } catch (errorInfo) {
       console.log('Failed:', errorInfo);
@@ -59,21 +41,23 @@ const Login = () => {
     // wrapperCol: { span: 8 },
   };
 
-  const toGoogle = () => {
-    window.location.href =
-      'https://github.com/login/oauth/authorize?scope=user:email&client_id=302129228f0d96055bee';
-  };
-
   return (
     <div className={styles.loginPage}>
       <div className={styles.loginLeft}>
+        <RightPanel></RightPanel>
+      </div>
+
+      <div className={styles.loginRight}>
+        <div className={styles.loginMark}>
+          <SvgIcon name="login-mark" width={240} ></SvgIcon>
+        </div>
         <div className={styles.leftContainer}>
           <div className={styles.loginTitle}>
-            <div>{title === 'login' ? t('login') : t('register')}</div>
+            <div>
+              {t('login')}
+            </div>
             <span>
-              {title === 'login'
-                ? t('loginDescription')
-                : t('registerDescription')}
+              {t('loginDescription')}
             </span>
           </div>
 
@@ -91,16 +75,6 @@ const Login = () => {
             >
               <Input size="large" placeholder={t('emailPlaceholder')} />
             </Form.Item>
-            {title === 'register' && (
-              <Form.Item
-                {...formItemLayout}
-                name="nickname"
-                label={t('nicknameLabel')}
-                rules={[{ required: true, message: t('nicknamePlaceholder') }]}
-              >
-                <Input size="large" placeholder={t('nicknamePlaceholder')} />
-              </Form.Item>
-            )}
             <Form.Item
               {...formItemLayout}
               name="password"
@@ -113,29 +87,9 @@ const Login = () => {
                 onPressEnter={onCheck}
               />
             </Form.Item>
-            {title === 'login' && (
-              <Form.Item name="remember" valuePropName="checked">
-                <Checkbox> {t('rememberMe')}</Checkbox>
-              </Form.Item>
-            )}
-            <div>
-              {title === 'login' && (
-                <div>
-                  {t('signInTip')}
-                  <Button type="link" onClick={changeTitle}>
-                    {t('signUp')}
-                  </Button>
-                </div>
-              )}
-              {title === 'register' && (
-                <div>
-                  {t('signUpTip')}
-                  <Button type="link" onClick={changeTitle}>
-                    {t('login')}
-                  </Button>
-                </div>
-              )}
-            </div>
+            <Form.Item name="remember" valuePropName="checked">
+              <Checkbox> {t('rememberMe')}</Checkbox>
+            </Form.Item>
             <Button
               type="primary"
               block
@@ -143,47 +97,10 @@ const Login = () => {
               onClick={onCheck}
               loading={loading}
             >
-              {title === 'login' ? t('login') : t('continue')}
+              {t('login')}
             </Button>
-            {title === 'login' && (
-              <>
-                {/* <Button
-                  block
-                  size="large"
-                  onClick={toGoogle}
-                  style={{ marginTop: 15 }}
-                >
-                  <div>
-                    <Icon
-                      icon="local:google"
-                      style={{ verticalAlign: 'middle', marginRight: 5 }}
-                    />
-                    Sign in with Google
-                  </div>
-                </Button> */}
-                {location.host === Domain && (
-                  <Button
-                    block
-                    size="large"
-                    onClick={toGoogle}
-                    style={{ marginTop: 15 }}
-                  >
-                    <div className="flex items-center">
-                      <Icon
-                        icon="local:github"
-                        style={{ verticalAlign: 'middle', marginRight: 5 }}
-                      />
-                      Sign in with Github
-                    </div>
-                  </Button>
-                )}
-              </>
-            )}
           </Form>
         </div>
-      </div>
-      <div className={styles.loginRight}>
-        <RightPanel></RightPanel>
       </div>
     </div>
   );

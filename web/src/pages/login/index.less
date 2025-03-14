@@ -4,22 +4,13 @@
   display: flex;
   background-color: rgba(255, 255, 255, 0.1);
 
+  .loginMark{
+    position: absolute;
+    right: 24px;
+    top: 24px;
+  }
+
   .loginLeft {
-    // width: 610px;
-    width: 40%;
-    background-color: rgba(255, 255, 255, 0.1);
-    height: 100vh;
-    display: flex;
-    align-items: center;
-  }
-
-  .leftContainer {
-    width: 60%;
-    padding: 5px, 0px, 5px, 0px;
-    margin: 0 auto;
-  }
-
-  .loginRight {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -32,11 +23,8 @@
       bottom: 0;
       left: 0;
       right: 0;
-      background-color: rgba(24, 73, 169, 0.6);
-      background-image: url('@/assets/svg/login-background.svg');
+      background-image: url('@/assets/login-background.png');
       background-size: cover;
-      background-blend-mode: multiply;
-      filter: blur(3px);
       background-position: center;
       z-index: -1;
     }
@@ -60,19 +48,22 @@
         font-weight: 500;
         line-height: 30px;
       }
-      .loginRateNumber {
-        font-size: 16px;
-        font-style: normal;
-        font-weight: 600;
-        line-height: 24px;
-      }
-      .loginRateReviews {
-        font-size: 16px;
-        font-style: normal;
-        font-weight: 500;
-        line-height: 24px;
-      }
     }
+  }
+
+  .loginRight {
+    // width: 610px;
+    width: 35%;
+    background-color: rgba(255, 255, 255, 0.1);
+    height: 100vh;
+    display: flex;
+    align-items: center;
+  }
+
+  .leftContainer {
+    width: 60%;
+    padding: 5px, 0px, 5px, 0px;
+    margin: 0 auto;
   }
 
   .loginTitle {
@@ -92,7 +83,7 @@
   }
 
   @media screen and (max-width: 957px) {
-    .loginLeft {
+    .loginRight {
       width: 100%;
       height: 100%;
     }
