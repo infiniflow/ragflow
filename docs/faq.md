@@ -421,7 +421,7 @@ You can use Ollama or Xinference to deploy local LLM. See [here](./guides/models
 
 ---
 
-### Is it possible to add an LLM that is not supported?
+### How to add an LLM that is not supported?
 
 If your model is not currently supported but has APIs compatible with those of OpenAI, click **OpenAI-API-Compatible** on the **Model providers** page to configure your model:
 
@@ -435,6 +435,19 @@ If your model is not currently supported but has APIs compatible with those of O
 - If you are using our online demo, ensure that the IP address of your Ollama server is public and accessible.
 
 See [here](./guides/models/deploy_local_llm.mdx) for more information.
+
+---
+
+### How to change the file size limit?
+
+For a locally deployed RAGFlow: the single file upload limit is 1GB, with a batch upload limit of 32 files and no cap on the total number of files per account. To update this file size limit:
+
+- In **docker/.env**, upcomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
+- If you update the value of `MAX_CONTENT_LENGTH` in **docker/.env**, ensure that you update `client_max_body_size` in **nginx/nginx.conf** correspondingly.
+
+:::tip NOTE
+If you use RAGFlow's HTTP API and Python SDK to upload files, the 1GB file size limit and the 32-file batch upload limit are automatically removed.
+:::
 
 ---
 

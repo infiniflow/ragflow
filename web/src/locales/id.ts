@@ -147,7 +147,7 @@ export default {
       changeSpecificCategory: 'Ubah kategori spesifik',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
-        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Penggunaan Lokal: Batas pengunggahan file tunggal adalah 1GB, dengan batas pengunggahan batch 32 file, dan tidak ada batasan jumlah total file per akun. demo.ragflow.io: Batas ukuran total pengunggahan batch adalah 10MB, dengan batas total file 128 per akun.',
+        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Penggunaan Lokal: Batas pengunggahan file tunggal adalah 1GB, dengan batas pengunggahan batch 32 file, dan tidak ada batasan jumlah total file per akun. ',
       chunk: 'Potongan',
       bulk: 'Massal',
       cancel: 'Batal',
@@ -652,7 +652,7 @@ export default {
       directory: 'Direktori',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
-        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Penggunaan Lokal: Batas pengunggahan file tunggal adalah 1GB, dengan batas pengunggahan batch 32 file, dan tidak ada batasan jumlah total file per akun. demo.ragflow.io: Batas ukuran total pengunggahan batch adalah 10MB, dengan batas total file 128 per akun.',
+        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Penggunaan Lokal: Batas pengunggahan file tunggal adalah 1GB, dengan batas pengunggahan batch 32 file, dan tidak ada batasan jumlah total file per akun. ',
       local: 'Unggahan lokal',
       s3: 'Unggahan S3',
       preview: 'Pratinjau',

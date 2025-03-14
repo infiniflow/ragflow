@@ -152,7 +152,7 @@ export default {
       changeSpecificCategory: 'Change specific category',
       uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Supports single or batch file upload. Locally deployed RAGFlow: the single file upload is 1GB, with a batch upload limit of 32 files and no cap on the total number of files per account; demo.ragflow.io: the total batch upload size limit is 10MB, with a total file limit of 128 files per account.',
+        'Supports single or batch file upload. Locally deployed RAGFlow: the single file upload limit is 1GB, with a batch upload limit of 32 files and no cap on the total number of files per account.',
       chunk: 'Chunk',
       bulk: 'Bulk',
       cancel: 'Cancel',
@@ -749,7 +749,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       directory: 'Directory',
       uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Supports single or batch file upload. Locally deployed RAGFlow: the single file upload is 1GB, with a batch upload limit of 32 files and no cap on the total number of files per account; demo.ragflow.io: the total batch upload size limit is 10MB, with a total file limit of 128 files per account.',
+        'Supports single or batch file upload. Locally deployed RAGFlow: the single file upload limit is 1GB, with a batch upload limit of 32 files and no cap on the total number of files per account.',
       local: 'Local uploads',
       s3: 'S3 uploads',
       preview: 'Preview',
