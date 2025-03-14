@@ -429,7 +429,7 @@ class ComponentBase(ABC):
         if not isinstance(o, partial):
             if not isinstance(o, pd.DataFrame):
                 if isinstance(o, list):
-                    return self._param.output_var_name, pd.DataFrame(o)
+                    return self._param.output_var_name, pd.DataFrame(o).dropna()
                 if o is None:
                     return self._param.output_var_name, pd.DataFrame()
                 return self._param.output_var_name, pd.DataFrame([{"content": str(o)}])
@@ -437,13 +437,13 @@ class ComponentBase(ABC):
 
         if allow_partial or not isinstance(o, partial):
             if not isinstance(o, partial) and not isinstance(o, pd.DataFrame):
-                return pd.DataFrame(o if isinstance(o, list) else [o])
+                return pd.DataFrame(o if isinstance(o, list) else [o]).dropna()
             return self._param.output_var_name, o
 
         outs = None
         for oo in o():
             if not isinstance(oo, pd.DataFrame):
-                outs = pd.DataFrame(oo if isinstance(oo, list) else [oo])
+                outs = pd.DataFrame(oo if isinstance(oo, list) else [oo]).dropna()
             else:
                 outs = oo
         return self._param.output_var_name, outs
