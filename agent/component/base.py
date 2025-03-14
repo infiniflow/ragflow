@@ -545,7 +545,7 @@ class ComponentBase(ABC):
         return df
 
     def get_input_elements(self):
-        assert self._param.query, "Please identify input parameters firstly."
+        assert self._param.query, "Please verify the input parameters first."
         eles = []
         for q in self._param.query:
             if q.get("component_id"):

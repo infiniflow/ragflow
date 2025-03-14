@@ -150,7 +150,7 @@ export default {
       changeSpecificCategory: '更改特定類別',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
-        '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
+        '支持單次或批量上傳。本地部署的單次上傳檔案大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量；demo.ragflow.io 限制單次批量上傳的檔案總大小不超過 10MB，單個帳戶檔案總數不超過 128。',
       chunk: '解析塊',
       bulk: '批量',
       cancel: '取消',
@@ -715,7 +715,7 @@ export default {
       parseOnCreation: '創建時解析',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
-        '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
+        '支持單次或批量上傳。本地部署的單次上傳檔案大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量；demo.ragflow.io 限制單次批量上傳的檔案總大小不超過 10MB，單個帳戶檔案總數不超過 128。',
       file: '文件',
       directory: '文件夾',
       local: '本地上傳',

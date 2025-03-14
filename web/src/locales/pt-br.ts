@@ -644,7 +644,7 @@ export default {
       uploadTitle:
         'Clique ou arraste o arquivo para esta área para fazer o upload',
       uploadDescription:
-        'Suporta upload de um único arquivo ou múltiplos arquivos. É estritamente proibido o upload de dados da empresa ou outros arquivos proibidos.',
+        'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Implementação Local: O limite de upload de um arquivo individual é de 1GB, com um limite de upload em lote de 32 arquivos, e não há limite no número total de arquivos por conta. demo.ragflow.io: O limite de tamanho total para uploads em lote é de 10MB, com um limite total de 128 arquivos por conta.',
       local: 'Uploads locais',
       s3: 'Uploads S3',
       preview: 'Pré-visualização',

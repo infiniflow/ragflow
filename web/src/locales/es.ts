@@ -484,7 +484,7 @@ export default {
       directory: 'Directorio',
       uploadTitle: 'Haz clic o arrastra el archivo a esta área para subir',
       uploadDescription:
-        'Soporte para una sola carga o carga múltiple. Está estrictamente prohibido subir datos de la empresa u otros archivos prohibidos.',
+        'RAGFlow admite la carga de archivos de forma individual o por lotes. Implementación Local: El límite de carga de un archivo individual es de 1GB, con un límite de carga por lotes de 32 archivos, y no hay límite en el número total de archivos por cuenta. demo.ragflow.io: El límite de tamaño total para la carga por lotes es de 10MB, con un límite total de 128 archivos por cuenta.',
       local: 'Subidas locales',
       s3: 'Subidas a S3',
       preview: 'Vista previa',
