@@ -81,7 +81,6 @@ class Google(ComponentBase, ABC):
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
             return Google.be_output("")
-        logging.info(f"self._param: {self._param}")
         try:
             if self._param.provider == "SerpApi":
                 google_res = self.search_serpapi(ans)
@@ -92,7 +91,6 @@ class Google(ComponentBase, ABC):
             else:
                 return Google.be_output("**ERROR**: Unsupported provider!")
         except Exception as e:
-            logging.info(f"Search error: {e}")
             return Google.be_output(f"**ERROR**: {e}!")
 
         if not google_res:
@@ -111,7 +109,6 @@ class Google(ComponentBase, ABC):
              "hl": self._param.language, "num": self._param.top_n})
         results = [{"content": '<a href="' + i["link"] + '">' + i["title"] + '</a>    ' + i["snippet"]} for i in
                    client.get_dict()["organic_results"]]
-        logging.info(f"{results}")
 
         return results
 
@@ -124,7 +121,6 @@ class Google(ComponentBase, ABC):
         response.raise_for_status()
         data = response.json()
         results = [{"content": '<a href="' + item["link"] + '">' + item["title"] + '</a>    ' + item["snippet"]} for item in data.get("items", [])]
-        logging.info(f"{results}")
 
         return results
 
@@ -142,5 +138,4 @@ class Google(ComponentBase, ABC):
             except Exception as e:
                 logging.error(f"Error processing search result {url}: {e}")
                 results.append({"content": f'<a href="{url.url}">{url.url}</a>    Error processing details'})
-        logging.info(f"{results}")
         return results

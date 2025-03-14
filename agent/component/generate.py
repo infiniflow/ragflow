@@ -159,7 +159,7 @@ class Generate(ComponentBase):
             if para["key"].lower().find("variables@") == 0:
                 cpn_id, key = para["key"].split("@")
                 if  key in vars.keys():
-                    kwargs[key] = vars[key]
+                    kwargs[para["key"]] = vars[key]
                     self._param.inputs.append({"component_id": para["key"], "content": vars[key]})
                     continue
             component_id = para["key"]
