@@ -24,8 +24,9 @@ from api.utils.api_utils import get_json_result, server_error_response, validate
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken
-
-
+import logging
+import os
+import time
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
 def templates():
@@ -61,7 +62,35 @@ def save():
     req["user_id"] = current_user.id
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
-
+    # get data on database to save dsl as json  on dist with version is date_update
+    if "id" in req:
+        e, flow  = UserCanvasService.get_by_id(req["id"])
+        flow = flow.to_dict()
+        if e:
+            version = time.strftime("%Y_%m_%d %H_%M_%S")
+            dslversion = flow.get("dsl")
+            id = flow.get("id")
+            # save dsl as json on dist
+            # Ensure the history data directory exists
+            history_dir = f"history_data_agent/{id}"
+            os.makedirs(history_dir, exist_ok=True)
+            # Check if we need to clean up old history files (keep only the 20 newest)
+            try:
+                existing_files = os.listdir(history_dir)
+                if len(existing_files) >= 19:
+                    files_with_times = [(f, os.path.getmtime(os.path.join(history_dir, f))) 
+                                       for f in existing_files if f.endswith('.json')]
+                    # Sort by modification time (newest last)
+                    files_with_times.sort(key=lambda x: x[1])
+                    # Delete older files, keeping only the newest 20
+                    for old_file, _ in files_with_times[:-19]:
+                        os.remove(os.path.join(history_dir, old_file))
+            except Exception as e:
+                logging.error(f"Error cleaning up history files: {e}")
+            # Save the DSL version to a JSON file
+            with open(f"{history_dir}/{version}.json", "w") as f:
+                json.dump(dslversion, f)
+            
     req["dsl"] = json.loads(req["dsl"])
     if "id" not in req:
         if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip()):
@@ -76,6 +105,42 @@ def save():
                 code=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
     return get_json_result(data=req)
+
+#api get list version dsl of canvas
+@manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
+@login_required
+def getlistversion(canvas_id):
+    history_dir = f"history_data_agent/{canvas_id}"
+    try:
+        existing_files = os.listdir(history_dir)
+        files_with_times = [(f, os.path.getmtime(os.path.join(history_dir, f))) 
+                            for f in existing_files if f.endswith('.json')]
+        # Sort by modification time (newest last)
+        files_with_times.sort(key=lambda x: x[1])
+        # Get the list of files (newest first)
+        file_list = [f for f, _ in files_with_times]
+        # Create a list of dictionaries with file name and creation date
+        result = []
+        for filename, mod_time in files_with_times:
+            date_created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mod_time))
+            result.append({"filename": filename, "created_at": date_created, "id": filename})
+        # Return newest first
+        return get_json_result(data=result[::-1])
+    except Exception as e:
+        return get_data_error_result(message=f"Error getting history files: {e}")
+    
+#api get version dsl of canvas
+@manager.route('/getversion/<canvas_id>/<version>', methods=['GET'])  # noqa: F821
+@login_required
+def getversion(canvas_id, version):
+    history_dir = f"history_data_agent/{canvas_id}"
+    try:
+        with open(f"{history_dir}/{version}", "r") as f:
+            dsl = json.load(f)
+            return get_json_result(data=dsl)
+    except Exception as e:
+        return get_data_error_result(message=f"Error getting history file: {e}")
+ 
 
 
 @manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821

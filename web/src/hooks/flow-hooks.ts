@@ -87,6 +87,57 @@ export const useFetchFlowList = (): { data: IFlow[]; loading: boolean } => {
   return { data, loading };
 };
 
+export const useFetchListVersion = (
+  canvas_id: string,
+): {
+  data: {
+    created_at: string;
+    filename: string;
+    id: string;
+  }[];
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchListVersion'],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await flowService.getListVersion({}, canvas_id);
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchVersion = (
+  canvas_id?: string,
+  version_id?: string,
+): {
+  data?: DSL;
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchVersion', canvas_id, version_id],
+    initialData: undefined,
+    gcTime: 0,
+    enabled: !!canvas_id && !!version_id, // Only call API when both values are provided
+    queryFn: async () => {
+      if (!canvas_id || !version_id) return undefined;
+
+      const { data } = await flowService.getVersion(
+        {},
+        `${canvas_id}/${version_id}`,
+      );
+
+      return data?.data ?? undefined;
+    },
+  });
+
+  return { data, loading };
+};
+
 export const useFetchFlow = (): {
   data: IFlow;
   loading: boolean;
