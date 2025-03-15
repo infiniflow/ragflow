@@ -138,6 +138,7 @@ export type INoteNode = BaseNode;
 export type IMessageNode = BaseNode;
 export type IRewriteNode = BaseNode;
 export type IInvokeNode = BaseNode;
+export type IVariableNode = BaseNode;
 export type ITemplateNode = BaseNode;
 export type IEmailNode = BaseNode;
 export type IIterationNode = BaseNode;
@@ -161,7 +162,8 @@ export type RAGFlowNodeType =
   | IEmailNode
   | IIterationNode
   | IIterationStartNode
-  | IKeywordNode;
+  | IKeywordNode
+  | IVariableNode;
 
 export interface IGraph {
   nodes: RAGFlowNodeType[];
