@@ -140,7 +140,7 @@ class TestUploadDocuments:
         fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt")
         res = upload_documnets(get_http_api_auth, ids[0], [fp])
         assert res["code"] == 101
-        assert res["message"].find("128") >= 0
+        assert res["message"] == "File name should be less than 128 bytes."
 
     def test_invalid_dataset_id(self, get_http_api_auth, tmp_path):
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
