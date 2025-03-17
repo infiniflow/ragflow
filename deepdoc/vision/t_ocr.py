@@ -34,14 +34,14 @@ import trio
 os.environ['CUDA_VISIBLE_DEVICES'] = '0' #1 gpu
 # os.environ['CUDA_VISIBLE_DEVICES'] = '' #cpu
 
+
 def main(args):
     import torch.cuda
 
     cuda_devices = torch.cuda.device_count()
     limiter = [trio.CapacityLimiter(1) for _ in range(cuda_devices)] if cuda_devices > 1 else None
-    ocr = OCR(parallel_devices = cuda_devices)
+    ocr = OCR()
     images, outputs = init_in_out(args)
-
 
     def __ocr(i, id, img):
         print("Task {} start".format(i))

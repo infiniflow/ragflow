@@ -38,13 +38,15 @@ from deepdoc.vision import OCR, LayoutRecognizer, Recognizer, TableStructureReco
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.nlp import rag_tokenizer
 
+from rag.settings import PARALLEL_DEVICES
+
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
 
 class RAGFlowPdfParser:
-    def __init__(self, parallel_devices: int | None = None, **kwargs):
+    def __init__(self, **kwargs):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
 
@@ -56,12 +58,10 @@ class RAGFlowPdfParser:
         ^_-
 
         """
-
-        self.ocr = OCR(parallel_devices=parallel_devices)
-        self.parallel_devices = parallel_devices
+        self.ocr = OCR()
         self.parallel_limiter = None
-        if parallel_devices is not None and parallel_devices > 1:
-            self.parallel_limiter = [trio.CapacityLimiter(1) for _ in range(parallel_devices)]
+        if PARALLEL_DEVICES is not None and PARALLEL_DEVICES > 1:
+            self.parallel_limiter = [trio.CapacityLimiter(1) for _ in range(PARALLEL_DEVICES)]
 
         if hasattr(self, "model_speciess"):
             self.layouter = LayoutRecognizer("layout." + self.model_speciess)
@@ -1066,8 +1066,8 @@ class RAGFlowPdfParser:
                     for i, img in enumerate(self.page_images):
                         chars = __ocr_preprocess()
 
-                        nursery.start_soon(__img_ocr, i, i % self.parallel_devices, img, chars,
-                                           self.parallel_limiter[i % self.parallel_devices])
+                        nursery.start_soon(__img_ocr, i, i % PARALLEL_DEVICES, img, chars,
+                                           self.parallel_limiter[i % PARALLEL_DEVICES])
                         await trio.sleep(0.1)
             else:
                 for i, img in enumerate(self.page_images):

@@ -130,8 +130,8 @@ class Docx(DocxParser):
 
 
 class Pdf(PdfParser):
-    def __init__(self, parallel_devices=None):
-        super().__init__(parallel_devices)
+    def __init__(self):
+        super().__init__()
 
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
@@ -199,7 +199,7 @@ class Markdown(MarkdownParser):
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
-          lang="Chinese", callback=None, parallel_devices=None, **kwargs):
+          lang="Chinese", callback=None, **kwargs):
     """
         Supported file formats are docx, pdf, excel, txt.
         This method apply the naive ways to chunk files.
@@ -243,7 +243,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         if layout_recognizer == "DeepDOC":
             pdf_parser = Pdf()
-            pdf_parser = Pdf(parallel_devices)
         elif layout_recognizer == "Plain Text":
             pdf_parser = PlainParser()
         else:
