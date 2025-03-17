@@ -18,13 +18,13 @@ import json
 import logging
 import re
 from collections import defaultdict
+
 import json_repair
+
 from api import settings
 from api.db import LLMType
-from api.db.services.document_service import DocumentService
-from api.db.services.llm_service import TenantLLMService, LLMBundle
 from rag.settings import TAG_FLD
-from rag.utils import num_tokens_from_string, encoder
+from rag.utils import encoder, num_tokens_from_string
 
 
 def chunks_format(reference):
@@ -44,9 +44,11 @@ def chunks_format(reference):
 
 
 def llm_id2llm_type(llm_id):
+    from api.db.services.llm_service import TenantLLMService
+
     llm_id, _ = TenantLLMService.split_model_name_and_factory(llm_id)
 
-    llm_factories = settings.FACTORY_LLM_INFOS  
+    llm_factories = settings.FACTORY_LLM_INFOS
     for llm_factory in llm_factories:
         for llm in llm_factory["llm"]:
             if llm_id == llm["llm_name"]:
@@ -92,6 +94,8 @@ def message_fit_in(msg, max_length=4000):
 
 
 def kb_prompt(kbinfos, max_tokens):
+    from api.db.services.document_service import DocumentService
+
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
     used_token_count = 0
     chunks_num = 0
@@ -223,6 +227,8 @@ Requirements:
 
 
 def full_question(tenant_id, llm_id, messages, language=None):
+    from api.db.services.llm_service import LLMBundle
+
     if llm_id2llm_type(llm_id) == "image2text":
         chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
@@ -358,3 +364,29 @@ Output:
         except Exception as e:
             logging.exception(f"JSON parsing error: {result} -> {e}")
             raise e
+
+
+def vision_llm_describe_prompt(page=1) -> str:
+    prompt_en = f"""
+        INSTRUCTION:
+        Transcribe the content from the provided PDF page image into clean Markdown format.
+        - Only output the content transcribed from the image.
+        - Do NOT output this instruction or any other explanation.
+        - If the content is missing or you do not understand the input, return an empty string.
+
+        RULES:
+        1. Do NOT generate examples, demonstrations, or templates.
+        2. Do NOT output any extra text such as 'Example', 'Example Output', or similar.
+        3. Do NOT generate any tables, headings, or content that is not explicitly present in the image.
+        4. Transcribe content word-for-word. Do NOT modify, translate, or omit any content.
+        5. Do NOT explain Markdown or mention that you are using Markdown.
+        6. Do NOT wrap the output in ```markdown or ``` blocks.
+        7. Only apply Markdown structure to headings, paragraphs, lists, and tables, strictly based on the layout of the image. Do NOT create tables unless an actual table exists in the image.
+        8. Preserve the original language, information, and order exactly as shown in the image.
+
+        At the end of the transcription, add the page divider: `--- Page {page} ---`.
+
+        FAILURE HANDLING:
+        - If you do not detect valid content in the image, return an empty string.
+        """
+    return prompt_en

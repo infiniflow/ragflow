@@ -30,6 +30,7 @@ from zhipuai import ZhipuAI
 from api.utils import get_uuid
 from api.utils.file_utils import get_project_base_directory
 from rag.nlp import is_english
+from rag.prompts import vision_llm_describe_prompt
 
 
 class Base(ABC):
@@ -127,30 +128,6 @@ class Base(ABC):
         ]
 
     def vision_llm_prompt(self, b64, page=1):
-
-        prompt_en = f"""
-        INSTRUCTION:
-        Transcribe the content from the provided PDF page image into clean Markdown format.
-        - Only output the content transcribed from the image.
-        - Do NOT output this instruction or any other explanation.
-        - If the content is missing or you do not understand the input, return an empty string.
-
-        RULES:
-        1. Do NOT generate examples, demonstrations, or templates.
-        2. Do NOT output any extra text such as 'Example', 'Example Output', or similar.
-        3. Do NOT generate any tables, headings, or content that is not explicitly present in the image.
-        4. Transcribe content word-for-word. Do NOT modify, translate, or omit any content.
-        5. Do NOT explain Markdown or mention that you are using Markdown.
-        6. Do NOT wrap the output in ```markdown or ``` blocks.
-        7. Only apply Markdown structure to headings, paragraphs, lists, and tables, strictly based on the layout of the image. Do NOT create tables unless an actual table exists in the image.
-        8. Preserve the original language, information, and order exactly as shown in the image.
-
-        At the end of the transcription, add the page divider: `--- Page {page} ---`.
-
-        FAILURE HANDLING:
-        - If you do not detect valid content in the image, return an empty string.
-        """
-
         return [
             {
                 "role": "user",
@@ -163,7 +140,7 @@ class Base(ABC):
                     },
                     {
                         "type": "text",
-                        "text": prompt_en,
+                        "text": vision_llm_describe_prompt(page=page),
 
                     },
                 ],
@@ -289,28 +266,6 @@ class QWenCV(Base):
             os.mkdir(tmp_dir)
         path = os.path.join(tmp_dir, "%s.jpg" % get_uuid())
         Image.open(io.BytesIO(binary)).save(path)
-        prompt_en = f"""
-        INSTRUCTION:
-        Transcribe the content from the provided PDF page image into clean Markdown format.
-        - Only output the content transcribed from the image.
-        - Do NOT output this instruction or any other explanation.
-        - If the content is missing or you do not understand the input, return an empty string.
-
-        RULES:
-        1. Do NOT generate examples, demonstrations, or templates.
-        2. Do NOT output any extra text such as 'Example', 'Example Output', or similar.
-        3. Do NOT generate any tables, headings, or content that is not explicitly present in the image.
-        4. Transcribe content word-for-word. Do NOT modify, translate, or omit any content.
-        5. Do NOT explain Markdown or mention that you are using Markdown.
-        6. Do NOT wrap the output in ```markdown or ``` blocks.
-        7. Only apply Markdown structure to headings, paragraphs, lists, and tables, strictly based on the layout of the image. Do NOT create tables unless an actual table exists in the image.
-        8. Preserve the original language, information, and order exactly as shown in the image.
-
-        At the end of the transcription, add the page divider: `--- Page {page} ---`.
-
-        FAILURE HANDLING:
-        - If you do not detect valid content in the image, return an empty string.
-        """
 
         return [
             {
@@ -320,7 +275,7 @@ class QWenCV(Base):
                         "image": f"file://{path}"
                     },
                     {
-                        "text":  prompt_en,
+                        "text":  vision_llm_describe_prompt(page=page),
                     },
                 ],
             }
