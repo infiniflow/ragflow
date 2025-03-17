@@ -30,7 +30,7 @@ from api.utils.api_utils import (
     token_required,
     get_error_data_result,
     valid,
-    get_parser_config, valid_parser_config,
+    get_parser_config, valid_parser_config, dataset_readonly_fields,
 )
 
 
@@ -85,6 +85,9 @@ def create(tenant_id):
               type: object
     """
     req = request.json
+    for k in req.keys():
+        if dataset_readonly_fields(k):
+            return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=f"'{k}' is readonly.")
     e, t = TenantService.get_by_id(tenant_id)
     permission = req.get("permission")
     chunk_method = req.get("chunk_method")
@@ -329,6 +332,9 @@ def update(tenant_id, dataset_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset")
     req = request.json
+    for k in req.keys():
+        if dataset_readonly_fields(k):
+            return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=f"'{k}' is readonly.")
     e, t = TenantService.get_by_id(tenant_id)
     invalid_keys = {"id", "embd_id", "chunk_num", "doc_num", "parser_id", "create_date", "create_time", "created_by", "status","token_num","update_date","update_time"}
     if any(key in req for key in invalid_keys):

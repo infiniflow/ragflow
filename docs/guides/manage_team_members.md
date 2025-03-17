@@ -30,6 +30,10 @@ _On the **Team** page, you can view the information about members of your team a
 
 You are, by default, the owner of your own team and the only person permitted to invite users to join your team or remove team members.
 
+:::danger IMPORTANT
+When using email address to invite a team member, ensure it is associated with an existing RAGFlow account to avoid errors.
+:::
+
 ![invite_team_member](https://github.com/user-attachments/assets/d85b55c3-7e86-4f04-a414-ca18a9ee8963)
 
 ## Remove team members
