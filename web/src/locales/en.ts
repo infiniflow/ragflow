@@ -1202,6 +1202,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         dsl: 'DSL',
         download: 'Download',
         version: 'Version',
+        select: 'No version selected',
       },
     },
     footer: {
