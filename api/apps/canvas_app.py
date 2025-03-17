@@ -67,9 +67,10 @@ def save():
         e, flow  = UserCanvasService.get_by_id(req["id"])
         flow = flow.to_dict()
         if e:
-            version = time.strftime("%Y_%m_%d %H_%M_%S")
+            version = time.strftime("%Y_%m_%d_%H_%M_%S")
             dslversion = flow.get("dsl")
             id = flow.get("id")
+            title = flow.get("title","")
             # save dsl as json on dist
             # Ensure the history data directory exists
             history_dir = f"history_data_agent/{id}"
@@ -88,7 +89,7 @@ def save():
             except Exception as e:
                 logging.error(f"Error cleaning up history files: {e}")
             # Save the DSL version to a JSON file
-            with open(f"{history_dir}/{version}.json", "w") as f:
+            with open(f"{history_dir}/{title}_{version}.json", "w") as f:
                 json.dump(dslversion, f)
             
     req["dsl"] = json.loads(req["dsl"])
@@ -106,40 +107,6 @@ def save():
         UserCanvasService.update_by_id(req["id"], req)
     return get_json_result(data=req)
 
-#api get list version dsl of canvas
-@manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
-@login_required
-def getlistversion(canvas_id):
-    history_dir = f"history_data_agent/{canvas_id}"
-    try:
-        existing_files = os.listdir(history_dir)
-        files_with_times = [(f, os.path.getmtime(os.path.join(history_dir, f))) 
-                            for f in existing_files if f.endswith('.json')]
-        # Sort by modification time (newest last)
-        files_with_times.sort(key=lambda x: x[1])
-        # Get the list of files (newest first)
-        file_list = [f for f, _ in files_with_times]
-        # Create a list of dictionaries with file name and creation date
-        result = []
-        for filename, mod_time in files_with_times:
-            date_created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mod_time))
-            result.append({"filename": filename, "created_at": date_created, "id": filename})
-        # Return newest first
-        return get_json_result(data=result[::-1])
-    except Exception as e:
-        return get_data_error_result(message=f"Error getting history files: {e}")
-    
-#api get version dsl of canvas
-@manager.route('/getversion/<canvas_id>/<version>', methods=['GET'])  # noqa: F821
-@login_required
-def getversion(canvas_id, version):
-    history_dir = f"history_data_agent/{canvas_id}"
-    try:
-        with open(f"{history_dir}/{version}", "r") as f:
-            dsl = json.load(f)
-            return get_json_result(data=dsl)
-    except Exception as e:
-        return get_data_error_result(message=f"Error getting history file: {e}")
  
 
 
@@ -349,3 +316,40 @@ def test_db_connect():
     except Exception as e:
         return server_error_response(e)
 
+
+
+
+#api get list version dsl of canvas
+@manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
+@login_required
+def getlistversion(canvas_id):
+    history_dir = f"history_data_agent/{canvas_id}"
+    try:
+        existing_files = os.listdir(history_dir)
+        files_with_times = [(f, os.path.getmtime(os.path.join(history_dir, f))) 
+                            for f in existing_files if f.endswith('.json')]
+        # Sort by modification time (newest last)
+        files_with_times.sort(key=lambda x: x[1])
+        # Get the list of files (newest first)
+        file_list = [f for f, _ in files_with_times]
+        # Create a list of dictionaries with file name and creation date
+        result = []
+        for filename, mod_time in files_with_times:
+            date_created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mod_time))
+            result.append({"filename": filename, "created_at": date_created, "id": filename})
+        # Return newest first
+        return get_json_result(data=result[::-1])
+    except Exception as e:
+        return get_data_error_result(message=f"Error getting history files: {e}")
+    
+#api get version dsl of canvas
+@manager.route('/getversion/<canvas_id>/<version>', methods=['GET'])  # noqa: F821
+@login_required
+def getversion(canvas_id, version):
+    history_dir = f"history_data_agent/{canvas_id}"
+    try:
+        with open(f"{history_dir}/{version}", "r") as f:
+            dsl = json.load(f)
+            return get_json_result(data=dsl)
+    except Exception as e:
+        return get_json_result(data=f"Error getting history file: {e}")
