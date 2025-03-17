@@ -88,18 +88,25 @@ def upload_documnets(auth, dataset_id, files_path=None):
         files_path = []
 
     fields = []
-    for i, fp in enumerate(files_path):
-        p = Path(fp)
-        fields.append(("file", (p.name, p.open("rb"))))
-    m = MultipartEncoder(fields=fields)
+    file_objects = []
+    try:
+        for fp in files_path:
+            p = Path(fp)
+            f = p.open("rb")
+            fields.append(("file", (p.name, f)))
+            file_objects.append(f)
+        m = MultipartEncoder(fields=fields)
 
-    res = requests.post(
-        url=url,
-        headers={"Content-Type": m.content_type},
-        auth=auth,
-        data=m,
-    )
-    return res.json()
+        res = requests.post(
+            url=url,
+            headers={"Content-Type": m.content_type},
+            auth=auth,
+            data=m,
+        )
+        return res.json()
+    finally:
+        for f in file_objects:
+            f.close()
 
 
 def batch_upload_documents(auth, dataset_id, num, tmp_path):
