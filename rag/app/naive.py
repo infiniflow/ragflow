@@ -130,43 +130,59 @@ class Docx(DocxParser):
 
 
 class Pdf(PdfParser):
-    def __init__(self):
-        super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
-        start = timer()
-        first_start = start
-        callback(msg="OCR started")
-        self.__images__(
-            filename if not binary else binary,
-            zoomin,
-            from_page,
-            to_page,
-            callback
-        )
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
-        logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
 
-        start = timer()
-        self._layouts_rec(zoomin)
-        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+<< << << < HEAD
 
-        start = timer()
-        self._table_transformer_job(zoomin)
-        callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
 
-        start = timer()
-        self._text_merge()
-        callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
-        tbls = self._extract_table_figure(True, zoomin, True, True)
-        # self._naive_vertical_merge()
-        self._concat_downward()
-        # self._filter_forpages()
+def __init__(self):
+    super().__init__()
 
-        logging.info("layouts cost: {}s".format(timer() - first_start))
-        return [(b["text"], self._line_tag(b, zoomin))
-                for b in self.boxes], tbls
+
+== == == =
+
+
+def __init__(self, parallel_devices=None):
+    super().__init__(parallel_devices)
+
+
+>>>>>> > 9132df67(Feat: add vision LLM PDF parser)
+
+
+def __call__(self, filename, binary=None, from_page=0,
+             to_page=100000, zoomin=3, callback=None):
+    start = timer()
+    first_start = start
+    callback(msg="OCR started")
+    self.__images__(
+        filename if not binary else binary,
+        zoomin,
+        from_page,
+        to_page,
+        callback
+    )
+    callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
+    logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
+
+    start = timer()
+    self._layouts_rec(zoomin)
+    callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+
+    start = timer()
+    self._table_transformer_job(zoomin)
+    callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
+
+    start = timer()
+    self._text_merge()
+    callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
+    tbls = self._extract_table_figure(True, zoomin, True, True)
+    # self._naive_vertical_merge()
+    self._concat_downward()
+    # self._filter_forpages()
+
+    logging.info("layouts cost: {}s".format(timer() - first_start))
+    return [(b["text"], self._line_tag(b, zoomin))
+            for b in self.boxes], tbls
 
 
 class Markdown(MarkdownParser):
