@@ -235,40 +235,26 @@ class TestDatasetUpdate:
         assert res["message"] == "You don't own the dataset"
 
     @pytest.mark.parametrize(
-        "payload, expected_code, expected_message",
+        "payload",
         [
-            ({"chunk_count": 1}, 102, "Can't change `chunk_count`."),
-            (
-                {"create_date": "Tue, 11 Mar 2025 13:37:23 GMT"},
-                102,
-                "The input parameters are invalid.",
-            ),
-            ({"create_time": 1741671443322}, 102, "The input parameters are invalid."),
-            ({"created_by": "aa"}, 102, "The input parameters are invalid."),
-            ({"document_count": 1}, 102, "Can't change `document_count`."),
-            ({"id": "id"}, 102, "The input parameters are invalid."),
-            ({"status": "1"}, 102, "The input parameters are invalid."),
-            (
-                {"tenant_id": "e57c1966f99211efb41e9e45646e0111"},
-                102,
-                "Can't change `tenant_id`.",
-            ),
-            ({"token_num": 1}, 102, "The input parameters are invalid."),
-            (
-                {"update_date": "Tue, 11 Mar 2025 13:37:23 GMT"},
-                102,
-                "The input parameters are invalid.",
-            ),
-            ({"update_time": 1741671443339}, 102, "The input parameters are invalid."),
+            {"chunk_count": 1},
+            {"create_date": "Tue, 11 Mar 2025 13:37:23 GMT"},
+            {"create_time": 1741671443322},
+            {"created_by": "aa"},
+            {"document_count": 1},
+            {"id": "id"},
+            {"status": "1"},
+            {"tenant_id": "e57c1966f99211efb41e9e45646e0111"},
+            {"token_num": 1},
+            {"update_date": "Tue, 11 Mar 2025 13:37:23 GMT"},
+            {"update_time": 1741671443339},
         ],
     )
-    def test_modify_read_only_field(
-        self, get_http_api_auth, payload, expected_code, expected_message
-    ):
+    def test_modify_read_only_field(self, get_http_api_auth, payload):
         ids = create_datasets(get_http_api_auth, 1)
         res = update_dataset(get_http_api_auth, ids[0], payload)
         assert res["code"] == 101
-        #assert res["message"] == expected_message
+        assert "is readonly" in res["message"]
 
     def test_modify_unknown_field(self, get_http_api_auth):
         ids = create_datasets(get_http_api_auth, 1)
