@@ -189,15 +189,16 @@ class TestDocumentList:
                 lambda r: (is_sorted(r["data"]["docs"], "update_time", True)),
                 "",
             ),
-            (
+            pytest.param(
                 {"orderby": "name", "desc": "False"},
                 0,
                 lambda r: (is_sorted(r["data"]["docs"], "name", False)),
                 "",
+                marks=pytest.mark.xfail(reason="issues/5851"),
             ),
             pytest.param(
                 {"orderby": "unknown"},
-                100,
+                102,
                 0,
                 "orderby should be create_time or update_time",
                 marks=pytest.mark.xfail(reason="issues/5851"),
@@ -277,7 +278,7 @@ class TestDocumentList:
             ),
             pytest.param(
                 {"desc": "unknown"},
-                100,
+                102,
                 0,
                 "desc should be true or false",
                 marks=pytest.mark.xfail(reason="issues/5851"),
