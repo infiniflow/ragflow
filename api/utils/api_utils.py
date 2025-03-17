@@ -349,7 +349,7 @@ def valid_parameter(parameter, valid_values):
 
 def dataset_readonly_fields(field_name):
     return field_name in ["chunk_count", "create_date", "create_time", "update_date", "update_time",
-                          "created_by", "document_count", "token_num", "status"]
+                          "created_by", "document_count", "token_num", "status", "tenant_id"]
 
 
 def get_parser_config(chunk_method, parser_config):
