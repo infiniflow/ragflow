@@ -1,10 +1,11 @@
-import { ReactComponent as FileIcon } from '@/assets/svg/file-management.svg';
-import { ReactComponent as GraphIcon } from '@/assets/svg/graph.svg';
-import { ReactComponent as KnowledgeBaseIcon } from '@/assets/svg/knowledge-base.svg';
+import { ReactComponent as HeaderKnowledge } from '@/assets/svg/header-knowledge.svg';
+import { ReactComponent as HeaderChat } from '@/assets/svg/header-chat.svg';
+import { ReactComponent as HeaderSearch } from '@/assets/svg/header-search.svg';
+import { ReactComponent as HeaderAgent } from '@/assets/svg/header-agent.svg';
+import { ReactComponent as HeaderFile } from '@/assets/svg/header-file.svg';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchAppConf } from '@/hooks/logic-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
-import { MessageOutlined, SearchOutlined } from '@ant-design/icons';
 import { Flex, Layout, Radio, Space, theme } from 'antd';
 import { MouseEventHandler, useCallback, useMemo } from 'react';
 import { useLocation } from 'umi';
@@ -26,11 +27,11 @@ const RagHeader = () => {
   const { theme: themeRag } = useTheme();
   const tagsData = useMemo(
     () => [
-      { path: '/knowledge', name: t('knowledgeBase'), icon: KnowledgeBaseIcon },
-      { path: '/chat', name: t('chat'), icon: MessageOutlined },
-      { path: '/search', name: t('search'), icon: SearchOutlined },
-      { path: '/flow', name: t('flow'), icon: GraphIcon },
-      { path: '/file', name: t('fileManager'), icon: FileIcon },
+      { path: '/knowledge', name: t('knowledgeBase'), icon: HeaderKnowledge },
+      { path: '/chat', name: t('chat'), icon: HeaderChat },
+      { path: '/search', name: t('search'), icon: HeaderSearch },
+      { path: '/flow', name: t('flow'), icon: HeaderAgent },
+      { path: '/file', name: t('fileManager'), icon: HeaderFile },
     ],
     [t],
   );
@@ -58,11 +59,12 @@ const RagHeader = () => {
     <Header
       style={{
         padding: '0 16px',
-        background: colorBgContainer,
+        background: 'linear-gradient(90deg, #FFFFFF 0%, #F3F6FD 52.12%, #FFFFFF 100%)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        height: '72px',
+        height: '54px',
+        lineHeight: '46px',
       }}
     >
       <a href={window.location.origin}>
@@ -92,6 +94,7 @@ const RagHeader = () => {
               <a href={item.path}>
                 <Flex
                   align="center"
+                  justify='center'
                   gap={8}
                   onClick={handleChange(item.path)}
                   className="cursor-pointer"

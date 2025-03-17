@@ -3,6 +3,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useLogout } from '@/hooks/login-hooks';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { useFetchSystemVersion } from '@/hooks/user-setting-hooks';
+import authorizationUtil from '@/utils/authorization-util';
 import type { MenuProps } from 'antd';
 import { Flex, Menu } from 'antd';
 import React, { useEffect, useMemo } from 'react';
@@ -67,6 +68,19 @@ const SideBar = () => {
   const selectedKeys = useMemo(() => {
     return [pathName];
   }, [pathName]);
+
+  const getUserInfoSafe = (): any => {
+    const userInfo = authorizationUtil.getUserInfo();
+    return userInfo ? JSON.parse(userInfo) : null;
+  };
+  items.forEach(ii => {
+    if (getUserInfoSafe() && !getUserInfoSafe().is_superuser) {
+      if (ii && ii.key === 'usermanage') {
+        // 删除items中的该对象
+        items.splice(items.indexOf(ii), 1);
+      }
+    }
+  })
 
   return (
     <section className={styles.sideBarWrapper}>

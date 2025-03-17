@@ -17,7 +17,7 @@ const App: React.FC = () => {
     <Layout className={styles.layout}>
       <Layout>
         <Header></Header>
-        <Divider orientationMargin={0} className={styles.divider} />
+        <Divider orientationMargin={0} className={styles.divider} style={{ borderColor: 'rgba(145, 180, 255, 0.3)' }} />
         <Content
           style={{
             minHeight: 280,

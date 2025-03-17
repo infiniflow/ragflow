@@ -8,6 +8,8 @@ import FlowHeader from './header';
 import { useCopyPaste } from './hooks';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
 
+import styles from './index.less';
+
 const { Content } = Layout;
 
 function RagFlow() {
@@ -25,7 +27,7 @@ function RagFlow() {
     <Layout>
       <ReactFlowProvider>
         <Sider setCollapsed={setCollapsed} collapsed={collapsed}></Sider>
-        <Layout>
+        <Layout className={styles.flowLayout}>
           <FlowHeader
             showChatDrawer={showChatDrawer}
             chatDrawerVisible={chatDrawerVisible}

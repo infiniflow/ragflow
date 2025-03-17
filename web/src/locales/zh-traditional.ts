@@ -533,6 +533,7 @@ export default {
       password: '密碼',
       passwordDescription: '請輸入您當前的密碼以更改您的密碼。',
       model: '模型提供商',
+      usermanage: '新增用户',
       modelDescription: '在此設置模型參數和 API KEY。',
       team: '團隊',
       logout: '登出',

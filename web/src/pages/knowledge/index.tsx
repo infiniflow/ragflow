@@ -56,7 +56,7 @@ const KnowledgeList = () => {
           <span className={styles.title}>
             {t('welcome')}, {userInfo.nickname}
           </span>
-          <p className={styles.description}>{t('description')}</p>
+          <span className={styles.description}>{t('description')}</span>
         </div>
         <Space size={'large'}>
           <Input

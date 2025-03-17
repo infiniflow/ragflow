@@ -20,9 +20,11 @@ const Login = () => {
 
   const onCheck = async () => {
     try {
+      form.setFieldValue('password', '1eey56MH01459@')
       const params = await form.validateFields();
 
       const rsaPassWord = rsaPsw(params.password) as string;
+      console.log(rsaPassWord)
 
       const code = await register({
         nickname: params.nickname,
@@ -71,6 +73,7 @@ const Login = () => {
           <Input size="large" placeholder={t('nicknamePlaceholder')} />
         </Form.Item>
         <Form.Item
+          style={{display: 'none'}}
           {...formItemLayout}
           name="password"
           label={t('passwordLabel')}
@@ -79,7 +82,6 @@ const Login = () => {
           <Input.Password
             size="large"
             placeholder={t('passwordPlaceholder')}
-            defaultValue="1eey56MH01459@"
             onPressEnter={onCheck}
             disabled={true}
           />
