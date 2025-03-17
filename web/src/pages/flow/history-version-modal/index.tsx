@@ -34,8 +34,7 @@ export function HistoryVersionModal({
   const { t } = useTranslate('flow');
   const { data, loading } = useFetchListVersion(id);
   const [selectedVersion, setSelectedVersion] = useState<any>(null);
-  const { data: datadsl, loading: loadingVersion } = useFetchVersion(
-    id,
+  const { data: flow, loading: loadingVersion } = useFetchVersion(
     selectedVersion?.id,
   );
 
@@ -50,7 +49,7 @@ export function HistoryVersionModal({
       e.stopPropagation();
       console.log('Restore version:', selectedVersion);
       // Create a JSON blob and trigger download
-      const jsonContent = JSON.stringify(datadsl, null, 2);
+      const jsonContent = JSON.stringify(flow?.dsl, null, 2);
       const blob = new Blob([jsonContent], {
         type: 'application/json',
       });
@@ -63,7 +62,7 @@ export function HistoryVersionModal({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     },
-    [selectedVersion, datadsl],
+    [selectedVersion, flow?.dsl],
   );
   return (
     <React.Fragment>
@@ -105,7 +104,7 @@ export function HistoryVersionModal({
                     }}
                   >
                     <List.Item.Meta
-                      title={`${t('filename')}: ${item.filename || '-'}`}
+                      title={`${t('filename')}: ${item.title || '-'}`}
                       description={item.created_at}
                     />
                   </List.Item>
@@ -129,7 +128,7 @@ export function HistoryVersionModal({
                   </Col>
                 </Row>
                 <Typography.Title level={4}>
-                  {selectedVersion.filename || '-'}
+                  {selectedVersion.title || '-'}
                 </Typography.Title>
 
                 <Typography.Text
@@ -141,7 +140,7 @@ export function HistoryVersionModal({
 
                 {/*render dsl  form api*/}
                 {loadingVersion && <Spin />}
-                {!loadingVersion && datadsl && (
+                {!loadingVersion && flow?.dsl && (
                   <ReactFlowProvider key={`flow-${selectedVersion.id}`}>
                     <div
                       style={{
@@ -152,9 +151,9 @@ export function HistoryVersionModal({
                     >
                       <ReactFlow
                         connectionMode={ConnectionMode.Loose}
-                        nodes={datadsl.graph?.nodes || []}
+                        nodes={flow?.dsl.graph?.nodes || []}
                         edges={
-                          datadsl.graph?.edges.flatMap((x) => ({
+                          flow?.dsl.graph?.edges.flatMap((x) => ({
                             ...x,
                             type: 'default',
                           })) || []

@@ -92,7 +92,7 @@ export const useFetchListVersion = (
 ): {
   data: {
     created_at: string;
-    filename: string;
+    title: string;
     id: string;
   }[];
   loading: boolean;
@@ -112,24 +112,20 @@ export const useFetchListVersion = (
 };
 
 export const useFetchVersion = (
-  canvas_id?: string,
   version_id?: string,
 ): {
-  data?: DSL;
+  data?: IFlow;
   loading: boolean;
 } => {
   const { data, isFetching: loading } = useQuery({
-    queryKey: ['fetchVersion', canvas_id, version_id],
+    queryKey: ['fetchVersion', version_id],
     initialData: undefined,
     gcTime: 0,
-    enabled: !!canvas_id && !!version_id, // Only call API when both values are provided
+    enabled: !!version_id, // Only call API when both values are provided
     queryFn: async () => {
-      if (!canvas_id || !version_id) return undefined;
+      if (!version_id) return undefined;
 
-      const { data } = await flowService.getVersion(
-        {},
-        `${canvas_id}/${version_id}`,
-      );
+      const { data } = await flowService.getVersion({}, version_id);
 
       return data?.data ?? undefined;
     },

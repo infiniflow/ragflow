@@ -18,6 +18,7 @@ import traceback
 from flask import request, Response
 from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
+from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
@@ -68,30 +69,12 @@ def save():
         flow = flow.to_dict()
         if e:
             version = time.strftime("%Y_%m_%d_%H_%M_%S")
-            dslversion = flow.get("dsl")
-            id = flow.get("id")
             title = flow.get("title","")
-            # save dsl as json on dist
-            # Ensure the history data directory exists
-            history_dir = f"history_data_agent/{id}"
-            os.makedirs(history_dir, exist_ok=True)
-            # Check if we need to clean up old history files (keep only the 20 newest)
-            try:
-                existing_files = os.listdir(history_dir)
-                if len(existing_files) >= 19:
-                    files_with_times = [(f, os.path.getmtime(os.path.join(history_dir, f))) 
-                                       for f in existing_files if f.endswith('.json')]
-                    # Sort by modification time (newest last)
-                    files_with_times.sort(key=lambda x: x[1])
-                    # Delete older files, keeping only the newest 20
-                    for old_file, _ in files_with_times[:-19]:
-                        os.remove(os.path.join(history_dir, old_file))
-            except Exception as e:
-                logging.error(f"Error cleaning up history files: {e}")
-            # Save the DSL version to a JSON file
-            with open(f"{history_dir}/{title}_{version}.json", "w") as f:
-                json.dump(dslversion, f)
-            
+            # check flow.get("dsl") <> req["dsl"] then save version
+            if flow.get("dsl") != req["dsl"]:
+                UserCanvasVersionService.create(user_canvas_id=flow.get("id"), dsl= flow.get("dsl"), title=f"{title}_{version}")
+                UserCanvasVersionService.delete_all_versions(flow.get("id"))
+
     req["dsl"] = json.loads(req["dsl"])
     if "id" not in req:
         if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip()):
@@ -323,33 +306,22 @@ def test_db_connect():
 @manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
 def getlistversion(canvas_id):
-    history_dir = f"history_data_agent/{canvas_id}"
     try:
-        existing_files = os.listdir(history_dir)
-        files_with_times = [(f, os.path.getmtime(os.path.join(history_dir, f))) 
-                            for f in existing_files if f.endswith('.json')]
-        # Sort by modification time (newest last)
-        files_with_times.sort(key=lambda x: x[1])
-        # Get the list of files (newest first)
-        file_list = [f for f, _ in files_with_times]
-        # Create a list of dictionaries with file name and creation date
-        result = []
-        for filename, mod_time in files_with_times:
-            date_created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mod_time))
-            result.append({"filename": filename, "created_at": date_created, "id": filename})
-        # Return newest first
-        return get_json_result(data=result[::-1])
+ 
+          return get_json_result(data=sorted([c.to_dict() for c in \
+                                 UserCanvasVersionService.getlist_by_canvas_id(canvas_id)], key=lambda x: x["update_time"]*-1)
+                                )
     except Exception as e:
         return get_data_error_result(message=f"Error getting history files: {e}")
     
 #api get version dsl of canvas
-@manager.route('/getversion/<canvas_id>/<version>', methods=['GET'])  # noqa: F821
+@manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
 @login_required
-def getversion(canvas_id, version):
-    history_dir = f"history_data_agent/{canvas_id}"
+def getversion( version_id):
     try:
-        with open(f"{history_dir}/{version}", "r") as f:
-            dsl = json.load(f)
-            return get_json_result(data=dsl)
+      
+        e, version = UserCanvasVersionService.get_by_id(version_id)
+        if version:
+            return get_json_result(data=version.to_dict())
     except Exception as e:
         return get_json_result(data=f"Error getting history file: {e}")

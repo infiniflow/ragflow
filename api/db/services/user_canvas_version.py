@@ -1,0 +1,69 @@
+from api.db.db_models import UserCanvasVersion, DB
+from api.db.services.common_service import CommonService
+from peewee import DoesNotExist
+import uuid
+import logging
+
+class UserCanvasVersionService(CommonService):
+    model = UserCanvasVersion
+    
+    
+    @classmethod
+    @DB.connection_context()
+    def getlist_by_canvas_id(cls, user_canvas_id):
+        try:
+            user_canvas_version = cls.model.select(
+                *[cls.model.id, 
+                cls.model.create_time,
+                cls.model.title,
+                cls.model.create_date, 
+                cls.model.update_date,
+                cls.model.user_canvas_id, 
+                cls.model.update_time]
+            ).where(cls.model.user_canvas_id == user_canvas_id)
+            return user_canvas_version
+        except DoesNotExist:
+            return None
+        except Exception as e:
+            return None
+    
+    @classmethod
+    @DB.connection_context()
+    def get_by_id(cls, pid):
+        return super().get_by_id(pid)
+    
+    @classmethod
+    @DB.connection_context()
+    def create(cls, **kwargs):
+        kwargs['id'] = str(uuid.uuid4())
+        return super().insert(**kwargs)
+    
+    @classmethod
+    @DB.connection_context()
+    def update(cls, pid, **kwargs):
+        return super().update_by_id(pid, kwargs)
+    
+
+    @classmethod
+    @DB.connection_context()
+    def delete(cls, pid):
+        return super().delete_by_id(pid)
+    
+    @classmethod
+    @DB.connection_context()
+    def delete_all_versions(cls, user_canvas_id):
+        try:
+            user_canvas_version = cls.model.select().where(cls.model.user_canvas_id == user_canvas_id).order_by(cls.model.create_time.desc())
+            if user_canvas_version.count() > 20:
+                for i in range(20, user_canvas_version.count()):
+                    logging.info(f"Deleting version: {user_canvas_version[i].id}")
+                    cls.delete(user_canvas_version[i].id)
+            return True
+        except DoesNotExist:
+            return None
+        except Exception as e:
+            logging.error(f"Error deleting versions: {str(e)}")
+            return None
+
+
+
