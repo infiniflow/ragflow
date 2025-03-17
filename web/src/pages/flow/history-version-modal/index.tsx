@@ -135,7 +135,7 @@ export function HistoryVersionModal({
                   type="secondary"
                   style={{ display: 'block', marginBottom: 16 }}
                 >
-                  {t('version.created')}: {selectedVersion.created_at}
+                  {t('version.created')}: {selectedVersion.create_date}
                 </Typography.Text>
 
                 {/*render dsl  form api*/}
