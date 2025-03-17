@@ -1243,13 +1243,17 @@ class PlainParser:
 class VisionParser(RAGFlowPdfParser):
     def __init__(self, vision_model, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.lang = kwargs.get("lang", "Chinese")
-        self.tenant_id = kwargs.get("tenant_id")
-        self.callback = kwargs.get("callback", lambda prog, msg: None)
         self.prompt = kwargs.get("prompt", "")
         self.vision_model = vision_model
 
+    def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
+        with sys.modules[LOCK_KEY_pdfplumber]:
+            self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
+            self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in enumerate(self.pdf.pages[page_from:page_to])]
+
     def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
+        callback = kwargs.get("callback", lambda prog, msg: None)
+
         self.__images__(fnm=filename, zoomin=3, page_from=from_page, page_to=to_page, **kwargs)
 
         total_pdf_pages = self.total_page
@@ -1269,19 +1273,12 @@ class VisionParser(RAGFlowPdfParser):
                 vision_model=self.vision_model,
                 page=pdf_page_num+1,
                 prompt=self.prompt,
-                callback=self.callback,
+                callback=callback,
             )
 
             if docs:
                 all_docs.append(docs)
         return [(doc, "") for doc in all_docs], []
-
-    def crop(self, ck, need_position):
-        raise NotImplementedError
-
-    @staticmethod
-    def remove_tag(txt):
-        raise NotImplementedError
 
 
 if __name__ == "__main__":

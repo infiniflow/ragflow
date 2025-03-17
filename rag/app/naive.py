@@ -247,7 +247,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             pdf_parser = PlainParser()
         else:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT, llm_name=layout_recognizer, lang=lang)
-            pdf_parser = VisionParser(vision_model=vision_model, **{**kwargs, "lang": lang, "callback": callback})
+            pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
 
         sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
                                       callback=callback)
