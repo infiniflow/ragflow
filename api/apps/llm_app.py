@@ -61,6 +61,7 @@ def set_api_key():
     msg = ""
     for llm in LLMService.query(fid=factory):
         if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
+            assert factory in EmbeddingModel, f"Embedding model from {factory} is not supported yet."
             mdl = EmbeddingModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
@@ -71,6 +72,7 @@ def set_api_key():
             except Exception as e:
                 msg += f"\nFail to access embedding model({llm.llm_name}) using this api key." + str(e)
         elif not chat_passed and llm.model_type == LLMType.CHAT.value:
+            assert factory in ChatModel, f"Chat model from {factory} is not supported yet."
             mdl = ChatModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
@@ -83,6 +85,7 @@ def set_api_key():
                 msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
                     e)
         elif not rerank_passed and llm.model_type == LLMType.RERANK:
+            assert factory in RerankModel, f"Re-rank model from {factory} is not supported yet."
             mdl = RerankModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
@@ -203,6 +206,7 @@ def add_llm():
     msg = ""
     mdl_nm = llm["llm_name"].split("___")[0]
     if llm["model_type"] == LLMType.EMBEDDING.value:
+        assert factory in EmbeddingModel, f"Embedding model from {factory} is not supported yet."
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
             model_name=mdl_nm,
@@ -214,6 +218,7 @@ def add_llm():
         except Exception as e:
             msg += f"\nFail to access embedding model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
+        assert factory in ChatModel, f"Chat model from {factory} is not supported yet."
         mdl = ChatModel[factory](
             key=llm['api_key'],
             model_name=mdl_nm,
@@ -228,6 +233,7 @@ def add_llm():
             msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
+        assert factory in RerankModel, f"RE-rank model from {factory} is not supported yet."
         try:
             mdl = RerankModel[factory](
                 key=llm["api_key"],
@@ -243,6 +249,7 @@ def add_llm():
             msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
+        assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
         mdl = CvModel[factory](
             key=llm["api_key"],
             model_name=mdl_nm,
@@ -256,6 +263,7 @@ def add_llm():
         except Exception as e:
             msg += f"\nFail to access model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
+        assert factory in TTSModel, f"TTS model from {factory} is not supported yet."
         mdl = TTSModel[factory](
             key=llm["api_key"], model_name=mdl_nm, base_url=llm["api_base"]
         )
