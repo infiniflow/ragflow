@@ -162,11 +162,11 @@ export function HistoryVersionModal({
                         fitView
                         nodeTypes={nodeTypes}
                         edgeTypes={{}}
-                        nodeOrigin={[0.5, 0]}
-                        zoomOnScroll={false}
-                        panOnDrag={false}
+                        zoomOnScroll={true}
+                        panOnDrag={true}
                         zoomOnDoubleClick={false}
                         preventScrolling={true}
+                        minZoom={0.1}
                       >
                         <Background />
                       </ReactFlow>
