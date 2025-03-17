@@ -153,7 +153,7 @@ export default {
         changeSpecificCategory: 'Spezifische Kategorie ändern',
         uploadTitle: 'Ziehen Sie Ihre Datei hierher, um sie hochzuladen',
         uploadDescription:
-          'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Lokale Bereitstellung: Die Obergrenze für das Hochladen einer einzelnen Datei beträgt 1GB, mit einer Obergrenze von 32 Dateien für Batch-Hochladen, und es gibt keine Begrenzung der Gesamtzahl der Dateien pro Konto.',
+          'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für demo.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
         chunk: 'Chunk',
         bulk: 'Masse',
         cancel: 'Abbrechen',
@@ -746,7 +746,7 @@ export default {
         directory: 'Verzeichnis',
         uploadTitle: 'Ziehen Sie Ihre Datei hierher, um sie hochzuladen',
         uploadDescription:
-          'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Lokale Bereitstellung: Die Obergrenze für das Hochladen einer einzelnen Datei beträgt 1GB, mit einer Obergrenze von 32 Dateien für Batch-Hochladen, und es gibt keine Begrenzung der Gesamtzahl der Dateien pro Konto.',
+          'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für demo.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
         local: 'Lokale Uploads',
         s3: 'S3-Uploads',
         preview: 'Vorschau',
