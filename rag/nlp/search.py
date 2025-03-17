@@ -258,6 +258,8 @@ class Dealer:
         q_denor = np.sqrt(np.sum([s*s for t,s in query_rfea.items() if t != PAGERANK_FLD]))
         for i in search_res.ids:
             nor, denor = 0, 0
+            if not search_res.field[i].get(TAG_FLD):
+                continue
             for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
                 if t in query_rfea:
                     nor += query_rfea[t] * sc
@@ -344,15 +346,11 @@ class Dealer:
         if not question:
             return ranks
 
-        RERANK_PAGE_LIMIT = 3
-        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": max(page_size * RERANK_PAGE_LIMIT, 128),
+        RERANK_LIMIT = 64
+        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": page, "size": RERANK_LIMIT,
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
                "available_int": 1}
-
-        if page > RERANK_PAGE_LIMIT:
-            req["page"] = page
-            req["size"] = page_size
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
@@ -361,20 +359,17 @@ class Dealer:
                            kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
         ranks["total"] = sres.total
 
-        if page <= RERANK_PAGE_LIMIT:
-            if rerank_mdl and sres.total > 0:
-                sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
-                                                       sres, question, 1 - vector_similarity_weight,
-                                                       vector_similarity_weight,
-                                                       rank_feature=rank_feature)
-            else:
-                sim, tsim, vsim = self.rerank(
-                    sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
-                    rank_feature=rank_feature)
-            idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
+        if rerank_mdl and sres.total > 0:
+            sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
+                                                   sres, question, 1 - vector_similarity_weight,
+                                                   vector_similarity_weight,
+                                                   rank_feature=rank_feature)
         else:
-            sim = tsim = vsim = [1] * len(sres.ids)
-            idx = list(range(len(sres.ids)))
+            sim, tsim, vsim = self.rerank(
+                sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
+                rank_feature=rank_feature)
+        idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
+
 
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"

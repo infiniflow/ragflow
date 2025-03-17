@@ -105,9 +105,10 @@ def init_llm_factory():
 
     factory_llm_infos = settings.FACTORY_LLM_INFOS    
     for factory_llm_info in factory_llm_infos:
-        llm_infos = factory_llm_info.pop("llm")
+        info = deepcopy(factory_llm_info)
+        llm_infos = info.pop("llm")
         try:
-            LLMFactoriesService.save(**factory_llm_info)
+            LLMFactoriesService.save(**info)
         except Exception:
             pass
         LLMService.filter_delete([LLM.fid == factory_llm_info["name"]])

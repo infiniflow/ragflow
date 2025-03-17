@@ -139,11 +139,8 @@ class TestUploadDocuments:
         # filename_length = 129
         fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt")
         res = upload_documnets(get_http_api_auth, ids[0], [fp])
-        assert res["code"] == 500
-        assert (
-            res["message"]
-            == f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt: Exceed the maximum length of file name!"
-        )
+        assert res["code"] == 101
+        assert res["message"] == "File name should be less than 128 bytes."
 
     def test_invalid_dataset_id(self, get_http_api_auth, tmp_path):
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
@@ -207,7 +204,6 @@ class TestUploadDocuments:
         res = list_dataset(get_http_api_auth, {"id": ids[0]})
         assert res["data"][0]["document_count"] == expected_document_count
 
-    @pytest.mark.xfail
     def test_concurrent_upload(self, get_http_api_auth, tmp_path):
         ids = create_datasets(get_http_api_auth, 1)
 
