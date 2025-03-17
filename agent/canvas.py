@@ -320,8 +320,8 @@ class Canvas:
         for key, value in variables.items():
             if not self.variables.get(key):
                 self.variables[key] = ""
-            if value:
-                self.variables[key] = value
+            if value and value != "Unknown" and value != "" and value != "None":
+                self.variables[key] = f"{value}"
 
     def add_user_input(self, question):
         self.history.append(("user", question))
