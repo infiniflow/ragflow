@@ -655,8 +655,8 @@ class GeminiCV(Base):
         return res.text, res.usage_metadata.total_token_count
 
     def describe_with_prompt(self, image, page, prompt=None):
-        prompt = prompt if prompt else self.vision_llm_prompt(b64, page=page)
         b64 = self.image2base64(image)
+        prompt = prompt if prompt else self.vision_llm_prompt(b64, page=page)
         img = open(BytesIO(base64.b64decode(b64)))
         input = [prompt, img]
         res = self.model.generate_content(
