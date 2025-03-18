@@ -69,6 +69,7 @@ interface Es {
 }
 
 export interface ITenantUser {
+  id: string;
   avatar: string;
   delta_seconds: number;
   email: string;
