@@ -166,7 +166,7 @@ export default {
       html4excel: 'Excel sang HTML',
       html4excelTip: `Excel sẽ được phân tích cú pháp thành bảng HTML hay không. Nếu là FALSE, mỗi hàng trong Excel sẽ được tạo thành một khối.`,
       autoKeywords: 'Từ khóa tự động',
-      autoKeywordsTip: `Trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các từ khóa đó. Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
+      autoKeywordsTip: `Tự động trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng trong các truy vấn chứa các từ khóa đó. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi mô hình trò chuyện được chỉ định trong "Cài đặt mô hình hệ thống". Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối.`,
       autoQuestions: 'Câu hỏi tự động',
       autoQuestionsTip: `Trích xuất N câu hỏi cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các câu hỏi đó. Bạn có thể kiểm tra hoặc cập nhật các câu hỏi đã thêm cho một khối từ danh sách khối. Tính năng này sẽ không làm gián đoạn quá trình phân khối nếu xảy ra lỗi, ngoại trừ việc nó có thể thêm kết quả trống vào khối gốc. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
       delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token".`,
@@ -229,7 +229,7 @@ export default {
       <p>
       <li>Sử dụng mô hình nhận dạng thị giác để chia các văn bản thành các phân đoạn nhỏ hơn.</li>
       <li>Sau đó, kết hợp các phân đoạn liền kề cho đến khi số lượng token vượt quá ngưỡng được chỉ định bởi 'Số token khối', tại thời điểm đó, một khối được tạo.</li></p>
-      <p>Các định dạng tệp được hỗ trợ là <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>`,
+      <p>Các định dạng tệp được hỗ trợ là <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>`,
       paper: `<p>Chỉ hỗ trợ tệp <b>PDF</b>.</p><p>
       Bài báo sẽ được chia theo các phần, chẳng hạn như <i>tóm tắt, 1.1, 1.2</i>. </p><p>
       Cách tiếp cận này cho phép LLM tóm tắt bài báo hiệu quả hơn và cung cấp các phản hồi toàn diện, dễ hiểu hơn. 
