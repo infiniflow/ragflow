@@ -37,6 +37,7 @@ from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.nlp import rag_tokenizer
+from rag.prompts import vision_llm_describe_prompt
 from rag.settings import PARALLEL_DEVICES
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
@@ -1243,7 +1244,6 @@ class PlainParser:
 class VisionParser(RAGFlowPdfParser):
     def __init__(self, vision_model, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.prompt = kwargs.get("prompt", "")
         self.vision_model = vision_model
 
     def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
@@ -1279,7 +1279,7 @@ class VisionParser(RAGFlowPdfParser):
             docs = picture_vision_llm_chunk(
                 binary=img_binary,
                 vision_model=self.vision_model,
-                prompt=self.prompt,
+                prompt=vision_llm_describe_prompt(page=pdf_page_num+1),
                 callback=callback,
             )
 
