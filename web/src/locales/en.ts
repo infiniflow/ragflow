@@ -1192,8 +1192,27 @@ This delimiter is used to split the input text into several text pieces echo of 
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
+      variableExtractDescription:
+        'Extract user information into global variable throughout the conversation',
+      variableExtract: 'Variables',
+      variables: 'Variables',
+      variablesTip: `Set the clear json key variable with a value of empty. e.g.
+      {
+        "UserCode":"",
+        "NumberPhone":""
+      }`,
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
+      historyversion: 'History version',
+      filename: 'File name',
+      version: {
+        created: 'Created',
+        details: 'Version details',
+        dsl: 'DSL',
+        download: 'Download',
+        version: 'Version',
+        select: 'No version selected',
+      },
       setting: 'Setting',
       settings: {
         upload: 'Upload',
@@ -1203,16 +1222,14 @@ This delimiter is used to split the input text into several text pieces echo of 
         me: 'me',
         team: 'Team',
       },
-      noMoreData: 'No more data',
-      searchAgentPlaceholder: 'Search agent',
-    },
-    footer: {
-      profile: 'All rights reserved @ React',
-    },
-    layout: {
-      file: 'file',
-      knowledge: 'knowledge',
-      chat: 'chat',
+      footer: {
+        profile: 'All rights reserved @ React',
+      },
+      layout: {
+        file: 'file',
+        knowledge: 'knowledge',
+        chat: 'chat',
+      },
     },
   },
 };

@@ -67,15 +67,15 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
         gap={'large'}
         className={styles.flowHeader}
       >
-        {' '}
         <Badge.Ribbon
           text={data?.nickname}
+          style={{ marginRight: -data?.nickname?.length * 5 }}
           color={userInfo?.nickname === data?.nickname ? '#1677ff' : 'pink'}
           className={classNames(styles.ribbon, {
             [styles.hideRibbon]: data.permission !== 'team',
           })}
         >
-          <Space size={'large'}>
+          <Space className={styles.headerTitle} size={'large'}>
             <Link to={`/flow`}>
               <ArrowLeftOutlined />
             </Link>
