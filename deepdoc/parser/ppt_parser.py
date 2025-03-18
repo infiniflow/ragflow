@@ -23,6 +23,13 @@ class RAGFlowPptParser:
     def __init__(self):
         super().__init__()
 
+    def __get_bulleted_text(self, paragraph):
+        is_bulleted = bool(paragraph._p.xpath("./a:pPr/a:buChar")) or bool(bool(paragraph._p.xpath("./a:pPr/a:buAutoNum")) )
+        if is_bulleted:
+            return f"{'  '* paragraph.level}.{paragraph.text}"
+        else:
+            return paragraph.text
+
     def __extract(self, shape):
         if shape.shape_type == 19:
             tb = shape.table
@@ -33,7 +40,12 @@ class RAGFlowPptParser:
             return "\n".join(rows)
 
         if shape.has_text_frame:
-            return shape.text_frame.text
+            text_frame = shape.text_frame
+            texts = []
+            for paragraph in text_frame.paragraphs:
+                if paragraph.text.strip():
+                    texts.append(self.__get_bulleted_text(paragraph))
+            return "\n".join(texts)
 
         if shape.shape_type == 6:
             texts = []

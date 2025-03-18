@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 
 from rag.settings import TAG_FLD, PAGERANK_FLD
-from rag.utils import rmSpace
+from rag.utils import rmSpace, get_float
 from rag.nlp import rag_tokenizer, query
 import numpy as np
 from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
@@ -49,7 +49,7 @@ class Dealer:
         if len(shape) > 1:
             raise Exception(
                 f"Dealer.get_vector returned array's shape {shape} doesn't match expectation(exact one dimension).")
-        embedding_data = [float(v) for v in qv]
+        embedding_data = [get_float(v) for v in qv]
         vector_column_name = f"q_{len(embedding_data)}_vec"
         return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
 
@@ -153,7 +153,7 @@ class Dealer:
 
     @staticmethod
     def trans2floats(txt):
-        return [float(t) for t in txt.split("\t")]
+        return [get_float(t) for t in txt.split("\t")]
 
     def insert_citations(self, answer, chunks, chunk_v,
                          embd_mdl, tkweight=0.1, vtweight=0.9):
@@ -282,7 +282,7 @@ class Dealer:
         for chunk_id in sres.ids:
             vector = sres.field[chunk_id].get(vector_column, zero_vector)
             if isinstance(vector, str):
-                vector = [float(v) for v in vector.split("\t")]
+                vector = [get_float(v) for v in vector.split("\t")]
             ins_embd.append(vector)
         if not ins_embd:
             return [], [], []
@@ -346,15 +346,11 @@ class Dealer:
         if not question:
             return ranks
 
-        RERANK_PAGE_LIMIT = 3
-        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "size": max(page_size * RERANK_PAGE_LIMIT, 128),
+        RERANK_LIMIT = 64
+        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": page, "size": RERANK_LIMIT,
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
                "available_int": 1}
-
-        if page > RERANK_PAGE_LIMIT:
-            req["page"] = page
-            req["size"] = page_size
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
@@ -363,20 +359,17 @@ class Dealer:
                            kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
         ranks["total"] = sres.total
 
-        if page <= RERANK_PAGE_LIMIT:
-            if rerank_mdl and sres.total > 0:
-                sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
-                                                       sres, question, 1 - vector_similarity_weight,
-                                                       vector_similarity_weight,
-                                                       rank_feature=rank_feature)
-            else:
-                sim, tsim, vsim = self.rerank(
-                    sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
-                    rank_feature=rank_feature)
-            idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
+        if rerank_mdl and sres.total > 0:
+            sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
+                                                   sres, question, 1 - vector_similarity_weight,
+                                                   vector_similarity_weight,
+                                                   rank_feature=rank_feature)
         else:
-            sim = tsim = vsim = [1] * len(sres.ids)
-            idx = list(range(len(sres.ids)))
+            sim, tsim, vsim = self.rerank(
+                sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
+                rank_feature=rank_feature)
+        idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
+
 
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"

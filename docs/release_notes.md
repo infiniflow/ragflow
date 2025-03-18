@@ -28,11 +28,11 @@ Released on March 13, 2025.
 
 #### HTTP APIs
 
-[Create chat completion](./references/http_api_reference.md#openai-compatible-api)
+- [Create chat completion](./references/http_api_reference.md#openai-compatible-api)
 
 #### Python APIs
 
-[Create chat completion](./references/python_api_reference.md#openai-compatible-api)
+- [Create chat completion](./references/python_api_reference.md#openai-compatible-api)
 
 ## v0.17.1
 
