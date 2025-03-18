@@ -319,9 +319,12 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ## 📚 Dokumentasi
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [Panduan Pengguna](https://ragflow.io/docs/dev/category/guides)
-- [Referensi](https://ragflow.io/docs/dev/category/references)
-- [FAQ](https://ragflow.io/docs/dev/faq)
+- [Configuration](https://ragflow.io/docs/dev/configurations)
+- [Release notes](https://ragflow.io/docs/dev/release_notes)
+- [User guides](https://ragflow.io/docs/dev/category/guides)
+- [Developer guides](https://ragflow.io/docs/dev/category/developers)
+- [References](https://ragflow.io/docs/dev/category/references)
+- [FAQs](https://ragflow.io/docs/dev/faq)
 
 ## 📜 Roadmap
 

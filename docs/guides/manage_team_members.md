@@ -16,6 +16,10 @@ By default, each RAGFlow user is assigned a single team named after their name. 
 - Update the default configurations for your datasets.
 - Parse documents in your datasets.
 
+:::danger IMPORTANT
+To allow your team members to view and update your knowledge base, ensure that you set **Permissions** on its **Configuration** page from **Only me** to **Team**.
+:::
+
 :::tip NOTE
 Team members are currently *not* allowed to invite users to your team, and only you, the team owner, is permitted to do so.
 :::
@@ -43,3 +47,5 @@ When using email address to invite a team member, ensure it is associated with a
 ## Accept or decline team invite
 
 ![accept_or_decline_team_invite](https://github.com/user-attachments/assets/6a2cb61f-03d5-4423-9ed1-71df97ff4114)
+
+_After accepting the team invite, you should be able to view and update the team owner's knowledge bases whose **Permissions** is set to **Team**._
