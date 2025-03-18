@@ -596,11 +596,13 @@ def delete(tenant_id, dataset_id):
     pf_id = root_folder["id"]
     FileService.init_knowledgebase_docs(pf_id, tenant_id)
     errors = ""
+    not_found = []
     for doc_id in doc_list:
         try:
             e, doc = DocumentService.get_by_id(doc_id)
             if not e:
-                return get_error_data_result(message="Document not found!")
+                not_found.append(doc_id)
+                continue
             tenant_id = DocumentService.get_tenant_id(doc_id)
             if not tenant_id:
                 return get_error_data_result(message="Tenant not found!")
@@ -624,6 +626,9 @@ def delete(tenant_id, dataset_id):
             STORAGE_IMPL.rm(b, n)
         except Exception as e:
             errors += str(e)
+
+    if not_found:
+        return get_result(message=f"Documents not found: {not_found}", code=settings.RetCode.DATA_ERROR)
 
     if errors:
         return get_result(message=errors, code=settings.RetCode.SERVER_ERROR)

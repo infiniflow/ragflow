@@ -93,8 +93,18 @@ def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
     return encoder.decode(encoder.encode(string)[:max_len])
 
-
+  
 def clean_markdown_block(text):
     text = re.sub(r'^\s*```markdown\s*\n?', '', text)
     text = re.sub(r'\n?\s*```\s*$', '', text)
     return text.strip()
+
+  
+def get_float(v: str | None):
+    if v is None:
+        return float('-inf')
+    try:
+        return float(v)
+    except Exception:
+        return float('-inf')
+
