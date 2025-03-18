@@ -194,10 +194,9 @@ class Recognizer:
             inputs['scale_factor'] = np.array(
                 (im_info[0]['scale_factor'],)).astype('float32')
             return inputs
-
-        for e in im_info:
-            im_shape.append(np.array((e['im_shape'],)).astype('float32'))
-            scale_factor.append(np.array((e['scale_factor'],)).astype('float32'))
+        
+        im_shape = np.array([info['im_shape'] for info in im_info], dtype='float32')
+        scale_factor = np.array([info['scale_factor'] for info in im_info], dtype='float32')
 
         inputs['im_shape'] = np.concatenate(im_shape, axis=0)
         inputs['scale_factor'] = np.concatenate(scale_factor, axis=0)
