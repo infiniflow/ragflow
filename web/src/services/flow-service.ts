@@ -15,6 +15,7 @@ const {
   getInputElements,
   debug,
   listCanvasTeam,
+  settingCanvas,
 } = api;
 
 const methods = {
@@ -65,6 +66,10 @@ const methods = {
   listCanvasTeam: {
     url: listCanvasTeam,
     method: 'get',
+  },
+  settingCanvas: {
+    url: settingCanvas,
+    method: 'post',
   },
 } as const;
 

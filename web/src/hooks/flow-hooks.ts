@@ -121,6 +121,27 @@ export const useFetchFlow = (): {
   return { data, loading, refetch };
 };
 
+export const useSettingFlow = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['SettingFlow'],
+    mutationFn: async (params: any) => {
+      const ret = await flowService.settingCanvas(params);
+      if (ret?.data?.code === 0) {
+        message.success('success');
+      } else {
+        message.error(ret?.data?.data);
+      }
+      return ret;
+    },
+  });
+
+  return { data, loading, settingFlow: mutateAsync };
+};
+
 export const useFetchFlowSSE = (): {
   data: IFlow;
   loading: boolean;

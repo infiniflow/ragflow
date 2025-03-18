@@ -1194,6 +1194,15 @@ This delimiter is used to split the input text into several text pieces echo of 
       nextStep: 'Next step',
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
+      setting: 'Setting',
+      settings: {
+        upload: 'Upload',
+        photo: 'Photo',
+        permissions: 'Permission',
+        permissionsTip: 'You can set the permissions of the team members here.',
+        me: 'me',
+        team: 'Team',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -25,7 +25,7 @@ from api.utils.api_utils import get_json_result, server_error_response, validate
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken
-
+import logging
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
@@ -302,3 +302,28 @@ def list_kbs():
         return get_json_result(data={"kbs": kbs, "total": total})
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route('/setting', methods=['POST'])  # noqa: F821
+@validate_request("id", "title", "permission")
+@login_required
+def setting():
+    req = request.json
+    req["user_id"] = current_user.id
+    e,flow = UserCanvasService.get_by_id(req["id"])
+    if not e:
+        return get_data_error_result(message="canvas not found.")
+    flow = flow.to_dict()
+    flow["title"] = req["title"]
+    if req["description"]:
+        flow["description"] = req["description"]
+    if req["permission"]:
+        flow["permission"] = req["permission"]
+    if req["avatar"]:
+        flow["avatar"] = req["avatar"]
+    if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
+    num= UserCanvasService.update_by_id(req["id"], flow)
+    return get_json_result(data=num)
