@@ -3,8 +3,10 @@ import { useShowEmbedModal } from '@/components/api-service/hooks';
 import { SharedFrom } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchFlow } from '@/hooks/flow-hooks';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { ArrowLeftOutlined } from '@ant-design/icons';
-import { Button, Flex, Space } from 'antd';
+import { Badge, Button, Flex, Space } from 'antd';
+import classNames from 'classnames';
 import { useCallback } from 'react';
 import { Link, useParams } from 'umi';
 import {
@@ -17,7 +19,6 @@ import {
   useWatchAgentChange,
 } from '../hooks/use-save-graph';
 import { BeginQuery } from '../interface';
-
 import styles from './index.less';
 
 interface IProps {
@@ -28,6 +29,8 @@ interface IProps {
 const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const { saveGraph } = useSaveGraph();
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
+  const { data: userInfo } = useFetchUserInfo();
+
   const { data } = useFetchFlow();
   const { t } = useTranslate('flow');
   const { id } = useParams();
@@ -58,33 +61,52 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
         gap={'large'}
         className={styles.flowHeader}
       >
+        {' '}
+        <Badge.Ribbon
+          text={data?.nickname}
+          color={userInfo?.nickname === data?.nickname ? '#1677ff' : 'pink'}
+          className={classNames(styles.ribbon, {
+            [styles.hideRibbon]: data.permission !== 'team',
+          })}
+        >
+          <Space size={'large'}>
+            <Link to={`/flow`}>
+              <ArrowLeftOutlined />
+            </Link>
+            <div className="flex flex-col">
+              <span className="font-semibold text-[18px]">{data.title}</span>
+              <span className="font-normal text-sm">
+                {t('autosaved')} {time}
+              </span>
+            </div>
+          </Space>
+        </Badge.Ribbon>
         <Space size={'large'}>
-          <Link to={`/flow`}>
-            <ArrowLeftOutlined />
-          </Link>
-          <div className="flex flex-col">
-            <span className="font-semibold text-[18px]">{data.title}</span>
-            <span className="font-normal text-sm">
-              {t('autosaved')} {time}
-            </span>
-          </div>
-        </Space>
-        <Space size={'large'}>
-          <Button onClick={handleRunAgent}>
+          <Button
+            disabled={userInfo.nickname !== data.permission}
+            onClick={handleRunAgent}
+          >
             <b>{t('run')}</b>
           </Button>
-          <Button type="primary" onClick={() => saveGraph()}>
+          <Button
+            disabled={userInfo.nickname !== data.permission}
+            type="primary"
+            onClick={() => saveGraph()}
+          >
             <b>{t('save')}</b>
           </Button>
           <Button
             type="primary"
             onClick={handleShowEmbedModal}
-            disabled={!isBeginNodeDataQuerySafe}
+            disabled={
+              !isBeginNodeDataQuerySafe || userInfo.nickname !== data.permission
+            }
           >
             <b>{t('embedIntoSite', { keyPrefix: 'common' })}</b>
           </Button>
         </Space>
       </Flex>
+
       {embedVisible && (
         <EmbedModal
           visible={embedVisible}

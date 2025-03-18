@@ -18,12 +18,14 @@ import time
 import traceback
 from uuid import uuid4
 from agent.canvas import Canvas
-from api.db.db_models import DB, CanvasTemplate, UserCanvas, API4Conversation
+from api.db import StatusEnum, TenantPermission
+from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation, UserTenant
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.conversation_service import structure_answer
 from api.utils import get_uuid
-
+from peewee import fn
+import logging
 
 class CanvasTemplateService(CommonService):
     model = CanvasTemplate
@@ -50,7 +52,77 @@ class UserCanvasService(CommonService):
         agents = agents.paginate(page_number, items_per_page)
 
         return list(agents.dicts())
-
+   
+    @classmethod
+    @DB.connection_context()
+    def get_by_tenant_id(cls, pid):
+        try:
+            
+            fields = [
+                cls.model.id,
+                cls.model.avatar,
+                cls.model.title,
+                cls.model.dsl,
+                cls.model.description,
+                cls.model.permission,
+                cls.model.update_time,
+                cls.model.user_id,
+                cls.model.status,
+                cls.model.create_time,
+                cls.model.create_date,
+                cls.model.update_date,
+                User.nickname,
+                User.avatar.alias('tenant_avatar'),
+            ]
+            angents = cls.model.select(*fields) \
+            .join(User, on=(cls.model.user_id == User.id)) \
+            .where(cls.model.id == pid)
+            # obj = cls.model.query(id=pid)[0]
+            return True, angents.dicts()[0]
+        except Exception as e:
+            print(e)
+            return False, None
+     
+    @classmethod
+    @DB.connection_context()
+    def get_by_tenant_ids(cls, joined_tenant_ids, user_id,
+                          page_number, items_per_page,
+                          orderby, desc, keywords,
+                          ):
+        fields = [
+            cls.model.id,
+            cls.model.avatar,
+            cls.model.title,
+            cls.model.dsl,
+            cls.model.description,
+            cls.model.permission,
+            User.nickname,
+            User.avatar.alias('tenant_avatar'),
+            cls.model.update_time
+        ]
+        if keywords:
+            angents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
+                ((cls.model.user_id.in_(joined_tenant_ids) & (cls.model.permission ==
+                                                                TenantPermission.TEAM.value)) | (
+                    cls.model.user_id == user_id))
+                & (cls.model.status == StatusEnum.VALID.value),
+                (fn.LOWER(cls.model.title).contains(keywords.lower()))
+            )
+        else:
+            angents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
+                ((cls.model.user_id.in_(joined_tenant_ids) & (cls.model.permission ==
+                                                                TenantPermission.TEAM.value)) | (
+                    cls.model.user_id == user_id))
+                & (cls.model.status == StatusEnum.VALID.value)
+            )
+        if desc:
+            angents = angents.order_by(cls.model.getter_by(orderby).desc())
+        else:
+            angents = angents.order_by(cls.model.getter_by(orderby).asc())
+        count = angents.count()
+        angents = angents.paginate(page_number, items_per_page)
+        return list(angents.dicts()), count
+   
 
 def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
     e, cvs = UserCanvasService.get_by_id(agent_id)

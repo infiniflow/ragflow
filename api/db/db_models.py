@@ -967,11 +967,24 @@ class UserCanvas(DataBaseModel):
     avatar = TextField(null=True, help_text="avatar base64 string")
     user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
     title = CharField(max_length=255, null=True, help_text="Canvas title")
-
+    
+    permission = CharField(
+        max_length=16,
+        null=False,
+        help_text="me|team",
+        default="me",
+        index=True)
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
     dsl = JSONField(null=True, default={})
 
+    status = CharField(
+        max_length=1,
+        null=True,
+        help_text="is it validate(0: wasted, 1: validate)",
+        default="1",
+        index=True)
+    
     class Meta:
         db_table = "user_canvas"
 
@@ -1127,6 +1140,20 @@ def migrate_db():
             migrate(
                 migrator.add_column("task", "priority",
                                     IntegerField(default=0))
+            )
+        except Exception:
+            pass
+        try:
+            migrate(
+                migrator.add_column("user_canvas", "permission",
+                                    CharField(max_length=16, null=False, help_text="me|team", default="me", index=True))
+            )
+        except Exception:
+            pass
+        try:
+            migrate(
+                migrator.add_column("user_canvas", "status",
+                                    CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
             )
         except Exception:
             pass

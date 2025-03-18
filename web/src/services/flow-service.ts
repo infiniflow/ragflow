@@ -14,6 +14,7 @@ const {
   testDbConnect,
   getInputElements,
   debug,
+  listCanvasTeam,
 } = api;
 
 const methods = {
@@ -60,6 +61,10 @@ const methods = {
   debugSingle: {
     url: debug,
     method: 'post',
+  },
+  listCanvasTeam: {
+    url: listCanvasTeam,
+    method: 'get',
   },
 } as const;
 
