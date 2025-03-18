@@ -103,8 +103,12 @@ MODEL_UNLOAD_IDLE_TIME = int(os.environ.get('MODEL_UNLOAD_IDLE_TIME', "30")) * 6
 async def unload_models():
     """Unload embedding and rerank models to save memory"""
     try:
-        logging.info("Idle time exceeded threshold, unloading models to save memory...")
+        # Check if there are any tasks still running
+        if CURRENT_TASKS:
+            logging.info("Tasks are still running, skipping model unloading")
+            return
         
+        logging.info("Idle time exceeded threshold, unloading models to save memory...")
         
         # Unload both embedding and rerank models
         unloaded_models = LLMBundle.unload_model()
