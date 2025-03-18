@@ -258,7 +258,7 @@ def tokenize(d, t, eng):
 def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
     res = []
     # wrap up as es documents
-    for ck in chunks:
+    for ii, ck in enumerate(chunks):
         if len(ck.strip()) == 0:
             continue
         logging.debug("-- {}".format(ck))
@@ -270,6 +270,8 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
                 ck = pdf_parser.remove_tag(ck)
             except NotImplementedError:
                 pass
+        else:
+            add_positions(d, [[ii]*5])
         tokenize(d, ck, eng)
         res.append(d)
     return res
