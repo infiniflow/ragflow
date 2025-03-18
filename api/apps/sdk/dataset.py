@@ -244,19 +244,18 @@ def delete(tenant_id):
         for kb in kbs:
             id_list.append(kb.id)
     else:
-        # check duplicate ids
-        id_set = set()
-        duplicate_ids = []
+        # detect duplicate ids and remove them
+        seen_ids = set()
+        duplicates = []
         for id in ids:
-            if id in id_set:
-                duplicate_ids.append(id)
+            if id in seen_ids:
+                duplicates.append(id)
             else:
-                id_set.add(id)
-        
-        if duplicate_ids:
-            return get_error_data_result(message=f"Found duplicate IDs: {', '.join(duplicate_ids)}")
-        
-        id_list = ids
+                seen_ids.add(id)
+                
+        if duplicates:
+            errors.append(f"Duplicate dataset ids: {', '.join(duplicates)}")
+        id_list = list(set(ids))
         
     for id in id_list:
         kbs = KnowledgebaseService.query(id=id, tenant_id=tenant_id)
@@ -289,7 +288,7 @@ def delete(tenant_id):
             )
         else:
             return get_error_data_result(message="; ".join(errors))
-    return get_result(code=settings.RetCode.SUCCESS)
+    return get_result(data={"success_count": success_count}, code=settings.RetCode.SUCCESS)
 
 
 @manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821  
