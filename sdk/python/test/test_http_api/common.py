@@ -88,18 +88,25 @@ def upload_documnets(auth, dataset_id, files_path=None):
         files_path = []
 
     fields = []
-    for i, fp in enumerate(files_path):
-        p = Path(fp)
-        fields.append(("file", (p.name, p.open("rb"))))
-    m = MultipartEncoder(fields=fields)
+    file_objects = []
+    try:
+        for fp in files_path:
+            p = Path(fp)
+            f = p.open("rb")
+            fields.append(("file", (p.name, f)))
+            file_objects.append(f)
+        m = MultipartEncoder(fields=fields)
 
-    res = requests.post(
-        url=url,
-        headers={"Content-Type": m.content_type},
-        auth=auth,
-        data=m,
-    )
-    return res.json()
+        res = requests.post(
+            url=url,
+            headers={"Content-Type": m.content_type},
+            auth=auth,
+            data=m,
+        )
+        return res.json()
+    finally:
+        for f in file_objects:
+            f.close()
 
 
 def batch_upload_documents(auth, dataset_id, num, tmp_path):
@@ -142,4 +149,10 @@ def list_documnet(auth, dataset_id, params=None):
 def update_documnet(auth, dataset_id, document_id, payload):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
     res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def delete_documnet(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
+    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
