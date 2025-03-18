@@ -37,7 +37,7 @@ const TopNav = () => {
               Chat
             </NavLink>
             <NavLink
-              to="/agent"
+              to="/flow-designer"
               className={({ isActive }) =>
                 `px-4 py-2 rounded-md text-base font-medium ${
                   isActive
@@ -46,7 +46,7 @@ const TopNav = () => {
                 }`
               }
             >
-              Agent
+              Flow Designer
             </NavLink>
           </nav>
           <div className="w-48 flex justify-end space-x-2">

@@ -4,7 +4,8 @@ import TopNav from './TopNav'
 import Greeting from '../components/Greeting'
 import Knowledge from '../pages/Knowledge'
 import Chat from '../pages/Chat'
-import Agent from '../pages/Agent'
+import FlowDesigner from '../pages/FlowDesigner'
+import FlowCanvas from '../pages/FlowCanvas'
 import AccountSettings from '../pages/AccountSettings'
 import Settings from '../pages/Settings'
 
@@ -20,7 +21,8 @@ const MainLayout = () => {
               <Route path="/" element={<Knowledge />} />
               <Route path="/knowledge" element={<Knowledge />} />
               <Route path="/chat" element={<Chat />} />
-              <Route path="/agent" element={<Agent />} />
+              <Route path="/flow-designer" element={<FlowDesigner />} />
+              <Route path="/flow-canvas" element={<FlowCanvas />} />
               <Route path="/account" element={<AccountSettings />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
