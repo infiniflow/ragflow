@@ -185,7 +185,7 @@ def chat_completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
-@manager.route('chats_openai/<chat_id>/chat/completions', methods=['POST'])  # noqa: F821
+@manager.route('/chats_openai/<chat_id>/chat/completions', methods=['POST'])  # noqa: F821
 @validate_request("model", "messages")  # noqa: F821
 @token_required
 def chat_completion_openai_like(tenant_id, chat_id):

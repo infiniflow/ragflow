@@ -629,7 +629,7 @@ def delete(tenant_id, dataset_id):
 
     if not_found:
         return get_result(message=f"Documents not found: {not_found}", code=settings.RetCode.DATA_ERROR)
-    
+
     if errors:
         return get_result(message=errors, code=settings.RetCode.SERVER_ERROR)
 
