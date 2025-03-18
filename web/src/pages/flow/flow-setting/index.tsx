@@ -1,17 +1,32 @@
 import { useTranslate } from '@/hooks/common-hooks';
-import { IModalProps } from '@/interfaces/common';
 import { Modal, Typography } from 'antd';
-import { useParams } from 'umi';
+import React from 'react';
 import styles from './index.less';
-const { Paragraph, Link } = Typography;
+const { Paragraph } = Typography;
+export function useFlowSettingModal() {
+  const [visibleSettingModal, setVisibleSettingMModal] = React.useState(false);
 
-export const FlowSettingModal = ({ hideModal }: IModalProps<any>) => {
+  return {
+    visibleSettingModal,
+    setVisibleSettingMModal,
+  };
+}
+
+type FlowSettingModalProps = {
+  visible: boolean;
+  hideModal: () => void;
+  id: string;
+};
+export const FlowSettingModal = ({
+  hideModal,
+  id,
+  visible,
+}: FlowSettingModalProps) => {
   const { t } = useTranslate('flow');
-  const { id } = useParams();
   return (
     <Modal
       title={'Agent Setting'}
-      open
+      open={visible}
       onCancel={hideModal}
       cancelButtonProps={{ style: { display: 'none' } }}
       onOk={hideModal}
@@ -20,12 +35,6 @@ export const FlowSettingModal = ({ hideModal }: IModalProps<any>) => {
       <Paragraph copyable={{ text: id }} className={styles.id}>
         {id}
       </Paragraph>
-      <Link
-        href="https://ragflow.io/docs/dev/http_api_reference#create-session-with-an-agent"
-        target="_blank"
-      >
-        {t('howUseId')}
-      </Link>
     </Modal>
   );
 };
