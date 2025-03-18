@@ -34,6 +34,7 @@ export const FlowSettingModal = ({
         title: data.title,
         description: data.description,
         permission: data.permission,
+        avatar: data.avatar ? [{ thumbUrl: data.avatar }] : [],
       });
     }
   }, [data, form]);
