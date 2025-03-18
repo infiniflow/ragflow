@@ -85,7 +85,7 @@ class TestDocumentDeletion:
         if callable(payload):
             payload = payload(document_ids)
         res = delete_documnet(get_http_api_auth, ids[0], payload)
-        assert res["code"] == [500, 102]
+        assert res["code"] in [500, 102]
         #if res["code"] != 0:
         #    assert res["message"] == expected_message
 
