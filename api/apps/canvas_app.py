@@ -63,18 +63,6 @@ def save():
     req["user_id"] = current_user.id
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
-    # get data on database to save dsl as json  on dist with version is date_update
-    if "id" in req:
-        e, flow  = UserCanvasService.get_by_id(req["id"])
-        flow = flow.to_dict()
-        if e:
-            version = time.strftime("%Y_%m_%d_%H_%M_%S")
-            title = flow.get("title","")
-            # check flow.get("dsl") <> req["dsl"] then save version
-            if flow.get("dsl") != req["dsl"]:
-                UserCanvasVersionService.create(user_canvas_id=flow.get("id"), dsl= flow.get("dsl"), title=f"{title}_{version}")
-                UserCanvasVersionService.delete_all_versions(flow.get("id"))
-
     req["dsl"] = json.loads(req["dsl"])
     if "id" not in req:
         if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip()):
@@ -88,6 +76,9 @@ def save():
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
+    # save version    
+    UserCanvasVersionService.create( user_canvas_id=req["id"], dsl=req["dsl"], title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")))
+    UserCanvasVersionService.delete_all_versions(req["id"])
     return get_json_result(data=req)
 
  
@@ -307,10 +298,8 @@ def test_db_connect():
 @login_required
 def getlistversion(canvas_id):
     try:
- 
-          return get_json_result(data=sorted([c.to_dict() for c in \
-                                 UserCanvasVersionService.getlist_by_canvas_id(canvas_id)], key=lambda x: x["update_time"]*-1)
-                                )
+        list =sorted([c.to_dict() for c in UserCanvasVersionService.getlist_by_canvas_id(canvas_id)], key=lambda x: x["update_time"]*-1)
+        return get_json_result(data=list)
     except Exception as e:
         return get_data_error_result(message=f"Error getting history files: {e}")
     
