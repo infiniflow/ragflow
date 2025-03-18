@@ -82,7 +82,7 @@ class Retrieval(ComponentBase, ABC):
                                         rank_feature=label_question(query, kbs))
         else:
             kbinfos = {"chunks": [], "doc_aggs": []}
-            
+
         if self._param.use_kg and kbs:
             ck = settings.kg_retrievaler.retrieval(query,
                                                    [kbs[0].tenant_id],
