@@ -265,7 +265,7 @@ class Canvas:
                 pid = cpn["parent_id"]
                 _, o = cpn["obj"].output(allow_partial=False)
                 _, oo = self.components[pid]["obj"].output(allow_partial=False)
-                self.components[pid]["obj"].set_output(pd.concat([oo.dropna(axis=1), o.dropna(axis=1)], ignore_index=True))
+                self.components[pid]["obj"].set_output(pd.concat([oo.dropna(axis=1), o.dropna(axis=1)], ignore_index=True).dropna())
                 downstream = [pid]
 
             for m in prepare2run(downstream):
