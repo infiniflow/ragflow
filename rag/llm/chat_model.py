@@ -49,7 +49,7 @@ class Base(ABC):
                 model=self.model_name,
                 messages=history,
                 **gen_conf)
-            if not response.choices:
+            if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
                 return "", 0
             ans = response.choices[0].message.content.strip()
             if response.choices[0].finish_reason == "length":
@@ -184,7 +184,6 @@ class BaiChuanChat(Base):
     def _format_params(params):
         return {
             "temperature": params.get("temperature", 0.3),
-            "max_tokens": params.get("max_tokens", 2048),
             "top_p": params.get("top_p", 0.85),
         }
 
