@@ -1485,8 +1485,8 @@ The parameters in `begin` component.
 from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-AGENT_ID = "AGENT_ID"
-agent = rag_object.list_agents(id = AGENT_id)[0]
+agent_id = "AGENT_ID"
+agent = rag_object.list_agents(id = agent_id)[0]
 session = agent.create_session()
 ```
 
