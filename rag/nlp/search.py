@@ -259,6 +259,7 @@ class Dealer:
         for i in search_res.ids:
             nor, denor = 0, 0
             if not search_res.field[i].get(TAG_FLD):
+                rank_fea.append(0)
                 continue
             for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
                 if t in query_rfea:
