@@ -9,6 +9,7 @@ import { Badge, Button, Flex, Space } from 'antd';
 import classNames from 'classnames';
 import { useCallback } from 'react';
 import { Link, useParams } from 'umi';
+import { FlowSettingModal, useFlowSettingModal } from '../flow-setting';
 import {
   useGetBeginNodeDataQuery,
   useGetBeginNodeDataQueryIsSafe,
@@ -38,6 +39,8 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
+  const { setVisibleSettingMModal, visibleSettingModal } =
+    useFlowSettingModal();
   const isBeginNodeDataQuerySafe = useGetBeginNodeDataQueryIsSafe();
 
   const handleShowEmbedModal = useCallback(() => {
@@ -53,6 +56,9 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
     }
   }, [getBeginNodeDataQuery, handleRun, showChatDrawer]);
 
+  const showSetting = useCallback(() => {
+    setVisibleSettingMModal(true);
+  }, [setVisibleSettingMModal]);
   return (
     <>
       <Flex
@@ -104,6 +110,9 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
           >
             <b>{t('embedIntoSite', { keyPrefix: 'common' })}</b>
           </Button>
+          <Button type="primary" onClick={showSetting}>
+            <b>{t('setting')}</b>
+          </Button>
         </Space>
       </Flex>
 
@@ -116,6 +125,14 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
           beta={beta}
           isAgent
         ></EmbedModal>
+      )}
+
+      {visibleSettingModal && (
+        <FlowSettingModal
+          id={id || ''}
+          visible={visibleSettingModal}
+          hideModal={() => setVisibleSettingMModal(false)}
+        ></FlowSettingModal>
       )}
     </>
   );

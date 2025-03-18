@@ -16,7 +16,9 @@
 
 import os
 import re
+
 import tiktoken
+
 from api.utils.file_utils import get_project_base_directory
 
 
@@ -54,7 +56,7 @@ def findMaxDt(fnm):
         pass
     return m
 
-  
+
 def findMaxTm(fnm):
     m = 0
     try:
@@ -91,7 +93,13 @@ def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
     return encoder.decode(encoder.encode(string)[:max_len])
 
+  
+def clean_markdown_block(text):
+    text = re.sub(r'^\s*```markdown\s*\n?', '', text)
+    text = re.sub(r'\n?\s*```\s*$', '', text)
+    return text.strip()
 
+  
 def get_float(v: str | None):
     if v is None:
         return float('-inf')
@@ -99,3 +107,4 @@ def get_float(v: str | None):
         return float(v)
     except Exception:
         return float('-inf')
+
