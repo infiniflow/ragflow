@@ -95,6 +95,29 @@ FAILED_TASKS = 0
 
 CURRENT_TASKS = {}
 
+# Track the last task processing time and configure idle timeout (default 30 minutes)
+LAST_TASK_TIME = datetime.now()
+MODEL_UNLOAD_IDLE_TIME = int(os.environ.get('MODEL_UNLOAD_IDLE_TIME', "30")) * 60  # seconds
+
+# Function to unload models when idle
+async def unload_models():
+    """Unload embedding and rerank models to save memory"""
+    try:
+        logging.info("Idle time exceeded threshold, unloading models to save memory...")
+        
+        
+        # Unload both embedding and rerank models
+        unloaded_models = LLMBundle.unload_model()
+        
+        if unloaded_models:
+            logging.info(f"Successfully unloaded models: {', '.join(unloaded_models)}")
+        else:
+            logging.info("No models were unloaded")
+            
+        logging.info("Model unloading completed")
+    except Exception:
+        logging.exception("Error occurred while unloading models")
+
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
 task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
@@ -170,8 +193,7 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
         logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception")
 
 async def collect():
-    global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS
-    global UNACKED_ITERATOR
+    global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS, UNACKED_ITERATOR, LAST_TASK_TIME
     svr_queue_names = get_svr_queue_names()
     try:
         if not UNACKED_ITERATOR:
@@ -188,7 +210,16 @@ async def collect():
         return None, None
 
     if not redis_msg:
+        # Check idle time since last task
+        idle_time = (datetime.now() - LAST_TASK_TIME).total_seconds()
+        if idle_time > MODEL_UNLOAD_IDLE_TIME:
+            await unload_models()
+            # Reset timer to avoid frequent unloading
+            LAST_TASK_TIME = datetime.now()
         return None, None
+    
+    # Update last task time when a new task arrives
+    LAST_TASK_TIME = datetime.now()
     msg = redis_msg.get_message()
     if not msg:
         logging.error(f"collect got empty message of {redis_msg.get_msg_id()}")
@@ -587,10 +618,14 @@ async def do_handle_task(task):
 
 
 async def handle_task():
-    global DONE_TASKS, FAILED_TASKS
+    global DONE_TASKS, FAILED_TASKS, LAST_TASK_TIME
     redis_msg, task = await collect()
     if not task:
         return
+    
+    # Update last task time
+    LAST_TASK_TIME = datetime.now()
+    
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
         CURRENT_TASKS[task["id"]] = copy.deepcopy(task)

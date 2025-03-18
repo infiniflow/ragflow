@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import gc
 
 from api.db.services.user_service import TenantService
 from rag.llm import EmbeddingModel, CvModel, ChatModel, RerankModel, Seq2txtModel, TTSModel
@@ -221,6 +222,67 @@ class TenantLLMService(CommonService):
         ).dicts()
         return list(objs)
 
+    @staticmethod
+    def unload_model(llm_type=None):
+        """Unload models of specified type to save memory.
+        
+        Args:
+            llm_type: The type of model to unload (LLMType.EMBEDDING, LLMType.RERANK, etc.)
+                      If None, unload all model types.
+        
+        Returns:
+            list: Names of model classes that were unloaded
+        """
+        try:
+            unloaded_models = []
+            
+            # Unload embedding models if requested
+            if llm_type is None or llm_type == LLMType.EMBEDDING:
+                from rag.llm.embedding_model import DefaultEmbedding
+                
+                if hasattr(DefaultEmbedding, '_model_lock') and hasattr(DefaultEmbedding, '_model'):
+                    with DefaultEmbedding._model_lock:
+                        if DefaultEmbedding._model is not None:
+                            DefaultEmbedding._model = None
+                            DefaultEmbedding._model_name = ""
+                            unloaded_models.append("DefaultEmbedding")
+                            logging.info("Unloaded DefaultEmbedding model")
+            
+            # Unload rerank models if requested
+            if llm_type is None or llm_type == LLMType.RERANK:
+                from rag.llm.rerank_model import DefaultRerank, YoudaoRerank
+                
+                if hasattr(DefaultRerank, '_model_lock') and hasattr(DefaultRerank, '_model'):
+                    with DefaultRerank._model_lock:
+                        if DefaultRerank._model is not None:
+                            DefaultRerank._model = None
+                            unloaded_models.append("DefaultRerank")
+                            logging.info("Unloaded DefaultRerank model")
+                
+                if hasattr(YoudaoRerank, '_model_lock') and hasattr(YoudaoRerank, '_model'):
+                    with YoudaoRerank._model_lock:
+                        if YoudaoRerank._model is not None:
+                            YoudaoRerank._model = None
+                            unloaded_models.append("YoudaoRerank")
+                            logging.info("Unloaded YoudaoRerank model")
+            
+            # Trigger garbage collection
+            gc.collect()
+            
+            # Clear CUDA cache if available
+            try:
+                import torch
+                torch.cuda.empty_cache()
+                logging.info("CUDA cache cleared")
+            except Exception:
+                pass
+                
+            return unloaded_models
+            
+        except Exception as e:
+            logging.exception(f"Error occurred while unloading models: {e}")
+            return []
+
 
 class LLMBundle:
     def __init__(self, tenant_id, llm_type, llm_name=None, lang="Chinese"):
@@ -233,6 +295,20 @@ class LLMBundle:
             tenant_id, llm_type, llm_name)
         model_config = TenantLLMService.get_model_config(tenant_id, llm_type, llm_name)
         self.max_length = model_config.get("max_tokens", 8192)
+
+    @classmethod
+    def unload_model(cls, llm_type=None):
+        """Unload models of specified type to save memory.
+        
+        Args:
+            llm_type: The type of model to unload (LLMType.EMBEDDING, LLMType.RERANK, etc.)
+                      If None, unload all model types.
+        
+        Returns:
+            list: Names of model classes that were unloaded
+        """
+        # Delegate unloading to TenantLLMService
+        return TenantLLMService.unload_model(llm_type)
 
     def encode(self, texts: list):
         embeddings, used_tokens = self.mdl.encode(texts)
