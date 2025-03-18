@@ -95,9 +95,8 @@ class TestDownloadDocument:
         )
 
     @pytest.mark.parametrize(
-        "docment_id, expected_code, expected_message",
+        "document_id, expected_code, expected_message",
         [
-            pytest.param("", 0, "", marks=pytest.mark.xfail(reason="issue#6031")),
             (
                 "invalid_document_id",
                 102,
@@ -105,14 +104,14 @@ class TestDownloadDocument:
             ),
         ],
     )
-    def test_invalid_docment_id(
-        self, get_http_api_auth, tmp_path, docment_id, expected_code, expected_message
+    def test_invalid_document_id(
+        self, get_http_api_auth, tmp_path, document_id, expected_code, expected_message
     ):
         ids = create_datasets(get_http_api_auth, 1)
         res = download_document(
             get_http_api_auth,
             ids[0],
-            docment_id,
+            document_id,
             tmp_path / "ragflow_test_download_1.txt",
         )
         assert res.status_code == codes.ok
