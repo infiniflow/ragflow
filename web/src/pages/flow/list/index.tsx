@@ -52,7 +52,7 @@ const FlowList = () => {
       <Flex justify={'end'}>
         <Space size={'large'}>
           <Input
-            placeholder={t('searchKnowledgePlaceholder')}
+            placeholder={t('searchAgentPlaceholder')}
             value={searchString}
             style={{ width: 220 }}
             allowClear
