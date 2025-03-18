@@ -306,7 +306,7 @@ class QWenChat(Base):
             result_list = list(g)
             error_msg_list = [item for item in result_list if str(item).find("**ERROR**") >= 0]
             if len(error_msg_list) > 0:
-                return "**ERROR**: " + "".join(error_msg_list) , 0
+                return "**ERROR**: " + "".join(error_msg_list), 0
             else:
                 return "".join(result_list[:-1]), result_list[-1]
 
@@ -338,7 +338,8 @@ class QWenChat(Base):
                             ans += LENGTH_NOTIFICATION_EN
                     yield ans
                 else:
-                    yield ans + "\n**ERROR**: " + resp.message if not re.search(r" (key|quota)", str(resp.message).lower()) else "Out of credit. Please set the API key in **settings > Model providers.**"
+                    yield ans + "\n**ERROR**: " + resp.message if not re.search(r" (key|quota)",
+                                                                                str(resp.message).lower()) else "Out of credit. Please set the API key in **settings > Model providers.**"
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 
@@ -358,7 +359,6 @@ class QWenChat(Base):
             model_name.lower().find("deepseek") >= 0,
             model_name.lower().find("qwq") >= 0 and model_name.lower() != 'qwq-32b-preview',
         ])
-
 
 
 class ZhipuChat(Base):
@@ -431,7 +431,8 @@ class ZhipuChat(Base):
 
 class OllamaChat(Base):
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"])
+        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else \
+            Client(host=kwargs["base_url"], headers={"Authorization": f"Bear {key}"})
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
@@ -753,7 +754,7 @@ class BedrockChat(Base):
             self.client = boto3.client('bedrock-runtime')
         else:
             self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
-                                   aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
+                                       aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
 
     def chat(self, system, history, gen_conf):
         from botocore.exceptions import ClientError
