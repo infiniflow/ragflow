@@ -150,3 +150,9 @@ def update_documnet(auth, dataset_id, document_id, payload):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
     res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def delete_documnet(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
+    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
