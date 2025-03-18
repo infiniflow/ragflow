@@ -116,6 +116,15 @@ class TestDatasetDeletion:
         assert res["code"] == 102
         assert res["message"] == f"You don't own the dataset {ids[0]}"
 
+    def test_duplicate_deletion(self, get_http_api_auth):
+        ids = create_datasets(get_http_api_auth, 1)
+        res = delete_dataset(get_http_api_auth, {"ids": ids + ids})
+        assert res["code"] == 0
+        assert res["data"]["success_count"] == 1
+
+        res = list_dataset(get_http_api_auth)
+        assert len(res["data"]) == 0
+
     def test_concurrent_deletion(self, get_http_api_auth):
         ids = create_datasets(get_http_api_auth, 100)
 
