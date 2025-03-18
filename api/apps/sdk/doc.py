@@ -591,7 +591,20 @@ def delete(tenant_id, dataset_id):
         for doc in docs:
             doc_list.append(doc.id)
     else:
+        # check duplicate ids
+        id_set = set()
+        duplicate_ids = []
+        for doc_id in doc_ids:
+            if doc_id in id_set:
+                duplicate_ids.append(doc_id)
+            else:
+                id_set.add(doc_id)
+        
+        if duplicate_ids:
+            return get_error_data_result(message=f"Found duplicate IDs: {', '.join(duplicate_ids)}")
+        
         doc_list = doc_ids
+        
     root_folder = FileService.get_root_folder(tenant_id)
     pf_id = root_folder["id"]
     FileService.init_knowledgebase_docs(pf_id, tenant_id)
@@ -680,7 +693,21 @@ def parse(tenant_id, dataset_id):
     req = request.json
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
-    for id in req["document_ids"]:
+    
+    # check duplicate ids
+    document_ids = req["document_ids"]
+    id_set = set()
+    duplicate_ids = []
+    for doc_id in document_ids:
+        if doc_id in id_set:
+            duplicate_ids.append(doc_id)
+        else:
+            id_set.add(doc_id)
+    
+    if duplicate_ids:
+        return get_error_data_result(message=f"Found duplicate IDs: {', '.join(duplicate_ids)}")
+    
+    for id in document_ids:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
@@ -1120,7 +1147,20 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     req = request.json
     condition = {"doc_id": document_id}
     if "chunk_ids" in req:
-        condition["id"] = req["chunk_ids"]
+        # check duplicate ids
+        chunk_ids = req["chunk_ids"]
+        id_set = set()
+        duplicate_ids = []
+        for chunk_id in chunk_ids:
+            if chunk_id in id_set:
+                duplicate_ids.append(chunk_id)
+            else:
+                id_set.add(chunk_id)
+        
+        if duplicate_ids:
+            return get_error_data_result(message=f"Found duplicate IDs: {', '.join(duplicate_ids)}")
+            
+        condition["id"] = chunk_ids
     chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
     if chunk_number != 0:
         DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
