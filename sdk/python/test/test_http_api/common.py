@@ -25,6 +25,7 @@ HEADERS = {"Content-Type": "application/json"}
 HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
 DATASETS_API_URL = "/api/v1/datasets"
 FILE_API_URL = "/api/v1/datasets/{dataset_id}/documents"
+FILE_CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/chunks"
 
 INVALID_API_TOKEN = "invalid_key_123"
 DATASET_NAME_LIMIT = 128
@@ -32,7 +33,7 @@ DOCUMENT_NAME_LIMIT = 128
 
 
 # DATASET MANAGEMENT
-def create_dataset(auth, payload):
+def create_dataset(auth, payload=None):
     res = requests.post(
         url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
         headers=HEADERS,
@@ -52,7 +53,7 @@ def list_dataset(auth, params=None):
     return res.json()
 
 
-def update_dataset(auth, dataset_id, payload):
+def update_dataset(auth, dataset_id, payload=None):
     res = requests.put(
         url=f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}",
         headers=HEADERS,
@@ -146,7 +147,7 @@ def list_documnet(auth, dataset_id, params=None):
     return res.json()
 
 
-def update_documnet(auth, dataset_id, document_id, payload):
+def update_documnet(auth, dataset_id, document_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
     res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
@@ -155,4 +156,10 @@ def update_documnet(auth, dataset_id, document_id, payload):
 def delete_documnet(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def parse_documnet(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
