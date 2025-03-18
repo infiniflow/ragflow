@@ -1577,7 +1577,6 @@ Success:
         "language": "English",
         "llm": {
             "frequency_penalty": 0.7,
-            "max_tokens": 512,
             "model_name": "qwen-plus@Tongyi-Qianwen",
             "presence_penalty": 0.4,
             "temperature": 0.1,
@@ -1825,7 +1824,6 @@ Success:
             "language": "English",
             "llm": {
                 "frequency_penalty": 0.7,
-                "max_tokens": 512,
                 "model_name": "qwen-plus@Tongyi-Qianwen",
                 "presence_penalty": 0.4,
                 "temperature": 0.1,
@@ -2807,7 +2805,6 @@ Success:
                             "cite": true,
                             "frequency_penalty": 0.7,
                             "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
-                            "max_tokens": 256,
                             "message_history_window_size": 12,
                             "parameters": [],
                             "presence_penalty": 0.4,
@@ -2854,7 +2851,6 @@ Success:
                                 "frequency_penalty": 0.7,
                                 "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
                                 "maxTokensEnabled": true,
-                                "max_tokens": 256,
                                 "message_history_window_size": 12,
                                 "parameters": [],
                                 "presencePenaltyEnabled": true,
