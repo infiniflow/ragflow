@@ -128,6 +128,9 @@ class Docx(DocxParser):
 
 
 class Pdf(PdfParser):
+    def __init__(self):
+        super().__init__()
+
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
         start = timer()

@@ -67,6 +67,7 @@ class Chunk(BaseModel):
                 raise ValueError("Each sublist in positions must have a length of 5")
         return value
 
+
 @manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
 @token_required
 def upload(dataset_id, tenant_id):
@@ -599,7 +600,8 @@ def delete(tenant_id, dataset_id):
         try:
             e, doc = DocumentService.get_by_id(doc_id)
             if not e:
-                return get_error_data_result(message="Document not found!")
+                errors += f"Document({doc_id}) not found!"
+                continue
             tenant_id = DocumentService.get_tenant_id(doc_id)
             if not tenant_id:
                 return get_error_data_result(message="Tenant not found!")
