@@ -38,40 +38,29 @@ class Session(Base):
             res = self._ask_agent(question, stream)
         elif self.__session_type == "chat":
             res = self._ask_chat(question, stream, **kwargs)
-            
-        for line in res.iter_lines():
-            line = line.decode("utf-8")
-            if line.startswith("{"):
-                json_data = json.loads(line)
-                raise Exception(json_data["message"])
-            if not line.startswith("data:"):
-                continue
-            json_data = json.loads(line[5:])
-            if json_data["data"] is True or json_data["data"].get("running_status"):
-                continue
-            answer = json_data["data"]["answer"]
-            reference = json_data["data"].get("reference", {})
-            temp_dict = {
-                "content": answer,
-                "role": "assistant"
-            }
-            if reference and "chunks" in reference:
-                chunks = reference["chunks"]
-                temp_dict["reference"] = chunks
-            message = Message(self.rag, temp_dict)
-            if stream:
-                yield message
-        if not stream:
-            return message
-    
-    def ask_without_stream(self, question="", stream=False, **kwargs):
-        if self.__session_type == "agent":
-            res = self._ask_agent(question, stream)
-        elif self.__session_type == "chat":
-            res = self._ask_chat(question, stream, **kwargs)
 
         if stream:
-            raise Exception("Please use session.ask() function!")
+            for line in res.iter_lines():
+                line = line.decode("utf-8")
+                if line.startswith("{"):
+                    json_data = json.loads(line)
+                    raise Exception(json_data["message"])
+                if not line.startswith("data:"):
+                    continue
+                json_data = json.loads(line[5:])
+                if json_data["data"] is True or json_data["data"].get("running_status"):
+                    continue
+                answer = json_data["data"]["answer"]
+                reference = json_data["data"].get("reference", {})
+                temp_dict = {
+                    "content": answer,
+                    "role": "assistant"
+                }
+                if reference and "chunks" in reference:
+                    chunks = reference["chunks"]
+                    temp_dict["reference"] = chunks
+                message = Message(self.rag, temp_dict)
+                yield message
         else:
             try:
                 json_data = json.loads(res.text)
