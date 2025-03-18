@@ -83,13 +83,13 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
         </Badge.Ribbon>
         <Space size={'large'}>
           <Button
-            disabled={userInfo.nickname !== data.permission}
+            disabled={userInfo.nickname !== data.nickname}
             onClick={handleRunAgent}
           >
             <b>{t('run')}</b>
           </Button>
           <Button
-            disabled={userInfo.nickname !== data.permission}
+            disabled={userInfo.nickname !== data.nickname}
             type="primary"
             onClick={() => saveGraph()}
           >
@@ -99,7 +99,7 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
             type="primary"
             onClick={handleShowEmbedModal}
             disabled={
-              !isBeginNodeDataQuerySafe || userInfo.nickname !== data.permission
+              !isBeginNodeDataQuerySafe || userInfo.nickname !== data.nickname
             }
           >
             <b>{t('embedIntoSite', { keyPrefix: 'common' })}</b>
