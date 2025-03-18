@@ -170,15 +170,15 @@ Overall, while Musk enjoys Dogecoin and often promotes it, he also warns against
 
 def keyword_extraction(chat_mdl, content, topn=3):
     prompt = f"""
-Role: You're a text analyzer. 
+Role: You're a text analyzer.
 Task: extract the most important keywords/phrases of a given piece of text content.
-Requirements: 
+Requirements:
   - Summarize the text content, and give top {topn} important keywords/phrases.
   - The keywords MUST be in language of the given piece of text content.
   - The keywords are delimited by ENGLISH COMMA.
   - Keywords ONLY in output.
 
-### Text Content 
+### Text Content
 {content}
 
 """
@@ -198,9 +198,9 @@ Requirements:
 
 def question_proposal(chat_mdl, content, topn=3):
     prompt = f"""
-Role: You're a text analyzer. 
+Role: You're a text analyzer.
 Task:  propose {topn} questions about a given piece of text content.
-Requirements: 
+Requirements:
   - Understand and summarize the text content, and propose top {topn} important questions.
   - The questions SHOULD NOT have overlapping meanings.
   - The questions SHOULD cover the main content of the text as much as possible.
@@ -208,7 +208,7 @@ Requirements:
   - One question per line.
   - Question ONLY in output.
 
-### Text Content 
+### Text Content
 {content}
 
 """
@@ -245,7 +245,7 @@ def full_question(tenant_id, llm_id, messages, language=None):
     prompt = f"""
 Role: A helpful assistant
 
-Task and steps: 
+Task and steps:
     1. Generate a full user question that would follow the conversation.
     2. If the user's question involves relative date, you need to convert it into absolute date based on the current date, which is {today}. For example: 'yesterday' would be converted to {yesterday}.
 
@@ -306,11 +306,11 @@ Output: What's the weather in Rochester on {tomorrow}?
 
 def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
     prompt = f"""
-Role: You're a text analyzer. 
+Role: You're a text analyzer.
 
 Task: Tag (put on some labels) to a given piece of text content based on the examples and the entire tag set.
 
-Steps:: 
+Steps::
   - Comprehend the tag/label set.
   - Comprehend examples which all consist of both text content and assigned tags with relevance score in format of JSON.
   - Summarize the text content, and tag it with top {topn} most relevant tags from the set of tag/label and the corresponding relevance score.
@@ -366,27 +366,30 @@ Output:
             raise e
 
 
-def vision_llm_describe_prompt(page=1) -> str:
-    prompt_en = f"""
-        INSTRUCTION:
-        Transcribe the content from the provided PDF page image into clean Markdown format.
-        - Only output the content transcribed from the image.
-        - Do NOT output this instruction or any other explanation.
-        - If the content is missing or you do not understand the input, return an empty string.
+def vision_llm_describe_prompt(page=None) -> str:
+    prompt_en = """
+INSTRUCTION:
+Transcribe the content from the provided PDF page image into clean Markdown format.
+- Only output the content transcribed from the image.
+- Do NOT output this instruction or any other explanation.
+- If the content is missing or you do not understand the input, return an empty string.
 
-        RULES:
-        1. Do NOT generate examples, demonstrations, or templates.
-        2. Do NOT output any extra text such as 'Example', 'Example Output', or similar.
-        3. Do NOT generate any tables, headings, or content that is not explicitly present in the image.
-        4. Transcribe content word-for-word. Do NOT modify, translate, or omit any content.
-        5. Do NOT explain Markdown or mention that you are using Markdown.
-        6. Do NOT wrap the output in ```markdown or ``` blocks.
-        7. Only apply Markdown structure to headings, paragraphs, lists, and tables, strictly based on the layout of the image. Do NOT create tables unless an actual table exists in the image.
-        8. Preserve the original language, information, and order exactly as shown in the image.
+RULES:
+1. Do NOT generate examples, demonstrations, or templates.
+2. Do NOT output any extra text such as 'Example', 'Example Output', or similar.
+3. Do NOT generate any tables, headings, or content that is not explicitly present in the image.
+4. Transcribe content word-for-word. Do NOT modify, translate, or omit any content.
+5. Do NOT explain Markdown or mention that you are using Markdown.
+6. Do NOT wrap the output in ```markdown or ``` blocks.
+7. Only apply Markdown structure to headings, paragraphs, lists, and tables, strictly based on the layout of the image. Do NOT create tables unless an actual table exists in the image.
+8. Preserve the original language, information, and order exactly as shown in the image.
+"""
 
-        At the end of the transcription, add the page divider: `--- Page {page} ---`.
+    if page is not None:
+        prompt_en += f"\nAt the end of the transcription, add the page divider: `--- Page {page} ---`."
 
-        FAILURE HANDLING:
-        - If you do not detect valid content in the image, return an empty string.
-        """
+    prompt_en += """
+FAILURE HANDLING:
+- If you do not detect valid content in the image, return an empty string.
+"""
     return prompt_en

@@ -60,7 +60,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
     return []
 
 
-def vision_llm_chunk(binary, vision_model, page, prompt=None, callback=None, **kwargs):
+def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):
     """
     A simple wrapper to process image to markdown texts via VLM.
 
@@ -77,7 +77,7 @@ def vision_llm_chunk(binary, vision_model, page, prompt=None, callback=None, **k
         img.save(img_binary, format='JPEG')
         img_binary.seek(0)
 
-        ans = clean_markdown_block(vision_model.describe_with_prompt(img_binary.read(), page, prompt))
+        ans = clean_markdown_block(vision_model.describe_with_prompt(img_binary.read(), prompt))
 
         txt += "\n" + ans
 

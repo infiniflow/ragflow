@@ -1255,6 +1255,8 @@ class VisionParser(RAGFlowPdfParser):
                                     enumerate(self.pdf.pages[page_from:page_to])]
                 self.total_page = len(self.pdf.pages)
         except Exception:
+            self.page_images = None
+            self.total_page = 0
             logging.exception("VisionParser __images__")
 
     def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
@@ -1269,7 +1271,7 @@ class VisionParser(RAGFlowPdfParser):
 
         all_docs = []
 
-        for idx, img_binary in enumerate(self.page_images):
+        for idx, img_binary in enumerate(self.page_images or []):
             pdf_page_num = idx  # 0-based
             if pdf_page_num < start_page or pdf_page_num >= end_page:
                 continue
@@ -1277,7 +1279,6 @@ class VisionParser(RAGFlowPdfParser):
             docs = picture_vision_llm_chunk(
                 binary=img_binary,
                 vision_model=self.vision_model,
-                page=pdf_page_num+1,
                 prompt=self.prompt,
                 callback=callback,
             )

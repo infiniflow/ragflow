@@ -265,8 +265,8 @@ class LLMBundle:
                 "LLMBundle.describe can't update token usage for {}/IMAGE2TEXT used_tokens: {}".format(self.tenant_id, used_tokens))
         return txt
 
-    def describe_with_prompt(self, image, prompt, max_tokens=300):
-        txt, used_tokens = self.mdl.describe_with_prompt(image, prompt, max_tokens)
+    def describe_with_prompt(self, image, prompt):
+        txt, used_tokens = self.mdl.describe_with_prompt(image, prompt)
         if not TenantLLMService.increase_usage(
                 self.tenant_id, self.llm_type, used_tokens):
             logging.error(

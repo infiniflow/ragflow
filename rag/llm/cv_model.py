@@ -40,7 +40,7 @@ class Base(ABC):
     def describe(self, image):
         raise NotImplementedError("Please implement encode method!")
 
-    def describe_with_prompt(self, image, page, prompt=None):
+    def describe_with_prompt(self, image, prompt=None):
         raise NotImplementedError("Please implement encode method!")
 
     def chat(self, system, history, gen_conf, image=""):
@@ -127,7 +127,7 @@ class Base(ABC):
             }
         ]
 
-    def vision_llm_prompt(self, b64, page=1):
+    def vision_llm_prompt(self, b64, prompt=None):
         return [
             {
                 "role": "user",
@@ -140,8 +140,7 @@ class Base(ABC):
                     },
                     {
                         "type": "text",
-                        "text": vision_llm_describe_prompt(page=page),
-
+                        "text": prompt if prompt else vision_llm_describe_prompt(),
                     },
                 ],
             }
@@ -184,14 +183,13 @@ class GptV4(Base):
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
-    def describe_with_prompt(self, image, page, prompt=None):
+    def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
-
-        prompt = prompt if prompt else self.vision_llm_prompt(b64, page=page)
+        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
 
         res = self.client.chat.completions.create(
             model=self.model_name,
-            messages=prompt,
+            messages=vision_prompt,
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
@@ -218,14 +216,13 @@ class AzureGptV4(Base):
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
-    def describe_with_prompt(self, image, page, prompt=None):
+    def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
-
-        prompt = prompt if prompt else self.vision_llm_prompt(b64, page=page)
+        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
 
         res = self.client.chat.completions.create(
             model=self.model_name,
-            messages=prompt,
+            messages=vision_prompt,
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
@@ -259,7 +256,7 @@ class QWenCV(Base):
             }
         ]
 
-    def vision_llm_prompt(self, binary, page=1):
+    def vision_llm_prompt(self, binary, prompt=None):
         # stupid as hell
         tmp_dir = get_project_base_directory("tmp")
         if not os.path.exists(tmp_dir):
@@ -275,7 +272,7 @@ class QWenCV(Base):
                         "image": f"file://{path}"
                     },
                     {
-                        "text":  vision_llm_describe_prompt(page=page),
+                        "text":  prompt if prompt else vision_llm_describe_prompt(),
                     },
                 ],
             }
@@ -291,18 +288,18 @@ class QWenCV(Base):
         from http import HTTPStatus
 
         from dashscope import MultiModalConversation
-        response = MultiModalConversation.call(model=self.model_name,
-                                               messages=self.prompt(image))
+        response = MultiModalConversation.call(model=self.model_name, messages=self.prompt(image))
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content'][0]["text"], response.usage.output_tokens
         return response.message, 0
 
-    def describe_with_prompt(self, image, page, prompt=None):
+    def describe_with_prompt(self, image, prompt=None):
         from http import HTTPStatus
 
         from dashscope import MultiModalConversation
-        response = MultiModalConversation.call(model=self.model_name,
-                                               messages=self.vision_llm_prompt(image))
+
+        vision_prompt = self.vision_llm_prompt(image, prompt) if prompt else self.vision_llm_prompt(image)
+        response = MultiModalConversation.call(model=self.model_name, messages=vision_prompt)
         if response.status_code == HTTPStatus.OK:
             return response.output.choices[0]['message']['content'][0]["text"], response.usage.output_tokens
         return response.message, 0
@@ -386,14 +383,13 @@ class Zhipu4V(Base):
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
-    def describe_with_prompt(self, image, page, prompt=None):
+    def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
-
-        prompt = prompt if prompt else self.vision_llm_prompt(b64, page=page)
+        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
 
         res = self.client.chat.completions.create(
             model=self.model_name,
-            messages=prompt
+            messages=vision_prompt
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
@@ -470,12 +466,12 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def describe_with_prompt(self, image, page, prompt=None):
-        prompt = self.vision_llm_prompt("")
+    def describe_with_prompt(self, image, prompt=None):
+        vision_prompt = self.vision_llm_prompt("", prompt) if prompt else self.vision_llm_prompt("")
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=prompt[0]["content"][1]["text"],
+                prompt=vision_prompt[0]["content"][1]["text"],
                 images=[image],
             )
             ans = response["response"].strip()
@@ -575,14 +571,13 @@ class XinferenceCV(Base):
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
-    def describe_with_prompt(self, image, page, prompt=None):
+    def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
-
-        prompt = prompt if prompt else self.vision_llm_prompt(b64, page=page)
+        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
 
         res = self.client.chat.completions.create(
             model=self.model_name,
-            messages=prompt,
+            messages=vision_prompt,
         )
         return res.choices[0].message.content.strip(), res.usage.total_tokens
 
@@ -609,11 +604,12 @@ class GeminiCV(Base):
         )
         return res.text, res.usage_metadata.total_token_count
 
-    def describe_with_prompt(self, image, page, prompt=None):
+    def describe_with_prompt(self, image, prompt=None):
+        from PIL.Image import open
         b64 = self.image2base64(image)
-        prompt = prompt if prompt else self.vision_llm_prompt(b64, page=page)
+        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
         img = open(BytesIO(base64.b64decode(b64)))
-        input = [prompt, img]
+        input = [vision_prompt, img]
         res = self.model.generate_content(
             input,
         )
@@ -737,8 +733,10 @@ class NvidiaCV(Base):
             response["usage"]["total_tokens"],
         )
 
-    def describe_with_prompt(self, image, page, prompt=None):
+    def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
+        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
+
         response = requests.post(
             url=self.base_url,
             headers={
@@ -747,7 +745,7 @@ class NvidiaCV(Base):
                 "Authorization": f"Bearer {self.key}",
             },
             json={
-                "messages": self.vision_llm_prompt(b64),
+                "messages": vision_prompt,
             },
         )
         response = response.json()
@@ -764,6 +762,17 @@ class NvidiaCV(Base):
                     "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。"
                     if self.lang.lower() == "chinese"
                     else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
+                )
+                + f' <img src="data:image/jpeg;base64,{b64}"/>',
+            }
+        ]
+
+    def vision_llm_prompt(self, b64, prompt=None):
+        return [
+            {
+                "role": "user",
+                "content": (
+                    prompt if prompt else vision_llm_describe_prompt()
                 )
                 + f' <img src="data:image/jpeg;base64,{b64}"/>',
             }
@@ -854,15 +863,14 @@ class HunyuanCV(Base):
         except TencentCloudSDKException as e:
             return ans + "\n**ERROR**: " + str(e), 0
 
-    def describe_with_prompt(self, image, page, prompt=None):
-        from tencentcloud.common.exception.tencent_cloud_sdk_exception import (
-            TencentCloudSDKException,
-        )
+    def describe_with_prompt(self, image, prompt=None):
+        from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
         from tencentcloud.hunyuan.v20230901 import models
 
         b64 = self.image2base64(image)
+        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
         req = models.ChatCompletionsRequest()
-        params = {"Model": self.model_name, "Messages": self.vision_llm_prompt(b64)}
+        params = {"Model": self.model_name, "Messages": vision_prompt}
         req.from_json_string(json.dumps(params))
         ans = ""
         try:
