@@ -703,7 +703,7 @@ def parse(tenant_id, dataset_id):
         
     for doc_id, count in id_count.items():
         if count > 1:
-            errors.append(f"Document ID {doc_id} appears {count} times")
+            errors.append(f"Duplicate document ids: {doc_id}")
     document_ids = list(set(req["document_ids"]))
     for id in document_ids:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
