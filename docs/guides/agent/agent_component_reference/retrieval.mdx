@@ -51,18 +51,25 @@ If a rerank model is selected, a combination of weighted keyword similarity and 
 Using a rerank model will *significantly* increase the system's response time.
 :::
 
+### Tavily API key
+
+If an API key is correctly set here, Tavily-based web searches will be used to supplement knowledge base retrieval.
+
+### Use knowledge graph
+
+It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.
 
 ### Knowledge bases 
 
-*Required*
-
-You are required to select the knowledge base(s) to retrieve data from.
+Select the knowledge base(s) to retrieve data from.
 
 :::danger IMPORTANT 
 If you select multiple knowledge bases, you must ensure that the knowledge bases (datasets) you select use the same embedding model; otherwise, an error message would occur.
 :::
 
+### Empty response
 
+Set this as a response if no results are retrieved from the knowledge bases for your query, or leave this field blank to allow the LLM to improvise when nothing is found.
 
 ## Examples
 

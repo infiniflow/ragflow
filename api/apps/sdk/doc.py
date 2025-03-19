@@ -586,7 +586,7 @@ def delete(tenant_id, dataset_id):
     if not req:
         doc_ids = None
     else:
-        doc_ids = req.get("ids")
+        doc_ids = set(req.get("ids"))
     if not doc_ids:
         doc_list = []
         docs = DocumentService.query(kb_id=dataset_id)
@@ -695,7 +695,6 @@ def parse(tenant_id, dataset_id):
     success_count = 0
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
-    
     # check duplicate ids
     id_count = {}
     for doc_id in req["document_ids"]:
@@ -734,6 +733,7 @@ def parse(tenant_id, dataset_id):
             return get_error_data_result(message="; ".join(errors))
 
     return get_result(data={"success_count": success_count})
+
 
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821

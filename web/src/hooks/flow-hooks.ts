@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { set } from 'lodash';
 import get from 'lodash/get';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 
@@ -51,6 +52,8 @@ export const EmptyDsl = {
 };
 
 export const useFetchFlowTemplates = (): ResponseType<IFlowTemplate[]> => {
+  const { t } = useTranslation();
+
   const { data } = useQuery({
     queryKey: ['fetchFlowTemplates'],
     initialData: [],
@@ -59,8 +62,8 @@ export const useFetchFlowTemplates = (): ResponseType<IFlowTemplate[]> => {
       if (Array.isArray(data?.data)) {
         data.data.unshift({
           id: uuid(),
-          title: 'Blank',
-          description: 'Create your agent from scratch',
+          title: t('flow.blank'),
+          description: t('flow.createFromNothing'),
           dsl: EmptyDsl,
         });
       }
@@ -81,6 +84,53 @@ export const useFetchFlowList = (): { data: IFlow[]; loading: boolean } => {
       const { data } = await flowService.listCanvas();
 
       return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchListVersion = (
+  canvas_id: string,
+): {
+  data: {
+    created_at: string;
+    title: string;
+    id: string;
+  }[];
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchListVersion'],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await flowService.getListVersion({}, canvas_id);
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchVersion = (
+  version_id?: string,
+): {
+  data?: IFlow;
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchVersion', version_id],
+    initialData: undefined,
+    gcTime: 0,
+    enabled: !!version_id, // Only call API when both values are provided
+    queryFn: async () => {
+      if (!version_id) return undefined;
+
+      const { data } = await flowService.getVersion({}, version_id);
+
+      return data?.data ?? undefined;
     },
   });
 
