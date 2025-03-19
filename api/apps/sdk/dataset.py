@@ -237,7 +237,7 @@ def delete(tenant_id):
     if not req:
         ids = None
     else:
-        ids = req.get("ids")
+        ids = set(req.get("ids"))
     if not ids:
         id_list = []
         kbs = KnowledgebaseService.query(tenant_id=tenant_id)

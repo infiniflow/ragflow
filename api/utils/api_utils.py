@@ -399,9 +399,15 @@ def valid_parser_config(parser_config):
     for k in parser_config.keys():
         assert k in scopes, f"Abnormal 'parser_config'. Invalid key: {k}"
 
+    assert isinstance(parser_config.get("chunk_token_num", 1), int), "chunk_token_num should be int"
     assert 1 <= parser_config.get("chunk_token_num", 1) < 100000000, "chunk_token_num should be in range from 1 to 100000000"
+    assert isinstance(parser_config.get("task_page_size", 1), int), "task_page_size should be int"
     assert 1 <= parser_config.get("task_page_size", 1) < 100000000, "task_page_size should be in range from 1 to 100000000"
+    assert isinstance(parser_config.get("auto_keywords", 1), int), "auto_keywords should be int"
     assert 0 <= parser_config.get("auto_keywords", 0) < 32, "auto_keywords should be in range from 0 to 32"
+    assert isinstance(parser_config.get("auto_questions", 1), int), "auto_questions should be int"
     assert 0 <= parser_config.get("auto_questions", 0) < 10, "auto_questions should be in range from 0 to 10"
+    assert isinstance(parser_config.get("topn_tags", 1), int), "topn_tags should be int"
     assert 0 <= parser_config.get("topn_tags", 0) < 10, "topn_tags should be in range from 0 to 10"
     assert isinstance(parser_config.get("html4excel", False), bool), "html4excel should be True or False"
+    assert isinstance(parser_config.get("delimiter", ""), str), "delimiter should be str"
