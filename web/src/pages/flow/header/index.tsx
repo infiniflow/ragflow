@@ -20,6 +20,11 @@ import {
   useWatchAgentChange,
 } from '../hooks/use-save-graph';
 import { BeginQuery } from '../interface';
+
+import {
+  HistoryVersionModal,
+  useHistoryVersionModal,
+} from '../history-version-modal';
 import styles from './index.less';
 
 interface IProps {
@@ -42,7 +47,8 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const { setVisibleSettingMModal, visibleSettingModal } =
     useFlowSettingModal();
   const isBeginNodeDataQuerySafe = useGetBeginNodeDataQueryIsSafe();
-
+  const { setVisibleHistoryVersionModal, visibleHistoryVersionModal } =
+    useHistoryVersionModal();
   const handleShowEmbedModal = useCallback(() => {
     showEmbedModal();
   }, [showEmbedModal]);
@@ -59,6 +65,10 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const showSetting = useCallback(() => {
     setVisibleSettingMModal(true);
   }, [setVisibleSettingMModal]);
+
+  const showListVersion = useCallback(() => {
+    setVisibleHistoryVersionModal(true);
+  }, [setVisibleHistoryVersionModal]);
   return (
     <>
       <Flex
@@ -117,9 +127,11 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
           >
             <b>{t('setting')}</b>
           </Button>
+          <Button type="primary" onClick={showListVersion}>
+            <b>{t('historyversion')}</b>
+          </Button>
         </Space>
       </Flex>
-
       {embedVisible && (
         <EmbedModal
           visible={embedVisible}
@@ -130,13 +142,19 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
           isAgent
         ></EmbedModal>
       )}
-
       {visibleSettingModal && (
         <FlowSettingModal
           id={id || ''}
           visible={visibleSettingModal}
           hideModal={() => setVisibleSettingMModal(false)}
         ></FlowSettingModal>
+      )}
+      {visibleHistoryVersionModal && (
+        <HistoryVersionModal
+          id={id || ''}
+          visible={visibleHistoryVersionModal}
+          hideModal={() => setVisibleHistoryVersionModal(false)}
+        ></HistoryVersionModal>
       )}
     </>
   );

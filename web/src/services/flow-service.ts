@@ -6,6 +6,8 @@ const {
   getCanvas,
   getCanvasSSE,
   setCanvas,
+  getListVersion,
+  getVersion,
   listCanvas,
   resetCanvas,
   removeCanvas,
@@ -30,6 +32,14 @@ const methods = {
   setCanvas: {
     url: setCanvas,
     method: 'post',
+  },
+  getListVersion: {
+    url: getListVersion,
+    method: 'get',
+  },
+  getVersion: {
+    url: getVersion,
+    method: 'get',
   },
   listCanvas: {
     url: listCanvas,
@@ -73,6 +83,6 @@ const methods = {
   },
 } as const;
 
-const chatService = registerServer<keyof typeof methods>(methods, request);
+const flowService = registerServer<keyof typeof methods>(methods, request);
 
-export default chatService;
+export default flowService;

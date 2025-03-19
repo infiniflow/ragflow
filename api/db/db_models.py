@@ -648,7 +648,7 @@ class TenantLLM(DataBaseModel):
         help_text="LLM name",
         default="",
         index=True)
-    api_key = CharField(max_length=1024, null=True, help_text="API KEY", index=True)
+    api_key = CharField(max_length=2048, null=True, help_text="API KEY", index=True)
     api_base = CharField(max_length=255, null=True, help_text="API Base")
     max_tokens = IntegerField(default=8192, index=True)
     used_tokens = IntegerField(default=0, index=True)
@@ -1001,6 +1001,16 @@ class CanvasTemplate(DataBaseModel):
     class Meta:
         db_table = "canvas_template"
 
+class UserCanvasVersion(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    user_canvas_id = CharField(max_length=255, null=False, help_text="user_canvas_id", index=True)
+
+    title = CharField(max_length=255, null=True, help_text="Canvas title")
+    description = TextField(null=True, help_text="Canvas description")
+    dsl = JSONField(null=True, default={})
+
+    class Meta:
+        db_table = "user_canvas_version"
 
 def migrate_db():
     with DB.transaction():
@@ -1040,7 +1050,7 @@ def migrate_db():
         try:
             migrate(
                 migrator.alter_column_type('tenant_llm', 'api_key',
-                                           CharField(max_length=1024, null=True, help_text="API KEY", index=True))
+                                           CharField(max_length=2048, null=True, help_text="API KEY", index=True))
             )
         except Exception:
             pass

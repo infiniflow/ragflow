@@ -100,7 +100,7 @@ def clean_markdown_block(text):
     return text.strip()
 
   
-def get_float(v: str | None):
+def get_float(v):
     if v is None:
         return float('-inf')
     try:
