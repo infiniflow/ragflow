@@ -16,10 +16,19 @@ export type TransferListItemType = {
   selected?: boolean;
 };
 
-type TransferListProps = {
+export enum TransferListMoveDirection {
+  Left = 'left',
+  Right = 'right',
+}
+
+export type TransferListProps = {
   items: TransferListItemType[];
   targetKeys?: string[];
-  onChange?(targetKeys: string[], direction: 'left' | 'right'): void;
+  onChange?(
+    targetKeys: string[],
+    direction: TransferListMoveDirection,
+    moveKeys: string[],
+  ): void;
 };
 
 export const TransferList = memo(function ({
@@ -39,7 +48,8 @@ export const TransferList = memo(function ({
     setLeftList(leftList.filter((item) => !item.selected));
     onChange?.(
       rightItems.map((x) => x.key),
-      'right',
+      TransferListMoveDirection.Right,
+      selectedItems.map((x) => x.key),
     );
   }, [leftList, onChange, rightList]);
 
@@ -50,7 +60,8 @@ export const TransferList = memo(function ({
     setRightList(rightItems);
     onChange?.(
       rightItems.map((x) => x.key),
-      'left',
+      TransferListMoveDirection.Left,
+      selectedItems.map((x) => x.key),
     );
   }, [onChange, rightList]);
 
@@ -76,7 +87,6 @@ export const TransferList = memo(function ({
     const leftItems = items.filter(
       (x) => !targetKeys?.some((y) => y === x.key),
     );
-    console.log('🚀 ~ useEffect ~ leftItems:', leftItems);
     setLeftList(leftItems);
     const rightItems = items.filter((x) =>
       targetKeys?.some((y) => y === x.key),

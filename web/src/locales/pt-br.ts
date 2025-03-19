@@ -170,7 +170,7 @@ export default {
         'Quando ativado, a planilha será analisada em tabelas HTML, com no máximo 256 linhas por tabela. Caso contrário, será analisada em pares chave-valor por linha.',
       autoKeywords: 'Palavras-chave automáticas',
       autoKeywordsTip:
-        'Extraia automaticamente N palavras-chave para cada fragmento para aumentar sua classificação para consultas que contenham essas palavras-chave. Você pode verificar ou atualizar as palavras-chave adicionadas para um fragmento na lista de fragmentos. Esteja ciente de que tokens extras serão consumidos pelo LLM especificado nas "Configurações do modelo do sistema".',
+        'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos.',
       autoQuestions: 'Perguntas automáticas',
       autoQuestionsTip: `Extraia automaticamente N perguntas para cada fragmento para aumentar sua relevância em consultas que contenham essas perguntas. Você pode verificar ou atualizar as perguntas adicionadas a um fragmento na lista de fragmentos. Essa funcionalidade não interromperá o processo de fragmentação em caso de erro, exceto pelo fato de que pode adicionar um resultado vazio ao fragmento original. Esteja ciente de que tokens extras serão consumidos pelo LLM especificado nas 'Configurações do modelo do sistema'.`,
       redo: 'Deseja limpar os {{chunkNum}} fragmentos existentes?',
@@ -243,7 +243,7 @@ export default {
       Os fragmentos terão granularidade compatível com 'ARTIGO', garantindo que todo o texto de nível superior seja incluído no fragmento.</p>`,
       manual: `<p>Apenas <b>PDF</b> é suportado.</p><p>
       Assumimos que o manual tem uma estrutura hierárquica de seções, usando os títulos das seções inferiores como unidade básica para fragmentação. Assim, figuras e tabelas na mesma seção não serão separadas, o que pode resultar em fragmentos maiores.</p>`,
-      naive: `<p>Os formatos de arquivo suportados são <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
+      naive: `<p>Os formatos de arquivo suportados são <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
       <p>Este método fragmenta arquivos de maneira 'simples':</p>
       <p>
       <li>Usa um modelo de detecção visual para dividir os textos em segmentos menores.</li>
