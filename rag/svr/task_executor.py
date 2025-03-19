@@ -627,6 +627,7 @@ async def handle_task():
     global DONE_TASKS, FAILED_TASKS, LAST_TASK_TIME
     redis_msg, task = await collect()
     if not task:
+        await trio.sleep(5)
         return
     
     # Update last task time
