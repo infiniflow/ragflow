@@ -9,7 +9,7 @@ class UserCanvasVersionService(CommonService):
     
     @classmethod
     @DB.connection_context()
-    def getlist_by_canvas_id(cls, user_canvas_id):
+    def list_by_canvas_id(cls, user_canvas_id):
         try:
             user_canvas_version = cls.model.select(
                 *[cls.model.id, 
@@ -25,28 +25,6 @@ class UserCanvasVersionService(CommonService):
             return None
         except Exception:
             return None
-    
-    @classmethod
-    @DB.connection_context()
-    def get_by_id(cls, pid):
-        return super().get_by_id(pid)
-    
-    @classmethod
-    @DB.connection_context()
-    def create(cls, **kwargs):
-        kwargs['id'] = str(uuid.uuid4())
-        return super().insert(**kwargs)
-    
-    @classmethod
-    @DB.connection_context()
-    def update(cls, pid, **kwargs):
-        return super().update_by_id(pid, kwargs)
-    
-
-    @classmethod
-    @DB.connection_context()
-    def delete(cls, pid):
-        return super().delete_by_id(pid)
     
     @classmethod
     @DB.connection_context()
