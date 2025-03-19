@@ -988,6 +988,16 @@ class CanvasTemplate(DataBaseModel):
     class Meta:
         db_table = "canvas_template"
 
+class UserCanvasVersion(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    user_canvas_id = CharField(max_length=255, null=False, help_text="user_canvas_id", index=True)
+
+    title = CharField(max_length=255, null=True, help_text="Canvas title")
+    description = TextField(null=True, help_text="Canvas description")
+    dsl = JSONField(null=True, default={})
+
+    class Meta:
+        db_table = "user_canvas_version"
 
 def migrate_db():
     with DB.transaction():

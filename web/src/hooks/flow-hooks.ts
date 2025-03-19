@@ -90,6 +90,53 @@ export const useFetchFlowList = (): { data: IFlow[]; loading: boolean } => {
   return { data, loading };
 };
 
+export const useFetchListVersion = (
+  canvas_id: string,
+): {
+  data: {
+    created_at: string;
+    title: string;
+    id: string;
+  }[];
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchListVersion'],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await flowService.getListVersion({}, canvas_id);
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchVersion = (
+  version_id?: string,
+): {
+  data?: IFlow;
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchVersion', version_id],
+    initialData: undefined,
+    gcTime: 0,
+    enabled: !!version_id, // Only call API when both values are provided
+    queryFn: async () => {
+      if (!version_id) return undefined;
+
+      const { data } = await flowService.getVersion({}, version_id);
+
+      return data?.data ?? undefined;
+    },
+  });
+
+  return { data, loading };
+};
+
 export const useFetchFlow = (): {
   data: IFlow;
   loading: boolean;
