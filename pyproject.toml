@@ -136,5 +136,8 @@ full = [
     "transformers>=4.35.0,<5.0.0"
 ]
 
+[tool.setuptools]
+packages = ['rag', 'api', 'sdk', 'helm','agent', 'deepdoc', 'graphrag', 'flask_session', 'intergrations', 'agentic_reasoning']
+
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
