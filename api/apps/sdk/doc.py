@@ -584,7 +584,7 @@ def delete(tenant_id, dataset_id):
     if not req:
         doc_ids = None
     else:
-        doc_ids = req.get("ids")
+        doc_ids = set(req.get("ids"))
     if not doc_ids:
         doc_list = []
         docs = DocumentService.query(kb_id=dataset_id)
@@ -681,7 +681,7 @@ def parse(tenant_id, dataset_id):
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
     not_found = []
-    for id in req["document_ids"]:
+    for id in set(req["document_ids"]):
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             not_found.append(id)
