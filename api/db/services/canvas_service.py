@@ -25,7 +25,6 @@ from api.db.services.common_service import CommonService
 from api.db.services.conversation_service import structure_answer
 from api.utils import get_uuid
 from peewee import fn
-import logging
 
 class CanvasTemplateService(CommonService):
     model = CanvasTemplate
