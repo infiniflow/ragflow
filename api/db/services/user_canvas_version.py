@@ -23,7 +23,7 @@ class UserCanvasVersionService(CommonService):
             return user_canvas_version
         except DoesNotExist:
             return None
-        except Exception as e:
+        except Exception:
             return None
     
     @classmethod
