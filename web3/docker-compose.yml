@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # Web application service
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    depends_on:
+      - db
+    environment:
+      - NODE_ENV=production
+      - PORT=5001
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=password
+      - DB_NAME=logen_db
+      - JWT_SECRET=your_jwt_secret_key_here
+      - EMAIL_SERVICE=gmail
+      - EMAIL_USER=your-email@gmail.com
+      - EMAIL_PASSWORD=your-app-password
+      - EMAIL_FROM=your-email@gmail.com
+    volumes:
+      - ./server:/app/server
+      - ./.env:/app/.env
+    networks:
+      - app-network
+
+  # MySQL Database service
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=logen_db
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./server/config/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - app-network
+
+volumes:
+  mysql-data:
+
+networks:
+  app-network:
+    driver: bridge 
