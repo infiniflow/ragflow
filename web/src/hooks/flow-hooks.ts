@@ -215,7 +215,9 @@ export const useDeleteFlow = () => {
     mutationFn: async (canvasIds: string[]) => {
       const { data } = await flowService.removeCanvas({ canvasIds });
       if (data.code === 0) {
-        queryClient.invalidateQueries({ queryKey: ['fetchFlowList'] });
+        queryClient.invalidateQueries({
+          queryKey: ['infiniteFetchFlowListTeam'],
+        });
       }
       return data?.data ?? [];
     },

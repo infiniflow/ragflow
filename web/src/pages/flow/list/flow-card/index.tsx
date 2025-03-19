@@ -14,6 +14,7 @@ import styles from './index.less';
 
 interface IProps {
   item: IFlow;
+  onDelete?: (string: string) => void;
 }
 
 const FlowCard = ({ item }: IProps) => {
