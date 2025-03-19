@@ -977,13 +977,6 @@ class UserCanvas(DataBaseModel):
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
     dsl = JSONField(null=True, default={})
-
-    status = CharField(
-        max_length=1,
-        null=True,
-        help_text="is it validate(0: wasted, 1: validate)",
-        default="1",
-        index=True)
     
     class Meta:
         db_table = "user_canvas"
@@ -1160,10 +1153,4 @@ def migrate_db():
             )
         except Exception:
             pass
-        try:
-            migrate(
-                migrator.add_column("user_canvas", "status",
-                                    CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
-            )
-        except Exception:
-            pass
+
