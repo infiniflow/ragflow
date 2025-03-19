@@ -680,18 +680,19 @@ def parse(tenant_id, dataset_id):
     req = request.json
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
+    not_found = []
     for id in req["document_ids"]:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
+        if not doc:
+            not_found.append(id)
+            continue
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
         if doc[0].progress != 0.0:
             return get_error_data_result(
                 "Can't stop parsing document with progress at 0 or 100"
             )
-        info = {"run": "1", "progress": 0}
-        info["progress_msg"] = ""
-        info["chunk_num"] = 0
-        info["token_num"] = 0
+        info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
         DocumentService.update_by_id(id, info)
         settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
         TaskService.filter_delete([Task.doc_id == id])
@@ -700,6 +701,10 @@ def parse(tenant_id, dataset_id):
         doc["tenant_id"] = tenant_id
         bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
         queue_tasks(doc, bucket, name, 0)
+
+    if not_found:
+        return get_result(message=f"Documents not found: {not_found}", code=settings.RetCode.DATA_ERROR)
+
     return get_result()
 
 
