@@ -817,9 +817,7 @@ class RAGFlowPdfParser:
         res = []
         positions = []
         figure_results = []
-        table_results = []
         figure_positions = []
-        table_positions = []
         # crop figure out and add caption
         for k, bxs in figures.items():
             txt = "\n".join([b["text"] for b in bxs])
@@ -851,21 +849,16 @@ class RAGFlowPdfParser:
 
             poss = []
 
-            if separate_tables_figures:
-                table_results.append((cropout(bxs, "table", poss),
-                                      self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
-                table_positions.append(poss)
-            else:
-                res.append((cropout(bxs, "table", poss),
-                            self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
-                positions.append(poss)
+            res.append((cropout(bxs, "table", poss),
+                        self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
+            positions.append(poss)
 
         if separate_tables_figures:
-            assert len(table_positions) + len(figure_positions) == len(table_results) + len(figure_results)
+            assert len(positions) + len(figure_positions) == len(res) + len(figure_results)
             if need_position:
-                return list(zip(table_results, table_positions)), list(zip(figure_results, figure_positions))
+                return list(zip(res, positions)), list(zip(figure_results, figure_positions))
             else:
-                return table_results, figure_results
+                return res, figure_results
         else:
             assert len(positions) == len(res)
             if need_position:
