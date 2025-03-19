@@ -37,7 +37,7 @@ from api.utils.file_utils import get_project_base_directory
 from deepdoc.vision import OCR, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.nlp import rag_tokenizer
-from rag.prompts import vision_llm_describe_prompt
+from rag.prompts import vision_llm_describe_prompt, vision_llm_figure_describe_prompt
 from rag.settings import PARALLEL_DEVICES
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
@@ -653,8 +653,7 @@ class RAGFlowPdfParser:
             b_["top"] = b["top"]
             self.boxes.pop(i)
 
-    def _extract_table_figure(self, need_image, ZM,
-                              return_html, need_position):
+    def _extract_table_figure(self, need_image, ZM, return_html, need_position, separate_tables_figures=False):
         tables = {}
         figures = {}
         # extract figure and table boxes
@@ -768,9 +767,6 @@ class RAGFlowPdfParser:
                     tk)
             self.boxes.pop(i)
 
-        res = []
-        positions = []
-
         def cropout(bxs, ltype, poss):
             nonlocal ZM
             pn = set([b["page_number"] - 1 for b in bxs])
@@ -818,35 +814,73 @@ class RAGFlowPdfParser:
                 height += img.size[1]
             return pic
 
-        # crop figure out and add caption
-        for k, bxs in figures.items():
-            txt = "\n".join([b["text"] for b in bxs])
-            if not txt:
-                continue
+        def process_boxes(boxes_dict, label, construct_fn=None, return_html=False, is_english=False):
+            results = []
+            positions = []
 
-            poss = []
-            res.append(
-                (cropout(
-                    bxs,
-                    "figure", poss),
-                 [txt]))
-            positions.append(poss)
+            for k, bxs in boxes_dict.items():
+                if not bxs:
+                    continue
 
-        for k, bxs in tables.items():
-            if not bxs:
-                continue
-            bxs = Recognizer.sort_Y_firstly(bxs, np.mean(
-                [(b["bottom"] - b["top"]) / 2 for b in bxs]))
-            poss = []
-            res.append((cropout(bxs, "table", poss),
-                        self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
-            positions.append(poss)
+                poss = []
 
-        assert len(positions) == len(res)
+                if label == "table":
+                    avg_height = np.mean([(b["bottom"] - b["top"]) / 2 for b in bxs])
+                    bxs = Recognizer.sort_Y_firstly(bxs, avg_height)
+                    result = (
+                        cropout(bxs, label, poss),
+                        construct_fn(bxs, html=return_html, is_english=is_english)
+                    )
+                else:
+                    txt = "\n".join([b["text"] for b in bxs])
+                    if not txt:
+                        continue
+                    result = (
+                        cropout(bxs, label, poss),
+                        [txt]
+                    )
 
-        if need_position:
-            return list(zip(res, positions))
-        return res
+                results.append(result)
+                positions.append(poss)
+
+            return results, positions
+
+        if separate_tables_figures:
+            table_results, table_positions = process_boxes(
+                tables, label="table", construct_fn=self.tbl_det.construct_table,
+                return_html=return_html, is_english=self.is_english
+            )
+            figure_results, figure_positions = process_boxes(
+                figures, label="figure"
+            )
+            assert len(table_positions) + len(figure_positions) == len(table_results) + len(figure_results)
+
+            if need_position:
+                return list(zip(table_results, table_positions)), list(zip(figure_results, figure_positions))
+
+            return table_results, figure_results
+        else:
+            res = []
+            positions = []
+
+            figure_results, figure_positions = process_boxes(
+                figures, label="figure"
+            )
+            table_results, table_positions = process_boxes(
+                tables, label="table", construct_fn=self.tbl_det.construct_table,
+                return_html=return_html, is_english=self.is_english
+            )
+
+            res.extend(table_results)
+            res.extend(figure_results)
+            positions.extend(table_positions)
+            positions.extend(figure_positions)
+            assert len(positions) == len(res)
+
+            if need_position:
+                return list(zip(res, positions))
+
+            return res
 
     def proj_match(self, line):
         if len(line) <= 2:
@@ -1286,6 +1320,69 @@ class VisionParser(RAGFlowPdfParser):
             if docs:
                 all_docs.append(docs)
         return [(doc, "") for doc in all_docs], []
+
+
+class VisionFigureParser:
+    def __init__(self, vision_model, figures_data, *args, **kwargs):
+        self.vision_model = vision_model
+        self._extract_figures_info(figures_data)
+        assert len(self.figures) == len(self.descriptions)
+        assert not self.positions or (len(self.figures) == len(self.positions))
+
+    def _extract_figures_info(self, figures_data):
+        self.figures = []
+        self.descriptions = []
+        self.positions = []
+
+        for item in figures_data:
+            # position
+            if len(item) == 2 and isinstance(item[1], list) and len(item[1]) == 1 and len(item[1][0]) == 5:
+                img_desc = item[0]
+                assert len(img_desc) == 2, "Should be (figure, [description])"
+                self.figures.append(img_desc[0])
+                self.descriptions.append(img_desc[1])
+                self.positions.append(item[1])
+            else:
+                assert len(item) == 2 and isinstance(item, tuple), f"get {len(item)=}, {item=}"
+                self.figures.append(item[0])
+                self.descriptions.append(item[1])
+
+    def _assemble(self):
+        self.assembled = []
+        self.has_positions = len(self.positions) != 0
+        for i in range(len(self.figures)):
+            figure = self.figures[i]
+            desc = self.descriptions[i]
+            pos = self.positions[i] if self.has_positions else None
+
+            figure_desc = (figure, desc)
+
+            if pos is not None:
+                self.assembled.append((figure_desc, pos))
+            else:
+                self.assembled.append((figure_desc,))
+
+        return self.assembled
+
+    def __call__(self, **kwargs):
+        callback = kwargs.get("callback", lambda prog, msg: None)
+
+        for idx, img_binary in enumerate(self.figures or []):
+            figure_num = idx  # 0-based
+
+            txt = picture_vision_llm_chunk(
+                binary=img_binary,
+                vision_model=self.vision_model,
+                prompt=vision_llm_figure_describe_prompt(),
+                callback=callback,
+            )
+
+            if txt:
+                self.descriptions[figure_num] = txt + "\n".join(self.descriptions[figure_num])
+
+        self._assemble()
+
+        return self.assembled
 
 
 if __name__ == "__main__":
