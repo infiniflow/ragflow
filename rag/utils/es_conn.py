@@ -327,7 +327,7 @@ class ESConnection(DocStoreConnection):
                         continue
                     try:
                         self.es.update(index=indexName, id=chunkId, script=f"ctx._source.remove(\"{k}\");")
-                    except Exception as e:
+                    except Exception:
                         logger.exception(f"ESConnection.update(index={indexName}, id={chunkId}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
                     self.es.update(index=indexName, id=chunkId, doc=doc)
