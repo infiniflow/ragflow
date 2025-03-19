@@ -18,7 +18,7 @@ import time
 import traceback
 from uuid import uuid4
 from agent.canvas import Canvas
-from api.db import StatusEnum, TenantPermission
+from api.db import TenantPermission
 from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation, UserTenant
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
