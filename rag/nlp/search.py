@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 
 from rag.settings import TAG_FLD, PAGERANK_FLD
-from rag.utils import rmSpace
+from rag.utils import rmSpace, get_float
 from rag.nlp import rag_tokenizer, query
 import numpy as np
 from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
@@ -49,7 +49,7 @@ class Dealer:
         if len(shape) > 1:
             raise Exception(
                 f"Dealer.get_vector returned array's shape {shape} doesn't match expectation(exact one dimension).")
-        embedding_data = [float(v) for v in qv]
+        embedding_data = [get_float(v) for v in qv]
         vector_column_name = f"q_{len(embedding_data)}_vec"
         return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
 
@@ -153,7 +153,7 @@ class Dealer:
 
     @staticmethod
     def trans2floats(txt):
-        return [float(t) for t in txt.split("\t")]
+        return [get_float(t) for t in txt.split("\t")]
 
     def insert_citations(self, answer, chunks, chunk_v,
                          embd_mdl, tkweight=0.1, vtweight=0.9):
@@ -259,6 +259,7 @@ class Dealer:
         for i in search_res.ids:
             nor, denor = 0, 0
             if not search_res.field[i].get(TAG_FLD):
+                rank_fea.append(0)
                 continue
             for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
                 if t in query_rfea:
@@ -282,7 +283,7 @@ class Dealer:
         for chunk_id in sres.ids:
             vector = sres.field[chunk_id].get(vector_column, zero_vector)
             if isinstance(vector, str):
-                vector = [float(v) for v in vector.split("\t")]
+                vector = [get_float(v) for v in vector.split("\t")]
             ins_embd.append(vector)
         if not ins_embd:
             return [], [], []
