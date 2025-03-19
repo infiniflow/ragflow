@@ -648,7 +648,7 @@ class TenantLLM(DataBaseModel):
         help_text="LLM name",
         default="",
         index=True)
-    api_key = CharField(max_length=1024, null=True, help_text="API KEY", index=True)
+    api_key = CharField(max_length=2048, null=True, help_text="API KEY", index=True)
     api_base = CharField(max_length=255, null=True, help_text="API Base")
     max_tokens = IntegerField(default=8192, index=True)
     used_tokens = IntegerField(default=0, index=True)
@@ -1027,7 +1027,7 @@ def migrate_db():
         try:
             migrate(
                 migrator.alter_column_type('tenant_llm', 'api_key',
-                                           CharField(max_length=1024, null=True, help_text="API KEY", index=True))
+                                           CharField(max_length=2048, null=True, help_text="API KEY", index=True))
             )
         except Exception:
             pass
