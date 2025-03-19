@@ -29,7 +29,8 @@ from tika import parser
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
-from deepdoc.parser.pdf_parser import PlainParser, VisionFigureParser, VisionParser
+from deepdoc.parser.pdf_parser import PlainParser, VisionParser
+from deepdoc.parser.figure_parser import VisionFigureParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_docx, tokenize_table
 from rag.utils import num_tokens_from_string
 
