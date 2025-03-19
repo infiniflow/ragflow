@@ -67,7 +67,6 @@ class UserCanvasService(CommonService):
                 cls.model.permission,
                 cls.model.update_time,
                 cls.model.user_id,
-                cls.model.status,
                 cls.model.create_time,
                 cls.model.create_date,
                 cls.model.update_date,
@@ -104,8 +103,7 @@ class UserCanvasService(CommonService):
             angents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
                 ((cls.model.user_id.in_(joined_tenant_ids) & (cls.model.permission ==
                                                                 TenantPermission.TEAM.value)) | (
-                    cls.model.user_id == user_id))
-                & (cls.model.status == StatusEnum.VALID.value),
+                    cls.model.user_id == user_id)),
                 (fn.LOWER(cls.model.title).contains(keywords.lower()))
             )
         else:
@@ -113,7 +111,6 @@ class UserCanvasService(CommonService):
                 ((cls.model.user_id.in_(joined_tenant_ids) & (cls.model.permission ==
                                                                 TenantPermission.TEAM.value)) | (
                     cls.model.user_id == user_id))
-                & (cls.model.status == StatusEnum.VALID.value)
             )
         if desc:
             angents = angents.order_by(cls.model.getter_by(orderby).desc())
