@@ -21,7 +21,7 @@ from api.utils.file_utils import get_project_base_directory
 # Server
 RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 
-# 从系统环境变量中获取存储类型和文档存擎
+# Get storage type and document engine from system environment variables
 STORAGE_IMPL_TYPE = os.getenv('STORAGE_IMPL', 'MINIO')
 DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 
@@ -32,7 +32,7 @@ S3 = {}
 MINIO = {}
 OSS = {}
 
-# 根据环境变量初始化对应选择的配置数据,解决因没有配置初始化报错问题
+# Initialize the selected configuration data based on environment variables to solve the problem of initialization errors due to lack of configuration
 if DOC_ENGINE == 'elasticsearch':
     ES = get_base_config("es", {})
 elif DOC_ENGINE == 'infinity':
