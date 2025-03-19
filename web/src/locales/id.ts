@@ -147,7 +147,7 @@ export default {
       changeSpecificCategory: 'Ubah kategori spesifik',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
-        'Dukungan untuk unggahan tunggal atau massal. Dilarang keras mengunggah data perusahaan atau file terlarang lainnya.',
+        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk demo.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
       chunk: 'Potongan',
       bulk: 'Massal',
       cancel: 'Batal',
@@ -209,7 +209,7 @@ export default {
           Kami mengasumsikan manual memiliki struktur bagian hierarkis. Kami menggunakan judul bagian terendah sebagai poros untuk memotong dokumen.
           Jadi, gambar dan tabel dalam bagian yang sama tidak akan dipisahkan, dan ukuran potongan mungkin besar.
           </p>`,
-      naive: `<p>Format file yang didukung adalah <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
+      naive: `<p>Format file yang didukung adalah <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
           <p>Metode ini menerapkan cara naif untuk memotong file: </p>
           <p>
           <li>Teks berturut-turut akan dipotong menjadi potongan menggunakan model deteksi visual.</li>
@@ -652,7 +652,7 @@ export default {
       directory: 'Direktori',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
-        'Dukungan untuk unggahan tunggal atau massal. Dilarang keras mengunggah data perusahaan atau file terlarang lainnya.',
+        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk demo.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
       local: 'Unggahan lokal',
       s3: 'Unggahan S3',
       preview: 'Pratinjau',

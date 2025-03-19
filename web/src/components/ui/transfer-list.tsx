@@ -8,7 +8,7 @@ import {
   SquareCheckIcon,
   SquareIcon,
 } from 'lucide-react';
-import React from 'react';
+import React, { memo, useCallback, useEffect } from 'react';
 
 export type TransferListItemType = {
   key: string;
@@ -16,42 +16,83 @@ export type TransferListItemType = {
   selected?: boolean;
 };
 
-export default function TransferList({
-  items,
-}: {
+export enum TransferListMoveDirection {
+  Left = 'left',
+  Right = 'right',
+}
+
+export type TransferListProps = {
   items: TransferListItemType[];
-}) {
-  const [leftList, setLeftList] = React.useState<TransferListItemType[]>(items);
+  targetKeys?: string[];
+  onChange?(
+    targetKeys: string[],
+    direction: TransferListMoveDirection,
+    moveKeys: string[],
+  ): void;
+};
+
+export const TransferList = memo(function ({
+  items,
+  onChange,
+  targetKeys,
+}: TransferListProps) {
+  const [leftList, setLeftList] = React.useState<TransferListItemType[]>([]);
   const [rightList, setRightList] = React.useState<TransferListItemType[]>([]);
   const [leftSearch, setLeftSearch] = React.useState('');
   const [rightSearch, setRightSearch] = React.useState('');
 
-  const moveToRight = () => {
+  const moveToRight = useCallback(() => {
     const selectedItems = leftList.filter((item) => item.selected);
-    setRightList([...rightList, ...selectedItems]);
+    const rightItems = [...rightList, ...selectedItems];
+    setRightList(rightItems);
     setLeftList(leftList.filter((item) => !item.selected));
-  };
+    onChange?.(
+      rightItems.map((x) => x.key),
+      TransferListMoveDirection.Right,
+      selectedItems.map((x) => x.key),
+    );
+  }, [leftList, onChange, rightList]);
 
-  const moveToLeft = () => {
+  const moveToLeft = useCallback(() => {
     const selectedItems = rightList.filter((item) => item.selected);
-    setLeftList([...leftList, ...selectedItems]);
-    setRightList(rightList.filter((item) => !item.selected));
-  };
+    setLeftList((list) => [...list, ...selectedItems]);
+    const rightItems = rightList.filter((item) => !item.selected);
+    setRightList(rightItems);
+    onChange?.(
+      rightItems.map((x) => x.key),
+      TransferListMoveDirection.Left,
+      selectedItems.map((x) => x.key),
+    );
+  }, [onChange, rightList]);
 
-  const toggleSelection = (
-    list: TransferListItemType[],
-    setList: React.Dispatch<React.SetStateAction<TransferListItemType[]>>,
-    key: string,
-  ) => {
-    const updatedList = list.map((item) => {
-      if (item.key === key) {
-        return { ...item, selected: !item.selected };
-      }
-      return item;
-    });
+  const toggleSelection = useCallback(
+    (
+      list: TransferListItemType[],
+      setList: React.Dispatch<React.SetStateAction<TransferListItemType[]>>,
+      key: string,
+    ) => {
+      const updatedList = list.map((item) => {
+        if (item.key === key) {
+          return { ...item, selected: !item.selected };
+        }
+        return item;
+      });
 
-    setList(updatedList);
-  };
+      setList(updatedList);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const leftItems = items.filter(
+      (x) => !targetKeys?.some((y) => y === x.key),
+    );
+    setLeftList(leftItems);
+    const rightItems = items.filter((x) =>
+      targetKeys?.some((y) => y === x.key),
+    );
+    setRightList(rightItems);
+  }, [items, targetKeys]);
 
   return (
     <div className="flex space-x-4">
@@ -148,4 +189,6 @@ export default function TransferList({
       </div>
     </div>
   );
-}
+});
+
+TransferList.displayName = 'TransferList';

@@ -137,7 +137,7 @@ export default {
       fromMessage: '缺少起始页码',
       toPlaceholder: '到',
       toMessage: '缺少结束页码（不包含）',
-      layoutRecognize: '文档解析器',
+      layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
         '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。',
       taskPageSize: '任务页面大小',
@@ -150,7 +150,7 @@ export default {
       changeSpecificCategory: '更改特定类别',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。单个文件大小不超过10MB，最多上传128份文件。严禁上传违禁文件。',
+        '支持单次或批量上传。本地部署的单次上传文件总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。对于 demo.ragflow.io：每次上传的总文件大小限制为 10MB，每个文件不得超过 10MB，每个账户最多可上传 128 个文件。严禁上传违禁文件。',
       chunk: '解析块',
       bulk: '批量',
       cancel: '取消',
@@ -159,14 +159,14 @@ export default {
       rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。`,
       topK: 'Top-K',
       topKTip: `K块将被送入Rerank型号。`,
-      delimiter: `分段标识符`,
+      delimiter: `文本分段标识符`,
       delimiterTip:
         '支持多字符作为分隔符，多字符分隔符用`包裹。如配置成这样：\n`##`;那么就会用换行，两个#以及分号先对文本进行分割，然后按照“ token number”大小进行拼装。',
       html4excel: '表格转HTML',
       html4excelTip: `开启后电子表格会被解析为 HTML 表格，每张表格最多 256 行，否则会按行解析为键值对。`,
-      autoKeywords: '自动关键词',
-      autoKeywordsTip: `在查询此类关键词时，为每个块提取 N 个关键词以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。`,
-      autoQuestions: '自动问题',
+      autoKeywords: '自动关键词提取',
+      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用“系统模型设置”中设置的默认聊天模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。`,
+      autoQuestions: '自动问题提取',
       autoQuestionsTip: `在查询此类问题时，为每个块提取 N 个问题以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。如果发生错误，此功能不会破坏整个分块过程，除了将空结果添加到原始块。`,
       redo: '是否清空已有 {{chunkNum}}个 chunk？',
       setMetaData: '设置元数据',
@@ -206,7 +206,7 @@ export default {
       languagePlaceholder: '请输入语言',
       permissions: '权限',
       embeddingModel: '嵌入模型',
-      chunkTokenNumber: '块Token数',
+      chunkTokenNumber: '文本的块标记编号',
       chunkTokenNumberMessage: '块Token数是必填项',
       embeddingModelTip:
         '用于嵌入块的嵌入模型。 一旦知识库有了块，它就无法更改。 如果你想改变它，你需要删除所有的块。',
@@ -240,7 +240,7 @@ export default {
       我们假设手册具有分层部分结构。 我们使用最低的部分标题作为对文档进行切片的枢轴。
       因此，同一部分中的图和表不会被分割，并且块大小可能会很大。
       </p>`,
-      naive: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML、HTML</b>。</p>
+      naive: `<p>支持的文件格式为<b>DOCX、XLSX、XLS (Excel97~2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
       <p>此方法将简单的方法应用于块文件：</p>
       <p>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
@@ -365,8 +365,9 @@ export default {
       <ul>
       <li>标签集是一个由用户定义和管理的封闭集，而自动生成的关键词属于开放集合。 </li>
       <li>在给你的知识库文本块批量打标签之前，你需要先生成标签集作为样本。 </li>
-      <li>自动关键词功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
+      <li>自动关键词提取功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
       </ul>
+      <p> 详见：https://ragflow.io/docs/dev/use_tag_sets </p>
       `,
       tags: '标签',
       addTag: '增加标签',
@@ -733,7 +734,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       parseOnCreation: '创建时解析',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。 单个文件大小不超过10MB，最多上传128份文件。严禁上传违禁文件。',
+        '支持单次或批量上传。 本地部署的单次上传文件总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。对于 demo.ragflow.io：每次上传的总文件大小限制为 10MB，每个文件不得超过 10MB，每个账户最多可上传 128 个文件。严禁上传违禁文件。',
       file: '文件',
       directory: '文件夹',
       local: '本地上传',

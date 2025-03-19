@@ -18,12 +18,14 @@ import os
 from pathlib import Path
 
 import requests
+from libs.utils.file_utils import create_txt_file
 from requests_toolbelt import MultipartEncoder
 
 HEADERS = {"Content-Type": "application/json"}
 HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
 DATASETS_API_URL = "/api/v1/datasets"
 FILE_API_URL = "/api/v1/datasets/{dataset_id}/documents"
+FILE_CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/chunks"
 
 INVALID_API_TOKEN = "invalid_key_123"
 DATASET_NAME_LIMIT = 128
@@ -31,7 +33,7 @@ DOCUMENT_NAME_LIMIT = 128
 
 
 # DATASET MANAGEMENT
-def create_dataset(auth, payload):
+def create_dataset(auth, payload=None):
     res = requests.post(
         url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
         headers=HEADERS,
@@ -51,7 +53,7 @@ def list_dataset(auth, params=None):
     return res.json()
 
 
-def update_dataset(auth, dataset_id, payload):
+def update_dataset(auth, dataset_id, payload=None):
     res = requests.put(
         url=f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}",
         headers=HEADERS,
@@ -87,15 +89,77 @@ def upload_documnets(auth, dataset_id, files_path=None):
         files_path = []
 
     fields = []
-    for i, fp in enumerate(files_path):
-        p = Path(fp)
-        fields.append(("file", (p.name, p.open("rb"))))
-    m = MultipartEncoder(fields=fields)
+    file_objects = []
+    try:
+        for fp in files_path:
+            p = Path(fp)
+            f = p.open("rb")
+            fields.append(("file", (p.name, f)))
+            file_objects.append(f)
+        m = MultipartEncoder(fields=fields)
 
-    res = requests.post(
+        res = requests.post(
+            url=url,
+            headers={"Content-Type": m.content_type},
+            auth=auth,
+            data=m,
+        )
+        return res.json()
+    finally:
+        for f in file_objects:
+            f.close()
+
+
+def batch_upload_documents(auth, dataset_id, num, tmp_path):
+    fps = []
+    for i in range(num):
+        fp = create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt")
+        fps.append(fp)
+    res = upload_documnets(auth, dataset_id, fps)
+    document_ids = []
+    for document in res["data"]:
+        document_ids.append(document["id"])
+    return document_ids
+
+
+def download_document(auth, dataset_id, document_id, save_path):
+    url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
+    res = requests.get(url=url, auth=auth, stream=True)
+    try:
+        if res.status_code == 200:
+            with open(save_path, "wb") as f:
+                for chunk in res.iter_content(chunk_size=8192):
+                    f.write(chunk)
+    finally:
+        res.close()
+
+    return res
+
+
+def list_documnet(auth, dataset_id, params=None):
+    url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
+    res = requests.get(
         url=url,
-        headers={"Content-Type": m.content_type},
+        headers=HEADERS,
         auth=auth,
-        data=m,
+        params=params,
     )
+    return res.json()
+
+
+def update_documnet(auth, dataset_id, document_id, payload=None):
+    url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
+    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def delete_documnet(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
+    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def parse_documnet(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()

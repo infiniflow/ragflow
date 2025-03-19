@@ -16,16 +16,15 @@
 import datetime
 import json
 import logging
-import os
 import re
 from collections import defaultdict
+
 import json_repair
+
+from api import settings
 from api.db import LLMType
-from api.db.services.document_service import DocumentService
-from api.db.services.llm_service import TenantLLMService, LLMBundle
-from api.utils.file_utils import get_project_base_directory
 from rag.settings import TAG_FLD
-from rag.utils import num_tokens_from_string, encoder
+from rag.utils import encoder, num_tokens_from_string
 
 
 def chunks_format(reference):
@@ -45,10 +44,12 @@ def chunks_format(reference):
 
 
 def llm_id2llm_type(llm_id):
+    from api.db.services.llm_service import TenantLLMService
+
     llm_id, _ = TenantLLMService.split_model_name_and_factory(llm_id)
-    fnm = os.path.join(get_project_base_directory(), "conf")
-    llm_factories = json.load(open(os.path.join(fnm, "llm_factories.json"), "r"))
-    for llm_factory in llm_factories["factory_llm_infos"]:
+
+    llm_factories = settings.FACTORY_LLM_INFOS
+    for llm_factory in llm_factories:
         for llm in llm_factory["llm"]:
             if llm_id == llm["llm_name"]:
                 return llm["model_type"].strip(",")[-1]
@@ -93,6 +94,8 @@ def message_fit_in(msg, max_length=4000):
 
 
 def kb_prompt(kbinfos, max_tokens):
+    from api.db.services.document_service import DocumentService
+
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
     used_token_count = 0
     chunks_num = 0
@@ -167,15 +170,15 @@ Overall, while Musk enjoys Dogecoin and often promotes it, he also warns against
 
 def keyword_extraction(chat_mdl, content, topn=3):
     prompt = f"""
-Role: You're a text analyzer. 
+Role: You're a text analyzer.
 Task: extract the most important keywords/phrases of a given piece of text content.
-Requirements: 
+Requirements:
   - Summarize the text content, and give top {topn} important keywords/phrases.
   - The keywords MUST be in language of the given piece of text content.
   - The keywords are delimited by ENGLISH COMMA.
   - Keywords ONLY in output.
 
-### Text Content 
+### Text Content
 {content}
 
 """
@@ -195,9 +198,9 @@ Requirements:
 
 def question_proposal(chat_mdl, content, topn=3):
     prompt = f"""
-Role: You're a text analyzer. 
+Role: You're a text analyzer.
 Task:  propose {topn} questions about a given piece of text content.
-Requirements: 
+Requirements:
   - Understand and summarize the text content, and propose top {topn} important questions.
   - The questions SHOULD NOT have overlapping meanings.
   - The questions SHOULD cover the main content of the text as much as possible.
@@ -205,7 +208,7 @@ Requirements:
   - One question per line.
   - Question ONLY in output.
 
-### Text Content 
+### Text Content
 {content}
 
 """
@@ -224,6 +227,8 @@ Requirements:
 
 
 def full_question(tenant_id, llm_id, messages, language=None):
+    from api.db.services.llm_service import LLMBundle
+
     if llm_id2llm_type(llm_id) == "image2text":
         chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
@@ -240,7 +245,7 @@ def full_question(tenant_id, llm_id, messages, language=None):
     prompt = f"""
 Role: A helpful assistant
 
-Task and steps: 
+Task and steps:
     1. Generate a full user question that would follow the conversation.
     2. If the user's question involves relative date, you need to convert it into absolute date based on the current date, which is {today}. For example: 'yesterday' would be converted to {yesterday}.
 
@@ -301,11 +306,11 @@ Output: What's the weather in Rochester on {tomorrow}?
 
 def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
     prompt = f"""
-Role: You're a text analyzer. 
+Role: You're a text analyzer.
 
 Task: Tag (put on some labels) to a given piece of text content based on the examples and the entire tag set.
 
-Steps:: 
+Steps::
   - Comprehend the tag/label set.
   - Comprehend examples which all consist of both text content and assigned tags with relevance score in format of JSON.
   - Summarize the text content, and tag it with top {topn} most relevant tags from the set of tag/label and the corresponding relevance score.
@@ -359,3 +364,32 @@ Output:
         except Exception as e:
             logging.exception(f"JSON parsing error: {result} -> {e}")
             raise e
+
+
+def vision_llm_describe_prompt(page=None) -> str:
+    prompt_en = """
+INSTRUCTION:
+Transcribe the content from the provided PDF page image into clean Markdown format.
+- Only output the content transcribed from the image.
+- Do NOT output this instruction or any other explanation.
+- If the content is missing or you do not understand the input, return an empty string.
+
+RULES:
+1. Do NOT generate examples, demonstrations, or templates.
+2. Do NOT output any extra text such as 'Example', 'Example Output', or similar.
+3. Do NOT generate any tables, headings, or content that is not explicitly present in the image.
+4. Transcribe content word-for-word. Do NOT modify, translate, or omit any content.
+5. Do NOT explain Markdown or mention that you are using Markdown.
+6. Do NOT wrap the output in ```markdown or ``` blocks.
+7. Only apply Markdown structure to headings, paragraphs, lists, and tables, strictly based on the layout of the image. Do NOT create tables unless an actual table exists in the image.
+8. Preserve the original language, information, and order exactly as shown in the image.
+"""
+
+    if page is not None:
+        prompt_en += f"\nAt the end of the transcription, add the page divider: `--- Page {page} ---`."
+
+    prompt_en += """
+FAILURE HANDLING:
+- If you do not detect valid content in the image, return an empty string.
+"""
+    return prompt_en

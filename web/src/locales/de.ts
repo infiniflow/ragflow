@@ -153,7 +153,7 @@ export default {
         changeSpecificCategory: 'Spezifische Kategorie ändern',
         uploadTitle: 'Ziehen Sie Ihre Datei hierher, um sie hochzuladen',
         uploadDescription:
-          'Unterstützt einzelne oder mehrere Datei-Uploads. Dateien dürfen jeweils 10MB nicht überschreiten, mit maximal 128 Dateien.',
+          'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für demo.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
         chunk: 'Chunk',
         bulk: 'Masse',
         cancel: 'Abbrechen',
@@ -168,7 +168,7 @@ export default {
         html4excel: 'Excel zu HTML',
         html4excelTip: 'Wenn aktiviert, wird die Tabelle in HTML-Tabellen umgewandelt, mit maximal 256 Zeilen pro Tabelle. Andernfalls wird sie in Schlüssel-Wert-Paare nach Zeilen umgewandelt.',
         autoKeywords: 'Auto-Schlüsselwort',
-        autoKeywordsTip: 'Extrahiert automatisch N Schlüsselwörter für jeden Chunk, um deren Ranking für Anfragen mit diesen Schlüsselwörtern zu erhöhen. Sie können die hinzugefügten Schlüsselwörter für einen Chunk in der Chunk-Liste überprüfen oder aktualisieren. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen LLM verbraucht werden.',
+        autoKeywordsTip: 'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren.',
         autoQuestions: 'Auto-Frage',
         autoQuestionsTip: 'Extrahiert automatisch N Fragen für jeden Chunk, um deren Ranking für Anfragen mit diesen Fragen zu erhöhen. Sie können die hinzugefügten Fragen für einen Chunk in der Chunk-Liste überprüfen oder aktualisieren. Diese Funktion unterbricht den Chunking-Prozess nicht, wenn ein Fehler auftritt, außer dass sie möglicherweise ein leeres Ergebnis zum ursprünglichen Chunk hinzufügt. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen LLM verbraucht werden.',
         redo: 'Möchten Sie die vorhandenen {{chunkNum}} Chunks löschen?',
@@ -246,7 +246,7 @@ export default {
         manual: `<p>Nur <b>PDF</b> wird unterstützt.</p><p>
         Wir gehen davon aus, dass das Handbuch eine hierarchische Abschnittsstruktur aufweist und verwenden die Titel der untersten Abschnitte als Grundeinheit für die Aufteilung der Dokumente. Daher werden Abbildungen und Tabellen im selben Abschnitt nicht getrennt, was zu größeren Chunk-Größen führen kann.
         </p>`,
-        naive: `<p>Unterstützte Dateiformate sind <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
+        naive: `<p>Unterstützte Dateiformate sind <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
         <p>Diese Methode teilt Dateien mit einer 'naiven' Methode auf: </p>
         <p>
         <li>Verwenden eines Erkennungsmodells, um die Texte in kleinere Segmente aufzuteilen.</li>
@@ -746,7 +746,7 @@ export default {
         directory: 'Verzeichnis',
         uploadTitle: 'Ziehen Sie Ihre Datei hierher, um sie hochzuladen',
         uploadDescription:
-          'Unterstützt einzelne oder Massen-Datei-Uploads. Dateien dürfen jeweils 10MB nicht überschreiten, mit maximal 128 Dateien.',
+          'RAGFlow unterstützt das Hochladen von Dateien einzeln oder in Batches. Für lokal bereitgestelltes RAGFlow: Die maximale Dateigröße pro Upload beträgt 1 GB, mit einem Batch-Upload-Limit von 32 Dateien. Es gibt keine Begrenzung der Gesamtanzahl an Dateien pro Konto. Für demo.ragflow.io: Die maximale Dateigröße pro Upload beträgt 10 MB, wobei jede Datei nicht größer als 10 MB sein darf und maximal 128 Dateien pro Konto erlaubt sind.',
         local: 'Lokale Uploads',
         s3: 'S3-Uploads',
         preview: 'Vorschau',

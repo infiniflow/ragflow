@@ -137,7 +137,7 @@ export default {
       fromMessage: '缺少起始頁碼',
       toPlaceholder: '到',
       toMessage: '缺少結束頁碼（不包含）',
-      layoutRecognize: '文件解析器',
+      layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
         '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。',
       taskPageSize: '任務頁面大小',
@@ -150,7 +150,7 @@ export default {
       changeSpecificCategory: '更改特定類別',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
-        '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
+        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 demo.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
       chunk: '解析塊',
       bulk: '批量',
       cancel: '取消',
@@ -159,13 +159,13 @@ export default {
       rerankTip: `如果是空的。它使用查詢和塊的嵌入來構成矢量餘弦相似性。否則，它使用rerank評分代替矢量餘弦相似性。`,
       topK: 'Top-K',
       topKTip: `K塊將被送入Rerank型號。`,
-      delimiter: `分段標識符`,
+      delimiter: `文字分段標識符`,
       delimiterTip:
         '支援多字元作為分隔符，多字元分隔符用`包裹。如配置成這樣：\n`##`;那麼就會用換行，兩個#以及分號先對文字進行分割，然後按照「 token number」大小進行拼裝。',
       html4excel: '表格轉HTML',
       html4excelTip: `啟用後，電子表格將解析為 HTML 表格，一張表格最多 256 行。否則，會按行解析成鍵值對。`,
       autoKeywords: '自動關鍵字',
-      autoKeywordsTip: `在查詢此類關鍵字時，為每個區塊提取 N 個關鍵字以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。 `,
+      autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。`,
       autoQuestions: '自動問題',
       autoQuestionsTip: `在查詢此類問題時，為每個區塊提取 N 個問題以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。如果發生錯誤，此功能不會破壞整個分塊過程，除了將空結果新增至原始區塊。 `,
       redo: '是否清空已有 {{chunkNum}}個 chunk？',
@@ -206,7 +206,7 @@ export default {
       languagePlaceholder: '請輸入語言',
       permissions: '權限',
       embeddingModel: '嵌入模型',
-      chunkTokenNumber: '塊Token數',
+      chunkTokenNumber: '文字的區塊標記編號',
       chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
         '用於嵌入塊的嵌入模型。一旦知識庫有了塊，它就無法更改。如果你想改變它，你需要刪除所有的塊。',
@@ -240,7 +240,7 @@ export default {
         我們假設手冊具有分層部分結構。我們使用最低的部分標題作為對文檔進行切片的樞軸。
         因此，同一部分中的圖和表不會被分割，並且塊大小可能會很大。
         </p>`,
-      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML、HTML</b>。</p>
+      naive: `<p>支持的文件格式為<b>DOCX、XLSX、XLS (Excel97~2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
         <p>此方法將簡單的方法應用於塊文件：</p>
         <p>
         <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
@@ -715,14 +715,14 @@ export default {
       parseOnCreation: '創建時解析',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
-        '支持單次或批量上傳。單個檔案大小不超過10MB，最多上傳128份檔案。',
+        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 demo.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
       file: '文件',
       directory: '文件夾',
       local: '本地上傳',
       s3: 'S3 上傳',
       preview: '預覽',
       fileError: '文件錯誤',
-      uploadLimit: '文件大小不能超過10M，文件總數不超過128個',
+      uploadLimit: '本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。',
       destinationFolder: '目標資料夾',
     },
     flow: {
