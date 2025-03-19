@@ -21,12 +21,32 @@ from api.utils.file_utils import get_project_base_directory
 # Server
 RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 
-ES = get_base_config("es", {})
-INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
-AZURE = get_base_config("azure", {})
-S3 = get_base_config("s3", {})
-MINIO = decrypt_database_config(name="minio")
-OSS = get_base_config("oss", {})
+# 从系统环境变量中获取存储类型和文档存擎
+STORAGE_IMPL_TYPE = os.getenv('STORAGE_IMPL', 'MINIO')
+DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
+
+ES = {}
+INFINITY = {}
+AZURE = {}
+S3 = {}
+MINIO = {}
+OSS = {}
+
+# 根据环境变量初始化对应选择的配置数据,解决因没有配置初始化报错问题
+if DOC_ENGINE == 'elasticsearch':
+    ES = get_base_config("es", {})
+elif DOC_ENGINE == 'infinity':
+    INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
+
+if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
+    AZURE = get_base_config("azure", {})
+elif STORAGE_IMPL_TYPE == 'AWS_S3':
+    S3 = get_base_config("s3", {})
+elif STORAGE_IMPL_TYPE == 'MINIO':
+    MINIO = decrypt_database_config(name="minio")
+elif STORAGE_IMPL_TYPE == 'OSS':
+    OSS = get_base_config("oss", {})
+
 try:
     REDIS = decrypt_database_config(name="redis")
 except Exception:
