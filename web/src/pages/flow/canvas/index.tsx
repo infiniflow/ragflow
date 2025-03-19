@@ -47,7 +47,7 @@ import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
 import { VariableNode } from './node/variable-node';
 
-const nodeTypes: NodeTypes = {
+export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
@@ -68,7 +68,7 @@ const nodeTypes: NodeTypes = {
   iterationStartNode: IterationStartNode,
 };
 
-const edgeTypes = {
+export const edgeTypes = {
   buttonEdge: ButtonEdge,
 };
 

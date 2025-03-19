@@ -1203,6 +1203,16 @@ This delimiter is used to split the input text into several text pieces echo of 
       }`,
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
+      historyversion: 'History version',
+      filename: 'File name',
+      version: {
+        created: 'Created',
+        details: 'Version details',
+        dsl: 'DSL',
+        download: 'Download',
+        version: 'Version',
+        select: 'No version selected',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',
