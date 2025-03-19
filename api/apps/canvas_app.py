@@ -18,6 +18,7 @@ import traceback
 from flask import request, Response
 from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
+from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
 from api.utils import get_uuid
@@ -25,6 +26,7 @@ from api.utils.api_utils import get_json_result, server_error_response, validate
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken
+import logging
 import time
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
@@ -86,10 +88,11 @@ def save():
 @manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
 def get(canvas_id):
-    e, c = UserCanvasService.get_by_id(canvas_id)
+    e, c = UserCanvasService.get_by_tenant_id(canvas_id)
+    logging.info(f"get canvas_id: {canvas_id} c: {c}")
     if not e:
         return get_data_error_result(message="canvas not found.")
-    return get_json_result(data=c.to_dict())
+    return get_json_result(data=c)
 
 @manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
 def getsse(canvas_id):
@@ -288,10 +291,6 @@ def test_db_connect():
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
         return server_error_response(e)
-
-
-
-
 #api get list version dsl of canvas
 @manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
@@ -301,7 +300,6 @@ def getlistversion(canvas_id):
         return get_json_result(data=list)
     except Exception as e:
         return get_data_error_result(message=f"Error getting history files: {e}")
-    
 #api get version dsl of canvas
 @manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
 @login_required
@@ -313,3 +311,42 @@ def getversion( version_id):
             return get_json_result(data=version.to_dict())
     except Exception as e:
         return get_json_result(data=f"Error getting history file: {e}")
+@manager.route('/listteam', methods=['GET'])  # noqa: F821
+@login_required
+def list_kbs():
+    keywords = request.args.get("keywords", "")
+    page_number = int(request.args.get("page", 1))
+    items_per_page = int(request.args.get("page_size", 150))
+    orderby = request.args.get("orderby", "create_time")
+    desc = request.args.get("desc", True)
+    try:
+        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+        kbs, total = UserCanvasService.get_by_tenant_ids(
+            [m["tenant_id"] for m in tenants], current_user.id, page_number,
+            items_per_page, orderby, desc, keywords)
+        return get_json_result(data={"kbs": kbs, "total": total})
+    except Exception as e:
+        return server_error_response(e)
+@manager.route('/setting', methods=['POST'])  # noqa: F821
+@validate_request("id", "title", "permission")
+@login_required
+def setting():
+    req = request.json
+    req["user_id"] = current_user.id
+    e,flow = UserCanvasService.get_by_id(req["id"])
+    if not e:
+        return get_data_error_result(message="canvas not found.")
+    flow = flow.to_dict()
+    flow["title"] = req["title"]
+    if req["description"]:
+        flow["description"] = req["description"]
+    if req["permission"]:
+        flow["permission"] = req["permission"]
+    if req["avatar"]:
+        flow["avatar"] = req["avatar"]
+    if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
+    num= UserCanvasService.update_by_id(req["id"], flow)
+    return get_json_result(data=num)
