@@ -592,6 +592,7 @@ async def handle_task():
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
+        await trio.sleep(5)
         return
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
