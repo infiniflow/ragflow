@@ -18,6 +18,10 @@ import {
 } from '../hooks/use-save-graph';
 import { BeginQuery } from '../interface';
 
+import {
+  HistoryVersionModal,
+  useHistoryVersionModal,
+} from '../history-version-modal';
 import styles from './index.less';
 
 interface IProps {
@@ -36,7 +40,8 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
   const isBeginNodeDataQuerySafe = useGetBeginNodeDataQueryIsSafe();
-
+  const { setVisibleHistoryVersionModal, visibleHistoryVersionModal } =
+    useHistoryVersionModal();
   const handleShowEmbedModal = useCallback(() => {
     showEmbedModal();
   }, [showEmbedModal]);
@@ -50,6 +55,9 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
     }
   }, [getBeginNodeDataQuery, handleRun, showChatDrawer]);
 
+  const showListVersion = useCallback(() => {
+    setVisibleHistoryVersionModal(true);
+  }, [setVisibleHistoryVersionModal]);
   return (
     <>
       <Flex
@@ -83,6 +91,9 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
           >
             <b>{t('embedIntoSite', { keyPrefix: 'common' })}</b>
           </Button>
+          <Button type="primary" onClick={showListVersion}>
+            <b>{t('historyversion')}</b>
+          </Button>
         </Space>
       </Flex>
       {embedVisible && (
@@ -94,6 +105,13 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
           beta={beta}
           isAgent
         ></EmbedModal>
+      )}
+      {visibleHistoryVersionModal && (
+        <HistoryVersionModal
+          id={id || ''}
+          visible={visibleHistoryVersionModal}
+          hideModal={() => setVisibleHistoryVersionModal(false)}
+        ></HistoryVersionModal>
       )}
     </>
   );
