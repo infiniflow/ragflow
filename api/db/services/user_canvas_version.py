@@ -2,7 +2,6 @@ from api.db.db_models import UserCanvasVersion, DB
 from api.db.services.common_service import CommonService
 from peewee import DoesNotExist
 import uuid
-import logging
 
 class UserCanvasVersionService(CommonService):
     model = UserCanvasVersion
@@ -56,13 +55,11 @@ class UserCanvasVersionService(CommonService):
             user_canvas_version = cls.model.select().where(cls.model.user_canvas_id == user_canvas_id).order_by(cls.model.create_time.desc())
             if user_canvas_version.count() > 20:
                 for i in range(20, user_canvas_version.count()):
-                    logging.info(f"Deleting version: {user_canvas_version[i].id}")
                     cls.delete(user_canvas_version[i].id)
             return True
         except DoesNotExist:
             return None
-        except Exception as e:
-            logging.error(f"Error deleting versions: {str(e)}")
+        except Exception:
             return None
 
 

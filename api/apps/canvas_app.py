@@ -25,9 +25,8 @@ from api.utils.api_utils import get_json_result, server_error_response, validate
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken
-import logging
-import os
 import time
+
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
 def templates():
