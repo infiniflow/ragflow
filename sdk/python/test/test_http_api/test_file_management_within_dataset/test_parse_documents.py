@@ -110,7 +110,7 @@ class TestDatasetParse:
         if callable(payload):
             payload = payload(document_ids)
         res = parse_documnet(get_http_api_auth, dataset_id, payload)
-        #assert res["code"] == expected_code
+        assert res["code"] == expected_code
         #if expected_code != 0:
         #    assert res["message"] == expected_message
         if expected_code == 0:
