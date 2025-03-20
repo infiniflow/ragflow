@@ -593,17 +593,14 @@ def delete(tenant_id, dataset_id):
         for doc in docs:
             doc_list.append(doc.id)
     else:
-        # detect duplicate ids and add them to errors
-        seen_ids = set()
-        duplicates = []
+        # check duplicate ids
+        id_count = {}
         for doc_id in doc_ids:
-            if doc_id in seen_ids:
-                duplicates.append(doc_id)
-            else:
-                seen_ids.add(doc_id)
-                
-        if duplicates:
-            errors.append(f"Duplicate document ids: {', '.join(duplicates)}")
+            id_count[doc_id] = id_count.get(doc_id, 0) + 1
+            
+        for doc_id, count in id_count.items():
+            if count > 1:
+                errors.append(f"Duplicate document ids: {doc_id}")
         doc_list = list(set(doc_ids))
         
     root_folder = FileService.get_root_folder(tenant_id)
