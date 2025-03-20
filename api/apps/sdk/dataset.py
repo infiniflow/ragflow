@@ -245,18 +245,14 @@ def delete(tenant_id):
             id_list.append(kb.id)
     else:
         # detect duplicate ids and remove them
-        seen_ids = set()
-        duplicates = []
+        id_count = {}
         for id in ids:
-            if id in seen_ids:
-                duplicates.append(id)
-            else:
-                seen_ids.add(id)
-                
-        if duplicates:
-            errors.append(f"Duplicate dataset ids: {', '.join(duplicates)}")
+            id_count[id] = id_count.get(id, 0) + 1
+            
+        for id, count in id_count.items():
+            if count > 1:
+                errors.append(f"Duplicate dataset ids: {id}")
         id_list = list(set(ids))
-        
     for id in id_list:
         kbs = KnowledgebaseService.query(id=id, tenant_id=tenant_id)
         if not kbs:
