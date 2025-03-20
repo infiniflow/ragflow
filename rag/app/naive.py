@@ -29,8 +29,8 @@ from tika import parser
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
-from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.figure_parser import VisionFigureParser
+from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_docx, tokenize_table
 from rag.utils import num_tokens_from_string
 
@@ -246,24 +246,32 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+        callback(0.1, "Start to parse.")
 
         if layout_recognizer == "DeepDOC":
             pdf_parser = Pdf()
 
             try:
                 vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+                callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
             except Exception:
                 vision_model = None
 
             if vision_model:
                 sections, tables, figures = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback, separate_tables_figures=True)
-                pdf_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures, **kwargs)
-                boosted_figures = pdf_vision_parser(callback=callback)
-                tables.extend(boosted_figures)
+                callback(0.5, "Basic parsing complete. Proceeding with figure enhancement...")
+                try:
+                    pdf_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures, **kwargs)
+                    boosted_figures = pdf_vision_parser(callback=callback)
+                    tables.extend(boosted_figures)
+                except Exception as e:
+                    callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+                    tables.extend(figures)
             else:
                 sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
 
             res = tokenize_table(tables, doc, is_english)
+            callback(0.8, "Finish parsing.")
 
         else:
             if layout_recognizer == "Plain Text":
@@ -275,6 +283,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
                                           callback=callback)
             res = tokenize_table(tables, doc, is_english)
+            callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
