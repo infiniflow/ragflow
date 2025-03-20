@@ -18,6 +18,7 @@ from datetime import datetime
 import json
 
 from flask_login import login_required, current_user
+from flask import Blueprint
 
 from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
@@ -36,6 +37,9 @@ from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
+from utils.system_utils import get_system_version
+
+manager = Blueprint('system', __name__)
 
 
 @manager.route("/version", methods=["GET"])  # noqa: F821
@@ -298,3 +302,25 @@ def rm(token):
         [APIToken.tenant_id == current_user.id, APIToken.token == token]
     )
     return get_json_result(data=True)
+
+
+@manager.route('/config', methods=['GET'])
+def get_config():
+    """
+    Get system configuration.
+    ---
+    tags:
+        - System
+    responses:
+        200:
+            description: Return system configuration
+            schema:
+                type: object
+                properties:
+                    registerEnable:
+                        type: boolean
+                        description: Whether user registration is enabled
+    """
+    return get_json_result({
+        "registerEnable": settings.REGISTER_ENABLE
+    })
