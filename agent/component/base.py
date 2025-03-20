@@ -463,7 +463,6 @@ class ComponentBase(ABC):
         if len(self._canvas.path) > 1:
             reversed_cpnts.extend(self._canvas.path[-2])
         reversed_cpnts.extend(self._canvas.path[-1])
-        #需要筛选出当前com的upstream的元素->获取upstream
         up_cpns = self.get_upstream()
         reversed_up_cpnts = [cpn for cpn in reversed_cpnts if cpn in up_cpns]
 
