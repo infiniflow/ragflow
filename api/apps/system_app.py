@@ -37,10 +37,6 @@ from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
-from utils.system_utils import get_system_version
-
-manager = Blueprint('system', __name__)
-
 
 @manager.route("/version", methods=["GET"])  # noqa: F821
 @login_required
@@ -321,6 +317,6 @@ def get_config():
                         type: boolean
                         description: Whether user registration is enabled
     """
-    return get_json_result({
+    return get_json_result(data={
         "registerEnable": settings.REGISTER_ENABLE
     })
