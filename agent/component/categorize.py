@@ -44,6 +44,7 @@ class CategorizeParam(GenerateParam):
         for c, desc in self.category_description.items():
             c=c.strip()
             for line in desc.get("examples", "").split("\n"):
+                line=line.strip()
                 if not line and not c:
                     continue
                 cate_lines.append("USER: {}\nCategory: {}".format(line, c))
