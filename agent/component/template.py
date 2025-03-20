@@ -18,7 +18,6 @@ import re
 from agent.component.base import ComponentBase, ComponentParamBase
 from jinja2 import Template as Jinja2Template
 
-
 class TemplateParam(ComponentParamBase):
     """
     Define the Generate component parameters.
@@ -45,6 +44,7 @@ class Template(ComponentBase):
     def get_input_elements(self):
         key_set = set([])
         res = []
+        vars = self._canvas.get_variables()
         for r in re.finditer(r"\{([a-z]+[:@][a-z0-9_-]+)\}", self._param.content, flags=re.IGNORECASE):
             cpn_id = r.group(1)
             if cpn_id in key_set:
@@ -57,6 +57,12 @@ class Template(ComponentBase):
                     res.append({"key": r.group(1), "name": p["name"]})
                     key_set.add(r.group(1))
                 continue
+            if cpn_id.lower().find("variables@") == 0:
+                cpn_id, key = cpn_id.split("@")
+                if key in vars.keys():
+                    res.append({"key": r.group(1), "name": key})
+                    key_set.add(r.group(1))
+                continue
             cpn_nm = self._canvas.get_component_name(cpn_id)
             if not cpn_nm:
                 continue
@@ -66,8 +72,8 @@ class Template(ComponentBase):
 
     def _run(self, history, **kwargs):
         content = self._param.content
-
         self._param.inputs = []
+        vars= self._canvas.get_variables()
         for para in self.get_input_elements():
             if para["key"].lower().find("begin@") == 0:
                 cpn_id, key = para["key"].split("@")
@@ -79,7 +85,14 @@ class Template(ComponentBase):
                 else:
                     assert False, f"Can't find parameter '{key}' for {cpn_id}"
                 continue
-
+            if para["key"].lower().find("variables@") == 0:
+                cpn_id, key = para["key"].split("@")
+                if key in vars.keys():
+                    value = vars[key]
+                    self.make_kwargs(para, kwargs, value)
+                else: 
+                    assert False, f"Can't find variables '{key}' for {cpn_id}"
+                continue
             component_id = para["key"]
             cpn = self._canvas.get_component(component_id)["obj"]
             if cpn.component_name.lower() == "answer":
@@ -92,7 +105,6 @@ class Template(ComponentBase):
                 continue
 
             _, out = cpn.output(allow_partial=False)
-
             result = ""
             if "content" in out.columns:
                 result = "\n".join(
@@ -100,7 +112,10 @@ class Template(ComponentBase):
                 )
 
             self.make_kwargs(para, kwargs, result)
-
+        # Replace variables in the content
+        for var_key, var_value in self._canvas.get_variables().items():
+            if var_value:
+                content = content.replace(f"{{{var_key}}}", str(var_value))
         template = Jinja2Template(content)
 
         try:

@@ -16,7 +16,6 @@
 from abc import ABC
 from agent.component.base import ComponentBase, ComponentParamBase
 
-
 class SwitchParam(ComponentParamBase):
     """
     Define the Switch component parameters.
@@ -67,6 +66,7 @@ class Switch(ComponentBase, ABC):
             for item in cond["items"]:
                 if not item["cpn_id"]:
                     continue
+                vars =self._canvas.get_variables()
                 cid = item["cpn_id"].split("@")[0]
                 if item["cpn_id"].find("@") > 0:
                     cpn_id, key = item["cpn_id"].split("@")
@@ -74,6 +74,8 @@ class Switch(ComponentBase, ABC):
                         if p["key"] == key:
                             res.append(self.process_operator(p.get("value",""), item["operator"], item.get("value", "")))
                             break
+                elif item["cpn_id"] in vars.keys():
+                    res.append(self.process_operator(vars[item["cpn_id"]], item["operator"], item.get("value", "")))
                 else:
                     out = self._canvas.get_component(cid)["obj"].output(allow_partial=False)[1]
                     cpn_input = "" if "content" not in out.columns else " ".join([str(s) for s in out["content"]])

@@ -157,7 +157,9 @@ def set_conversation():
                 "dialog_id": cvs.id,
                 "user_id": request.args.get("user_id", ""),
                 "message": [{"role": "assistant", "content": canvas.get_prologue()}],
-                "source": "agent"
+                "source": "agent",
+                "variables":canvas.get_variables(),
+
             }
             API4ConversationService.save(**conv)
             return get_json_result(data=conv)
