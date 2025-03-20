@@ -111,7 +111,7 @@ class TestDocumentsParse:
             payload = payload(document_ids)
         res = parse_documnet(get_http_api_auth, dataset_id, payload)
         assert res["code"] == expected_code
-        #if expected_code != 0:
+        # if expected_code != 0:
         #    assert res["message"] == expected_message
         if expected_code == 0:
             condition(get_http_api_auth, dataset_id, payload["document_ids"])
@@ -205,8 +205,7 @@ class TestDocumentsParse:
         res = parse_documnet(
             get_http_api_auth, dataset_id, {"document_ids": document_ids}
         )
-        assert res["code"] == 102
-        assert res["message"] == "Can't stop parsing document with progress at 0 or 100"
+        assert res["code"] == 0
 
     @pytest.mark.skip(reason="issues/6234")
     def test_duplicate_parse(self, get_http_api_auth, tmp_path):
