@@ -300,7 +300,7 @@ def rm(token):
     return get_json_result(data=True)
 
 
-@manager.route('/config', methods=['GET'])
+@manager.route('/config', methods=['GET'])  # noqa: F821
 def get_config():
     """
     Get system configuration.
