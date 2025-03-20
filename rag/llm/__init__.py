@@ -143,6 +143,7 @@ from .tts_model import (
     SparkTTS,
     XinferenceTTS,
     GPUStackTTS,
+    SILICONFLOWTTS
 )
 
 EmbeddingModel = {
@@ -278,4 +279,5 @@ TTSModel = {
     "XunFei Spark": SparkTTS,
     "Xinference": XinferenceTTS,
     "GPUStack": GPUStackTTS,
+    "SILICONFLOW": SILICONFLOWTTS,
 }

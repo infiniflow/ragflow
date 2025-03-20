@@ -359,6 +359,8 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], all_tags, {"topn": topn_tags})
             if not cached:
                 picked_examples = random.choices(examples, k=2) if len(examples)>2 else examples
+                if not picked_examples:
+                    picked_examples.append({"content": "This is an example", TAG_FLD: {'example': 1}})
                 async with chat_limiter:
                     cached = await trio.to_thread.run_sync(lambda: content_tagging(chat_mdl, d["content_with_weight"], all_tags, picked_examples, topn=topn_tags))
                 if cached:
@@ -590,6 +592,7 @@ async def handle_task():
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
+        await trio.sleep(5)
         return
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
