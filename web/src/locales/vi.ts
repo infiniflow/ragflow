@@ -494,7 +494,7 @@ export default {
       betaError: `"Beta API Token" không được để trống!`,
       useKnowledgeGraph: 'Sử dụng đồ thị tri thức',
       useKnowledgeGraphTip:
-        'Nó sẽ truy xuất các mô tả về các thực thể, quan hệ và cộng đồng liên quan, điều này sẽ tăng cường khả năng suy luận các câu hỏi phức tạp và nhiều bước.',
+        'Có nên sử dụng đồ thị tri thức trong cơ sở tri thức được chỉ định trong quá trình thu hồi để trả lời câu hỏi đa bước hay không. Khi được kích hoạt, điều này sẽ liên quan đến các tìm kiếm lặp lại trên các đoạn thực thể, mối quan hệ và báo cáo cộng đồng, làm tăng đáng kể thời gian thu hồi.',
       keyword: 'Phân tích từ khóa',
       keywordTip:
         'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan.',
