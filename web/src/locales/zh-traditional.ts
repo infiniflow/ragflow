@@ -515,7 +515,7 @@ export default {
       keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。`,
       reasoning: '推理',
       reasoningTip:
-        '它將觸發類似Deepseek-R1/OpenAI o1的推理過程。將代理搜尋過程整合到推理工作流程中，使得模型本身能夠在遇到不確定資訊時動態地檢索外部知識。',
+        '是否像 DeepSeek-R1 / OpenAI o1 一樣通過推理產生答案。啟用後，允許模型在遇到未知情況時將代理搜索過程整合到推理工作流中，自行動態檢索外部知識，並通過推理生成最終答案。',
       tavilyApiKeyTip:
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
       tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
@@ -722,7 +722,8 @@ export default {
       s3: 'S3 上傳',
       preview: '預覽',
       fileError: '文件錯誤',
-      uploadLimit: '本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。',
+      uploadLimit:
+        '本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。',
       destinationFolder: '目標資料夾',
     },
     flow: {
