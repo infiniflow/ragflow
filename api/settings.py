@@ -19,6 +19,7 @@ from enum import IntEnum, Enum
 import json
 import rag.utils.es_conn
 import rag.utils.infinity_conn
+import rag.utils.milvus_conn
 
 import rag.utils
 from rag.nlp import search
@@ -130,6 +131,8 @@ def init_settings():
         docStoreConn = rag.utils.es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
+    elif lower_case_doc_engine == "milvus":
+        docStoreConn = rag.utils.milvus_conn.MilvusConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 

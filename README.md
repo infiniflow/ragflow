@@ -255,23 +255,56 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
 
 1. Stop all running containers:
 
-   ```bash
-   $ docker compose -f docker/docker-compose.yml down -v
-   ```
+    ```bash
+    $ cd ragflow/docker
+    $ docker compose -f docker-compose.yml down
+    ```
 
-> [!WARNING]
-> `-v` will delete the docker container volumes, and the existing data will be cleared.
+2. Update the DOC_ENGINE value in the .env file:
 
-2. Set `DOC_ENGINE` in **docker/.env** to `infinity`.
+    ```bash
+    DOC_ENGINE=infinity
+    COMPOSE_PROFILES=infinity
+    ```
 
-3. Start the containers:
+3. Restart the containers:
 
-   ```bash
-   $ docker compose -f docker-compose.yml up -d
-   ```
+    ```bash
+    $ docker compose -f docker-compose.yml up -d
+    ```
 
-> [!WARNING]
-> Switching to Infinity on a Linux/arm64 machine is not yet officially supported.
+### Switch doc engine from Elasticsearch to Milvus
+
+RAGFlow can also use [Milvus](https://milvus.io/) as the vector database. To switch to Milvus, follow these steps:
+
+1. Stop all running containers:
+
+    ```bash
+    $ cd ragflow/docker
+    $ docker compose -f docker-compose.yml down
+    ```
+
+2. Update the DOC_ENGINE value in the .env file:
+
+    ```bash
+    DOC_ENGINE=milvus
+    COMPOSE_PROFILES=milvus
+    ```
+
+3. Configure Milvus settings in the .env file if needed:
+
+    ```bash
+    MILVUS_PORT=19530
+    MILVUS_USER=root
+    MILVUS_PASSWORD=Milvus
+    MILVUS_DB=default
+    ```
+
+4. Restart the containers:
+
+    ```bash
+    $ docker compose -f docker-compose.yml up -d
+    ```
 
 ## 🔧 Build a Docker image without embedding models
 

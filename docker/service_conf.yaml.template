@@ -24,6 +24,12 @@ redis:
   db: 1
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}:6379'
+milvus:
+  host: '${MILVUS_HOST:-milvus}'
+  port: 19530
+  user: '${MILVUS_USER:-root}'
+  password: '${MILVUS_PASSWORD:-Milvus}'
+  db_name: '${MILVUS_DB:-default}'
 
 # postgres:
 #   name: '${POSTGRES_DBNAME:-rag_flow}'

@@ -163,3 +163,19 @@ The [.env](./.env) file contains important environment variables for Docker.
 
 > [!TIP]  
 > If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
+
+- `infinity`
+  - `uri`: The Infinity serving IP *and* port inside the Docker container. Defaults to `infinity:23817`.
+  - `db_name`: The default database name. Defaults to `default_db`.
+
+- `milvus`
+  - `host`: The Milvus serving host inside the Docker container. Defaults to `milvus`.
+  - `port`: The Milvus serving port inside the Docker container. Defaults to `19530`.
+  - `user`: The username for Milvus.
+  - `password`: The password for Milvus.
+  - `db_name`: The database name for Milvus. Defaults to `default`.
+
+- `redis`
+  - `db`: The default database index for Redis. Defaults to `1`.
+  - `password`: The password for Redis.
+  - `host`: The Redis serving IP *and* port inside the Docker container. Defaults to `redis:6379`.
