@@ -378,6 +378,44 @@ def get_parser_config(chunk_method, parser_config):
     return parser_config
 
 
+def get_data_openai(id=None, 
+                    created=None, 
+                    model=None, 
+                    prompt_tokens= 0, 
+                    completion_tokens=0, 
+                    content = None, 
+                    finish_reason= None,
+                    object="chat.completion"
+):
+   
+    total_tokens= prompt_tokens + completion_tokens
+    return {
+        "id":f"{id}",
+        "object": object,
+        "created": int(time.time()) if created else None,
+        "model": model,
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "completion_tokens_details": {
+                "reasoning_tokens": 0,
+                "accepted_prediction_tokens": 0,
+                "rejected_prediction_tokens": 0
+            }
+        },
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": content
+                },
+                "logprobs": None,
+                "finish_reason": finish_reason,
+                "index": 0
+            }
+        ]
+    } 
 def valid_parser_config(parser_config):
     if not parser_config:
         return
