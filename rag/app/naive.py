@@ -29,7 +29,7 @@ from tika import parser
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
-from deepdoc.parser.figure_parser import VisionFigureParser
+from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wraper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_docx, tokenize_table
 from rag.utils import num_tokens_from_string
@@ -226,10 +226,27 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     pdf_parser = None
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections, tables = Docx()(filename, binary)
-        res = tokenize_table(tables, doc, is_english)  # just for table
 
+        try:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
+        except Exception:
+            vision_model = None
+
+        sections, tables = Docx()(filename, binary)
+
+        if vision_model:
+            figures_data = vision_figure_parser_figure_data_wraper(sections)
+            try:
+                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+                boosted_figures = docx_vision_parser(callback=callback)
+                tables.extend(boosted_figures)
+            except Exception as e:
+                callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+
+        res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
+
         st = timer()
 
         chunks, images = naive_merge_docx(
