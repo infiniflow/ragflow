@@ -524,7 +524,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       descriptionPlaceholder: 'e.g. A chat assistant for resume.',
       useKnowledgeGraph: 'Use knowledge graph',
       useKnowledgeGraphTip:
-        'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
+        'Whether to use knowledge graph(s) in the specified knowledge base(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.',
       keyword: 'Keyword analysis',
       keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphasize during the relevance computation.`,
       languageTip:
@@ -1213,14 +1213,25 @@ This delimiter is used to split the input text into several text pieces echo of 
         version: 'Version',
         select: 'No version selected',
       },
-    },
-    footer: {
-      profile: 'All rights reserved @ React',
-    },
-    layout: {
-      file: 'file',
-      knowledge: 'knowledge',
-      chat: 'chat',
+      setting: 'Setting',
+      settings: {
+        upload: 'Upload',
+        photo: 'Photo',
+        permissions: 'Permission',
+        permissionsTip: 'You can set the permissions of the team members here.',
+        me: 'me',
+        team: 'Team',
+      },
+      noMoreData: 'No more data',
+      searchAgentPlaceholder: 'Search agent',
+      footer: {
+        profile: 'All rights reserved @ React',
+      },
+      layout: {
+        file: 'file',
+        knowledge: 'knowledge',
+        chat: 'chat',
+      },
     },
   },
 };

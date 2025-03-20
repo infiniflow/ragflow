@@ -53,7 +53,7 @@ class Switch(ComponentBase, ABC):
             for item in cond["items"]:
                 if not item["cpn_id"]:
                     continue
-                if item["cpn_id"].find("begin") >= 0:
+                if item["cpn_id"].lower().find("begin") >= 0 or item["cpn_id"].lower().find("answer") >= 0:
                     continue
                 cid = item["cpn_id"].split("@")[0]
                 res.append(cid)
@@ -77,7 +77,7 @@ class Switch(ComponentBase, ABC):
                 elif item["cpn_id"] in vars.keys():
                     res.append(self.process_operator(vars[item["cpn_id"]], item["operator"], item.get("value", "")))
                 else:
-                    out = self._canvas.get_component(cid)["obj"].output()[1]
+                    out = self._canvas.get_component(cid)["obj"].output(allow_partial=False)[1]
                     cpn_input = "" if "content" not in out.columns else " ".join([str(s) for s in out["content"]])
                     res.append(self.process_operator(cpn_input, item["operator"], item.get("value", "")))
 

@@ -382,7 +382,7 @@ class CoHereRerank(Base):
         from cohere import Client
 
         self.client = Client(api_key=key, base_url=base_url)
-        self.model_name = model_name
+        self.model_name = model_name.split("___")[0]
 
     def similarity(self, query: str, texts: list):
         token_count = num_tokens_from_string(query) + sum(
