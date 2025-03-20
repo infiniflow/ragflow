@@ -263,6 +263,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+        if isinstance(layout_recognizer, bool):
+            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
         callback(0.1, "Start to parse.")
 
         if layout_recognizer == "DeepDOC":
