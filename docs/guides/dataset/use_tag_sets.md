@@ -13,7 +13,7 @@ Retrieval accuracy is the touchstone for a production-ready RAG framework. In ad
 
 To use this feature, ensure you have at least one properly configured tag set, specify the tag set(s) on the **Configuration** page of your knowledge base (dataset), and then re-parse your documents to initiate the auto-tag process. During this process, each chunk in your dataset is compared with every entry in the specified tag set(s), and tags are automatically applied based on similarity.
 
-:::danger IMPORTANT
+:::caution NOTE
 The auto-tagging feature is *unavailable* on the [Infinity](https://github.com/infiniflow/infinity) document engine.
 :::
 
