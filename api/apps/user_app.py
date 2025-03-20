@@ -563,7 +563,7 @@ def user_add():
           type: object
     """
 
-    if not settings.REGISTER_ENABLE:
+    if not settings.REGISTER_ENABLED:
         return get_json_result(
             data=False,
             message="User registration is disabled!",

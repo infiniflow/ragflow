@@ -63,11 +63,11 @@ retrievaler = None
 kg_retrievaler = None
 
 # user registration switch
-REGISTER_ENABLE = True
+REGISTER_ENABLED = 0
 
 
 def init_settings():
-    global LLM, LLM_FACTORY, LLM_BASE_URL, LIGHTEN, DATABASE_TYPE, DATABASE, FACTORY_LLM_INFOS, REGISTER_ENABLE
+    global LLM, LLM_FACTORY, LLM_BASE_URL, LIGHTEN, DATABASE_TYPE, DATABASE, FACTORY_LLM_INFOS, REGISTER_ENABLED
     LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
     DATABASE_TYPE = os.getenv("DB_TYPE", 'mysql')
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
@@ -75,7 +75,10 @@ def init_settings():
     LLM_DEFAULT_MODELS = LLM.get("default_models", {})
     LLM_FACTORY = LLM.get("factory", "Tongyi-Qianwen")
     LLM_BASE_URL = LLM.get("base_url")
-    REGISTER_ENABLE = os.environ.get("REGISTER_ENABLE", "true").lower() == "true"
+    try:
+        REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "0"))
+    except (ValueError, TypeError):
+        REGISTER_ENABLED = 0
     
     try:
         with open(os.path.join(get_project_base_directory(), "conf", "llm_factories.json"), "r") as f:

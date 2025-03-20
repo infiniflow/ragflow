@@ -314,9 +314,9 @@ def get_config():
                 type: object
                 properties:
                     registerEnable:
-                        type: boolean
+                        type: integer 0 means disabled, 1 means enabled
                         description: Whether user registration is enabled
     """
     return get_json_result(data={
-        "registerEnable": settings.REGISTER_ENABLE
+        "registerEnabled": settings.REGISTER_ENABLED
     })

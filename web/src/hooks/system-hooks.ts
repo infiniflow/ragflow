@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
 import userService from '@/services/user-service';
+import { useQuery } from '@tanstack/react-query';
 
 /**
  * Hook to fetch system configuration including register enable status
@@ -10,9 +10,9 @@ export const useSystemConfig = () => {
     queryKey: ['systemConfig'],
     queryFn: async () => {
       const { data = {} } = await userService.getSystemConfig();
-      return data.data || { registerEnable: true }; // Default to enabling registration
+      return data.data || { registerEnabled: 0 }; // Default to disabling registration
     },
   });
 
   return { config: data, loading: isLoading };
-}; 
+};

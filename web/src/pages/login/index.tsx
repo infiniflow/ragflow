@@ -18,7 +18,7 @@ const Login = () => {
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
   const loading = signLoading || registerLoading;
   const { config } = useSystemConfig();
-  const registerEnabled = config?.registerEnable !== false;
+  const registerEnabled = config?.registerEnabled !== 0;
 
   const changeTitle = () => {
     if (title === 'login' && !registerEnabled) {
