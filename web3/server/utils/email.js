@@ -1,7 +1,27 @@
+/**
+ * Email Utility Module
+ * 
+ * This module provides email functionality for the application,
+ * specifically for sending password reset emails with verification PINs.
+ * 
+ * It utilizes Nodemailer to configure and send emails through the
+ * email service defined in environment variables.
+ */
+
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
-// Configure nodemailer
+/**
+ * Nodemailer Transporter
+ * 
+ * Configures the email transport mechanism using environment variables:
+ * - EMAIL_SERVICE: The email service provider (e.g., 'gmail', 'outlook')
+ * - EMAIL_USER: The sender's email address
+ * - EMAIL_PASSWORD: The sender's email password or app-specific password
+ * 
+ * For Gmail, you typically need to use an app-specific password
+ * rather than your account password due to security restrictions.
+ */
 const transporter = nodemailer.createTransport({
   service: process.env.EMAIL_SERVICE,
   auth: {
@@ -11,16 +31,23 @@ const transporter = nodemailer.createTransport({
 });
 
 /**
- * Send password reset email with PIN
- * @param {string} to - Recipient email
- * @param {string} pin - 6-digit PIN for password reset
- * @returns {Promise} - Nodemailer result
+ * Send Password Reset Email
+ * 
+ * Sends an email containing a 6-digit PIN for password reset verification.
+ * The email includes instructions and formatting for a professional appearance.
+ * 
+ * @param {string} to - Recipient's email address
+ * @param {string} pin - 6-digit PIN for password reset verification
+ * @returns {Promise<object>} - Resolves with Nodemailer info object on success
+ * @throws {Error} - Throws if email sending fails
  */
 async function sendPasswordResetEmail(to, pin) {
+  // Define email content and options
   const mailOptions = {
-    from: process.env.EMAIL_FROM,
-    to,
+    from: process.env.EMAIL_FROM, // Sender address from environment variables
+    to, // Recipient address
     subject: 'Logen AI - Password Reset',
+    // HTML email body with styling for better presentation
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #4A5568;">Password Reset Request</h2>
@@ -37,15 +64,20 @@ async function sendPasswordResetEmail(to, pin) {
   };
 
   try {
+    // Attempt to send the email using the configured transporter
     const info = await transporter.sendMail(mailOptions);
+    // Log success information
     console.log('Email sent: %s', info.messageId);
     return info;
   } catch (error) {
+    // Log detailed error information for debugging
     console.error('Error sending email:', error);
+    // Re-throw the error for handling by the calling function
     throw error;
   }
 }
 
+// Export functions for use in other modules
 module.exports = {
   sendPasswordResetEmail
 }; 
