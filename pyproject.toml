@@ -138,3 +138,14 @@ full = [
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
+
+[tool.ruff]
+line-length = 200
+exclude = [
+    ".venv",
+    "rag/svr/discord_svr.py",
+]
+
+[tool.ruff.lint]
+extend-select = ["ASYNC", "ASYNC1"]
+ignore = ["E402"]
