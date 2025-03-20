@@ -42,7 +42,6 @@ dependencies = [
     "flask-login==0.6.3",
     "flask-session==0.8.0",
     "google-search-results==2.4.2",
-    "googlesearch-python==1.3.0",
     "groq==0.9.0",
     "hanziconv==0.3.2",
     "html-text==0.6.2",
