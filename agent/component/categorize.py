@@ -42,8 +42,9 @@ class CategorizeParam(GenerateParam):
     def get_prompt(self, chat_hist):
         cate_lines = []
         for c, desc in self.category_description.items():
+            c=c.strip()
             for line in desc.get("examples", "").split("\n"):
-                if not line:
+                if not line and not c:
                     continue
                 cate_lines.append("USER: {}\nCategory: {}".format(line, c))
         descriptions = []
