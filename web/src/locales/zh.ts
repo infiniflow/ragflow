@@ -527,12 +527,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '例如 你是一个专业的简历助手，只能回答简历的问题。',
       useKnowledgeGraph: '使用知识图谱',
       useKnowledgeGraphTip:
-        '它将检索相关实体、关系和社区报告的描述，这将增强多跳和复杂问题的推理。',
+        '是否检索与所选知识库对应的知识图谱相关文本块，以处理复杂的多跳问题？这一过程将涉及对实体、关系和社区报告文本块的多次检索，会显著延长检索时间。',
       keyword: '关键词分析',
       keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
       reasoning: '推理',
       reasoningTip:
-        '它将像Deepseek-R1 / OpenAI o1一样触发推理过程。将代理搜索过程集成到推理工作流中，允许模型本身在遇到不确定信息时动态地检索外部知识。',
+        '是否像 Deepseek-R1 / OpenAI o1一样通过推理产生答案。启用后，允许模型在遇到未知情况时将代理搜索过程集成到推理工作流中，自行动态检索外部知识，并通过推理生成最终答案。',
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',

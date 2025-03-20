@@ -541,7 +541,7 @@ export default {
       descriptionPlaceholder: 'z.B. Ein Chat-Assistent für Lebensläufe.',
       useKnowledgeGraph: 'Wissensgraph verwenden',
       useKnowledgeGraphTip:
-        'Es werden Beschreibungen relevanter Entitäten, Beziehungen und Gemeinschaftsberichte abgerufen, was die Inferenz von mehrschrittigen und komplexen Fragen verbessert.',
+        'Ob ein Wissensgraph im angegebenen Wissensspeicher während der Wiederherstellung für die Beantwortung von Fragen mit mehreren Schritten verwendet werden soll. Wenn aktiviert, beinhaltet dies iterative Suchen über Entitäten-, Beziehungs- und Gemeinschaftsberichtssegmente, was die Wiederherstellungszeit erheblich verlängert.',
       keyword: 'Schlüsselwortanalyse',
       keywordTip:
         'LLM anwenden, um die Fragen des Benutzers zu analysieren und Schlüsselwörter zu extrahieren, die während der Relevanzberechnung hervorgehoben werden.',
@@ -552,7 +552,7 @@ export default {
       selectLanguage: 'Sprache auswählen',
       reasoning: 'Schlussfolgerung',
       reasoningTip:
-        'Es wird ein Schlussfolgerungsprozess wie bei Deepseek-R1/OpenAI o1 ausgelöst. Integriert einen agentischen Suchprozess in den Schlussfolgerungsworkflow, der es Modellen ermöglicht, dynamisch externes Wissen abzurufen, wenn sie auf unsichere Informationen stoßen.',
+        'Ob Antworten durch Denkprozesse wie DeepSeek-R1/OpenAI o1 generiert werden sollen. Wenn aktiviert, integriert das Chat-Modell Deep Research autonom während der Beantwortung von Fragen, wenn es auf ein unbekanntes Thema trifft. Dies beinhaltet, dass das Chat-Modell dynamisch externe Kenntnisse durchsucht und endgültige Antworten durch Denkprozesse generiert.',
       tavilyApiKeyTip:
         'Wenn hier ein API-Schlüssel korrekt eingestellt ist, werden Tavily-basierte Websuchen verwendet, um den Abruf aus der Wissensdatenbank zu ergänzen.',
       tavilyApiKeyMessage: 'Bitte geben Sie Ihren Tavily-API-Schlüssel ein',
