@@ -19,6 +19,7 @@ from collections import defaultdict, Counter
 from copy import deepcopy
 from typing import Callable
 import trio
+import networkx as nx
 
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import get_llm_cache, set_llm_cache, handle_single_entity_extraction, \
@@ -40,18 +41,10 @@ class Extractor:
         llm_invoker: CompletionLLM,
         language: str | None = "English",
         entity_types: list[str] | None = None,
-        get_entity: Callable | None = None,
-        set_entity: Callable | None = None,
-        get_relation: Callable | None = None,
-        set_relation: Callable | None = None,
     ):
         self._llm = llm_invoker
         self._language = language
         self._entity_types = entity_types or DEFAULT_ENTITY_TYPES
-        self._get_entity_ = get_entity
-        self._set_entity_ = set_entity
-        self._get_relation_ = get_relation
-        self._set_relation_ = set_relation
 
     def _chat(self, system, history, gen_conf):
         hist = deepcopy(history)
@@ -152,25 +145,15 @@ class Extractor:
     async def _merge_nodes(self, entity_name: str, entities: list[dict], all_relationships_data):
         if not entities:
             return
-        already_entity_types = []
-        already_source_ids = []
-        already_description = []
-
-        already_node = self._get_entity_(entity_name)
-        if already_node:
-            already_entity_types.append(already_node["entity_type"])
-            already_source_ids.extend(already_node["source_id"])
-            already_description.append(already_node["description"])
-
         entity_type = sorted(
             Counter(
-                [dp["entity_type"] for dp in entities] + already_entity_types
+                [dp["entity_type"] for dp in entities]
             ).items(),
             key=lambda x: x[1],
             reverse=True,
         )[0][0]
         description = GRAPH_FIELD_SEP.join(
-            sorted(set([dp["description"] for dp in entities] + already_description))
+            sorted(set([dp["description"] for dp in entities]))
         )
         already_source_ids = flat_uniq_list(entities, "source_id")
         description = await self._handle_entity_relation_summary(entity_name, description)
@@ -180,7 +163,6 @@ class Extractor:
             source_id=already_source_ids,
         )
         node_data["entity_name"] = entity_name
-        self._set_entity_(entity_name, node_data)
         all_relationships_data.append(node_data)
 
     async def _merge_edges(
@@ -192,36 +174,11 @@ class Extractor:
     ):
         if not edges_data:
             return
-        already_weights = []
-        already_source_ids = []
-        already_description = []
-        already_keywords = []
-
-        relation = self._get_relation_(src_id, tgt_id)
-        if relation:
-            already_weights = [relation["weight"]]
-            already_source_ids = relation["source_id"]
-            already_description = [relation["description"]]
-            already_keywords = relation["keywords"]
-
-        weight = sum([dp["weight"] for dp in edges_data] + already_weights)
-        description = GRAPH_FIELD_SEP.join(
-            sorted(set([dp["description"] for dp in edges_data] + already_description))
-        )
-        keywords = flat_uniq_list(edges_data, "keywords") + already_keywords
-        source_id = flat_uniq_list(edges_data, "source_id") + already_source_ids
-
-        for need_insert_id in [src_id, tgt_id]:
-            if self._get_entity_(need_insert_id):
-                continue
-            self._set_entity_(need_insert_id, {
-                        "source_id": source_id,
-                        "description": description,
-                        "entity_type": 'UNKNOWN'
-                    })
-        description = await self._handle_entity_relation_summary(
-            f"({src_id}, {tgt_id})", description
-        )
+        weight = sum([edge["weight"] for edge in edges_data])
+        description = GRAPH_FIELD_SEP.join(sorted(set([edge["description"] for edge in edges_data])))
+        description = await self._handle_entity_relation_summary(f"{src_id} -> {tgt_id}", description)
+        keywords = flat_uniq_list(edges_data, "keywords")
+        source_id = flat_uniq_list(edges_data, "source_id")
         edge_data = dict(
             src_id=src_id,
             tgt_id=tgt_id,
@@ -230,9 +187,38 @@ class Extractor:
             weight=weight,
             source_id=source_id
         )
-        self._set_relation_(src_id, tgt_id, edge_data)
-        if all_relationships_data is not None:
-            all_relationships_data.append(edge_data)
+        all_relationships_data.append(edge_data)
+
+    async def _merge_graph_nodes(self, graph: nx.Graph, nodes: list[str]):
+        if len(nodes) <= 1:
+            return
+        nodes_set = set(nodes)
+        node0_attrs = graph.nodes[nodes[0]]
+        node0_neighbors = set(graph.neighbors(nodes[0]))
+        for node1 in nodes[1:]:
+            # Merge two nodes
+            # Keep "entity_name", "entity_type", "page_rank"
+            node1_attrs = graph.nodes[node1]
+            node0_attrs["description"] += f"{GRAPH_FIELD_SEP}{node1_attrs['description']}"
+            for attr in ["keywords", "source_id"]:
+                node0_attrs[attr] = sorted(set(node0_attrs[attr].extend(node1_attrs[attr])))
+            for neighbor in graph.neighbors(node1):
+                if neighbor not in nodes_set:
+                    edge1_attrs = graph.get_edge_data(node1, neighbor)
+                    if neighbor in node0_neighbors:
+                        # Merge two edges
+                        edge0_attrs = graph.get_edge_data(nodes[0], neighbor)
+                        edge0_attrs["weight"] += edge1_attrs["weight"]
+                        edge0_attrs["description"] += f"{GRAPH_FIELD_SEP}{edge1_attrs['description']}"
+                        edge0_attrs["keywords"] = list(set(edge0_attrs["keywords"].extend(edge1_attrs["keywords"])))
+                        edge0_attrs["source_id"] = list(set(edge0_attrs["source_id"].extend(edge1_attrs["source_id"])))
+                        edge0_attrs["description"] = await self._handle_entity_relation_summary(f"({nodes[0]}, {neighbor})", edge0_attrs["description"])
+                        graph.add_edge(nodes[0], neighbor, **edge0_attrs)
+                    else:
+                        graph.add_edge(nodes[0], neighbor, **edge1_attrs)
+            graph.remove_node(node1)
+        node0_attrs["description"] = await self._handle_entity_relation_summary(nodes[0], node0_attrs["description"])
+        graph.nodes[nodes[0]].update(node0_attrs)
 
     async def _handle_entity_relation_summary(
             self,
