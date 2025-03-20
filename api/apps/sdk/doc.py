@@ -1189,11 +1189,7 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     condition["id"] = chunk_ids
     chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
     if chunk_number == 0:
-        return get_error_data_result(
-            message=f"no chunks deleted, please check the chunk ids, 
-            make sure you own the chunks or the chunks 
-            are in the document, chunk_ids: {', '.join(chunk_ids)}"
-        )
+        return get_error_data_result(message=f"no chunks deleted, please check the chunk ids, make sure you own the chunks or the chunks are in the document, chunk_ids: {', '.join(chunk_ids)}")
     
     DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
     
