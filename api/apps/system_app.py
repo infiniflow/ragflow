@@ -18,7 +18,6 @@ from datetime import datetime
 import json
 
 from flask_login import login_required, current_user
-from flask import Blueprint
 
 from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
