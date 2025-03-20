@@ -47,15 +47,14 @@ class CategorizeParam(GenerateParam):
                 line=line.strip()
                 if not line and not c:
                     continue
-                cate_lines.append("USER: {}\nCategory: {}".format(line, c))
+                cate_lines.append("Category: {} - USER: {}".format(c,line))
         descriptions = []
         for c, desc in self.category_description.items():
             if desc.get("description"):
                 descriptions.append(
                     "--------------------\nCategory: {}\nDescription: {}\n".format(c, desc["description"]))
-
         self.prompt = """
-        You're a text classifier. You need to categorize the user’s questions into {} categories, 
+        You're a text classifier. You need to categorize the user's questions into {} categories, 
         namely: {}
         Here's description of each category:
         {}
@@ -71,7 +70,7 @@ class CategorizeParam(GenerateParam):
             len(self.category_description.keys()),
             "/".join(list(self.category_description.keys())),
             "\n".join(descriptions),
-            "- ".join(cate_lines),
+            "\n".join(cate_lines),
             chat_hist
         )
         return self.prompt
