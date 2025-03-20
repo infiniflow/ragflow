@@ -86,4 +86,4 @@ def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):
     except Exception as e:
         callback(-1, str(e))
 
-    return []
+    return ""
