@@ -226,7 +226,9 @@ class CommonService:
         # Returns:
         #     Tuple of (success, record)
         obj = cls.model.get_or_none(cls.model.id == pid)
-        return True, obj if obj else False, None
+        if obj:
+            return True, obj
+        return False, None
 
     @classmethod
     @DB.connection_context()
