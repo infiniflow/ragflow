@@ -23,7 +23,7 @@ from api.db.services.llm_service import TenantLLMService, LLMBundle
 from api import settings
 import xxhash
 import re
-from api.utils.api_utils import token_required
+from api.utils.api_utils import token_required, check_duplicate_ids
 from api.db.db_models import Task
 from api.db.services.task_service import TaskService, queue_tasks
 from api.utils.api_utils import server_error_response
@@ -594,15 +594,9 @@ def delete(tenant_id, dataset_id):
         for doc in docs:
             doc_list.append(doc.id)
     else:
-        # check duplicate ids
-        id_count = {}
-        for doc_id in doc_ids:
-            id_count[doc_id] = id_count.get(doc_id, 0) + 1
-            
-        for doc_id, count in id_count.items():
-            if count > 1:
-                errors.append(f"Duplicate document ids: {doc_id}")
-        doc_list = list(set(doc_ids))
+        # Use check_duplicate_ids to handle duplicate detection
+        doc_list, duplicate_errors = check_duplicate_ids(doc_ids, "document")
+        errors.extend(duplicate_errors)
         
     root_folder = FileService.get_root_folder(tenant_id)
     pf_id = root_folder["id"]
@@ -693,15 +687,11 @@ def parse(tenant_id, dataset_id):
     success_count = 0
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
-    # check duplicate ids
-    id_count = {}
-    for doc_id in req["document_ids"]:
-        id_count[doc_id] = id_count.get(doc_id, 0) + 1
-        
-    for doc_id, count in id_count.items():
-        if count > 1:
-            errors.append(f"Duplicate document ids: {doc_id}")
-    document_ids = list(set(req["document_ids"]))
+    
+    # Use check_duplicate_ids to handle duplicate detection
+    document_ids, duplicate_errors = check_duplicate_ids(req["document_ids"], "document")
+    errors.extend(duplicate_errors)
+    
     for id in document_ids:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
@@ -781,16 +771,11 @@ def stop_parsing(tenant_id, dataset_id):
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
     
-    # check duplicate ids
-    id_count = {}
-    for doc_id in req["document_ids"]:
-        id_count[doc_id] = id_count.get(doc_id, 0) + 1
-        
-    for doc_id, count in id_count.items():
-        if count > 1:
-            errors.append(f"Duplicate document ids: {doc_id}")
-    document_ids = list(set(req["document_ids"]))
+    # Use check_duplicate_ids to handle duplicate detection
+    document_ids, duplicate_errors = check_duplicate_ids(req["document_ids"], "document")
+    errors.extend(duplicate_errors)
     req["document_ids"] = document_ids
+    
     for id in req["document_ids"]:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
@@ -1173,17 +1158,11 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     condition = {"doc_id": document_id}
     if "chunk_ids" not in req:
         return get_error_data_result("`chunk_ids` is required")
-    # detect duplicate ids and remove them
-    # check duplicate ids
-    id_count = {}
-    for chunk_id in req["chunk_ids"]:
-        id_count[chunk_id] = id_count.get(chunk_id, 0) + 1
-        
-    errors = []
-    for chunk_id, count in id_count.items():
-        if count > 1:
-            errors.append(f"Duplicate chunk ids: {chunk_id}")
-    chunk_ids = list(set(req["chunk_ids"]))
+    
+    # Use check_duplicate_ids to handle duplicate detection
+    chunk_ids, duplicate_errors = check_duplicate_ids(req["chunk_ids"], "chunk")
+    errors = duplicate_errors
+    
     condition["id"] = chunk_ids
     chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
     if chunk_number == 0:

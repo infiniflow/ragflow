@@ -31,6 +31,7 @@ from api.utils.api_utils import (
     get_error_data_result,
     valid,
     get_parser_config, valid_parser_config, dataset_readonly_fields,
+    check_duplicate_ids,
 )
 
 
@@ -245,15 +246,10 @@ def delete(tenant_id):
         for kb in kbs:
             id_list.append(kb.id)
     else:
-        # detect duplicate ids and remove them
-        id_count = {}
-        for id in ids:
-            id_count[id] = id_count.get(id, 0) + 1
-            
-        for id, count in id_count.items():
-            if count > 1:
-                errors.append(f"Duplicate dataset ids: {id}")
-        id_list = list(set(ids))
+        # Use the check_duplicate_ids function to detect duplicates
+        id_list, duplicate_errors = check_duplicate_ids(ids, "dataset")
+        errors.extend(duplicate_errors)
+        
     for id in id_list:
         kbs = KnowledgebaseService.query(id=id, tenant_id=tenant_id)
         if not kbs:

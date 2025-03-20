@@ -411,3 +411,32 @@ def valid_parser_config(parser_config):
     assert 0 <= parser_config.get("topn_tags", 0) < 10, "topn_tags should be in range from 0 to 10"
     assert isinstance(parser_config.get("html4excel", False), bool), "html4excel should be True or False"
     assert isinstance(parser_config.get("delimiter", ""), str), "delimiter should be str"
+
+
+def check_duplicate_ids(ids, id_type="item"):
+    """
+    Check for duplicate IDs in a list and return unique IDs and error messages.
+    
+    Args:
+        ids (list): List of IDs to check for duplicates
+        id_type (str): Type of ID for error messages (e.g., 'document', 'dataset', 'chunk')
+    
+    Returns:
+        tuple: (unique_ids, error_messages)
+            - unique_ids (list): List of unique IDs
+            - error_messages (list): List of error messages for duplicate IDs
+    """
+    id_count = {}
+    error_messages = []
+    
+    # Count occurrences of each ID
+    for id_value in ids:
+        id_count[id_value] = id_count.get(id_value, 0) + 1
+    
+    # Check for duplicates
+    for id_value, count in id_count.items():
+        if count > 1:
+            error_messages.append(f"Duplicate {id_type} ids: {id_value}")
+    
+    # Return unique IDs and error messages
+    return list(set(ids)), error_messages
