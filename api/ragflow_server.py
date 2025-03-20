@@ -29,6 +29,7 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import uuid
 
 from werkzeug.serving import run_simple
 from api import settings
@@ -47,17 +48,17 @@ from rag.utils.redis_conn import RedisDistributedLock
 stop_event = threading.Event()
 
 def update_progress():
-    redis_lock = RedisDistributedLock("update_progress", timeout=60)
+    lock_value = str(uuid.uuid4())
+    redis_lock = RedisDistributedLock("update_progress", lock_value=lock_value, timeout=60)
+    logging.info(f"update_progress lock_value: {lock_value}")
     while not stop_event.is_set():
         try:
-            if not redis_lock.acquire():
-                continue
-            DocumentService.update_progress()
+            if redis_lock.acquire():
+                DocumentService.update_progress()
+                redis_lock.release()
             stop_event.wait(6)
         except Exception:
             logging.exception("update_progress exception")
-        finally:
-            redis_lock.release()
 
 def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
