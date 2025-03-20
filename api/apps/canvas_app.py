@@ -75,6 +75,7 @@ def save():
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
         UserCanvasService.update_by_id(req["id"], req)
+    with open("debug.json", "w") as file: json.dump(req, file, indent=4, default=str, ensure_ascii=False)
     return get_json_result(data=req)
 
 
@@ -283,4 +284,3 @@ def test_db_connect():
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
         return server_error_response(e)
-

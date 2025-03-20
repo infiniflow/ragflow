@@ -1,0 +1,498 @@
+{
+    "id": "0167aa2e04e611f099ffc78c60b624d4",
+    "title": "test3",
+    "dsl": {
+        "answer": [],
+        "components": {
+            "begin": {
+                "obj": {
+                    "component_name": "Begin",
+                    "inputs": [],
+                    "output": {
+                        "content": {
+                            "0": {
+                                "content": "Hi! I'm your smart assistant. What can I do for you?"
+                            }
+                        }
+                    },
+                    "params": {}
+                },
+                "downstream": [
+                    "Answer:SwiftTurtlesSmash"
+                ],
+                "upstream": []
+            },
+            "Answer:SwiftTurtlesSmash": {
+                "obj": {
+                    "component_name": "Answer",
+                    "inputs": [],
+                    "output": {
+                        "content": "Hi! I'm your smart assistant. What can I do for you?"
+                    },
+                    "params": {}
+                },
+                "downstream": [
+                    "Concentrator:LemonSquidsBehave"
+                ],
+                "upstream": [
+                    "begin"
+                ]
+            },
+            "Concentrator:LemonSquidsBehave": {
+                "obj": {
+                    "component_name": "Concentrator",
+                    "inputs": [],
+                    "output": {
+                        "content": {
+                            "0": "114514"
+                        }
+                    },
+                    "params": {}
+                },
+                "downstream": [
+                    "Retrieval:EasyMoonsTell",
+                    "Baidu:NastyViewsGrab"
+                ],
+                "upstream": [
+                    "Answer:SwiftTurtlesSmash"
+                ]
+            },
+            "Retrieval:EasyMoonsTell": {
+                "obj": {
+                    "component_name": "Retrieval",
+                    "inputs": [
+                        {
+                            "component_id": "Answer:SwiftTurtlesSmash",
+                            "content": "USER:椎间盘"
+                        }
+                    ],
+                    "output": {
+                        "component_id": {
+                            "0": "Retrieval:EasyMoonsTell"
+                        },
+                        "content": {
+                            "0": ""
+                        }
+                    },
+                    "params": {
+                        "keywords_similarity_weight": 0.3,
+                        "query": [],
+                        "similarity_threshold": 0.2,
+                        "top_n": 8,
+                        "use_kg": false
+                    }
+                },
+                "downstream": [
+                    "Generate:GiantYearsFetch"
+                ],
+                "upstream": [
+                    "Concentrator:LemonSquidsBehave"
+                ]
+            },
+            "Baidu:NastyViewsGrab": {
+                "obj": {
+                    "component_name": "Baidu",
+                    "inputs": [
+                        {
+                            "component_id": "Retrieval:EasyMoonsTell",
+                            "content": ""
+                        }
+                    ],
+                    "output": {
+                        "component_id": {
+                            "0": "Baidu:NastyViewsGrab"
+                        },
+                        "content": {
+                            "0": ""
+                        }
+                    },
+                    "params": {
+                        "query": [],
+                        "top_n": 10
+                    }
+                },
+                "downstream": [
+                    "Generate:GiantYearsFetch"
+                ],
+                "upstream": [
+                    "Concentrator:LemonSquidsBehave"
+                ]
+            },
+            "Generate:GiantYearsFetch": {
+                "obj": {
+                    "component_name": "Generate",
+                    "inputs": [
+                        {
+                            "component_id": "Baidu:NastyViewsGrab",
+                            "content": ""
+                        }
+                    ],
+                    "output": {
+                        "content": {
+                            "0": {
+                                "content": "根据提供的段落内容，无法总结出与“椎间盘”相关的具体信息。段落中未提及任何与椎间盘相关的内容或数据。如果需要了解椎间盘的相关知识，建议查阅医学资料或咨询专业医生。",
+                                "reference": []
+                            }
+                        }
+                    },
+                    "params": {
+                        "cite": true,
+                        "frequency_penalty": 0.7,
+                        "llm_id": "deepseek-chat@DeepSeek",
+                        "message_history_window_size": 12,
+                        "parameters": [],
+                        "presence_penalty": 0.4,
+                        "prompt": "请总结以下段落。注意数字，不要胡编乱造。段落如下：\n{input}\n以上就是你需要总结的内容。",
+                        "temperature": 0.1,
+                        "top_p": 0.3
+                    }
+                },
+                "downstream": [
+                    "Baidu:SolidParrotsCheat"
+                ],
+                "upstream": [
+                    "Retrieval:EasyMoonsTell",
+                    "Baidu:NastyViewsGrab"
+                ]
+            },
+            "Baidu:SolidParrotsCheat": {
+                "obj": {
+                    "component_name": "Baidu",
+                    "params": {
+                        "top_n": 10,
+                        "query": []
+                    }
+                },
+                "downstream": [],
+                "upstream": [
+                    "Generate:GiantYearsFetch"
+                ]
+            }
+        },
+        "embed_id": "",
+        "graph": {
+            "nodes": [
+                {
+                    "data": {
+                        "label": "Begin",
+                        "name": "begin"
+                    },
+                    "id": "begin",
+                    "measured": {
+                        "height": 44,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 50,
+                        "y": 200
+                    },
+                    "sourcePosition": "left",
+                    "targetPosition": "right",
+                    "type": "beginNode"
+                },
+                {
+                    "data": {
+                        "form": {},
+                        "label": "Answer",
+                        "name": "Interact_0"
+                    },
+                    "dragging": false,
+                    "id": "Answer:SwiftTurtlesSmash",
+                    "measured": {
+                        "height": 44,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 289.8768800632143,
+                        "y": 199.50752025285715
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "logicNode"
+                },
+                {
+                    "data": {
+                        "form": {},
+                        "label": "Concentrator",
+                        "name": "Concentrator_0"
+                    },
+                    "dragging": false,
+                    "id": "Concentrator:LemonSquidsBehave",
+                    "measured": {
+                        "height": 64,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 544.4675383399724,
+                        "y": 186.8436248536539
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "logicNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "keywords_similarity_weight": 0.3,
+                            "query": [],
+                            "similarity_threshold": 0.2,
+                            "top_n": 8,
+                            "use_kg": false
+                        },
+                        "label": "Retrieval",
+                        "name": "Retrieval_0"
+                    },
+                    "id": "Retrieval:EasyMoonsTell",
+                    "measured": {
+                        "height": 64,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 795,
+                        "y": 150
+                    },
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "retrievalNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "query": [],
+                            "top_n": 10
+                        },
+                        "label": "Baidu",
+                        "name": "Baidu_0"
+                    },
+                    "dragging": false,
+                    "id": "Baidu:NastyViewsGrab",
+                    "measured": {
+                        "height": 64,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 799.4675383399725,
+                        "y": 255
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "ragNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "cite": true,
+                            "frequencyPenaltyEnabled": true,
+                            "frequency_penalty": 0.7,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_tokens": 256,
+                            "message_history_window_size": 12,
+                            "parameter": "Precise",
+                            "parameters": [],
+                            "presencePenaltyEnabled": true,
+                            "presence_penalty": 0.4,
+                            "prompt": "请总结以下段落。注意数字，不要胡编乱造。段落如下：\n{input}\n以上就是你需要总结的内容。",
+                            "temperature": 0.1,
+                            "temperatureEnabled": true,
+                            "topPEnabled": true,
+                            "top_p": 0.3
+                        },
+                        "label": "Generate",
+                        "name": "Generate_0"
+                    },
+                    "dragging": false,
+                    "id": "Generate:GiantYearsFetch",
+                    "measured": {
+                        "height": 102,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 1102.0083138023901,
+                        "y": 185.0815509248352
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "generateNode"
+                },
+                {
+                    "id": "Baidu:SolidParrotsCheat",
+                    "type": "ragNode",
+                    "position": {
+                        "x": 1368.3715887811766,
+                        "y": 206.21564341574674
+                    },
+                    "data": {
+                        "label": "Baidu",
+                        "name": "Baidu_1",
+                        "form": {
+                            "top_n": 10,
+                            "query": []
+                        }
+                    },
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "measured": {
+                        "width": 200,
+                        "height": 64
+                    },
+                    "selected": false,
+                    "dragging": false
+                }
+            ],
+            "edges": [
+                {
+                    "id": "xy-edge__begin-Answer:SwiftTurtlesSmashc",
+                    "markerEnd": "logo",
+                    "source": "begin",
+                    "style": {
+                        "stroke": "rgb(202 197 245)",
+                        "strokeWidth": 2
+                    },
+                    "target": "Answer:SwiftTurtlesSmash",
+                    "targetHandle": "c",
+                    "type": "buttonEdge",
+                    "zIndex": 1001
+                },
+                {
+                    "id": "xy-edge__Answer:SwiftTurtlesSmashb-Concentrator:LemonSquidsBehavec",
+                    "markerEnd": "logo",
+                    "source": "Answer:SwiftTurtlesSmash",
+                    "sourceHandle": "b",
+                    "style": {
+                        "stroke": "rgb(202 197 245)",
+                        "strokeWidth": 2
+                    },
+                    "target": "Concentrator:LemonSquidsBehave",
+                    "targetHandle": "c",
+                    "type": "buttonEdge",
+                    "zIndex": 1001
+                },
+                {
+                    "id": "xy-edge__Concentrator:LemonSquidsBehaveb-Retrieval:EasyMoonsTellc",
+                    "markerEnd": "logo",
+                    "source": "Concentrator:LemonSquidsBehave",
+                    "sourceHandle": "b",
+                    "style": {
+                        "stroke": "rgb(202 197 245)",
+                        "strokeWidth": 2
+                    },
+                    "target": "Retrieval:EasyMoonsTell",
+                    "targetHandle": "c",
+                    "type": "buttonEdge",
+                    "zIndex": 1001
+                },
+                {
+                    "id": "xy-edge__Concentrator:LemonSquidsBehaveb-Baidu:NastyViewsGrabc",
+                    "markerEnd": "logo",
+                    "source": "Concentrator:LemonSquidsBehave",
+                    "sourceHandle": "b",
+                    "style": {
+                        "stroke": "rgb(202 197 245)",
+                        "strokeWidth": 2
+                    },
+                    "target": "Baidu:NastyViewsGrab",
+                    "targetHandle": "c",
+                    "type": "buttonEdge",
+                    "zIndex": 1001
+                },
+                {
+                    "id": "xy-edge__Retrieval:EasyMoonsTellb-Generate:GiantYearsFetchc",
+                    "markerEnd": "logo",
+                    "source": "Retrieval:EasyMoonsTell",
+                    "sourceHandle": "b",
+                    "style": {
+                        "stroke": "rgb(202 197 245)",
+                        "strokeWidth": 2
+                    },
+                    "target": "Generate:GiantYearsFetch",
+                    "targetHandle": "c",
+                    "type": "buttonEdge",
+                    "zIndex": 1001
+                },
+                {
+                    "id": "xy-edge__Baidu:NastyViewsGrabb-Generate:GiantYearsFetchc",
+                    "markerEnd": "logo",
+                    "source": "Baidu:NastyViewsGrab",
+                    "sourceHandle": "b",
+                    "style": {
+                        "stroke": "rgb(202 197 245)",
+                        "strokeWidth": 2
+                    },
+                    "target": "Generate:GiantYearsFetch",
+                    "targetHandle": "c",
+                    "type": "buttonEdge",
+                    "zIndex": 1001
+                },
+                {
+                    "type": "buttonEdge",
+                    "markerEnd": "logo",
+                    "style": {
+                        "strokeWidth": 2,
+                        "stroke": "rgb(202 197 245)"
+                    },
+                    "zIndex": 1001,
+                    "source": "Generate:GiantYearsFetch",
+                    "sourceHandle": "b",
+                    "target": "Baidu:SolidParrotsCheat",
+                    "targetHandle": "c",
+                    "id": "xy-edge__Generate:GiantYearsFetchb-Baidu:SolidParrotsCheatc"
+                }
+            ]
+        },
+        "history": [
+            [
+                "assistant",
+                "Hi! I'm your smart assistant. What can I do for you?"
+            ],
+            [
+                "user",
+                "椎间盘"
+            ],
+            [
+                "assistant",
+                "根据提供的段落内容，无法总结出与“椎间盘”相关的具体信息。段落中未提及任何与椎间盘相关的内容或数据。如果需要了解椎间盘的相关知识，建议查阅医学资料或咨询专业医生。"
+            ]
+        ],
+        "messages": [
+            {
+                "content": "Hi! I'm your smart assistant. What can I do for you?",
+                "id": "2408803c04e911f0b75393c754be9628",
+                "role": "assistant"
+            },
+            {
+                "content": "椎间盘",
+                "id": "b5bf173e-2e68-4f27-8978-1cce02f7501f",
+                "role": "user"
+            },
+            {
+                "content": "根据提供的段落内容，无法总结出与“椎间盘”相关的具体信息。段落中未提及任何与椎间盘相关的内容或数据。如果需要了解椎间盘的相关知识，建议查阅医学资料或咨询专业医生。",
+                "id": "b5bf173e-2e68-4f27-8978-1cce02f7501f",
+                "role": "assistant"
+            }
+        ],
+        "path": [
+            [
+                "begin"
+            ],
+            [
+                "Answer:SwiftTurtlesSmash"
+            ],
+            [
+                "Concentrator:LemonSquidsBehave",
+                "Retrieval:EasyMoonsTell",
+                "Baidu:NastyViewsGrab",
+                "Generate:GiantYearsFetch",
+                "Answer:LovelyHumansSmoke"
+            ]
+        ],
+        "reference": []
+    },
+    "user_id": "e93f43c8041111f08f9ba9fc9c556ed5",
+    "update_time": 1742406060662,
+    "update_date": "2025-03-20 01:41:00"
+}

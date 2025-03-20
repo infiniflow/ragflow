@@ -84,7 +84,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y nodejs
 
 # A modern version of cargo is needed for the latest version of the Rust compiler.
-RUN apt update && apt install -y curl build-essential \
+RUN apt update && apt install -y curl build-essential cargo \
     && if [ "$NEED_MIRROR" == "1" ]; then \
          # Use TUNA mirrors for rustup/rust dist files
          export RUSTUP_DIST_SERVER="https://mirrors.tuna.tsinghua.edu.cn/rustup"; \
