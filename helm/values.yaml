@@ -27,13 +27,13 @@ env:
   REDIS_PASSWORD: infini_rag_flow_helm
 
   # The RAGFlow Docker image to download.
-  # Defaults to the v0.17.0-slim edition, which is the RAGFlow Docker image without embedding models.
-  RAGFLOW_IMAGE: infiniflow/ragflow:v0.17.0-slim
+  # Defaults to the v0.17.2-slim edition, which is the RAGFlow Docker image without embedding models.
+  RAGFLOW_IMAGE: infiniflow/ragflow:v0.17.2-slim
   #
   # To download the RAGFlow Docker image with embedding models, uncomment the following line instead:
-  # RAGFLOW_IMAGE: infiniflow/ragflow:v0.17.0
+  # RAGFLOW_IMAGE: infiniflow/ragflow:v0.17.2
   #
-  # The Docker image of the v0.17.0 edition includes:
+  # The Docker image of the v0.17.2 edition includes:
   # - Built-in embedding models:
   #   - BAAI/bge-large-zh-v1.5
   #   - BAAI/bge-reranker-v2-m3

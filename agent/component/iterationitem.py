@@ -38,6 +38,10 @@ class IterationItem(ComponentBase, ABC):
         ans = parent.get_input()
         ans = parent._param.delimiter.join(ans["content"]) if "content" in ans else ""
         ans = [a.strip() for a in ans.split(parent._param.delimiter)]
+        if not ans:
+            self._idx = -1
+            return pd.DataFrame()
+
         df = pd.DataFrame([{"content": ans[self._idx]}])
         self._idx += 1
         if self._idx >= len(ans):

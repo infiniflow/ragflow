@@ -30,7 +30,7 @@ from api.utils.api_utils import (
     token_required,
     get_error_data_result,
     valid,
-    get_parser_config, valid_parser_config,
+    get_parser_config, valid_parser_config, dataset_readonly_fields,
 )
 
 
@@ -85,6 +85,9 @@ def create(tenant_id):
               type: object
     """
     req = request.json
+    for k in req.keys():
+        if dataset_readonly_fields(k):
+            return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=f"'{k}' is readonly.")
     e, t = TenantService.get_by_id(tenant_id)
     permission = req.get("permission")
     chunk_method = req.get("chunk_method")
@@ -182,7 +185,7 @@ def create(tenant_id):
     req.update(mapped_keys)
     flds = list(req.keys())
     for f in flds:
-        if req[f] == "" and f in ["permission", "chunk_method"]:
+        if req[f] == "" and f in ["permission", "parser_id", "chunk_method"]:
             del req[f]
     if not KnowledgebaseService.save(**req):
         return get_error_data_result(message="Create dataset error.(Database error)")
@@ -234,7 +237,7 @@ def delete(tenant_id):
     if not req:
         ids = None
     else:
-        ids = req.get("ids")
+        ids = set(req.get("ids"))
     if not ids:
         id_list = []
         kbs = KnowledgebaseService.query(tenant_id=tenant_id)
@@ -276,7 +279,7 @@ def delete(tenant_id):
     return get_result(code=settings.RetCode.SUCCESS)
 
 
-@manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821  
 @token_required
 def update(tenant_id, dataset_id):
     """
@@ -329,8 +332,11 @@ def update(tenant_id, dataset_id):
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset")
     req = request.json
+    for k in req.keys():
+        if dataset_readonly_fields(k):
+            return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=f"'{k}' is readonly.")
     e, t = TenantService.get_by_id(tenant_id)
-    invalid_keys = {"id", "embd_id", "chunk_num", "doc_num", "parser_id"}
+    invalid_keys = {"id", "embd_id", "chunk_num", "doc_num", "parser_id", "create_date", "create_time", "created_by", "status","token_num","update_date","update_time"}
     if any(key in req for key in invalid_keys):
         return get_error_data_result(message="The input parameters are invalid.")
     permission = req.get("permission")
@@ -377,7 +383,7 @@ def update(tenant_id, dataset_id):
         if req["document_count"] != kb.doc_num:
             return get_error_data_result(message="Can't change `document_count`.")
         req.pop("document_count")
-    if "chunk_method" in req:
+    if req.get("chunk_method"):
         if kb.chunk_num != 0 and req["chunk_method"] != kb.parser_id:
             return get_error_data_result(
                 message="If `chunk_count` is not 0, `chunk_method` is not changeable."
@@ -439,6 +445,10 @@ def update(tenant_id, dataset_id):
             return get_error_data_result(
                 message="Duplicated dataset name in updating dataset."
             )
+    flds = list(req.keys())
+    for f in flds:
+        if req[f] == "" and f in ["permission", "parser_id", "chunk_method"]:
+            del req[f]
     if not KnowledgebaseService.update_by_id(kb.id, req):
         return get_error_data_result(message="Update dataset error.(Database error)")
     return get_result(code=settings.RetCode.SUCCESS)
@@ -515,7 +525,9 @@ def list_datasets(tenant_id):
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
     orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc") == "False" or request.args.get("desc") == "false":
+    if request.args.get("desc", "false").lower() not in ["true", "false"]:
+        return get_error_data_result("desc should be true or false")
+    if request.args.get("desc", "true").lower() == "false":
         desc = False
     else:
         desc = True

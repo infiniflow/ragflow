@@ -137,7 +137,7 @@ export default {
       fromMessage: '缺少起始页码',
       toPlaceholder: '到',
       toMessage: '缺少结束页码（不包含）',
-      layoutRecognize: '文档解析器',
+      layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
         '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。',
       taskPageSize: '任务页面大小',
@@ -150,23 +150,23 @@ export default {
       changeSpecificCategory: '更改特定类别',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。单个文件大小不超过10MB，最多上传128份文件。严禁上传违禁文件。',
+        '支持单次或批量上传。本地部署的单次上传文件总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。对于 demo.ragflow.io：每次上传的总文件大小限制为 10MB，每个文件不得超过 10MB，每个账户最多可上传 128 个文件。严禁上传违禁文件。',
       chunk: '解析块',
       bulk: '批量',
       cancel: '取消',
       rerankModel: 'Rerank模型',
       rerankPlaceholder: '请选择',
-      rerankTip: `如果是空的。它使用查询和块的嵌入来构成矢量余弦相似性。否则，它使用rerank评分代替矢量余弦相似性。`,
+      rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。`,
       topK: 'Top-K',
       topKTip: `K块将被送入Rerank型号。`,
-      delimiter: `分段标识符`,
+      delimiter: `文本分段标识符`,
       delimiterTip:
         '支持多字符作为分隔符，多字符分隔符用`包裹。如配置成这样：\n`##`;那么就会用换行，两个#以及分号先对文本进行分割，然后按照“ token number”大小进行拼装。',
       html4excel: '表格转HTML',
       html4excelTip: `开启后电子表格会被解析为 HTML 表格，每张表格最多 256 行，否则会按行解析为键值对。`,
-      autoKeywords: '自动关键词',
-      autoKeywordsTip: `在查询此类关键词时，为每个块提取 N 个关键词以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。`,
-      autoQuestions: '自动问题',
+      autoKeywords: '自动关键词提取',
+      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用“系统模型设置”中设置的默认聊天模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。`,
+      autoQuestions: '自动问题提取',
       autoQuestionsTip: `在查询此类问题时，为每个块提取 N 个问题以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。如果发生错误，此功能不会破坏整个分块过程，除了将空结果添加到原始块。`,
       redo: '是否清空已有 {{chunkNum}}个 chunk？',
       setMetaData: '设置元数据',
@@ -206,7 +206,7 @@ export default {
       languagePlaceholder: '请输入语言',
       permissions: '权限',
       embeddingModel: '嵌入模型',
-      chunkTokenNumber: '块Token数',
+      chunkTokenNumber: '文本的块标记编号',
       chunkTokenNumberMessage: '块Token数是必填项',
       embeddingModelTip:
         '用于嵌入块的嵌入模型。 一旦知识库有了块，它就无法更改。 如果你想改变它，你需要删除所有的块。',
@@ -240,7 +240,7 @@ export default {
       我们假设手册具有分层部分结构。 我们使用最低的部分标题作为对文档进行切片的枢轴。
       因此，同一部分中的图和表不会被分割，并且块大小可能会很大。
       </p>`,
-      naive: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML、HTML</b>。</p>
+      naive: `<p>支持的文件格式为<b>DOCX、XLSX、XLS (Excel97~2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
       <p>此方法将简单的方法应用于块文件：</p>
       <p>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
@@ -355,18 +355,19 @@ export default {
       searchTags: '搜索标签',
       tagCloud: '云',
       tagTable: '表',
-      tagSet: '标签库',
+      tagSet: '标签集',
       topnTags: 'Top-N 标签',
       tagSetTip: `
-      <p> 选择“标签”知识库有助于标记每个块。 </p>
-      <p>对这些块的查询也将带有标签。 </p>
-      此过程将通过向数据集添加更多信息来提高检索的准确性，尤其是在存在大量块的情况下。
-      <p>标签和关键字之间的区别：</p>
+      <p> 请选择一个或多个标签集或标签知识库，用于对知识库中的每个文本块进行标记。 </p>
+      <p>对这些文本块的查询也将自动关联相应标签。 </p>
+      <p>此功能基于文本相似度，能够为数据集的文本块批量添加更多领域知识，从而显著提高检索准确性。该功能还能提升大量文本块的操作效率。</p>
+      <p>为了更好地理解标签集的作用，以下是标签集和关键词之间的主要区别：</p>
       <ul>
-      <li>标签是一个由用户定义和操作的封闭集，而关键字是一个开放集。 </li>
-      <li>您需要在使用前上传带有样本的标签集。 </li>
-      <li>关键字由 LLM 生成，这既昂贵又耗时。 </li>
+      <li>标签集是一个由用户定义和管理的封闭集，而自动生成的关键词属于开放集合。 </li>
+      <li>在给你的知识库文本块批量打标签之前，你需要先生成标签集作为样本。 </li>
+      <li>自动关键词提取功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
       </ul>
+      <p> 详见：https://ragflow.io/docs/dev/use_tag_sets </p>
       `,
       tags: '标签',
       addTag: '增加标签',
@@ -429,7 +430,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       knowledgeBases: '知识库',
       knowledgeBasesMessage: '请选择',
       knowledgeBasesTip: '选择关联的知识库。',
-      system: '系统',
+      system: '系统提示词',
       systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
         以下是知识库：
         {knowledge}
@@ -441,9 +442,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
       variable: '变量',
       variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
-      这些变量用于填写提示中的“系统”部分，以便给LLM一个提示。
+      这些变量用于填写提示中的“系统提示词”部分，以便给LLM一个提示。
       “知识”是一个非常特殊的变量，它将用检索到的块填充。
-      “System”中的所有变量都应该用大括号括起来。`,
+      “系统提示词”中的所有变量都应该用大括号括起来。`,
       add: '新增',
       key: '关键字',
       optional: '可选的',
@@ -451,7 +452,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       model: '模型',
       modelTip: '大语言聊天模型',
       modelMessage: '请选择',
-      freedom: '自由',
+      freedom: '自由度',
       improvise: '即兴创作',
       precise: '精确',
       balance: '平衡',
@@ -526,12 +527,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '例如 你是一个专业的简历助手，只能回答简历的问题。',
       useKnowledgeGraph: '使用知识图谱',
       useKnowledgeGraphTip:
-        '它将检索相关实体、关系和社区报告的描述，这将增强多跳和复杂问题的推理。',
+        '是否检索与所选知识库对应的知识图谱相关文本块，以处理复杂的多跳问题？这一过程将涉及对实体、关系和社区报告文本块的多次检索，会显著延长检索时间。',
       keyword: '关键词分析',
       keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
       reasoning: '推理',
       reasoningTip:
-        '它将像Deepseek-R1 / OpenAI o1一样触发推理过程。将代理搜索过程集成到推理工作流中，允许模型本身在遇到不确定信息时动态地检索外部知识。',
+        '是否像 Deepseek-R1 / OpenAI o1一样通过推理产生答案。启用后，允许模型在遇到未知情况时将代理搜索过程集成到推理工作流中，自行动态检索外部知识，并通过推理生成最终答案。',
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',
@@ -597,7 +598,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       img2txtModel: 'Img2txt模型',
       img2txtModelTip:
         '所有新创建的知识库都将使用默认的多模块模型。 它可以描述图片或视频。',
-      sequence2txtModel: 'Sequence2txt模型',
+      sequence2txtModel: 'Speech2txt模型',
       sequence2txtModelTip:
         '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。',
       rerankModel: 'Rerank模型',
@@ -733,7 +734,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       parseOnCreation: '创建时解析',
       uploadTitle: '点击或拖拽文件至此区域即可上传',
       uploadDescription:
-        '支持单次或批量上传。 单个文件大小不超过10MB，最多上传128份文件。严禁上传违禁文件。',
+        '支持单次或批量上传。 本地部署的单次上传文件总大小上限为 1GB，单次批量上传文件数不超过 32，单个账户不限文件数量。对于 demo.ragflow.io：每次上传的总文件大小限制为 10MB，每个文件不得超过 10MB，每个账户最多可上传 128 个文件。严禁上传违禁文件。',
       file: '文件',
       directory: '文件夹',
       local: '本地上传',

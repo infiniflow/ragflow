@@ -22,7 +22,7 @@
         <img alt="Badge Estático" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.17.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.17.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.17.2-brightgreen" alt="docker pull infiniflow/ragflow:v0.17.2">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Última%20Relese" alt="Última Versão">
@@ -171,17 +171,21 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 > Todas as imagens Docker são construídas para plataformas x86. Atualmente, não oferecemos imagens Docker para ARM64.
 > Se você estiver usando uma plataforma ARM64, por favor, utilize [este guia](https://ragflow.io/docs/dev/build_docker_image) para construir uma imagem Docker compatível com o seu sistema.
 
-    > O comando abaixo baixa a edição `v0.17.0-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.17.0-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.0` para a edição completa `v0.17.0`.
+    > O comando abaixo baixa a edição `v0.17.2-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.17.2-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.2` para a edição completa `v0.17.2`.
 
     ```bash
     $ cd ragflow/docker
+    # Use CPU for embedding and DeepDoc tasks:
     $ docker compose -f docker-compose.yml up -d
+    
+    # To use GPU to accelerate embedding and DeepDoc tasks:
+    # docker compose -f docker-compose-gpu.yml up -d
     ```
 
     | Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                 |
     | --------------------- | ---------------------- | ------------------------------- | ------------------------ |
-    | v0.17.0               | ~9                     | :heavy_check_mark:              | Lançamento estável       |
-    | v0.17.0-slim          | ~2                     | ❌                              | Lançamento estável       |
+    | v0.17.2               | ~9                     | :heavy_check_mark:              | Lançamento estável       |
+    | v0.17.2-slim          | ~2                     | ❌                              | Lançamento estável       |
     | nightly               | ~9                     | :heavy_check_mark:              | _Instável_ build noturno |
     | nightly-slim          | ~2                     | ❌                               | _Instável_ build noturno |
 
@@ -335,10 +339,13 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 
 ## 📚 Documentação
 
-- [Início rápido](https://ragflow.io/docs/dev/)
-- [Guia do usuário](https://ragflow.io/docs/dev/category/guides)
-- [Referências](https://ragflow.io/docs/dev/category/references)
-- [FAQ](https://ragflow.io/docs/dev/faq)
+- [Quickstart](https://ragflow.io/docs/dev/)
+- [Configuration](https://ragflow.io/docs/dev/configurations)
+- [Release notes](https://ragflow.io/docs/dev/release_notes)
+- [User guides](https://ragflow.io/docs/dev/category/guides)
+- [Developer guides](https://ragflow.io/docs/dev/category/developers)
+- [References](https://ragflow.io/docs/dev/category/references)
+- [FAQs](https://ragflow.io/docs/dev/faq)
 
 ## 📜 Roadmap
 

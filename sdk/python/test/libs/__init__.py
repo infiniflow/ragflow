@@ -13,12 +13,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-import pytest
-from common import delete_dataset
-
-
-@pytest.fixture(scope="function", autouse=True)
-def clear_datasets(get_http_api_auth):
-    yield
-    delete_dataset(get_http_api_auth)

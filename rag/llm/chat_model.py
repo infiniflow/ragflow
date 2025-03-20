@@ -29,8 +29,8 @@ import json
 import requests
 import asyncio
 
-LENGTH_NOTIFICATION_CN = "······\n由于长度的原因，回答被截断了，要继续吗？"
-LENGTH_NOTIFICATION_EN = "...\nFor the content length reason, it stopped, continue?"
+LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
+LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
 
 class Base(ABC):
@@ -49,7 +49,7 @@ class Base(ABC):
                 model=self.model_name,
                 messages=history,
                 **gen_conf)
-            if not response.choices:
+            if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
                 return "", 0
             ans = response.choices[0].message.content.strip()
             if response.choices[0].finish_reason == "length":
@@ -184,7 +184,6 @@ class BaiChuanChat(Base):
     def _format_params(params):
         return {
             "temperature": params.get("temperature", 0.3),
-            "max_tokens": params.get("max_tokens", 2048),
             "top_p": params.get("top_p", 0.85),
         }
 
@@ -268,13 +267,13 @@ class QWenChat(Base):
         import dashscope
         dashscope.api_key = key
         self.model_name = model_name
-        if model_name.lower().find("deepseek") >= 0:
+        if self.is_reasoning_model(self.model_name):
             super().__init__(key, model_name, "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
     def chat(self, system, history, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        if self.model_name.lower().find("deepseek") >= 0:
+        if self.is_reasoning_model(self.model_name):
             return super().chat(system, history, gen_conf)
 
         stream_flag = str(os.environ.get('QWEN_CHAT_BY_STREAM', 'true')).lower() == 'true'
@@ -307,7 +306,7 @@ class QWenChat(Base):
             result_list = list(g)
             error_msg_list = [item for item in result_list if str(item).find("**ERROR**") >= 0]
             if len(error_msg_list) > 0:
-                return "**ERROR**: " + "".join(error_msg_list) , 0
+                return "**ERROR**: " + "".join(error_msg_list), 0
             else:
                 return "".join(result_list[:-1]), result_list[-1]
 
@@ -339,7 +338,8 @@ class QWenChat(Base):
                             ans += LENGTH_NOTIFICATION_EN
                     yield ans
                 else:
-                    yield ans + "\n**ERROR**: " + resp.message if not re.search(r" (key|quota)", str(resp.message).lower()) else "Out of credit. Please set the API key in **settings > Model providers.**"
+                    yield ans + "\n**ERROR**: " + resp.message if not re.search(r" (key|quota)",
+                                                                                str(resp.message).lower()) else "Out of credit. Please set the API key in **settings > Model providers.**"
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 
@@ -348,10 +348,17 @@ class QWenChat(Base):
     def chat_streamly(self, system, history, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        if self.model_name.lower().find("deepseek") >= 0:
+        if self.is_reasoning_model(self.model_name):
             return super().chat_streamly(system, history, gen_conf)
 
         return self._chat_streamly(system, history, gen_conf)
+
+    @staticmethod
+    def is_reasoning_model(model_name: str) -> bool:
+        return any([
+            model_name.lower().find("deepseek") >= 0,
+            model_name.lower().find("qwq") >= 0 and model_name.lower() != 'qwq-32b-preview',
+        ])
 
 
 class ZhipuChat(Base):
@@ -424,7 +431,8 @@ class ZhipuChat(Base):
 
 class OllamaChat(Base):
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"])
+        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else \
+            Client(host=kwargs["base_url"], headers={"Authorization": f"Bear {key}"})
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
@@ -740,13 +748,13 @@ class BedrockChat(Base):
         self.bedrock_sk = json.loads(key).get('bedrock_sk', '')
         self.bedrock_region = json.loads(key).get('bedrock_region', '')
         self.model_name = model_name
-        
+
         if self.bedrock_ak == '' or self.bedrock_sk == '' or self.bedrock_region == '':
             # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
             self.client = boto3.client('bedrock-runtime')
         else:
             self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
-                                   aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
+                                       aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
 
     def chat(self, system, history, gen_conf):
         from botocore.exceptions import ClientError

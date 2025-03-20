@@ -13,12 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import base64
-from pathlib import Path
 
 import pytest
 from common import DATASET_NAME_LIMIT, INVALID_API_TOKEN, create_dataset
 from libs.auth import RAGFlowHttpApiAuth
+from libs.utils import encode_avatar
+from libs.utils.file_utils import create_image_file
 
 
 class TestAuthorization:
@@ -75,18 +75,11 @@ class TestDatasetCreation:
 
 
 class TestAdvancedConfigurations:
-    def test_avatar(self, get_http_api_auth, request):
-        def encode_avatar(image_path):
-            with Path.open(image_path, "rb") as file:
-                binary_data = file.read()
-            base64_encoded = base64.b64encode(binary_data).decode("utf-8")
-            return base64_encoded
-
+    def test_avatar(self, get_http_api_auth, tmp_path):
+        fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {
             "name": "avatar_test",
-            "avatar": encode_avatar(
-                Path(request.config.rootdir) / "test/data/logo.svg"
-            ),
+            "avatar": encode_avatar(fn),
         }
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0
@@ -101,9 +94,7 @@ class TestAdvancedConfigurations:
         [
             ("me", "me", 0),
             ("team", "team", 0),
-            pytest.param(
-                "empty_permission", "", 0, marks=pytest.mark.xfail(reason="issue#5709")
-            ),
+            ("empty_permission", "", 0),
             ("me_upercase", "ME", 102),
             ("team_upercase", "TEAM", 102),
             ("other_permission", "other_permission", 102),
@@ -134,12 +125,7 @@ class TestAdvancedConfigurations:
             ("picknowledge_graphture", "knowledge_graph", 0),
             ("email", "email", 0),
             ("tag", "tag", 0),
-            pytest.param(
-                "empty_chunk_method",
-                "",
-                0,
-                marks=pytest.mark.xfail(reason="issue#5709"),
-            ),
+            ("empty_chunk_method", "", 0),
             ("other_chunk_method", "other_chunk_method", 102),
         ],
     )
@@ -196,7 +182,7 @@ class TestAdvancedConfigurations:
             assert res["data"]["embedding_model"] == embedding_model
 
     @pytest.mark.parametrize(
-        "name, chunk_method, parser_config, expected_code",
+        "name, chunk_method, parser_config, expected_code, expected_message",
         [
             (
                 "naive_default",
@@ -210,109 +196,214 @@ class TestAdvancedConfigurations:
                     "raptor": {"use_raptor": False},
                 },
                 0,
+                "",
             ),
-            ("naive_empty", "naive", {}, 0),
-            pytest.param(
+            ("naive_empty", "naive", {}, 0, ""),
+            (
                 "naive_chunk_token_num_negative",
                 "naive",
                 {"chunk_token_num": -1},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
+                100,
+                "AssertionError('chunk_token_num should be in range from 1 to 100000000')",
             ),
-            pytest.param(
+            (
                 "naive_chunk_token_num_zero",
                 "naive",
                 {"chunk_token_num": 0},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
+                100,
+                "AssertionError('chunk_token_num should be in range from 1 to 100000000')",
             ),
-            pytest.param(
+            (
+                "naive_chunk_token_num_max",
+                "naive",
+                {"chunk_token_num": 100000000},
+                100,
+                "AssertionError('chunk_token_num should be in range from 1 to 100000000')",
+            ),
+            (
                 "naive_chunk_token_num_float",
                 "naive",
                 {"chunk_token_num": 3.14},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
+                100,
+                "AssertionError('chunk_token_num should be int')",
             ),
-            pytest.param(
-                "naive_chunk_token_num_max",
-                "naive",
-                {"chunk_token_num": 1024 * 1024 * 1024},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
-            ),
-            pytest.param(
+            (
                 "naive_chunk_token_num_str",
                 "naive",
                 {"chunk_token_num": "1024"},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
+                100,
+                "AssertionError('chunk_token_num should be int')",
             ),
             (
                 "naive_layout_recognize_DeepDOC",
                 "naive",
                 {"layout_recognize": "DeepDOC"},
                 0,
+                "",
             ),
-            ("naive_layout_recognize_Naive", "naive", {"layout_recognize": "Naive"}, 0),
-            ("naive_html4excel_true", "naive", {"html4excel": True}, 0),
-            ("naive_html4excel_false", "naive", {"html4excel": False}, 0),
-            pytest.param(
+            (
+                "naive_layout_recognize_Naive",
+                "naive",
+                {"layout_recognize": "Naive"},
+                0,
+                "",
+            ),
+            ("naive_html4excel_true", "naive", {"html4excel": True}, 0, ""),
+            ("naive_html4excel_false", "naive", {"html4excel": False}, 0, ""),
+            (
                 "naive_html4excel_not_bool",
                 "naive",
                 {"html4excel": 1},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
+                100,
+                "AssertionError('html4excel should be True or False')",
             ),
-            ("naive_delimiter_empty", "naive", {"delimiter": ""}, 0),
-            ("naive_delimiter_backticks", "naive", {"delimiter": "`##`"}, 0),
-            pytest.param(
-                "naive_delimiterl_not_str",
+            ("naive_delimiter_empty", "naive", {"delimiter": ""}, 0, ""),
+            ("naive_delimiter_backticks", "naive", {"delimiter": "`##`"}, 0, ""),
+            (
+                "naive_delimiter_not_str",
                 "naive",
-                {"delimiterl": 1},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
+                {"delimiter": 1},
+                100,
+                "AssertionError('delimiter should be str')",
             ),
-            pytest.param(
+            (
                 "naive_task_page_size_negative",
                 "naive",
                 {"task_page_size": -1},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
+                100,
+                "AssertionError('task_page_size should be in range from 1 to 100000000')",
             ),
-            pytest.param(
+            (
                 "naive_task_page_size_zero",
                 "naive",
                 {"task_page_size": 0},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
+                100,
+                "AssertionError('task_page_size should be in range from 1 to 100000000')",
             ),
-            pytest.param(
+            (
+                "naive_task_page_size_max",
+                "naive",
+                {"task_page_size": 100000000},
+                100,
+                "AssertionError('task_page_size should be in range from 1 to 100000000')",
+            ),
+            (
                 "naive_task_page_size_float",
                 "naive",
                 {"task_page_size": 3.14},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
+                100,
+                "AssertionError('task_page_size should be int')",
             ),
-            pytest.param(
-                "naive_task_page_size_max",
-                "naive",
-                {"task_page_size": 1024 * 1024 * 1024},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
-            ),
-            pytest.param(
+            (
                 "naive_task_page_size_str",
                 "naive",
                 {"task_page_size": "1024"},
-                102,
-                marks=pytest.mark.xfail(reason="issue#5719"),
+                100,
+                "AssertionError('task_page_size should be int')",
             ),
-            ("naive_raptor_true", "naive", {"raptor": {"use_raptor": True}}, 0),
-            ("naive_raptor_false", "naive", {"raptor": {"use_raptor": False}}, 0),
+            ("naive_raptor_true", "naive", {"raptor": {"use_raptor": True}}, 0, ""),
+            ("naive_raptor_false", "naive", {"raptor": {"use_raptor": False}}, 0, ""),
+            (
+                "invalid_key",
+                "naive",
+                {"invalid_key": "invalid_value"},
+                100,
+                """AssertionError("Abnormal \'parser_config\'. Invalid key: invalid_key")""",
+            ),
+            (
+                "naive_auto_keywords_negative",
+                "naive",
+                {"auto_keywords": -1},
+                100,
+                "AssertionError('auto_keywords should be in range from 0 to 32')",
+            ),
+            (
+                "naive_auto_keywords_max",
+                "naive",
+                {"auto_keywords": 32},
+                100,
+                "AssertionError('auto_keywords should be in range from 0 to 32')",
+            ),
+            (
+                "naive_auto_keywords_float",
+                "naive",
+                {"auto_keywords": 3.14},
+                100,
+                "AssertionError('auto_keywords should be int')",
+            ),
+            (
+                "naive_auto_keywords_str",
+                "naive",
+                {"auto_keywords": "1024"},
+                100,
+                "AssertionError('auto_keywords should be int')",
+            ),
+            (
+                "naive_auto_questions_negative",
+                "naive",
+                {"auto_questions": -1},
+                100,
+                "AssertionError('auto_questions should be in range from 0 to 10')",
+            ),
+            (
+                "naive_auto_questions_max",
+                "naive",
+                {"auto_questions": 10},
+                100,
+                "AssertionError('auto_questions should be in range from 0 to 10')",
+            ),
+            (
+                "naive_auto_questions_float",
+                "naive",
+                {"auto_questions": 3.14},
+                100,
+                "AssertionError('auto_questions should be int')",
+            ),
+            (
+                "naive_auto_questions_str",
+                "naive",
+                {"auto_questions": "1024"},
+                100,
+                "AssertionError('auto_questions should be int')",
+            ),
+            (
+                "naive_topn_tags_negative",
+                "naive",
+                {"topn_tags": -1},
+                100,
+                "AssertionError('topn_tags should be in range from 0 to 10')",
+            ),
+            (
+                "naive_topn_tags_max",
+                "naive",
+                {"topn_tags": 10},
+                100,
+                "AssertionError('topn_tags should be in range from 0 to 10')",
+            ),
+            (
+                "naive_topn_tags_float",
+                "naive",
+                {"topn_tags": 3.14},
+                100,
+                "AssertionError('topn_tags should be int')",
+            ),
+            (
+                "naive_topn_tags_str",
+                "naive",
+                {"topn_tags": "1024"},
+                100,
+                "AssertionError('topn_tags should be int')",
+            ),
         ],
     )
     def test_parser_configs(
-        self, get_http_api_auth, name, chunk_method, parser_config, expected_code
+        self,
+        get_http_api_auth,
+        name,
+        chunk_method,
+        parser_config,
+        expected_code,
+        expected_message,
     ):
         payload = {
             "name": name,
@@ -320,11 +411,12 @@ class TestAdvancedConfigurations:
             "parser_config": parser_config,
         }
         res = create_dataset(get_http_api_auth, payload)
-        # print(res)
         assert res["code"] == expected_code
         if expected_code == 0 and parser_config != {}:
             for k, v in parser_config.items():
                 assert res["data"]["parser_config"][k] == v
+        if expected_code != 0 or expected_message:
+            assert res["message"] == expected_message
         if parser_config == {}:
             assert res["data"]["parser_config"] == {
                 "chunk_token_num": 128,

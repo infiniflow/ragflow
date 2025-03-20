@@ -39,18 +39,18 @@ This section covers the following topics:
 
 RAGFlow offers multiple chunking template to facilitate chunking files of different layouts and ensure semantic integrity. In **Chunk method**, you can choose the default template that suits the layouts and formats of your files. The following table shows the descriptions and the compatible file formats of each supported chunk template:
 
-| **Template** | Description                                                           | File format                                          |
-|--------------|-----------------------------------------------------------------------|------------------------------------------------------|
-| General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, EXCEL, PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF |
-| Q&A          |                                                                       | XLSX, CSV/TXT                                        |
-| Manual       |                                                                       | PDF                                                  |
-| Table        |                                                                       | XLSX, CSV/TXT                                        |
-| Paper        |                                                                       | PDF                                                  |
-| Book         |                                                                       | DOCX, PDF, TXT                                       |
-| Laws         |                                                                       | DOCX, PDF, TXT                                       |
-| Presentation |                                                                       | PDF, PPTX                                            |
-| Picture      |                                                                       | JPEG, JPG, PNG, TIF, GIF                             |
-| One          | The entire document is chunked as one.                                | DOCX, EXCEL, PDF, TXT                                |
+| **Template** | Description                                                           | File format                                                                                   |
+|--------------|-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
+| General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
+| Q&A          |                                                                       | XLSX, XLS (Excel97~2003), CSV/TXT                                                             |
+| Manual       |                                                                       | PDF                                                                                           |
+| Table        |                                                                       | XLSX, XLS (Excel97~2003), CSV/TXT                                                             |
+| Paper        |                                                                       | PDF                                                                                           |
+| Book         |                                                                       | DOCX, PDF, TXT                                                                                |
+| Laws         |                                                                       | DOCX, PDF, TXT                                                                                |
+| Presentation |                                                                       | PDF, PPTX                                                                                     |
+| Picture      |                                                                       | JPEG, JPG, PNG, TIF, GIF                                                                      |
+| One          | The entire document is chunked as one.                                | DOCX, XLSX, XLS (Excel97~2003), PDF, TXT                                                      |
 
 You can also change a file's chunk method on the **Datasets** page.
 
@@ -124,11 +124,13 @@ RAGFlow uses multiple recall of both full-text search and vector search in its c
 - Similarity threshold: Chunks with similarities below the threshold will be filtered. By default, it is set to 0.2.
 - Vector similarity weight: The percentage by which vector similarity contributes to the overall score. By default, it is set to 0.3.
 
+See [Run retrieval test](./run_retrieval_test.md) for details.
+
 ![retrieval test](https://github.com/infiniflow/ragflow/assets/93570324/c03f06f6-f41f-4b20-a97e-ae405d3a950c)
 
 ## Search for knowledge base
 
-As of RAGFlow v0.17.0, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
+As of RAGFlow v0.17.2, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
 
 ![search knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/836ae94c-2438-42be-879e-c7ad2a59693e)
 

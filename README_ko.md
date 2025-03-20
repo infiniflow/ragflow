@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.17.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.17.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.17.2-brightgreen" alt="docker pull infiniflow/ragflow:v0.17.2">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -152,17 +152,21 @@
 > 모든 Docker 이미지는 x86 플랫폼을 위해 빌드되었습니다. 우리는 현재 ARM64 플랫폼을 위한 Docker 이미지를 제공하지 않습니다.
 > ARM64 플랫폼을 사용 중이라면, [시스템과 호환되는 Docker 이미지를 빌드하려면 이 가이드를 사용해 주세요](https://ragflow.io/docs/dev/build_docker_image).
 
-   > 아래 명령어는 RAGFlow Docker 이미지의 v0.17.0-slim 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.17.0-slim과 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오. 예를 들어, 전체 버전인 v0.17.0을 다운로드하려면 RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.0로 설정합니다.
+   > 아래 명령어는 RAGFlow Docker 이미지의 v0.17.2-slim 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.17.2-slim과 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오. 예를 들어, 전체 버전인 v0.17.2을 다운로드하려면 RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.2로 설정합니다.
 
    ```bash
    $ cd ragflow/docker
+   # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
+
+   # To use GPU to accelerate embedding and DeepDoc tasks:
+   # docker compose -f docker-compose-gpu.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.17.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.17.0-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.17.2           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.17.2-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
@@ -311,9 +315,12 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ## 📚 문서
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [User guide](https://ragflow.io/docs/dev/category/guides)
+- [Configuration](https://ragflow.io/docs/dev/configurations)
+- [Release notes](https://ragflow.io/docs/dev/release_notes)
+- [User guides](https://ragflow.io/docs/dev/category/guides)
+- [Developer guides](https://ragflow.io/docs/dev/category/developers)
 - [References](https://ragflow.io/docs/dev/category/references)
-- [FAQ](https://ragflow.io/docs/dev/faq)
+- [FAQs](https://ragflow.io/docs/dev/faq)
 
 ## 📜 로드맵
 

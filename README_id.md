@@ -22,7 +22,7 @@
         <img alt="Lencana Daring" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.17.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.17.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.17.2-brightgreen" alt="docker pull infiniflow/ragflow:v0.17.2">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Rilis%20Terbaru" alt="Rilis Terbaru">
@@ -171,17 +171,21 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-   > Perintah di bawah ini mengunduh edisi v0.17.0-slim dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.17.0-slim, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server. Misalnya, atur RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.0 untuk edisi lengkap v0.17.0.
+   > Perintah di bawah ini mengunduh edisi v0.17.2-slim dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.17.2-slim, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server. Misalnya, atur RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.2 untuk edisi lengkap v0.17.2.
 
    ```bash
    $ cd ragflow/docker
+   # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
+
+   # To use GPU to accelerate embedding and DeepDoc tasks:
+   # docker compose -f docker-compose-gpu.yml up -d
    ```
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.17.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.17.0-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.17.2           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.17.2-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
 
@@ -315,9 +319,12 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ## 📚 Dokumentasi
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [Panduan Pengguna](https://ragflow.io/docs/dev/category/guides)
-- [Referensi](https://ragflow.io/docs/dev/category/references)
-- [FAQ](https://ragflow.io/docs/dev/faq)
+- [Configuration](https://ragflow.io/docs/dev/configurations)
+- [Release notes](https://ragflow.io/docs/dev/release_notes)
+- [User guides](https://ragflow.io/docs/dev/category/guides)
+- [Developer guides](https://ragflow.io/docs/dev/category/developers)
+- [References](https://ragflow.io/docs/dev/category/references)
+- [FAQs](https://ragflow.io/docs/dev/faq)
 
 ## 📜 Roadmap
 

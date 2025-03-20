@@ -237,8 +237,33 @@ def is_float_regex(value):
 def chunk_id(chunk):
     return xxhash.xxh64((chunk["content_with_weight"] + chunk["kb_id"]).encode("utf-8")).hexdigest()
 
+def get_entity_cache(tenant_id, kb_id, ent_name) -> str | list[str]:
+    hasher = xxhash.xxh64()
+    hasher.update(str(tenant_id).encode("utf-8"))
+    hasher.update(str(kb_id).encode("utf-8"))
+    hasher.update(str(ent_name).encode("utf-8"))
+
+    k = hasher.hexdigest()
+    bin = REDIS_CONN.get(k)
+    if not bin:
+        return
+    return json.loads(bin)
+
+
+def set_entity_cache(tenant_id, kb_id, ent_name, content_with_weight):
+    hasher = xxhash.xxh64()
+    hasher.update(str(tenant_id).encode("utf-8"))
+    hasher.update(str(kb_id).encode("utf-8"))
+    hasher.update(str(ent_name).encode("utf-8"))
+
+    k = hasher.hexdigest()
+    REDIS_CONN.set(k, content_with_weight.encode("utf-8"), 3600)
+
 
 def get_entity(tenant_id, kb_id, ent_name):
+    cache = get_entity_cache(tenant_id, kb_id, ent_name)
+    if cache:
+        return cache
     conds = {
         "fields": ["content_with_weight"],
         "entity_kwd": ent_name,
@@ -250,6 +275,7 @@ def get_entity(tenant_id, kb_id, ent_name):
     for id in es_res.ids:
         try:
             if isinstance(ent_name, str):
+                set_entity_cache(tenant_id, kb_id, ent_name, es_res.field[id]["content_with_weight"])
                 return json.loads(es_res.field[id]["content_with_weight"])
             res.append(json.loads(es_res.field[id]["content_with_weight"]))
         except Exception:
@@ -272,6 +298,7 @@ def set_entity(tenant_id, kb_id, embd_mdl, ent_name, meta):
         "available_int": 0
     }
     chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
+    set_entity_cache(tenant_id, kb_id, ent_name, chunk["content_with_weight"])
     res = settings.retrievaler.search({"entity_kwd": ent_name, "size": 1, "fields": []},
                                       search.index_name(tenant_id), [kb_id])
     if res.ids:
@@ -489,15 +516,16 @@ async def update_nodes_pagerank_nhop_neighbour(tenant_id, kb_id, graph, n_hop):
         return nbrs
 
     pr = nx.pagerank(graph)
-    for n, p in pr.items():
-        graph.nodes[n]["pagerank"] = p
-        try:
-            await trio.to_thread.run_sync(lambda: settings.docStoreConn.update({"entity_kwd": n, "kb_id": kb_id},
-                                         {"rank_flt": p,
-                                          "n_hop_with_weight": json.dumps( (n), ensure_ascii=False)},
-                                         search.index_name(tenant_id), kb_id))
-        except Exception as e:
-            logging.exception(e)
+    try:
+        async with trio.open_nursery() as nursery:
+            for n, p in pr.items():
+                graph.nodes[n]["pagerank"] = p
+                nursery.start_soon(lambda: trio.to_thread.run_sync(lambda: settings.docStoreConn.update({"entity_kwd": n, "kb_id": kb_id},
+                                                {"rank_flt": p,
+                                                "n_hop_with_weight": json.dumps((n), ensure_ascii=False)},
+                                                search.index_name(tenant_id), kb_id)))
+    except Exception as e:
+        logging.exception(e)
 
     ty2ents = defaultdict(list)
     for p, r in sorted(pr.items(), key=lambda x: x[1], reverse=True):

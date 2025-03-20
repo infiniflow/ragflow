@@ -19,11 +19,12 @@ from collections import defaultdict
 from copy import deepcopy
 import json_repair
 import pandas as pd
+import trio
 
 from api.utils import get_uuid
 from graphrag.query_analyze_prompt import PROMPTS
 from graphrag.utils import get_entity_type2sampels, get_llm_cache, set_llm_cache, get_relation
-from rag.utils import num_tokens_from_string
+from rag.utils import num_tokens_from_string, get_float
 from rag.utils.doc_store_conn import OrderByExpr
 
 from rag.nlp.search import Dealer, index_name
@@ -41,7 +42,7 @@ class KGSearch(Dealer):
         return response
 
     def query_rewrite(self, llm, question, idxnms, kb_ids):
-        ty2ents = get_entity_type2sampels(idxnms, kb_ids)
+        ty2ents = trio.run(lambda: get_entity_type2sampels(idxnms, kb_ids))
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question,
                                                           TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
         result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {"temperature": .5})
@@ -71,13 +72,13 @@ class KGSearch(Dealer):
             for f in flds:
                 if f in ent and ent[f] is None:
                     del ent[f]
-            if float(ent.get("_score", 0)) < sim_thr:
+            if get_float(ent.get("_score", 0)) < sim_thr:
                 continue
             if isinstance(ent["entity_kwd"], list):
                 ent["entity_kwd"] = ent["entity_kwd"][0]
             res[ent["entity_kwd"]] = {
-                "sim": float(ent.get("_score", 0)),
-                "pagerank": float(ent.get("rank_flt", 0)),
+                "sim": get_float(ent.get("_score", 0)),
+                "pagerank": get_float(ent.get("rank_flt", 0)),
                 "n_hop_ents": json.loads(ent.get("n_hop_with_weight", "[]")),
                 "description": ent.get("content_with_weight", "{}")
             }
@@ -88,7 +89,7 @@ class KGSearch(Dealer):
         es_res = self.dataStore.getFields(es_res, ["content_with_weight", "_score", "from_entity_kwd", "to_entity_kwd",
                                                    "weight_int"])
         for _, ent in es_res.items():
-            if float(ent["_score"]) < sim_thr:
+            if get_float(ent["_score"]) < sim_thr:
                 continue
             f, t = sorted([ent["from_entity_kwd"], ent["to_entity_kwd"]])
             if isinstance(f, list):
@@ -96,8 +97,8 @@ class KGSearch(Dealer):
             if isinstance(t, list):
                 t = t[0]
             res[(f, t)] = {
-                "sim": float(ent["_score"]),
-                "pagerank": float(ent.get("weight_int", 0)),
+                "sim": get_float(ent["_score"]),
+                "pagerank": get_float(ent.get("weight_int", 0)),
                 "description": ent["content_with_weight"]
             }
         return res

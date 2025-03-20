@@ -51,18 +51,33 @@ If a rerank model is selected, a combination of weighted keyword similarity and 
 Using a rerank model will *significantly* increase the system's response time.
 :::
 
+### Tavily API key
+
+*Optional*
+
+Enter your Tavily API key here to enable Tavily web search during retrieval. See [here](https://app.tavily.com/home) for instructions on getting a Tavily API key.
+
+### Use knowledge graph
+
+Whether to use knowledge graph(s) in the specified knowledge base(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.
 
 ### Knowledge bases 
 
-*Required*
+*Optional*
 
-You are required to select the knowledge base(s) to retrieve data from.
+Select the knowledge base(s) to retrieve data from.
 
-:::danger IMPORTANT 
-If you select multiple knowledge bases, you must ensure that the knowledge bases (datasets) you select use the same embedding model; otherwise, an error message would occur.
+- If no knowledge base is selected, meaning conversations with the agent will not be based on any knowledge base, ensure that the **Empty response** field is left blank to avoid an error.
+- If you select multiple knowledge bases, you must ensure that the knowledge bases (datasets) you select use the same embedding model; otherwise, an error message would occur.
+
+### Empty response
+
+- Set this as a response if no results are retrieved from the knowledge base(s) for your query, or 
+- Leave this field blank to allow the chat model to improvise when nothing is found.
+
+:::caution WARNING
+If you do not specify a knowledge base, you must leave this field blank; otherwise, an error would occur.
 :::
-
-
 
 ## Examples
 
