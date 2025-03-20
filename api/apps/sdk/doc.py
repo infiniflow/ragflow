@@ -782,6 +782,17 @@ def stop_parsing(tenant_id, dataset_id):
     success_count = 0
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
+    
+    # check duplicate ids
+    id_count = {}
+    for doc_id in req["document_ids"]:
+        id_count[doc_id] = id_count.get(doc_id, 0) + 1
+        
+    for doc_id, count in id_count.items():
+        if count > 1:
+            errors.append(f"Duplicate document ids: {doc_id}")
+    document_ids = list(set(req["document_ids"]))
+    req["document_ids"] = document_ids
     for id in req["document_ids"]:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
@@ -1162,24 +1173,32 @@ def rm_chunk(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = request.json
     condition = {"doc_id": document_id}
-    if "chunk_ids" in req:
-        # detect duplicate ids and remove them
-        seen_ids = set()
-        duplicates = []
-        for chunk_id in req["chunk_ids"]:
-            if chunk_id in seen_ids:
-                duplicates.append(chunk_id)
-            else:
-                seen_ids.add(chunk_id)
-        chunk_ids = list(set(req["chunk_ids"]))
-        condition["id"] = chunk_ids
+    if "chunk_ids" not in req:
+        return get_error_data_result("`chunk_ids` is required")
+    # detect duplicate ids and remove them
+    # check duplicate ids
+    id_count = {}
+    for chunk_id in req["chunk_ids"]:
+        id_count[chunk_id] = id_count.get(chunk_id, 0) + 1
+        
+    errors = []
+    for chunk_id, count in id_count.items():
+        if count > 1:
+            errors.append(f"Duplicate chunk ids: {chunk_id}")
+    chunk_ids = list(set(req["chunk_ids"]))
+    condition["id"] = chunk_ids
     chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
-    if chunk_number != 0:
-        DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
-    if "chunk_ids" in req and chunk_number != len(req["chunk_ids"]):
-        return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(req['chunk_ids'])}")
-    if duplicates:
-        return get_result(message=f"deleted {chunk_number} chunks with {len(duplicates)} duplicates", data={"success_count": chunk_number, "errors": f"duplicates: {', '.join(duplicates)}"})
+    if chunk_number == 0:
+        return get_error_data_result(
+            message=f"no chunks deleted, please check the chunk ids, 
+            make sure you own the chunks or the chunks 
+            are in the document, chunk_ids: {', '.join(chunk_ids)}"
+        )
+    
+    DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
+    
+    if errors:
+        return get_result(message=f"deleted {chunk_number} chunks with {len(errors)} duplicates", data={"success_count": chunk_number, "errors": f"{', '.join(errors)}"})
     return get_result(message=f"deleted {chunk_number} chunks", data={"success_count": chunk_number})
 
 
