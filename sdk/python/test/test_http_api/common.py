@@ -163,3 +163,9 @@ def parse_documnet(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def stop_parse_documnet(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
+    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
