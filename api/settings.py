@@ -63,7 +63,7 @@ retrievaler = None
 kg_retrievaler = None
 
 # user registration switch
-REGISTER_ENABLED = 0
+REGISTER_ENABLED = 1
 
 
 def init_settings():
@@ -76,9 +76,9 @@ def init_settings():
     LLM_FACTORY = LLM.get("factory", "Tongyi-Qianwen")
     LLM_BASE_URL = LLM.get("base_url")
     try:
-        REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "0"))
-    except (ValueError, TypeError):
-        REGISTER_ENABLED = 0
+        REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
+    except Exception:
+        pass  
     
     try:
         with open(os.path.join(get_project_base_directory(), "conf", "llm_factories.json"), "r") as f:
