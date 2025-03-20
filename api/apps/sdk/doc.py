@@ -585,8 +585,9 @@ def delete(tenant_id, dataset_id):
     success_count = 0
     if not req:
         doc_ids = None
-    else:
-        doc_ids = set(req.get("ids"))
+    if "ids" not in req:
+        return get_error_data_result(message="`ids` is required")
+    doc_ids = req.get("ids")
     if not doc_ids:
         doc_list = []
         docs = DocumentService.query(kb_id=dataset_id)
