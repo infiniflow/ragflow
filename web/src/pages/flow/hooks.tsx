@@ -108,7 +108,7 @@ export const useInitializeOperatorParams = () => {
         ...initialRewriteQuestionValues,
         llm_id: llmId,
       },
-      [Operator.VariableExtract]: { ...initialVariableValues, llm_id: llmId },
+      [Operator.VariablesExtract]: { ...initialVariableValues, llm_id: llmId },
       [Operator.Message]: initialMessageValues,
       [Operator.KeywordExtract]: {
         ...initialKeywordExtractValues,

@@ -1,13 +1,12 @@
 import { EditableCell, EditableRow } from '@/components/editable-cell';
 import { useTranslate } from '@/hooks/common-hooks';
+import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { DeleteOutlined } from '@ant-design/icons';
-import { Button, Collapse, Flex, Input, Select, Table, TableProps } from 'antd';
+import { Button, Collapse, Flex, Select, Table, TableProps } from 'antd';
 import { trim } from 'lodash';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
-import { IInvokeVariable } from '../../interface';
+import { IVariable } from '../../interface';
 import { useHandleOperateParameters } from './hooks';
-
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import styles from './index.less';
 
 interface IProps {
@@ -32,15 +31,14 @@ const DynamicVariablesForm = ({ node }: IProps) => {
     handleRemove,
     handleSave,
     handleComponentIdChange,
-    handleValueChange,
   } = useHandleOperateParameters(nodeId!);
 
-  const columns: TableProps<IInvokeVariable>['columns'] = [
+  const columns: TableProps<IVariable>['columns'] = [
     {
       title: t('key'),
       dataIndex: 'key',
       key: 'key',
-      onCell: (record: IInvokeVariable) => ({
+      onCell: (record: IVariable) => ({
         record,
         editable: true,
         dataIndex: 'key',
@@ -53,32 +51,17 @@ const DynamicVariablesForm = ({ node }: IProps) => {
       dataIndex: 'component_id',
       key: 'component_id',
       align: 'center',
-      width: 140,
+
       render(text, record) {
         return (
           <Select
             style={{ width: '100%' }}
             allowClear
-            options={options}
+            showSearch
+            options={options.filter((p) => p.key === 'begin')}
             value={text}
             disabled={trim(record.value) !== ''}
             onChange={handleComponentIdChange(record)}
-          />
-        );
-      },
-    },
-    {
-      title: t('value'),
-      dataIndex: 'value',
-      key: 'value',
-      align: 'center',
-      width: 140,
-      render(text, record) {
-        return (
-          <Input
-            value={text}
-            disabled={!!record.component_id}
-            onChange={handleValueChange(record)}
           />
         );
       },

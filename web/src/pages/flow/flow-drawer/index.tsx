@@ -51,7 +51,7 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { FlowFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
 import IterationForm from '../form/iteration-from';
-import VariableForm from '../form/variable-form';
+import VariablesForm from '../form/variables-form';
 import styles from './index.less';
 
 interface IProps {
@@ -98,7 +98,7 @@ const FormMap = {
   [Operator.Email]: EmailForm,
   [Operator.Iteration]: IterationForm,
   [Operator.IterationStart]: () => <></>,
-  [Operator.VariableExtract]: VariableForm,
+  [Operator.VariablesExtract]: VariablesForm,
 };
 
 const EmptyContent = () => <div></div>;

@@ -47,10 +47,8 @@ export const useBuildComponentIdSelectOptions = (
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
   const query: BeginQuery[] = getBeginNodeDataQuery();
 
-  // Limit the nodes inside iteration to only reference peer nodes with the same parentId and other external nodes other than their parent nodes
   const filterChildNodesToSameParentOrExternal = useCallback(
     (node: RAGFlowNodeType) => {
-      // Node inside iteration
       if (parentId) {
         return (
           (node.parentId === parentId || node.parentId === undefined) &&
@@ -68,55 +66,26 @@ export const useBuildComponentIdSelectOptions = (
       .filter(
         (x) =>
           x.id !== nodeId &&
-          !ExcludedNodes.some((y) => y === x.data.label) &&
+          !ExcludedNodes?.some((y) => y === x.data.label) &&
           filterChildNodesToSameParentOrExternal(x),
       )
       .map((x) => ({ label: x.data.name, value: x.id }));
   }, [nodes, nodeId, filterChildNodesToSameParentOrExternal]);
 
-  const variableOptions = useMemo(() => {
-    const variableNode = nodes.filter(
-      (x) =>
-        x.id !== nodeId &&
-        x.id.includes('VariableExtract') === true &&
-        filterChildNodesToSameParentOrExternal(x),
-    );
-    let vars = {};
-    variableNode.forEach((x) => {
-      try {
-        const dataJson = JSON.parse(x.data.form.variables);
-        vars = { ...vars, ...dataJson };
-      } catch (e) {
-        console.log(e);
-      }
-    });
-
-    return Object.keys(vars).map((key) => ({
-      label: key,
-      value: key,
-    }));
-  }, [nodes, nodeId, filterChildNodesToSameParentOrExternal]);
-
   const groupedOptions = [
     {
+      key: 'component',
       label: <span>Component Output</span>,
       title: 'Component Output',
       options: componentIdOptions,
     },
     {
+      key: 'begin',
       label: <span>Begin Input</span>,
       title: 'Begin Input',
       options: query.map((x) => ({
         label: x.name,
         value: `begin@${x.key}`,
-      })),
-    },
-    {
-      label: <span>Variable Extract</span>,
-      title: 'Variables',
-      options: variableOptions.map((x) => ({
-        label: x.label,
-        value: `variables@${x.value}`,
       })),
     },
   ];

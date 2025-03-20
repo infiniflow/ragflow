@@ -127,9 +127,7 @@ def create_agent_session(tenant_id, agent_id):
         "user_id": user_id,
         "message": [{"role": "assistant", "content": canvas.get_prologue()}],
         "source": "agent",
-        "dsl": cvs.dsl,
-        "variables": canvas.get_variables(),
-
+        "dsl": cvs.dsl
     }
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")

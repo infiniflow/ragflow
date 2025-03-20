@@ -17,6 +17,9 @@ export interface IGenerateParameter {
 export interface IInvokeVariable extends IGenerateParameter {
   value?: string;
 }
+export interface IVariable extends IGenerateParameter {
+  value?: string;
+}
 
 export type IPosition = { top: number; right: number; idx: number };
 

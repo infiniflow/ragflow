@@ -57,12 +57,6 @@ class Template(ComponentBase):
                     res.append({"key": r.group(1), "name": p["name"]})
                     key_set.add(r.group(1))
                 continue
-            if cpn_id.lower().find("variables@") == 0:
-                cpn_id, key = cpn_id.split("@")
-                if key in vars.keys():
-                    res.append({"key": r.group(1), "name": key})
-                    key_set.add(r.group(1))
-                continue
             cpn_nm = self._canvas.get_component_name(cpn_id)
             if not cpn_nm:
                 continue
@@ -84,14 +78,6 @@ class Template(ComponentBase):
                         break
                 else:
                     assert False, f"Can't find parameter '{key}' for {cpn_id}"
-                continue
-            if para["key"].lower().find("variables@") == 0:
-                cpn_id, key = para["key"].split("@")
-                if key in vars.keys():
-                    value = vars[key]
-                    self.make_kwargs(para, kwargs, value)
-                else: 
-                    assert False, f"Can't find variables '{key}' for {cpn_id}"
                 continue
             component_id = para["key"]
             cpn = self._canvas.get_component(component_id)["obj"]

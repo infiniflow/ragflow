@@ -22,23 +22,23 @@ from agent.component import GenerateParam, Generate
 import json
 
 
-class VariableExtractParam(GenerateParam):
+class VariablesExtractParam(GenerateParam):
     """
-    Define the VariableExtract component parameters.
+    Define the VariablesExtract component parameters.
     """
 
     def __init__(self):
         super().__init__()
         self.temperature = 0.9
-        self.variables = {}
         self.prompt = ""
 
 
     def check(self):
         super().check()
-        self.check_json(self.variables , "JSON format")
 
-    def get_prompt(self, conv, variables):
+
+
+    def get_prompt(self, conv, params):
         prompt = f"""
 You are a data expert extracting information. DON'T generate anything except the information extracted by the template. 
 ######################################
@@ -101,7 +101,7 @@ REQUEST: Get 'The languages of the latest question', 'Topic' from the conversati
 ```
 ###################
 # Real Data
-REQUEST: Get '{", ".join(variables.keys())}' from the conversation.
+REQUEST: Get '{", ".join(params.keys())}' from the conversation.
 
 ## Conversation
     {conv}
@@ -111,16 +111,33 @@ REQUEST: Get '{", ".join(variables.keys())}' from the conversation.
         return prompt
 
 
-class VariableExtract(Generate, ABC):
-    component_name = "VariableExtract"
+class VariablesExtract(Generate, ABC):
+    component_name = "VariablesExtract"
 
     def _run(self, history, **kwargs):
+        args = {}
+        for para in self._param.variables:
+            if para.get("component_id"):
+                if '@' in para["component_id"]:
+                    component = para["component_id"].split('@')[0]
+                    field = para["component_id"].split('@')[1]
+                    component_obj = self._canvas.get_component(component)
+                    if component_obj is not None:
+                        cpn = component_obj["obj"]
+                        for param in cpn._param.query:
+                            if param["key"] == field:
+                                if "value" in param:
+                                    args[para["key"]] = param["value"]
+            else:
+                args[para["key"]] = para["value"]
+
+
         query = self.get_input()
         query = str(query["content"][0]) if "content" in query else ""
-        variables = {}
-        if self._param.variables:
-            variables = json.loads(self._param.variables)
-        self._canvas.update_variables(variables)
+        
+        logging.info("Begin: query: {}".format( self._canvas.components["begin"]._param.query))
+       
+        
     
         hist = self._canvas.get_history(self._param.message_history_window_size)
         conv = []
@@ -130,7 +147,7 @@ class VariableExtract(Generate, ABC):
             conv.append("{}: {}".format(m["role"].upper(), m["content"]))
         conv = "\n".join(conv)
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
-        ans = chat_mdl.chat(self._param.get_prompt(conv, variables),
+        ans = chat_mdl.chat(self._param.get_prompt(conv, args),
                             [{"role": "user", "content": "Output template:"}], self._param.gen_conf())
         match = re.search(r"```json\s*(.*?)\s*```", ans, re.DOTALL)
         if match:
@@ -139,17 +156,17 @@ class VariableExtract(Generate, ABC):
             logging.info(ans)
         if not ans:
             logging.info(ans)
-            return VariableExtract.be_output(query)
+            return VariablesExtract.be_output(query)
 
         
         logging.info(f"ans: {ans}")
         try:
             ans_json = json.loads(ans)
             self._canvas.update_variables(ans_json)
-            return VariableExtract.be_output(query)
+            return VariablesExtract.be_output(query)
         except json.JSONDecodeError:
-            logging.warning(f"VariableExtract: LLM returned non-JSON output: {ans}")
-            return VariableExtract.be_output(query)
+            logging.warning(f"VariablesExtract: LLM returned non-JSON output: {ans}")
+            return VariablesExtract.be_output(query)
 
     def debug(self, **kwargs):
         return self._run([], **kwargs)

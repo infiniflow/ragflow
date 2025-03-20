@@ -104,7 +104,7 @@ export enum Operator {
   Email = 'Email',
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
-  VariableExtract = 'VariableExtract',
+  VariablesExtract = 'VariablesExtract',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -120,7 +120,7 @@ export const operatorIconMap = {
   [Operator.Message]: MessageOutlined,
   [Operator.Relevant]: BranchesOutlined,
   [Operator.RewriteQuestion]: FormOutlined,
-  [Operator.VariableExtract]: VarsIcon,
+  [Operator.VariablesExtract]: VarsIcon,
   [Operator.KeywordExtract]: KeywordIcon,
   [Operator.DuckDuckGo]: DuckIcon,
   [Operator.Baidu]: BaiduIcon,
@@ -207,7 +207,7 @@ export const operatorMap: Record<
     fontSize: 12,
     iconFontSize: 16,
   },
-  [Operator.VariableExtract]: { backgroundColor: '#e6f7ff' },
+  [Operator.VariablesExtract]: { backgroundColor: '#e6f7ff' },
 
   [Operator.KeywordExtract]: {
     width: 70,
@@ -327,7 +327,7 @@ export const componentMenuList = [
     name: Operator.Iteration,
   },
   {
-    name: Operator.VariableExtract,
+    name: Operator.VariablesExtract,
   },
   {
     name: Operator.Note,
@@ -447,9 +447,6 @@ export const initialRewriteQuestionValues = {
 
 export const initialVariableValues = {
   ...initialLlmBaseValues,
-  variables: `{
-   
-}`,
   message_history_window_size: 6,
 };
 
@@ -621,7 +618,7 @@ export const initialInvokeValues = {
   "Accept": "*/*",
   "Cache-Control": "no-cache",
   "Connection": "keep-alive"
-}`,
+  }`,
   proxy: 'http://',
   clean_html: false,
   datatype: 'json',
@@ -698,7 +695,7 @@ export const RestrictedUpstreamMap = {
     Operator.RewriteQuestion,
     Operator.Relevant,
   ],
-  [Operator.VariableExtract]: [
+  [Operator.VariablesExtract]: [
     Operator.Begin,
     Operator.Message,
     Operator.RewriteQuestion,
@@ -748,7 +745,7 @@ export const NodeMap = {
   [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.KeywordExtract]: 'keywordNode',
-  [Operator.VariableExtract]: 'variableNode',
+  [Operator.VariablesExtract]: 'variablesNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Baidu]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',

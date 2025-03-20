@@ -45,7 +45,7 @@ import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
-import { VariableNode } from './node/variable-node';
+import { VariablesNode } from './node/variable-node';
 
 export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
@@ -62,7 +62,7 @@ export const nodeTypes: NodeTypes = {
   keywordNode: KeywordNode,
   invokeNode: InvokeNode,
   templateNode: TemplateNode,
-  variableNode: VariableNode,
+  variablesNode: VariablesNode,
   emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,

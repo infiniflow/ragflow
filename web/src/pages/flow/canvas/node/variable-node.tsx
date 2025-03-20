@@ -8,7 +8,7 @@ import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-export function VariableNode({
+export function VariablesNode({
   id,
   data,
   isConnectable = true,

@@ -1192,9 +1192,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
-      variableExtractDescription:
+      variablesExtractDescription:
         'Extract user information into global variable throughout the conversation',
-      variableExtract: 'Variables',
+      variablesExtract: 'Variables',
       variables: 'Variables',
       variablesTip: `Set the clear json key variable with a value of empty. e.g.
       {

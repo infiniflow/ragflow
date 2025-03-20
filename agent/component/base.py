@@ -416,8 +416,7 @@ class ComponentBase(ABC):
         cpnts = set([para["component_id"].split("@")[0] for para in self._param.query \
                      if para.get("component_id") \
                      and para["component_id"].lower().find("answer") < 0 \
-                     and para["component_id"].lower().find("begin") < 0 \
-                     and para["component_id"].lower().find("variables@") < 0])
+                     and para["component_id"].lower().find("begin") < 0 ])
         return list(cpnts)
 
     def run(self, history, **kwargs):
@@ -481,7 +480,6 @@ class ComponentBase(ABC):
         if self._param.query:
             self._param.inputs = []
             outs = []
-            vars =self._canvas.get_variables()
             for q in self._param.query:
                 if q.get("component_id"):
                     if q["component_id"].split("@")[0].lower().find("begin") >= 0:
@@ -503,13 +501,6 @@ class ComponentBase(ABC):
                         self._param.inputs.append({"content": txt, "component_id": q["component_id"]})
                         outs.append(pd.DataFrame([{"content": txt}]))
                         continue
-                    if q["component_id"].split("@")[0].lower().find("variables") >= 0:
-                        key = q["component_id"].split("@")[1]
-                        if key in vars.keys():
-                            self._param.inputs.append({"component_id": q["component_id"], "content": vars[key]})
-                            outs.append(pd.DataFrame([{"content": vars[key]}]))
-                            continue
-                
                     outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
                     self._param.inputs.append({"component_id": q["component_id"],
                                                "content": "\n".join(

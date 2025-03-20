@@ -50,8 +50,6 @@ class Invoke(ComponentBase, ABC):
 
     def _run(self, history, **kwargs):
         args = {}
-        vars =self._canvas.get_variables()
-
         for para in self._param.variables:
             if para.get("component_id"):
                 if '@' in para["component_id"]:
@@ -64,9 +62,6 @@ class Invoke(ComponentBase, ABC):
                             if param["key"] == field:
                                 if "value" in param:
                                     args[para["key"]] = param["value"]
-                    if field in vars.keys():
-                        args[para["key"]] = vars[field]
-              
                 else:
                     component = self._canvas.get_component(para["component_id"])
                     if component is not None:

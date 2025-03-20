@@ -74,7 +74,6 @@ class Canvas:
         self.history = []
         self.messages = []
         self.answer = []
-        self.variables = {}
         self.components = {}
         self.dsl = json.loads(dsl) if dsl else {
             "components": {
@@ -95,7 +94,6 @@ class Canvas:
             "reference": [],
             "path": [],
             "answer": [],
-            "variables":{}
         }
         self._tenant_id = tenant_id
         self._embed_id = ""
@@ -128,7 +126,6 @@ class Canvas:
         self.answer = self.dsl["answer"]
         self.reference = self.dsl["reference"]
         self._embed_id = self.dsl.get("embed_id", "")
-        self.variables = self.dsl.get("variables", {})
 
 
     def __str__(self):
@@ -138,7 +135,6 @@ class Canvas:
         self.dsl["answer"] = self.answer
         self.dsl["reference"] = self.reference
         self.dsl["embed_id"] = self._embed_id
-        self.dsl["variables"] = self.variables
         dsl = {
             "components": {}
         }
@@ -162,12 +158,10 @@ class Canvas:
         self.history = []
         self.messages = []
         self.answer = []
-        self.variables = {}
         self.reference = []
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset()
         self._embed_id = ""
-        self.variables = {}
 
     def get_component_name(self, cid):
         for n in self.dsl["graph"]["nodes"]:
@@ -317,6 +311,7 @@ class Canvas:
                 convs.append({"role": role, "content": str(obj)})
         return convs
     def update_variables(self, variables):
+
         for key, value in variables.items():
             if not self.variables.get(key):
                 self.variables[key] = ""
@@ -365,8 +360,6 @@ class Canvas:
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
     
-    def get_variables(self):
-        return self.variables
 
     def set_global_param(self, **kwargs):
         for k, v in kwargs.items():

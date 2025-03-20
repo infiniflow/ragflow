@@ -1,11 +1,13 @@
 import LLMSelect from '@/components/llm-select';
 import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
-import { Editor } from '@monaco-editor/react';
+import { loader } from '@monaco-editor/react';
 import { Form } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { IOperatorForm } from '../../interface';
+import DynamicVariablesForm from './dynamic-variables';
+loader.config({ paths: { vs: '/vs' } });
 
-const VariableForm = ({ onValuesChange, form }: IOperatorForm) => {
+const VariablesForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslation();
 
   return (
@@ -24,19 +26,13 @@ const VariableForm = ({ onValuesChange, form }: IOperatorForm) => {
         >
           <LLMSelect></LLMSelect>
         </Form.Item>
-        <Form.Item
-          tooltip={t('flow.variablesTip')}
-          name={'variables'}
-          label={t('flow.variables')}
-        >
-          <Editor height={200} defaultLanguage="json" theme="vs-dark" />
-        </Form.Item>
         <MessageHistoryWindowSizeItem
           initialValue={6}
         ></MessageHistoryWindowSizeItem>
+        <DynamicVariablesForm node={node}></DynamicVariablesForm>
       </Form>
     </>
   );
 };
 
-export default VariableForm;
+export default VariablesForm;

@@ -68,7 +68,7 @@ export const useBuildComponentIdSelectOptions = (
       .filter(
         (x) =>
           x.id !== nodeId &&
-          !ExcludedNodes.some((y) => y === x.data.label) &&
+          !ExcludedNodes?.some((y) => y === x.data.label) &&
           filterChildNodesToSameParentOrExternal(x),
       )
       .map((x) => ({ label: x.data.name, value: x.id }));
