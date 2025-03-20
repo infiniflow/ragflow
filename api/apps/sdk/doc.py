@@ -704,6 +704,7 @@ def parse(tenant_id, dataset_id):
         info["progress_msg"] = ""
         info["chunk_num"] = 0
         info["token_num"] = 0
+
         DocumentService.update_by_id(id, info)
         settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
         TaskService.filter_delete([Task.doc_id == id])
