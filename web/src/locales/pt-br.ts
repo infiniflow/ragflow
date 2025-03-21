@@ -162,9 +162,9 @@ export default {
         'Se deixado vazio, o RAGFlow usará uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada; se um modelo de reranking for selecionado, uma pontuação de reranking ponderada substituirá a similaridade de cosseno vetorial ponderada. Esteja ciente de que usar um modelo de reranking aumentará significativamente o tempo de resposta do sistema.',
       topK: 'Top-K',
       topKTip: 'K fragmentos serão alimentados em modelos de reranking.',
-      delimiter: 'Delimitador',
+      delimiter: 'Delimitadores para segmentação de texto',
       delimiterTip:
-        'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula.',
+        'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \\n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula. Defina os delimitadores apenas após entender o mecanismo de segmentação e particionamento de texto.',
       html4excel: 'Excel para HTML',
       html4excelTip:
         'Quando ativado, a planilha será analisada em tabelas HTML, com no máximo 256 linhas por tabela. Caso contrário, será analisada em pares chave-valor por linha.',
@@ -208,14 +208,14 @@ export default {
       languagePlaceholder: 'Por favor, insira seu idioma!',
       permissions: 'Permissões',
       embeddingModel: 'Modelo de incorporação',
-      chunkTokenNumber: 'Número de tokens por fragmento',
+      chunkTokenNumber: 'Tamanho de bloco recomendado',
       chunkTokenNumberMessage: 'O número de tokens por fragmento é obrigatório',
       embeddingModelTip:
         'O modelo que converte fragmentos em embeddings. Ele não pode ser alterado depois que a base de conhecimento tiver fragmentos. Para mudar para um modelo diferente, é necessário excluir todos os fragmentos existentes.',
       permissionsTip:
         "Se definido como 'Equipe', todos os membros da equipe poderão gerenciar a base de conhecimento.",
       chunkTokenNumberTip:
-        'Define o limite de tokens para um fragmento. Um parágrafo com menos tokens que esse limite será combinado com o próximo parágrafo até que a contagem de tokens ultrapasse o limite, momento em que um fragmento será criado.',
+        'Define o limite de tokens para um fragmento. Um parágrafo com menos tokens que esse limite será combinado com o próximo parágrafo até que a contagem de tokens ultrapasse o limite, momento em que um fragmento será criado. Nenhum novo bloco será criado a menos que um delimitador seja encontrado, mesmo que esse limite seja excedido.',
       chunkMethod: 'Método de fragmentação',
       chunkMethodTip: 'Veja as dicas à direita.',
       upload: 'Enviar',

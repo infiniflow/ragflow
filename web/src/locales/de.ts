@@ -165,9 +165,9 @@ export default {
         'Wenn leer gelassen, verwendet RAGFlow eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit; wenn ein Neuordnungsmodell ausgewählt wird, ersetzt eine gewichtete Neuordnungsbewertung die gewichtete Vektorkosinus-Ähnlichkeit. Bitte beachten Sie, dass die Verwendung eines Neuordnungsmodells die Antwortzeit des Systems erheblich erhöht.',
       topK: 'Top-K',
       topKTip: 'K Chunks werden in das Neuordnungsmodell eingespeist.',
-      delimiter: 'Trennzeichen',
+      delimiter: 'Trennzeichen für Textsegmentierung',
       delimiterTip:
-        'Ein Trennzeichen oder Separator kann aus einem oder mehreren Sonderzeichen bestehen. Bei mehreren Zeichen stellen Sie sicher, dass sie in Backticks (` `) eingeschlossen sind. Wenn Sie beispielsweise Ihre Trennzeichen so konfigurieren: \n`##`;, dann werden Ihre Texte an Zeilenumbrüchen, doppelten Rautenzeichen (##) oder Semikolons getrennt.',
+        'Ein Trennzeichen oder Separator kann aus einem oder mehreren Sonderzeichen bestehen. Bei mehreren Zeichen stellen Sie sicher, dass sie in Backticks (` `) eingeschlossen sind. Wenn Sie beispielsweise Ihre Trennzeichen so konfigurieren: \\n`##`;, dann werden Ihre Texte an Zeilenumbrüchen, doppelten Rautenzeichen (##) oder Semikolons getrennt. Setzen Sie Trennzeichen nur nachdem Sie das Mechanismus der Textsegmentierung und -chunking verstanden haben.',
       html4excel: 'Excel zu HTML',
       html4excelTip:
         'Wenn aktiviert, wird die Tabelle in HTML-Tabellen umgewandelt, mit maximal 256 Zeilen pro Tabelle. Andernfalls wird sie in Schlüssel-Wert-Paare nach Zeilen umgewandelt.',
@@ -215,14 +215,14 @@ export default {
       languagePlaceholder: 'Bitte geben Sie Ihre Sprache ein!',
       permissions: 'Berechtigungen',
       embeddingModel: 'Embedding-Modell',
-      chunkTokenNumber: 'Chunk-Token-Anzahl',
+      chunkTokenNumber: 'Empfohlene Chunk-Größe',
       chunkTokenNumberMessage: 'Chunk-Token-Anzahl ist erforderlich',
       embeddingModelTip:
         'Das Modell, das Chunks in Embeddings umwandelt. Es kann nicht geändert werden, sobald die Wissensdatenbank Chunks enthält. Um zu einem anderen Embedding-Modell zu wechseln, müssen Sie alle vorhandenen Chunks in der Wissensdatenbank löschen.',
       permissionsTip:
         'Wenn auf "Team" gesetzt, können alle Teammitglieder die Wissensdatenbank verwalten.',
       chunkTokenNumberTip:
-        'Legt den Token-Schwellenwert für einen Chunk fest. Ein Absatz mit weniger Tokens als dieser Schwellenwert wird mit dem folgenden Absatz kombiniert, bis die Token-Anzahl den Schwellenwert überschreitet, dann wird ein Chunk erstellt.',
+        'Legt den Token-Schwellenwert für einen Chunk fest. Ein Absatz mit weniger Tokens als dieser Schwellenwert wird mit dem folgenden Absatz kombiniert, bis die Token-Anzahl den Schwellenwert überschreitet, dann wird ein Chunk erstellt. Ein neuer Block wird nicht erstellt, es sei denn, ein Trennzeichen wird gefunden, auch wenn dieser Schwellenwert überschritten wird.',
       chunkMethod: 'Chunk-Methode',
       chunkMethodTip: 'Siehe Tipps auf der rechten Seite.',
       upload: 'Hochladen',

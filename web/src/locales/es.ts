@@ -152,7 +152,7 @@ export default {
       rerankTip: `Si está vacío, se utilizan los embeddings de la consulta y los fragmentos para calcular la similitud coseno del vector. De lo contrario, se usa la puntuación de reordenamiento en lugar de la similitud coseno del vector.`,
       topK: 'Top-K',
       topKTip: `K fragmentos serán alimentados a los modelos de reordenamiento.`,
-      delimiter: `Delimitador`,
+      delimiter: `Delimitadores para segmentación de texto`,
       html4excel: 'Excel a HTML',
       html4excelTip: `Excel se analizará en una tabla HTML o no. Si es FALSO, cada fila en Excel se formará como un fragmento.`,
     },

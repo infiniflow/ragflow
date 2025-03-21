@@ -163,7 +163,7 @@ export default {
       topKTip: `K chunks will be sent into the rerank model.`,
       delimiter: `Delimiter for text`,
       delimiterTip:
-        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \n`##`;, then your texts will be separated at line breaks, double hash symbols (##), or semicolons.',
+        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
       html4excel: 'Excel to HTML',
       html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables, and at most 256 rows for one table. Otherwise, it will be parsed into key-value pairs by row.`,
       autoKeywords: 'Auto-keyword',
@@ -209,14 +209,14 @@ export default {
       languagePlaceholder: 'Please input your language!',
       permissions: 'Permissions',
       embeddingModel: 'Embedding model',
-      chunkTokenNumber: 'Chunk token number for text',
+      chunkTokenNumber: 'Recommended chunk size',
       chunkTokenNumberMessage: 'Chunk token number for text is required',
       embeddingModelTip:
         'The model that converts chunks into embeddings. It cannot be changed once the knowledge base has chunks. To switch to a different embedding model, you must delete all existing chunks in the knowledge base.',
       permissionsTip:
-        "If set to 'Team', all team members will be able to manage the knowledge base.",
+        "If it is set to 'Team', all your team members will be able to manage the knowledge base.",
       chunkTokenNumberTip:
-        'It sets the token threshold for a chunk. A paragraph with fewer tokens than this threshold will be combined with the following paragraph until the token count exceeds the threshold, at which point a chunk is created.',
+        'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
       chunkMethod: 'Chunk method',
       chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
