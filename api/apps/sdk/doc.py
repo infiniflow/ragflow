@@ -1067,7 +1067,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
     d["important_tks"] = rag_tokenizer.tokenize(
         " ".join(req.get("important_keywords", []))
     )
-    d["question_kwd"] = req.get("questions", [])
+    d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
     d["question_tks"] = rag_tokenizer.tokenize(
         "\n".join(req.get("questions", []))
     )
