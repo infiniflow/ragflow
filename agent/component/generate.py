@@ -70,10 +70,7 @@ class Generate(ComponentBase):
 
     def get_dependent_components(self):
         inputs = self.get_input_elements()
-        cpnts = set([
-            i["key"] for i in inputs[1:] if i["key"].lower().find("answer") < 0 \
-            and i["key"].lower().find("begin") < 0  \
-            ])
+        cpnts = set([i["key"] for i in inputs[1:] if i["key"].lower().find("answer") < 0 and i["key"].lower().find("begin") < 0])
         return list(cpnts)
 
     def set_cite(self, retrieval_res, answer):
@@ -107,7 +104,7 @@ class Generate(ComponentBase):
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
         res = {"content": answer, "reference": reference}
         res = structure_answer(None, res, "", "")
-
+        
         return res
 
     def get_input_elements(self):
@@ -129,6 +126,7 @@ class Generate(ComponentBase):
             if not cpn_nm:
                 continue
             res.append({"key": cpn_id, "name": cpn_nm})
+            key_set.add(cpn_id)
         return res
 
     def _run(self, history, **kwargs):
@@ -167,7 +165,6 @@ class Generate(ComponentBase):
                     retrieval_res.append(out)
                 kwargs[para["key"]] = "  - " + "\n - ".join([o if isinstance(o, str) else str(o) for o in out["content"]])
             self._param.inputs.append({"component_id": para["key"], "content": kwargs[para["key"]]})
-
 
         if retrieval_res:
             retrieval_res = pd.concat(retrieval_res, ignore_index=True)
