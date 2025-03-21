@@ -705,6 +705,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       logout: 'logout',
       logged: 'logged!',
       pleaseSelectChunk: 'Please select chunk!',
+      registerDisabled: 'User registration is disabled',
       modified: 'Modified',
       created: 'Created',
       deleted: 'Deleted',

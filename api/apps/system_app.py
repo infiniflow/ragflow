@@ -37,7 +37,6 @@ from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
 
-
 @manager.route("/version", methods=["GET"])  # noqa: F821
 @login_required
 def version():
@@ -298,3 +297,25 @@ def rm(token):
         [APIToken.tenant_id == current_user.id, APIToken.token == token]
     )
     return get_json_result(data=True)
+
+
+@manager.route('/config', methods=['GET'])  # noqa: F821
+def get_config():
+    """
+    Get system configuration.
+    ---
+    tags:
+        - System
+    responses:
+        200:
+            description: Return system configuration
+            schema:
+                type: object
+                properties:
+                    registerEnable:
+                        type: integer 0 means disabled, 1 means enabled
+                        description: Whether user registration is enabled
+    """
+    return get_json_result(data={
+        "registerEnabled": settings.REGISTER_ENABLED
+    })
