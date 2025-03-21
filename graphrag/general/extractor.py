@@ -59,7 +59,7 @@ class Extractor:
         response = get_llm_cache(self._llm.llm_name, system, hist, conf)
         if response:
             return response
-        _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.97))
+        _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.92))
         response = self._llm.chat(system_msg[0]["content"], hist, conf)
         response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
         if response.find("**ERROR**") >= 0:
