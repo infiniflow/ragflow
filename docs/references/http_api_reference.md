@@ -1149,7 +1149,7 @@ curl --request GET \
 
 - `dataset_id`: (*Path parameter*)  
   The associated dataset ID.
-- `document_ids`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)  
   The associated document ID.
 - `keywords`(*Filter parameter*), `string`  
   The keywords used to match chunk content.
