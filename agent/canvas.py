@@ -310,13 +310,6 @@ class Canvas:
             else:
                 convs.append({"role": role, "content": str(obj)})
         return convs
-    def update_variables(self, variables):
-
-        for key, value in variables.items():
-            if not self.variables.get(key):
-                self.variables[key] = ""
-            if value and value != "Unknown" and value != "" and value != "None":
-                self.variables[key] = f"{value}"
 
     def add_user_input(self, question):
         self.history.append(("user", question))
@@ -362,6 +355,7 @@ class Canvas:
     
 
     def set_global_param(self, **kwargs):
+        logging.info(f"Canvas.set_global_param: {kwargs}")
         for k, v in kwargs.items():
             for q in self.components["begin"]["obj"]._param.query:
                 if k != q["key"]:
@@ -373,3 +367,4 @@ class Canvas:
 
     def get_component_input_elements(self, cpnnm):
         return self.components[cpnnm]["obj"].get_input_elements()
+

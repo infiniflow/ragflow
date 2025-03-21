@@ -1,10 +1,5 @@
 import get from 'lodash/get';
-import {
-  ChangeEventHandler,
-  MouseEventHandler,
-  useCallback,
-  useMemo,
-} from 'react';
+import { MouseEventHandler, useCallback, useMemo } from 'react';
 import { v4 as uuid } from 'uuid';
 import { IGenerateParameter, IInvokeVariable } from '../../interface';
 import useGraphStore from '../../store';
@@ -12,10 +7,10 @@ import useGraphStore from '../../store';
 export const useHandleOperateParameters = (nodeId: string) => {
   const { getNode, updateNodeForm } = useGraphStore((state) => state);
   const node = getNode(nodeId);
-  const dataSource: IGenerateParameter[] = useMemo(
-    () => get(node, 'data.form.variables', []) as IGenerateParameter[],
-    [node],
-  );
+  const dataSource: {
+    id?: string;
+    key: string;
+  }[] = useMemo(() => get(node, 'data.form.variables', []), [node]);
 
   const changeValue = useCallback(
     (row: IInvokeVariable, field: string, value: string) => {
@@ -34,16 +29,8 @@ export const useHandleOperateParameters = (nodeId: string) => {
 
   const handleComponentIdChange = useCallback(
     (row: IInvokeVariable) => (value: string) => {
-      changeValue(row, 'component_id', value);
+      changeValue(row, 'key', value);
     },
-    [changeValue],
-  );
-
-  const handleValueChange = useCallback(
-    (row: IInvokeVariable): ChangeEventHandler<HTMLInputElement> =>
-      (e) => {
-        changeValue(row, 'value', e.target.value);
-      },
     [changeValue],
   );
 
@@ -64,9 +51,7 @@ export const useHandleOperateParameters = (nodeId: string) => {
           ...dataSource,
           {
             id: uuid(),
-            key: '',
-            component_id: undefined,
-            value: '',
+            key: undefined,
           },
         ],
       });
@@ -90,7 +75,6 @@ export const useHandleOperateParameters = (nodeId: string) => {
     handleAdd,
     handleRemove,
     handleComponentIdChange,
-    handleValueChange,
     handleSave,
     dataSource,
   };

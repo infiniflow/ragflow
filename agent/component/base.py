@@ -407,6 +407,9 @@ class ComponentBase(ABC):
         )
 
     def __init__(self, canvas, id, param: ComponentParamBase):
+        from agent.canvas import Canvas 
+        if not isinstance(canvas, Canvas):
+            raise TypeError("canvas must be an instance of Canvas")
         self._canvas = canvas
         self._id = id
         self._param = param

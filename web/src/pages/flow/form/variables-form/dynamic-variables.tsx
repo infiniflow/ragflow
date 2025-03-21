@@ -4,8 +4,8 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Collapse, Flex, Select, Table, TableProps } from 'antd';
 import { trim } from 'lodash';
-import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
-import { IVariable } from '../../interface';
+import { useGetBeginNodeDataQuery } from '../../hooks/use-get-begin-query';
+import { BeginQuery, IVariable } from '../../interface';
 import { useHandleOperateParameters } from './hooks';
 import styles from './index.less';
 
@@ -23,43 +23,33 @@ const components = {
 const DynamicVariablesForm = ({ node }: IProps) => {
   const nodeId = node?.id;
   const { t } = useTranslate('flow');
+  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
 
-  const options = useBuildComponentIdSelectOptions(nodeId, node?.parentId);
-  const {
-    dataSource,
-    handleAdd,
-    handleRemove,
-    handleSave,
-    handleComponentIdChange,
-  } = useHandleOperateParameters(nodeId!);
+  const query: BeginQuery[] = getBeginNodeDataQuery();
+  const options = query.map((x) => ({
+    label: x.name,
+    value: `begin@${x.key}`,
+  }));
+
+  const { dataSource, handleAdd, handleRemove, handleComponentIdChange } =
+    useHandleOperateParameters(nodeId!);
 
   const columns: TableProps<IVariable>['columns'] = [
     {
       title: t('key'),
       dataIndex: 'key',
       key: 'key',
-      onCell: (record: IVariable) => ({
-        record,
-        editable: true,
-        dataIndex: 'key',
-        title: 'key',
-        handleSave,
-      }),
-    },
-    {
-      title: t('componentId'),
-      dataIndex: 'component_id',
-      key: 'component_id',
-      align: 'center',
-
       render(text, record) {
         return (
           <Select
             style={{ width: '100%' }}
             allowClear
             showSearch
-            options={options.filter((p) => p.key === 'begin')}
-            value={text}
+            options={options.filter(
+              (p) =>
+                dataSource.every((d) => d.key !== p.value) || p.value === text,
+            )}
+            value={options.find((x) => x.value === text)?.label}
             disabled={trim(record.value) !== ''}
             onChange={handleComponentIdChange(record)}
           />

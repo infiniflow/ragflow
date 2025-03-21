@@ -107,7 +107,6 @@ REQUEST: Get '{", ".join(params.keys())}' from the conversation.
     {conv}
 ######################################
 """
-        logging.info(prompt)
         return prompt
 
 
@@ -116,27 +115,20 @@ class VariablesExtract(Generate, ABC):
 
     def _run(self, history, **kwargs):
         args = {}
+        logging.info(f"VariablesExtract: _run: {self._param.variables}")
         for para in self._param.variables:
-            if para.get("component_id"):
-                if '@' in para["component_id"]:
-                    component = para["component_id"].split('@')[0]
-                    field = para["component_id"].split('@')[1]
-                    component_obj = self._canvas.get_component(component)
-                    if component_obj is not None:
-                        cpn = component_obj["obj"]
-                        for param in cpn._param.query:
-                            if param["key"] == field:
-                                if "value" in param:
-                                    args[para["key"]] = param["value"]
-            else:
-                args[para["key"]] = para["value"]
+            if para.get("key"):
+                if 'begin@' in para["key"]:
+                    field = para["key"].split('@')[1]
+                    field = field.strip()
+                    if field:
+                        args[field]=""
 
-
+        logging.info(f"VariablesExtract: _run: args: {args}")
         query = self.get_input()
         query = str(query["content"][0]) if "content" in query else ""
         
-        logging.info("Begin: query: {}".format( self._canvas.components["begin"]._param.query))
-       
+     
         
     
         hist = self._canvas.get_history(self._param.message_history_window_size)
@@ -149,10 +141,11 @@ class VariablesExtract(Generate, ABC):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         ans = chat_mdl.chat(self._param.get_prompt(conv, args),
                             [{"role": "user", "content": "Output template:"}], self._param.gen_conf())
+        ans = re.sub(r"\s+", " ", ans)
         match = re.search(r"```json\s*(.*?)\s*```", ans, re.DOTALL)
         if match:
             ans = match.group(1)
-            ans = ans.replace("\n", " ")
+         
             logging.info(ans)
         if not ans:
             logging.info(ans)
@@ -160,9 +153,17 @@ class VariablesExtract(Generate, ABC):
 
         
         logging.info(f"ans: {ans}")
+       
         try:
+            kwargs ={}
             ans_json = json.loads(ans)
-            self._canvas.update_variables(ans_json)
+            for v in ans_json:
+                if  ans_json[v] != "Unknown" and  ans_json[v] != "" and ans_json[v] != "None":
+                    kwargs[v] = "{}".format(ans_json[v]) 
+
+            self._canvas.set_global_param(**kwargs)
+            logging.info("Begin: query: {}".format( self._canvas.components["begin"]["obj"]._param.query)) 
+
             return VariablesExtract.be_output(query)
         except json.JSONDecodeError:
             logging.warning(f"VariablesExtract: LLM returned non-JSON output: {ans}")

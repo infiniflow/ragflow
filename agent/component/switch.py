@@ -66,7 +66,6 @@ class Switch(ComponentBase, ABC):
             for item in cond["items"]:
                 if not item["cpn_id"]:
                     continue
-                vars =self._canvas.get_variables()
                 cid = item["cpn_id"].split("@")[0]
                 if item["cpn_id"].find("@") > 0:
                     cpn_id, key = item["cpn_id"].split("@")

@@ -158,7 +158,6 @@ def set_conversation():
                 "user_id": request.args.get("user_id", ""),
                 "message": [{"role": "assistant", "content": canvas.get_prologue()}],
                 "source": "agent",
-                "variables":canvas.get_variables(),
 
             }
             API4ConversationService.save(**conv)
