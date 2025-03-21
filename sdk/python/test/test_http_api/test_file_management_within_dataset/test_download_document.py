@@ -57,7 +57,7 @@ class TestAuthorization:
         assert response_json["message"] == expected_message
 
 
-class TestDownloadDocument:
+class TestDocumentDownload:
     @pytest.mark.parametrize(
         "generate_test_files",
         [
