@@ -54,8 +54,7 @@ class CategorizeParam(GenerateParam):
                 descriptions.append(
                     "--------------------\nCategory: {}\nDescription: {}\n".format(c, desc["description"]))
         self.prompt = """
-You're a text classifier. You need to categorize the user's questions into {} categories, 
-namely: {}
+You're a text classifier. You need to categorize the user's questions into {} categories, namely: {}
 Here's description of each category:
 {}
 
