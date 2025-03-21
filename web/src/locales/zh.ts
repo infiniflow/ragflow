@@ -746,6 +746,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
     },
     flow: {
       flow: '工作流',
+      noMoreData: '没有更多数据了',
       cite: '引用',
       citeTip: '引用',
       name: '名称',
