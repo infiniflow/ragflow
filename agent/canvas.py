@@ -93,7 +93,7 @@ class Canvas:
             "messages": [],
             "reference": [],
             "path": [],
-            "answer": [],
+            "answer": []
         }
         self._tenant_id = tenant_id
         self._embed_id = ""
@@ -101,7 +101,6 @@ class Canvas:
 
     def load(self):
         self.components = self.dsl["components"]
-
         cpn_nms = set([])
         for k, cpn in self.components.items():
             cpn_nms.add(cpn["obj"]["component_name"])
@@ -126,7 +125,6 @@ class Canvas:
         self.answer = self.dsl["answer"]
         self.reference = self.dsl["reference"]
         self._embed_id = self.dsl.get("embed_id", "")
-
 
     def __str__(self):
         self.dsl["path"] = self.path
@@ -212,7 +210,7 @@ class Canvas:
                                 waiting.append(c)
                             continue
                     yield "*'{}'* is running...🕞".format(self.get_component_name(c))
-                    
+
                     if cpn.component_name.lower() == "iteration":
                         st_cpn = cpn.get_start()
                         assert st_cpn, "Start component not found for Iteration."
@@ -352,7 +350,7 @@ class Canvas:
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
-    
+
     def set_global_param(self, **kwargs):
         for k, v in kwargs.items():
             for q in self.components["begin"]["obj"]._param.query:
