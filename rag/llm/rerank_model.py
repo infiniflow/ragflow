@@ -537,7 +537,7 @@ class HuggingfaceRerank(DefaultRerank):
         return np.array(scores)
 
     def __init__(self, key, model_name="BAAI/bge-reranker-v2-m3", base_url="http://127.0.0.1"):
-        self.model_name = model_name
+        self.model_name = model_name.split("___")[0]
         self.base_url = base_url
 
     def similarity(self, query: str, texts: list) -> tuple[np.ndarray, int]:
