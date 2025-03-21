@@ -19,6 +19,8 @@ from collections import defaultdict, Counter
 from copy import deepcopy
 from typing import Callable
 import trio
+import random
+import time
 
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import get_llm_cache, set_llm_cache, handle_single_entity_extraction, \
@@ -53,19 +55,51 @@ class Extractor:
         self._get_relation_ = get_relation
         self._set_relation_ = set_relation
 
-    def _chat(self, system, history, gen_conf):
+    async def _chat(self, system, history, gen_conf):
         hist = deepcopy(history)
         conf = deepcopy(gen_conf)
         response = get_llm_cache(self._llm.llm_name, system, hist, conf)
         if response:
             return response
-        _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.97))
-        response = self._llm.chat(system_msg[0]["content"], hist, conf)
-        response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
-        if response.find("**ERROR**") >= 0:
-            raise Exception(response)
-        set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
-        return response
+            
+        # Implement exponential backoff retry strategy
+        max_retries = 3  # Maximum of 3 retry attempts
+        base_delay = 1.0  # Initial delay of 1 second
+        
+        for attempt in range(max_retries):
+            try:
+                _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.97))
+                response = self._llm.chat(system_msg[0]["content"], hist, conf)
+                response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
+                
+                # Check for error in response
+                if response.find("**ERROR**") >= 0:
+                    raise Exception(response)
+                
+                # Successfully received response, set cache and return
+                set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
+                return response
+                
+            except Exception as e:
+                error_str = str(e)
+                # Check if it's a rate limit error
+                if (("429" in error_str or 
+                     "rate limit" in error_str.lower() or 
+                     "tpm limit" in error_str.lower() or
+                     "too many requests" in error_str.lower()) and
+                    attempt < max_retries - 1):  # Only retry if not the last attempt
+                    
+                    # Calculate backoff time - exponential growth strategy
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                    logging.warning(f"Rate limit hit. Retrying in {delay:.2f} seconds... (Attempt {attempt+1}/{max_retries})")
+                    await trio.sleep(delay)
+                    continue
+                else:
+                    # For non-rate limit errors or last attempt, raise immediately
+                    raise
+        
+        # If maximum retry attempts reached, return error message
+        raise Exception(f"Failed after {max_retries} attempts due to rate limiting.")
 
     def _entities_and_relations(self, chunk_key: str, records: list, tuple_delimiter: str):
         maybe_nodes = defaultdict(list)
@@ -253,5 +287,5 @@ class Extractor:
         use_prompt = prompt_template.format(**context_base)
         logging.info(f"Trigger summary: {entity_or_relation_name}")
         async with chat_limiter:
-            summary = await trio.to_thread.run_sync(lambda: self._chat(use_prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.8}))
+            summary = await self._chat(use_prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.8})
         return summary
