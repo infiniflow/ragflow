@@ -1,7 +1,7 @@
-name: Feature request
+name: "💞 Feature request"
 description: Propose a feature request for RAGFlow.
 title: "[Feature Request]: "
-labels: [feature request]
+labels: ["💞 feature"]
 body:
   - type: checkboxes
     attributes:
