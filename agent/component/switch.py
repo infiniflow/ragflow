@@ -73,8 +73,6 @@ class Switch(ComponentBase, ABC):
                         if p["key"] == key:
                             res.append(self.process_operator(p.get("value",""), item["operator"], item.get("value", "")))
                             break
-                elif item["cpn_id"] in vars.keys():
-                    res.append(self.process_operator(vars[item["cpn_id"]], item["operator"], item.get("value", "")))
                 else:
                     out = self._canvas.get_component(cid)["obj"].output(allow_partial=False)[1]
                     cpn_input = "" if "content" not in out.columns else " ".join([str(s) for s in out["content"]])
