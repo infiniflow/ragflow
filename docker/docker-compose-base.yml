@@ -65,6 +65,73 @@ services:
       retries: 120
     restart: on-failure
 
+  milvus:
+    container_name: ragflow-milvus
+    profiles:
+      - milvus
+    image: milvusdb/milvus:v2.5.0
+    command: ["milvus", "run", "standalone"]
+    volumes:
+      - milvus_data:/var/lib/milvus
+    ports:
+      - ${MILVUS_PORT}:19530
+    env_file: .env
+    environment:
+      - TZ=${TIMEZONE}
+    mem_limit: ${MEM_LIMIT}
+    networks:
+      - ragflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: on-failure
+
+  etcd:
+    container_name: ragflow-etcd
+    profiles:
+      - milvus
+    image: quay.io/coreos/etcd:v3.5.14
+    volumes:
+      - etcd_data:/etcd
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+      - TZ=${TIMEZONE}
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - ragflow
+    restart: on-failure
+
+  minio-milvus:
+    container_name: ragflow-minio-milvus
+    profiles:
+      - milvus
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    volumes:
+      - minio_milvus_data:/minio_data
+    environment:
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - TZ=${TIMEZONE}
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - ragflow
+    restart: on-failure
 
   mysql:
     # mysql:5.7 linux/arm64 image is unavailable.
@@ -139,6 +206,12 @@ volumes:
   minio_data:
     driver: local
   redis_data:
+    driver: local
+  milvus_data:
+    driver: local
+  etcd_data:
+    driver: local
+  minio_milvus_data:
     driver: local
 
 networks:
