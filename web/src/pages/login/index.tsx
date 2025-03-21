@@ -39,6 +39,10 @@ const Login = () => {
       const rsaPassWord = rsaPsw(params.password) as string;
 
       if (title === 'login') {
+        if (params.remember) {
+          localStorage.setItem('email', params.email);
+          localStorage.setItem('password', params.password);
+        }
         const code = await login({
           email: `${params.email}`.trim(),
           password: rsaPassWord,
@@ -70,6 +74,14 @@ const Login = () => {
       'https://github.com/login/oauth/authorize?scope=user:email&client_id=302129228f0d96055bee';
   };
 
+  useEffect(() => {
+    if (title === 'login') {
+      form.setFieldsValue({
+        password: localStorage.getItem('password') || '',
+        email: localStorage.getItem('email') || '',
+      });
+    }
+  }, [form, title]);
   return (
     <div className={styles.loginPage}>
       <div className={styles.loginLeft}>
