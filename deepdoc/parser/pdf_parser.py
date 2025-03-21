@@ -653,8 +653,7 @@ class RAGFlowPdfParser:
             b_["top"] = b["top"]
             self.boxes.pop(i)
 
-    def _extract_table_figure(self, need_image, ZM,
-                              return_html, need_position):
+    def _extract_table_figure(self, need_image, ZM, return_html, need_position, separate_tables_figures=False):
         tables = {}
         figures = {}
         # extract figure and table boxes
@@ -768,9 +767,6 @@ class RAGFlowPdfParser:
                     tk)
             self.boxes.pop(i)
 
-        res = []
-        positions = []
-
         def cropout(bxs, ltype, poss):
             nonlocal ZM
             pn = set([b["page_number"] - 1 for b in bxs])
@@ -818,6 +814,10 @@ class RAGFlowPdfParser:
                 height += img.size[1]
             return pic
 
+        res = []
+        positions = []
+        figure_results = []
+        figure_positions = []
         # crop figure out and add caption
         for k, bxs in figures.items():
             txt = "\n".join([b["text"] for b in bxs])
@@ -825,28 +825,46 @@ class RAGFlowPdfParser:
                 continue
 
             poss = []
-            res.append(
-                (cropout(
-                    bxs,
-                    "figure", poss),
-                 [txt]))
-            positions.append(poss)
+
+            if separate_tables_figures:
+                figure_results.append(
+                    (cropout(
+                        bxs,
+                        "figure", poss),
+                     [txt]))
+                figure_positions.append(poss)
+            else:
+                res.append(
+                    (cropout(
+                        bxs,
+                        "figure", poss),
+                     [txt]))
+                positions.append(poss)
 
         for k, bxs in tables.items():
             if not bxs:
                 continue
             bxs = Recognizer.sort_Y_firstly(bxs, np.mean(
                 [(b["bottom"] - b["top"]) / 2 for b in bxs]))
+
             poss = []
+
             res.append((cropout(bxs, "table", poss),
                         self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
             positions.append(poss)
 
-        assert len(positions) == len(res)
-
-        if need_position:
-            return list(zip(res, positions))
-        return res
+        if separate_tables_figures:
+            assert len(positions) + len(figure_positions) == len(res) + len(figure_results)
+            if need_position:
+                return list(zip(res, positions)), list(zip(figure_results, figure_positions))
+            else:
+                return res, figure_results
+        else:
+            assert len(positions) == len(res)
+            if need_position:
+                return list(zip(res, positions))
+            else:
+                return res
 
     def proj_match(self, line):
         if len(line) <= 2:

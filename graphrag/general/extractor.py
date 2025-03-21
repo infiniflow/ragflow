@@ -68,7 +68,8 @@ class Extractor:
         
         for attempt in range(max_retries):
             try:
-                _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.97))
+                # Use upstream's max_length value (0.92 instead of 0.97)
+                _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.92))
                 response = self._llm.chat(system_msg[0]["content"], hist, conf)
                 response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
                 

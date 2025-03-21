@@ -26,6 +26,7 @@ HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
 DATASETS_API_URL = "/api/v1/datasets"
 FILE_API_URL = "/api/v1/datasets/{dataset_id}/documents"
 FILE_CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/chunks"
+CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks"
 
 INVALID_API_TOKEN = "invalid_key_123"
 DATASET_NAME_LIMIT = 128
@@ -161,5 +162,20 @@ def delete_documnet(auth, dataset_id, payload=None):
 
 def parse_documnet(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def stop_parse_documnet(auth, dataset_id, payload=None):
+    url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
+    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+# CHUNK MANAGEMENT WITHIN DATASET
+def add_chunk(auth, dataset_id, document_id, payload=None):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(
+        dataset_id=dataset_id, document_id=document_id
+    )
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()

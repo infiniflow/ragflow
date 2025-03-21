@@ -441,7 +441,9 @@ class OllamaChat(Base):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         try:
-            options = {}
+            options = {
+                "num_ctx": 32768
+            }
             if "temperature" in gen_conf:
                 options["temperature"] = gen_conf["temperature"]
             if "max_tokens" in gen_conf:
