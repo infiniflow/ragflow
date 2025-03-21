@@ -62,7 +62,9 @@ Here's description of each category:
 {}
 
 You could learn from the following examples:
-{}
+
+- {}
+
 You could learn from the above examples.
 
 Requirements:
@@ -77,8 +79,7 @@ USER: {}\n
             "\n\n- ".join(cate_lines),
             chat_hist
         )
-        logging.info(f"Prompt: {self.prompt}")
-        return self.prompt
+        return self.prompt.strip()
 
 
 class Categorize(Generate, ABC):
