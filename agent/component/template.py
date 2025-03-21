@@ -18,6 +18,7 @@ import re
 from agent.component.base import ComponentBase, ComponentParamBase
 from jinja2 import Template as Jinja2Template
 
+
 class TemplateParam(ComponentParamBase):
     """
     Define the Generate component parameters.
@@ -65,6 +66,7 @@ class Template(ComponentBase):
 
     def _run(self, history, **kwargs):
         content = self._param.content
+
         self._param.inputs = []
         for para in self.get_input_elements():
             if para["key"].lower().find("begin@") == 0:
@@ -77,6 +79,7 @@ class Template(ComponentBase):
                 else:
                     assert False, f"Can't find parameter '{key}' for {cpn_id}"
                 continue
+
             component_id = para["key"]
             cpn = self._canvas.get_component(component_id)["obj"]
             if cpn.component_name.lower() == "answer":
@@ -89,6 +92,7 @@ class Template(ComponentBase):
                 continue
 
             _, out = cpn.output(allow_partial=False)
+
             result = ""
             if "content" in out.columns:
                 result = "\n".join(
@@ -96,6 +100,7 @@ class Template(ComponentBase):
                 )
 
             self.make_kwargs(para, kwargs, result)
+
         template = Jinja2Template(content)
 
         try:
