@@ -24,7 +24,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import TenantLLMService, LLMService
 from api.db.services.user_service import TenantService
 from api import settings
-from api.utils import get_uuid
+from api.utils import get_uuid, check_duplicate_ids
 from api.utils.api_utils import (
     get_result,
     token_required,
@@ -237,7 +237,7 @@ def delete(tenant_id):
     if not req:
         ids = None
     else:
-        ids = set(req.get("ids"))
+        ids = req.get("ids")
     if not ids:
         id_list = []
         kbs = KnowledgebaseService.query(tenant_id=tenant_id)
@@ -245,6 +245,9 @@ def delete(tenant_id):
             id_list.append(kb.id)
     else:
         id_list = ids
+    unique_id_list, duplicate_messages = check_duplicate_ids(id_list, "dataset")
+    id_list = unique_id_list
+
     for id in id_list:
         kbs = KnowledgebaseService.query(id=id, tenant_id=tenant_id)
         if not kbs:
@@ -276,6 +279,11 @@ def delete(tenant_id):
             )
         else:
             return get_error_data_result(message="; ".join(errors))
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(message=f"Partially deleted {success_count} datasets with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages},)
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
     return get_result(code=settings.RetCode.SUCCESS)
 
 
