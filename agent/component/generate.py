@@ -104,7 +104,7 @@ class Generate(ComponentBase):
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
         res = {"content": answer, "reference": reference}
         res = structure_answer(None, res, "", "")
-        
+
         return res
 
     def get_input_elements(self):
@@ -147,6 +147,7 @@ class Generate(ComponentBase):
                 else:
                     assert False, f"Can't find parameter '{key}' for {cpn_id}"
                 continue
+
             component_id = para["key"]
             cpn = self._canvas.get_component(component_id)["obj"]
             if cpn.component_name.lower() == "answer":
