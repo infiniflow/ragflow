@@ -4479,6 +4479,20 @@ crypto = [
 ]
 
 [[package]]
+name = "pymochow"
+version = "2.2.4"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "future" },
+    { name = "orjson" },
+    { name = "requests" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/80/38/0893f0940a9b1dfd741805401b986d896816e25d9e72f67a3d36b6da228d/pymochow-2.2.4.tar.gz", hash = "sha256:0c9dce6409012ab6e8b705e071e60fc2a8d065acf2b8a18de2ee3f0771ae27f6" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/67/99/6c1bab3bfe505946d4b63473010cf1318865beabde45aa685861a4fbddd6/pymochow-2.2.4-py3-none-any.whl", hash = "sha256:6ada2e4984510a409d9acdecaf4691086e7248067599eab1f84566bc474775a7" },
+]
+
+[[package]]
 name = "pymysql"
 version = "1.1.1"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -4877,6 +4891,7 @@ dependencies = [
     { name = "pyclipper" },
     { name = "pycryptodomex" },
     { name = "pyicu" },
+    { name = "pymochow" },
     { name = "pymysql" },
     { name = "pyodbc" },
     { name = "pypdf" },
@@ -5014,6 +5029,7 @@ requires-dist = [
     { name = "pyclipper", specifier = "==1.3.0.post5" },
     { name = "pycryptodomex", specifier = "==3.20.0" },
     { name = "pyicu", specifier = ">=2.13.1,<3.0.0" },
+    { name = "pymochow", specifier = "==2.2.4" },
     { name = "pymysql", specifier = ">=1.1.1,<2.0.0" },
     { name = "pyodbc", specifier = ">=5.2.0,<6.0.0" },
     { name = "pypdf", specifier = ">=5.0.0,<6.0.0" },
