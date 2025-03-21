@@ -36,7 +36,7 @@
   <a href="https://ragflow.io/docs/dev/">Document</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/4XxujFgUN7">Discord</a> |
+  <a href="https://discord.gg/zd4qPW6t">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
@@ -341,7 +341,7 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
 
 ## 🏄 开源社区
 
-- [Discord](https://discord.gg/4XxujFgUN7)
+- [Discord](https://discord.gg/zd4qPW6t)
 - [Twitter](https://twitter.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
