@@ -49,7 +49,7 @@ class TestAuthorization:
         assert res["message"] == expected_message
 
 
-class TestupdatedDocument:
+class TestUpdatedDocument:
     @pytest.mark.parametrize(
         "name, expected_code, expected_message",
         [
