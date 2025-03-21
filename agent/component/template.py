@@ -117,7 +117,7 @@ class Template(ComponentBase):
                 r"\{%s\}" % re.escape(n), v, content
             )
             content = re.sub(
-                r"(\\\"|\")", "", content
+                r"(\\\")", "", content
             )
             content = re.sub(
                 r"(#+)", r" \1 ", content
