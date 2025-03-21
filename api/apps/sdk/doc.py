@@ -1010,7 +1010,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
         )
     doc = doc[0]
     req = request.json
-    if not req.get("content"):
+    if not str(req.get("content", "")).strip():
         return get_error_data_result(message="`content` is required")
     if "important_keywords" in req:
         if not isinstance(req["important_keywords"], list):
