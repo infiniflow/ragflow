@@ -119,6 +119,7 @@ export default {
   createSystemToken: `${api_host}/system/new_token`,
   listSystemToken: `${api_host}/system/token_list`,
   removeSystemToken: `${api_host}/system/token`,
+  getSystemConfig: `${api_host}/system/config`,
 
   // flow
   listTemplates: `${api_host}/canvas/templates`,

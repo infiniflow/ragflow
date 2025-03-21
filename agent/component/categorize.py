@@ -52,24 +52,29 @@ class CategorizeParam(GenerateParam):
         for c, desc in self.category_description.items():
             if desc.get("description"):
                 descriptions.append(
-                    "--------------------\nCategory: {}\nDescription: {}\n".format(c, desc["description"]))
+                    "\nCategory: {}\nDescription: {}".format(c, desc["description"]))
+
         self.prompt = """
-You're a text classifier. You need to categorize the user's questions into {} categories, namely: {}
+Role: You're a text classifier. 
+Task: You need to categorize the user's questions into {} categories, namely: {}
+
 Here's description of each category:
 {}
 
 You could learn from the following examples:
 {}
 You could learn from the above examples.
-Just mention the category names, no need for any additional words.
-        
+
+Requirements:
+- Just mention the category names, no need for any additional words.
+
 ---- Real Data ----
-{}
-""".format(
+USER: {}\n
+        """.format(
             len(self.category_description.keys()),
             "/".join(list(self.category_description.keys())),
             "\n".join(descriptions),
-            "\n".join(cate_lines),
+            "\n\n- ".join(cate_lines),
             chat_hist
         )
         logging.info(f"Prompt: {self.prompt}")

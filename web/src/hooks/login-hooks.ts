@@ -67,6 +67,13 @@ export const useRegister = () => {
       const { data = {} } = await userService.register(params);
       if (data.code === 0) {
         message.success(t('message.registered'));
+      } else if (
+        data.message &&
+        data.message.includes('registration is disabled')
+      ) {
+        message.error(
+          t('message.registerDisabled') || 'User registration is disabled',
+        );
       }
       return data.code;
     },
