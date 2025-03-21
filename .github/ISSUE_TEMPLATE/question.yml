@@ -1,7 +1,7 @@
-name: Question
+name: "🙋‍♀️ Question"
 description: Ask questions on RAGFlow
 title: "[Question]: "
-labels: [question]
+labels: ["🙋‍♀️ question"]
 body:
 - type: checkboxes
   attributes:

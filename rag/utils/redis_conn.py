@@ -62,13 +62,11 @@ class RedisDB:
         self.REDIS = None
         self.config = settings.REDIS
         self.__open__()
-        self.register_scripts()
 
     def register_scripts(self) -> None:
         cls = self.__class__
         client = self.REDIS
-        if cls.lua_delete_if_equal is None:
-            cls.lua_delete_if_equal = client.register_script(cls.LUA_DELETE_IF_EQUAL_SCRIPT)
+        cls.lua_delete_if_equal = client.register_script(cls.LUA_DELETE_IF_EQUAL_SCRIPT)
 
     def __open__(self):
         try:
@@ -79,6 +77,7 @@ class RedisDB:
                 password=self.config.get("password"),
                 decode_responses=True,
             )
+            self.register_scripts()
         except Exception:
             logging.warning("Redis can't be connected.")
         return self.REDIS
