@@ -13,6 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+"""
+This module implements a variety of reranking models for RAG (Retrieval-Augmented Generation) systems.
+
+Reranking is a crucial step in the RAG pipeline that takes a set of retrieved documents/passages 
+and reorders them based on their relevance to the query, improving the quality of context 
+provided to the LLM. This module provides implementations for various reranking approaches,
+including local models and API-based services.
+"""
+
 import re
 import threading
 from collections.abc import Iterable
@@ -33,17 +42,36 @@ import json
 
 
 def sigmoid(x):
+    """Apply sigmoid function to input to convert scores to probability range (0-1)"""
     return 1 / (1 + np.exp(-x))
 
 
 class Base(ABC):
+    """
+    Abstract base class for all reranking models.
+    Defines the interface that all reranker implementations must follow.
+    """
     def __init__(self, key, model_name):
         pass
 
     def similarity(self, query: str, texts: list):
+        """
+        Calculate similarity scores between query and texts.
+        
+        Args:
+            query: The search query
+            texts: List of texts/passages to rerank
+            
+        Returns:
+            Tuple of (similarity scores, token count)
+        """
         raise NotImplementedError("Please implement encode method!")
 
     def total_token_count(self, resp):
+        """
+        Extract total token count from response.
+        Tries different response formats to handle various API returns.
+        """
         try:
             return resp.usage.total_tokens
         except Exception:
@@ -56,20 +84,21 @@ class Base(ABC):
 
 
 class DefaultRerank(Base):
+    """
+    Default reranker implementation using FlagEmbedding FlagReranker.
+    Uses a Hugging Face model loaded locally for reranking.
+    
+    Implements a dynamic batch processing system that adapts to available GPU memory.
+    """
     _model = None
     _model_lock = threading.Lock()
 
     def __init__(self, key, model_name, **kwargs):
         """
-        If you have trouble downloading HuggingFace models, -_^ this might help!!
-
-        For Linux:
-        export HF_ENDPOINT=https://hf-mirror.com
-
-        For Windows:
-        Good luck
-        ^_-
-
+        Initialize the DefaultRerank model by loading it from HuggingFace.
+        
+        Uses a singleton pattern with a lock to ensure the model is loaded only once.
+        Supports GPU acceleration when available.
         """
         if not settings.LIGHTEN and not DefaultRerank._model:
             import torch
@@ -91,6 +120,7 @@ class DefaultRerank(Base):
         self._min_batch_size = 1
 
     def torch_empty_cache(self):
+        """Clear CUDA memory cache to prevent OOM errors"""
         try:
             import torch
             torch.cuda.empty_cache()
@@ -98,7 +128,12 @@ class DefaultRerank(Base):
             print(f"Error emptying cache: {e}")
 
     def _process_batch(self, pairs, max_batch_size=None):
-        """template method for subclass call"""
+        """
+        Process query-text pairs in batches with adaptive batch sizing.
+        
+        If OOM errors occur, reduces batch size and retries until successful.
+        This method balances throughput with memory constraints.
+        """
         old_dynamic_batch_size = self._dynamic_batch_size
         if max_batch_size is not None:
             self._dynamic_batch_size = max_batch_size
@@ -131,6 +166,11 @@ class DefaultRerank(Base):
         return np.array(res)
 
     def _compute_batch_scores(self, batch_pairs, max_length=None):
+        """
+        Compute similarity scores for a batch of query-text pairs.
+        
+        Applies sigmoid to normalize raw scores to 0-1 range.
+        """
         if max_length is None:
             scores = self._model.compute_score(batch_pairs)
         else:
@@ -141,6 +181,12 @@ class DefaultRerank(Base):
         return scores
 
     def similarity(self, query: str, texts: list):
+        """
+        Calculate similarity between query and a list of texts.
+        
+        Truncates texts to prevent overflow and processes them in batches.
+        Returns normalized scores and token count.
+        """
         pairs = [(query, truncate(t, 2048)) for t in texts]
         token_count = 0
         for _, t in pairs:
@@ -151,6 +197,9 @@ class DefaultRerank(Base):
 
 
 class JinaRerank(Base):
+    """
+    Implementation for Jina AI's reranking API service.
+    """
     def __init__(self, key, model_name="jina-reranker-v2-base-multilingual",
                  base_url="https://api.jina.ai/v1/rerank"):
         self.base_url = "https://api.jina.ai/v1/rerank"
@@ -161,6 +210,11 @@ class JinaRerank(Base):
         self.model_name = model_name
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using Jina AI's API service.
+        
+        Makes an API call to Jina's reranking endpoint and processes the response.
+        """
         texts = [truncate(t, 8196) for t in texts]
         data = {
             "model": self.model_name,
@@ -176,6 +230,11 @@ class JinaRerank(Base):
 
 
 class YoudaoRerank(DefaultRerank):
+    """
+    Reranker using Youdao's BCE (Bi-directional Contrastive Encoder) model.
+    
+    Extends DefaultRerank and uses RerankerModel from BCEmbedding.
+    """
     _model = None
     _model_lock = threading.Lock()
 
@@ -196,6 +255,11 @@ class YoudaoRerank(DefaultRerank):
         self._model = YoudaoRerank._model
 
     def similarity(self, query: str, texts: list):
+        """
+        Calculate similarity between query and texts using BCE model.
+        
+        Truncates texts to the model's maximum length and processes in batches.
+        """
         pairs = [(query, truncate(t, self._model.max_length)) for t in texts]
         token_count = 0
         for _, t in pairs:
@@ -206,6 +270,9 @@ class YoudaoRerank(DefaultRerank):
 
 
 class XInferenceRerank(Base):
+    """
+    Reranker implementation for generic inference servers with rerank API.
+    """
     def __init__(self, key="xxxxxxx", model_name="", base_url=""):
         if base_url.find("/v1") == -1:
             base_url = urljoin(base_url, "/v1/rerank")
@@ -220,6 +287,11 @@ class XInferenceRerank(Base):
         }
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using an external inference server.
+        
+        Normalizes scores to 0-1 range and handles empty text lists.
+        """
         if len(texts) == 0:
             return np.array([]), 0
         pairs = [(query, truncate(t, 4096)) for t in texts]
@@ -241,6 +313,9 @@ class XInferenceRerank(Base):
 
 
 class LocalAIRerank(Base):
+    """
+    Reranker implementation for LocalAI self-hosted API.
+    """
     def __init__(self, key, model_name, base_url):
         if base_url.find("/rerank") == -1:
             self.base_url = urljoin(base_url, "/rerank")
@@ -253,6 +328,11 @@ class LocalAIRerank(Base):
         self.model_name = model_name.split("___")[0]
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using LocalAI API.
+        
+        Normalizes the scores to 0-1 range for consistent scoring across different models.
+        """
         # noway to config Ragflow , use fix setting
         texts = [truncate(t, 500) for t in texts]
         data = {
@@ -285,6 +365,9 @@ class LocalAIRerank(Base):
 
 
 class NvidiaRerank(Base):
+    """
+    Implementation for NVIDIA's AI reranking service.
+    """
     def __init__(
             self, key, model_name, base_url="https://ai.api.nvidia.com/v1/retrieval/nvidia/"
     ):
@@ -308,6 +391,11 @@ class NvidiaRerank(Base):
         }
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using NVIDIA's AI reranking API.
+        
+        Uses logits as scores from the response.
+        """
         token_count = num_tokens_from_string(query) + sum(
             [num_tokens_from_string(t) for t in texts]
         )
@@ -326,6 +414,9 @@ class NvidiaRerank(Base):
 
 
 class LmStudioRerank(Base):
+    """
+    Placeholder for LM Studio reranking implementation (not implemented).
+    """
     def __init__(self, key, model_name, base_url):
         pass
 
@@ -334,6 +425,9 @@ class LmStudioRerank(Base):
 
 
 class OpenAI_APIRerank(Base):
+    """
+    Reranker implementation for OpenAI-compatible reranking APIs.
+    """
     def __init__(self, key, model_name, base_url):
         if base_url.find("/rerank") == -1:
             self.base_url = urljoin(base_url, "/rerank")
@@ -346,6 +440,11 @@ class OpenAI_APIRerank(Base):
         self.model_name = model_name.split("___")[0]
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using OpenAI-compatible reranking API.
+        
+        Normalizes scores to 0-1 range and handles API response.
+        """
         # noway to config Ragflow , use fix setting
         texts = [truncate(t, 500) for t in texts]
         data = {
@@ -378,6 +477,9 @@ class OpenAI_APIRerank(Base):
 
 
 class CoHereRerank(Base):
+    """
+    Implementation for Cohere's reranking service.
+    """
     def __init__(self, key, model_name, base_url=None):
         from cohere import Client
 
@@ -385,6 +487,11 @@ class CoHereRerank(Base):
         self.model_name = model_name.split("___")[0]
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using Cohere's reranking API.
+        
+        Uses the Cohere client for API interaction.
+        """
         token_count = num_tokens_from_string(query) + sum(
             [num_tokens_from_string(t) for t in texts]
         )
@@ -402,6 +509,9 @@ class CoHereRerank(Base):
 
 
 class TogetherAIRerank(Base):
+    """
+    Placeholder for TogetherAI reranking implementation (not implemented).
+    """
     def __init__(self, key, model_name, base_url):
         pass
 
@@ -410,6 +520,9 @@ class TogetherAIRerank(Base):
 
 
 class SILICONFLOWRerank(Base):
+    """
+    Implementation for SiliconFlow's reranking service.
+    """
     def __init__(
             self, key, model_name, base_url="https://api.siliconflow.cn/v1/rerank"
     ):
@@ -424,6 +537,11 @@ class SILICONFLOWRerank(Base):
         }
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using SiliconFlow's API.
+        
+        Supports chunking for long documents and overlap.
+        """
         payload = {
             "model": self.model_name,
             "query": query,
@@ -449,6 +567,9 @@ class SILICONFLOWRerank(Base):
 
 
 class BaiduYiyanRerank(Base):
+    """
+    Implementation for Baidu Yiyan (Qianfan) reranking service.
+    """
     def __init__(self, key, model_name, base_url=None):
         from qianfan.resources import Reranker
 
@@ -459,6 +580,11 @@ class BaiduYiyanRerank(Base):
         self.model_name = model_name
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using Baidu Yiyan's reranking API.
+        
+        Handles the specific response format of Qianfan API.
+        """
         res = self.client.do(
             model=self.model_name,
             query=query,
@@ -472,6 +598,9 @@ class BaiduYiyanRerank(Base):
 
 
 class VoyageRerank(Base):
+    """
+    Implementation for Voyage AI reranking service.
+    """
     def __init__(self, key, model_name, base_url=None):
         import voyageai
 
@@ -479,6 +608,11 @@ class VoyageRerank(Base):
         self.model_name = model_name
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using Voyage AI's reranking API.
+        
+        Returns empty array if texts list is empty.
+        """
         rank = np.zeros(len(texts), dtype=float)
         if not texts:
             return rank, 0
@@ -491,12 +625,20 @@ class VoyageRerank(Base):
 
 
 class QWenRerank(Base):
+    """
+    Implementation for Alibaba's QWen reranking service via DashScope.
+    """
     def __init__(self, key, model_name='gte-rerank', base_url=None, **kwargs):
         import dashscope
         self.api_key = key
         self.model_name = dashscope.TextReRank.Models.gte_rerank if model_name is None else model_name
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using QWen's reranking API through DashScope.
+        
+        Handles HTTP errors with informative error messages.
+        """
         import dashscope
         from http import HTTPStatus
         resp = dashscope.TextReRank.call(
@@ -517,8 +659,16 @@ class QWenRerank(Base):
 
 
 class HuggingfaceRerank(DefaultRerank):
+    """
+    Reranker implementation for local HuggingFace models via REST API.
+    """
     @staticmethod
     def post(query: str, texts: list, url="127.0.0.1"):
+        """
+        POST request helper for Hugging Face reranker API.
+        
+        Handles batching to prevent oversized requests.
+        """
         exc = None
         scores = [0 for _ in range(len(texts))]
         batch_size = 8
@@ -541,6 +691,11 @@ class HuggingfaceRerank(DefaultRerank):
         self.base_url = base_url
 
     def similarity(self, query: str, texts: list) -> tuple[np.ndarray, int]:
+        """
+        Calculate similarity between query and texts using HuggingFace model API.
+        
+        Returns empty array for empty texts list.
+        """
         if not texts:
             return np.array([]), 0
         token_count = 0
@@ -550,6 +705,9 @@ class HuggingfaceRerank(DefaultRerank):
 
 
 class GPUStackRerank(Base):
+    """
+    Implementation for GPUStack's reranking service.
+    """
     def __init__(
             self, key, model_name, base_url
     ):
@@ -565,6 +723,11 @@ class GPUStackRerank(Base):
         }
 
     def similarity(self, query: str, texts: list):
+        """
+        Rerank texts using GPUStack's reranking API.
+        
+        Provides detailed error messages on API failures.
+        """
         payload = {
             "model": self.model_name,
             "query": query,

@@ -28,6 +28,10 @@ from rag.utils import encoder, num_tokens_from_string
 
 
 def chunks_format(reference):
+    """
+    Standardizes the format of document chunks from various input formats.
+    Maps different field names to a consistent structure.
+    """
     def get_value(d, k1, k2):
         return d.get(k1, d.get(k2))
 
@@ -44,6 +48,10 @@ def chunks_format(reference):
 
 
 def llm_id2llm_type(llm_id):
+    """
+    Converts a LLM ID to its corresponding LLM type.
+    Searches through the configured LLM factories to find a matching model.
+    """
     from api.db.services.llm_service import TenantLLMService
 
     llm_id, _ = TenantLLMService.split_model_name_and_factory(llm_id)
@@ -56,6 +64,13 @@ def llm_id2llm_type(llm_id):
 
 
 def message_fit_in(msg, max_length=4000):
+    """
+    Ensures that a message fits within the token limit by truncating if necessary.
+    Prioritizes keeping system messages and the latest user message if truncation is needed.
+    
+    Returns:
+        tuple: (token_count, adjusted_messages)
+    """
     def count():
         nonlocal msg
         tks_cnts = []
@@ -71,6 +86,7 @@ def message_fit_in(msg, max_length=4000):
     if c < max_length:
         return c, msg
 
+    # If we need to truncate, keep system messages and the last message
     msg_ = [m for m in msg if m["role"] == "system"]
     if len(msg) > 1:
         msg_.append(msg[-1])
@@ -79,6 +95,7 @@ def message_fit_in(msg, max_length=4000):
     if c < max_length:
         return c, msg
 
+    # If still too long, truncate content based on proportion
     ll = num_tokens_from_string(msg_[0]["content"])
     ll2 = num_tokens_from_string(msg_[-1]["content"])
     if ll / (ll + ll2) > 0.8:
@@ -94,6 +111,12 @@ def message_fit_in(msg, max_length=4000):
 
 
 def kb_prompt(kbinfos, max_tokens):
+    """
+    Formats retrieved knowledge base chunks into a structured prompt for LLM consumption.
+    Groups chunks by document and includes metadata from the document.
+    
+    Limits the number of chunks based on the token limit to avoid exceeding model context.
+    """
     from api.db.services.document_service import DocumentService
 
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
@@ -107,14 +130,17 @@ def kb_prompt(kbinfos, max_tokens):
             logging.warning(f"Not all the retrieval into prompt: {i+1}/{len(knowledges)}")
             break
 
+    # Get metadata for documents
     docs = DocumentService.get_by_ids([ck["doc_id"] for ck in kbinfos["chunks"][:chunks_num]])
     docs = {d.id: d.meta_fields for d in docs}
 
+    # Group chunks by document
     doc2chunks = defaultdict(lambda: {"chunks": [], "meta": []})
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
         doc2chunks[ck["docnm_kwd"]]["chunks"].append((f"URL: {ck['url']}\n" if "url" in ck else "") + f"ID: {i}\n" + ck["content_with_weight"])
         doc2chunks[ck["docnm_kwd"]]["meta"] = docs.get(ck["doc_id"], {})
 
+    # Format knowledge into a structured document format
     knowledges = []
     for nm, cks_meta in doc2chunks.items():
         txt = f"\nDocument: {nm} \n"
@@ -128,6 +154,11 @@ def kb_prompt(kbinfos, max_tokens):
 
 
 def citation_prompt():
+    """
+    Returns a prompt instructing the LLM on how to format citations in its responses.
+    
+    Provides an example of properly formatted citations with ID references to source chunks.
+    """
     return """
 
 # Citation requirements:
@@ -141,7 +172,7 @@ def citation_prompt():
 Document: Elon Musk Breaks Silence on Crypto, Warns Against Dogecoin ...
 URL: https://blockworks.co/news/elon-musk-crypto-dogecoin
 ID: 0
-The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it’s still his favorite crypto...
+The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it's still his favorite crypto...
 
 Document: Elon Musk's Dogecoin tweet sparks social media frenzy
 ID: 1
@@ -149,7 +180,7 @@ Musk said he is 'willing to serve' D.O.G.E. – shorthand for Dogecoin.
 
 Document: Causal effect of Elon Musk tweets on Dogecoin price
 ID: 2
-If you think of Dogecoin — the cryptocurrency based on a meme — you can’t help but also think of Elon Musk...
+If you think of Dogecoin — the cryptocurrency based on a meme — you can't help but also think of Elon Musk...
 
 Document: Elon Musk's Tweet Ignites Dogecoin's Future In Public Services
 ID: 3
@@ -169,6 +200,17 @@ Overall, while Musk enjoys Dogecoin and often promotes it, he also warns against
 
 
 def keyword_extraction(chat_mdl, content, topn=3):
+    """
+    Uses an LLM to extract the most important keywords from a given text.
+    
+    Args:
+        chat_mdl: The LLM model to use
+        content: The text to analyze
+        topn: Number of keywords to extract
+        
+    Returns:
+        String of comma-separated keywords
+    """
     prompt = f"""
 Role: You're a text analyzer.
 Task: extract the most important keywords/phrases of a given piece of text content.
@@ -190,13 +232,24 @@ Requirements:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)  # Remove thinking process
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
 
 
 def question_proposal(chat_mdl, content, topn=3):
+    """
+    Uses an LLM to generate relevant questions about the given content.
+    
+    Args:
+        chat_mdl: The LLM model to use
+        content: The text to analyze
+        topn: Number of questions to generate
+        
+    Returns:
+        String with generated questions, one per line
+    """
     prompt = f"""
 Role: You're a text analyzer.
 Task:  propose {topn} questions about a given piece of text content.
@@ -220,13 +273,21 @@ Requirements:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)  # Remove thinking process
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
 
 
 def full_question(tenant_id, llm_id, messages, language=None):
+    """
+    Generates a complete, standalone question based on conversation context.
+    
+    Particularly useful for handling follow-up questions by converting them into
+    self-contained questions with necessary context.
+    
+    Also handles date references (like "tomorrow" or "yesterday") by converting to actual dates.
+    """
     from api.db.services.llm_service import LLMBundle
 
     if llm_id2llm_type(llm_id) == "image2text":
@@ -300,11 +361,26 @@ Output: What's the weather in Rochester on {tomorrow}?
 ###############
     """
     ans = chat_mdl.chat(prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.2})
-    ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
+    ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)  # Remove thinking process
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
 
 def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
+    """
+    Tags a given text with relevant tags from a predefined set, with relevance scores.
+    
+    Uses examples to learn tagging patterns and applies similar logic to new content.
+    
+    Args:
+        chat_mdl: The LLM model to use
+        content: The text to analyze and tag
+        all_tags: List of possible tags
+        examples: Example texts with their assigned tags and scores
+        topn: Number of tags to assign
+        
+    Returns:
+        JSON object with tags as keys and relevance scores as values
+    """
     prompt = f"""
 Role: You're a text analyzer.
 
@@ -350,10 +426,11 @@ Output:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.5})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)  # Remove thinking process
     if kwd.find("**ERROR**") >= 0:
         raise Exception(kwd)
 
+    # Try to parse the JSON response, with fallback handling for malformed JSON
     try:
         return json_repair.loads(kwd)
     except json_repair.JSONDecodeError:
@@ -367,6 +444,18 @@ Output:
 
 
 def vision_llm_describe_prompt(page=None) -> str:
+    """
+    Creates a prompt for vision LLMs to transcribe content from PDF page images.
+    
+    Instructs the model to convert visual content to Markdown format without adding
+    extra content or explanations.
+    
+    Args:
+        page: Optional page number to include in the output
+        
+    Returns:
+        Prompt string for vision LLM
+    """
     prompt_en = """
 INSTRUCTION:
 Transcribe the content from the provided PDF page image into clean Markdown format.
@@ -396,6 +485,14 @@ FAILURE HANDLING:
 
 
 def vision_llm_figure_describe_prompt() -> str:
+    """
+    Creates a prompt for vision LLMs to analyze and describe figures, charts, and diagrams.
+    
+    Instructs the model to identify the type of visual, extract data points, and analyze trends.
+    
+    Returns:
+        Prompt string for vision LLM to describe figures
+    """
     prompt = """
 You are an expert visual data analyst. Analyze the image and provide a comprehensive description of its content. Focus on identifying the type of visual data representation (e.g., bar chart, pie chart, line graph, table, flowchart), its structure, and any text captions or labels included in the image.
 

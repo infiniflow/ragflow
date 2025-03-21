@@ -1,0 +1,5 @@
+huggingface_hub
+httpx
+requests
+numpy
+yarl 
