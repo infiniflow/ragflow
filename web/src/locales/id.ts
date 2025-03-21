@@ -156,7 +156,7 @@ export default {
       rerankTip: `Jika kosong. Ini menggunakan embedding dari kueri dan potongan untuk menghitung kesamaan kosinus vektor. Jika tidak, ini menggunakan skor rerank sebagai pengganti kesamaan kosinus vektor.`,
       topK: 'Top-K',
       topKTip: `K potongan akan dimasukkan ke dalam model rerank.`,
-      delimiter: `Pembatas`,
+      delimiter: `Pemisah untuk segmentasi teks`,
       html4excel: 'Excel ke HTML',
       html4excelTip: `Excel akan diparsing menjadi tabel HTML atau tidak. Jika FALSE, setiap baris di Excel akan dibentuk sebagai potongan.`,
     },
@@ -171,14 +171,14 @@ export default {
       languagePlaceholder: 'Silakan masukkan bahasa Anda!',
       permissions: 'Izin',
       embeddingModel: 'Model embedding',
-      chunkTokenNumber: 'Jumlah token potongan',
+      chunkTokenNumber: 'Ukuran potongan yang disarankan',
       chunkTokenNumberMessage: 'Jumlah token potongan diperlukan',
       embeddingModelTip:
         'Model embedding yang digunakan untuk embedding potongan. Tidak dapat diubah setelah basis pengetahuan memiliki potongan. Anda perlu menghapus semua potongan jika ingin mengubahnya.',
       permissionsTip:
         "Jika izinnya 'Tim', semua anggota tim dapat memanipulasi basis pengetahuan.",
       chunkTokenNumberTip:
-        'Ini menentukan jumlah token dari sebuah potongan secara kira-kira.',
+        'Ini menentukan jumlah token dari sebuah potongan secara kira-kira. Tidak ada blok baru yang akan dibuat kecuali jika sebuah pembatas ditemukan, bahkan jika ambang batas ini dilampaui.',
       chunkMethod: 'Metode potongan',
       chunkMethodTip: 'Instruksi ada di sebelah kanan.',
       upload: 'Unggah',
