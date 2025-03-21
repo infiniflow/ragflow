@@ -217,7 +217,7 @@ class EntityResolution(Extractor):
             if editdistance.eval(a, b) <= min(len(a), len(b)) // 2:
                 return True
 
-        if len(set(a) & set(b)) > 0:
+        if len(set(a) & set(b)) > 1:
             return True
 
         return False

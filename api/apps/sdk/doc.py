@@ -36,7 +36,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils.api_utils import construct_json_result, get_parser_config
+from api.utils.api_utils import construct_json_result, get_parser_config, check_duplicate_ids
 from rag.nlp import search
 from rag.prompts import keyword_extraction
 from rag.app.tag import label_question
@@ -592,15 +592,22 @@ def delete(tenant_id, dataset_id):
             doc_list.append(doc.id)
     else:
         doc_list = doc_ids
+
+    unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
+    doc_list = unique_doc_ids
+
     root_folder = FileService.get_root_folder(tenant_id)
     pf_id = root_folder["id"]
     FileService.init_knowledgebase_docs(pf_id, tenant_id)
     errors = ""
+    not_found = []
+    success_count = 0
     for doc_id in doc_list:
         try:
             e, doc = DocumentService.get_by_id(doc_id)
             if not e:
-                return get_error_data_result(message="Document not found!")
+                not_found.append(doc_id)
+                continue
             tenant_id = DocumentService.get_tenant_id(doc_id)
             if not tenant_id:
                 return get_error_data_result(message="Tenant not found!")
@@ -622,11 +629,21 @@ def delete(tenant_id, dataset_id):
             File2DocumentService.delete_by_document_id(doc_id)
 
             STORAGE_IMPL.rm(b, n)
+            success_count += 1
         except Exception as e:
             errors += str(e)
 
+    if not_found:
+        return get_result(message=f"Documents not found: {not_found}", code=settings.RetCode.DATA_ERROR)
+
     if errors:
         return get_result(message=errors, code=settings.RetCode.SERVER_ERROR)
+
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(message=f"Partially deleted {success_count} datasets with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages},)
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
 
     return get_result()
 
@@ -675,18 +692,24 @@ def parse(tenant_id, dataset_id):
     req = request.json
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
-    for id in req["document_ids"]:
+    doc_list = req.get("document_ids")
+    unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
+    doc_list = unique_doc_ids
+
+    not_found = []
+    success_count = 0
+    for id in doc_list:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
+            not_found.append(id)
+            continue
+        if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
-        if doc[0].progress != 0.0:
+        if 0.0 < doc[0].progress < 1.0:
             return get_error_data_result(
-                "Can't stop parsing document with progress at 0 or 100"
+                "Can't parse document that is currently being processed"
             )
-        info = {"run": "1", "progress": 0}
-        info["progress_msg"] = ""
-        info["chunk_num"] = 0
-        info["token_num"] = 0
+        info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
         DocumentService.update_by_id(id, info)
         settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
         TaskService.filter_delete([Task.doc_id == id])
@@ -695,6 +718,15 @@ def parse(tenant_id, dataset_id):
         doc["tenant_id"] = tenant_id
         bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
         queue_tasks(doc, bucket, name, 0)
+        success_count += 1
+    if not_found:
+        return get_result(message=f"Documents not found: {not_found}", code=settings.RetCode.DATA_ERROR)
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(message=f"Partially parsed {success_count} documents with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages},)
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
+
     return get_result()
 
 
@@ -740,9 +772,15 @@ def stop_parsing(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = request.json
+
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
-    for id in req["document_ids"]:
+    doc_list = req.get("document_ids")
+    unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
+    doc_list = unique_doc_ids
+
+    success_count = 0
+    for id in doc_list:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
@@ -753,6 +791,12 @@ def stop_parsing(tenant_id, dataset_id):
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
         settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
+        success_count += 1
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(message=f"Partially stopped {success_count} documents with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages},)
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
     return get_result()
 
 
@@ -1000,7 +1044,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
         )
     doc = doc[0]
     req = request.json
-    if not req.get("content"):
+    if not str(req.get("content", "")).strip():
         return get_error_data_result(message="`content` is required")
     if "important_keywords" in req:
         if not isinstance(req["important_keywords"], list):
@@ -1115,12 +1159,15 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     req = request.json
     condition = {"doc_id": document_id}
     if "chunk_ids" in req:
-        condition["id"] = req["chunk_ids"]
+        unique_chunk_ids, duplicate_messages = check_duplicate_ids(req["chunk_ids"], "chunk")
+        condition["id"] = unique_chunk_ids
     chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
     if chunk_number != 0:
         DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
-    if "chunk_ids" in req and chunk_number != len(req["chunk_ids"]):
-        return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(req['chunk_ids'])}")
+    if "chunk_ids" in req and chunk_number != len(unique_chunk_ids):
+        return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}")
+    if duplicate_messages:
+        return get_result(message=f"Partially deleted {chunk_number} chunks with {len(duplicate_messages)} errors", data={"success_count": chunk_number, "errors": duplicate_messages},)
     return get_result(message=f"deleted {chunk_number} chunks")
 
 

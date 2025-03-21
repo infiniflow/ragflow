@@ -57,7 +57,7 @@ from rag.app import laws, paper, presentation, manual, qa, table, book, resume, 
 from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from rag.settings import DOC_MAXIMUM_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
-from rag.utils import num_tokens_from_string
+from rag.utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
@@ -359,6 +359,8 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], all_tags, {"topn": topn_tags})
             if not cached:
                 picked_examples = random.choices(examples, k=2) if len(examples)>2 else examples
+                if not picked_examples:
+                    picked_examples.append({"content": "This is an example", TAG_FLD: {'example': 1}})
                 async with chat_limiter:
                     cached = await trio.to_thread.run_sync(lambda: content_tagging(chat_mdl, d["content_with_weight"], all_tags, picked_examples, topn=topn_tags))
                 if cached:
@@ -402,7 +404,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
     cnts_ = np.array([])
     for i in range(0, len(cnts), batch_size):
-        vts, c = await trio.to_thread.run_sync(lambda: mdl.encode(cnts[i: i + batch_size]))
+        vts, c = await trio.to_thread.run_sync(lambda: mdl.encode([truncate(c, mdl.max_length-10) for c in cnts[i: i + batch_size]]))
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -590,6 +592,7 @@ async def handle_task():
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
+        await trio.sleep(5)
         return
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")

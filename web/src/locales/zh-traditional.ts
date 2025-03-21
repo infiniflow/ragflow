@@ -161,11 +161,11 @@ export default {
       topKTip: `K塊將被送入Rerank型號。`,
       delimiter: `文字分段標識符`,
       delimiterTip:
-        '支援多字元作為分隔符，多字元分隔符用`包裹。如配置成這樣：\n`##`;那麼就會用換行，兩個#以及分號先對文字進行分割，然後按照「 token number」大小進行拼裝。',
+        '支持多字符作為分隔符，多字符分隔符用 包裹。如配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建议文本块大小」設定的大小進行拼裝。在设置文本分段標識符之前，請確保您已理解上述文本分段切片機制。',
       html4excel: '表格轉HTML',
       html4excelTip: `啟用後，電子表格將解析為 HTML 表格，一張表格最多 256 行。否則，會按行解析成鍵值對。`,
       autoKeywords: '自動關鍵字',
-      autoKeywordsTip: `在查詢此類關鍵字時，為每個區塊提取 N 個關鍵字以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。 `,
+      autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。`,
       autoQuestions: '自動問題',
       autoQuestionsTip: `在查詢此類問題時，為每個區塊提取 N 個問題以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。如果發生錯誤，此功能不會破壞整個分塊過程，除了將空結果新增至原始區塊。 `,
       redo: '是否清空已有 {{chunkNum}}個 chunk？',
@@ -206,12 +206,12 @@ export default {
       languagePlaceholder: '請輸入語言',
       permissions: '權限',
       embeddingModel: '嵌入模型',
-      chunkTokenNumber: '文字的區塊標記編號',
+      chunkTokenNumber: '建議文本塊大小',
       chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
         '用於嵌入塊的嵌入模型。一旦知識庫有了塊，它就無法更改。如果你想改變它，你需要刪除所有的塊。',
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
-      chunkTokenNumberTip: '它大致確定了一個塊的Token數量。',
+      chunkTokenNumberTip: '建議的生成文本塊的 token 數閾值。如果切分得到的小文本段 token 數達不到這一閾值，系統就會不斷與之後的文本段合併，直至再合併下一個文本段會超過這一閾值為止，此時產生一個最終文本塊。如果系統在切分文本段時始終沒有遇到文本分段標識符，即便文本段 token 數已經超過這一閾值，系統也不會生成新文本塊。',
       chunkMethod: '切片方法',
       chunkMethodTip: '說明位於右側。',
       upload: '上傳',
@@ -240,7 +240,7 @@ export default {
         我們假設手冊具有分層部分結構。我們使用最低的部分標題作為對文檔進行切片的樞軸。
         因此，同一部分中的圖和表不會被分割，並且塊大小可能會很大。
         </p>`,
-      naive: `<p>支持的文件格式為<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML、HTML</b>。</p>
+      naive: `<p>支持的文件格式為<b>DOCX、XLSX、XLS (Excel97~2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
         <p>此方法將簡單的方法應用於塊文件：</p>
         <p>
         <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
@@ -515,7 +515,7 @@ export default {
       keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。`,
       reasoning: '推理',
       reasoningTip:
-        '它將觸發類似Deepseek-R1/OpenAI o1的推理過程。將代理搜尋過程整合到推理工作流程中，使得模型本身能夠在遇到不確定資訊時動態地檢索外部知識。',
+        '是否像 DeepSeek-R1 / OpenAI o1 一樣通過推理產生答案。啟用後，允許模型在遇到未知情況時將代理搜索過程整合到推理工作流中，自行動態檢索外部知識，並通過推理生成最終答案。',
       tavilyApiKeyTip:
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
       tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
@@ -722,7 +722,8 @@ export default {
       s3: 'S3 上傳',
       preview: '預覽',
       fileError: '文件錯誤',
-      uploadLimit: '本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。',
+      uploadLimit:
+        '本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。',
       destinationFolder: '目標資料夾',
     },
     flow: {

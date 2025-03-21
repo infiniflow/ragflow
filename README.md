@@ -36,7 +36,7 @@
   <a href="https://ragflow.io/docs/dev/">Document</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/4XxujFgUN7">Discord</a> |
+  <a href="https://discord.gg/zd4qPW6t">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
@@ -353,9 +353,12 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ## 📚 Documentation
 
 - [Quickstart](https://ragflow.io/docs/dev/)
-- [User guide](https://ragflow.io/docs/dev/category/guides)
+- [Configuration](https://ragflow.io/docs/dev/configurations)
+- [Release notes](https://ragflow.io/docs/dev/release_notes)
+- [User guides](https://ragflow.io/docs/dev/category/guides)
+- [Developer guides](https://ragflow.io/docs/dev/category/developers)
 - [References](https://ragflow.io/docs/dev/category/references)
-- [FAQ](https://ragflow.io/docs/dev/faq)
+- [FAQs](https://ragflow.io/docs/dev/faq)
 
 ## 📜 Roadmap
 
@@ -363,7 +366,7 @@ See the [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214
 
 ## 🏄 Community
 
-- [Discord](https://discord.gg/4XxujFgUN7)
+- [Discord](https://discord.gg/zd4qPW6t)
 - [Twitter](https://twitter.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 

@@ -162,15 +162,15 @@ export default {
         'Se deixado vazio, o RAGFlow usará uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada; se um modelo de reranking for selecionado, uma pontuação de reranking ponderada substituirá a similaridade de cosseno vetorial ponderada. Esteja ciente de que usar um modelo de reranking aumentará significativamente o tempo de resposta do sistema.',
       topK: 'Top-K',
       topKTip: 'K fragmentos serão alimentados em modelos de reranking.',
-      delimiter: 'Delimitador',
+      delimiter: 'Delimitadores para segmentação de texto',
       delimiterTip:
-        'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula.',
+        'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \\n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula. Defina os delimitadores apenas após entender o mecanismo de segmentação e particionamento de texto.',
       html4excel: 'Excel para HTML',
       html4excelTip:
         'Quando ativado, a planilha será analisada em tabelas HTML, com no máximo 256 linhas por tabela. Caso contrário, será analisada em pares chave-valor por linha.',
       autoKeywords: 'Palavras-chave automáticas',
       autoKeywordsTip:
-        'Extraia automaticamente N palavras-chave para cada fragmento para aumentar sua classificação para consultas que contenham essas palavras-chave. Você pode verificar ou atualizar as palavras-chave adicionadas para um fragmento na lista de fragmentos. Esteja ciente de que tokens extras serão consumidos pelo LLM especificado nas "Configurações do modelo do sistema".',
+        'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos.',
       autoQuestions: 'Perguntas automáticas',
       autoQuestionsTip: `Extraia automaticamente N perguntas para cada fragmento para aumentar sua relevância em consultas que contenham essas perguntas. Você pode verificar ou atualizar as perguntas adicionadas a um fragmento na lista de fragmentos. Essa funcionalidade não interromperá o processo de fragmentação em caso de erro, exceto pelo fato de que pode adicionar um resultado vazio ao fragmento original. Esteja ciente de que tokens extras serão consumidos pelo LLM especificado nas 'Configurações do modelo do sistema'.`,
       redo: 'Deseja limpar os {{chunkNum}} fragmentos existentes?',
@@ -208,14 +208,14 @@ export default {
       languagePlaceholder: 'Por favor, insira seu idioma!',
       permissions: 'Permissões',
       embeddingModel: 'Modelo de incorporação',
-      chunkTokenNumber: 'Número de tokens por fragmento',
+      chunkTokenNumber: 'Tamanho de bloco recomendado',
       chunkTokenNumberMessage: 'O número de tokens por fragmento é obrigatório',
       embeddingModelTip:
         'O modelo que converte fragmentos em embeddings. Ele não pode ser alterado depois que a base de conhecimento tiver fragmentos. Para mudar para um modelo diferente, é necessário excluir todos os fragmentos existentes.',
       permissionsTip:
         "Se definido como 'Equipe', todos os membros da equipe poderão gerenciar a base de conhecimento.",
       chunkTokenNumberTip:
-        'Define o limite de tokens para um fragmento. Um parágrafo com menos tokens que esse limite será combinado com o próximo parágrafo até que a contagem de tokens ultrapasse o limite, momento em que um fragmento será criado.',
+        'Define o limite de tokens para um fragmento. Um parágrafo com menos tokens que esse limite será combinado com o próximo parágrafo até que a contagem de tokens ultrapasse o limite, momento em que um fragmento será criado. Nenhum novo bloco será criado a menos que um delimitador seja encontrado, mesmo que esse limite seja excedido.',
       chunkMethod: 'Método de fragmentação',
       chunkMethodTip: 'Veja as dicas à direita.',
       upload: 'Enviar',
@@ -243,7 +243,7 @@ export default {
       Os fragmentos terão granularidade compatível com 'ARTIGO', garantindo que todo o texto de nível superior seja incluído no fragmento.</p>`,
       manual: `<p>Apenas <b>PDF</b> é suportado.</p><p>
       Assumimos que o manual tem uma estrutura hierárquica de seções, usando os títulos das seções inferiores como unidade básica para fragmentação. Assim, figuras e tabelas na mesma seção não serão separadas, o que pode resultar em fragmentos maiores.</p>`,
-      naive: `<p>Os formatos de arquivo suportados são <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
+      naive: `<p>Os formatos de arquivo suportados são <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
       <p>Este método fragmenta arquivos de maneira 'simples':</p>
       <p>
       <li>Usa um modelo de detecção visual para dividir os textos em segmentos menores.</li>

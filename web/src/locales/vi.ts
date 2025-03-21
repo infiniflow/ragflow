@@ -162,14 +162,14 @@ export default {
       rerankTip: `Nếu để trống, RAGFlow sẽ sử dụng kết hợp giữa độ tương đồng từ khóa được trọng số và độ tương đồng vectơ cosin được trọng số; nếu chọn mô hình xếp hạng lại, điểm xếp hạng được tính lại sẽ thay thế độ tương đồng vectơ cosin được trọng số.`,
       topK: 'Top-K',
       topKTip: `K khối sẽ được đưa vào các mô hình xếp hạng lại.`,
-      delimiter: 'Giới hạn',
+      delimiter: 'Dấu phân cách cho phân đoạn văn bản',
       html4excel: 'Excel sang HTML',
       html4excelTip: `Excel sẽ được phân tích cú pháp thành bảng HTML hay không. Nếu là FALSE, mỗi hàng trong Excel sẽ được tạo thành một khối.`,
       autoKeywords: 'Từ khóa tự động',
-      autoKeywordsTip: `Trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các từ khóa đó. Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
+      autoKeywordsTip: `Tự động trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng trong các truy vấn chứa các từ khóa đó. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi mô hình trò chuyện được chỉ định trong "Cài đặt mô hình hệ thống". Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối.`,
       autoQuestions: 'Câu hỏi tự động',
       autoQuestionsTip: `Trích xuất N câu hỏi cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các câu hỏi đó. Bạn có thể kiểm tra hoặc cập nhật các câu hỏi đã thêm cho một khối từ danh sách khối. Tính năng này sẽ không làm gián đoạn quá trình phân khối nếu xảy ra lỗi, ngoại trừ việc nó có thể thêm kết quả trống vào khối gốc. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
-      delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token".`,
+      delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token". Thiết lập các dấu phân cách chỉ sau khi hiểu cơ chế phân đoạn và phân khối văn bản.`,
       redo: `Bạn có muốn xóa các đoạn {{chunkNum}} hiện có không?`,
       knowledgeGraph: 'Đồ thị tri thức',
       setMetaData: 'Đặt dữ liệu Meta',
@@ -190,14 +190,14 @@ export default {
       languagePlaceholder: 'Vui lòng nhập ngôn ngữ của bạn!',
       permissions: 'Quyền hạn',
       embeddingModel: 'Mô hình nhúng',
-      chunkTokenNumber: 'Số token khối',
+      chunkTokenNumber: 'Kích thước khối được khuyến nghị',
       chunkTokenNumberMessage: 'Số token khối là bắt buộc',
       embeddingModelTip:
         'Mô hình chuyển đổi các khối thành các nhúng. Nó không thể được thay đổi sau khi cơ sở kiến thức có các khối. Để chuyển sang mô hình nhúng khác, bạn phải xóa tất cả các khối trong cơ sở kiến thức.',
       permissionsTip:
         'Nếu được đặt thành "Đội", tất cả các thành viên trong nhóm sẽ có thể quản lý cơ sở kiến thức.',
       chunkTokenNumberTip:
-        'Nó đặt ngưỡng token cho một khối. Một đoạn văn có ít token hơn ngưỡng này sẽ được kết hợp với đoạn văn tiếp theo cho đến khi số lượng token vượt quá ngưỡng, tại thời điểm đó, một khối được tạo.',
+        'Nó đặt ngưỡng token cho một khối. Một đoạn văn có ít token hơn ngưỡng này sẽ được kết hợp với đoạn văn tiếp theo cho đến khi số lượng token vượt quá ngưỡng, tại thời điểm đó, một khối được tạo. Không có khối mới nào được tạo ra trừ khi một dấu phân cách được gặp, ngay cả khi ngưỡng này bị vượt quá.',
       chunkMethod: 'Phương thức khối',
       chunkMethodTip: 'Mẹo ở bên phải.',
       upload: 'Tải lên',
@@ -229,7 +229,7 @@ export default {
       <p>
       <li>Sử dụng mô hình nhận dạng thị giác để chia các văn bản thành các phân đoạn nhỏ hơn.</li>
       <li>Sau đó, kết hợp các phân đoạn liền kề cho đến khi số lượng token vượt quá ngưỡng được chỉ định bởi 'Số token khối', tại thời điểm đó, một khối được tạo.</li></p>
-      <p>Các định dạng tệp được hỗ trợ là <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>`,
+      <p>Các định dạng tệp được hỗ trợ là <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>`,
       paper: `<p>Chỉ hỗ trợ tệp <b>PDF</b>.</p><p>
       Bài báo sẽ được chia theo các phần, chẳng hạn như <i>tóm tắt, 1.1, 1.2</i>. </p><p>
       Cách tiếp cận này cho phép LLM tóm tắt bài báo hiệu quả hơn và cung cấp các phản hồi toàn diện, dễ hiểu hơn. 
@@ -494,7 +494,7 @@ export default {
       betaError: `"Beta API Token" không được để trống!`,
       useKnowledgeGraph: 'Sử dụng đồ thị tri thức',
       useKnowledgeGraphTip:
-        'Nó sẽ truy xuất các mô tả về các thực thể, quan hệ và cộng đồng liên quan, điều này sẽ tăng cường khả năng suy luận các câu hỏi phức tạp và nhiều bước.',
+        'Có nên sử dụng đồ thị tri thức trong cơ sở tri thức được chỉ định trong quá trình thu hồi để trả lời câu hỏi đa bước hay không. Khi được kích hoạt, điều này sẽ liên quan đến các tìm kiếm lặp lại trên các đoạn thực thể, mối quan hệ và báo cáo cộng đồng, làm tăng đáng kể thời gian thu hồi.',
       keyword: 'Phân tích từ khóa',
       keywordTip:
         'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan.',

@@ -108,7 +108,7 @@ export default {
       processDuration: 'Duration',
       progressMsg: 'Progress',
       testingDescription:
-        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the **Retrieval** agent component settings.',
+        'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results.',
@@ -163,11 +163,11 @@ export default {
       topKTip: `K chunks will be sent into the rerank model.`,
       delimiter: `Delimiter for text`,
       delimiterTip:
-        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \n`##`;, then your texts will be separated at line breaks, double hash symbols (##), or semicolons.',
+        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
       html4excel: 'Excel to HTML',
       html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables, and at most 256 rows for one table. Otherwise, it will be parsed into key-value pairs by row.`,
       autoKeywords: 'Auto-keyword',
-      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. You can check or update the added keywords for a chunk from the chunk list. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
+      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the chat model specified in 'System model settings'. You can check or update the added keywords for a chunk from the chunk list. `,
       autoQuestions: 'Auto-question',
       autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'.`,
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
@@ -209,14 +209,14 @@ export default {
       languagePlaceholder: 'Please input your language!',
       permissions: 'Permissions',
       embeddingModel: 'Embedding model',
-      chunkTokenNumber: 'Chunk token number for text',
+      chunkTokenNumber: 'Recommended chunk size',
       chunkTokenNumberMessage: 'Chunk token number for text is required',
       embeddingModelTip:
         'The model that converts chunks into embeddings. It cannot be changed once the knowledge base has chunks. To switch to a different embedding model, you must delete all existing chunks in the knowledge base.',
       permissionsTip:
-        "If set to 'Team', all team members will be able to manage the knowledge base.",
+        "If it is set to 'Team', all your team members will be able to manage the knowledge base.",
       chunkTokenNumberTip:
-        'It sets the token threshold for a chunk. A paragraph with fewer tokens than this threshold will be combined with the following paragraph until the token count exceeds the threshold, at which point a chunk is created.',
+        'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
       chunkMethod: 'Chunk method',
       chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
@@ -246,7 +246,7 @@ export default {
       manual: `<p>Only <b>PDF</b> is supported.</p><p>
       We assume that the manual has a hierarchical section structure, using the lowest section titles as basic unit for chunking documents. Therefore, figures and tables in the same section will not be separated, which may result in larger chunk sizes.
       </p>`,
-      naive: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
+      naive: `<p>Supported file formats are <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
       <p>This method chunks files using a 'naive' method: </p>
       <p>
       <li>Use vision detection model to split the texts into smaller segments.</li>
@@ -524,7 +524,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       descriptionPlaceholder: 'e.g. A chat assistant for resume.',
       useKnowledgeGraph: 'Use knowledge graph',
       useKnowledgeGraphTip:
-        'It will retrieve descriptions of relevant entities,relations and community reports, which will enhance inference of multi-hop and complex question.',
+        'Whether to use knowledge graph(s) in the specified knowledge base(s) during retrieval for multi-hop question answering. When enabled, this would involve iterative searches across entity, relationship, and community report chunks, greatly increasing retrieval time.',
       keyword: 'Keyword analysis',
       keywordTip: `Apply LLM to analyze user's questions, extract keywords which will be emphasize during the relevance computation.`,
       languageTip:
@@ -705,6 +705,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       logout: 'logout',
       logged: 'logged!',
       pleaseSelectChunk: 'Please select chunk!',
+      registerDisabled: 'User registration is disabled',
       modified: 'Modified',
       created: 'Created',
       deleted: 'Deleted',
@@ -1192,16 +1193,46 @@ This delimiter is used to split the input text into several text pieces echo of 
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
+      variableExtractDescription:
+        'Extract user information into global variable throughout the conversation',
+      variableExtract: 'Variables',
+      variables: 'Variables',
+      variablesTip: `Set the clear json key variable with a value of empty. e.g.
+      {
+        "UserCode":"",
+        "NumberPhone":""
+      }`,
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
-    },
-    footer: {
-      profile: 'All rights reserved @ React',
-    },
-    layout: {
-      file: 'file',
-      knowledge: 'knowledge',
-      chat: 'chat',
+      historyversion: 'History version',
+      filename: 'File name',
+      version: {
+        created: 'Created',
+        details: 'Version details',
+        dsl: 'DSL',
+        download: 'Download',
+        version: 'Version',
+        select: 'No version selected',
+      },
+      setting: 'Setting',
+      settings: {
+        upload: 'Upload',
+        photo: 'Photo',
+        permissions: 'Permission',
+        permissionsTip: 'You can set the permissions of the team members here.',
+        me: 'me',
+        team: 'Team',
+      },
+      noMoreData: 'No more data',
+      searchAgentPlaceholder: 'Search agent',
+      footer: {
+        profile: 'All rights reserved @ React',
+      },
+      layout: {
+        file: 'file',
+        knowledge: 'knowledge',
+        chat: 'chat',
+      },
     },
   },
 };
