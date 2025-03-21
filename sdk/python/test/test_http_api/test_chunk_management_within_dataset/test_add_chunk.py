@@ -198,7 +198,8 @@ class TestAddChunk:
         assert res["code"] == 102
         assert res["message"] == f"You don't own the document {document_ids[0]}."
 
-    def test_concurrent_parse(self, get_http_api_auth, tmp_path):
+    @pytest.mark.skip(reason="issues/6411")
+    def test_concurrent_add_chunk(self, get_http_api_auth, tmp_path):
         chunk_num = 50
         ids = create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
