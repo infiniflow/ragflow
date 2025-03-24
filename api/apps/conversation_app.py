@@ -17,6 +17,7 @@ import json
 import re
 import traceback
 from copy import deepcopy
+import trio
 from api.db.db_models import APIToken
 
 from api.db.services.conversation_service import ConversationService, structure_answer
@@ -77,7 +78,7 @@ def set_conversation():
 def get():
     conv_id = request.args["conversation_id"]
     try:
-        
+
         e, conv = ConversationService.get_by_id(conv_id)
         if not e:
             return get_data_error_result(message="Conversation not found!")
@@ -117,7 +118,7 @@ def get():
 
 @manager.route('/getsse/<dialog_id>', methods=['GET'])  # type: ignore # noqa: F821
 def getsse(dialog_id):
-    
+
     token = request.headers.get('Authorization').split()
     if len(token) != 2:
         return get_data_error_result(message='Authorization is not valid!"')
@@ -323,7 +324,7 @@ def thumbup():
     e, conv = ConversationService.get_by_id(req["conversation_id"])
     if not e:
         return get_data_error_result(message="Conversation not found!")
-    up_down = req.get("set")
+    up_down = req.get("thumbup")
     feedback = req.get("feedback", "")
     conv = conv.to_dict()
     for i, msg in enumerate(conv["message"]):
@@ -386,7 +387,8 @@ def mindmap():
                                            rank_feature=label_question(question, [kb])
                                            )
     mindmap = MindMapExtractor(chat_mdl)
-    mind_map = mindmap([c["content_with_weight"] for c in ranks["chunks"]]).output
+    mind_map = trio.run(mindmap, [c["content_with_weight"] for c in ranks["chunks"]])
+    mind_map = mind_map.output
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)

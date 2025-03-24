@@ -106,7 +106,9 @@ from .cv_model import (
     TogetherAICV,
     YiCV,
     HunyuanCV,
+    AnthropicCV
 )
+
 from .rerank_model import (
     LocalAIRerank,
     DefaultRerank,
@@ -123,7 +125,9 @@ from .rerank_model import (
     VoyageRerank,
     QWenRerank,
     GPUStackRerank,
+    HuggingfaceRerank,
 )
+
 from .sequence2txt_model import (
     GPTSeq2txt,
     QWenSeq2txt,
@@ -132,6 +136,7 @@ from .sequence2txt_model import (
     TencentCloudSeq2txt,
     GPUStackSeq2txt,
 )
+
 from .tts_model import (
     FishAudioTTS,
     QwenTTS,
@@ -139,6 +144,7 @@ from .tts_model import (
     SparkTTS,
     XinferenceTTS,
     GPUStackTTS,
+    SILICONFLOWTTS
 )
 
 EmbeddingModel = {
@@ -193,6 +199,7 @@ CvModel = {
     "TogetherAI": TogetherAICV,
     "01.AI": YiCV,
     "Tencent Hunyuan": HunyuanCV,
+    "Anthropic": AnthropicCV,
 }
 
 ChatModel = {
@@ -255,6 +262,7 @@ RerankModel = {
     "Voyage AI": VoyageRerank,
     "Tongyi-Qianwen": QWenRerank,
     "GPUStack": GPUStackRerank,
+    "HuggingFace": HuggingfaceRerank,
 }
 
 Seq2txtModel = {
@@ -273,4 +281,5 @@ TTSModel = {
     "XunFei Spark": SparkTTS,
     "Xinference": XinferenceTTS,
     "GPUStack": GPUStackTTS,
+    "SILICONFLOW": SILICONFLOWTTS,
 }

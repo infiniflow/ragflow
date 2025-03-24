@@ -71,11 +71,13 @@ def upload():
     if not e:
         raise LookupError("Can't find this knowledgebase!")
 
-    err, _ = FileService.upload_document(kb, file_objs, current_user.id)
+    err, files = FileService.upload_document(kb, file_objs, current_user.id)
+    files = [f[0] for f in files] # remove the blob
+    
     if err:
         return get_json_result(
-            data=False, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
-    return get_json_result(data=True)
+            data=files, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
+    return get_json_result(data=files)
 
 
 @manager.route('/web_crawl', methods=['POST'])  # noqa: F821
@@ -345,7 +347,7 @@ def rm():
 @manager.route('/run', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "run")
-def run():
+def run(): 
     req = request.json
     for doc_id in req["doc_ids"]:
         if not DocumentService.accessible(doc_id, current_user.id):
@@ -378,7 +380,7 @@ def run():
                 doc = doc.to_dict()
                 doc["tenant_id"] = tenant_id
                 bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
-                queue_tasks(doc, bucket, name)
+                queue_tasks(doc, bucket, name, 0)
 
         return get_json_result(data=True)
     except Exception as e:

@@ -185,7 +185,7 @@ def chat_completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
-@manager.route('chats_openai/<chat_id>/chat/completions', methods=['POST'])  # noqa: F821
+@manager.route('/chats_openai/<chat_id>/chat/completions', methods=['POST'])  # noqa: F821
 @validate_request("model", "messages")  # noqa: F821
 @token_required
 def chat_completion_openai_like(tenant_id, chat_id):
@@ -259,6 +259,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
         # The choices field on the last chunk will always be an empty array [].
         def streamed_response_generator(chat_id, dia, msg):
             token_used = 0
+            answer_cache = ""
             response = {
                 "id": f"chatcmpl-{chat_id}",
                 "choices": [
@@ -284,7 +285,8 @@ def chat_completion_openai_like(tenant_id, chat_id):
             try:
                 for ans in chat(dia, msg, True):
                     answer = ans["answer"]
-                    incremental = answer[token_used:]
+                    incremental = answer.replace(answer_cache, "", 1)
+                    answer_cache = answer.rstrip("</think>")
                     token_used += len(incremental)
                     response["choices"][0]["delta"]["content"] = incremental
                     yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
@@ -365,6 +367,18 @@ def agent_completions(tenant_id, agent_id):
         conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
         if not conv:
             return get_error_data_result(f"You don't own the session {req['session_id']}")
+        # If an update to UserCanvas is detected, update the API4Conversation.dsl
+        sync_dsl = req.get("sync_dsl", False)
+        if sync_dsl is True and cvs[0].update_time > conv[0].update_time:
+            current_dsl = conv[0].dsl
+            new_dsl = json.loads(dsl)
+            state_fields = ["history", "messages", "path", "reference"]
+            states = {field: current_dsl.get(field, []) for field in state_fields}
+            current_dsl.update(new_dsl)
+            current_dsl.update(states)
+            API4ConversationService.update_by_id(req["session_id"], {
+                "dsl": current_dsl
+            })
     else:
         req["question"] = ""
     if req.get("stream", True):
@@ -448,7 +462,10 @@ def list_agent_session(tenant_id, agent_id):
         desc = False
     else:
         desc = True
-    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id)
+    # dsl defaults to True in all cases except for False and false
+    include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
+    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id,
+                                             user_id, include_dsl)
     if not convs:
         return get_result(data=[])
     for conv in convs:
@@ -510,6 +527,38 @@ def delete(tenant_id, chat_id):
         ConversationService.delete_by_id(id)
     return get_result()
 
+
+@manager.route('/agents/<agent_id>/sessions', methods=["DELETE"])  # noqa: F821
+@token_required
+def delete_agent_session(tenant_id, agent_id):
+    req = request.json
+    cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
+    if not cvs:
+        return get_error_data_result(f"You don't own the agent {agent_id}")
+    
+    convs = API4ConversationService.query(dialog_id=agent_id)
+    if not convs:
+        return get_error_data_result(f"Agent {agent_id} has no sessions")
+
+    if not req:
+        ids = None
+    else:
+        ids = req.get("ids")
+
+    if not ids:
+        conv_list = []
+        for conv in convs:
+            conv_list.append(conv.id)
+    else:
+        conv_list = ids
+    
+    for session_id in conv_list:
+        conv = API4ConversationService.query(id=session_id, dialog_id=agent_id)
+        if not conv:
+            return get_error_data_result(f"The agent doesn't own the session ${session_id}")
+        API4ConversationService.delete_by_id(session_id)
+    return get_result()
+    
 
 @manager.route('/sessions/ask', methods=['POST'])  # noqa: F821
 @token_required

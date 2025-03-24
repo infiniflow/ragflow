@@ -1,86 +1,155 @@
-import { useTranslate } from '@/hooks/common-hooks';
-import { Form, Input, Select } from 'antd';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { RAGFlowSelect } from '@/components/ui/select';
 import { useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   QWeatherLangOptions,
   QWeatherTimePeriodOptions,
   QWeatherTypeOptions,
   QWeatherUserTypeOptions,
 } from '../../constant';
-import { IOperatorForm } from '../../interface';
-import DynamicInputVariable from '../components/dynamic-input-variable';
+import { INextOperatorForm } from '../../interface';
+import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
-const QWeatherForm = ({ onValuesChange, form, node }: IOperatorForm) => {
-  const { t } = useTranslate('flow');
+enum FormFieldName {
+  Type = 'type',
+  UserType = 'user_type',
+}
+
+const QWeatherForm = ({ form, node }: INextOperatorForm) => {
+  const { t } = useTranslation();
+  const typeValue = form.watch(FormFieldName.Type);
+
   const qWeatherLangOptions = useMemo(() => {
     return QWeatherLangOptions.map((x) => ({
       value: x,
-      label: t(`qWeatherLangOptions.${x}`),
+      label: t(`flow.qWeatherLangOptions.${x}`),
     }));
   }, [t]);
 
   const qWeatherTypeOptions = useMemo(() => {
     return QWeatherTypeOptions.map((x) => ({
       value: x,
-      label: t(`qWeatherTypeOptions.${x}`),
+      label: t(`flow.qWeatherTypeOptions.${x}`),
     }));
   }, [t]);
 
   const qWeatherUserTypeOptions = useMemo(() => {
     return QWeatherUserTypeOptions.map((x) => ({
       value: x,
-      label: t(`qWeatherUserTypeOptions.${x}`),
+      label: t(`flow.qWeatherUserTypeOptions.${x}`),
     }));
   }, [t]);
 
-  const getQWeatherTimePeriodOptions = useCallback(
-    (userType: string) => {
-      let options = QWeatherTimePeriodOptions;
-      if (userType === 'free') {
-        options = options.slice(0, 3);
-      }
-      return options.map((x) => ({
-        value: x,
-        label: t(`qWeatherTimePeriodOptions.${x}`),
-      }));
-    },
-    [t],
-  );
+  const getQWeatherTimePeriodOptions = useCallback(() => {
+    let options = QWeatherTimePeriodOptions;
+    const userType = form.getValues(FormFieldName.UserType);
+    if (userType === 'free') {
+      options = options.slice(0, 3);
+    }
+    return options.map((x) => ({
+      value: x,
+      label: t(`flow.qWeatherTimePeriodOptions.${x}`),
+    }));
+  }, [form, t]);
 
   return (
-    <Form
-      name="basic"
-      autoComplete="off"
-      form={form}
-      onValuesChange={onValuesChange}
-      layout={'vertical'}
-    >
-      <DynamicInputVariable node={node}></DynamicInputVariable>
-      <Form.Item label={t('webApiKey')} name={'web_apikey'}>
-        <Input></Input>
-      </Form.Item>
-      <Form.Item label={t('lang')} name={'lang'}>
-        <Select options={qWeatherLangOptions}></Select>
-      </Form.Item>
-      <Form.Item label={t('type')} name={'type'}>
-        <Select options={qWeatherTypeOptions}></Select>
-      </Form.Item>
-      <Form.Item label={t('userType')} name={'user_type'}>
-        <Select options={qWeatherUserTypeOptions}></Select>
-      </Form.Item>
-      <Form.Item noStyle dependencies={['type', 'user_type']}>
-        {({ getFieldValue }) =>
-          getFieldValue('type') === 'weather' && (
-            <Form.Item label={t('timePeriod')} name={'time_period'}>
-              <Select
-                options={getQWeatherTimePeriodOptions(
-                  getFieldValue('user_type'),
-                )}
-              ></Select>
-            </Form.Item>
-          )
-        }
-      </Form.Item>
+    <Form {...form}>
+      <form
+        className="space-y-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
+      >
+        <DynamicInputVariable node={node}></DynamicInputVariable>
+        <FormField
+          control={form.control}
+          name="web_apikey"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('flow.webApiKey')}</FormLabel>
+              <FormControl>
+                <Input {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="lang"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('flow.lang')}</FormLabel>
+              <FormControl>
+                <RAGFlowSelect
+                  {...field}
+                  options={qWeatherLangOptions}
+                ></RAGFlowSelect>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name={FormFieldName.Type}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('flow.type')}</FormLabel>
+              <FormControl>
+                <RAGFlowSelect
+                  {...field}
+                  options={qWeatherTypeOptions}
+                ></RAGFlowSelect>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name={FormFieldName.UserType}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('flow.userType')}</FormLabel>
+              <FormControl>
+                <RAGFlowSelect
+                  {...field}
+                  options={qWeatherUserTypeOptions}
+                ></RAGFlowSelect>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        {typeValue === 'weather' && (
+          <FormField
+            control={form.control}
+            name={'time_period'}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('flow.timePeriod')}</FormLabel>
+                <FormControl>
+                  <RAGFlowSelect
+                    {...field}
+                    options={getQWeatherTimePeriodOptions()}
+                  ></RAGFlowSelect>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+      </form>
     </Form>
   );
 };

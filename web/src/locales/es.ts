@@ -99,7 +99,7 @@ export default {
       processDuration: 'Duración del proceso',
       progressMsg: 'Mensaje de progreso',
       testingDescription:
-        '¡Último paso! Después del éxito, deja el resto al AI de RAGFlow.',
+        '¡Último paso! Después del éxito, deja el resto al AI de RAGFlow. Por favor, tenga en cuenta que los cambios realizados aquí no se guardan automáticamente. Si ajusta la configuración predeterminada aquí, como el peso de similitud de palabras clave, asegúrese de actualizar la configuración relacionada de manera sincronizada en la configuración del asistente de chat o en la configuración del operador de recuperación.',
       similarityThreshold: 'Umbral de similitud',
       similarityThresholdTip:
         'Usamos una puntuación de similitud híbrida para evaluar la distancia entre dos líneas de texto. Se pondera la similitud de palabras clave y la similitud coseno de vectores. Si la similitud entre la consulta y el fragmento es menor que este umbral, el fragmento será filtrado.',
@@ -152,7 +152,7 @@ export default {
       rerankTip: `Si está vacío, se utilizan los embeddings de la consulta y los fragmentos para calcular la similitud coseno del vector. De lo contrario, se usa la puntuación de reordenamiento en lugar de la similitud coseno del vector.`,
       topK: 'Top-K',
       topKTip: `K fragmentos serán alimentados a los modelos de reordenamiento.`,
-      delimiter: `Delimitador`,
+      delimiter: `Delimitadores para segmentación de texto`,
       html4excel: 'Excel a HTML',
       html4excelTip: `Excel se analizará en una tabla HTML o no. Si es FALSO, cada fila en Excel se formará como un fragmento.`,
     },
@@ -185,7 +185,7 @@ export default {
       knowledgeBases: 'Bases de conocimiento',
       knowledgeBasesMessage: 'Por favor selecciona',
       knowledgeBasesTip: 'Selecciona las bases de conocimiento asociadas.',
-      system: 'Sistema',
+      system: 'prompt del sistema',
       systemInitialValue: `Eres un asistente inteligente. Por favor resume el contenido de la base de conocimiento para responder la pregunta. Enumera los datos en la base de conocimiento y responde con detalle. Cuando todo el contenido de la base de conocimiento sea irrelevante para la pregunta, tu respuesta debe incluir la frase "¡La respuesta que buscas no se encuentra en la base de conocimiento!". Las respuestas necesitan considerar el historial de chat.
         Aquí está la base de conocimiento:
         {knowledge}
@@ -197,9 +197,9 @@ export default {
       topNTip: `No todos los fragmentos cuya puntuación de similitud esté por encima del "umbral de similitud" serán enviados a los LLMs. Los LLMs solo pueden ver estos "Top N" fragmentos.`,
       variable: 'Variable',
       variableTip: `Si usas APIs de diálogo, las variables pueden ayudarte a chatear con tus clientes usando diferentes estrategias.
-        Las variables se utilizan para completar la parte "Sistema" del prompt para darle una pista al LLM.
+        Las variables se utilizan para completar la parte "prompt del sistema" del prompt para darle una pista al LLM.
         La "base de conocimiento" es una variable muy especial que se completará con los fragmentos recuperados.
-        Todas las variables en "Sistema" deben estar entre llaves.`,
+        Todas las variables en "prompt del sistema" deben estar entre llaves.`,
       add: 'Agregar',
       key: 'Clave',
       optional: 'Opcional',
@@ -480,16 +480,17 @@ export default {
       newFolder: 'Nueva carpeta',
       file: 'Archivo',
       uploadFile: 'Subir archivo',
+      parseOnCreation: 'Ejecutar en la creación',
       directory: 'Directorio',
       uploadTitle: 'Haz clic o arrastra el archivo a esta área para subir',
       uploadDescription:
-        'Soporte para una sola carga o carga múltiple. Está estrictamente prohibido subir datos de la empresa u otros archivos prohibidos.',
+        'RAGFlow admite la carga de archivos de forma individual o por lotes. Para un RAGFlow desplegado localmente: el límite total de tamaño de archivo por carga es de 1 GB, con un límite de carga por lote de 32 archivos. No hay límite en el número total de archivos por cuenta. Para demo.ragflow.io: el límite total de tamaño de archivo por carga es de 10 MB, con cada archivo no excediendo los 10 MB y un máximo de 128 archivos por cuenta.',
       local: 'Subidas locales',
       s3: 'Subidas a S3',
       preview: 'Vista previa',
       fileError: 'Error en el archivo',
       uploadLimit:
-        'El tamaño del archivo no puede exceder los 10 MB, y el número total de archivos no puede exceder los 128',
+        'RAGFlow admite la carga de archivos de forma individual o por lotes. Para un RAGFlow desplegado localmente: el límite total de tamaño de archivo por carga es de 1 GB, con un límite de carga por lote de 32 archivos. No hay límite en el número total de archivos por cuenta. Para demo.ragflow.io: el límite total de tamaño de archivo por carga es de 10 MB, con cada archivo no excediendo los 10 MB y un máximo de 128 archivos por cuenta.',
       destinationFolder: 'Carpeta de destino',
     },
     flow: {

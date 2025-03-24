@@ -35,7 +35,7 @@ spec:
             {{- end }}
             backend:
               service:
-                name: {{ include "ragflow.fullname" $ }}
+                name: {{ .Release.Name }}
                 port:
                   name: http
           {{- end }}

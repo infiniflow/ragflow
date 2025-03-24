@@ -562,11 +562,19 @@ def user_add():
         schema:
           type: object
     """
+
+    if not settings.REGISTER_ENABLED:
+        return get_json_result(
+            data=False,
+            message="User registration is disabled!",
+            code=settings.RetCode.OPERATING_ERROR,
+        )
+
     req = request.json
     email_address = req["email"]
 
     # Validate the email address
-    if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,5}$", email_address):
+    if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email_address):
         return get_json_result(
             data=False,
             message=f"Invalid email address: {email_address}!",

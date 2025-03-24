@@ -109,15 +109,13 @@ class Template(ComponentBase):
             pass
 
         for n, v in kwargs.items():
-            try:
-                v = json.dumps(v, ensure_ascii=False)
-            except Exception:
-                pass
+            if not isinstance(v, str):
+                try:
+                    v = json.dumps(v, ensure_ascii=False)
+                except Exception:
+                    pass
             content = re.sub(
                 r"\{%s\}" % re.escape(n), v, content
-            )
-            content = re.sub(
-                r"(\\\"|\")", "", content
             )
             content = re.sub(
                 r"(#+)", r" \1 ", content

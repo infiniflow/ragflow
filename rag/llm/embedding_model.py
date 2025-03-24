@@ -260,14 +260,16 @@ class OllamaEmbed(Base):
         tks_num = 0
         for txt in texts:
             res = self.client.embeddings(prompt=txt,
-                                         model=self.model_name)
+                                         model=self.model_name,
+                                         options={"use_mmap": True})
             arr.append(res["embedding"])
             tks_num += 128
         return np.array(arr), tks_num
 
     def encode_queries(self, text):
         res = self.client.embeddings(prompt=text,
-                                     model=self.model_name)
+                                     model=self.model_name,
+                                     options={"use_mmap": True})
         return np.array(res["embedding"]), 128
 
 

@@ -24,7 +24,7 @@ from rag.utils import singleton
 
 
 @singleton
-class RAGFlowMinio(object):
+class RAGFlowMinio:
     def __init__(self):
         self.conn = None
         self.__open__()
