@@ -465,7 +465,7 @@ class Dealer:
         cnt = np.sum([c for _, c in aggs])
         tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
-        doc[TAG_FLD] = {a: c for a, c in tag_fea if c > 0}
+        doc[TAG_FLD] = {a.replace(".", "_"): c for a, c in tag_fea if c > 0}
         return True
 
     def tag_query(self, question: str, tenant_ids: str | list[str], kb_ids: list[str], all_tags, topn_tags=3, S=1000):
@@ -481,4 +481,4 @@ class Dealer:
         cnt = np.sum([c for _, c in aggs])
         tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
-        return {a: max(1, c) for a, c in tag_fea}
+        return {a.replace(".", "_"): max(1, c) for a, c in tag_fea}

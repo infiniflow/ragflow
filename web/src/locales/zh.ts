@@ -689,6 +689,16 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       sureDelete: '您确定要删除该成员吗？',
       quit: '退出',
       sureQuit: '确定退出加入的团队吗？',
+      secretKey: '密钥',
+      publicKey: '公钥',
+      secretKeyMessage: '请输入私钥',
+      publicKeyMessage: '请输入公钥',
+      hostMessage: '请输入 host',
+      configuration: '配置',
+      langfuseDescription:
+        '跟踪、评估、提示管理和指标，以调试和改进您的 LLM 应用程序。',
+      viewLangfuseSDocumentation: '查看 Langfuse 的文档',
+      view: '查看',
     },
     message: {
       registered: '注册成功',
