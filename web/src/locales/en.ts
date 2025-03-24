@@ -111,7 +111,7 @@ export default {
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. That means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
       vectorSimilarityWeight: 'Keyword similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
@@ -263,9 +263,7 @@ export default {
       This chunk method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
     </p>
     <li>
-      If a file is in <b>XLSX</b> format, it should contain two columns
-      without headers: one for questions and the other for answers, with the
-      question column preceding the answer column. Multiple sheets are
+      If a file is in <b>XLSX</b> or <b>XLS (Excel97~2003)</b> format, it should contain two columns without headers: one for questions and the other for answers, with the question column preceding the answer column. Multiple sheets are
       acceptable, provided the columns are properly structured.
     </li>
     <li>
@@ -304,7 +302,7 @@ export default {
     If the text extracted by the OCR model is deemed insufficient, a specified visual LLM will be used to provide a description of the image.
     </p>`,
       one: `
-    <p>Supported file formats are <b>DOCX, EXCEL, PDF, TXT</b>.
+    <p>Supported file formats are <b>DOCX, XLSX, XLS (Excel97~2003), PDF, TXT</b>.
     </p><p>
     This method treats each document in its entirety as a chunk.
     </p><p>
@@ -315,15 +313,14 @@ export default {
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
 <p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
-      tag: `<p>Knowledge base using 'Tag' as a chunking method is supposed to be used by other knowledge bases to add tags to their chunks, queries to which will also be with tags too.</p>
-<p>Knowledge base using 'Tag' as a chunking method is <b>NOT</b> supposed to be involved in RAG procedure.</p>
-<p>The chunks in this knowledge base are examples of tags, which demonstrate the entire tag set and the relevance between chunk and tags.</p>
-
-<p>This chunk method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.</p>
-<p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for content and the other for tags, with the content column preceding the tags column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
-<p>If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate content and tags.</p>
-<p>In tags column, there are English <b>comma</b> between tags.</p>
-<i>Lines of texts that fail to follow the above rules will be ignored, and each  pair will be considered a distinct chunk.</i>
+      tag: `<p>A knowledge base using the 'Tag' chunk method functions as a tag set. Other knowledge bases can use it to tag their own chunks, and queries to these knowledge bases will also be tagged using this tag set.</p>
+<p>Knowledge base using 'Tag' as a chunk method will <b>NOT</b> be involved in a Retrieval-Augmented Generation (RAG) process.</p>
+<p>Each chunk in this knowledge base is an independent description-tag pair.</p>
+<p>Supported file formats include <b>XLSX</b> and <b>CSV/TXT</b>:</p>
+<p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for tag descriptions and the other for tag names, with the Description column preceding the Tag column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
+<p>If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate descriptions and tags.</p>
+<p>In a Tag column, <b>comma</b> is used to separate tags.</p>
+<i>Lines of texts that fail to follow the above rules will be ignored.</i>
 `,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:

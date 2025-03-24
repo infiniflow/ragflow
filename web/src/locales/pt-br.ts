@@ -110,7 +110,7 @@ export default {
         'Realize um teste de recuperação para verificar se o RAGFlow pode recuperar o conteúdo pretendido para o LLM. Por favor, note que as alterações feitas aqui não são salvas automaticamente. Se você ajustar as configurações padrão aqui, como o peso de similaridade de palavras-chave, certifique-se de atualizar as configurações relacionadas de forma sincronizada nas configurações do assistente de chat ou nas configurações do operador de recuperação.',
       similarityThreshold: 'Limite de similaridade',
       similarityThresholdTip:
-        'O RAGFlow emprega uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada, ou uma combinação de similaridade de palavras-chave ponderada e pontuação de reranking ponderada durante a recuperação. Este parâmetro define o limite para similaridades entre a consulta do usuário e os fragmentos. Qualquer fragmento com uma pontuação de similaridade abaixo deste limite será excluído dos resultados.',
+        'O RAGFlow emprega uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada, ou uma combinação de similaridade de palavras-chave ponderada e pontuação de reranking ponderada durante a recuperação. Este parâmetro define o limite para similaridades entre a consulta do usuário e os fragmentos. Qualquer fragmento com uma pontuação de similaridade abaixo deste limite será excluído dos resultados. Por padrão, o limite é definido como 0,2. Isso significa que apenas os trechos com uma pontuação de similaridade híbrida de 20 ou mais serão recuperados.',
       vectorSimilarityWeight: 'Peso da similaridade de palavras-chave',
       vectorSimilarityWeightTip:
         'Define o peso da similaridade de palavras-chave na pontuação de similaridade combinada, usada com a similaridade de cosseno vetorial ou com a pontuação de reranking. O total dos dois pesos deve ser igual a 1.0.',
@@ -172,7 +172,7 @@ export default {
       autoKeywordsTip:
         'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos.',
       autoQuestions: 'Perguntas automáticas',
-      autoQuestionsTip: `Extraia automaticamente N perguntas para cada fragmento para aumentar sua relevância em consultas que contenham essas perguntas. Você pode verificar ou atualizar as perguntas adicionadas a um fragmento na lista de fragmentos. Essa funcionalidade não interromperá o processo de fragmentação em caso de erro, exceto pelo fato de que pode adicionar um resultado vazio ao fragmento original. Esteja ciente de que tokens extras serão consumidos pelo LLM especificado nas 'Configurações do modelo do sistema'.`,
+      autoQuestionsTip: `Para aumentar as pontuações de classificação, extraia N perguntas para cada bloco da base de conhecimento usando o modelo de bate-papo definido em "Configurações do Modelo do Sistema". Observe que isso consome tokens extras. Os resultados podem ser visualizados e editados na lista de blocos. Erros na extração de perguntas não bloquearão o processo de fragmentação; resultados vazios serão adicionados ao bloco original.`,
       redo: 'Deseja limpar os {{chunkNum}} fragmentos existentes?',
       setMetaData: 'Definir Metadados',
       pleaseInputJson: 'Por favor, insira um JSON',
