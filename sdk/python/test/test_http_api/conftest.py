@@ -31,7 +31,7 @@ from libs.utils.file_utils import (
 )
 
 
-@pytest.fixture(scope="function", autouse=True)
+@pytest.fixture(scope="function")
 def clear_datasets(get_http_api_auth):
     yield
     delete_dataset(get_http_api_auth)
