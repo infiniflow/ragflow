@@ -50,9 +50,7 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(
-        self, get_http_api_auth, tmp_path, auth, expected_code, expected_message
-    ):
+    def test_invalid_auth(self, get_http_api_auth, tmp_path, auth, expected_code, expected_message):
         ids = create_datasets(get_http_api_auth, 1)
         document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
         res = parse_documnet(auth, ids[0], {"document_ids": document_ids[0]})
@@ -68,32 +66,30 @@ class TestDocumentsParse:
                 None,
                 102,
                 """AttributeError("\'NoneType\' object has no attribute \'get\'")""",
-                marks=pytest.mark.xfail,
+                marks=pytest.mark.skip,
             ),
             ({"document_ids": []}, 102, "`document_ids` is required"),
             (
                 {"document_ids": ["invalid_id"]},
                 102,
-                "You don't own the document invalid_id.",
+                "Documents not found: ['invalid_id']",
             ),
             (
                 {"document_ids": ["\n!?。；！？\"'"]},
                 102,
-                """You don\'t own the document \n!?。；！？"\'.""",
+                """Documents not found: [\'\\n!?。；！？"\\\'\']""",
             ),
             pytest.param(
                 "not json",
                 102,
                 "AttributeError(\"'str' object has no attribute 'get'\")",
-                marks=pytest.mark.xfail,
+                marks=pytest.mark.skip,
             ),
             (lambda r: {"document_ids": r[:1]}, 0, ""),
             (lambda r: {"document_ids": r}, 0, ""),
         ],
     )
-    def test_basic_scenarios(
-        self, get_http_api_auth, tmp_path, payload, expected_code, expected_message
-    ):
+    def test_basic_scenarios(self, get_http_api_auth, tmp_path, payload, expected_code, expected_message):
         @wait_for(10, 1, "Document parsing timeout")
         def condition(_auth, _dataset_id, _document_ids):
             for _document_id in _document_ids:
@@ -104,20 +100,16 @@ class TestDocumentsParse:
 
         ids = create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(
-            get_http_api_auth, dataset_id, 3, tmp_path
-        )
+        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 3, tmp_path)
         if callable(payload):
             payload = payload(document_ids)
         res = parse_documnet(get_http_api_auth, dataset_id, payload)
         assert res["code"] == expected_code
-        #if expected_code != 0:
-        #    assert res["message"] == expected_message
+        if expected_code != 0:
+            assert res["message"] == expected_message
         if expected_code == 0:
             condition(get_http_api_auth, dataset_id, payload["document_ids"])
-            validate_document_details(
-                get_http_api_auth, dataset_id, payload["document_ids"]
-            )
+            validate_document_details(get_http_api_auth, dataset_id, payload["document_ids"])
 
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
@@ -140,13 +132,10 @@ class TestDocumentsParse:
     ):
         ids = create_datasets(get_http_api_auth, 1)
         document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = parse_documnet(
-            get_http_api_auth, dataset_id, {"document_ids": document_ids}
-        )
+        res = parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
-    @pytest.mark.skip(reason="issues/6229")
     @pytest.mark.parametrize(
         "payload",
         [
@@ -155,9 +144,7 @@ class TestDocumentsParse:
             lambda r: {"document_ids": r + ["invalid_id"]},
         ],
     )
-    def test_parse_partial_invalid_document_id(
-        self, get_http_api_auth, tmp_path, payload
-    ):
+    def test_parse_partial_invalid_document_id(self, get_http_api_auth, tmp_path, payload):
         @wait_for(10, 1, "Document parsing timeout")
         def condition(_auth, _dataset_id):
             res = list_documnet(_auth, _dataset_id)
@@ -168,14 +155,12 @@ class TestDocumentsParse:
 
         ids = create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(
-            get_http_api_auth, dataset_id, 3, tmp_path
-        )
+        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 3, tmp_path)
         if callable(payload):
             payload = payload(document_ids)
         res = parse_documnet(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 102
-        assert res["message"] == "You don't own the document invalid_id."
+        assert res["message"] == "Documents not found: ['invalid_id']"
 
         condition(get_http_api_auth, dataset_id)
 
@@ -192,22 +177,15 @@ class TestDocumentsParse:
 
         ids = create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(
-            get_http_api_auth, dataset_id, 1, tmp_path
-        )
-        res = parse_documnet(
-            get_http_api_auth, dataset_id, {"document_ids": document_ids}
-        )
+        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
+        res = parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 0
 
         condition(get_http_api_auth, dataset_id)
 
-        res = parse_documnet(
-            get_http_api_auth, dataset_id, {"document_ids": document_ids}
-        )
+        res = parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 0
 
-    @pytest.mark.skip(reason="issues/6234")
     def test_duplicate_parse(self, get_http_api_auth, tmp_path):
         @wait_for(10, 1, "Document parsing timeout")
         def condition(_auth, _dataset_id):
@@ -219,13 +197,11 @@ class TestDocumentsParse:
 
         ids = create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(
-            get_http_api_auth, dataset_id, 1, tmp_path
-        )
-        res = parse_documnet(
-            get_http_api_auth, dataset_id, {"document_ids": document_ids + document_ids}
-        )
+        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
+        res = parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids + document_ids})
         assert res["code"] == 0
+        assert res["data"]["errors"][0] == f"Duplicate document ids: {document_ids[0]}"
+        assert res["data"]["success_count"] == 1
 
         condition(get_http_api_auth, dataset_id)
 
@@ -244,12 +220,8 @@ class TestDocumentsParse:
         document_num = 100
         ids = create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(
-            get_http_api_auth, dataset_id, document_num, tmp_path
-        )
-        res = parse_documnet(
-            get_http_api_auth, dataset_id, {"document_ids": document_ids}
-        )
+        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
+        res = parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 0
 
         condition(get_http_api_auth, dataset_id, document_num)
@@ -269,9 +241,7 @@ class TestDocumentsParse:
         document_num = 100
         ids = create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(
-            get_http_api_auth, dataset_id, document_num, tmp_path
-        )
+        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [

@@ -38,9 +38,7 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(
-        self, get_http_api_auth, auth, expected_code, expected_message
-    ):
+    def test_invalid_auth(self, get_http_api_auth, auth, expected_code, expected_message):
         ids = create_datasets(get_http_api_auth, 1)
         res = delete_dataset(auth, {"ids": ids})
         assert res["code"] == expected_code
@@ -73,9 +71,7 @@ class TestDatasetDeletion:
             (lambda r: {"ids": r}, 0, "", 0),
         ],
     )
-    def test_basic_scenarios(
-        self, get_http_api_auth, payload, expected_code, expected_message, remaining
-    ):
+    def test_basic_scenarios(self, get_http_api_auth, payload, expected_code, expected_message, remaining):
         ids = create_datasets(get_http_api_auth, 3)
         if callable(payload):
             payload = payload(ids)
@@ -120,7 +116,8 @@ class TestDatasetDeletion:
         ids = create_datasets(get_http_api_auth, 1)
         res = delete_dataset(get_http_api_auth, {"ids": ids + ids})
         assert res["code"] == 0
-        #assert res["data"]["success_count"] == 1
+        assert res["data"]["errors"][0] == f"Duplicate dataset ids: {ids[0]}"
+        assert res["data"]["success_count"] == 1
 
         res = list_dataset(get_http_api_auth)
         assert len(res["data"]) == 0
@@ -129,12 +126,7 @@ class TestDatasetDeletion:
         ids = create_datasets(get_http_api_auth, 100)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(
-                    delete_dataset, get_http_api_auth, {"ids": ids[i : i + 1]}
-                )
-                for i in range(100)
-            ]
+            futures = [executor.submit(delete_dataset, get_http_api_auth, {"ids": ids[i : i + 1]}) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
