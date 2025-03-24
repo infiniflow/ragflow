@@ -260,7 +260,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
 
     def decorate_answer(answer):
-        nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions
+        nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
 
         refs = []
         ans = answer.split("</think>")
@@ -336,7 +336,10 @@ def chat(dialog, messages, stream=True, **kwargs):
 
         langfuse_output = "\n" + re.sub(r"^.*?(### Query:.*)", r"\1", prompt, flags=re.DOTALL)
         langfuse_output = {"time_elapsed:": re.sub(r"\n", "  \n", langfuse_output), "created_at": time.time()}
-        langfuse_generation.end(output=langfuse_output)
+
+        # Add a condition check to call the end method only if langfuse_tracer exists
+        if langfuse_tracer and 'langfuse_generation' in locals():
+            langfuse_generation.end(output=langfuse_output)
 
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
