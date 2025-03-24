@@ -343,7 +343,7 @@ async def extract_community(
             "entities_kwd": stru["entities"],
             "important_kwd": stru["entities"],
             "kb_id": kb_id,
-            "source_id": doc_ids,
+            "source_id": list(doc_ids),
             "available_int": 0,
         }
         chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(
