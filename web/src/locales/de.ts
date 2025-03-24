@@ -113,7 +113,7 @@ export default {
         'Führen Sie einen Abruftest durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
       similarityThreshold: 'Ähnlichkeitsschwelle',
       similarityThresholdTip:
-        'RAGFlow verwendet entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit oder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Neuordnungsbewertung während des Abrufs. Dieser Parameter legt den Schwellenwert für Ähnlichkeiten zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einer Ähnlichkeitsbewertung unter diesem Schwellenwert wird von den Ergebnissen ausgeschlossen.',
+        'RAGFlow verwendet entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit oder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Neuordnungsbewertung während des Abrufs. Dieser Parameter legt den Schwellenwert für Ähnlichkeiten zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einer Ähnlichkeitsbewertung unter diesem Schwellenwert wird von den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 0,2 festgelegt. Das bedeutet, dass nur Textblöcke mit einer hybriden Ähnlichkeitsbewertung von 20 oder höher abgerufen werden.',
       vectorSimilarityWeight: 'Schlüsselwortähnlichkeitsgewicht',
       vectorSimilarityWeightTip:
         'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Neuordnungsbewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
@@ -176,7 +176,7 @@ export default {
         'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren.',
       autoQuestions: 'Auto-Frage',
       autoQuestionsTip:
-        'Extrahiert automatisch N Fragen für jeden Chunk, um deren Ranking für Anfragen mit diesen Fragen zu erhöhen. Sie können die hinzugefügten Fragen für einen Chunk in der Chunk-Liste überprüfen oder aktualisieren. Diese Funktion unterbricht den Chunking-Prozess nicht, wenn ein Fehler auftritt, außer dass sie möglicherweise ein leeres Ergebnis zum ursprünglichen Chunk hinzufügt. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen LLM verbraucht werden.',
+        'Um die Ranking-Ergebnisse zu verbessern, extrahieren Sie N Fragen für jeden Wissensdatenbank-Chunk mithilfe des im "Systemmodell-Setup" definierten Chatmodells. Beachten Sie, dass dies zusätzliche Token verbraucht. Die Ergebnisse können in der Chunk-Liste eingesehen und bearbeitet werden. Fehler bei der Fragenextraktion blockieren den Chunking-Prozess nicht; leere Ergebnisse werden dem ursprünglichen Chunk hinzugefügt.',
       redo: 'Möchten Sie die vorhandenen {{chunkNum}} Chunks löschen?',
       setMetaData: 'Metadaten festlegen',
       pleaseInputJson: 'Bitte JSON eingeben',
@@ -321,15 +321,14 @@ export default {
   <p>Dieser Ansatz teilt Dateien mit der 'naiven'/'Allgemeinen' Methode auf. Er teilt ein Dokument in Segmente und kombiniert dann benachbarte Segmente, bis die Token-Anzahl den durch 'Chunk-Token-Anzahl' festgelegten Schwellenwert überschreitet, woraufhin ein Chunk erstellt wird.</p>
   <p>Die Chunks werden dann dem LLM zugeführt, um Entitäten und Beziehungen für einen Wissensgraphen und eine Mind Map zu extrahieren.</p>
   <p>Stellen Sie sicher, dass Sie die <b>Entitätstypen</b> festlegen.</p>`,
-      tag: `<p>Eine Wissensdatenbank, die 'Tag' als Chunking-Methode verwendet, soll von anderen Wissensdatenbanken verwendet werden, um Tags zu ihren Chunks hinzuzufügen, deren Abfragen ebenfalls mit Tags versehen werden.</p>
-  <p>Eine Wissensdatenbank, die 'Tag' als Chunking-Methode verwendet, soll <b>NICHT</b> am RAG-Verfahren beteiligt sein.</p>
-  <p>Die Chunks in dieser Wissensdatenbank sind Beispiele für Tags, die das gesamte Tag-Set und die Relevanz zwischen Chunk und Tags zeigen.</p>
-  
-  <p>Diese Chunk-Methode unterstützt die Dateiformate <b>XLSX</b> und <b>CSV/TXT</b>.</p>
-  <p>Wenn eine Datei im <b>XLSX</b>-Format vorliegt, sollte sie zwei Spalten ohne Kopfzeilen enthalten: eine für Inhalte und die andere für Tags, wobei die Inhaltsspalte der Tags-Spalte vorangeht. Mehrere Blätter sind akzeptabel, vorausgesetzt, die Spalten sind richtig strukturiert.</p>
-  <p>Wenn eine Datei im <b>CSV/TXT</b>-Format vorliegt, muss sie UTF-8-kodiert sein und TAB als Trennzeichen verwenden, um Inhalte und Tags zu trennen.</p>
-  <p>In der Tags-Spalte befinden sich englische <b>Kommas</b> zwischen den Tags.</p>
-  <i>Textzeilen, die nicht den obigen Regeln folgen, werden ignoriert, und jedes Paar wird als eigenständiger Chunk betrachtet.</i>
+      tag: `<p>Eine Wissensdatenbank, die die 'Tag'-Chunk-Methode verwendet, fungiert als Tag-Set. Andere Wissensdatenbanken können es verwenden, um ihre eigenen Chunks zu taggen, und Abfragen an diese Wissensdatenbanken werden ebenfalls mit diesem Tag-Set getaggt.</p>
+      <p>Die Wissensdatenbank, die 'Tag' als Chunk-Methode verwendet, ist <b>NICHT</b> an einem Retrieval-Augmented Generation (RAG)-Prozess beteiligt.</p>
+      <p>Jeder Chunk in dieser Wissensdatenbank ist ein unabhängiges Beschreibungs-Tag-Paar.</p>
+      <p>Zu den unterstützten Dateiformaten gehören <b>XLSX</b> und <b>CSV/TXT</b>:</p>
+      <p>Wenn eine Datei im <b>XLSX</b>-Format vorliegt, sollte sie zwei Spalten ohne Überschriften enthalten: eine für Tag-Beschreibungen und die andere für Tag-Namen, wobei die Spalte "Beschreibung" vor der Spalte "Tag" steht. Mehrere Blätter sind zulässig, sofern die Spalten ordnungsgemäß strukturiert sind.</p>
+      <p>Wenn eine Datei im <b>CSV/TXT</b>-Format vorliegt, muss sie UTF-8-kodiert sein, wobei TAB als Trennzeichen zum Trennen von Beschreibungen und Tags verwendet wird.</p>
+      <p>In einer Tag-Spalte wird das <b>Komma</b> verwendet, um Tags zu trennen.</p>
+      <i>Textzeilen, die nicht den obigen Regeln entsprechen, werden ignoriert.</i>
   `,
       useRaptor: 'RAPTOR zur Verbesserung des Abrufs verwenden',
       useRaptorTip:
