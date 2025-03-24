@@ -43,8 +43,9 @@ class TenantLangfuseService(CommonService):
 
     @classmethod
     def update_by_tenant(cls, tenant_id, langfuse_keys):
-        fields = ["tenant_id", "host", "secret_key", "public_key"]
-        return cls.model.update(**langfuse_keys).fields(*fields).where(cls.model.tenant_id == tenant_id).execute()
+        langfuse_keys["update_time"] = current_timestamp()
+        langfuse_keys["update_date"] = datetime_format(datetime.now())
+        return cls.model.update(**langfuse_keys).where(cls.model.tenant_id == tenant_id).execute()
 
     @classmethod
     def save(cls, **kwargs):
