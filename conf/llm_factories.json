@@ -3203,7 +3203,7 @@
                     "tags": "LLM,CHAT,100k",
                     "max_tokens": 102400,
                     "model_type": "chat"
-                },
+                }
             ]
         },
         {
