@@ -1216,6 +1216,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       },
       setting: 'Setting',
       settings: {
+        agentSetting: 'Agent Setting',
+        title: 'title',
+        description: 'description',
         upload: 'Upload',
         photo: 'Photo',
         permissions: 'Permission',
