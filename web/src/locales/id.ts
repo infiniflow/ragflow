@@ -107,7 +107,7 @@ export default {
         'Lakukan tes pengambilan untuk memeriksa apakah RAGFlow dapat memulihkan konten yang diinginkan untuk LLM. ',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor. Jika kesamaan antara kueri dan potongan kurang dari ambang ini, potongan akan disaring.',
+        'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor. Jika kesamaan antara kueri dan potongan kurang dari ambang ini, potongan akan disaring. Secara default, ambang batas diatur ke 0,2. Itu berarti hanya potongan dengan skor kemiripan hibrida 20 atau lebih tinggi yang akan diambil.',
       vectorSimilarityWeight: 'Bobot kesamaan kata kunci',
       vectorSimilarityWeightTip:
         'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor atau skor rerank (0~1). Jumlah dari kedua bobot adalah 1.0.',
