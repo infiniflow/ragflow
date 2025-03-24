@@ -36,7 +36,6 @@ class RAGFlowS3:
         self.addressing_style = self.s3_config.get('addressing_style', None)
         self.bucket = self.s3_config.get('bucket', None)
         self.prefix_path = self.s3_config.get('prefix_path', None)
-        self.kb_id_as_prefix_path = self.s3_config.get('kb_id_as_prefix_path', True)
         self.__open__()
 
     @staticmethod
@@ -51,16 +50,12 @@ class RAGFlowS3:
     def use_prefix_path(method):
         def wrapper(self, bucket, fnm, *args, **kwargs):
             # If the prefix path is set, use the prefix path.
-            # If the kb_id_as_prefix_path is true, the bucket passed from the upstream call is 
+            # The bucket passed from the upstream call is 
             # used as the file prefix. This is especially useful when you're using the default bucket
             if self.prefix_path:
-                if self.kb_id_as_prefix_path:
-                    fnm = f"{self.prefix_path}/{bucket}/{fnm}"
-                else:
-                    fnm = f"{self.prefix_path}/{fnm}"
+                fnm = f"{self.prefix_path}/{bucket}/{fnm}"
             else:
-                if self.kb_id_as_prefix_path:
-                    fnm = f"{bucket}/{fnm}"
+                fnm = f"{bucket}/{fnm}"
             return method(self, bucket, fnm, *args, **kwargs)
         return wrapper
 
@@ -81,9 +76,9 @@ class RAGFlowS3:
             if 'endpoint_url' in self.s3_config:
                 s3_params['endpoint_url'] = self.endpoint_url
             if 'signature_version' in self.s3_config:
-                s3_params['config'] = Config(signature_version=self.signature_version)
+                s3_params['config'] = Config(s3={"signature_version": self.signature_version})
             if 'addressing_style' in self.s3_config:
-                s3_params['config'] = Config(addressing_style=self.addressing_style)
+                s3_params['config'] = Config(s3={"addressing_style": self.addressing_style})
             self.conn = boto3.client('s3', **s3_params)
         except Exception:
             logging.exception(f"Fail to connect at region {self.region} or endpoint {self.endpoint_url}")

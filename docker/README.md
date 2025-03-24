@@ -127,7 +127,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 
 ## 🐋 Service configuration
 
-[service_conf.yaml](./service_conf.yaml) specifies the system-level configuration for RAGFlow and is used by its API server and task executor. In a dockerized setup, this file is automatically created based on the [service_conf.yaml.template](./service_conf.yaml.template) file (replacing all environment variables by their values). When configuring S3 and OSS related items in the `service_conf.yaml.template`, although some configuration items will be replaced, these items are commented out. Therefore, it is advisable to place the S3 and OSS configurations in `local.service_conf.yaml` and directly specify the configuration values without using environment variables. Then, mount `local.service_conf.yaml` to the container at `/ragflow/conf/local.service_conf.yaml`.
+[service_conf.yaml](./service_conf.yaml) specifies the system-level configuration for RAGFlow and is used by its API server and task executor. In a dockerized setup, this file is automatically created based on the [service_conf.yaml.template](./service_conf.yaml.template) file (replacing all environment variables by their values).
 
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
@@ -151,7 +151,7 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `secret_key`: The secret access key used to authenticate requests to the OSS service.
   - `endpoint_url`: The URL of the OSS service endpoint.
   - `region`: The OSS region where the bucket is located.
-  - `bucket`: The name of the OSS bucket where files will be stored.
+  - `bucket`: The name of the OSS bucket where files will be stored. When you want to store all files in a specified bucket, you need this configuration item.
   - `prefix_path`: Optional. A prefix path to prepend to file names in the OSS bucket, which can help organize files within the bucket.
 
 - `s3`:
@@ -163,7 +163,6 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `signature_version`: Optional. The version of the signature to use for authenticating requests. Common versions include `v4`.
   - `addressing_style`: Optional. The style of addressing to use for the S3 endpoint. This can be `path` or `virtual`.
   - `prefix_path`: Optional. A prefix path to prepend to file names in the S3 bucket, which can help organize files within the bucket.
-  - `kb_id_as_prefix_path`: Optional. By default, all files in S3 storage do not have a prefix. When using the default bucket, files in S3 storage cannot be associated with the knowledge base, making management inconvenient. This configuration is used to control whether the knowledge ID should be used as a file prefix when storing files in S3. The default value is True.
 
 - `oauth`  
   The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
