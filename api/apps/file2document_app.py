@@ -42,6 +42,8 @@ def convert():
         files_set = set([file.id for file in files])
         for file_id in file_ids:
             file = files_set[file_id]
+            if not file:
+                return get_data_error_result(message="File not found!")
             file_ids_list = [file_id]
             if file.type == FileType.FOLDER.value:
                 file_ids_list = FileService.get_all_innermost_file_ids(file_id, [])
