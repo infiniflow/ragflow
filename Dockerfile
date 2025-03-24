@@ -7,16 +7,16 @@ ARG NEED_MIRROR=0
 ARG LIGHTEN=0
 ENV LIGHTEN=${LIGHTEN}
 
-WORKDIR /ragflow
+WORKDIR /tmp/ragflow
 
 # Copy models downloaded via download_deps.py
-RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN mkdir -p /tmp/ragflow/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
-    cp /huggingface.co/InfiniFlow/huqie/huqie.txt.trie /ragflow/rag/res/ && \
+    cp /huggingface.co/InfiniFlow/huqie/huqie.txt.trie /tmp/ragflow/rag/res/ && \
     tar --exclude='.*' -cf - \
         /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc 
+        | tar -xf - --strip-components=3 -C /tmp/ragflow/rag/res/deepdoc
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     if [ "$LIGHTEN" != "1" ]; then \
         (tar -cf - \
@@ -31,10 +31,10 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
 # This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
     cp -r /deps/nltk_data /root/ && \
-    cp /deps/tika-server-standard-3.0.0.jar /deps/tika-server-standard-3.0.0.jar.md5 /ragflow/ && \
-    cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+    cp /deps/tika-server-standard-3.0.0.jar /deps/tika-server-standard-3.0.0.jar.md5 /tmp/ragflow/ && \
+    cp /deps/cl100k_base.tiktoken /tmp/ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 
-ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.0.0.jar"
+ENV TIKA_SERVER_JAR="file:///tmp/ragflow/tika-server-standard-3.0.0.jar"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Setup apt
@@ -142,7 +142,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
 FROM base AS builder
 USER root
 
-WORKDIR /ragflow
+WORKDIR /tmp/ragflow
 
 # install dependencies from uv.lock file
 COPY pyproject.toml uv.lock ./
@@ -166,7 +166,7 @@ COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
     cd web && npm install && npm run build
 
-COPY .git /ragflow/.git
+COPY .git /tmp/ragflow/.git
 
 RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
     if [ "$LIGHTEN" == "1" ]; then \
@@ -175,20 +175,20 @@ RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
         version_info="$version_info full"; \
     fi; \
     echo "RAGFlow version: $version_info"; \
-    echo $version_info > /ragflow/VERSION
+    echo $version_info > /tmp/ragflow/VERSION
 
 # production stage
 FROM base AS production
 USER root
 
-WORKDIR /ragflow
+WORKDIR /tmp/ragflow
 
 # Copy Python environment and packages
-ENV VIRTUAL_ENV=/ragflow/.venv
+ENV VIRTUAL_ENV=/tmp/ragflow/.venv
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
-ENV PYTHONPATH=/ragflow/
+ENV PYTHONPATH=/tmp/ragflow/
 
 COPY web web
 COPY api api
@@ -205,7 +205,7 @@ COPY docker/entrypoint.sh docker/entrypoint-parser.sh ./
 RUN chmod +x ./entrypoint*.sh
 
 # Copy compiled web pages
-COPY --from=builder /ragflow/web/dist /ragflow/web/dist
+COPY --from=builder /tmp/ragflow/web/dist /tmp/ragflow/web/dist
 
-COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+COPY --from=builder /tmp/ragflow/VERSION /tmp/ragflow/VERSION
 ENTRYPOINT ["./entrypoint.sh"]

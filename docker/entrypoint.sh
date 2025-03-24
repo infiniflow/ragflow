@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # replace env variables in the service_conf.yaml file
-rm -rf /ragflow/conf/service_conf.yaml
+rm -rf /tmp/ragflow/conf/service_conf.yaml
 while IFS= read -r line || [[ -n "$line" ]]; do
     # Use eval to interpret the variable with default values
-    eval "echo \"$line\"" >> /ragflow/conf/service_conf.yaml
-done < /ragflow/conf/service_conf.yaml.template
+    eval "echo \"$line\"" >> /tmp/ragflow/conf/service_conf.yaml
+done < /tmp/ragflow/conf/service_conf.yaml.template
 
 /usr/sbin/nginx
 
