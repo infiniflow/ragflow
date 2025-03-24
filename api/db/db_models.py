@@ -524,9 +524,7 @@ class TenantLangfuse(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, primary_key=True)
     secret_key = CharField(max_length=2048, null=False, help_text="SECRET KEY", index=True)
     public_key = CharField(max_length=2048, null=False, help_text="PUBLIC KEY", index=True)
-    host = CharField(max_length=128, null=False, help_text="host", index=True)
-    # max_tokens = IntegerField(default=8192, index=True)
-    # used_tokens = IntegerField(default=0, index=True)
+    host = CharField(max_length=128, null=False, help_text="HOST", index=True)
 
     def __str__(self):
         return "Langfuse host" + self.host
