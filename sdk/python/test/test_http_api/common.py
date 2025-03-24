@@ -174,8 +174,6 @@ def stop_parse_documnet(auth, dataset_id, payload=None):
 
 # CHUNK MANAGEMENT WITHIN DATASET
 def add_chunk(auth, dataset_id, document_id, payload=None):
-    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(
-        dataset_id=dataset_id, document_id=document_id
-    )
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
