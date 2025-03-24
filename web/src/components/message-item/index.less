@@ -15,7 +15,6 @@
   }
 
   .messageTextBase() {
-    padding: 6px 10px;
     border-radius: 8px;
     & > p {
       margin: 0;
@@ -24,8 +23,10 @@
   .messageText {
     .chunkText();
     .messageTextBase();
-    background-color: #e6f4ff;
+    background-color: #2f78e5;
     word-break: break-word;
+    color: #fff;
+    border-radius: 16px 16px 16px 0;
   }
   .messageTextDark {
     .chunkText();
@@ -37,13 +38,13 @@
       border-left-color: rgb(78, 78, 86);
     }
   }
-
   .messageUserText {
     .chunkText();
     .messageTextBase();
-    background-color: rgba(255, 255, 255, 0.3);
+    background-color: #f0f3f5;
     word-break: break-word;
     text-align: justify;
+    border-radius: 16px 16px 0 16px;
   }
   .messageEmpty {
     width: 300px;
@@ -54,10 +55,14 @@
   }
 }
 
+.messageUserText,
+.messageText {
+  .messageCommon();
+}
+
 .messageItemLeft {
   text-align: left;
 }
-
 .messageItemRight {
   text-align: right;
 }
