@@ -27,7 +27,7 @@ def beAdoc(d, q, a, eng, row_num=-1):
     d["content_with_weight"] = q
     d["content_ltks"] = rag_tokenizer.tokenize(q)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["tag_kwd"] = [t.strip() for t in a.split(",") if t.strip()]
+    d["tag_kwd"] = [t.strip().replace(".", "_") for t in a.split(",") if t.strip()]
     if row_num >= 0:
         d["top_int"] = [row_num]
     return d
