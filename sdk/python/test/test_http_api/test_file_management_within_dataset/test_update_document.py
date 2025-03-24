@@ -39,9 +39,7 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(
-        self, get_http_api_auth, tmp_path, auth, expected_code, expected_message
-    ):
+    def test_invalid_auth(self, get_http_api_auth, tmp_path, auth, expected_code, expected_message):
         ids = create_datasets(get_http_api_auth, 1)
         document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
         res = update_documnet(auth, ids[0], document_ids[0], {"name": "auth_test.txt"})
@@ -91,14 +89,10 @@ class TestUpdatedDocument:
             ),
         ],
     )
-    def test_name(
-        self, get_http_api_auth, tmp_path, name, expected_code, expected_message
-    ):
+    def test_name(self, get_http_api_auth, tmp_path, name, expected_code, expected_message):
         ids = create_datasets(get_http_api_auth, 1)
         document_ids = batch_upload_documents(get_http_api_auth, ids[0], 2, tmp_path)
-        res = update_documnet(
-            get_http_api_auth, ids[0], document_ids[0], {"name": name}
-        )
+        res = update_documnet(get_http_api_auth, ids[0], document_ids[0], {"name": name})
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_documnet(get_http_api_auth, ids[0], {"id": document_ids[0]})
@@ -117,13 +111,9 @@ class TestUpdatedDocument:
             ),
         ],
     )
-    def test_invalid_document_id(
-        self, get_http_api_auth, document_id, expected_code, expected_message
-    ):
+    def test_invalid_document_id(self, get_http_api_auth, document_id, expected_code, expected_message):
         ids = create_datasets(get_http_api_auth, 1)
-        res = update_documnet(
-            get_http_api_auth, ids[0], document_id, {"name": "new_name.txt"}
-        )
+        res = update_documnet(get_http_api_auth, ids[0], document_id, {"name": "new_name.txt"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -138,14 +128,10 @@ class TestUpdatedDocument:
             ),
         ],
     )
-    def test_invalid_dataset_id(
-        self, get_http_api_auth, tmp_path, dataset_id, expected_code, expected_message
-    ):
+    def test_invalid_dataset_id(self, get_http_api_auth, tmp_path, dataset_id, expected_code, expected_message):
         ids = create_datasets(get_http_api_auth, 1)
         document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = update_documnet(
-            get_http_api_auth, dataset_id, document_ids[0], {"name": "new_name.txt"}
-        )
+        res = update_documnet(get_http_api_auth, dataset_id, document_ids[0], {"name": "new_name.txt"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -153,14 +139,10 @@ class TestUpdatedDocument:
         "meta_fields, expected_code, expected_message",
         [({"test": "test"}, 0, ""), ("test", 102, "meta_fields must be a dictionary")],
     )
-    def test_meta_fields(
-        self, get_http_api_auth, tmp_path, meta_fields, expected_code, expected_message
-    ):
+    def test_meta_fields(self, get_http_api_auth, tmp_path, meta_fields, expected_code, expected_message):
         ids = create_datasets(get_http_api_auth, 1)
         document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = update_documnet(
-            get_http_api_auth, ids[0], document_ids[0], {"meta_fields": meta_fields}
-        )
+        res = update_documnet(get_http_api_auth, ids[0], document_ids[0], {"meta_fields": meta_fields})
         if expected_code == 0:
             res = list_documnet(get_http_api_auth, ids[0], {"id": document_ids[0]})
             assert res["data"]["docs"][0]["meta_fields"] == meta_fields
@@ -173,18 +155,16 @@ class TestUpdatedDocument:
             ("naive", 0, ""),
             ("manual", 0, ""),
             ("qa", 0, ""),
-            pytest.param("table", 0, "", marks=pytest.mark.xfail(reason="issues/6081")),
+            ("table", 0, ""),
             ("paper", 0, ""),
             ("book", 0, ""),
             ("laws", 0, ""),
             ("presentation", 0, ""),
-            pytest.param(
-                "picture", 0, "", marks=pytest.mark.xfail(reason="issues/6081")
-            ),
-            pytest.param("one", 0, "", marks=pytest.mark.xfail(reason="issues/6081")),
+            ("picture", 0, ""),
+            ("one", 0, ""),
             ("knowledge_graph", 0, ""),
-            pytest.param("email", 0, "", marks=pytest.mark.xfail(reason="issues/6081")),
-            pytest.param("tag", 0, "", marks=pytest.mark.xfail(reason="issues/6081")),
+            ("email", 0, ""),
+            ("tag", 0, ""),
             ("", 102, "`chunk_method`  doesn't exist"),
             (
                 "other_chunk_method",
@@ -193,14 +173,11 @@ class TestUpdatedDocument:
             ),
         ],
     )
-    def test_chunk_method(
-        self, get_http_api_auth, tmp_path, chunk_method, expected_code, expected_message
-    ):
+    def test_chunk_method(self, get_http_api_auth, tmp_path, chunk_method, expected_code, expected_message):
         ids = create_datasets(get_http_api_auth, 1)
         document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = update_documnet(
-            get_http_api_auth, ids[0], document_ids[0], {"chunk_method": chunk_method}
-        )
+        res = update_documnet(get_http_api_auth, ids[0], document_ids[0], {"chunk_method": chunk_method})
+        print(res)
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_documnet(get_http_api_auth, ids[0], {"id": document_ids[0]})
