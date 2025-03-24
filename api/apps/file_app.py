@@ -55,20 +55,17 @@ def upload():
                 data=False, message='No file selected!', code=settings.RetCode.ARGUMENT_ERROR)
     file_res = []
     try:
+        e, pf_folder = FileService.get_by_id(pf_id)
+        if not e:
+            return get_data_error_result( message="Can't find this folder!")
         for file_obj in file_objs:
-            e, file = FileService.get_by_id(pf_id)
-            if not e:
-                return get_data_error_result(
-                    message="Can't find this folder!")
             MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
             if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(current_user.id) >= MAX_FILE_NUM_PER_USER:
-                return get_data_error_result(
-                    message="Exceed the maximum file number of a free user!")
+                return get_data_error_result( message="Exceed the maximum file number of a free user!")
 
             # split file name path
             if not file_obj.filename:
-                e, file = FileService.get_by_id(pf_id)
-                file_obj_names = [file.name, file_obj.filename]
+                file_obj_names = [pf_folder.name, file_obj.filename]
             else:
                 full_path = '/' + file_obj.filename
                 file_obj_names = full_path.split('/')
