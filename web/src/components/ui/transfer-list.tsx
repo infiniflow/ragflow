@@ -8,12 +8,13 @@ import {
   SquareCheckIcon,
   SquareIcon,
 } from 'lucide-react';
-import React, { memo, useCallback, useEffect } from 'react';
+import React, { ReactNode, memo, useCallback, useEffect } from 'react';
 
 export type TransferListItemType = {
   key: string;
   label: string;
   selected?: boolean;
+  disabled?: boolean;
 };
 
 export enum TransferListMoveDirection {
@@ -29,12 +30,15 @@ export type TransferListProps = {
     direction: TransferListMoveDirection,
     moveKeys: string[],
   ): void;
+} & {
+  children?(item: TransferListItemType): ReactNode;
 };
 
 export const TransferList = memo(function ({
   items,
   onChange,
   targetKeys,
+  children,
 }: TransferListProps) {
   const [leftList, setLeftList] = React.useState<TransferListItemType[]>([]);
   const [rightList, setRightList] = React.useState<TransferListItemType[]>([]);
@@ -166,23 +170,26 @@ export const TransferList = memo(function ({
             )
             .map((item) => (
               <li
-                className="flex items-center gap-1.5 text-sm hover:bg-muted rounded-sm"
+                className="flex items-center gap-1.5 text-sm hover:bg-muted rounded-sm group"
                 key={item.key}
               >
                 <button
                   type="button"
-                  className="flex items-center gap-1.5 w-full p-1.5"
+                  className="flex items-center gap-1.5 p-1.5"
                   onClick={() =>
                     toggleSelection(rightList, setRightList, item.key)
                   }
                 >
-                  {item.selected ? (
+                  {item.disabled ? (
+                    <span className="size-4"></span>
+                  ) : item.selected ? (
                     <SquareCheckIcon className="h-4 w-4 text-muted-foreground/50" />
                   ) : (
                     <SquareIcon className="h-4 w-4 text-muted-foreground/50" />
                   )}
                   {item.label}
                 </button>
+                {children?.(item)}
               </li>
             ))}
         </ul>

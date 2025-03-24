@@ -124,6 +124,7 @@ dependencies = [
     "flasgger>=0.9.7.1,<0.10.0",
     "xxhash>=3.5.0,<4.0.0",
     "trio>=0.29.0",
+    "langfuse>=2.60.0",
 ]
 
 [project.optional-dependencies]
@@ -135,6 +136,9 @@ full = [
     "torch>=2.5.0,<3.0.0",
     "transformers>=4.35.0,<5.0.0"
 ]
+
+[tool.setuptools]
+packages = ['rag', 'api', 'sdk', 'helm','agent', 'deepdoc', 'graphrag', 'flask_session', 'intergrations', 'agentic_reasoning']
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"

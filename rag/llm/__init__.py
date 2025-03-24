@@ -106,6 +106,7 @@ from .cv_model import (
     TogetherAICV,
     YiCV,
     HunyuanCV,
+    AnthropicCV
 )
 
 from .rerank_model import (
@@ -198,6 +199,7 @@ CvModel = {
     "TogetherAI": TogetherAICV,
     "01.AI": YiCV,
     "Tencent Hunyuan": HunyuanCV,
+    "Anthropic": AnthropicCV,
 }
 
 ChatModel = {
