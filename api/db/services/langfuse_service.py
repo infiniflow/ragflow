@@ -34,9 +34,19 @@ class TenantLangfuseService(CommonService):
     @classmethod
     @DB.connection_context()
     def filter_by_tenant(cls, tenant_id):
-        fields = [cls.model.host, cls.model.secret_key, cls.model.public_key]
+        fields = [cls.model.tenant_id, cls.model.host, cls.model.secret_key, cls.model.public_key]
         try:
             keys = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id).first()
+            return keys
+        except peewee.DoesNotExist:
+            return None
+
+    @classmethod
+    @DB.connection_context()
+    def filter_by_tenant_with_info(cls, tenant_id):
+        fields = [cls.model.tenant_id, cls.model.host, cls.model.secret_key, cls.model.public_key]
+        try:
+            keys = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id).dicts().first()
             return keys
         except peewee.DoesNotExist:
             return None
@@ -55,3 +65,7 @@ class TenantLangfuseService(CommonService):
         kwargs["update_date"] = datetime_format(datetime.now())
         obj = cls.model.create(**kwargs)
         return obj
+
+    @classmethod
+    def delete_model(cls, langfuse_model):
+        langfuse_model.delete_instance()
