@@ -13,9 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
-import xxhash
 import json
+import logging
 import random
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -23,23 +22,21 @@ from copy import deepcopy
 from datetime import datetime
 from io import BytesIO
 
+import trio
+import xxhash
 from peewee import fn
 
-from api.db.db_utils import bulk_insert_into_db
 from api import settings
-from api.utils import current_timestamp, get_format_time, get_uuid
-from graphrag.general.mind_map_extractor import MindMapExtractor
-from rag.settings import SVR_QUEUE_NAME
-from rag.utils.storage_factory import STORAGE_IMPL
-from rag.nlp import search, rag_tokenizer
-
-from api.db import FileType, TaskStatus, ParserType, LLMType
-from api.db.db_models import DB, Knowledgebase, Tenant, Task, UserTenant
-from api.db.db_models import Document
+from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus
+from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant
+from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db import StatusEnum
+from api.utils import current_timestamp, get_format_time, get_uuid
+from rag.nlp import rag_tokenizer, search
+from rag.settings import get_svr_queue_name
 from rag.utils.redis_conn import REDIS_CONN
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 class DocumentService(CommonService):
@@ -96,9 +93,7 @@ class DocumentService(CommonService):
     def insert(cls, doc):
         if not cls.save(**doc):
             raise RuntimeError("Database error (Document)!")
-        e, kb = KnowledgebaseService.get_by_id(doc["kb_id"])
-        if not KnowledgebaseService.update_by_id(
-                kb.id, {"doc_num": kb.doc_num + 1}):
+        if not KnowledgebaseService.atomic_increase_doc_num_by_id(doc["kb_id"]):
             raise RuntimeError("Database error (Knowledgebase)!")
         return Document(**doc)
 
@@ -174,9 +169,9 @@ class DocumentService(CommonService):
                 "Document not found which is supposed to be there")
         num = Knowledgebase.update(
             token_num=Knowledgebase.token_num +
-                      token_num,
+            token_num,
             chunk_num=Knowledgebase.chunk_num +
-                      chunk_num).where(
+            chunk_num).where(
             Knowledgebase.id == kb_id).execute()
         return num
 
@@ -192,9 +187,9 @@ class DocumentService(CommonService):
                 "Document not found which is supposed to be there")
         num = Knowledgebase.update(
             token_num=Knowledgebase.token_num -
-                      token_num,
+            token_num,
             chunk_num=Knowledgebase.chunk_num -
-                      chunk_num
+            chunk_num
         ).where(
             Knowledgebase.id == kb_id).execute()
         return num
@@ -207,9 +202,9 @@ class DocumentService(CommonService):
 
         num = Knowledgebase.update(
             token_num=Knowledgebase.token_num -
-                      doc.token_num,
+            doc.token_num,
             chunk_num=Knowledgebase.chunk_num -
-                      doc.chunk_num,
+            doc.chunk_num,
             doc_num=Knowledgebase.doc_num - 1
         ).where(
             Knowledgebase.id == doc.kb_id).execute()
@@ -221,7 +216,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(
             Knowledgebase.tenant_id).join(
             Knowledgebase, on=(
-                    Knowledgebase.id == cls.model.kb_id)).where(
+                Knowledgebase.id == cls.model.kb_id)).where(
             cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
@@ -243,7 +238,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(
             Knowledgebase.tenant_id).join(
             Knowledgebase, on=(
-                    Knowledgebase.id == cls.model.kb_id)).where(
+                Knowledgebase.id == cls.model.kb_id)).where(
             cls.model.name == name, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
@@ -256,7 +251,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(
             cls.model.id).join(
             Knowledgebase, on=(
-                    Knowledgebase.id == cls.model.kb_id)
+                Knowledgebase.id == cls.model.kb_id)
         ).join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
                ).where(cls.model.id == doc_id, UserTenant.user_id == user_id).paginate(0, 1)
         docs = docs.dicts()
@@ -270,7 +265,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(
             cls.model.id).join(
             Knowledgebase, on=(
-                    Knowledgebase.id == cls.model.kb_id)
+                Knowledgebase.id == cls.model.kb_id)
         ).where(cls.model.id == doc_id, Knowledgebase.created_by == user_id).paginate(0, 1)
         docs = docs.dicts()
         if not docs:
@@ -283,7 +278,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(
             Knowledgebase.embd_id).join(
             Knowledgebase, on=(
-                    Knowledgebase.id == cls.model.kb_id)).where(
+                Knowledgebase.id == cls.model.kb_id)).where(
             cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
@@ -306,9 +301,9 @@ class DocumentService(CommonService):
                 Tenant.asr_id,
                 Tenant.llm_id,
             )
-                .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id))
-                .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
-                .where(cls.model.id == doc_id)
+            .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id))
+            .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
+            .where(cls.model.id == doc_id)
         )
         configs = configs.dicts()
         if not configs:
@@ -336,6 +331,8 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_parser_config(cls, id, config):
+        if not config:
+            return
         e, d = cls.get_by_id(id)
         if not e:
             raise LookupError(f"Document({id}) not found.")
@@ -372,6 +369,7 @@ class DocumentService(CommonService):
                     "progress_msg": "Task is queued...",
                     "process_begin_at": get_format_time()
                     })
+
     @classmethod
     @DB.connection_context()
     def update_meta_fields(cls, doc_id, meta_fields):
@@ -380,12 +378,6 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def update_progress(cls):
-        MSG = {
-            "raptor": "Start RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval).",
-            "graphrag": "Entities extraction progress",
-            "graph_resolution": "Start Graph Resolution",
-            "graph_community": "Start Graph Community Reports Generation"
-        }
         docs = cls.get_unfinished_docs()
         for d in docs:
             try:
@@ -396,37 +388,33 @@ class DocumentService(CommonService):
                 prg = 0
                 finished = True
                 bad = 0
+                has_raptor = False
+                has_graphrag = False
                 e, doc = DocumentService.get_by_id(d["id"])
                 status = doc.run  # TaskStatus.RUNNING.value
+                priority = 0
                 for t in tsks:
                     if 0 <= t.progress < 1:
                         finished = False
-                    prg += t.progress if t.progress >= 0 else 0
-                    if t.progress_msg not in msg:
-                        msg.append(t.progress_msg)
                     if t.progress == -1:
                         bad += 1
+                    prg += t.progress if t.progress >= 0 else 0
+                    msg.append(t.progress_msg)
+                    if t.task_type == "raptor":
+                        has_raptor = True
+                    elif t.task_type == "graphrag":
+                        has_graphrag = True
+                    priority = max(priority, t.priority)
                 prg /= len(tsks)
                 if finished and bad:
                     prg = -1
                     status = TaskStatus.FAIL.value
                 elif finished:
-                    m = "\n".join(sorted(msg))
-                    if d["parser_config"].get("raptor", {}).get("use_raptor") and m.find(MSG["raptor"]) < 0:
-                        queue_raptor_o_graphrag_tasks(d, "raptor", MSG["raptor"])
+                    if d["parser_config"].get("raptor", {}).get("use_raptor") and not has_raptor:
+                        queue_raptor_o_graphrag_tasks(d, "raptor", priority)
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") and m.find(MSG["graphrag"]) < 0:
-                        queue_raptor_o_graphrag_tasks(d, "graphrag", MSG["graphrag"])
-                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") \
-                        and d["parser_config"].get("graphrag", {}).get("resolution") \
-                        and m.find(MSG["graph_resolution"]) < 0:
-                        queue_raptor_o_graphrag_tasks(d, "graph_resolution", MSG["graph_resolution"])
-                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") \
-                        and d["parser_config"].get("graphrag", {}).get("community") \
-                        and m.find(MSG["graph_community"]) < 0:
-                        queue_raptor_o_graphrag_tasks(d, "graph_community", MSG["graph_community"])
+                    elif d["parser_config"].get("graphrag", {}).get("use_graphrag") and not has_graphrag:
+                        queue_raptor_o_graphrag_tasks(d, "graphrag", priority)
                         prg = 0.98 * len(tsks) / (len(tsks) + 1)
                     else:
                         status = TaskStatus.DONE.value
@@ -435,7 +423,7 @@ class DocumentService(CommonService):
                 info = {
                     "process_duation": datetime.timestamp(
                         datetime.now()) -
-                                       d["process_begin_at"].timestamp(),
+                    d["process_begin_at"].timestamp(),
                     "run": status}
                 if prg != 0:
                     info["progress"] = prg
@@ -463,7 +451,7 @@ class DocumentService(CommonService):
         return False
 
 
-def queue_raptor_o_graphrag_tasks(doc, ty, msg):
+def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     hasher = xxhash.xxh64()
     for field in sorted(chunking_config.keys()):
@@ -476,7 +464,8 @@ def queue_raptor_o_graphrag_tasks(doc, ty, msg):
             "doc_id": doc["id"],
             "from_page": 100000000,
             "to_page": 100000000,
-            "progress_msg":  datetime.now().strftime("%H:%M:%S") + " " + msg
+            "task_type": ty,
+            "progress_msg":  datetime.now().strftime("%H:%M:%S") + " created task " + ty
         }
 
     task = new_task()
@@ -485,18 +474,17 @@ def queue_raptor_o_graphrag_tasks(doc, ty, msg):
     hasher.update(ty.encode("utf-8"))
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
-    task["task_type"] = ty
-    assert REDIS_CONN.queue_product(SVR_QUEUE_NAME, message=task), "Can't access Redis. Please check the Redis' status."
+    assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
 
 
 def doc_upload_and_parse(conversation_id, file_objs, user_id):
-    from rag.app import presentation, picture, naive, audio, email
+    from api.db.services.api_service import API4ConversationService
+    from api.db.services.conversation_service import ConversationService
     from api.db.services.dialog_service import DialogService
     from api.db.services.file_service import FileService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.user_service import TenantService
-    from api.db.services.api_service import API4ConversationService
-    from api.db.services.conversation_service import ConversationService
+    from rag.app import audio, email, naive, picture, presentation
 
     e, conv = ConversationService.get_by_id(conversation_id)
     if not e:
@@ -504,6 +492,9 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
     assert e, "Conversation not found!"
 
     e, dia = DialogService.get_by_id(conv.dialog_id)
+    if not dia.kb_ids:
+        raise LookupError("No knowledge base associated with this conversation. "
+                          "Please add a knowledge base before uploading documents")
     kb_id = dia.kb_ids[0]
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
@@ -592,10 +583,11 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         cks = [c for c in docs if c["doc_id"] == doc_id]
 
         if parser_ids[doc_id] != ParserType.PICTURE.value:
+            from graphrag.general.mind_map_extractor import MindMapExtractor
             mindmap = MindMapExtractor(llm_bdl)
             try:
-                mind_map = json.dumps(mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]).output,
-                                      ensure_ascii=False, indent=2)
+                mind_map = trio.run(mindmap, [c["content_with_weight"] for c in docs if c["doc_id"] == doc_id])
+                mind_map = json.dumps(mind_map.output, ensure_ascii=False, indent=2)
                 if len(mind_map) < 32:
                     raise Exception("Few content: " + mind_map)
                 cks.append({

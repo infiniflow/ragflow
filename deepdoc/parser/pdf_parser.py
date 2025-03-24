@@ -17,26 +17,53 @@
 import logging
 import os
 import random
+import re
+import sys
+import threading
+from copy import deepcopy
+from io import BytesIO
 from timeit import default_timer as timer
 
-import xgboost as xgb
-from io import BytesIO
-import re
-import pdfplumber
-from PIL import Image
 import numpy as np
+import pdfplumber
+import trio
+import xgboost as xgb
+from huggingface_hub import snapshot_download
+from PIL import Image
 from pypdf import PdfReader as pdf2_read
 
 from api import settings
 from api.utils.file_utils import get_project_base_directory
-from deepdoc.vision import OCR, Recognizer, LayoutRecognizer, TableStructureRecognizer
+from deepdoc.vision import OCR, LayoutRecognizer, Recognizer, TableStructureRecognizer
+from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.nlp import rag_tokenizer
-from copy import deepcopy
-from huggingface_hub import snapshot_download
+from rag.prompts import vision_llm_describe_prompt
+from rag.settings import PARALLEL_DEVICES
+
+LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
+if LOCK_KEY_pdfplumber not in sys.modules:
+    sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
+
 
 class RAGFlowPdfParser:
-    def __init__(self):
+    def __init__(self, **kwargs):
+        """
+        If you have trouble downloading HuggingFace models, -_^ this might help!!
+
+        For Linux:
+        export HF_ENDPOINT=https://hf-mirror.com
+
+        For Windows:
+        Good luck
+        ^_-
+
+        """
+
         self.ocr = OCR()
+        self.parallel_limiter = None
+        if PARALLEL_DEVICES is not None and PARALLEL_DEVICES > 1:
+            self.parallel_limiter = [trio.CapacityLimiter(1) for _ in range(PARALLEL_DEVICES)]
+
         if hasattr(self, "model_speciess"):
             self.layouter = LayoutRecognizer("layout." + self.model_speciess)
         else:
@@ -46,7 +73,7 @@ class RAGFlowPdfParser:
         self.updown_cnt_mdl = xgb.Booster()
         if not settings.LIGHTEN:
             try:
-                import torch
+                import torch.cuda
                 if torch.cuda.is_available():
                     self.updown_cnt_mdl.set_param({"device": "cuda"})
             except Exception:
@@ -66,17 +93,6 @@ class RAGFlowPdfParser:
                 model_dir, "updown_concat_xgb.model"))
 
         self.page_from = 0
-        """
-        If you have trouble downloading HuggingFace models, -_^ this might help!!
-
-        For Linux:
-        export HF_ENDPOINT=https://hf-mirror.com
-
-        For Windows:
-        Good luck
-        ^_-
-
-        """
 
     def __char_width(self, c):
         return (c["x1"] - c["x0"]) // max(len(c["text"]), 1)
@@ -91,7 +107,7 @@ class RAGFlowPdfParser:
     def _y_dis(
             self, a, b):
         return (
-                       b["top"] + b["bottom"] - a["top"] - a["bottom"]) / 2
+            b["top"] + b["bottom"] - a["top"] - a["bottom"]) / 2
 
     def _match_proj(self, b):
         proj_patt = [
@@ -114,9 +130,9 @@ class RAGFlowPdfParser:
         tks_down = rag_tokenizer.tokenize(down["text"][:LEN]).split()
         tks_up = rag_tokenizer.tokenize(up["text"][-LEN:]).split()
         tks_all = up["text"][-LEN:].strip() \
-                  + (" " if re.match(r"[a-zA-Z0-9]+",
-                                     up["text"][-1] + down["text"][0]) else "") \
-                  + down["text"][:LEN].strip()
+            + (" " if re.match(r"[a-zA-Z0-9]+",
+                               up["text"][-1] + down["text"][0]) else "") \
+            + down["text"][:LEN].strip()
         tks_all = rag_tokenizer.tokenize(tks_all).split()
         fea = [
             up.get("R", -1) == down.get("R", -1),
@@ -138,7 +154,7 @@ class RAGFlowPdfParser:
             True if re.search(r"[，,][^。.]+$", up["text"]) else False,
             True if re.search(r"[，,][^。.]+$", up["text"]) else False,
             True if re.search(r"[\(（][^\)）]+$", up["text"])
-                    and re.search(r"[\)）]", down["text"]) else False,
+            and re.search(r"[\)）]", down["text"]) else False,
             self._match_proj(down),
             True if re.match(r"[A-Z]", down["text"]) else False,
             True if re.match(r"[A-Z]", up["text"][-1]) else False,
@@ -200,7 +216,7 @@ class RAGFlowPdfParser:
                 continue
             for tb in tbls:  # for table
                 left, top, right, bott = tb["x0"] - MARGIN, tb["top"] - MARGIN, \
-                                         tb["x1"] + MARGIN, tb["bottom"] + MARGIN
+                    tb["x1"] + MARGIN, tb["bottom"] + MARGIN
                 left *= ZM
                 top *= ZM
                 right *= ZM
@@ -277,9 +293,9 @@ class RAGFlowPdfParser:
                 b["H_right"] = spans[ii]["x1"]
                 b["SP"] = ii
 
-    def __ocr(self, pagenum, img, chars, ZM=3):
+    def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
-        bxs = self.ocr.detect(np.array(img))
+        bxs = self.ocr.detect(np.array(img), device_id)
         logging.info(f"__ocr detecting boxes of a image cost ({timer() - start}s)")
 
         start = timer()
@@ -294,7 +310,7 @@ class RAGFlowPdfParser:
               "page_number": pagenum} for b, t in bxs if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]],
             self.mean_height[-1] / 3
         )
-        
+
         # merge chars in the same rect
         for c in Recognizer.sort_Y_firstly(
                 chars, self.mean_height[pagenum - 1] // 4):
@@ -324,7 +340,7 @@ class RAGFlowPdfParser:
                 b["box_image"] = self.ocr.get_rotate_crop_image(img_np, np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
                 boxes_to_reg.append(b)
             del b["txt"]
-        texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg])
+        texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
         for i in range(len(boxes_to_reg)):
             boxes_to_reg[i]["text"] = texts[i]
             del boxes_to_reg[i]["box_image"]
@@ -442,7 +458,7 @@ class RAGFlowPdfParser:
                     b_["text"],
                     any(feats),
                     any(concatting_feats),
-                    ))
+                ))
                 i += 1
                 continue
             # merge up and down
@@ -637,8 +653,7 @@ class RAGFlowPdfParser:
             b_["top"] = b["top"]
             self.boxes.pop(i)
 
-    def _extract_table_figure(self, need_image, ZM,
-                              return_html, need_position):
+    def _extract_table_figure(self, need_image, ZM, return_html, need_position, separate_tables_figures=False):
         tables = {}
         figures = {}
         # extract figure and table boxes
@@ -650,7 +665,7 @@ class RAGFlowPdfParser:
                 i += 1
                 continue
             lout_no = str(self.boxes[i]["page_number"]) + \
-                      "-" + str(self.boxes[i]["layoutno"])
+                "-" + str(self.boxes[i]["layoutno"])
             if TableStructureRecognizer.is_caption(self.boxes[i]) or self.boxes[i]["layout_type"] in ["table caption",
                                                                                                       "title",
                                                                                                       "figure caption",
@@ -752,9 +767,6 @@ class RAGFlowPdfParser:
                     tk)
             self.boxes.pop(i)
 
-        res = []
-        positions = []
-
         def cropout(bxs, ltype, poss):
             nonlocal ZM
             pn = set([b["page_number"] - 1 for b in bxs])
@@ -802,6 +814,10 @@ class RAGFlowPdfParser:
                 height += img.size[1]
             return pic
 
+        res = []
+        positions = []
+        figure_results = []
+        figure_positions = []
         # crop figure out and add caption
         for k, bxs in figures.items():
             txt = "\n".join([b["text"] for b in bxs])
@@ -809,28 +825,46 @@ class RAGFlowPdfParser:
                 continue
 
             poss = []
-            res.append(
-                (cropout(
-                    bxs,
-                    "figure", poss),
-                 [txt]))
-            positions.append(poss)
+
+            if separate_tables_figures:
+                figure_results.append(
+                    (cropout(
+                        bxs,
+                        "figure", poss),
+                     [txt]))
+                figure_positions.append(poss)
+            else:
+                res.append(
+                    (cropout(
+                        bxs,
+                        "figure", poss),
+                     [txt]))
+                positions.append(poss)
 
         for k, bxs in tables.items():
             if not bxs:
                 continue
             bxs = Recognizer.sort_Y_firstly(bxs, np.mean(
                 [(b["bottom"] - b["top"]) / 2 for b in bxs]))
+
             poss = []
+
             res.append((cropout(bxs, "table", poss),
                         self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
             positions.append(poss)
 
-        assert len(positions) == len(res)
-
-        if need_position:
-            return list(zip(res, positions))
-        return res
+        if separate_tables_figures:
+            assert len(positions) + len(figure_positions) == len(res) + len(figure_results)
+            if need_position:
+                return list(zip(res, positions)), list(zip(figure_results, figure_positions))
+            else:
+                return res, figure_results
+        else:
+            assert len(positions) == len(res)
+            if need_position:
+                return list(zip(res, positions))
+            else:
+                return res
 
     def proj_match(self, line):
         if len(line) <= 2:
@@ -948,9 +982,12 @@ class RAGFlowPdfParser:
     @staticmethod
     def total_page_number(fnm, binary=None):
         try:
-            pdf = pdfplumber.open(
-                fnm) if not binary else pdfplumber.open(BytesIO(binary))
-            return len(pdf.pages)
+            with sys.modules[LOCK_KEY_pdfplumber]:
+                pdf = pdfplumber.open(
+                    fnm) if not binary else pdfplumber.open(BytesIO(binary))
+            total_page = len(pdf.pages)
+            pdf.close()
+            return total_page
         except Exception:
             logging.exception("total_page_number")
 
@@ -966,17 +1003,18 @@ class RAGFlowPdfParser:
         self.page_from = page_from
         start = timer()
         try:
-            self.pdf = pdfplumber.open(fnm) if isinstance(
-                fnm, str) else pdfplumber.open(BytesIO(fnm))
-            self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
-                                enumerate(self.pdf.pages[page_from:page_to])]
-            try:
-                self.page_chars = [[c for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
-            except Exception as e:
-                logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
-                self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
-                
-            self.total_page = len(self.pdf.pages)
+            with sys.modules[LOCK_KEY_pdfplumber]:
+                self.pdf = pdfplumber.open(fnm) if isinstance(
+                    fnm, str) else pdfplumber.open(BytesIO(fnm))
+                self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
+                                    enumerate(self.pdf.pages[page_from:page_to])]
+                try:
+                    self.page_chars = [[c for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
+                except Exception as e:
+                    logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
+                    self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
+
+                self.total_page = len(self.pdf.pages)
         except Exception:
             logging.exception("RAGFlowPdfParser __images__")
         logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
@@ -996,29 +1034,22 @@ class RAGFlowPdfParser:
             dfs(outlines, 0)
         except Exception as e:
             logging.warning(f"Outlines exception: {e}")
+        finally:
+            self.pdf.close()
         if not self.outlines:
             logging.warning("Miss outlines")
 
         logging.debug("Images converted.")
         self.is_english = [re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(
             random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i]))))) for i in
-                           range(len(self.page_chars))]
+            range(len(self.page_chars))]
         if sum([1 if e else 0 for e in self.is_english]) > len(
                 self.page_images) / 2:
             self.is_english = True
         else:
             self.is_english = False
 
-        start = timer()
-        for i, img in enumerate(self.page_images):
-            chars = self.page_chars[i] if not self.is_english else []
-            self.mean_height.append(
-                np.median(sorted([c["height"] for c in chars])) if chars else 0
-            )
-            self.mean_width.append(
-                np.median(sorted([c["width"] for c in chars])) if chars else 8
-            )
-            self.page_cum_height.append(img.size[1] / zoomin)
+        async def __img_ocr(i, id, img, chars, limiter):
             j = 0
             while j + 1 < len(chars):
                 if chars[j]["text"] and chars[j + 1]["text"] \
@@ -1028,9 +1059,44 @@ class RAGFlowPdfParser:
                     chars[j]["text"] += " "
                 j += 1
 
-            self.__ocr(i + 1, img, chars, zoomin)
+            if limiter:
+                async with limiter:
+                    await trio.to_thread.run_sync(lambda: self.__ocr(i + 1, img, chars, zoomin, id))
+            else:
+                self.__ocr(i + 1, img, chars, zoomin, id)
+
             if callback and i % 6 == 5:
                 callback(prog=(i + 1) * 0.6 / len(self.page_images), msg="")
+
+        async def __img_ocr_launcher():
+            def __ocr_preprocess():
+                chars = self.page_chars[i] if not self.is_english else []
+                self.mean_height.append(
+                    np.median(sorted([c["height"] for c in chars])) if chars else 0
+                )
+                self.mean_width.append(
+                    np.median(sorted([c["width"] for c in chars])) if chars else 8
+                )
+                self.page_cum_height.append(img.size[1] / zoomin)
+                return chars
+
+            if self.parallel_limiter:
+                async with trio.open_nursery() as nursery:
+                    for i, img in enumerate(self.page_images):
+                        chars = __ocr_preprocess()
+
+                        nursery.start_soon(__img_ocr, i, i % PARALLEL_DEVICES, img, chars,
+                                           self.parallel_limiter[i % PARALLEL_DEVICES])
+                        await trio.sleep(0.1)
+            else:
+                for i, img in enumerate(self.page_images):
+                    chars = __ocr_preprocess()
+                    await __img_ocr(i, 0, img, chars, None)
+
+        start = timer()
+
+        trio.run(__img_ocr_launcher)
+
         logging.info(f"__images__ {len(self.page_images)} pages cost {timer() - start}s")
 
         if not self.is_english and not any(
@@ -1095,7 +1161,7 @@ class RAGFlowPdfParser:
                 self.page_images[pns[0]].crop((left * ZM, top * ZM,
                                                right *
                                                ZM, min(
-                    bottom, self.page_images[pns[0]].size[1])
+                                                   bottom, self.page_images[pns[0]].size[1])
                                                ))
             )
             if 0 < ii < len(poss) - 1:
@@ -1157,7 +1223,7 @@ class RAGFlowPdfParser:
         return poss
 
 
-class PlainParser(object):
+class PlainParser:
     def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
         self.outlines = []
         lines = []
@@ -1191,6 +1257,53 @@ class PlainParser(object):
     @staticmethod
     def remove_tag(txt):
         raise NotImplementedError
+
+
+class VisionParser(RAGFlowPdfParser):
+    def __init__(self, vision_model, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.vision_model = vision_model
+
+    def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
+        try:
+            with sys.modules[LOCK_KEY_pdfplumber]:
+                self.pdf = pdfplumber.open(fnm) if isinstance(
+                    fnm, str) else pdfplumber.open(BytesIO(fnm))
+                self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
+                                    enumerate(self.pdf.pages[page_from:page_to])]
+                self.total_page = len(self.pdf.pages)
+        except Exception:
+            self.page_images = None
+            self.total_page = 0
+            logging.exception("VisionParser __images__")
+
+    def __call__(self, filename, from_page=0, to_page=100000, **kwargs):
+        callback = kwargs.get("callback", lambda prog, msg: None)
+
+        self.__images__(fnm=filename, zoomin=3, page_from=from_page, page_to=to_page, **kwargs)
+
+        total_pdf_pages = self.total_page
+
+        start_page = max(0, from_page)
+        end_page = min(to_page, total_pdf_pages)
+
+        all_docs = []
+
+        for idx, img_binary in enumerate(self.page_images or []):
+            pdf_page_num = idx  # 0-based
+            if pdf_page_num < start_page or pdf_page_num >= end_page:
+                continue
+
+            docs = picture_vision_llm_chunk(
+                binary=img_binary,
+                vision_model=self.vision_model,
+                prompt=vision_llm_describe_prompt(page=pdf_page_num+1),
+                callback=callback,
+            )
+
+            if docs:
+                all_docs.append(docs)
+        return [(doc, "") for doc in all_docs], []
 
 
 if __name__ == "__main__":

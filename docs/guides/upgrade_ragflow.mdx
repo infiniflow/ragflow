@@ -3,7 +3,7 @@ sidebar_position: 11
 slug: /upgrade_ragflow
 ---
 
-# Upgrade RAGFlow
+# Upgrade
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -62,16 +62,16 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-2. Switch to the latest, officially published release, e.g., `v0.16.0`:
+2. Switch to the latest, officially published release, e.g., `v0.17.2`:
 
    ```bash
-   git checkout -f v0.16.0
+   git checkout -f v0.17.2
    ```
 
 3. Update **ragflow/docker/.env** as follows:
 
    ```bash
-   RAGFLOW_IMAGE=infiniflow/ragflow:v0.16.0
+   RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.2
    ```
 
 4. Update the RAGFlow image and restart RAGFlow:

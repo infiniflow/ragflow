@@ -3,7 +3,7 @@ sidebar_position: 4
 slug: /manage_team_members
 ---
 
-# Manage team members
+# Team
 
 Invite or remove team members, join or leave a team.
 
@@ -11,9 +11,14 @@ Invite or remove team members, join or leave a team.
 
 By default, each RAGFlow user is assigned a single team named after their name. RAGFlow allows you to invite RAGFlow users to your team. Your team members can help you:
 
-- Upload documents to your datasets.
+- Upload documents to your datasets (knowledge bases).
 - Update document configurations in your datasets.
+- Update the default configurations for your datasets.
 - Parse documents in your datasets.
+
+:::danger IMPORTANT
+To allow your team members to view and update your knowledge base, ensure that you set **Permissions** on its **Configuration** page from **Only me** to **Team**.
+:::
 
 :::tip NOTE
 Team members are currently *not* allowed to invite users to your team, and only you, the team owner, is permitted to do so.
@@ -29,6 +34,10 @@ _On the **Team** page, you can view the information about members of your team a
 
 You are, by default, the owner of your own team and the only person permitted to invite users to join your team or remove team members.
 
+:::danger IMPORTANT
+When using email address to invite a team member, ensure it is associated with an existing RAGFlow account to avoid errors.
+:::
+
 ![invite_team_member](https://github.com/user-attachments/assets/d85b55c3-7e86-4f04-a414-ca18a9ee8963)
 
 ## Remove team members
@@ -38,3 +47,5 @@ You are, by default, the owner of your own team and the only person permitted to
 ## Accept or decline team invite
 
 ![accept_or_decline_team_invite](https://github.com/user-attachments/assets/6a2cb61f-03d5-4423-9ed1-71df97ff4114)
+
+_After accepting the team invite, you should be able to view and update the team owner's knowledge bases whose **Permissions** is set to **Team**._

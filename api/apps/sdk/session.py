@@ -185,7 +185,7 @@ def chat_completion(tenant_id, chat_id):
         return get_result(data=answer)
 
 
-@manager.route('chats_openai/<chat_id>/chat/completions', methods=['POST'])  # noqa: F821
+@manager.route('/chats_openai/<chat_id>/chat/completions', methods=['POST'])  # noqa: F821
 @validate_request("model", "messages")  # noqa: F821
 @token_required
 def chat_completion_openai_like(tenant_id, chat_id):
@@ -217,7 +217,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
         model=model,
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "Who you are?"},
+            {"role": "user", "content": "Who are you?"},
             {"role": "assistant", "content": "I am an AI assistant named..."},
             {"role": "user", "content": "Can you tell me how to install neovim"},
         ],
@@ -236,14 +236,20 @@ def chat_completion_openai_like(tenant_id, chat_id):
     messages = req.get("messages", [])
     # To prevent empty [] input
     if len(messages) < 1:
-        return get_error_data_result("You have to provide messages")
+        return get_error_data_result("You have to provide messages.")
+    if messages[-1]["role"] != "user":
+        return get_error_data_result("The last content of this conversation is not from user.")
+
+    prompt = messages[-1]["content"]
+    # Treat context tokens as reasoning tokens
+    context_token_used = sum(len(message["content"]) for message in messages)
 
     dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
     if not dia:
         return get_error_data_result(f"You don't own the chat {chat_id}")
     dia = dia[0]
 
-    # Filter system and assistant messages
+    # Filter system and non-sense assistant messages
     msg = None
     msg = [m for m in messages if m["role"] != "system" and (m["role"] != "assistant" or msg)]
 
@@ -251,8 +257,9 @@ def chat_completion_openai_like(tenant_id, chat_id):
         # The value for the usage field on all chunks except for the last one will be null.
         # The usage field on the last chunk contains token usage statistics for the entire request.
         # The choices field on the last chunk will always be an empty array [].
-        def streamed_respose_generator(chat_id, dia, msg):
+        def streamed_response_generator(chat_id, dia, msg):
             token_used = 0
+            answer_cache = ""
             response = {
                 "id": f"chatcmpl-{chat_id}",
                 "choices": [
@@ -278,25 +285,28 @@ def chat_completion_openai_like(tenant_id, chat_id):
             try:
                 for ans in chat(dia, msg, True):
                     answer = ans["answer"]
-                    incremental = answer[token_used:]
+                    incremental = answer.replace(answer_cache, "", 1)
+                    answer_cache = answer.rstrip("</think>")
                     token_used += len(incremental)
                     response["choices"][0]["delta"]["content"] = incremental
-                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+                    yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             except Exception as e:
                 response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
-                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+                yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
 
-            # The last chunck
+            # The last chunk
             response["choices"][0]["delta"]["content"] = None
             response["choices"][0]["finish_reason"] = "stop"
             response["usage"] = {
-                "prompt_tokens": len(msg),
+                "prompt_tokens": len(prompt),
                 "completion_tokens": token_used,
-                "total_tokens": len(msg) + token_used
+                "total_tokens": len(prompt) + token_used
             }
-            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n".encode("utf-8")
+            yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
+            yield "data:[DONE]\n\n"
 
-        resp = Response(streamed_respose_generator(chat_id, dia, msg), mimetype="text/event-stream")
+
+        resp = Response(streamed_response_generator(chat_id, dia, msg), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
@@ -308,6 +318,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
             # focus answer content only
             answer = ans
             break
+        content = answer["answer"]
 
         response  = {
             "id": f"chatcmpl-{chat_id}",
@@ -315,20 +326,20 @@ def chat_completion_openai_like(tenant_id, chat_id):
             "created": int(time.time()),
             "model": req.get("model", ""),
             "usage": {
-                "prompt_tokens": len(messages),
-                "completion_tokens": len(answer),
-                "total_tokens": len(messages) + len(answer),
+                "prompt_tokens": len(prompt),
+                "completion_tokens": len(content),
+                "total_tokens": len(prompt) + len(content),
                 "completion_tokens_details": {
-                    "reasoning_tokens": len(answer),
-                    "accepted_prediction_tokens": len(answer),
-                    "rejected_prediction_tokens": len(answer)
+                    "reasoning_tokens": context_token_used,
+                    "accepted_prediction_tokens": len(content),
+                    "rejected_prediction_tokens": 0 # 0 for simplicity
                 }
             },
             "choices": [
                 {
                     "message": {
                         "role": "assistant",
-                        "content": answer["answer"]
+                        "content": content
                     },
                     "logprobs": None,
                     "finish_reason": "stop",
@@ -356,6 +367,18 @@ def agent_completions(tenant_id, agent_id):
         conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
         if not conv:
             return get_error_data_result(f"You don't own the session {req['session_id']}")
+        # If an update to UserCanvas is detected, update the API4Conversation.dsl
+        sync_dsl = req.get("sync_dsl", False)
+        if sync_dsl is True and cvs[0].update_time > conv[0].update_time:
+            current_dsl = conv[0].dsl
+            new_dsl = json.loads(dsl)
+            state_fields = ["history", "messages", "path", "reference"]
+            states = {field: current_dsl.get(field, []) for field in state_fields}
+            current_dsl.update(new_dsl)
+            current_dsl.update(states)
+            API4ConversationService.update_by_id(req["session_id"], {
+                "dsl": current_dsl
+            })
     else:
         req["question"] = ""
     if req.get("stream", True):
@@ -439,7 +462,10 @@ def list_agent_session(tenant_id, agent_id):
         desc = False
     else:
         desc = True
-    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id)
+    # dsl defaults to True in all cases except for False and false
+    include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
+    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id,
+                                             user_id, include_dsl)
     if not convs:
         return get_result(data=[])
     for conv in convs:
@@ -501,6 +527,38 @@ def delete(tenant_id, chat_id):
         ConversationService.delete_by_id(id)
     return get_result()
 
+
+@manager.route('/agents/<agent_id>/sessions', methods=["DELETE"])  # noqa: F821
+@token_required
+def delete_agent_session(tenant_id, agent_id):
+    req = request.json
+    cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
+    if not cvs:
+        return get_error_data_result(f"You don't own the agent {agent_id}")
+    
+    convs = API4ConversationService.query(dialog_id=agent_id)
+    if not convs:
+        return get_error_data_result(f"Agent {agent_id} has no sessions")
+
+    if not req:
+        ids = None
+    else:
+        ids = req.get("ids")
+
+    if not ids:
+        conv_list = []
+        for conv in convs:
+            conv_list.append(conv.id)
+    else:
+        conv_list = ids
+    
+    for session_id in conv_list:
+        conv = API4ConversationService.query(id=session_id, dialog_id=agent_id)
+        if not conv:
+            return get_error_data_result(f"The agent doesn't own the session ${session_id}")
+        API4ConversationService.delete_by_id(session_id)
+    return get_result()
+    
 
 @manager.route('/sessions/ask', methods=['POST'])  # noqa: F821
 @token_required

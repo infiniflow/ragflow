@@ -397,6 +397,7 @@ export const initialRetrievalValues = {
   similarity_threshold: 0.2,
   keywords_similarity_weight: 0.3,
   top_n: 8,
+  use_kg: false,
   ...initialQueryBaseValues,
 };
 
@@ -606,6 +607,7 @@ export const initialInvokeValues = {
 }`,
   proxy: 'http://',
   clean_html: false,
+  datatype: 'json',
 };
 
 export const initialTemplateValues = {

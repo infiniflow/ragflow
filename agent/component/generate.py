@@ -18,10 +18,10 @@ from functools import partial
 import pandas as pd
 from api.db import LLMType
 from api.db.services.conversation_service import structure_answer
-from api.db.services.dialog_service import message_fit_in
 from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
+from rag.prompts import message_fit_in
 
 
 class GenerateParam(ComponentParamBase):
@@ -216,6 +216,8 @@ class Generate(ComponentBase):
             return
 
         msg = self._canvas.get_history(self._param.message_history_window_size)
+        if msg and msg[0]['role'] == 'assistant':
+            msg.pop(0)
         if len(msg) < 1:
             msg.append({"role": "user", "content": "Output: "})
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))

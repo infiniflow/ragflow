@@ -1,12 +1,19 @@
+import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
+import { cn } from '@/lib/utils';
 import { Form, Select, Switch } from 'antd';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
+import { DatasetConfigurationContainer } from '../dataset-configuration-container';
 import EntityTypesItem from '../entity-types-item';
 
-const excludedTagParseMethods = ['table', 'knowledge_graph', 'tag'];
+const excludedTagParseMethods = [
+  DocumentParserType.Table,
+  DocumentParserType.KnowledgeGraph,
+  DocumentParserType.Tag,
+];
 
-export const showTagItems = (parserId: string) => {
+export const showTagItems = (parserId: DocumentParserType) => {
   return !excludedTagParseMethods.includes(parserId);
 };
 
@@ -16,20 +23,24 @@ const enum MethodValue {
 }
 
 export const excludedParseMethods = [
-  'table',
-  'resume',
-  'picture',
-  'knowledge_graph',
-  'qa',
-  'tag',
+  DocumentParserType.Table,
+  DocumentParserType.Resume,
+  DocumentParserType.Picture,
+  DocumentParserType.KnowledgeGraph,
+  DocumentParserType.Qa,
+  DocumentParserType.Tag,
 ];
 
-export const showGraphRagItems = (parserId: string) => {
-  return !excludedParseMethods.includes(parserId);
+export const showGraphRagItems = (parserId: DocumentParserType | undefined) => {
+  return !excludedParseMethods.some((x) => x === parserId);
+};
+
+type GraphRagItemsProps = {
+  marginBottom?: boolean;
 };
 
 // The three types "table", "resume" and "one" do not display this configuration.
-const GraphRagItems = () => {
+const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
 
   const methodOptions = useMemo(() => {
@@ -43,20 +54,20 @@ const GraphRagItems = () => {
     (title: React.ReactNode | string) => {
       return {
         title: typeof title === 'string' ? t(title) : title,
-        overlayInnerStyle: { width: '50vw' },
+        overlayInnerStyle: { width: '32vw' },
       };
     },
     [t],
   );
 
   return (
-    <div className="border p-2 rounded-lg bg-slate-50 dark:bg-gray-600">
+    <DatasetConfigurationContainer className={cn({ 'mb-4': marginBottom })}>
       <Form.Item
         name={['parser_config', 'graphrag', 'use_graphrag']}
         label={t('useGraphRag')}
         initialValue={false}
         valuePropName="checked"
-        tooltip={renderWideTooltip('useGraphRagTip')}
+        tooltip={t('useGraphRagTip')}
       >
         <Switch />
       </Form.Item>
@@ -112,7 +123,7 @@ const GraphRagItems = () => {
           );
         }}
       </Form.Item>
-    </div>
+    </DatasetConfigurationContainer>
   );
 };
 

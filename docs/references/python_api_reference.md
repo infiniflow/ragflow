@@ -5,7 +5,7 @@ slug: /python_api_reference
 
 # Python API
 
-A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's Python APIs. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/models/llm_api_key_setup.md).
 
 :::tip NOTE
 Run the following command to download the Python SDK:
@@ -13,9 +13,62 @@ Run the following command to download the Python SDK:
 ```bash
 pip install ragflow-sdk
 ```
+
 :::
 
 ---
+
+## OpenAI-Compatible API
+
+---
+
+### Create chat completion
+
+Creates a model response for the given historical chat conversation via OpenAI's API.
+
+#### Parameters
+
+##### model: `str`, *Required*
+
+The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+
+##### messages: `list[object]`, *Required*
+
+A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
+
+##### stream: `boolean`
+
+Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+#### Returns
+
+- Success: Response [message](https://platform.openai.com/docs/api-reference/chat/create) like OpenAI
+- Failure: `Exception`
+
+#### Examples
+
+```python
+from openai import OpenAI
+
+model = "model"
+client = OpenAI(api_key="ragflow-api-key", base_url=f"http://ragflow_address/api/v1/chats_openai/<chat_id>")
+
+completion = client.chat.completions.create(
+    model=model,
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Who are you?"},
+    ],
+    stream=True
+)
+
+stream = True
+if stream:
+    for chunk in completion:
+        print(chunk)
+else:
+    print(completion.choices[0].message.content)
+```
 
 ## DATASET MANAGEMENT
 
@@ -29,7 +82,6 @@ RAGFlow.create_dataset(
     avatar: str = "",
     description: str = "",
     embedding_model: str = "BAAI/bge-large-zh-v1.5",
-    language: str = "English",
     permission: str = "me", 
     chunk_method: str = "naive",
     parser_config: DataSet.ParserConfig = None
@@ -44,11 +96,6 @@ Creates a dataset.
 
 The unique name of the dataset to create. It must adhere to the following requirements:
 
-- Permitted characters include:
-  - English letters (a-z, A-Z)
-  - Digits (0-9)
-  - "_" (underscore)
-- Must begin with an English letter or underscore.
 - Maximum 65,535 characters.
 - Case-insensitive.
 
@@ -60,12 +107,6 @@ Base64 encoding of the avatar. Defaults to `""`
 
 A brief description of the dataset to create. Defaults to `""`.
 
-##### language: `str`
-
-The language setting of the dataset to create. Available options:
-
-- `"English"` (default)
-- `"Chinese"`
 
 ##### permission
 
@@ -260,9 +301,6 @@ A dictionary representing the attributes to update, with the following keys:
   - `"picture"`: Picture
   - `"one"`: One
   - `"email"`: Email
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
-  - `"meta_fields"`: `dict[str, Any]` The meta fields of the dataset.
 
 #### Returns
 
@@ -278,6 +316,23 @@ rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:
 dataset = rag_object.list_datasets(name="kb_name")
 dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "chunk_method":"manual"})
 ```
+
+---
+
+## Error Codes
+
+---
+
+| Code | Message | Description |
+|------|---------|-------------|
+| 400  | Bad Request | Invalid request parameters |
+| 401  | Unauthorized | Unauthorized access |
+| 403  | Forbidden | Access denied |
+| 404  | Not Found | Resource not found |
+| 500  | Internal Server Error | Server internal error |
+| 1001 | Invalid Chunk ID | Invalid Chunk ID |
+| 1002 | Chunk Update Failed | Chunk update failed |
+
 
 ---
 
@@ -331,6 +386,7 @@ Updates configurations for the current document.
 A dictionary representing the attributes to update, with the following keys:
 
 - `"display_name"`: `str` The name of the document to update.
+- `"meta_fields"`: `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: `str` The parsing method to apply to the document.
   - `"naive"`: General
   - `"manual`: Manual
@@ -951,8 +1007,6 @@ The LLM settings for the chat assistant to create. Defaults to `None`. When the 
   This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
 - `frequency penalty`: `float`  
   Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
-- `max_token`: `int`  
-  The maximum length of the model's output, measured in the number of tokens (words or pieces of words). Defaults to `512`. If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.
 
 ##### prompt: `Chat.Prompt`
 
@@ -1015,7 +1069,6 @@ A dictionary representing the attributes to update, with the following keys:
   - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
   - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have appeared in the conversation.
   - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model’s tendency to repeat the same words.
-  - `"max_token"`, `int` The maximum length of the model's output, measured in the number of tokens (words or pieces of words). Defaults to `512`. If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.
 - `"prompt"` : Instructions for the LLM to follow.
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
@@ -1407,20 +1460,12 @@ while True:
 ### Create session with agent
 
 ```python
-Agent.create_session(id,rag, **kwargs) -> Session
+Agent.create_session(**kwargs) -> Session
 ```
 
 Creates a session with the current agent.
 
 #### Parameters
-
-##### id: `str`, *Required*
-
-The id of agent
-
-##### rag:`RAGFlow object`
-
-The RAGFlow object
 
 ##### **kwargs
 
@@ -1440,8 +1485,9 @@ The parameters in `begin` component.
 from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-AGENT_ID = "AGENT_ID"
-session = Agent.create_session(AGENT_ID, rag_object)
+agent_id = "AGENT_ID"
+agent = rag_object.list_agents(id = agent_id)[0]
+session = agent.create_session()
 ```
 
 ---
@@ -1518,7 +1564,8 @@ from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
-session = Agent.create_session(AGENT_id, rag_object)    
+agent = rag_object.list_agents(id = AGENT_id)[0]
+session = agent.create_session()    
 
 print("\n===== Miss R ====\n")
 print("Hello. What can I do for you?")
@@ -1539,8 +1586,6 @@ while True:
 
 ```python
 Agent.list_sessions(
-    agent_id,
-    rag
     page: int = 1, 
     page_size: int = 30, 
     orderby: str = "update_time", 
@@ -1587,10 +1632,41 @@ The ID of the agent session to retrieve. Defaults to `None`.
 from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-agent_id = "2710f2269b4611ef8fdf0242ac120006"
-sessions=Agent.list_sessions(agent_id,rag_object)
+AGENT_id = "AGENT_ID"
+agent = rag_object.list_agents(id = AGENT_id)[0]
+sessons = agent.list_sessions()
 for session in sessions:
     print(session)
+```
+---
+### Delete agent's sessions
+
+```python
+Agent.delete_sessions(ids: list[str] = None)
+```
+
+Deletes sessions of a agent by ID.
+
+#### Parameters
+
+##### ids: `list[str]`
+
+The IDs of the sessions to delete. Defaults to `None`. If it is not specified, all sessions associated with the agent will be deleted.
+
+#### Returns
+
+- Success: No value is returned.
+- Failure: `Exception`
+
+#### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+AGENT_id = "AGENT_ID"
+agent = rag_object.list_agents(id = AGENT_id)[0]
+agent.delete_sessions(ids=["id_1","id_2"])
 ```
 
 ---
@@ -1658,3 +1734,5 @@ for agent in rag_object.list_agents():
 ```
 
 ---
+
+

@@ -1,0 +1,62 @@
+---
+sidebar_position: 9
+slug: /switch_component
+---
+
+# Switch component
+
+A component that evaluates whether specified conditions are met and directs the follow of execution accordingly. 
+
+---
+
+A **Switch** component evaluates conditions based on the output of specific components, directing the flow of execution accordingly to enable complex branching logic.
+
+## Scenarios
+
+A **Switch** component is essential for condition-based direction of execution flow. While it shares similarities with the [Categorize](./categorize.mdx) component, which is also used in multi-pronged strategies, the key distinction lies in their approach: the evaluation of the **Switch** component is rule-based, whereas the **Categorize** component involves AI and uses an LLM for decision-making. 
+
+## Configurations
+
+### Case n
+
+A **Switch** component must have at least one case, each with multiple specified conditions and *only one* downstream component. When multiple conditions are specified for a case, you must set the logical relationship between them to either AND or OR.
+
+#### Next step
+
+Specifies the downstream component of this case.
+
+- *Once you specify the ID of the downstream component, a link is established between this case and the corresponding component.*
+- *If you manually link this case to a downstream component on the canvas, the ID of that component is auto-populated.*
+
+#### Condition
+
+Evaluates whether the output of specific components meets certain conditions, with **Component ID**, **Operator**, and **Value** together forming a conditional expression.
+
+:::danger IMPORTANT
+When you have added multiple conditions for a specific case, a **Logical operator** field appears, requiring you to set the logical relationship between these conditions as either AND or OR.
+![Image](https://github.com/user-attachments/assets/102f006e-9906-49c2-af43-de6af03d5074)
+:::
+
+- **Component ID**: The ID of the corresponding component.
+- **Operator**: The operator required to form a conditional expression.
+  - Equals
+  - Not equal
+  - Greater than
+  - Greater equal
+  - Less than
+  - Less equal
+  - Contains 
+  - Not contains 
+  - Starts with
+  - Ends with
+  - Is empty
+  - Not empty
+- **Value**: A single value, which can be an integer, float, or string.  
+  - Delimiters, multiple values, or expressions are *not* supported.
+  - Strings need not be wrapped in `""` or `''`.
+
+### ELSE 
+
+**Required**. Specifies the downstream component if none of the conditions defined above are met.
+
+*Once you specify the ID of the downstream component, a link is established between ELSE and the corresponding component.*

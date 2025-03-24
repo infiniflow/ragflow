@@ -3,9 +3,103 @@ sidebar_position: 2
 slug: /release_notes
 ---
 
-# Release notes
+# Releases
 
 Key features, improvements and bug fixes in the latest releases.
+
+## v0.17.2
+
+Released on March 13, 2025.
+
+### Improvements
+
+- Adds OpenAI-compatible APIs.
+- Introduces a German user interface.
+- Accelerates knowledge graph extraction.
+- Enables Tavily-based web search in the **Retrieval** agent component.
+- Adds Tongyi-Qianwen QwQ models (OpenAI-compatible).
+- Supports CSV files in the **General** chunk method.
+
+### Fixed issues
+
+- Unable to add models via Ollama/Xinference, an issue introduced in v0.17.1.
+
+### Related APIs
+
+#### HTTP APIs
+
+- [Create chat completion](./references/http_api_reference.md#openai-compatible-api)
+
+#### Python APIs
+
+- [Create chat completion](./references/python_api_reference.md#openai-compatible-api)
+
+## v0.17.1
+
+Released on March 11, 2025.
+
+### Improvements
+
+- Improves English tokenization quality.
+- Improves the table extraction logic in Markdown document parsing.
+- Updates SiliconFlow's model list.
+- Supports parsing XLS files (Excel97~2003) with improved corresponding error handling.
+- Supports Huggingface rerank models.
+- Enables relative time expressions ("now", "yesterday", "last week", "next year", and more) in the **Rewrite** agent component.
+
+### Fixed issues
+
+- A repetitive knowledge graph extraction issue.
+- Issues with API calling.
+- Options in the **PDF parser**, aka **Document parser**, dropdown are missing.
+- A Tavily web search issue.
+- Unable to preview diagrams or images in an AI chat.
+
+### Documentation
+
+#### Added documents
+
+- [Use tag set](./guides/dataset/use_tag_sets.md)
+
+## v0.17.0
+
+Released on March 3, 2025.
+
+### New features
+
+- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt Engine** tab of your chat assistant dialogue.
+- AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant Setting** tab of your chat assistant dialogue.
+- AI chat: Supports starting a chat without specifying knowledge bases.
+- AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
+- Dataset: Adds a **PDF parser**, aka **Document parser**, dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options.
+- Agent component: **(x)** or a forward slash `/` can be used to insert available keys (variables) in the system prompt field of the **Generate** or **Template** component.
+- Object storage: Supports using Aliyun OSS (Object Storage Service) as a file storage option.
+- Models: Updates the supported model list for Tongyi-Qianwen (Qwen), adding DeepSeek-specific models; adds ModelScope as a model provider.
+- APIs: Document metadata can be updated through an API.
+
+The following diagram illustrates the workflow of RAGFlow's Deep Research:
+
+![Image](https://github.com/user-attachments/assets/f65d4759-4f09-4d9d-9549-c0e1fe907525)
+
+The following is a screenshot of a conversation that integrates Deep Research:
+
+![Image](https://github.com/user-attachments/assets/165b88ff-1f5d-4fb8-90e2-c836b25e32e9)
+
+### Related APIs
+
+#### HTTP APIs
+
+Adds a body parameter `"meta_fields"` to the [Update document](./references/http_api_reference.md#update-document) method.
+
+#### Python APIs
+
+Adds a key option `"meta_fields"` to the [Update document](./references/python_api_reference.md#update-document) method.
+
+### Documentation
+
+#### Added documents
+
+- [Run retrieval test](./guides/dataset/run_retrieval_test.md)
 
 ## v0.16.0
 
@@ -15,9 +109,9 @@ Released on February 6, 2025.
 
 - Supports DeepSeek R1 and DeepSeek V3.
 - GraphRAG refactor: Knowledge graph is dynamically built on an entire knowledge base (dataset) rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph).
-- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](https://ragflow.io/docs/dev/iteration_component).
+- Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_component_reference/iteration.mdx).
 - New UI language: Portuguese.
-- Allows setting metadata for a specific file in a knowledge base to enhance AI-powered chats. See [here](https://ragflow.io/docs/dev/set_metada).
+- Allows setting metadata for a specific file in a knowledge base to enhance AI-powered chats. See [here](./guides/dataset/set_metadata.md).
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
 - Supports GPU acceleration for DeepDoc (see [docker-compose-gpu.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose-gpu.yml)).
 - Supports creating and referencing a **Tag** knowledge base as a key milestone towards bridging the semantic gap between query and response.
@@ -30,22 +124,21 @@ The **Tag knowledge base** feature is *unavailable* on the [Infinity](https://gi
 
 #### Added documents
 
-- [Construct knowledge graph](https://ragflow.io/docs/dev/construct_knowledge_graph)
-- [Set metadata](https://ragflow.io/docs/dev/set_metada)
-- [Begin component](https://ragflow.io/docs/dev/begin_component)
-- [Generate component](https://ragflow.io/docs/dev/generate_component)
-- [Interact component](https://ragflow.io/docs/dev/interact_component)
-- [Retrieval component](https://ragflow.io/docs/dev/retrieval_component)
-- [Categorize component](https://ragflow.io/docs/dev/categorize_component)
-- [Keyword component](https://ragflow.io/docs/dev/keyword_component)
-- [Message component](https://ragflow.io/docs/dev/message_component)
-- [Rewrite component](https://ragflow.io/docs/dev/rewrite_component)
-- [Switch component](https://ragflow.io/docs/dev/switch_component)
-- [Concentrator component](https://ragflow.io/docs/dev/concentrator_component)
-- [Template component](https://ragflow.io/docs/dev/template_component)
-- [Iteration component](https://ragflow.io/docs/dev/iteration_component)
-- [Note component](https://ragflow.io/docs/dev/note_component)
-
+- [Construct knowledge graph](./guides/dataset/construct_knowledge_graph.md)
+- [Set metadata](./guides/dataset/set_metadata.md)
+- [Begin component](./guides/agent/agent_component_reference/begin.mdx)
+- [Generate component](./guides/agent/agent_component_reference/generate.mdx)
+- [Interact component](./guides/agent/agent_component_reference/interact.mdx)
+- [Retrieval component](./guides/agent/agent_component_reference/retrieval.mdx)
+- [Categorize component](./guides/agent/agent_component_reference/categorize.mdx)
+- [Keyword component](./guides/agent/agent_component_reference/keyword.mdx)
+- [Message component](./guides/agent/agent_component_reference/message.mdx)
+- [Rewrite component](./guides/agent/agent_component_reference/rewrite.mdx)
+- [Switch component](./guides/agent/agent_component_reference/switch.mdx)
+- [Concentrator component](./guides/agent/agent_component_reference/concentrator.mdx)
+- [Template component](./guides/agent/agent_component_reference/template.mdx)
+- [Iteration component](./guides/agent/agent_component_reference/iteration.mdx)
+- [Note component](./guides/agent/agent_component_reference/note.mdx)
 
 ## v0.15.1
 
@@ -206,9 +299,9 @@ pip install ragflow-sdk==0.13.0
 
 #### Added documents
 
-- [Acquire a RAGFlow API key](https://ragflow.io/docs/dev/acquire_ragflow_api_key)
-- [HTTP API Reference](https://ragflow.io/docs/dev/http_api_reference)
-- [Python API Reference](https://ragflow.io/docs/dev/python_api_reference)
+- [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md)
+- [HTTP API Reference](./references/http_api_reference.md)
+- [Python API Reference](./references/python_api_reference.md)
 
 ## v0.12.0
 
@@ -316,7 +409,7 @@ Released on May 31, 2024.
 :::danger IMPORTANT
 While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM.
 
-If you are on an ARM platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a RAGFlow Docker image.
+If you are on an ARM platform, follow [this guide](./develop/build_docker_image.mdx) to build a RAGFlow Docker image.
 :::
 
 ### Related APIs

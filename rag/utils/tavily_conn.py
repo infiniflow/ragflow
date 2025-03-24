@@ -27,7 +27,8 @@ class Tavily:
         try:
             response = self.tavily_client.search(
                 query=query,
-                search_depth="advanced"
+                search_depth="advanced",
+                max_results=6
             )
             return [{"url": res["url"], "title": res["title"], "content": res["content"], "score": res["score"]} for res in response["results"]]
         except Exception as e:
@@ -38,6 +39,7 @@ class Tavily:
     def retrieve_chunks(self, question):
         chunks = []
         aggs = []
+        logging.info("[Tavily]Q: " + question)
         for r in self.search(question):
             id = get_uuid()
             chunks.append({
@@ -62,5 +64,5 @@ class Tavily:
                 "count": 1,
                 "url": r["url"]
             })
-            logging.info("[Tavily]: "+r["content"][:128]+"...")
+            logging.info("[Tavily]R: "+r["content"][:128]+"...")
         return {"chunks": chunks, "doc_aggs": aggs}

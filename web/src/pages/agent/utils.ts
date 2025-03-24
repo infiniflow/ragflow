@@ -8,7 +8,7 @@ import { removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, Position, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
-import { curry, get, intersectionWith, isEqual, sample } from 'lodash';
+import { curry, get, intersectionWith, isEqual, omit, sample } from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import { v4 as uuidv4 } from 'uuid';
@@ -415,4 +415,26 @@ export const buildCategorizeListFromObject = (
       return pre;
     }, [])
     .sort((a, b) => a.index - b.index);
+};
+
+/**
+   * Convert the list in the following form into an object
+   * {
+    "items": [
+      {
+        "name": "Categorize 1",
+        "description": "111",
+        "examples": "ddd",
+        "to": "Retrieval:LazyEelsStick"
+      }
+     ]
+    }
+*/
+export const buildCategorizeObjectFromList = (list: Array<ICategorizeItem>) => {
+  return list.reduce<ICategorizeItemResult>((pre, cur) => {
+    if (cur?.name) {
+      pre[cur.name] = omit(cur, 'name');
+    }
+    return pre;
+  }, {});
 };

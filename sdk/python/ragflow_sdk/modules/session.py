@@ -38,17 +38,34 @@ class Session(Base):
             res = self._ask_agent(question, stream)
         elif self.__session_type == "chat":
             res = self._ask_chat(question, stream, **kwargs)
-            
-        for line in res.iter_lines():
-            line = line.decode("utf-8")
-            if line.startswith("{"):
-                json_data = json.loads(line)
-                raise Exception(json_data["message"])
-            if not line.startswith("data:"):
-                continue
-            json_data = json.loads(line[5:])
-            if json_data["data"] is True or json_data["data"].get("running_status"):
-                continue
+
+        if stream:
+            for line in res.iter_lines():
+                line = line.decode("utf-8")
+                if line.startswith("{"):
+                    json_data = json.loads(line)
+                    raise Exception(json_data["message"])
+                if not line.startswith("data:"):
+                    continue
+                json_data = json.loads(line[5:])
+                if json_data["data"] is True or json_data["data"].get("running_status"):
+                    continue
+                answer = json_data["data"]["answer"]
+                reference = json_data["data"].get("reference", {})
+                temp_dict = {
+                    "content": answer,
+                    "role": "assistant"
+                }
+                if reference and "chunks" in reference:
+                    chunks = reference["chunks"]
+                    temp_dict["reference"] = chunks
+                message = Message(self.rag, temp_dict)
+                yield message
+        else:
+            try:
+                json_data = json.loads(res.text)
+            except ValueError:
+                raise Exception(f"Invalid response {res}")
             answer = json_data["data"]["answer"]
             reference = json_data["data"].get("reference", {})
             temp_dict = {
@@ -59,13 +76,10 @@ class Session(Base):
                 chunks = reference["chunks"]
                 temp_dict["reference"] = chunks
             message = Message(self.rag, temp_dict)
-            if stream:
-                yield message
-        if not stream:
             return message
-    
+
     def _ask_chat(self, question: str, stream: bool, **kwargs):
-        json_data = {"question": question, "stream": True, "session_id": self.id}
+        json_data = {"question": question, "stream": stream, "session_id": self.id}
         json_data.update(kwargs)
         res = self.post(f"/chats/{self.chat_id}/completions",
                         json_data, stream=stream)
@@ -73,7 +87,7 @@ class Session(Base):
 
     def _ask_agent(self, question: str, stream: bool):
         res = self.post(f"/agents/{self.agent_id}/completions",
-                        {"question": question, "stream": True, "session_id": self.id}, stream=stream)
+                        {"question": question, "stream": stream, "session_id": self.id}, stream=stream)
         return res
 
     def update(self, update_message):

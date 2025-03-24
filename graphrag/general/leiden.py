@@ -120,6 +120,9 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
         result = {}
         results_by_level[level] = result
         for node_id, raw_community_id in node_id_to_community_map[level].items():
+            if node_id not in graph.nodes:
+                logging.warning(f"Node {node_id} not found in the graph.")
+                continue
             community_id = str(raw_community_id)
             if community_id not in result:
                 result[community_id] = {"weight": 0, "nodes": []}

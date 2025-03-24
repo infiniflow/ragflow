@@ -110,10 +110,10 @@ export default {
       processDuration: 'Thời gian xử lý',
       progressMsg: 'Thông báo tiến trình',
       testingDescription:
-        'Thực hiện kiểm tra truy hồi để kiểm tra xem RAGFlow có thể phục hồi nội dung mong muốn cho LLM không.',
+        'Thực hiện kiểm tra truy hồi để kiểm tra xem RAGFlow có thể phục hồi nội dung mong muốn cho LLM không.Vui lòng lưu ý rằng các thay đổi được thực hiện ở đây sẽ không được lưu tự động. Nếu bạn điều chỉnh các cài đặt mặc định ở đây, chẳng hạn như trọng số tương tự của từ khóa, hãy đảm bảo rằng bạn cập nhật các cài đặt liên quan theo cách đồng bộ trong cài đặt trợ lý trò chuyện hoặc cài đặt toán tử thu hồi.',
       similarityThreshold: 'Ngưỡng tương đồng',
       similarityThresholdTip:
-        'RAGFlow sử dụng kết hợp giữa độ tương đồng từ khóa được trọng số và độ tương đồng vectơ cosin được trọng số hoặc kết hợp giữa độ tương đồng từ khóa được trọng số và điểm xếp hạng được tính lại trong quá trình truy hồi. Tham số này đặt ngưỡng cho sự tương đồng giữa truy vấn của người dùng và các khối. Bất kỳ khối nào có điểm tương đồng dưới ngưỡng này sẽ bị loại khỏi kết quả.',
+        'RAGFlow sử dụng kết hợp giữa độ tương đồng từ khóa được trọng số và độ tương đồng vectơ cosin được trọng số hoặc kết hợp giữa độ tương đồng từ khóa được trọng số và điểm xếp hạng được tính lại trong quá trình truy hồi. Tham số này đặt ngưỡng cho sự tương đồng giữa truy vấn của người dùng và các khối. Bất kỳ khối nào có điểm tương đồng dưới ngưỡng này sẽ bị loại khỏi kết quả. Theo mặc định, ngưỡng được đặt thành 0,2. Điều đó có nghĩa là chỉ những đoạn có điểm tương đồng hỗn hợp từ 20 trở lên mới được truy xuất.',
       vectorSimilarityWeight: 'Trọng số tương đồng từ khóa',
       vectorSimilarityWeightTip:
         'Cài đặt trọng số của độ tương đồng từ khóa trong điểm tương đồng kết hợp, được sử dụng với độ tương đồng vectơ cosin hoặc với điểm xếp hạng được tính lại. Tổng của hai trọng số phải bằng 1.0.',
@@ -153,7 +153,7 @@ export default {
       changeSpecificCategory: 'Thay đổi danh mục cụ thể',
       uploadTitle: 'Nhấp hoặc kéo thả tệp vào khu vực này để tải lên',
       uploadDescription:
-        'Hỗ trợ tải lên đơn hoặc hàng loạt. Nghiêm cấm tải lên dữ liệu công ty hoặc các tệp bị cấm khác.',
+        'RAGFlow hỗ trợ tải lên tệp một lần hoặc theo lô. Đối với RAGFlow triển khai cục bộ: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 1GB, với giới hạn tải lên theo lô là 32 tệp. Không có giới hạn về tổng số tệp trên mỗi tài khoản. Đối với demo.ragflow.io: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 10MB, với mỗi tệp không vượt quá 10MB và tối đa là 128 tệp trên mỗi tài khoản.',
       chunk: 'Khối',
       bulk: 'Hàng loạt',
       cancel: 'Hủy bỏ',
@@ -162,14 +162,14 @@ export default {
       rerankTip: `Nếu để trống, RAGFlow sẽ sử dụng kết hợp giữa độ tương đồng từ khóa được trọng số và độ tương đồng vectơ cosin được trọng số; nếu chọn mô hình xếp hạng lại, điểm xếp hạng được tính lại sẽ thay thế độ tương đồng vectơ cosin được trọng số.`,
       topK: 'Top-K',
       topKTip: `K khối sẽ được đưa vào các mô hình xếp hạng lại.`,
-      delimiter: 'Giới hạn',
+      delimiter: 'Dấu phân cách cho phân đoạn văn bản',
       html4excel: 'Excel sang HTML',
       html4excelTip: `Excel sẽ được phân tích cú pháp thành bảng HTML hay không. Nếu là FALSE, mỗi hàng trong Excel sẽ được tạo thành một khối.`,
       autoKeywords: 'Từ khóa tự động',
-      autoKeywordsTip: `Trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các từ khóa đó. Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
+      autoKeywordsTip: `Tự động trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng trong các truy vấn chứa các từ khóa đó. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi mô hình trò chuyện được chỉ định trong "Cài đặt mô hình hệ thống". Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối.`,
       autoQuestions: 'Câu hỏi tự động',
-      autoQuestionsTip: `Trích xuất N câu hỏi cho mỗi khối để tăng thứ hạng của chúng cho các truy vấn chứa các câu hỏi đó. Bạn có thể kiểm tra hoặc cập nhật các câu hỏi đã thêm cho một khối từ danh sách khối. Tính năng này sẽ không làm gián đoạn quá trình phân khối nếu xảy ra lỗi, ngoại trừ việc nó có thể thêm kết quả trống vào khối gốc. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi LLM được chỉ định trong 'Cài đặt mô hình hệ thống'.`,
-      delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token".`,
+      autoQuestionsTip: `Để tăng điểm xếp hạng, hãy trích xuất N câu hỏi cho mỗi đoạn kiến thức bằng mô hình trò chuyện được xác định trong "Cài đặt mô hình hệ thống". Lưu ý rằng việc này sẽ tiêu tốn thêm token. Kết quả có thể được xem và chỉnh sửa trong danh sách các đoạn. Lỗi trích xuất câu hỏi sẽ không chặn quá trình phân đoạn; kết quả trống sẽ được thêm vào đoạn gốc.`,
+      delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token". Thiết lập các dấu phân cách chỉ sau khi hiểu cơ chế phân đoạn và phân khối văn bản.`,
       redo: `Bạn có muốn xóa các đoạn {{chunkNum}} hiện có không?`,
       knowledgeGraph: 'Đồ thị tri thức',
       setMetaData: 'Đặt dữ liệu Meta',
@@ -190,14 +190,14 @@ export default {
       languagePlaceholder: 'Vui lòng nhập ngôn ngữ của bạn!',
       permissions: 'Quyền hạn',
       embeddingModel: 'Mô hình nhúng',
-      chunkTokenNumber: 'Số token khối',
+      chunkTokenNumber: 'Kích thước khối được khuyến nghị',
       chunkTokenNumberMessage: 'Số token khối là bắt buộc',
       embeddingModelTip:
         'Mô hình chuyển đổi các khối thành các nhúng. Nó không thể được thay đổi sau khi cơ sở kiến thức có các khối. Để chuyển sang mô hình nhúng khác, bạn phải xóa tất cả các khối trong cơ sở kiến thức.',
       permissionsTip:
         'Nếu được đặt thành "Đội", tất cả các thành viên trong nhóm sẽ có thể quản lý cơ sở kiến thức.',
       chunkTokenNumberTip:
-        'Nó đặt ngưỡng token cho một khối. Một đoạn văn có ít token hơn ngưỡng này sẽ được kết hợp với đoạn văn tiếp theo cho đến khi số lượng token vượt quá ngưỡng, tại thời điểm đó, một khối được tạo.',
+        'Nó đặt ngưỡng token cho một khối. Một đoạn văn có ít token hơn ngưỡng này sẽ được kết hợp với đoạn văn tiếp theo cho đến khi số lượng token vượt quá ngưỡng, tại thời điểm đó, một khối được tạo. Không có khối mới nào được tạo ra trừ khi một dấu phân cách được gặp, ngay cả khi ngưỡng này bị vượt quá.',
       chunkMethod: 'Phương thức khối',
       chunkMethodTip: 'Mẹo ở bên phải.',
       upload: 'Tải lên',
@@ -229,7 +229,7 @@ export default {
       <p>
       <li>Sử dụng mô hình nhận dạng thị giác để chia các văn bản thành các phân đoạn nhỏ hơn.</li>
       <li>Sau đó, kết hợp các phân đoạn liền kề cho đến khi số lượng token vượt quá ngưỡng được chỉ định bởi 'Số token khối', tại thời điểm đó, một khối được tạo.</li></p>
-      <p>Các định dạng tệp được hỗ trợ là <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>`,
+      <p>Các định dạng tệp được hỗ trợ là <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>`,
       paper: `<p>Chỉ hỗ trợ tệp <b>PDF</b>.</p><p>
       Bài báo sẽ được chia theo các phần, chẳng hạn như <i>tóm tắt, 1.1, 1.2</i>. </p><p>
       Cách tiếp cận này cho phép LLM tóm tắt bài báo hiệu quả hơn và cung cấp các phản hồi toàn diện, dễ hiểu hơn. 
@@ -239,10 +239,10 @@ export default {
       <i>Phương thức phân khối này được tự động áp dụng cho tất cả các tệp PPT được tải lên, do đó bạn không cần phải chỉ định thủ công.</i></p>`,
       qa: `
       <p>
-      Phương thức phân khối này hỗ trợ các định dạng tệp <b>EXCEL</b> và <b>CSV/TXT</b>.
+      Phương thức phân khối này hỗ trợ các định dạng tệp <b>XLSX</b> và <b>CSV/TXT</b>.
       </p>
       <li>
-      Nếu tệp ở định dạng <b>Excel</b>, nó phải chứa hai cột
+      Nếu tệp ở định dạng <b>XLSX</b>, nó phải chứa hai cột
       không có tiêu đề: một cột cho câu hỏi và cột còn lại cho câu trả lời, với
       cột câu hỏi đứng trước cột câu trả lời. Nhiều trang tính được chấp nhận, miễn là các cột được cấu trúc chính xác.
       </li>
@@ -260,7 +260,7 @@ export default {
       </p><p>
       Các bản lý lịch với nhiều hình thức khác nhau được phân tích cú pháp và tổ chức thành dữ liệu có cấu trúc để hỗ trợ nhà tuyển dụng tìm kiếm ứng viên.
       </p>`,
-      table: `<p>Các định dạng tệp được hỗ trợ là <b>EXCEL</b> và <b>CSV/TXT</b>.</p><p>
+      table: `<p>Các định dạng tệp được hỗ trợ là <b>XLSX</b> và <b>CSV/TXT</b>.</p><p>
       Dưới đây là một số điều kiện tiên quyết và mẹo:
       <ul>
       <li>Đối với tệp CSV hoặc TXT, dấu phân cách giữa các cột phải là <em><b>TAB</b></em>.</li>
@@ -316,14 +316,14 @@ export default {
       vietnamese: 'Tiếng Việt',
       pageRank: 'Xếp hạng trang',
       pageRankTip: `Điều này được sử dụng để tăng điểm liên quan. Điểm liên quan với tất cả các khối được truy xuất sẽ cộng với số này, Khi bạn muốn tìm kiếm cơ sở kiến thức đã cho ở vị trí đầu tiên, hãy đặt điểm "Page Rank" cao hơn những điểm khác.`,
-      tag: `<p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn được cho là sẽ được sử dụng bởi các cơ sở kiến thức khác để thêm thẻ vào các đoạn của chúng, các truy vấn tới đó cũng sẽ có thẻ.</p> 
-<p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn <b>KHÔNG</b> được dự định tham gia vào quy trình RAG.</p> 
-<p>Các đoạn trong cơ sở kiến thức này là ví dụ về thẻ, thể hiện toàn bộ tập hợp thẻ và mối quan hệ giữa đoạn và thẻ.</p> 
-<p>Phương pháp phân đoạn này hỗ trợ định dạng tệp <b>EXCEL</b> và <b>CSV/TXT</b>.</p> 
-<p>Nếu tệp ở định dạng <b>Excel</b>, nó phải chứa hai cột không có tiêu đề: một cho nội dung và một cho thẻ, với cột nội dung đứng trước cột thẻ. Nhiều trang tính được chấp nhận, miễn là các cột được cấu trúc đúng.</p> 
-<p>Nếu tệp ở định dạng <b>CSV/TXT</b>, nó phải được mã hóa UTF-8 với TAB làm dấu phân cách để phân tách nội dung và thẻ.</p> 
-<p>Trong cột thẻ, có dấu <b>phẩy</b> tiếng Anh giữa các thẻ.</p> 
-<i>Các dòng văn bản không tuân theo các quy tắc trên sẽ bị bỏ qua và mỗi cặp sẽ được coi là một đoạn riêng biệt.</i>`,
+      tag: `<p>Cơ sở kiến thức sử dụng phương pháp phân đoạn 'Tag' hoạt động như một tập hợp thẻ. Các cơ sở kiến thức khác có thể sử dụng nó để gắn thẻ cho các đoạn của riêng chúng và các truy vấn tới các cơ sở kiến thức này cũng sẽ được gắn thẻ bằng tập hợp thẻ này.</p>
+      <p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn sẽ <b>NOT</b> tham gia vào quy trình Tạo tăng cường truy xuất (RAG).</p>
+      <p>Mỗi đoạn trong cơ sở kiến thức này là một cặp mô tả-thẻ độc lập.</p>
+      <p>Các định dạng tệp được hỗ trợ bao gồm <b>XLSX</b> và <b>CSV/TXT</b>:</p>
+      <p>Nếu tệp ở định dạng <b>XLSX</b>, tệp đó phải chứa hai cột không có tiêu đề: một cột dành cho mô tả thẻ và cột còn lại dành cho tên thẻ, với cột Mô tả đứng trước cột Thẻ. Có thể chấp nhận nhiều trang tính, miễn là cấu trúc cột được cấu trúc đúng cách.</p>
+      <p>Nếu tệp ở định dạng <b>CSV/TXT</b>, tệp đó phải được mã hóa UTF-8 với TAB làm dấu phân cách để phân tách mô tả và thẻ.</p>
+      <p>Trong cột Thẻ, <b>dấu phẩy</b> được sử dụng để phân tách các thẻ.</p>
+      <i>Các dòng văn bản không tuân theo các quy tắc trên sẽ bị bỏ qua.</i>`,
       tagName: 'Thẻ',
       frequency: 'Tần số',
       searchTags: 'Thẻ tìm kiếm',
@@ -494,7 +494,7 @@ export default {
       betaError: `"Beta API Token" không được để trống!`,
       useKnowledgeGraph: 'Sử dụng đồ thị tri thức',
       useKnowledgeGraphTip:
-        'Nó sẽ truy xuất các mô tả về các thực thể, quan hệ và cộng đồng liên quan, điều này sẽ tăng cường khả năng suy luận các câu hỏi phức tạp và nhiều bước.',
+        'Có nên sử dụng đồ thị tri thức trong cơ sở tri thức được chỉ định trong quá trình thu hồi để trả lời câu hỏi đa bước hay không. Khi được kích hoạt, điều này sẽ liên quan đến các tìm kiếm lặp lại trên các đoạn thực thể, mối quan hệ và báo cáo cộng đồng, làm tăng đáng kể thời gian thu hồi.',
       keyword: 'Phân tích từ khóa',
       keywordTip:
         'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan.',
@@ -565,7 +565,7 @@ export default {
       img2txtModel: 'Mô hình img2txt',
       img2txtModelTip:
         'Mô hình đa mô-đun mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng. Nó có thể mô tả hình ảnh hoặc video.',
-      sequence2txtModel: 'Mô hình sequence2txt',
+      sequence2txtModel: 'Mô hình speech2txt',
       sequence2txtModelTip:
         'Mô hình ASR mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng. Sử dụng mô hình này để chuyển đổi giọng nói thành văn bản tương ứng.',
       rerankModel: 'Mô hình xếp hạng lại',
@@ -707,10 +707,11 @@ export default {
       newFolder: 'Thư mục mới',
       file: 'Tệp',
       uploadFile: 'Tải tệp lên',
+      parseOnCreation: 'Phân tích khi tạo',
       directory: 'Thư mục',
       uploadTitle: 'Nhấp hoặc kéo thả tệp vào khu vực này để tải lên',
       uploadDescription:
-        'Hỗ trợ tải lên đơn hoặc hàng loạt. Nghiêm cấm tải lên dữ liệu công ty hoặc các tệp bị cấm khác.',
+        'RAGFlow hỗ trợ tải lên tệp một lần hoặc theo lô. Đối với RAGFlow triển khai cục bộ: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 1GB, với giới hạn tải lên theo lô là 32 tệp. Không có giới hạn về tổng số tệp trên mỗi tài khoản. Đối với demo.ragflow.io: giới hạn tổng kích thước tệp cho mỗi lần tải lên là 10MB, với mỗi tệp không vượt quá 10MB và tối đa là 128 tệp trên mỗi tài khoản.',
       local: 'Tải lên cục bộ',
       s3: 'Tải lên S3',
       preview: 'Xem trước',

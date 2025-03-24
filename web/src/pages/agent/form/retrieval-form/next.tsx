@@ -11,37 +11,47 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
-import { useTranslate } from '@/hooks/common-hooks';
+import { useTranslation } from 'react-i18next';
 import { INextOperatorForm } from '../../interface';
-import { DynamicVariableForm } from '../components/next-dynamic-input-variable';
+import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
 const RetrievalForm = ({ form, node }: INextOperatorForm) => {
-  const { t } = useTranslate('flow');
+  const { t } = useTranslation();
   return (
     <Form {...form}>
-      <DynamicVariableForm></DynamicVariableForm>
-      <SimilaritySliderFormField name="keywords_similarity_weight"></SimilaritySliderFormField>
-      <TopNFormField></TopNFormField>
-      <RerankFormFields></RerankFormFields>
-      <KnowledgeBaseFormField></KnowledgeBaseFormField>
-      <FormField
-        control={form.control}
-        name="empty_response"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('chat.emptyResponse')}</FormLabel>
-            <FormControl>
-              <Textarea
-                placeholder={t('common.namePlaceholder')}
-                {...field}
-                autoComplete="off"
-                rows={4}
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      <form
+        className="space-y-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+        }}
+      >
+        <DynamicInputVariable node={node}></DynamicInputVariable>
+        <SimilaritySliderFormField
+          vectorSimilarityWeightName="keywords_similarity_weight"
+          isTooltipShown
+        ></SimilaritySliderFormField>
+        <TopNFormField></TopNFormField>
+        <RerankFormFields></RerankFormFields>
+        <KnowledgeBaseFormField></KnowledgeBaseFormField>
+        <FormField
+          control={form.control}
+          name="empty_response"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('chat.emptyResponse')}</FormLabel>
+              <FormControl>
+                <Textarea
+                  placeholder={t('common.namePlaceholder')}
+                  {...field}
+                  autoComplete="off"
+                  rows={4}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </form>
     </Form>
   );
 };
