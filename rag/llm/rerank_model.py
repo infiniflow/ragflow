@@ -194,6 +194,8 @@ class YoudaoRerank(DefaultRerank):
                                 "maidalun1020", "InfiniFlow"))
 
         self._model = YoudaoRerank._model
+        self._dynamic_batch_size = 8
+        self._min_batch_size = 1
 
     def similarity(self, query: str, texts: list):
         pairs = [(query, truncate(t, self._model.max_length)) for t in texts]
