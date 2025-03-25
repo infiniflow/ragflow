@@ -330,12 +330,12 @@ class PostgresDatabaseLock:
             raise Exception(f"postgres lock {self.lock_name} does not exist")
 
     def __enter__(self):
-        if isinstance(self.db, PooledDatabase.POSTGRES):
+        if isinstance(self.db, PooledPostgresqlDatabase):
             self.lock()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if isinstance(self.db, PooledDatabase.POSTGRES):
+        if isinstance(self.db, PooledPostgresqlDatabase):
             self.unlock()
 
     def __call__(self, func):
@@ -377,12 +377,12 @@ class MysqlDatabaseLock:
             raise Exception(f"mysql lock {self.lock_name} does not exist")
 
     def __enter__(self):
-        if isinstance(self.db, PooledDatabase.MYSQL):
+        if isinstance(self.db, PooledMySQLDatabase):
             self.lock()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if isinstance(self.db, PooledDatabase.MYSQL):
+        if isinstance(self.db, PooledMySQLDatabase):
             self.unlock()
 
     def __call__(self, func):
