@@ -25,8 +25,13 @@ def file_management_tmp_dir(tmp_path_factory):
 
 
 @pytest.fixture(scope="class")
-def get_dataset_id_and_document_ids(get_http_api_auth, file_management_tmp_dir):
+def get_dataset_id_and_document_ids(get_http_api_auth, file_management_tmp_dir, request):
+    def cleanup():
+        delete_dataset(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
     dataset_ids = batch_create_datasets(get_http_api_auth, 1)
-    document_ids = bulk_upload_documents(get_http_api_auth, dataset_ids[0], 5, file_management_tmp_dir)
-    yield dataset_ids[0], document_ids
-    delete_dataset(get_http_api_auth)
+    dataset_id = dataset_ids[0]
+    document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 5, file_management_tmp_dir)
+    return dataset_id, document_ids
