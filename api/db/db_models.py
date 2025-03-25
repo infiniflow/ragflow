@@ -22,6 +22,7 @@ import typing
 import time
 from enum import Enum
 from functools import wraps
+import hashlib
 
 from flask_login import UserMixin
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
@@ -302,12 +303,13 @@ def with_retry(max_retries=3, retry_delay=1.0):
 class PostgresDatabaseLock:
     def __init__(self, lock_name, timeout=10, db=None):
         self.lock_name = lock_name
+        self.lock_id = hashlib.md5(lock_name.encode()).hexdigest()
         self.timeout = int(timeout)
         self.db = db if db else DB
 
     @with_retry(max_retries=3, retry_delay=1.0)
     def lock(self):
-        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", self.timeout)
+        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", self.lock_id)
         ret = cursor.fetchone()
         if ret[0] == 0:
             raise Exception(f"acquire postgres lock {self.lock_name} timeout")
@@ -318,7 +320,7 @@ class PostgresDatabaseLock:
 
     @with_retry(max_retries=3, retry_delay=1.0)
     def unlock(self):
-        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", self.timeout)
+        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", self.lock_id)
         ret = cursor.fetchone()
         if ret[0] == 0:
             raise Exception(f"postgres lock {self.lock_name} was not established by this thread")
