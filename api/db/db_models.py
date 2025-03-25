@@ -307,33 +307,33 @@ class PostgresDatabaseLock:
 
     @with_retry(max_retries=3, retry_delay=1.0)
     def lock(self):
-        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", (self.lock_name,))
+        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", self.timeout)
         ret = cursor.fetchone()
-        if ret[0] is False:
+        if ret[0] == 0:
             raise Exception(f"acquire postgres lock {self.lock_name} timeout")
-        elif ret[0] is True:
+        elif ret[0] == 1:
             return True
         else:
             raise Exception(f"failed to acquire lock {self.lock_name}")
 
     @with_retry(max_retries=3, retry_delay=1.0)
     def unlock(self):
-        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", (self.lock_name,))
+        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", self.timeout)
         ret = cursor.fetchone()
-        if ret[0] is False:
+        if ret[0] == 0:
             raise Exception(f"postgres lock {self.lock_name} was not established by this thread")
-        elif ret[0] is True:
+        elif ret[0] == 1:
             return True
         else:
             raise Exception(f"postgres lock {self.lock_name} does not exist")
 
     def __enter__(self):
-        if isinstance(self.db, PooledPostgresqlDatabase):
+        if isinstance(self.db, PooledDatabase.POSTGRES):
             self.lock()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if isinstance(self.db, PooledPostgresqlDatabase):
+        if isinstance(self.db, PooledDatabase.POSTGRES):
             self.unlock()
 
     def __call__(self, func):
@@ -375,12 +375,12 @@ class MysqlDatabaseLock:
             raise Exception(f"mysql lock {self.lock_name} does not exist")
 
     def __enter__(self):
-        if isinstance(self.db, PooledMySQLDatabase):
+        if isinstance(self.db, PooledDatabase.MYSQL):
             self.lock()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if isinstance(self.db, PooledMySQLDatabase):
+        if isinstance(self.db, PooledDatabase.MYSQL):
             self.unlock()
 
     def __call__(self, func):
