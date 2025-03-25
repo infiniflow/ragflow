@@ -934,7 +934,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
             "important_keywords":chunk.get("important_kwd",[]),
             "questions":chunk.get("question_kwd",[]),
             "dataset_id":chunk.get("kb_id",chunk.get("dataset_id")),
-            "image_id":chunk["img_id"],
+            "image_id":chunk.get("img_id"),
             "available":bool(chunk.get("available_int",1)),
             "positions":chunk.get("position_int",[]),
         }
