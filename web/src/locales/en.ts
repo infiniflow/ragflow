@@ -696,6 +696,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       sureDelete: 'Are you sure to remove this member?',
       quit: 'Quit',
       sureQuit: 'Are you sure you want to quit the team you joined?',
+      secretKey: 'Secret key',
+      publicKey: 'Public key',
+      secretKeyMessage: 'Please enter the secret key',
+      publicKeyMessage: 'Please enter the public key',
+      hostMessage: 'Please enter the host',
+      configuration: 'Configuration',
+      langfuseDescription:
+        'Traces, evals, prompt management and metrics to debug and improve your LLM application.',
+      viewLangfuseSDocumentation: "View Langfuse's documentation",
+      view: 'View',
     },
     message: {
       registered: 'Registered!',
@@ -1213,6 +1223,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       },
       setting: 'Setting',
       settings: {
+        agentSetting: 'Agent Setting',
+        title: 'title',
+        description: 'description',
         upload: 'Upload',
         photo: 'Photo',
         permissions: 'Permission',

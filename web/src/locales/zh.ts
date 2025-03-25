@@ -210,8 +210,10 @@ export default {
       chunkTokenNumberMessage: '块Token数是必填项',
       embeddingModelTip:
         '用于嵌入块的嵌入模型。 一旦知识库有了块，它就无法更改。 如果你想改变它，你需要删除所有的块。',
-      permissionsTip: '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
-      chunkTokenNumberTip: '建议的生成文本块的 token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
+      permissionsTip:
+        '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
+      chunkTokenNumberTip:
+        '建议的生成文本块的 token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
       chunkMethod: '切片方法',
       chunkMethodTip: '说明位于右侧。',
       upload: '上传',
@@ -687,6 +689,16 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       sureDelete: '您确定要删除该成员吗？',
       quit: '退出',
       sureQuit: '确定退出加入的团队吗？',
+      secretKey: '密钥',
+      publicKey: '公钥',
+      secretKeyMessage: '请输入私钥',
+      publicKeyMessage: '请输入公钥',
+      hostMessage: '请输入 host',
+      configuration: '配置',
+      langfuseDescription:
+        '跟踪、评估、提示管理和指标，以调试和改进您的 LLM 应用程序。',
+      viewLangfuseSDocumentation: '查看 Langfuse 的文档',
+      view: '查看',
     },
     message: {
       registered: '注册成功',
@@ -1167,6 +1179,18 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       categoryName: '分类名称',
       nextStep: '下一步',
       insertVariableTip: `输入 / 插入变量`,
+      setting: '设置',
+      settings: {
+        agentSetting: 'Agent设置',
+        title: '标题',
+        description: '描述',
+        upload: '上传',
+        photo: '照片',
+        permissions: '权限',
+        permissionsTip: '你可以在这里设置团队访问权限。',
+        me: '仅限自己',
+        team: '团队',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',

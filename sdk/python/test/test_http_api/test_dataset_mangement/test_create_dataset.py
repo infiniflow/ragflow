@@ -21,6 +21,7 @@ from libs.utils import encode_avatar
 from libs.utils.file_utils import create_image_file
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -39,6 +40,7 @@ class TestAuthorization:
         assert res["message"] == expected_message
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestDatasetCreation:
     @pytest.mark.parametrize(
         "payload, expected_code",
@@ -74,6 +76,7 @@ class TestDatasetCreation:
             assert res["code"] == 0, f"Failed to create dataset {i}"
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestAdvancedConfigurations:
     def test_avatar(self, get_http_api_auth, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
@@ -172,9 +175,7 @@ class TestAdvancedConfigurations:
             ("other_embedding_model", "other_embedding_model", 102),
         ],
     )
-    def test_embedding_model(
-        self, get_http_api_auth, name, embedding_model, expected_code
-    ):
+    def test_embedding_model(self, get_http_api_auth, name, embedding_model, expected_code):
         payload = {"name": name, "embedding_model": embedding_model}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == expected_code

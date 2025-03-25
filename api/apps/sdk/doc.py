@@ -917,6 +917,8 @@ def list_chunks(tenant_id, dataset_id, document_id):
     res = {"total": 0, "chunks": [], "doc": renamed_doc}
     if req.get("id"):
         chunk = settings.docStoreConn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
+        if not chunk:
+            return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=settings.RetCode.NOT_FOUND)
         k = []
         for n in chunk.keys():
             if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
@@ -934,7 +936,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
             "important_keywords":chunk.get("important_kwd",[]),
             "questions":chunk.get("question_kwd",[]),
             "dataset_id":chunk.get("kb_id",chunk.get("dataset_id")),
-            "image_id":chunk["img_id"],
+            "image_id":chunk.get("img_id"),
             "available":bool(chunk.get("available_int",1)),
             "positions":chunk.get("position_int",[]),
         }
@@ -1067,7 +1069,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
     d["important_tks"] = rag_tokenizer.tokenize(
         " ".join(req.get("important_keywords", []))
     )
-    d["question_kwd"] = req.get("questions", [])
+    d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
     d["question_tks"] = rag_tokenizer.tokenize(
         "\n".join(req.get("questions", []))
     )
