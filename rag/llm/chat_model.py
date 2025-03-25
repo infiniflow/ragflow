@@ -1443,7 +1443,7 @@ class AnthropicChat(Base):
             del gen_conf["presence_penalty"]
         if "frequency_penalty" in gen_conf:
             del gen_conf["frequency_penalty"]
-        gen_conf["max_tokens"] = 8196
+        gen_conf["max_tokens"] = 8192
         if "haiku" in self.model_name or "opus" in self.model_name:
             gen_conf["max_tokens"] = 4096
 
@@ -1477,7 +1477,7 @@ class AnthropicChat(Base):
             del gen_conf["presence_penalty"]
         if "frequency_penalty" in gen_conf:
             del gen_conf["frequency_penalty"]
-        gen_conf["max_tokens"] = 8196
+        gen_conf["max_tokens"] = 8192
         if "haiku" in self.model_name or "opus" in self.model_name:
             gen_conf["max_tokens"] = 4096
 
