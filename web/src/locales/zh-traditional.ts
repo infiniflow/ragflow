@@ -326,7 +326,7 @@ export default {
       maxClusterMessage: '最大聚類數是必填項',
       randomSeed: '隨機種子',
       randomSeedMessage: '隨機種子是必填項',
-      promptTip: 'LLM提示用於總結。',
+      promptTip: '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
       maxTokenTip: '用於匯總的最大token數。',
       thresholdTip: '閾值越大，聚類越少。',
       maxClusterTip: '最大聚類數。',
@@ -351,6 +351,7 @@ export default {
         <li>在給你的知識庫文本塊批量打標籤之前，你需要先生成標籤集作為樣本。</li>
         <li>自動關鍵詞功能中的關鍵詞由 LLM 生成，此過程相對耗時，並且會產生一定的 Token 消耗。</li>
       </ul>
+      <p>詳情請參閱 https://ragflow.io/docs/dev/use_tag_sets。</p>
  `,
       tags: '標籤',
       addTag: '增加標籤',

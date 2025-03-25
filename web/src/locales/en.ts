@@ -326,7 +326,7 @@ export default {
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information.',
       prompt: 'Prompt',
-      promptTip: 'LLM prompt used for summarization.',
+      promptTip: 'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
       {cluster_content}
@@ -353,9 +353,9 @@ The above is the content you need to summarize.`,
       tagTable: 'Table',
       tagSet: 'Tag sets',
       tagSetTip: `
-     <p> Select one or multiple tag knowledge bases to auto-tag chunks in your knowledge base. </p>
+     <p> Select one or multiple tag knowledge bases to auto-tag chunks in your knowledge base. See https://ragflow.io/docs/dev/use_tag_sets for details.</p>
 <p>The user query will also be auto-tagged.</p>
-This auto-tag feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
+This auto-tagging feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
 <p>Difference between auto-tag and auto-keyword:</p>
 <ul>
   <li>A tag knowledge base is a user-defined close set, whereas keywords extracted by the LLM can be regarded as an open set.</li>
