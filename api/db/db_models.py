@@ -303,7 +303,7 @@ def with_retry(max_retries=3, retry_delay=1.0):
 class PostgresDatabaseLock:
     def __init__(self, lock_name, timeout=10, db=None):
         self.lock_name = lock_name
-        self.lock_id = hashlib.md5(lock_name.encode()).hexdigest()
+        self.lock_id = int(hashlib.md5(lock_name.encode()).hexdigest(), 16) % (2**31-1)
         self.timeout = int(timeout)
         self.db = db if db else DB
 
