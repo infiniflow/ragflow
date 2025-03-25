@@ -205,4 +205,4 @@ COPY --from=builder /ragflow/web/dist /var/task/web/dist
 COPY --from=builder /ragflow/VERSION /var/task/VERSION
 
 # Lambda entrypoint
-CMD ["app.lambda_handler"]
+ENTRYPOINT ["./entrypoint.sh"]
