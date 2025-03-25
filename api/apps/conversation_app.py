@@ -17,26 +17,25 @@ import json
 import re
 import traceback
 from copy import deepcopy
+
 import trio
-from api.db.db_models import APIToken
+from flask import Response, request
+from flask_login import current_user, login_required
 
-from api.db.services.conversation_service import ConversationService, structure_answer
-from api.db.services.user_service import UserTenantService
-from flask import request, Response
-from flask_login import login_required, current_user
-
+from api import settings
 from api.db import LLMType
-from api.db.services.dialog_service import DialogService, chat, ask
+from api.db.db_models import APIToken
+from api.db.services.conversation_service import ConversationService, structure_answer
+from api.db.services.dialog_service import DialogService, ask, chat
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle, TenantService
-from api import settings
-from api.utils.api_utils import get_json_result
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
+from api.db.services.user_service import UserTenantService
+from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
 from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.app.tag import label_question
 
 
-@manager.route('/set', methods=['POST'])  # noqa: F821
+@manager.route("/set", methods=["POST"])  # noqa: F821
 @login_required
 def set_conversation():
     req = request.json
@@ -50,8 +49,7 @@ def set_conversation():
                 return get_data_error_result(message="Conversation not found!")
             e, conv = ConversationService.get_by_id(conv_id)
             if not e:
-                return get_data_error_result(
-                    message="Fail to update a conversation!")
+                return get_data_error_result(message="Fail to update a conversation!")
             conv = conv.to_dict()
             return get_json_result(data=conv)
         except Exception as e:
@@ -61,38 +59,30 @@ def set_conversation():
         e, dia = DialogService.get_by_id(req["dialog_id"])
         if not e:
             return get_data_error_result(message="Dialog not found")
-        conv = {
-            "id": conv_id,
-            "dialog_id": req["dialog_id"],
-            "name": req.get("name", "New conversation"),
-            "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
-        }
+        conv = {"id": conv_id, "dialog_id": req["dialog_id"], "name": req.get("name", "New conversation"), "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]}
         ConversationService.save(**conv)
         return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/get', methods=['GET'])  # noqa: F821
+@manager.route("/get", methods=["GET"])  # noqa: F821
 @login_required
 def get():
     conv_id = request.args["conversation_id"]
     try:
-
         e, conv = ConversationService.get_by_id(conv_id)
         if not e:
             return get_data_error_result(message="Conversation not found!")
         tenants = UserTenantService.query(user_id=current_user.id)
-        avatar =None
+        avatar = None
         for tenant in tenants:
             dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
-            if dialog and len(dialog)>0:
+            if dialog and len(dialog) > 0:
                 avatar = dialog[0].icon
                 break
         else:
-            return get_json_result(
-                data=False, message='Only owner of conversation authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+            return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
 
         def get_value(d, k1, k2):
             return d.get(k1, d.get(k2))
@@ -100,26 +90,29 @@ def get():
         for ref in conv.reference:
             if isinstance(ref, list):
                 continue
-            ref["chunks"] = [{
-                "id": get_value(ck, "chunk_id", "id"),
-                "content": get_value(ck, "content", "content_with_weight"),
-                "document_id": get_value(ck, "doc_id", "document_id"),
-                "document_name": get_value(ck, "docnm_kwd", "document_name"),
-                "dataset_id": get_value(ck, "kb_id", "dataset_id"),
-                "image_id": get_value(ck, "image_id", "img_id"),
-                "positions": get_value(ck, "positions", "position_int"),
-            } for ck in ref.get("chunks", [])]
+            ref["chunks"] = [
+                {
+                    "id": get_value(ck, "chunk_id", "id"),
+                    "content": get_value(ck, "content", "content_with_weight"),
+                    "document_id": get_value(ck, "doc_id", "document_id"),
+                    "document_name": get_value(ck, "docnm_kwd", "document_name"),
+                    "dataset_id": get_value(ck, "kb_id", "dataset_id"),
+                    "image_id": get_value(ck, "image_id", "img_id"),
+                    "positions": get_value(ck, "positions", "position_int"),
+                }
+                for ck in ref.get("chunks", [])
+            ]
 
         conv = conv.to_dict()
-        conv["avatar"]=avatar
+        conv["avatar"] = avatar
         return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
 
-@manager.route('/getsse/<dialog_id>', methods=['GET'])  # type: ignore # noqa: F821
-def getsse(dialog_id):
 
-    token = request.headers.get('Authorization').split()
+@manager.route("/getsse/<dialog_id>", methods=["GET"])  # type: ignore # noqa: F821
+def getsse(dialog_id):
+    token = request.headers.get("Authorization").split()
     if len(token) != 2:
         return get_data_error_result(message='Authorization is not valid!"')
     token = token[1]
@@ -131,13 +124,14 @@ def getsse(dialog_id):
         if not e:
             return get_data_error_result(message="Dialog not found!")
         conv = conv.to_dict()
-        conv["avatar"]= conv["icon"]
+        conv["avatar"] = conv["icon"]
         del conv["icon"]
         return get_json_result(data=conv)
     except Exception as e:
         return server_error_response(e)
 
-@manager.route('/rm', methods=['POST'])  # noqa: F821
+
+@manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
 def rm():
     conv_ids = request.json["conversation_ids"]
@@ -151,28 +145,21 @@ def rm():
                 if DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id):
                     break
             else:
-                return get_json_result(
-                    data=False, message='Only owner of conversation authorized for this operation.',
-                    code=settings.RetCode.OPERATING_ERROR)
+                return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
             ConversationService.delete_by_id(cid)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/list', methods=['GET'])  # noqa: F821
+@manager.route("/list", methods=["GET"])  # noqa: F821
 @login_required
 def list_convsersation():
     dialog_id = request.args["dialog_id"]
     try:
         if not DialogService.query(tenant_id=current_user.id, id=dialog_id):
-            return get_json_result(
-                data=False, message='Only owner of dialog authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
-        convs = ConversationService.query(
-            dialog_id=dialog_id,
-            order_by=ConversationService.model.create_time,
-            reverse=True)
+            return get_json_result(data=False, message="Only owner of dialog authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
+        convs = ConversationService.query(dialog_id=dialog_id, order_by=ConversationService.model.create_time, reverse=True)
 
         convs = [d.to_dict() for d in convs]
         return get_json_result(data=convs)
@@ -180,7 +167,7 @@ def list_convsersation():
         return server_error_response(e)
 
 
-@manager.route('/completion', methods=['POST'])  # noqa: F821
+@manager.route("/completion", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id", "messages")
 def completion():
@@ -207,25 +194,30 @@ def completion():
         if not conv.reference:
             conv.reference = []
         else:
+
             def get_value(d, k1, k2):
                 return d.get(k1, d.get(k2))
 
             for ref in conv.reference:
                 if isinstance(ref, list):
                     continue
-                ref["chunks"] = [{
-                    "id": get_value(ck, "chunk_id", "id"),
-                    "content": get_value(ck, "content", "content_with_weight"),
-                    "document_id": get_value(ck, "doc_id", "document_id"),
-                    "document_name": get_value(ck, "docnm_kwd", "document_name"),
-                    "dataset_id": get_value(ck, "kb_id", "dataset_id"),
-                    "image_id": get_value(ck, "image_id", "img_id"),
-                    "positions": get_value(ck, "positions", "position_int"),
-                } for ck in ref.get("chunks", [])]
+                ref["chunks"] = [
+                    {
+                        "id": get_value(ck, "chunk_id", "id"),
+                        "content": get_value(ck, "content", "content_with_weight"),
+                        "document_id": get_value(ck, "doc_id", "document_id"),
+                        "document_name": get_value(ck, "docnm_kwd", "document_name"),
+                        "dataset_id": get_value(ck, "kb_id", "dataset_id"),
+                        "image_id": get_value(ck, "image_id", "img_id"),
+                        "positions": get_value(ck, "positions", "position_int"),
+                    }
+                    for ck in ref.get("chunks", [])
+                ]
 
         if not conv.reference:
             conv.reference = []
         conv.reference.append({"chunks": [], "doc_aggs": []})
+
         def stream():
             nonlocal dia, msg, req, conv
             try:
@@ -235,9 +227,7 @@ def completion():
                 ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as e:
                 traceback.print_exc()
-                yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                            "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                                           ensure_ascii=False) + "\n\n"
+                yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
         if req.get("stream", True):
@@ -259,7 +249,7 @@ def completion():
         return server_error_response(e)
 
 
-@manager.route('/tts', methods=['POST'])  # noqa: F821
+@manager.route("/tts", methods=["POST"])  # noqa: F821
 @login_required
 def tts():
     req = request.json
@@ -281,9 +271,7 @@ def tts():
                 for chunk in tts_mdl.tts(txt):
                     yield chunk
         except Exception as e:
-            yield ("data:" + json.dumps({"code": 500, "message": str(e),
-                                         "data": {"answer": "**ERROR**: " + str(e)}},
-                                        ensure_ascii=False)).encode('utf-8')
+            yield ("data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e)}}, ensure_ascii=False)).encode("utf-8")
 
     resp = Response(stream_audio(), mimetype="audio/mpeg")
     resp.headers.add_header("Cache-Control", "no-cache")
@@ -293,7 +281,7 @@ def tts():
     return resp
 
 
-@manager.route('/delete_msg', methods=['POST'])  # noqa: F821
+@manager.route("/delete_msg", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id", "message_id")
 def delete_msg():
@@ -316,7 +304,7 @@ def delete_msg():
     return get_json_result(data=conv)
 
 
-@manager.route('/thumbup', methods=['POST'])  # noqa: F821
+@manager.route("/thumbup", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id", "message_id")
 def thumbup():
@@ -343,7 +331,7 @@ def thumbup():
     return get_json_result(data=conv)
 
 
-@manager.route('/ask', methods=['POST'])  # noqa: F821
+@manager.route("/ask", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question", "kb_ids")
 def ask_about():
@@ -356,9 +344,7 @@ def ask_about():
             for ans in ask(req["question"], req["kb_ids"], uid):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
-            yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                        "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                                       ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
     resp = Response(stream(), mimetype="text/event-stream")
@@ -369,7 +355,7 @@ def ask_about():
     return resp
 
 
-@manager.route('/mindmap', methods=['POST'])  # noqa: F821
+@manager.route("/mindmap", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question", "kb_ids")
 def mindmap():
@@ -382,10 +368,7 @@ def mindmap():
     embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id)
     chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
     question = req["question"]
-    ranks = settings.retrievaler.retrieval(question, embd_mdl, kb.tenant_id, kb_ids, 1, 12,
-                                           0.3, 0.3, aggs=False,
-                                           rank_feature=label_question(question, [kb])
-                                           )
+    ranks = settings.retrievaler.retrieval(question, embd_mdl, kb.tenant_id, kb_ids, 1, 12, 0.3, 0.3, aggs=False, rank_feature=label_question(question, [kb]))
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = trio.run(mindmap, [c["content_with_weight"] for c in ranks["chunks"]])
     mind_map = mind_map.output
@@ -394,7 +377,7 @@ def mindmap():
     return get_json_result(data=mind_map)
 
 
-@manager.route('/related_questions', methods=['POST'])  # noqa: F821
+@manager.route("/related_questions", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("question")
 def related_questions():
@@ -402,31 +385,49 @@ def related_questions():
     question = req["question"]
     chat_mdl = LLMBundle(current_user.id, LLMType.CHAT)
     prompt = """
-Objective: To generate search terms related to the user's search keywords, helping users find more valuable information.
-Instructions:
- - Based on the keywords provided by the user, generate 5-10 related search terms.
- - Each search term should be directly or indirectly related to the keyword, guiding the user to find more valuable information.
- - Use common, general terms as much as possible, avoiding obscure words or technical jargon.
- - Keep the term length between 2-4 words, concise and clear.
- - DO NOT translate, use the language of the original keywords.
+Role: You are an AI language model assistant tasked with generating 5-10 related questions based on a user’s original query. These questions should help expand the search query scope and improve search relevance.
 
-### Example:
-Keywords: Chinese football
-Related search terms:
-1. Current status of Chinese football
-2. Reform of Chinese football
-3. Youth training of Chinese football
-4. Chinese football in the Asian Cup
-5. Chinese football in the World Cup
+Instructions:
+	Input: You are provided with a user’s question.
+	Output: Generate 5-10 alternative questions that are related to the original user question. These alternatives should help retrieve a broader range of relevant documents from a vector database.
+	Context: Focus on rephrasing the original question in different ways, making sure the alternative questions are diverse but still connected to the topic of the original query. Do not create overly obscure, irrelevant, or unrelated questions.
+	Fallback: If you cannot generate any relevant alternatives, do not return any questions.
+	Guidance:
+	1. Each alternative should be unique but still relevant to the original query.
+	2. Keep the phrasing clear, concise, and easy to understand.
+	3. Avoid overly technical jargon or specialized terms unless directly relevant.
+	4. Ensure that each question contributes towards improving search results by broadening the search angle, not narrowing it.
+
+Example:
+Original Question: What are the benefits of electric vehicles?
+
+Alternative Questions:
+	1. How do electric vehicles impact the environment?
+	2. What are the advantages of owning an electric car?
+	3. What is the cost-effectiveness of electric vehicles?
+	4. How do electric vehicles compare to traditional cars in terms of fuel efficiency?
+	5. What are the environmental benefits of switching to electric cars?
+	6. How do electric vehicles help reduce carbon emissions?
+	7. Why are electric vehicles becoming more popular?
+	8. What are the long-term savings of using electric vehicles?
+	9. How do electric vehicles contribute to sustainability?
+	10. What are the key benefits of electric vehicles for consumers?
 
 Reason:
- - When searching, users often only use one or two keywords, making it difficult to fully express their information needs.
- - Generating related search terms can help users dig deeper into relevant information and improve search efficiency. 
- - At the same time, related terms can also help search engines better understand user needs and return more accurate search results.
- 
+	Rephrasing the original query into multiple alternative questions helps the user explore different aspects of their search topic, improving the quality of search results.
+	These questions guide the search engine to provide a more comprehensive set of relevant documents.
 """
-    ans = chat_mdl.chat(prompt, [{"role": "user", "content": f"""
+    ans = chat_mdl.chat(
+        prompt,
+        [
+            {
+                "role": "user",
+                "content": f"""
 Keywords: {question}
 Related search terms:
-    """}], {"temperature": 0.9})
+    """,
+            }
+        ],
+        {"temperature": 0.9},
+    )
     return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
