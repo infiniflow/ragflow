@@ -18,8 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from common import (
     INVALID_API_TOKEN,
-    batch_upload_documents,
-    create_datasets,
+    batch_create_datasets,
+    bulk_upload_documents,
     delete_documnet,
     list_documnet,
 )
@@ -38,14 +38,14 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(self, get_http_api_auth, tmp_path, auth, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = delete_documnet(auth, ids[0], {"ids": document_ids[0]})
+    def test_invalid_auth(self, get_dataset_id_and_document_ids, auth, expected_code, expected_message):
+        dataset_id, document_ids = get_dataset_id_and_document_ids
+        res = delete_documnet(auth, dataset_id, {"ids": document_ids})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestDocumentDeletion:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
@@ -78,8 +78,8 @@ class TestDocumentDeletion:
         expected_message,
         remaining,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
+        ids = batch_create_datasets(get_http_api_auth, 1)
+        document_ids = bulk_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
         if callable(payload):
             payload = payload(document_ids)
         res = delete_documnet(get_http_api_auth, ids[0], payload)
@@ -103,13 +103,12 @@ class TestDocumentDeletion:
         ],
     )
     def test_invalid_dataset_id(self, get_http_api_auth, tmp_path, dataset_id, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
+        ids = batch_create_datasets(get_http_api_auth, 1)
+        document_ids = bulk_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
         res = delete_documnet(get_http_api_auth, dataset_id, {"ids": document_ids[:1]})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
-    # @pytest.mark.xfail(reason="issues/6174")
     @pytest.mark.parametrize(
         "payload",
         [
@@ -119,8 +118,8 @@ class TestDocumentDeletion:
         ],
     )
     def test_delete_partial_invalid_id(self, get_http_api_auth, tmp_path, payload):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
+        ids = batch_create_datasets(get_http_api_auth, 1)
+        document_ids = bulk_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
         if callable(payload):
             payload = payload(document_ids)
         res = delete_documnet(get_http_api_auth, ids[0], payload)
@@ -132,8 +131,8 @@ class TestDocumentDeletion:
         assert res["data"]["total"] == 0
 
     def test_repeated_deletion(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
+        ids = batch_create_datasets(get_http_api_auth, 1)
+        document_ids = bulk_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
         res = delete_documnet(get_http_api_auth, ids[0], {"ids": document_ids})
         assert res["code"] == 0
 
@@ -142,8 +141,8 @@ class TestDocumentDeletion:
         assert res["message"] == f"Documents not found: {document_ids}"
 
     def test_duplicate_deletion(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
+        ids = batch_create_datasets(get_http_api_auth, 1)
+        document_ids = bulk_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
         res = delete_documnet(get_http_api_auth, ids[0], {"ids": document_ids + document_ids})
         assert res["code"] == 0
         assert res["data"]["errors"][0] == f"Duplicate document ids: {document_ids[0]}"
@@ -155,8 +154,8 @@ class TestDocumentDeletion:
 
     def test_concurrent_deletion(self, get_http_api_auth, tmp_path):
         documnets_num = 100
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], documnets_num, tmp_path)
+        ids = batch_create_datasets(get_http_api_auth, 1)
+        document_ids = bulk_upload_documents(get_http_api_auth, ids[0], documnets_num, tmp_path)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
@@ -174,8 +173,8 @@ class TestDocumentDeletion:
     @pytest.mark.slow
     def test_delete_1k(self, get_http_api_auth, tmp_path):
         documnets_num = 1_000
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], documnets_num, tmp_path)
+        ids = batch_create_datasets(get_http_api_auth, 1)
+        document_ids = bulk_upload_documents(get_http_api_auth, ids[0], documnets_num, tmp_path)
         res = list_documnet(get_http_api_auth, ids[0])
         assert res["data"]["total"] == documnets_num
 

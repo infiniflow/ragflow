@@ -16,19 +16,16 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import INVALID_API_TOKEN, create_datasets, list_dataset
+from common import INVALID_API_TOKEN, list_dataset
 from libs.auth import RAGFlowHttpApiAuth
 
 
 def is_sorted(data, field, descending=True):
     timestamps = [ds[field] for ds in data]
-    return (
-        all(a >= b for a, b in zip(timestamps, timestamps[1:]))
-        if descending
-        else all(a <= b for a, b in zip(timestamps, timestamps[1:]))
-    )
+    return all(a >= b for a, b in zip(timestamps, timestamps[1:])) if descending else all(a <= b for a, b in zip(timestamps, timestamps[1:]))
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -47,13 +44,13 @@ class TestAuthorization:
         assert res["message"] == expected_message
 
 
+@pytest.mark.usefixtures("get_dataset_ids")
 class TestDatasetList:
     def test_default(self, get_http_api_auth):
-        create_datasets(get_http_api_auth, 31)
         res = list_dataset(get_http_api_auth, params={})
 
         assert res["code"] == 0
-        assert len(res["data"]) == 30
+        assert len(res["data"]) == 5
 
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
@@ -79,15 +76,7 @@ class TestDatasetList:
             ),
         ],
     )
-    def test_page(
-        self,
-        get_http_api_auth,
-        params,
-        expected_code,
-        expected_page_size,
-        expected_message,
-    ):
-        create_datasets(get_http_api_auth, 5)
+    def test_page(self, get_http_api_auth, params, expected_code, expected_page_size, expected_message):
         res = list_dataset(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -98,10 +87,10 @@ class TestDatasetList:
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
-            ({"page_size": None}, 0, 30, ""),
+            ({"page_size": None}, 0, 5, ""),
             ({"page_size": 0}, 0, 0, ""),
             ({"page_size": 1}, 0, 1, ""),
-            ({"page_size": 32}, 0, 31, ""),
+            ({"page_size": 6}, 0, 5, ""),
             ({"page_size": "1"}, 0, 1, ""),
             pytest.param(
                 {"page_size": -1},
@@ -127,7 +116,6 @@ class TestDatasetList:
         expected_page_size,
         expected_message,
     ):
-        create_datasets(get_http_api_auth, 31)
         res = list_dataset(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -180,7 +168,6 @@ class TestDatasetList:
         assertions,
         expected_message,
     ):
-        create_datasets(get_http_api_auth, 3)
         res = list_dataset(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -257,7 +244,6 @@ class TestDatasetList:
         assertions,
         expected_message,
     ):
-        create_datasets(get_http_api_auth, 3)
         res = list_dataset(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -269,16 +255,13 @@ class TestDatasetList:
     @pytest.mark.parametrize(
         "params, expected_code, expected_num, expected_message",
         [
-            ({"name": None}, 0, 3, ""),
-            ({"name": ""}, 0, 3, ""),
+            ({"name": None}, 0, 5, ""),
+            ({"name": ""}, 0, 5, ""),
             ({"name": "dataset_1"}, 0, 1, ""),
             ({"name": "unknown"}, 102, 0, "You don't own the dataset unknown"),
         ],
     )
-    def test_name(
-        self, get_http_api_auth, params, expected_code, expected_num, expected_message
-    ):
-        create_datasets(get_http_api_auth, 3)
+    def test_name(self, get_http_api_auth, params, expected_code, expected_num, expected_message):
         res = list_dataset(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -292,8 +275,8 @@ class TestDatasetList:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_num, expected_message",
         [
-            (None, 0, 3, ""),
-            ("", 0, 3, ""),
+            (None, 0, 5, ""),
+            ("", 0, 5, ""),
             (lambda r: r[0], 0, 1, ""),
             ("unknown", 102, 0, "You don't own the dataset unknown"),
         ],
@@ -301,14 +284,15 @@ class TestDatasetList:
     def test_id(
         self,
         get_http_api_auth,
+        get_dataset_ids,
         dataset_id,
         expected_code,
         expected_num,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 3)
+        dataset_ids = get_dataset_ids
         if callable(dataset_id):
-            params = {"id": dataset_id(ids)}
+            params = {"id": dataset_id(dataset_ids)}
         else:
             params = {"id": dataset_id}
 
@@ -334,15 +318,16 @@ class TestDatasetList:
     def test_name_and_id(
         self,
         get_http_api_auth,
+        get_dataset_ids,
         dataset_id,
         name,
         expected_code,
         expected_num,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 3)
+        dataset_ids = get_dataset_ids
         if callable(dataset_id):
-            params = {"id": dataset_id(ids), "name": name}
+            params = {"id": dataset_id(dataset_ids), "name": name}
         else:
             params = {"id": dataset_id, "name": name}
 
@@ -353,12 +338,8 @@ class TestDatasetList:
             assert res["message"] == expected_message
 
     def test_concurrent_list(self, get_http_api_auth):
-        create_datasets(get_http_api_auth, 3)
-
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(list_dataset, get_http_api_auth) for i in range(100)
-            ]
+            futures = [executor.submit(list_dataset, get_http_api_auth) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
@@ -366,4 +347,4 @@ class TestDatasetList:
         params = {"a": "b"}
         res = list_dataset(get_http_api_auth, params=params)
         assert res["code"] == 0
-        assert len(res["data"]) == 0
+        assert len(res["data"]) == 5

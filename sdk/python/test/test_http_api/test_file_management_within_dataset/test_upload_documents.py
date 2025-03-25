@@ -24,7 +24,7 @@ from common import (
     FILE_API_URL,
     HOST_ADDRESS,
     INVALID_API_TOKEN,
-    create_datasets,
+    batch_create_datasets,
     list_dataset,
     upload_documnets,
 )
@@ -33,6 +33,7 @@ from libs.utils.file_utils import create_txt_file
 from requests_toolbelt import MultipartEncoder
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -45,18 +46,17 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(
-        self, get_http_api_auth, auth, expected_code, expected_message
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
+    def test_invalid_auth(self, get_http_api_auth, auth, expected_code, expected_message):
+        ids = batch_create_datasets(get_http_api_auth, 1)
         res = upload_documnets(auth, ids[0])
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestUploadDocuments:
     def test_valid_single_upload(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         res = upload_documnets(get_http_api_auth, ids[0], [fp])
         assert res["code"] == 0
@@ -79,10 +79,8 @@ class TestUploadDocuments:
         ],
         indirect=True,
     )
-    def test_file_type_validation(
-        self, get_http_api_auth, generate_test_files, request
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
+    def test_file_type_validation(self, get_http_api_auth, generate_test_files, request):
+        ids = batch_create_datasets(get_http_api_auth, 1)
         fp = generate_test_files[request.node.callspec.params["generate_test_files"]]
         res = upload_documnets(get_http_api_auth, ids[0], [fp])
         assert res["code"] == 0
@@ -94,24 +92,21 @@ class TestUploadDocuments:
         ["exe", "unknown"],
     )
     def test_unsupported_file_type(self, get_http_api_auth, tmp_path, file_type):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         fp = tmp_path / f"ragflow_test.{file_type}"
         fp.touch()
         res = upload_documnets(get_http_api_auth, ids[0], [fp])
         assert res["code"] == 500
-        assert (
-            res["message"]
-            == f"ragflow_test.{file_type}: This type of file has not been supported yet!"
-        )
+        assert res["message"] == f"ragflow_test.{file_type}: This type of file has not been supported yet!"
 
     def test_missing_file(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         res = upload_documnets(get_http_api_auth, ids[0])
         assert res["code"] == 101
         assert res["message"] == "No file part!"
 
     def test_empty_file(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         fp = tmp_path / "empty.txt"
         fp.touch()
 
@@ -120,7 +115,7 @@ class TestUploadDocuments:
         assert res["data"][0]["size"] == 0
 
     def test_filename_empty(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=ids[0])
         fields = (("file", ("", fp.open("rb"))),)
@@ -135,7 +130,7 @@ class TestUploadDocuments:
         assert res.json()["message"] == "No file selected!"
 
     def test_filename_exceeds_max_length(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         # filename_length = 129
         fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt")
         res = upload_documnets(get_http_api_auth, ids[0], [fp])
@@ -146,13 +141,10 @@ class TestUploadDocuments:
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         res = upload_documnets(get_http_api_auth, "invalid_dataset_id", [fp])
         assert res["code"] == 100
-        assert (
-            res["message"]
-            == """LookupError("Can\'t find the dataset with ID invalid_dataset_id!")"""
-        )
+        assert res["message"] == """LookupError("Can\'t find the dataset with ID invalid_dataset_id!")"""
 
     def test_duplicate_files(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         res = upload_documnets(get_http_api_auth, ids[0], [fp, fp])
         assert res["code"] == 0
@@ -165,7 +157,7 @@ class TestUploadDocuments:
             assert res["data"][i]["name"] == expected_name
 
     def test_same_file_repeat(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         for i in range(10):
             res = upload_documnets(get_http_api_auth, ids[0], [fp])
@@ -178,7 +170,7 @@ class TestUploadDocuments:
             assert res["data"][0]["name"] == expected_name
 
     def test_filename_special_characters(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         illegal_chars = '<>:"/\\|?*'
         translation_table = str.maketrans({char: "_" for char in illegal_chars})
         safe_filename = string.punctuation.translate(translation_table)
@@ -192,7 +184,7 @@ class TestUploadDocuments:
         assert res["data"][0]["name"] == fp.name
 
     def test_multiple_files(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         expected_document_count = 20
         fps = []
         for i in range(expected_document_count):
@@ -205,7 +197,7 @@ class TestUploadDocuments:
         assert res["data"][0]["document_count"] == expected_document_count
 
     def test_concurrent_upload(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
 
         expected_document_count = 20
         fps = []
@@ -214,12 +206,7 @@ class TestUploadDocuments:
             fps.append(fp)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(
-                    upload_documnets, get_http_api_auth, ids[0], fps[i : i + 1]
-                )
-                for i in range(expected_document_count)
-            ]
+            futures = [executor.submit(upload_documnets, get_http_api_auth, ids[0], fps[i : i + 1]) for i in range(expected_document_count)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 

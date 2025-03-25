@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import INVALID_API_TOKEN, add_chunk, batch_upload_documents, create_datasets, delete_documnet
+from common import INVALID_API_TOKEN, add_chunk, delete_documnet
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -43,11 +43,9 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(self, get_http_api_auth, tmp_path, auth, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
-        res = add_chunk(auth, dataset_id, document_ids[0], {})
+    def test_invalid_auth(self, get_dataset_id_and_document_id, auth, expected_code, expected_message):
+        dataset_id, document_id = get_dataset_id_and_document_id
+        res = add_chunk(auth, dataset_id, document_id, {})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -69,14 +67,12 @@ class TestAddChunk:
             ({"content": "\n!?。；！？\"'"}, 0, ""),
         ],
     )
-    def test_content(self, get_http_api_auth, tmp_path, payload, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
-        res = add_chunk(get_http_api_auth, dataset_id, document_ids[0], payload)
+    def test_content(self, get_http_api_auth, get_dataset_id_and_document_id, payload, expected_code, expected_message):
+        dataset_id, document_id = get_dataset_id_and_document_id
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, payload)
         assert res["code"] == expected_code
         if expected_code == 0:
-            validate_chunk_details(dataset_id, document_ids[0], payload, res)
+            validate_chunk_details(dataset_id, document_id, payload, res)
         else:
             assert res["message"] == expected_message
 
@@ -95,14 +91,12 @@ class TestAddChunk:
             ({"content": "a", "important_keywords": 123}, 102, "`important_keywords` is required to be a list"),
         ],
     )
-    def test_important_keywords(self, get_http_api_auth, tmp_path, payload, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
-        res = add_chunk(get_http_api_auth, dataset_id, document_ids[0], payload)
+    def test_important_keywords(self, get_http_api_auth, get_dataset_id_and_document_id, payload, expected_code, expected_message):
+        dataset_id, document_id = get_dataset_id_and_document_id
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, payload)
         assert res["code"] == expected_code
         if expected_code == 0:
-            validate_chunk_details(dataset_id, document_ids[0], payload, res)
+            validate_chunk_details(dataset_id, document_id, payload, res)
         else:
             assert res["message"] == expected_message
 
@@ -122,14 +116,12 @@ class TestAddChunk:
             ({"content": "a", "questions": 123}, 102, "`questions` is required to be a list"),
         ],
     )
-    def test_questions(self, get_http_api_auth, tmp_path, payload, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
-        res = add_chunk(get_http_api_auth, dataset_id, document_ids[0], payload)
+    def test_questions(self, get_http_api_auth, get_dataset_id_and_document_id, payload, expected_code, expected_message):
+        dataset_id, document_id = get_dataset_id_and_document_id
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, payload)
         assert res["code"] == expected_code
         if expected_code == 0:
-            validate_chunk_details(dataset_id, document_ids[0], payload, res)
+            validate_chunk_details(dataset_id, document_id, payload, res)
         else:
             assert res["message"] == expected_message
 
@@ -147,14 +139,13 @@ class TestAddChunk:
     def test_invalid_dataset_id(
         self,
         get_http_api_auth,
-        tmp_path,
+        get_dataset_id_and_document_id,
         dataset_id,
         expected_code,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = add_chunk(get_http_api_auth, dataset_id, document_ids[0], {"content": "a"})
+        _, document_id = get_dataset_id_and_document_id
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": "a"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -169,49 +160,42 @@ class TestAddChunk:
             ),
         ],
     )
-    def test_invalid_document_id(self, get_http_api_auth, document_id, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        res = add_chunk(get_http_api_auth, ids[0], document_id, {"content": "a"})
+    def test_invalid_document_id(self, get_http_api_auth, get_dataset_id_and_document_id, document_id, expected_code, expected_message):
+        dataset_id, _ = get_dataset_id_and_document_id
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": "a"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
-    def test_repeated_add_chunk(self, get_http_api_auth, tmp_path):
+    def test_repeated_add_chunk(self, get_http_api_auth, get_dataset_id_and_document_id):
         payload = {"content": "a"}
-
-        ids = create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
-        res = add_chunk(get_http_api_auth, dataset_id, document_ids[0], payload)
+        dataset_id, document_id = get_dataset_id_and_document_id
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, payload)
         assert res["code"] == 0
-        validate_chunk_details(dataset_id, document_ids[0], payload, res)
+        validate_chunk_details(dataset_id, document_id, payload, res)
 
-        res = add_chunk(get_http_api_auth, dataset_id, document_ids[0], payload)
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, payload)
         assert res["code"] == 0
-        validate_chunk_details(dataset_id, document_ids[0], payload, res)
+        validate_chunk_details(dataset_id, document_id, payload, res)
 
-    def test_add_chunk_to_deleted_document(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
-        delete_documnet(get_http_api_auth, ids[0], {"ids": document_ids})
-        res = add_chunk(get_http_api_auth, dataset_id, document_ids[0], {"content": "a"})
+    def test_add_chunk_to_deleted_document(self, get_http_api_auth, get_dataset_id_and_document_id):
+        dataset_id, document_id = get_dataset_id_and_document_id
+        delete_documnet(get_http_api_auth, dataset_id, {"ids": [document_id]})
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": "a"})
         assert res["code"] == 102
-        assert res["message"] == f"You don't own the document {document_ids[0]}."
+        assert res["message"] == f"You don't own the document {document_id}."
 
     @pytest.mark.skip(reason="issues/6411")
-    def test_concurrent_add_chunk(self, get_http_api_auth, tmp_path):
+    def test_concurrent_add_chunk(self, get_http_api_auth, get_dataset_id_and_document_id):
         chunk_num = 50
-        ids = create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
+        dataset_id, document_id = get_dataset_id_and_document_id
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
                 executor.submit(
                     add_chunk,
                     get_http_api_auth,
-                    ids[0],
-                    document_ids[0],
+                    dataset_id,
+                    document_id,
                     {"content": "a"},
                 )
                 for i in range(chunk_num)
