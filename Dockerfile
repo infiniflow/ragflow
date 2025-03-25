@@ -179,6 +179,7 @@ RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
 
 # production stage
 FROM base AS production
+RUN mkdir -p /tmp/ragflow
 USER root
 
 WORKDIR /tmp/ragflow
