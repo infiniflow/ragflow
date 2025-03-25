@@ -16,7 +16,7 @@
 
 
 import pytest
-from common import batch_create_datasets, bulk_upload_documents, delete_dataset, list_documnet, parse_documnet
+from common import add_chunk, batch_create_datasets, bulk_upload_documents, delete_dataset, list_documnet, parse_documnet
 from libs.utils import wait_for
 
 
@@ -35,11 +35,31 @@ def chunk_management_tmp_dir(tmp_path_factory):
 
 
 @pytest.fixture(scope="class")
-def get_dataset_id_and_document_id(get_http_api_auth, chunk_management_tmp_dir):
-    dataset_ids = batch_create_datasets(get_http_api_auth, 1)
-    document_ids = bulk_upload_documents(get_http_api_auth, dataset_ids[0], 1, chunk_management_tmp_dir)
-    parse_documnet(get_http_api_auth, dataset_ids[0], {"document_ids": document_ids})
-    condition(get_http_api_auth, dataset_ids[0])
+def get_dataset_id_and_document_id(get_http_api_auth, chunk_management_tmp_dir, request):
+    def cleanup():
+        delete_dataset(get_http_api_auth)
 
-    yield dataset_ids[0], document_ids[0]
-    delete_dataset(get_http_api_auth)
+    request.addfinalizer(cleanup)
+
+    dataset_ids = batch_create_datasets(get_http_api_auth, 1)
+    dataset_id = dataset_ids[0]
+    document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 1, chunk_management_tmp_dir)
+    parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+    condition(get_http_api_auth, dataset_id)
+
+    return dataset_id, document_ids[0]
+
+
+@pytest.fixture(scope="class")
+def add_chunks(get_http_api_auth, get_dataset_id_and_document_id):
+    dataset_id, document_id = get_dataset_id_and_document_id
+    chunk_ids = []
+    for i in range(4):
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": f"chunk test {i}"})
+        chunk_ids.append(res["data"]["chunk"]["id"])
+
+    # issues/6487
+    from time import sleep
+
+    sleep(1)
+    yield dataset_id, document_id, chunk_ids

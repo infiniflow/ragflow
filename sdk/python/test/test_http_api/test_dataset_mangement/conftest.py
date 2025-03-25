@@ -20,7 +20,10 @@ from common import batch_create_datasets, delete_dataset
 
 
 @pytest.fixture(scope="class")
-def get_dataset_ids(get_http_api_auth):
-    ids = batch_create_datasets(get_http_api_auth, 5)
-    yield ids
-    delete_dataset(get_http_api_auth)
+def get_dataset_ids(get_http_api_auth, request):
+    def cleanup():
+        delete_dataset(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    return batch_create_datasets(get_http_api_auth, 5)
