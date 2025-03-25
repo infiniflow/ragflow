@@ -64,7 +64,19 @@ def set_api_key():
 def get_api_key():
     langfuse_entry = TenantLangfuseService.filter_by_tenant_with_info(tenant_id=current_user.id)
     if not langfuse_entry:
-        return get_error_data_result(message="Have not record any Langfuse keys.")
+        return get_json_result(message="Have not record any Langfuse keys.")
+
+    langfuse = Langfuse(public_key=langfuse_entry["public_key"], secret_key=langfuse_entry["secret_key"], host=langfuse_entry["host"])
+    try:
+        if not langfuse.auth_check():
+            return get_error_data_result(message="Invalid Langfuse keys loaded")
+    except langfuse.api.core.api_error.ApiError as api_err:
+        return get_json_result(message=f"Error from Langfuse: {api_err}")
+    except Exception as e:
+        server_error_response(e)
+
+    langfuse_entry["project_id"] = langfuse.api.projects.get().dict()["data"][0]["id"]
+    langfuse_entry["project_name"] = langfuse.api.projects.get().dict()["data"][0]["name"]
 
     return get_json_result(data=langfuse_entry)
 
@@ -75,7 +87,7 @@ def get_api_key():
 def delete_api_key():
     langfuse_entry = TenantLangfuseService.filter_by_tenant(tenant_id=current_user.id)
     if not langfuse_entry:
-        return get_error_data_result(message="Have not record any Langfuse keys.")
+        return get_json_result(message="Have not record any Langfuse keys.")
 
     with DB.atomic():
         try:
