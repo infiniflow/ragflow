@@ -201,6 +201,7 @@ class ESConnection(DocStoreConnection):
                           query_vector=list(m.embedding_data),
                           filter=bqry.to_dict(),
                           similarity=similarity,
+                          boost=vector_similarity_weight
                           )
 
         if bqry and rank_feature:
