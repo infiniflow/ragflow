@@ -917,6 +917,8 @@ def list_chunks(tenant_id, dataset_id, document_id):
     res = {"total": 0, "chunks": [], "doc": renamed_doc}
     if req.get("id"):
         chunk = settings.docStoreConn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
+        if not chunk:
+            return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=settings.RetCode.NOT_FOUND)
         k = []
         for n in chunk.keys():
             if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
