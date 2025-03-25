@@ -27,7 +27,7 @@ from rag.nlp import is_english
 import editdistance
 from graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
 from rag.llm.chat_model import Base as CompletionLLM
-from graphrag.utils import perform_variable_replacements, chat_limiter
+from graphrag.utils import perform_variable_replacements, chat_limiter, GraphChange
 
 DEFAULT_RECORD_DELIMITER = "##"
 DEFAULT_ENTITY_INDEX_DELIMITER = "<|>"
@@ -38,7 +38,7 @@ DEFAULT_RESOLUTION_RESULT_DELIMITER = "&&"
 class EntityResolutionResult:
     """Entity resolution result class definition."""
     graph: nx.Graph
-    removed_entities: int
+    change: GraphChange
 
 
 class EntityResolution(Extractor):
@@ -79,8 +79,8 @@ class EntityResolution(Extractor):
                                                    or DEFAULT_RESOLUTION_RESULT_DELIMITER,
         }
 
-        nodes = graph.nodes
-        entity_types = list(set(graph.nodes[node].get('entity_type', '-') for node in nodes))
+        nodes = sorted(graph.nodes())
+        entity_types = sorted(set(graph.nodes[node].get('entity_type', '-') for node in nodes))
         node_clusters = {entity_type: [] for entity_type in entity_types}
 
         for node in nodes:
@@ -100,14 +100,13 @@ class EntityResolution(Extractor):
                 nursery.start_soon(lambda: self._resolve_candidate(candidate_resolution_i, resolution_result))
         callback(msg=f"Resolved {num_candidates} candidate pairs, {len(resolution_result)} of them are selected to merge.")
 
-        removed_entities = 0
+        change = GraphChange()
         connect_graph = nx.Graph()
         connect_graph.add_edges_from(resolution_result)
         async with trio.open_nursery() as nursery:
             for sub_connect_graph in nx.connected_components(connect_graph):
                 merging_nodes = list(sub_connect_graph.nodes)
-                removed_entities += len(merging_nodes) - 1
-                nursery.start_soon(lambda: self._merge_graph_nodes(graph, merging_nodes))
+                nursery.start_soon(lambda: self._merge_graph_nodes(graph, merging_nodes, change))
 
         # Update pagerank
         pr = nx.pagerank(graph)
@@ -116,7 +115,7 @@ class EntityResolution(Extractor):
 
         return EntityResolutionResult(
             graph=graph,
-            removed_entities=removed_entities
+            change=change,
         )
 
     async def _resolve_candidate(self, candidate_resolution_i, resolution_result):

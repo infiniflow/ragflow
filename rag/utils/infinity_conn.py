@@ -173,7 +173,8 @@ class InfinityConnection(DocStoreConnection):
                 )
 
     def field_keyword(self, field_name: str):
-        if field_name == "source_id" or field_name.endswith("_kwd"):
+        # The "docnm_kwd" field is always a string, not list.
+        if field_name == "source_id" or (field_name.endswith("_kwd") and field_name != "docnm_kwd"):
             return True
         return False
 
@@ -502,6 +503,8 @@ class InfinityConnection(DocStoreConnection):
                 elif k in ["page_num_int", "top_int"]:
                     assert isinstance(v, list)
                     d[k] = "_".join(f"{num:08x}" for num in v)
+                else:
+                    d[k] = v
 
             for n, vs in embedding_clmns:
                 if n in d:
@@ -539,8 +542,6 @@ class InfinityConnection(DocStoreConnection):
                     newValue[k] = v
             elif re.search(r"_feas$", k):
                 newValue[k] = json.dumps(v)
-            elif k.endswith("_kwd") and isinstance(v, list):
-                newValue[k] = " ".join(v)
             elif k == 'kb_id':
                 if isinstance(newValue[k], list):
                     newValue[k] = newValue[k][0]  # since d[k] is a list, but we need a str
@@ -555,6 +556,8 @@ class InfinityConnection(DocStoreConnection):
                 del newValue[k]
                 if v in [PAGERANK_FLD]:
                     newValue[v] = 0
+            else:
+                newValue[k] = v
 
         logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {newValue}.")
         table_instance.update(filter, newValue)

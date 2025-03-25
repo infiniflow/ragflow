@@ -517,6 +517,8 @@ async def do_handle_task(task):
         chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
     # Either using graphrag or Standard chunking methods
     elif task.get("task_type", "") == "graphrag":
+        global task_limiter
+        task_limiter = trio.CapacityLimiter(2)
         graphrag_conf = task_parser_config.get("graphrag", {})
         if not graphrag_conf.get("use_graphrag", False):
             return

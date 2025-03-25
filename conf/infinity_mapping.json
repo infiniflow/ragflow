@@ -5,7 +5,7 @@
 	"create_time": {"type": "varchar", "default": ""},
 	"create_timestamp_flt": {"type": "float", "default": 0.0},
 	"img_id": {"type": "varchar", "default": ""},
-	"docnm_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"docnm_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"title_tks": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"title_sm_tks": {"type": "varchar", "default": "", "analyzer": "whitespace"},
 	"name_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},

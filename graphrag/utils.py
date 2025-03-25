@@ -16,11 +16,13 @@ from hashlib import md5
 from typing import Any, Callable
 import os
 import trio
+from typing import Set, Tuple
 
 import networkx as nx
 import numpy as np
 import xxhash
 from networkx.readwrite import json_graph
+import dataclasses
 
 from api import settings
 from api.utils import get_uuid
@@ -33,6 +35,13 @@ GRAPH_FIELD_SEP = "<SEP>"
 ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
 chat_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
+
+@dataclasses.dataclass
+class GraphChange:
+    removed_nodes: Set[str] = dataclasses.field(default_factory=set)
+    added_updated_nodes: Set[str] = dataclasses.field(default_factory=set)
+    removed_edges: Set[Tuple[str, str]] = dataclasses.field(default_factory=set)
+    added_updated_edges: Set[Tuple[str, str]] = dataclasses.field(default_factory=set)
 
 def perform_variable_replacements(
     input: str, history: list[dict] | None = None, variables: dict | None = None
@@ -179,18 +188,26 @@ def tidy_graph(graph: nx.Graph, callback):
     if purged_edges and callback:
         callback(msg=f"Purged {len(purged_edges)} edges from graph due to missing essential attributes.")
 
-def graph_merge(g1: nx.Graph, g2: nx.Graph):
+def get_from_to(node1, node2):
+    if node1 < node2:
+        return (node1, node2)
+    else:
+        return (node2, node1)
+
+def graph_merge(g1: nx.Graph, g2: nx.Graph, change: GraphChange):
     """Merge graph g2 into g1 in place."""
     for node_name, attr in g2.nodes(data=True):
+        change.added_updated_nodes.add(node_name)
         if not g1.has_node(node_name):
             g1.add_node(node_name, **attr)
             continue
-        node = g1[node_name]
+        node = g1.nodes[node_name]
         node["description"] += GRAPH_FIELD_SEP + attr["description"]
         # A node's source_id indicates which chunks it came from.
         node["source_id"] += attr["source_id"]
 
     for source, target, attr in g2.edges(data=True):
+        change.added_updated_edges.add(get_from_to(source, target))
         edge = g1.get_edge_data(source, target)
         if edge is None:
             g1.add_edge(source, target, **attr)
@@ -411,8 +428,23 @@ async def get_graph(tenant_id, kb_id):
     return result
 
 
-async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, callback):
+async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, change: GraphChange, callback):
     start = trio.current_time()
+
+    await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph"]}, search.index_name(tenant_id), kb_id))
+
+    if change.removed_nodes:
+        await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["entity"], "entity_kwd": sorted(change.removed_nodes)}, search.index_name(tenant_id), kb_id))
+
+    if change.removed_edges:
+        async with trio.open_nursery() as nursery:
+            for from_node, to_node in change.removed_edges:
+                nursery.start_soon(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node}, search.index_name(tenant_id), kb_id))
+    now = trio.current_time()
+    if callback:
+        callback(msg=f"set_graph removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges from index in {now - start:.2f}s.")
+    start = now
+
     chunks = [{
         "id": get_uuid(),
         "content_with_weight": json.dumps(nx.node_link_data(graph, edges="edges"), ensure_ascii=False),
@@ -423,13 +455,15 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, callb
         "removed_kwd": "N"
     }]
     async with trio.open_nursery() as nursery:
-        for node, node_attrs in graph.nodes(data=True):
+        for node in change.added_updated_nodes:
+            node_attrs = graph.nodes[node]
             nursery.start_soon(lambda: graph_node_to_chunk(kb_id, embd_mdl, node, node_attrs, chunks))
-        for from_node, to_node, edge_attrs in graph.edges(data=True):
+        for from_node, to_node in change.added_updated_edges:
+            edge_attrs = graph.edges[from_node, to_node]
             nursery.start_soon(lambda: graph_edge_to_chunk(kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks))
     now = trio.current_time()
     if callback:
-        callback(msg=f"set_graph converted graph to {len(chunks)} chunks in {now - start:.2f}s.")
+        callback(msg=f"set_graph converted graph change to {len(chunks)} chunks in {now - start:.2f}s.")
     start = now
 
     await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "entity", "relation"]}, search.index_name(tenant_id), kb_id))
@@ -442,7 +476,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, callb
             raise Exception(error_message)
     now = trio.current_time()
     if callback:
-        callback(msg=f"set_graph indexed {len(chunks)} in {now - start:.2f}s.")
+        callback(msg=f"set_graph added/updated {len(change.added_updated_nodes)} nodes and {len(change.added_updated_edges)} edges from index in {now - start:.2f}s.")
 
 
 def is_continuous_subsequence(subseq, seq):
