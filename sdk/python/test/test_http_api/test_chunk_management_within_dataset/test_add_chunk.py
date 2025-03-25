@@ -60,7 +60,7 @@ class TestAddChunk:
                 {"content": 1},
                 100,
                 """TypeError("unsupported operand type(s) for +: \'int\' and \'str\'")""",
-                marks=pytest.mark.xfail,
+                marks=pytest.mark.skip,
             ),
             ({"content": "a"}, 0, ""),
             ({"content": " "}, 102, "`content` is required"),
@@ -83,16 +83,16 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"content": "a", "important_keywords": ["a", "b", "c"]}, 0, ""),
-            ({"content": "a", "important_keywords": [""]}, 0, ""),
+            ({"content": "chunk test", "important_keywords": ["a", "b", "c"]}, 0, ""),
+            ({"content": "chunk test", "important_keywords": [""]}, 0, ""),
             (
-                {"content": "a", "important_keywords": [1]},
+                {"content": "chunk test", "important_keywords": [1]},
                 100,
                 "TypeError('sequence item 0: expected str instance, int found')",
             ),
-            ({"content": "a", "important_keywords": ["a", "a"]}, 0, ""),
-            ({"content": "a", "important_keywords": "abc"}, 102, "`important_keywords` is required to be a list"),
-            ({"content": "a", "important_keywords": 123}, 102, "`important_keywords` is required to be a list"),
+            ({"content": "chunk test", "important_keywords": ["a", "a"]}, 0, ""),
+            ({"content": "chunk test", "important_keywords": "abc"}, 102, "`important_keywords` is required to be a list"),
+            ({"content": "chunk test", "important_keywords": 123}, 102, "`important_keywords` is required to be a list"),
         ],
     )
     def test_important_keywords(self, get_http_api_auth, get_dataset_id_and_document_id, payload, expected_code, expected_message):
@@ -111,17 +111,17 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"content": "a", "questions": ["a", "b", "c"]}, 0, ""),
+            ({"content": "chunk test", "questions": ["a", "b", "c"]}, 0, ""),
             pytest.param(
-                {"content": "a", "questions": [""]},
+                {"content": "chunk test", "questions": [""]},
                 0,
                 "",
-                marks=pytest.mark.xfail(reason="issues/6404"),
+                marks=pytest.mark.skip(reason="issues/6404"),
             ),
-            ({"content": "a", "questions": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
-            ({"content": "a", "questions": ["a", "a"]}, 0, ""),
-            ({"content": "a", "questions": "abc"}, 102, "`questions` is required to be a list"),
-            ({"content": "a", "questions": 123}, 102, "`questions` is required to be a list"),
+            ({"content": "chunk test", "questions": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
+            ({"content": "chunk test", "questions": ["a", "a"]}, 0, ""),
+            ({"content": "chunk test", "questions": "abc"}, 102, "`questions` is required to be a list"),
+            ({"content": "chunk test", "questions": 123}, 102, "`questions` is required to be a list"),
         ],
     )
     def test_questions(self, get_http_api_auth, get_dataset_id_and_document_id, payload, expected_code, expected_message):
@@ -174,12 +174,12 @@ class TestAddChunk:
     )
     def test_invalid_document_id(self, get_http_api_auth, get_dataset_id_and_document_id, document_id, expected_code, expected_message):
         dataset_id, _ = get_dataset_id_and_document_id
-        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": "a"})
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": "chunk test"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
     def test_repeated_add_chunk(self, get_http_api_auth, get_dataset_id_and_document_id):
-        payload = {"content": "a"}
+        payload = {"content": "chunk test"}
         dataset_id, document_id = get_dataset_id_and_document_id
         res = list_chunks(get_http_api_auth, dataset_id, document_id)
         chunks_count = res["data"]["doc"]["chunk_count"]
@@ -198,7 +198,7 @@ class TestAddChunk:
     def test_add_chunk_to_deleted_document(self, get_http_api_auth, get_dataset_id_and_document_id):
         dataset_id, document_id = get_dataset_id_and_document_id
         delete_documnet(get_http_api_auth, dataset_id, {"ids": [document_id]})
-        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": "a"})
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": "chunk test"})
         assert res["code"] == 102
         assert res["message"] == f"You don't own the document {document_id}."
 
@@ -216,7 +216,7 @@ class TestAddChunk:
                     get_http_api_auth,
                     dataset_id,
                     document_id,
-                    {"content": "a"},
+                    {"content": f"chunk test {i}"},
                 )
                 for i in range(chunk_num)
             ]

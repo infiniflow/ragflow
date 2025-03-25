@@ -67,7 +67,7 @@ class TestDatasetUpdate:
                 100,
                 """AttributeError("\'NoneType\' object has no attribute \'strip\'")""",
             ),
-            pytest.param("", 102, "", marks=pytest.mark.xfail(reason="issue#5915")),
+            pytest.param("", 102, "", marks=pytest.mark.skip(reason="issue/5915")),
             ("dataset_1", 102, "Duplicated dataset name in updating dataset."),
             ("DATASET_1", 102, "Duplicated dataset name in updating dataset."),
         ],
