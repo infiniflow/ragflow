@@ -40,11 +40,6 @@ def create(tenant_id):
         kb = kbs[0]
         if kb.chunk_num == 0:
             return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
-        
-        # Check if all documents in the knowledge base have been parsed
-        is_done, error_msg = KnowledgebaseService.is_parsed_done(kb_id)
-        if not is_done:
-            return get_error_data_result(error_msg)
     
     kbs = KnowledgebaseService.get_by_ids(ids) if ids else []
     embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
@@ -182,11 +177,6 @@ def update(tenant_id, chat_id):
                 kb = kbs[0]
                 if kb.chunk_num == 0:
                     return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
-                
-                # Check if all documents in the knowledge base have been parsed
-                is_done, error_msg = KnowledgebaseService.is_parsed_done(kb_id)
-                if not is_done:
-                    return get_error_data_result(error_msg)
                 
             kbs = KnowledgebaseService.get_by_ids(ids)
             embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
