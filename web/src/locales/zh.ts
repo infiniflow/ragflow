@@ -1179,6 +1179,18 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       categoryName: '分类名称',
       nextStep: '下一步',
       insertVariableTip: `输入 / 插入变量`,
+      setting: '设置',
+      settings: {
+        agentSetting: 'Agent设置',
+        title: '标题',
+        description: '描述',
+        upload: '上传',
+        photo: '照片',
+        permissions: '权限',
+        permissionsTip: '你可以在这里设置团队访问权限。',
+        me: '仅限自己',
+        team: '团队',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',
