@@ -18,8 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from common import (
     INVALID_API_TOKEN,
-    batch_upload_documents,
-    create_datasets,
+    batch_create_datasets,
+    bulk_upload_documents,
     list_documnet,
     parse_documnet,
 )
@@ -50,14 +50,14 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(self, get_http_api_auth, tmp_path, auth, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = parse_documnet(auth, ids[0], {"document_ids": document_ids[0]})
+    def test_invalid_auth(self, get_dataset_id_and_document_ids, auth, expected_code, expected_message):
+        dataset_id, document_ids = get_dataset_id_and_document_ids
+        res = parse_documnet(auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestDocumentsParse:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
@@ -98,9 +98,9 @@ class TestDocumentsParse:
                     return False
             return True
 
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 3, tmp_path)
+        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 3, tmp_path)
         if callable(payload):
             payload = payload(document_ids)
         res = parse_documnet(get_http_api_auth, dataset_id, payload)
@@ -130,8 +130,8 @@ class TestDocumentsParse:
         expected_code,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
+        ids = batch_create_datasets(get_http_api_auth, 1)
+        document_ids = bulk_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
         res = parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
@@ -153,9 +153,9 @@ class TestDocumentsParse:
                     return False
             return True
 
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 3, tmp_path)
+        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 3, tmp_path)
         if callable(payload):
             payload = payload(document_ids)
         res = parse_documnet(get_http_api_auth, dataset_id, payload)
@@ -175,9 +175,9 @@ class TestDocumentsParse:
                     return False
             return True
 
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
+        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
         res = parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 0
 
@@ -195,9 +195,9 @@ class TestDocumentsParse:
                     return False
             return True
 
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
+        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
         res = parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids + document_ids})
         assert res["code"] == 0
         assert res["data"]["errors"][0] == f"Duplicate document ids: {document_ids[0]}"
@@ -218,9 +218,9 @@ class TestDocumentsParse:
             return True
 
         document_num = 100
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
+        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
         res = parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 0
 
@@ -239,9 +239,9 @@ class TestDocumentsParse:
             return True
 
         document_num = 100
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         dataset_id = ids[0]
-        document_ids = batch_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
+        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
