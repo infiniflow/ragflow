@@ -309,7 +309,7 @@ class PostgresDatabaseLock:
 
     @with_retry(max_retries=3, retry_delay=1.0)
     def lock(self):
-        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", self.lock_id)
+        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", (self.lock_id,))
         ret = cursor.fetchone()
         if ret[0] == 0:
             raise Exception(f"acquire postgres lock {self.lock_name} timeout")
@@ -320,7 +320,7 @@ class PostgresDatabaseLock:
 
     @with_retry(max_retries=3, retry_delay=1.0)
     def unlock(self):
-        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", self.lock_id)
+        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", (self.lock_id,))
         ret = cursor.fetchone()
         if ret[0] == 0:
             raise Exception(f"postgres lock {self.lock_name} was not established by this thread")
