@@ -159,6 +159,10 @@ class TestChunksList:
         res = list_chunks(get_http_api_auth, dataset_id, document_id)
         chunks_count = res["data"]["doc"]["chunk_count"]
         batch_add_chunks(get_http_api_auth, dataset_id, document_id, 31)
+        # issues/6487
+        from time import sleep
+
+        sleep(3)
         res = list_chunks(get_http_api_auth, dataset_id, document_id)
         assert res["code"] == 0
         assert len(res["data"]["chunks"]) == 30
