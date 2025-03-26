@@ -110,7 +110,7 @@ export default {
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
-        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。',
+        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 0.2，也就是说文本块的混合相似度得分至少 20 才会被召回。',
       vectorSimilarityWeight: '关键字相似度权重',
       vectorSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或rerank得分（0〜1）。两个权重的总和为1.0。',
@@ -167,7 +167,7 @@ export default {
       autoKeywords: '自动关键词提取',
       autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用“系统模型设置”中设置的默认聊天模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。`,
       autoQuestions: '自动问题提取',
-      autoQuestionsTip: `在查询此类问题时，为每个块提取 N 个问题以提高其排名得分。在“系统模型设置”中设置的 LLM 将消耗额外的 token。您可以在块列表中查看结果。如果发生错误，此功能不会破坏整个分块过程，除了将空结果添加到原始块。`,
+      autoQuestionsTip: `利用“系统模型设置”中设置的 chat model 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。`,
       redo: '是否清空已有 {{chunkNum}}个 chunk？',
       setMetaData: '设置元数据',
       pleaseInputJson: '请输入JSON',
@@ -210,8 +210,10 @@ export default {
       chunkTokenNumberMessage: '块Token数是必填项',
       embeddingModelTip:
         '用于嵌入块的嵌入模型。 一旦知识库有了块，它就无法更改。 如果你想改变它，你需要删除所有的块。',
-      permissionsTip: '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
-      chunkTokenNumberTip: '建议的生成文本块的 token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
+      permissionsTip:
+        '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
+      chunkTokenNumberTip:
+        '建议的生成文本块的 token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
       chunkMethod: '切片方法',
       chunkMethodTip: '说明位于右侧。',
       upload: '上传',
@@ -317,15 +319,15 @@ export default {
 <p>接下来，将分块传输到 LLM 以提取知识图谱和思维导图的节点和关系。</p>
 
 注意您需要指定的条目类型。</p>`,
-      tag: `<p>使用“标签”作为分块方法的知识库应该被其他知识库使用，以将标签添加到其块中，对这些块的查询也将带有标签。</p>
-<p>使用“标签”作为分块方法的知识库<b>不</b>应该参与 RAG 过程。</p>
-<p>此知识库中的块是标签的示例，它们演示了整个标签集以及块和标签之间的相关性。</p>
+      tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
+<p>使用“标签”作为分块方法的知识库<b>不</b>参与 RAG 检索过程。</p>
+<p>标签集中的每个文本分块是都是相互独立的标签和标签描述的文本对。</p>
 
-<p>此块方法支持<b>XLSX</b>和<b>CSV/TXT</b>文件格式。</p>
-<p>如果文件为<b>XLSX</b>格式，则它应该包含两列无标题：一列用于内容，另一列用于标签，内容列位于标签列之前。可以接受多个工作表，只要列结构正确即可。</p>
+<p>Tag 分块方法支持<b>XLSX</b>和<b>CSV/TXT</b>文件格式。</p>
+<p>如果文件为<b>XLSX</b>格式，则它应该包含两列无标题：一列用于标签描述，另一列用于标签，标签描述列位于标签列之前。支持多个工作表，只要列结构正确即可。</p>
 <p>如果文件为 <b>CSV/TXT</b> 格式，则必须使用 UTF-8 编码并以 TAB 作为分隔符来分隔内容和标签。</p>
-<p>在标签列中，标签之间使用英文 <b>逗号</b>。</p>
-<i>不符合上述规则的文本行将被忽略，并且每对文本将被视为一个不同的块。</i>
+<p>在标签列中，标签之间使用英文逗号分隔。</p>
+<i>不符合上述规则的文本行将被忽略。</i>
 `,
       useRaptor: '使用召回增强RAPTOR策略',
       useRaptorTip: '请参考 https://huggingface.co/papers/2401.18059',
@@ -342,7 +344,7 @@ export default {
       maxClusterMessage: '最大聚类数是必填项',
       randomSeed: '随机种子',
       randomSeedMessage: '随机种子是必填项',
-      promptTip: 'LLM提示用于总结。',
+      promptTip: '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
       maxTokenTip: '用于汇总的最大token数。',
       thresholdTip: '阈值越大，聚类越少。',
       maxClusterTip: '最大聚类数。',
@@ -358,7 +360,7 @@ export default {
       tagSet: '标签集',
       topnTags: 'Top-N 标签',
       tagSetTip: `
-      <p> 请选择一个或多个标签集或标签知识库，用于对知识库中的每个文本块进行标记。 </p>
+      <p> 请选择一个或多个标签集或标签知识库，用于对知识库中的每个文本块进行标记。</p>
       <p>对这些文本块的查询也将自动关联相应标签。 </p>
       <p>此功能基于文本相似度，能够为数据集的文本块批量添加更多领域知识，从而显著提高检索准确性。该功能还能提升大量文本块的操作效率。</p>
       <p>为了更好地理解标签集的作用，以下是标签集和关键词之间的主要区别：</p>
@@ -687,6 +689,16 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       sureDelete: '您确定要删除该成员吗？',
       quit: '退出',
       sureQuit: '确定退出加入的团队吗？',
+      secretKey: '密钥',
+      publicKey: '公钥',
+      secretKeyMessage: '请输入私钥',
+      publicKeyMessage: '请输入公钥',
+      hostMessage: '请输入 host',
+      configuration: '配置',
+      langfuseDescription:
+        '跟踪、评估、提示管理和指标，以调试和改进您的 LLM 应用程序。',
+      viewLangfuseSDocumentation: '查看 Langfuse 的文档',
+      view: '查看',
     },
     message: {
       registered: '注册成功',
@@ -1167,6 +1179,18 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       categoryName: '分类名称',
       nextStep: '下一步',
       insertVariableTip: `输入 / 插入变量`,
+      setting: '设置',
+      settings: {
+        agentSetting: 'Agent设置',
+        title: '标题',
+        description: '描述',
+        upload: '上传',
+        photo: '照片',
+        permissions: '权限',
+        permissionsTip: '你可以在这里设置团队访问权限。',
+        me: '仅限自己',
+        team: '团队',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',

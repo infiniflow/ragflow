@@ -56,7 +56,11 @@ Click the dropdown menu of **Model** to show the model configuration window.
 
 Typically, you use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. We do not plan to elaborate on this topic, as it can be as extensive as prompt engineering. However, please be aware that the system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. 
 
-Keys in a system prompt should be enclosed in curly braces. Below is a prompt excerpt of a **Generate** component from the **Interpreter** template (component ID: **Reflect**):
+:::danger IMPORTANT
+A **Generate** component relies on keys (variables) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence. Keys in a **Generate** component are used in conjunction with the system prompt to specify data inputs for the LLM. Use a forward slash `/` or the **(x)** button to show the keys to use.
+:::
+
+Below is a prompt excerpt of a **Generate** component from the **Interpreter** template (component ID: **Reflect**):
 
 ```text
 Your task is to read a source text and a translation to {target_lang}, and give constructive suggestions to improve the translation. The source text and initial translation, delimited by XML tags <SOURCE_TEXT></SOURCE_TEXT> and <TRANSLATION></TRANSLATION>, are as follows:
@@ -75,11 +79,6 @@ When writing suggestions, pay attention to whether there are ways to improve the
 ```
 
 Where `{source_text}` and `{target_lang}` are global variables defined by the **Begin** component, while `{translation_1}` is the output of another **Generate** component with the component ID **Translate directly**.
-
-
-:::danger IMPORTANT
-A **Generate** component relies on keys (variables) to specify its data inputs. Its immediate upstream component is *not* necessarily its data input, and the arrows in the workflow indicate *only* the processing sequence. Keys in a **Generate** component are used in conjunction with the system prompt to specify data inputs for the LLM. Use a forward slash `/` to show the keys to use.
-:::
 
 ### Cite 
 

@@ -74,7 +74,7 @@ def delete_dataset(auth, payload=None):
     return res.json()
 
 
-def create_datasets(auth, num):
+def batch_create_datasets(auth, num):
     ids = []
     for i in range(num):
         res = create_dataset(auth, {"name": f"dataset_{i}"})
@@ -109,18 +109,6 @@ def upload_documnets(auth, dataset_id, files_path=None):
     finally:
         for f in file_objects:
             f.close()
-
-
-def batch_upload_documents(auth, dataset_id, num, tmp_path):
-    fps = []
-    for i in range(num):
-        fp = create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt")
-        fps.append(fp)
-    res = upload_documnets(auth, dataset_id, fps)
-    document_ids = []
-    for document in res["data"]:
-        document_ids.append(document["id"])
-    return document_ids
 
 
 def download_document(auth, dataset_id, document_id, save_path):
@@ -172,10 +160,39 @@ def stop_parse_documnet(auth, dataset_id, payload=None):
     return res.json()
 
 
+def bulk_upload_documents(auth, dataset_id, num, tmp_path):
+    fps = []
+    for i in range(num):
+        fp = create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt")
+        fps.append(fp)
+    res = upload_documnets(auth, dataset_id, fps)
+    document_ids = []
+    for document in res["data"]:
+        document_ids.append(document["id"])
+    return document_ids
+
+
 # CHUNK MANAGEMENT WITHIN DATASET
 def add_chunk(auth, dataset_id, document_id, payload=None):
-    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(
-        dataset_id=dataset_id, document_id=document_id
-    )
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def list_chunks(auth, dataset_id, document_id, params=None):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.get(
+        url=url,
+        headers=HEADERS,
+        auth=auth,
+        params=params,
+    )
+    return res.json()
+
+
+def batch_add_chunks(auth, dataset_id, document_id, num):
+    chunk_ids = []
+    for i in range(num):
+        res = add_chunk(auth, dataset_id, document_id, {"content": f"chunk test {i}"})
+        chunk_ids.append(res["data"]["chunk"]["id"])
+    return chunk_ids

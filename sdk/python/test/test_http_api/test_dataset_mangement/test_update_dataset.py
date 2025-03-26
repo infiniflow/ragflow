@@ -19,7 +19,7 @@ import pytest
 from common import (
     DATASET_NAME_LIMIT,
     INVALID_API_TOKEN,
-    create_datasets,
+    batch_create_datasets,
     list_dataset,
     update_dataset,
 )
@@ -30,6 +30,7 @@ from libs.utils.file_utils import create_image_file
 # TODO: Missing scenario for updating embedding_model with chunk_count != 0
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -42,15 +43,14 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(
-        self, get_http_api_auth, auth, expected_code, expected_message
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
+    def test_invalid_auth(self, get_http_api_auth, auth, expected_code, expected_message):
+        ids = batch_create_datasets(get_http_api_auth, 1)
         res = update_dataset(auth, ids[0], {"name": "new_name"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "name, expected_code, expected_message",
@@ -67,13 +67,13 @@ class TestDatasetUpdate:
                 100,
                 """AttributeError("\'NoneType\' object has no attribute \'strip\'")""",
             ),
-            pytest.param("", 102, "", marks=pytest.mark.xfail(reason="issue#5915")),
+            pytest.param("", 102, "", marks=pytest.mark.skip(reason="issue/5915")),
             ("dataset_1", 102, "Duplicated dataset name in updating dataset."),
             ("DATASET_1", 102, "Duplicated dataset name in updating dataset."),
         ],
     )
     def test_name(self, get_http_api_auth, name, expected_code, expected_message):
-        ids = create_datasets(get_http_api_auth, 2)
+        ids = batch_create_datasets(get_http_api_auth, 2)
         res = update_dataset(get_http_api_auth, ids[0], {"name": name})
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -105,13 +105,9 @@ class TestDatasetUpdate:
             (None, 102, "`embedding_model` can't be empty"),
         ],
     )
-    def test_embedding_model(
-        self, get_http_api_auth, embedding_model, expected_code, expected_message
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
-        res = update_dataset(
-            get_http_api_auth, ids[0], {"embedding_model": embedding_model}
-        )
+    def test_embedding_model(self, get_http_api_auth, embedding_model, expected_code, expected_message):
+        ids = batch_create_datasets(get_http_api_auth, 1)
+        res = update_dataset(get_http_api_auth, ids[0], {"embedding_model": embedding_model})
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_dataset(get_http_api_auth, {"id": ids[0]})
@@ -139,16 +135,12 @@ class TestDatasetUpdate:
             (
                 "other_chunk_method",
                 102,
-                "'other_chunk_method' is not in ['naive', 'manual', 'qa', 'table',"
-                " 'paper', 'book', 'laws', 'presentation', 'picture', 'one', "
-                "'knowledge_graph', 'email', 'tag']",
+                "'other_chunk_method' is not in ['naive', 'manual', 'qa', 'table', 'paper', 'book', 'laws', 'presentation', 'picture', 'one', 'knowledge_graph', 'email', 'tag']",
             ),
         ],
     )
-    def test_chunk_method(
-        self, get_http_api_auth, chunk_method, expected_code, expected_message
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
+    def test_chunk_method(self, get_http_api_auth, chunk_method, expected_code, expected_message):
+        ids = batch_create_datasets(get_http_api_auth, 1)
         res = update_dataset(get_http_api_auth, ids[0], {"chunk_method": chunk_method})
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -161,14 +153,14 @@ class TestDatasetUpdate:
             assert res["message"] == expected_message
 
     def test_avatar(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {"avatar": encode_avatar(fn)}
         res = update_dataset(get_http_api_auth, ids[0], payload)
         assert res["code"] == 0
 
     def test_description(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         payload = {"description": "description"}
         res = update_dataset(get_http_api_auth, ids[0], payload)
         assert res["code"] == 0
@@ -177,7 +169,7 @@ class TestDatasetUpdate:
         assert res["data"][0]["description"] == "description"
 
     def test_pagerank(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         payload = {"pagerank": 1}
         res = update_dataset(get_http_api_auth, ids[0], payload)
         assert res["code"] == 0
@@ -186,7 +178,7 @@ class TestDatasetUpdate:
         assert res["data"][0]["pagerank"] == 1
 
     def test_similarity_threshold(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         payload = {"similarity_threshold": 1}
         res = update_dataset(get_http_api_auth, ids[0], payload)
         assert res["code"] == 0
@@ -206,7 +198,7 @@ class TestDatasetUpdate:
         ],
     )
     def test_permission(self, get_http_api_auth, permission, expected_code):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         payload = {"permission": permission}
         res = update_dataset(get_http_api_auth, ids[0], payload)
         assert res["code"] == expected_code
@@ -218,7 +210,7 @@ class TestDatasetUpdate:
             assert res["data"][0]["permission"] == "me"
 
     def test_vector_similarity_weight(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         payload = {"vector_similarity_weight": 1}
         res = update_dataset(get_http_api_auth, ids[0], payload)
         assert res["code"] == 0
@@ -227,10 +219,8 @@ class TestDatasetUpdate:
         assert res["data"][0]["vector_similarity_weight"] == 1
 
     def test_invalid_dataset_id(self, get_http_api_auth):
-        create_datasets(get_http_api_auth, 1)
-        res = update_dataset(
-            get_http_api_auth, "invalid_dataset_id", {"name": "invalid_dataset_id"}
-        )
+        batch_create_datasets(get_http_api_auth, 1)
+        res = update_dataset(get_http_api_auth, "invalid_dataset_id", {"name": "invalid_dataset_id"})
         assert res["code"] == 102
         assert res["message"] == "You don't own the dataset"
 
@@ -251,25 +241,20 @@ class TestDatasetUpdate:
         ],
     )
     def test_modify_read_only_field(self, get_http_api_auth, payload):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         res = update_dataset(get_http_api_auth, ids[0], payload)
         assert res["code"] == 101
         assert "is readonly" in res["message"]
 
     def test_modify_unknown_field(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         res = update_dataset(get_http_api_auth, ids[0], {"unknown_field": 0})
         assert res["code"] == 100
 
     def test_concurrent_update(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(
-                    update_dataset, get_http_api_auth, ids[0], {"name": f"dataset_{i}"}
-                )
-                for i in range(100)
-            ]
+            futures = [executor.submit(update_dataset, get_http_api_auth, ids[0], {"name": f"dataset_{i}"}) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)

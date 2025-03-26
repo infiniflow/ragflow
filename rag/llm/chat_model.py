@@ -1443,6 +1443,9 @@ class AnthropicChat(Base):
             del gen_conf["presence_penalty"]
         if "frequency_penalty" in gen_conf:
             del gen_conf["frequency_penalty"]
+        gen_conf["max_tokens"] = 8192
+        if "haiku" in self.model_name or "opus" in self.model_name:
+            gen_conf["max_tokens"] = 4096
 
         ans = ""
         try:
@@ -1474,6 +1477,9 @@ class AnthropicChat(Base):
             del gen_conf["presence_penalty"]
         if "frequency_penalty" in gen_conf:
             del gen_conf["frequency_penalty"]
+        gen_conf["max_tokens"] = 8192
+        if "haiku" in self.model_name or "opus" in self.model_name:
+            gen_conf["max_tokens"] = 4096
 
         ans = ""
         total_tokens = 0
@@ -1481,15 +1487,21 @@ class AnthropicChat(Base):
             response = self.client.messages.create(
                 model=self.model_name,
                 messages=history,
-                system=self.system,
+                system=system,
                 stream=True,
                 **gen_conf,
             )
             for res in response:
                 if res.type == 'content_block_delta':
-                    text = res.delta.text
-                    ans += text
-                    total_tokens += num_tokens_from_string(text)
+                    if res.delta.type == "thinking_delta" and res.delta.thinking:
+                        if ans.find("<think>") < 0:
+                            ans += "<think>"
+                        ans = ans.replace("</think>", "")
+                        ans += res.delta.thinking + "</think>"
+                    else:
+                        text = res.delta.text
+                        ans += text
+                        total_tokens += num_tokens_from_string(text)
                     yield ans
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
