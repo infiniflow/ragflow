@@ -133,6 +133,7 @@ class Base(ABC):
             del gen_conf["max_tokens"]
         ans = ""
         total_tokens = 0
+        reasoning_start = False
         try:
             response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
             for resp in response:
@@ -142,11 +143,12 @@ class Base(ABC):
                     resp.choices[0].delta.content = ""
                 if hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
                     ans = ""
-                    if ans.find("<think>") < 0:
-                        ans += "<think>"
-                    ans = ans.replace("</think>", "")
+                    if not reasoning_start:
+                        reasoning_start = True
+                        ans = "<think>"
                     ans += resp.choices[0].delta.reasoning_content + "</think>"
                 else:
+                    reasoning_start = False
                     ans = resp.choices[0].delta.content
 
                 tol = self.total_token_count(resp)
@@ -1365,6 +1367,7 @@ class AnthropicChat(Base):
 
         ans = ""
         total_tokens = 0
+        reasoning_start = False
         try:
             response = self.client.messages.create(
                 model=self.model_name,
@@ -1377,11 +1380,12 @@ class AnthropicChat(Base):
                 if res.type == "content_block_delta":
                     if res.delta.type == "thinking_delta" and res.delta.thinking:
                         ans = ""
-                        if ans.find("<think>") < 0:
-                            ans += "<think>"
-                        ans = ans.replace("</think>", "")
+                        if not reasoning_start:
+                            reasoning_start = True
+                            ans = "<think>"
                         ans += res.delta.thinking + "</think>"
                     else:
+                        reasoning_start = False
                         text = res.delta.text
                         ans = text
                         total_tokens += num_tokens_from_string(text)

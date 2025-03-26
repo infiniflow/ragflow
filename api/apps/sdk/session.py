@@ -260,6 +260,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
         def streamed_response_generator(chat_id, dia, msg):
             token_used = 0
             answer_cache = ""
+            reasoning_cache = ""
             response = {
                 "id": f"chatcmpl-{chat_id}",
                 "choices": [
@@ -268,7 +269,8 @@ def chat_completion_openai_like(tenant_id, chat_id):
                             "content": "",
                             "role": "assistant",
                             "function_call": None,
-                            "tool_calls": None
+                            "tool_calls": None,
+                            "reasoning_content": ""
                         },
                         "finish_reason": None,
                         "index": 0,
@@ -285,10 +287,37 @@ def chat_completion_openai_like(tenant_id, chat_id):
             try:
                 for ans in chat(dia, msg, True):
                     answer = ans["answer"]
-                    incremental = answer.replace(answer_cache, "", 1)
-                    answer_cache = answer.rstrip("</think>")
-                    token_used += len(incremental)
-                    response["choices"][0]["delta"]["content"] = incremental
+
+                    reasoning_match = re.search(r"<think>(.*?)</think>", answer, flags=re.DOTALL)
+                    if reasoning_match:
+                        reasoning_part = reasoning_match.group(1)
+                        content_part = answer[reasoning_match.end():]
+                    else:
+                        reasoning_part = ""
+                        content_part = answer
+
+                    reasoning_incremental = ""
+                    if reasoning_part:
+                        if reasoning_part.startswith(reasoning_cache):
+                            reasoning_incremental = reasoning_part.replace(reasoning_cache, "", 1)
+                        else:
+                            reasoning_incremental = reasoning_part
+                        reasoning_cache = reasoning_part
+
+                    content_incremental = ""
+                    if content_part:
+                        if content_part.startswith(answer_cache):
+                            content_incremental = content_part.replace(answer_cache, "", 1)
+                    else:
+                        content_incremental = content_part
+                    answer_cache = content_part
+
+                    token_used += len(reasoning_incremental) + len(content_incremental)
+                    if reasoning_incremental:
+                        response["choices"][0]["delta"]["reasoning_content"] = reasoning_incremental
+                    if content_incremental:
+                        response["choices"][0]["delta"]["content"] = content_incremental
+
                     yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
             except Exception as e:
                 response["choices"][0]["delta"]["content"] = "**ERROR**: " + str(e)
@@ -296,6 +325,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
 
             # The last chunk
             response["choices"][0]["delta"]["content"] = None
+            response["choices"][0]["delta"]["reasoning_content"] = None
             response["choices"][0]["finish_reason"] = "stop"
             response["usage"] = {
                 "prompt_tokens": len(prompt),

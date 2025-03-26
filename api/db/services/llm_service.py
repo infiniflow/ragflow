@@ -325,6 +325,7 @@ class LLMBundle:
             generation = self.trace.generation(name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
 
         ans = ""
+        reasoning_start = False
         for txt in self.mdl.chat_streamly(system, history, gen_conf):
             if isinstance(txt, int):
                 if self.langfuse:
@@ -333,6 +334,16 @@ class LLMBundle:
                 if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, txt, self.llm_name):
                     logging.error("LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name, txt))
                 return ans
+            if txt.endswith("</think>"):
+                if not reasoning_start:
+                    reasoning_start = True
+                    ans += txt
+                else:
+                    ans = ans.rstrip("</think>")
+                    ans += txt
+            else:
+                if reasoning_start:
+                    reasoning_start = False
+                ans += txt
 
-            ans += txt
             yield ans
