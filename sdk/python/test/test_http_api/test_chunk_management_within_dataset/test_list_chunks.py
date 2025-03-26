@@ -109,7 +109,7 @@ class TestChunksList:
         [
             (None, 0, 5, ""),
             ("", 0, 5, ""),
-            pytest.param(lambda r: r[0], 0, 1, "", marks=pytest.mark.skip(reason="issues/6499")),
+            pytest.param(lambda r: r[0], 0, 1, "", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6499")),
             pytest.param("unknown", 100, 0, """AttributeError("\'NoneType\' object has no attribute \'keys\'")""", marks=pytest.mark.skip),
         ],
     )
