@@ -324,15 +324,15 @@ class LLMBundle:
         if self.langfuse:
             generation = self.trace.generation(name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
 
-        output = ""
+        ans = ""
         for txt in self.mdl.chat_streamly(system, history, gen_conf):
             if isinstance(txt, int):
                 if self.langfuse:
-                    generation.end(output={"output": output})
+                    generation.end(output={"output": ans})
 
                 if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, txt, self.llm_name):
                     logging.error("LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name, txt))
-                return
+                return ans
 
-            output = txt
-            yield txt
+            ans += txt
+            yield ans
