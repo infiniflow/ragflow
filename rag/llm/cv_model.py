@@ -833,6 +833,13 @@ class YiCV(GptV4):
         super().__init__(key, model_name, lang, base_url)
 
 
+class SILICONFLOWCV(GptV4):
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://api.siliconflow.cn/v1",):
+        if not base_url:
+            base_url = "https://api.siliconflow.cn/v1"
+        super().__init__(key, model_name, lang, base_url)
+
+
 class HunyuanCV(Base):
     def __init__(self, key, model_name, lang="Chinese", base_url=None):
         from tencentcloud.common import credential
