@@ -319,9 +319,3 @@ class RedisDistributedLock:
 
     def release(self):
         return self.lock.release()
-
-    def __enter__(self):
-        self.acquire()
-
-    def __exit__(self, exception_type, exception_value, exception_traceback):
-        self.release()
