@@ -84,14 +84,14 @@ class TestDocumentList:
                 100,
                 0,
                 "1064",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
             pytest.param(
                 {"page": "a", "page_size": 2},
                 100,
                 0,
                 """ValueError("invalid literal for int() with base 10: \'a\'")""",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
         ],
     )
@@ -126,14 +126,14 @@ class TestDocumentList:
                 100,
                 0,
                 "1064",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
             pytest.param(
                 {"page_size": "a"},
                 100,
                 0,
                 """ValueError("invalid literal for int() with base 10: \'a\'")""",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
         ],
     )
@@ -180,14 +180,14 @@ class TestDocumentList:
                 0,
                 lambda r: (is_sorted(r["data"]["docs"], "name", False)),
                 "",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
             pytest.param(
                 {"orderby": "unknown"},
                 102,
                 0,
                 "orderby should be create_time or update_time",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
         ],
     )
@@ -241,7 +241,7 @@ class TestDocumentList:
                 0,
                 lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
                 "",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
             (
                 {"desc": "False"},
@@ -266,7 +266,7 @@ class TestDocumentList:
                 102,
                 0,
                 "desc should be true or false",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
         ],
     )

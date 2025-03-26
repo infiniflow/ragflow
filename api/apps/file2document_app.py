@@ -39,7 +39,7 @@ def convert():
 
     try:
         files = FileService.get_by_ids(file_ids)
-        files_set = set([file.id for file in files])
+        files_set = dict({file.id: file for file in files})
         for file_id in file_ids:
             file = files_set[file_id]
             if not file:

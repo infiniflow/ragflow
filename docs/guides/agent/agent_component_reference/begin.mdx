@@ -50,6 +50,10 @@ If your agent's **Begin** component takes a variable, you *cannot* embed it into
   - **boolean**: Requires the user to toggle between on and off.
 - **Optional**: A toggle indicating whether the variable is optional. 
 
+:::danger IMPORTAN
+If you set the key type as **file**, ensure the token count of the uploaded file does not exceed your model provider's maximum token limit; otherwise, the plain text in your file will be truncated and incomplete.
+:::
+
 ## Examples
 
 As mentioned earlier, the **Begin** component is indispensable for an agent. Still, you can take a look at our three-step interpreter agent template, where the **Begin** component takes two global variables:
@@ -64,7 +68,7 @@ As mentioned earlier, the **Begin** component is indispensable for an agent. Sti
 
 ### Is the uploaded file in a knowledge base?
 
-No. Files uploaded to an agent as input are not stored in a knowledge base and will not be chunked using RAGFlow's built-in chunk methods. However, RAGFlow's built-in OSR, DLR, and TSR models will still be applied to process the document.
+No. Files uploaded to an agent as input are not stored in a knowledge base and hence will not be processed using RAGFlow's built-in OCR, DLR or TSR models, or chunked using RAGFlow's built-in chunk methods. 
 
 ### How to upload a webpage or file from a URL?
 
@@ -74,5 +78,8 @@ If you set the type of a variable as **file**, your users will be able to upload
 
 ### File size limit for an uploaded file
 
-The maximum file size for each uploaded file is determined by the variable `MAX_CONTENT_LENGTH` in `/docker/.env`. It defaults to 128 MB. If you change the default file size, ensure you also update the value of `client_max_body_size` in `/docker/nginx/nginx.conf` accordingly.
+There is no *specific* file size limit for a file uploaded to an agent. However, note that model providers typically have a default or explicit maximum token setting, which can range from 8196 to 128k: The plain text part of the uploaded file will be passed in as the key value, but if the file's token count exceeds this limit, the string will be truncated and incomplete.
 
+:::tip NOTE
+The variables `MAX_CONTENT_LENGTH` in `/docker/.env` and `client_max_body_size` in `/docker/nginx/nginx.conf` set the file size limit for each upload to a knowledge base or **File Management**. These settings DO NOT apply in this scenario.
+:::

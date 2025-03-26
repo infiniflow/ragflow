@@ -193,6 +193,6 @@ def list_chunks(auth, dataset_id, document_id, params=None):
 def batch_add_chunks(auth, dataset_id, document_id, num):
     chunk_ids = []
     for i in range(num):
-        res = add_chunk(auth, dataset_id, document_id, {"content": f"ragflow test {i}"})
+        res = add_chunk(auth, dataset_id, document_id, {"content": f"chunk test {i}"})
         chunk_ids.append(res["data"]["chunk"]["id"])
     return chunk_ids
