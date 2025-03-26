@@ -537,6 +537,7 @@ class LLM(DataBaseModel):
     max_tokens = IntegerField(default=0)
 
     tags = CharField(max_length=255, null=False, help_text="LLM, Text Embedding, Image2Text, Chat, 32k...", index=True)
+    is_tools =  BooleanField(null=False, help_text="support tools", default=False)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
@@ -876,5 +877,9 @@ def migrate_db():
             pass
         try:
             migrate(migrator.add_column("user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)))
+        except Exception:
+            pass
+        try:
+            migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
         except Exception:
             pass
