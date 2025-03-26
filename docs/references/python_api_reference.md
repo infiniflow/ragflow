@@ -330,6 +330,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(name="kb_name")
+dataset = dataset[0]
 dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "chunk_method":"manual"})
 ```
 
