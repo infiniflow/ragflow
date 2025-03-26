@@ -15,6 +15,7 @@
 #
 import re
 import random
+from typing import List, Dict, Optional
 
 from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
@@ -498,91 +499,113 @@ class ZhipuChat(Base):
 
 
 class OllamaChat(Base):
-    def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else \
-            Client(host=kwargs["base_url"], headers={"Authorization": f"Bear {key}"})
+    """Ollama chat model implementation"""
+    
+    def __init__(self, model_name: str, base_url: str = "http://localhost:11434", 
+                 min_ctx_size: int = 2048):
         self.model_name = model_name
-        # 设置上下文窗口的上下限
-        self.min_ctx = 2048
-        self.max_ctx = 32768
-        # 设置缓冲区比例，用于预留空间给模型输出
-        self.buffer_ratio = 1.5
-
+        self.min_ctx_size = min_ctx_size
+        self._last_ctx_size = None  # Cache the last used context size
+        self._ctx_threshold = 1024  # Threshold for context size changes
+        
+        # Initialize Ollama client with host parameter instead of base_url
+        self.client = Client(host=base_url)
+        
     def _calculate_dynamic_ctx(self, history):
-        """计算动态的上下文窗口大小"""
+        """Calculate dynamic context window size"""
         def count_tokens(text):
-            """计算文本的token数量"""
-            # 简单计算：每个字符计为1个token
-            # 对于中文、日文、韩文等非ASCII字符计为2个token
+            """Calculate token count for text"""
+            # Simple calculation: 1 token per ASCII character
+            # 2 tokens for non-ASCII characters (Chinese, Japanese, Korean, etc.)
             total = 0
             for char in text:
-                if ord(char) < 128:  # ASCII字符
+                if ord(char) < 128:  # ASCII characters
                     total += 1
-                else:  # 非ASCII字符（中文、日文、韩文等）
+                else:  # Non-ASCII characters (Chinese, Japanese, Korean, etc.)
                     total += 2
             return total
 
-        # 计算所有消息的总token数
+        # Calculate total tokens for all messages
         total_tokens = 0
         for message in history:
             content = message.get("content", "")
-            # 计算内容token数
+            # Calculate content tokens
             content_tokens = count_tokens(content)
-            # 添加角色标记的token开销
+            # Add role marker token overhead
             role_tokens = 4
             total_tokens += content_tokens + role_tokens
 
-        # 先应用1.2倍的缓冲区
+        # Apply 1.2x buffer ratio
         total_tokens_with_buffer = int(total_tokens * 1.2)
         
-        # 基于2048为基准，动态添加1024的倍数
-        base_ctx = 2048  # 最小上下文窗口
+        # If buffered tokens are less than or equal to 2048, use 2048
+        if total_tokens_with_buffer <= 2048:
+            return 2048
+        
+        # If exceeding 2048, dynamically add multiples of 1024
+        base_ctx = 2048
         additional_ctx = 0
+        multiples = (total_tokens_with_buffer - 2048) // 1024 + 1
+        additional_ctx = multiples * 1024
         
-        # 根据带缓冲区的token数量动态添加1024的倍数
-        if total_tokens_with_buffer > 2048:
-            # 计算需要多少个1024的倍数
-            multiples = (total_tokens_with_buffer - 2048) // 1024 + 1
-            additional_ctx = multiples * 1024
-        
-        # 计算最终上下文大小
+        # Calculate final context size
         dynamic_ctx = base_ctx + additional_ctx
         
-        # 确保不超过最大上下文大小
-        return min(dynamic_ctx, self.max_ctx)
-
-    def chat(self, system, history, gen_conf):
-        if system:
-            history.insert(0, {"role": "system", "content": system})
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
-        try:
-            # 动态计算上下文窗口大小
-            dynamic_ctx = self._calculate_dynamic_ctx(history)
+        return dynamic_ctx
+        
+    def _should_update_ctx(self, new_ctx_size):
+        """Determine if context size needs to be updated"""
+        if self._last_ctx_size is None:
+            return True
             
-            options = {
-                "num_ctx": dynamic_ctx
-            }
-            if "temperature" in gen_conf:
-                options["temperature"] = gen_conf["temperature"]
-            if "max_tokens" in gen_conf:
-                options["num_predict"] = gen_conf["max_tokens"]
-            if "top_p" in gen_conf:
-                options["top_p"] = gen_conf["top_p"]
-            if "presence_penalty" in gen_conf:
-                options["presence_penalty"] = gen_conf["presence_penalty"]
-            if "frequency_penalty" in gen_conf:
-                options["frequency_penalty"] = gen_conf["frequency_penalty"]
+        # Calculate difference
+        diff = abs(new_ctx_size - self._last_ctx_size)
+        
+        # If difference exceeds threshold, use new value
+        if diff > self._ctx_threshold:
+            return True
+            
+        # If new value is smaller than old value and difference is less than threshold, keep old value
+        if new_ctx_size < self._last_ctx_size:
+            return False
+            
+        # For other cases, use new value
+        return True
+
+    def chat(self, system: str, history: List[Dict[str, str]], gen_conf: Optional[Dict] = None) -> str:
+        """Chat with the model"""
+        try:
+            # 计算新的上下文大小
+            new_ctx_size = self._calculate_dynamic_ctx(history)
+            
+            # 只在需要时更新上下文大小
+            if self._should_update_ctx(new_ctx_size):
+                self._last_ctx_size = new_ctx_size
+                params = {
+                    "num_ctx": new_ctx_size
+                }
+                # 只在需要更新时重新加载模型
+                self.client.create_model(self.model_name, params)
+            
+            # 构建消息列表
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.extend(history)
+            
+            # 调用模型生成回复
             response = self.client.chat(
                 model=self.model_name,
-                messages=history,
-                options=options,
-                keep_alive=-1
+                messages=messages,
+                stream=False,
+                **(gen_conf or {})
             )
-            ans = response["message"]["content"].strip()
-            return ans, response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
+            
+            return response['message']['content']
+            
         except Exception as e:
-            return "**ERROR**: " + str(e), 0
+            logger.error(f"Error in Ollama chat: {str(e)}")
+            raise
 
     def chat_streamly(self, system, history, gen_conf):
         if system:
