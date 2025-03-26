@@ -502,6 +502,54 @@ class OllamaChat(Base):
         self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else \
             Client(host=kwargs["base_url"], headers={"Authorization": f"Bear {key}"})
         self.model_name = model_name
+        # 设置上下文窗口的上下限
+        self.min_ctx = 2048
+        self.max_ctx = 32768
+        # 设置缓冲区比例，用于预留空间给模型输出
+        self.buffer_ratio = 1.5
+
+    def _calculate_dynamic_ctx(self, history):
+        """计算动态的上下文窗口大小"""
+        def count_tokens(text):
+            """计算文本的token数量"""
+            # 简单计算：每个字符计为1个token
+            # 对于中文、日文、韩文等非ASCII字符计为2个token
+            total = 0
+            for char in text:
+                if ord(char) < 128:  # ASCII字符
+                    total += 1
+                else:  # 非ASCII字符（中文、日文、韩文等）
+                    total += 2
+            return total
+
+        # 计算所有消息的总token数
+        total_tokens = 0
+        for message in history:
+            content = message.get("content", "")
+            # 计算内容token数
+            content_tokens = count_tokens(content)
+            # 添加角色标记的token开销
+            role_tokens = 4
+            total_tokens += content_tokens + role_tokens
+
+        # 先应用1.2倍的缓冲区
+        total_tokens_with_buffer = int(total_tokens * 1.2)
+        
+        # 基于2048为基准，动态添加1024的倍数
+        base_ctx = 2048  # 最小上下文窗口
+        additional_ctx = 0
+        
+        # 根据带缓冲区的token数量动态添加1024的倍数
+        if total_tokens_with_buffer > 2048:
+            # 计算需要多少个1024的倍数
+            multiples = (total_tokens_with_buffer - 2048) // 1024 + 1
+            additional_ctx = multiples * 1024
+        
+        # 计算最终上下文大小
+        dynamic_ctx = base_ctx + additional_ctx
+        
+        # 确保不超过最大上下文大小
+        return min(dynamic_ctx, self.max_ctx)
 
     def chat(self, system, history, gen_conf):
         if system:
@@ -509,8 +557,11 @@ class OllamaChat(Base):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         try:
+            # 动态计算上下文窗口大小
+            dynamic_ctx = self._calculate_dynamic_ctx(history)
+            
             options = {
-                "num_ctx": 32768
+                "num_ctx": dynamic_ctx
             }
             if "temperature" in gen_conf:
                 options["temperature"] = gen_conf["temperature"]
