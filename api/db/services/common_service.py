@@ -254,6 +254,16 @@ class CommonService:
         # Returns:
         #     Number of records deleted
         return cls.model.delete().where(cls.model.id == pid).execute()
+    
+    @classmethod
+    @DB.connection_context()
+    def delete_by_ids(cls, pids):
+        # Delete multiple records by their IDs
+        # Args:
+        #     pids: List of record IDs
+        # Returns:
+        #     Number of records deleted
+        return cls.model.delete().where(cls.model.id.in_(pids)).execute()
 
     @classmethod
     @DB.connection_context()
