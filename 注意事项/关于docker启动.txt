@@ -1,0 +1,2 @@
+docker compose -f docker/docker-compose-base.yml up -d
+docker compose -f docker/docker-compose-base.yml down
