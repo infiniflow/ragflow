@@ -190,6 +190,12 @@ def list_chunks(auth, dataset_id, document_id, params=None):
     return res.json()
 
 
+def update_chunk(auth, dataset_id, document_id, chunk_id, payload=None):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_id}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
 def batch_add_chunks(auth, dataset_id, document_id, num):
     chunk_ids = []
     for i in range(num):
