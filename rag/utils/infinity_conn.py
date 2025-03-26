@@ -172,6 +172,12 @@ class InfinityConnection(DocStoreConnection):
                     ConflictType.Ignore,
                 )
 
+    def field_keyword(self, field_name: str):
+        # The "docnm_kwd" field is always a string, not list.
+        if field_name == "source_id" or (field_name.endswith("_kwd") and field_name != "docnm_kwd"):
+            return True
+        return False
+
     """
     Database operations
     """
@@ -480,9 +486,11 @@ class InfinityConnection(DocStoreConnection):
             assert "_id" not in d
             assert "id" in d
             for k, v in d.items():
-                if k in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd", "source_id"]:
-                    assert isinstance(v, list)
-                    d[k] = "###".join(v)
+                if self.field_keyword(k):
+                    if isinstance(v, list):
+                        d[k] = "###".join(v)
+                    else:
+                        d[k] = v
                 elif re.search(r"_feas$", k):
                     d[k] = json.dumps(v)
                 elif k == 'kb_id':
@@ -495,6 +503,8 @@ class InfinityConnection(DocStoreConnection):
                 elif k in ["page_num_int", "top_int"]:
                     assert isinstance(v, list)
                     d[k] = "_".join(f"{num:08x}" for num in v)
+                else:
+                    d[k] = v
 
             for n, vs in embedding_clmns:
                 if n in d:
@@ -525,13 +535,13 @@ class InfinityConnection(DocStoreConnection):
         #    del condition["exists"]
         filter = equivalent_condition_to_str(condition, table_instance)
         for k, v in list(newValue.items()):
-            if k in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd", "source_id"]:
-                assert isinstance(v, list)
-                newValue[k] = "###".join(v)
+            if self.field_keyword(k):
+                if isinstance(v, list):
+                    newValue[k] = "###".join(v)
+                else:
+                    newValue[k] = v
             elif re.search(r"_feas$", k):
                 newValue[k] = json.dumps(v)
-            elif k.endswith("_kwd") and isinstance(v, list):
-                newValue[k] = " ".join(v)
             elif k == 'kb_id':
                 if isinstance(newValue[k], list):
                     newValue[k] = newValue[k][0]  # since d[k] is a list, but we need a str
@@ -546,6 +556,8 @@ class InfinityConnection(DocStoreConnection):
                 del newValue[k]
                 if v in [PAGERANK_FLD]:
                     newValue[v] = 0
+            else:
+                newValue[k] = v
 
         logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {newValue}.")
         table_instance.update(filter, newValue)
@@ -600,7 +612,7 @@ class InfinityConnection(DocStoreConnection):
 
         for column in res2.columns:
             k = column.lower()
-            if k in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd", "source_id"]:
+            if self.field_keyword(k):
                 res2[column] = res2[column].apply(lambda v:[kwd for kwd in v.split("###") if kwd])
             elif k == "position_int":
                 def to_position_int(v):

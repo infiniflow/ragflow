@@ -2,7 +2,7 @@
 # Licensed under the MIT License
 """
 Reference:
- - [graphrag](https://github.com/microsoft/graphrag)
+ - [GraphRAG](https://github.com/microsoft/graphrag/blob/main/graphrag/prompts/index/extract_graph.py)
 """
 
 GRAPH_EXTRACTION_PROMPT = """

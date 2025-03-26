@@ -1,7 +1,7 @@
 # Licensed under the MIT License
 """
 Reference:
- - [LightRag](https://github.com/HKUDS/LightRAG)
+ - [LightRAG](https://github.com/HKUDS/LightRAG/blob/main/lightrag/prompt.py)
 """
 
 

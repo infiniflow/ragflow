@@ -12,6 +12,8 @@ services:
       - ${SVR_HTTP_PORT}:9380
       - 80:80
       - 443:443
+      - 5678:5678
+      - 5679:5679
     volumes:
       - ./ragflow-logs:/ragflow/logs
       - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf

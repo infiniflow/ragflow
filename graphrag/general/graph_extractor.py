@@ -6,7 +6,7 @@ Reference:
 """
 
 import re
-from typing import Any, Callable
+from typing import Any
 from dataclasses import dataclass
 import tiktoken
 import trio
@@ -53,10 +53,6 @@ class GraphExtractor(Extractor):
         llm_invoker: CompletionLLM,
         language: str | None = "English",
         entity_types: list[str] | None = None,
-        get_entity: Callable | None = None,
-        set_entity: Callable | None = None,
-        get_relation: Callable | None = None,
-        set_relation: Callable | None = None,
         tuple_delimiter_key: str | None = None,
         record_delimiter_key: str | None = None,
         input_text_key: str | None = None,
@@ -66,7 +62,7 @@ class GraphExtractor(Extractor):
         max_gleanings: int | None = None,
         on_error: ErrorHandlerFn | None = None,
     ):
-        super().__init__(llm_invoker, language, entity_types, get_entity, set_entity, get_relation, set_relation)
+        super().__init__(llm_invoker, language, entity_types)
         """Init method definition."""
         # TODO: streamline construction
         self._llm = llm_invoker
