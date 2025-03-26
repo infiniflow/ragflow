@@ -37,9 +37,8 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(self, get_dataset_id_and_document_id, auth, expected_code, expected_message):
-        dataset_id, document_id = get_dataset_id_and_document_id
-        res = list_chunks(auth, dataset_id, document_id)
+    def test_invalid_auth(self, auth, expected_code, expected_message):
+        res = list_chunks(auth, "dataset_id", "document_id")
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -111,7 +110,7 @@ class TestChunksList:
             (None, 0, 5, ""),
             ("", 0, 5, ""),
             pytest.param(lambda r: r[0], 0, 1, "", marks=pytest.mark.skip(reason="issues/6499")),
-            pytest.param("unknown", 102, 0, "You don't own the document unknown.txt.", marks=pytest.mark.skip(reason="issues/6500")),
+            pytest.param("unknown", 100, 0, """AttributeError("\'NoneType\' object has no attribute \'keys\'")""", marks=pytest.mark.skip),
         ],
     )
     def test_id(

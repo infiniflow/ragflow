@@ -100,7 +100,8 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
         logging.debug(
             "Running leiden with max_cluster_size=%s, lcc=%s", max_cluster_size, use_lcc
         )
-    if not graph.nodes():
+    nodes = set(graph.nodes())
+    if not nodes:
         return {}
 
     node_id_to_community_map = _compute_leiden_communities(
@@ -120,7 +121,7 @@ def run(graph: nx.Graph, args: dict[str, Any]) -> dict[int, dict[str, dict]]:
         result = {}
         results_by_level[level] = result
         for node_id, raw_community_id in node_id_to_community_map[level].items():
-            if node_id not in graph.nodes:
+            if node_id not in nodes:
                 logging.warning(f"Node {node_id} not found in the graph.")
                 continue
             community_id = str(raw_community_id)
