@@ -16,6 +16,7 @@
 import re
 import random
 from typing import List, Dict, Optional
+import logging
 
 from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
@@ -30,9 +31,10 @@ import os
 import json
 import requests
 import asyncio
-import logging
 import time
 
+# 配置日志记录器
+logger = logging.getLogger(__name__)
 
 # Error message constants
 ERROR_PREFIX = "**ERROR**"
@@ -99,11 +101,8 @@ class Base(ABC):
         # Implement exponential backoff retry strategy
         for attempt in range(self.max_retries):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=history,
-                    **gen_conf)
-                
+                response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf)
+
                 if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
                     return "", 0
                 ans = response.choices[0].message.content.strip()
@@ -112,17 +111,17 @@ class Base(ABC):
                         ans += LENGTH_NOTIFICATION_CN
                     else:
                         ans += LENGTH_NOTIFICATION_EN
-                return ans, self.total_token_count(response)                            
+                return ans, self.total_token_count(response)
             except Exception as e:
                 # Classify the error
                 error_code = self._classify_error(e)
-                
+
                 # Check if it's a rate limit error or server error and not the last attempt
                 should_retry = (error_code == ERROR_RATE_LIMIT or error_code == ERROR_SERVER) and attempt < self.max_retries - 1
-                
+
                 if should_retry:
                     delay = self._get_delay(attempt)
-                    logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt+1}/{self.max_retries})")
+                    logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
                     time.sleep(delay)
                 else:
                     # For non-rate limit errors or the last attempt, return an error message
@@ -137,24 +136,23 @@ class Base(ABC):
             del gen_conf["max_tokens"]
         ans = ""
         total_tokens = 0
+        reasoning_start = False
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=history,
-                stream=True,
-                **gen_conf)
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
             for resp in response:
                 if not resp.choices:
                     continue
                 if not resp.choices[0].delta.content:
                     resp.choices[0].delta.content = ""
                 if hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
-                    if ans.find("<think>") < 0:
-                        ans += "<think>"
-                    ans = ans.replace("</think>", "")
+                    ans = ""
+                    if not reasoning_start:
+                        reasoning_start = True
+                        ans = "<think>"
                     ans += resp.choices[0].delta.reasoning_content + "</think>"
                 else:
-                    ans += resp.choices[0].delta.content
+                    reasoning_start = False
+                    ans = resp.choices[0].delta.content
 
                 tol = self.total_token_count(resp)
                 if not tol:
@@ -184,6 +182,48 @@ class Base(ABC):
         except Exception:
             pass
         return 0
+
+    def _calculate_dynamic_ctx(self, history):
+        """Calculate dynamic context window size"""
+        logger.debug("Calculating dynamic context size")
+        def count_tokens(text):
+            """Calculate token count for text"""
+            # Simple calculation: 1 token per ASCII character
+            # 2 tokens for non-ASCII characters (Chinese, Japanese, Korean, etc.)
+            total = 0
+            for char in text:
+                if ord(char) < 128:  # ASCII characters
+                    total += 1
+                else:  # Non-ASCII characters (Chinese, Japanese, Korean, etc.)
+                    total += 2
+            return total
+
+        # Calculate total tokens for all messages
+        total_tokens = 0
+        for message in history:
+            content = message.get("content", "")
+            # Calculate content tokens
+            content_tokens = count_tokens(content)
+            # Add role marker token overhead
+            role_tokens = 4
+            total_tokens += content_tokens + role_tokens
+            logger.debug(f"Message tokens: {content_tokens} + {role_tokens} = {content_tokens + role_tokens}")
+
+        logger.debug(f"Total tokens before buffer: {total_tokens}")
+
+        # Apply 1.2x buffer ratio
+        total_tokens_with_buffer = int(total_tokens * 1.2)
+        logger.debug(f"Total tokens with buffer: {total_tokens_with_buffer}")
+            
+        if total_tokens_with_buffer <= 8192:
+            ctx_size = 8192
+            logger.debug(f"Using minimum context size: {ctx_size}")
+        else:
+            ctx_multiplier = (total_tokens_with_buffer // 8192) + 1
+            ctx_size = ctx_multiplier * 8192
+            logger.debug(f"Calculated context size: {ctx_size} (multiplier: {ctx_multiplier}, total_tokens_with_buffer: {total_tokens_with_buffer})")
+        
+        return ctx_size
 
 
 class GptTurbo(Base):
@@ -499,147 +539,113 @@ class ZhipuChat(Base):
 
 
 class OllamaChat(Base):
-    """Ollama chat model implementation"""
-    
-    def __init__(self, model_name: str, base_url: str = "http://localhost:11434", 
-                 min_ctx_size: int = 2048):
+    def __init__(self, key, model_name, **kwargs):
+        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else \
+            Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
-        self.min_ctx_size = min_ctx_size
-        self._last_ctx_size = None  # Cache the last used context size
-        self._ctx_threshold = 1024  # Threshold for context size changes
-        
-        # Initialize Ollama client with host parameter instead of base_url
-        self.client = Client(host=base_url)
-        
-    def _calculate_dynamic_ctx(self, history):
-        """Calculate dynamic context window size"""
-        def count_tokens(text):
-            """Calculate token count for text"""
-            # Simple calculation: 1 token per ASCII character
-            # 2 tokens for non-ASCII characters (Chinese, Japanese, Korean, etc.)
-            total = 0
-            for char in text:
-                if ord(char) < 128:  # ASCII characters
-                    total += 1
-                else:  # Non-ASCII characters (Chinese, Japanese, Korean, etc.)
-                    total += 2
-            return total
 
-        # Calculate total tokens for all messages
-        total_tokens = 0
-        for message in history:
-            content = message.get("content", "")
-            # Calculate content tokens
-            content_tokens = count_tokens(content)
-            # Add role marker token overhead
-            role_tokens = 4
-            total_tokens += content_tokens + role_tokens
+    def chat(self, system, history, gen_conf):
+        logger.info(f"Starting chat with model: {self.model_name}")
+        logger.debug(f"System prompt: {system}")
+        logger.debug(f"History length: {len(history)}")
+        logger.debug(f"Generation config: {gen_conf}")
 
-        # Apply 1.2x buffer ratio
-        total_tokens_with_buffer = int(total_tokens * 1.2)
-        
-        # If buffered tokens are less than or equal to 2048, use 2048
-        if total_tokens_with_buffer <= 2048:
-            return 2048
-        
-        # If exceeding 2048, dynamically add multiples of 1024
-        base_ctx = 2048
-        additional_ctx = 0
-        multiples = (total_tokens_with_buffer - 2048) // 1024 + 1
-        additional_ctx = multiples * 1024
-        
-        # Calculate final context size
-        dynamic_ctx = base_ctx + additional_ctx
-        
-        return dynamic_ctx
-        
-    def _should_update_ctx(self, new_ctx_size):
-        """Determine if context size needs to be updated"""
-        if self._last_ctx_size is None:
-            return True
-            
-        # Calculate difference
-        diff = abs(new_ctx_size - self._last_ctx_size)
-        
-        # If difference exceeds threshold, use new value
-        if diff > self._ctx_threshold:
-            return True
-            
-        # If new value is smaller than old value and difference is less than threshold, keep old value
-        if new_ctx_size < self._last_ctx_size:
-            return False
-            
-        # For other cases, use new value
-        return True
-
-    def chat(self, system: str, history: List[Dict[str, str]], gen_conf: Optional[Dict] = None) -> str:
-        """Chat with the model"""
-        try:
-            # 计算新的上下文大小
-            new_ctx_size = self._calculate_dynamic_ctx(history)
-            
-            # 只在需要时更新上下文大小
-            if self._should_update_ctx(new_ctx_size):
-                self._last_ctx_size = new_ctx_size
-                params = {
-                    "num_ctx": new_ctx_size
-                }
-                # 只在需要更新时重新加载模型
-                self.client.create_model(self.model_name, params)
-            
-            # 构建消息列表
-            messages = []
-            if system:
-                messages.append({"role": "system", "content": system})
-            messages.extend(history)
-            
-            # 调用模型生成回复
-            response = self.client.chat(
-                model=self.model_name,
-                messages=messages,
-                stream=False,
-                **(gen_conf or {})
-            )
-            
-            return response['message']['content']
-            
-        except Exception as e:
-            logger.error(f"Error in Ollama chat: {str(e)}")
-            raise
-
-    def chat_streamly(self, system, history, gen_conf):
         if system:
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        options = {}
-        if "temperature" in gen_conf:
-            options["temperature"] = gen_conf["temperature"]
-        if "max_tokens" in gen_conf:
-            options["num_predict"] = gen_conf["max_tokens"]
-        if "top_p" in gen_conf:
-            options["top_p"] = gen_conf["top_p"]
-        if "presence_penalty" in gen_conf:
-            options["presence_penalty"] = gen_conf["presence_penalty"]
-        if "frequency_penalty" in gen_conf:
-            options["frequency_penalty"] = gen_conf["frequency_penalty"]
-        ans = ""
         try:
+            # Calculate context size
+            ctx_size = self._calculate_dynamic_ctx(history)
+            logger.info(f"Using context size: {ctx_size}")
+            
+            options = {
+                "num_ctx": ctx_size
+            }
+            if "temperature" in gen_conf:
+                options["temperature"] = gen_conf["temperature"]
+            if "max_tokens" in gen_conf:
+                options["num_predict"] = gen_conf["max_tokens"]
+            if "top_p" in gen_conf:
+                options["top_p"] = gen_conf["top_p"]
+            if "presence_penalty" in gen_conf:
+                options["presence_penalty"] = gen_conf["presence_penalty"]
+            if "frequency_penalty" in gen_conf:
+                options["frequency_penalty"] = gen_conf["frequency_penalty"]
+
+            logger.info(f"Sending request to Ollama API with options: {options}")
             response = self.client.chat(
                 model=self.model_name,
                 messages=history,
-                stream=True,
                 options=options,
-                keep_alive=-1
+                keep_alive=10
             )
-            for resp in response:
-                if resp["done"]:
-                    yield resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
-                ans += resp["message"]["content"]
-                yield ans
+            logger.info("Successfully received response from Ollama API")
+            ans = response["message"]["content"].strip()
+            token_count = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
+            logger.info(f"Response token count: {token_count}")
+            return ans, token_count
         except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
-        yield 0
+            logger.error(f"Error in chat method: {str(e)}")
+            return "**ERROR**: " + str(e), 0
+
+    def chat_streamly(self, system, history, gen_conf):
+        logger.info(f"Starting streaming chat with model: {self.model_name}")
+        logger.debug(f"System prompt: {system}")
+        logger.debug(f"History length: {len(history)}")
+        logger.debug(f"Generation config: {gen_conf}")
+
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+        try:
+            # Calculate context size
+            ctx_size = self._calculate_dynamic_ctx(history)
+            logger.info(f"Using context size: {ctx_size}")
+            
+            options = {
+                "num_ctx": ctx_size
+            }
+            if "temperature" in gen_conf:
+                options["temperature"] = gen_conf["temperature"]
+            if "max_tokens" in gen_conf:
+                options["num_predict"] = gen_conf["max_tokens"]
+            if "top_p" in gen_conf:
+                options["top_p"] = gen_conf["top_p"]
+            if "presence_penalty" in gen_conf:
+                options["presence_penalty"] = gen_conf["presence_penalty"]
+            if "frequency_penalty" in gen_conf:
+                options["frequency_penalty"] = gen_conf["frequency_penalty"]
+                
+            logger.info(f"Starting streaming generation with options: {options}")
+            
+            ans = ""
+            try:
+                response = self.client.chat(
+                    model=self.model_name,
+                    messages=history,
+                    stream=True,
+                    options=options,
+                    keep_alive=10
+                )
+                logger.info("Starting to receive streaming response")
+                for resp in response:
+                    if resp["done"]:
+                        token_count = resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
+                        logger.info(f"Streaming complete, total tokens: {token_count}")
+                        yield token_count
+                    ans += resp["message"]["content"]
+                    logger.debug(f"Current response length: {len(ans)}")
+                    yield ans
+            except Exception as e:
+                logger.error(f"Error during streaming: {str(e)}")
+                yield ans + "\n**ERROR**: " + str(e)
+            yield 0
+        except Exception as e:
+            logger.error(f"Error in chat_streamly method: {str(e)}")
+            yield "**ERROR**: " + str(e)
+            yield 0
 
 
 class LocalAIChat(Base):
@@ -1697,12 +1703,19 @@ class GoogleChat(Base):
                     stream=True,
                     **gen_conf,
                 )
-                for res in response.iter_lines():
-                    res = res.decode("utf-8")
-                    if "content_block_delta" in res and "data" in res:
-                        text = json.loads(res[6:])["delta"]["text"]
-                        ans += text
-                        total_tokens += num_tokens_from_string(text)
+                for res in response:
+                    if res.type == 'content_block_delta':
+                        if res.delta.type == "thinking_delta" and res.delta.thinking:
+                            if ans.find("<think>") < 0:
+                                ans += "<think>"
+                            ans = ans.replace("</think>", "")
+                            ans += res.delta.thinking + "</think>"
+                        else:
+                            text = res.delta.text
+                            ans += text
+                            total_tokens += num_tokens_from_string(text)
+                yield ans
+
             except Exception as e:
                 yield ans + "\n**ERROR**: " + str(e)
 
