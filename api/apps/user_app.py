@@ -562,6 +562,14 @@ def user_add():
         schema:
           type: object
     """
+
+    if not settings.REGISTER_ENABLED:
+        return get_json_result(
+            data=False,
+            message="User registration is disabled!",
+            code=settings.RetCode.OPERATING_ERROR,
+        )
+
     req = request.json
     email_address = req["email"]
 

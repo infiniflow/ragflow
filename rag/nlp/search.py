@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 
 from rag.settings import TAG_FLD, PAGERANK_FLD
-from rag.utils import rmSpace
+from rag.utils import rmSpace, get_float
 from rag.nlp import rag_tokenizer, query
 import numpy as np
 from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
@@ -49,7 +49,7 @@ class Dealer:
         if len(shape) > 1:
             raise Exception(
                 f"Dealer.get_vector returned array's shape {shape} doesn't match expectation(exact one dimension).")
-        embedding_data = [float(v) for v in qv]
+        embedding_data = [get_float(v) for v in qv]
         vector_column_name = f"q_{len(embedding_data)}_vec"
         return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
 
@@ -119,13 +119,17 @@ class Dealer:
 
                 # If result is empty, try again with lower min_match
                 if total == 0:
-                    matchText, _ = self.qryr.question(qst, min_match=0.1)
-                    filters.pop("doc_ids", None)
-                    matchDense.extra_options["similarity"] = 0.17
-                    res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
-                                                orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
-                    total = self.dataStore.getTotal(res)
-                    logging.debug("Dealer.search 2 TOTAL: {}".format(total))
+                    if filters.get("doc_id"):
+                        res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
+                        total = self.dataStore.getTotal(res)
+                    else:
+                        matchText, _ = self.qryr.question(qst, min_match=0.1)
+                        filters.pop("doc_id", None)
+                        matchDense.extra_options["similarity"] = 0.17
+                        res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
+                                                    orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
+                        total = self.dataStore.getTotal(res)
+                        logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:
                 kwds.add(k)
@@ -153,7 +157,7 @@ class Dealer:
 
     @staticmethod
     def trans2floats(txt):
-        return [float(t) for t in txt.split("\t")]
+        return [get_float(t) for t in txt.split("\t")]
 
     def insert_citations(self, answer, chunks, chunk_v,
                          embd_mdl, tkweight=0.1, vtweight=0.9):
@@ -259,6 +263,7 @@ class Dealer:
         for i in search_res.ids:
             nor, denor = 0, 0
             if not search_res.field[i].get(TAG_FLD):
+                rank_fea.append(0)
                 continue
             for t, sc in eval(search_res.field[i].get(TAG_FLD, "{}")).items():
                 if t in query_rfea:
@@ -282,7 +287,7 @@ class Dealer:
         for chunk_id in sres.ids:
             vector = sres.field[chunk_id].get(vector_column, zero_vector)
             if isinstance(vector, str):
-                vector = [float(v) for v in vector.split("\t")]
+                vector = [get_float(v) for v in vector.split("\t")]
             ins_embd.append(vector)
         if not ins_embd:
             return [], [], []
@@ -374,6 +379,9 @@ class Dealer:
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
+        if doc_ids:
+            similarity_threshold = 0
+            page_size = 30
         for i in idx:
             if sim[i] < similarity_threshold:
                 break
@@ -464,7 +472,7 @@ class Dealer:
         cnt = np.sum([c for _, c in aggs])
         tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
-        doc[TAG_FLD] = {a: c for a, c in tag_fea if c > 0}
+        doc[TAG_FLD] = {a.replace(".", "_"): c for a, c in tag_fea if c > 0}
         return True
 
     def tag_query(self, question: str, tenant_ids: str | list[str], kb_ids: list[str], all_tags, topn_tags=3, S=1000):
@@ -480,4 +488,4 @@ class Dealer:
         cnt = np.sum([c for _, c in aggs])
         tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
-        return {a: max(1, c) for a, c in tag_fea}
+        return {a.replace(".", "_"): max(1, c) for a, c in tag_fea}

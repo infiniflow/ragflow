@@ -8,24 +8,37 @@ import {
   SquareCheckIcon,
   SquareIcon,
 } from 'lucide-react';
-import React, { memo, useCallback, useEffect } from 'react';
+import React, { ReactNode, memo, useCallback, useEffect } from 'react';
 
 export type TransferListItemType = {
   key: string;
   label: string;
   selected?: boolean;
+  disabled?: boolean;
 };
 
-type TransferListProps = {
+export enum TransferListMoveDirection {
+  Left = 'left',
+  Right = 'right',
+}
+
+export type TransferListProps = {
   items: TransferListItemType[];
   targetKeys?: string[];
-  onChange?(targetKeys: string[], direction: 'left' | 'right'): void;
+  onChange?(
+    targetKeys: string[],
+    direction: TransferListMoveDirection,
+    moveKeys: string[],
+  ): void;
+} & {
+  children?(item: TransferListItemType): ReactNode;
 };
 
 export const TransferList = memo(function ({
   items,
   onChange,
   targetKeys,
+  children,
 }: TransferListProps) {
   const [leftList, setLeftList] = React.useState<TransferListItemType[]>([]);
   const [rightList, setRightList] = React.useState<TransferListItemType[]>([]);
@@ -39,7 +52,8 @@ export const TransferList = memo(function ({
     setLeftList(leftList.filter((item) => !item.selected));
     onChange?.(
       rightItems.map((x) => x.key),
-      'right',
+      TransferListMoveDirection.Right,
+      selectedItems.map((x) => x.key),
     );
   }, [leftList, onChange, rightList]);
 
@@ -50,7 +64,8 @@ export const TransferList = memo(function ({
     setRightList(rightItems);
     onChange?.(
       rightItems.map((x) => x.key),
-      'left',
+      TransferListMoveDirection.Left,
+      selectedItems.map((x) => x.key),
     );
   }, [onChange, rightList]);
 
@@ -76,7 +91,6 @@ export const TransferList = memo(function ({
     const leftItems = items.filter(
       (x) => !targetKeys?.some((y) => y === x.key),
     );
-    console.log('🚀 ~ useEffect ~ leftItems:', leftItems);
     setLeftList(leftItems);
     const rightItems = items.filter((x) =>
       targetKeys?.some((y) => y === x.key),
@@ -156,23 +170,26 @@ export const TransferList = memo(function ({
             )
             .map((item) => (
               <li
-                className="flex items-center gap-1.5 text-sm hover:bg-muted rounded-sm"
+                className="flex items-center gap-1.5 text-sm hover:bg-muted rounded-sm group"
                 key={item.key}
               >
                 <button
                   type="button"
-                  className="flex items-center gap-1.5 w-full p-1.5"
+                  className="flex items-center gap-1.5 p-1.5"
                   onClick={() =>
                     toggleSelection(rightList, setRightList, item.key)
                   }
                 >
-                  {item.selected ? (
+                  {item.disabled ? (
+                    <span className="size-4"></span>
+                  ) : item.selected ? (
                     <SquareCheckIcon className="h-4 w-4 text-muted-foreground/50" />
                   ) : (
                     <SquareIcon className="h-4 w-4 text-muted-foreground/50" />
                   )}
                   {item.label}
                 </button>
+                {children?.(item)}
               </li>
             ))}
         </ul>

@@ -24,7 +24,7 @@ class RAGFlowPptParser:
         super().__init__()
 
     def __get_bulleted_text(self, paragraph):
-        is_bulleted = bool(paragraph._p.xpath("./a:pPr/a:buChar")) or bool(bool(paragraph._p.xpath("./a:pPr/a:buAutoNum")) )
+        is_bulleted = bool(paragraph._p.xpath("./a:pPr/a:buChar")) or bool(paragraph._p.xpath("./a:pPr/a:buAutoNum")) or bool(paragraph._p.xpath("./a:pPr/a:buBlip"))
         if is_bulleted:
             return f"{'  '* paragraph.level}.{paragraph.text}"
         else:

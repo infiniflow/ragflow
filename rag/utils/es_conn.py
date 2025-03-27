@@ -26,7 +26,7 @@ from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
 from rag import settings
 from rag.settings import TAG_FLD, PAGERANK_FLD
-from rag.utils import singleton
+from rag.utils import singleton, get_float
 from api.utils.file_utils import get_project_base_directory
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
@@ -178,7 +178,7 @@ class ESConnection(DocStoreConnection):
                                                                                                         MatchDenseExpr) and isinstance(
                     matchExprs[2], FusionExpr)
                 weights = m.fusion_params["weights"]
-                vector_similarity_weight = float(weights.split(",")[1])
+                vector_similarity_weight = get_float(weights.split(",")[1])
         for m in matchExprs:
             if isinstance(m, MatchTextExpr):
                 minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
@@ -322,12 +322,19 @@ class ESConnection(DocStoreConnection):
             # update specific single document
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
+                for k in doc.keys():
+                    if "feas" != k.split("_")[-1]:
+                        continue
+                    try:
+                        self.es.update(index=indexName, id=chunkId, script=f"ctx._source.remove(\"{k}\");")
+                    except Exception:
+                        logger.exception(f"ESConnection.update(index={indexName}, id={chunkId}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
                     self.es.update(index=indexName, id=chunkId, doc=doc)
                     return True
                 except Exception as e:
                     logger.exception(
-                        f"ESConnection.update(index={indexName}, id={id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
+                        f"ESConnection.update(index={indexName}, id={chunkId}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                     if re.search(r"(timeout|connection)", str(e).lower()):
                         continue
                     break
