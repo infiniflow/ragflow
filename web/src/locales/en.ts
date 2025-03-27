@@ -111,7 +111,7 @@ export default {
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. That means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
       vectorSimilarityWeight: 'Keyword similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
@@ -163,7 +163,7 @@ export default {
       topKTip: `K chunks will be sent into the rerank model.`,
       delimiter: `Delimiter for text`,
       delimiterTip:
-        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \n`##`;, then your texts will be separated at line breaks, double hash symbols (##), or semicolons.',
+        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
       html4excel: 'Excel to HTML',
       html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables, and at most 256 rows for one table. Otherwise, it will be parsed into key-value pairs by row.`,
       autoKeywords: 'Auto-keyword',
@@ -209,14 +209,14 @@ export default {
       languagePlaceholder: 'Please input your language!',
       permissions: 'Permissions',
       embeddingModel: 'Embedding model',
-      chunkTokenNumber: 'Chunk token number for text',
+      chunkTokenNumber: 'Recommended chunk size',
       chunkTokenNumberMessage: 'Chunk token number for text is required',
       embeddingModelTip:
         'The model that converts chunks into embeddings. It cannot be changed once the knowledge base has chunks. To switch to a different embedding model, you must delete all existing chunks in the knowledge base.',
       permissionsTip:
-        "If set to 'Team', all team members will be able to manage the knowledge base.",
+        "If it is set to 'Team', all your team members will be able to manage the knowledge base.",
       chunkTokenNumberTip:
-        'It sets the token threshold for a chunk. A paragraph with fewer tokens than this threshold will be combined with the following paragraph until the token count exceeds the threshold, at which point a chunk is created.',
+        'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
       chunkMethod: 'Chunk method',
       chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
@@ -263,9 +263,7 @@ export default {
       This chunk method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
     </p>
     <li>
-      If a file is in <b>XLSX</b> format, it should contain two columns
-      without headers: one for questions and the other for answers, with the
-      question column preceding the answer column. Multiple sheets are
+      If a file is in <b>XLSX</b> or <b>XLS (Excel97~2003)</b> format, it should contain two columns without headers: one for questions and the other for answers, with the question column preceding the answer column. Multiple sheets are
       acceptable, provided the columns are properly structured.
     </li>
     <li>
@@ -304,7 +302,7 @@ export default {
     If the text extracted by the OCR model is deemed insufficient, a specified visual LLM will be used to provide a description of the image.
     </p>`,
       one: `
-    <p>Supported file formats are <b>DOCX, EXCEL, PDF, TXT</b>.
+    <p>Supported file formats are <b>DOCX, XLSX, XLS (Excel97~2003), PDF, TXT</b>.
     </p><p>
     This method treats each document in its entirety as a chunk.
     </p><p>
@@ -315,21 +313,20 @@ export default {
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
 <p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
-      tag: `<p>Knowledge base using 'Tag' as a chunking method is supposed to be used by other knowledge bases to add tags to their chunks, queries to which will also be with tags too.</p>
-<p>Knowledge base using 'Tag' as a chunking method is <b>NOT</b> supposed to be involved in RAG procedure.</p>
-<p>The chunks in this knowledge base are examples of tags, which demonstrate the entire tag set and the relevance between chunk and tags.</p>
-
-<p>This chunk method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.</p>
-<p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for content and the other for tags, with the content column preceding the tags column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
-<p>If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate content and tags.</p>
-<p>In tags column, there are English <b>comma</b> between tags.</p>
-<i>Lines of texts that fail to follow the above rules will be ignored, and each  pair will be considered a distinct chunk.</i>
+      tag: `<p>A knowledge base using the 'Tag' chunk method functions as a tag set. Other knowledge bases can use it to tag their own chunks, and queries to these knowledge bases will also be tagged using this tag set.</p>
+<p>Knowledge base using 'Tag' as a chunk method will <b>NOT</b> be involved in a Retrieval-Augmented Generation (RAG) process.</p>
+<p>Each chunk in this knowledge base is an independent description-tag pair.</p>
+<p>Supported file formats include <b>XLSX</b> and <b>CSV/TXT</b>:</p>
+<p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for tag descriptions and the other for tag names, with the Description column preceding the Tag column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
+<p>If a file is in <b>CSV/TXT</b> format, it must be UTF-8 encoded with TAB as the delimiter to separate descriptions and tags.</p>
+<p>In a Tag column, <b>comma</b> is used to separate tags.</p>
+<i>Lines of texts that fail to follow the above rules will be ignored.</i>
 `,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information.',
       prompt: 'Prompt',
-      promptTip: 'LLM prompt used for summarization.',
+      promptTip: 'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
       {cluster_content}
@@ -356,9 +353,9 @@ The above is the content you need to summarize.`,
       tagTable: 'Table',
       tagSet: 'Tag sets',
       tagSetTip: `
-     <p> Select one or multiple tag knowledge bases to auto-tag chunks in your knowledge base. </p>
+     <p> Select one or multiple tag knowledge bases to auto-tag chunks in your knowledge base. See https://ragflow.io/docs/dev/use_tag_sets for details.</p>
 <p>The user query will also be auto-tagged.</p>
-This auto-tag feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
+This auto-tagging feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
 <p>Difference between auto-tag and auto-keyword:</p>
 <ul>
   <li>A tag knowledge base is a user-defined close set, whereas keywords extracted by the LLM can be regarded as an open set.</li>
@@ -699,12 +696,23 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       sureDelete: 'Are you sure to remove this member?',
       quit: 'Quit',
       sureQuit: 'Are you sure you want to quit the team you joined?',
+      secretKey: 'Secret key',
+      publicKey: 'Public key',
+      secretKeyMessage: 'Please enter the secret key',
+      publicKeyMessage: 'Please enter the public key',
+      hostMessage: 'Please enter the host',
+      configuration: 'Configuration',
+      langfuseDescription:
+        'Traces, evals, prompt management and metrics to debug and improve your LLM application.',
+      viewLangfuseSDocumentation: "View Langfuse's documentation",
+      view: 'View',
     },
     message: {
       registered: 'Registered!',
       logout: 'logout',
       logged: 'logged!',
       pleaseSelectChunk: 'Please select chunk!',
+      registerDisabled: 'User registration is disabled',
       modified: 'Modified',
       created: 'Created',
       deleted: 'Deleted',
@@ -1215,6 +1223,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       },
       setting: 'Setting',
       settings: {
+        agentSetting: 'Agent Setting',
+        title: 'title',
+        description: 'description',
         upload: 'Upload',
         photo: 'Photo',
         permissions: 'Permission',

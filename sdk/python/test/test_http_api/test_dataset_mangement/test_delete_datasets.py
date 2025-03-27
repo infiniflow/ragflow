@@ -19,13 +19,14 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from common import (
     INVALID_API_TOKEN,
-    create_datasets,
+    batch_create_datasets,
     delete_dataset,
     list_dataset,
 )
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -38,10 +39,8 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(
-        self, get_http_api_auth, auth, expected_code, expected_message
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
+    def test_invalid_auth(self, get_http_api_auth, auth, expected_code, expected_message):
+        ids = batch_create_datasets(get_http_api_auth, 1)
         res = delete_dataset(auth, {"ids": ids})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
@@ -50,6 +49,7 @@ class TestAuthorization:
         assert len(res["data"]) == 1
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestDatasetDeletion:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
@@ -73,10 +73,8 @@ class TestDatasetDeletion:
             (lambda r: {"ids": r}, 0, "", 0),
         ],
     )
-    def test_basic_scenarios(
-        self, get_http_api_auth, payload, expected_code, expected_message, remaining
-    ):
-        ids = create_datasets(get_http_api_auth, 3)
+    def test_basic_scenarios(self, get_http_api_auth, payload, expected_code, expected_message, remaining):
+        ids = batch_create_datasets(get_http_api_auth, 3)
         if callable(payload):
             payload = payload(ids)
         res = delete_dataset(get_http_api_auth, payload)
@@ -96,7 +94,7 @@ class TestDatasetDeletion:
         ],
     )
     def test_delete_partial_invalid_id(self, get_http_api_auth, payload):
-        ids = create_datasets(get_http_api_auth, 3)
+        ids = batch_create_datasets(get_http_api_auth, 3)
         if callable(payload):
             payload = payload(ids)
         res = delete_dataset(get_http_api_auth, payload)
@@ -108,7 +106,7 @@ class TestDatasetDeletion:
         assert len(res["data"]) == 0
 
     def test_repeated_deletion(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         res = delete_dataset(get_http_api_auth, {"ids": ids})
         assert res["code"] == 0
 
@@ -117,30 +115,26 @@ class TestDatasetDeletion:
         assert res["message"] == f"You don't own the dataset {ids[0]}"
 
     def test_duplicate_deletion(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 1)
+        ids = batch_create_datasets(get_http_api_auth, 1)
         res = delete_dataset(get_http_api_auth, {"ids": ids + ids})
         assert res["code"] == 0
-        #assert res["data"]["success_count"] == 1
+        assert res["data"]["errors"][0] == f"Duplicate dataset ids: {ids[0]}"
+        assert res["data"]["success_count"] == 1
 
         res = list_dataset(get_http_api_auth)
         assert len(res["data"]) == 0
 
     def test_concurrent_deletion(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 100)
+        ids = batch_create_datasets(get_http_api_auth, 100)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(
-                    delete_dataset, get_http_api_auth, {"ids": ids[i : i + 1]}
-                )
-                for i in range(100)
-            ]
+            futures = [executor.submit(delete_dataset, get_http_api_auth, {"ids": ids[i : i + 1]}) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
     @pytest.mark.slow
     def test_delete_10k(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 10_000)
+        ids = batch_create_datasets(get_http_api_auth, 10_000)
         res = delete_dataset(get_http_api_auth, {"ids": ids})
         assert res["code"] == 0
 

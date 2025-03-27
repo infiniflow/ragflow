@@ -36,7 +36,7 @@
   <a href="https://ragflow.io/docs/dev/">Documentação</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/4XxujFgUN7">Discord</a> |
+  <a href="https://discord.gg/zd4qPW6t">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
@@ -177,7 +177,7 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
     $ cd ragflow/docker
     # Use CPU for embedding and DeepDoc tasks:
     $ docker compose -f docker-compose.yml up -d
-    
+
     # To use GPU to accelerate embedding and DeepDoc tasks:
     # docker compose -f docker-compose-gpu.yml up -d
     ```
@@ -353,7 +353,7 @@ Veja o [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214)
 
 ## 🏄 Comunidade
 
-- [Discord](https://discord.gg/4XxujFgUN7)
+- [Discord](https://discord.gg/zd4qPW6t)
 - [Twitter](https://twitter.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 

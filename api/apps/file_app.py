@@ -55,20 +55,17 @@ def upload():
                 data=False, message='No file selected!', code=settings.RetCode.ARGUMENT_ERROR)
     file_res = []
     try:
+        e, pf_folder = FileService.get_by_id(pf_id)
+        if not e:
+            return get_data_error_result( message="Can't find this folder!")
         for file_obj in file_objs:
-            e, file = FileService.get_by_id(pf_id)
-            if not e:
-                return get_data_error_result(
-                    message="Can't find this folder!")
             MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
             if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(current_user.id) >= MAX_FILE_NUM_PER_USER:
-                return get_data_error_result(
-                    message="Exceed the maximum file number of a free user!")
+                return get_data_error_result( message="Exceed the maximum file number of a free user!")
 
             # split file name path
             if not file_obj.filename:
-                e, file = FileService.get_by_id(pf_id)
-                file_obj_names = [file.name, file_obj.filename]
+                file_obj_names = [pf_folder.name, file_obj.filename]
             else:
                 full_path = '/' + file_obj.filename
                 file_obj_names = full_path.split('/')
@@ -184,7 +181,7 @@ def list_files():
             current_user.id, pf_id, page_number, items_per_page, orderby, desc, keywords)
 
         parent_folder = FileService.get_parent_folder(pf_id)
-        if not FileService.get_parent_folder(pf_id):
+        if not parent_folder:
             return get_json_result(message="File not found!")
 
         return get_json_result(data={"total": total, "files": files, "parent_folder": parent_folder.to_json()})
@@ -358,9 +355,14 @@ def move():
     try:
         file_ids = req["src_file_ids"]
         parent_id = req["dest_file_id"]
+        files = FileService.get_by_ids(file_ids)
+        files_dict = {}
+        for file in files:
+            files_dict[file.id] = file
+
         for file_id in file_ids:
-            e, file = FileService.get_by_id(file_id)
-            if not e:
+            file = files_dict[file_id]
+            if not file:
                 return get_data_error_result(message="File or Folder not found!")
             if not file.tenant_id:
                 return get_data_error_result(message="Tenant not found!")

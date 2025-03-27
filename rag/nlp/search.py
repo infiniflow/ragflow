@@ -119,13 +119,17 @@ class Dealer:
 
                 # If result is empty, try again with lower min_match
                 if total == 0:
-                    matchText, _ = self.qryr.question(qst, min_match=0.1)
-                    filters.pop("doc_ids", None)
-                    matchDense.extra_options["similarity"] = 0.17
-                    res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
-                                                orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
-                    total = self.dataStore.getTotal(res)
-                    logging.debug("Dealer.search 2 TOTAL: {}".format(total))
+                    if filters.get("doc_id"):
+                        res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
+                        total = self.dataStore.getTotal(res)
+                    else:
+                        matchText, _ = self.qryr.question(qst, min_match=0.1)
+                        filters.pop("doc_id", None)
+                        matchDense.extra_options["similarity"] = 0.17
+                        res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
+                                                    orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
+                        total = self.dataStore.getTotal(res)
+                        logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:
                 kwds.add(k)
@@ -375,6 +379,9 @@ class Dealer:
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
+        if doc_ids:
+            similarity_threshold = 0
+            page_size = 30
         for i in idx:
             if sim[i] < similarity_threshold:
                 break
@@ -465,7 +472,7 @@ class Dealer:
         cnt = np.sum([c for _, c in aggs])
         tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
-        doc[TAG_FLD] = {a: c for a, c in tag_fea if c > 0}
+        doc[TAG_FLD] = {a.replace(".", "_"): c for a, c in tag_fea if c > 0}
         return True
 
     def tag_query(self, question: str, tenant_ids: str | list[str], kb_ids: list[str], all_tags, topn_tags=3, S=1000):
@@ -481,4 +488,4 @@ class Dealer:
         cnt = np.sum([c for _, c in aggs])
         tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
-        return {a: max(1, c) for a, c in tag_fea}
+        return {a.replace(".", "_"): max(1, c) for a, c in tag_fea}

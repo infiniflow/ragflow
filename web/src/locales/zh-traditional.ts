@@ -110,7 +110,7 @@ export default {
         '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。請注意這裡的改動不會被自動保存。如果你調整了這裡的默認設置，比如關鍵詞相似度權重，請務必在聊天助手設置或者召回算子設置處同步更新相關設置。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
-        '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。',
+        '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。預設值設定為 0.2，也就是說，文本塊的混合相似度得分至少要 20 才會被檢索。',
       vectorSimilarityWeight: '關鍵字相似度權重',
       vectorSimilarityWeightTip:
         '我們使用混合相似性評分來評估兩行文本之間的距離。它是加權關鍵字相似性和矢量餘弦相似性或rerank得分（0〜1）。兩個權重的總和為1.0。',
@@ -161,13 +161,13 @@ export default {
       topKTip: `K塊將被送入Rerank型號。`,
       delimiter: `文字分段標識符`,
       delimiterTip:
-        '支援多字元作為分隔符，多字元分隔符用`包裹。如配置成這樣：\n`##`;那麼就會用換行，兩個#以及分號先對文字進行分割，然後按照「 token number」大小進行拼裝。',
+        '支持多字符作為分隔符，多字符分隔符用 包裹。如配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建议文本块大小」設定的大小進行拼裝。在设置文本分段標識符之前，請確保您已理解上述文本分段切片機制。',
       html4excel: '表格轉HTML',
       html4excelTip: `啟用後，電子表格將解析為 HTML 表格，一張表格最多 256 行。否則，會按行解析成鍵值對。`,
       autoKeywords: '自動關鍵字',
       autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。`,
       autoQuestions: '自動問題',
-      autoQuestionsTip: `在查詢此類問題時，為每個區塊提取 N 個問題以提高其排名分數。在「系統模型設定」中設定的 LLM 將消耗額外的 token。您可以在區塊清單中查看結果。如果發生錯誤，此功能不會破壞整個分塊過程，除了將空結果新增至原始區塊。 `,
+      autoQuestionsTip: `為了提高排名分數，請使用「系統模型設定」中定義的聊天模型，為每個知識庫區塊提取 N 個問題。 請注意：這會消耗額外的 token。 結果可在區塊列表中查看和編輯。 問題提取錯誤不會阻止分塊過程； 空結果將被添加到原始區塊。 `,
       redo: '是否清空已有 {{chunkNum}}個 chunk？',
       setMetaData: '設定元數據',
       pleaseInputJson: '請輸入JSON',
@@ -206,12 +206,13 @@ export default {
       languagePlaceholder: '請輸入語言',
       permissions: '權限',
       embeddingModel: '嵌入模型',
-      chunkTokenNumber: '文字的區塊標記編號',
+      chunkTokenNumber: '建議文本塊大小',
       chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
         '用於嵌入塊的嵌入模型。一旦知識庫有了塊，它就無法更改。如果你想改變它，你需要刪除所有的塊。',
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
-      chunkTokenNumberTip: '它大致確定了一個塊的Token數量。',
+      chunkTokenNumberTip:
+        '建議的生成文本塊的 token 數閾值。如果切分得到的小文本段 token 數達不到這一閾值，系統就會不斷與之後的文本段合併，直至再合併下一個文本段會超過這一閾值為止，此時產生一個最終文本塊。如果系統在切分文本段時始終沒有遇到文本分段標識符，即便文本段 token 數已經超過這一閾值，系統也不會生成新文本塊。',
       chunkMethod: '切片方法',
       chunkMethodTip: '說明位於右側。',
       upload: '上傳',
@@ -300,16 +301,16 @@ export default {
 連續的文字將被分割成多個片段，每個片段大約有 512 個令牌數。
 <p>接下來，區塊將傳送到LLM以提取知識圖譜和思維導圖的節點和關係。
 
-<p>請注意您需要指定的條目類型。</p></p>`,
-      tag: `<p>使用「標籤」作為分塊方法的知識庫應該被其他知識庫用來將標籤加入其區塊中，查詢也將帶有標籤。
-<p>使用「標籤」作為分塊方法的知識庫<b>不</b>應該參與 RAG 過程。
-<p>本知識庫中的區塊是標籤的範例，展示了整個標籤集以及區塊與標籤之間的相關性。
+<p>請注意您需要指定的條目類型。</p>`,
+      tag: `<p>使用「Tag」分塊方法的知識庫用作標籤集。其他知識庫可以使用它來標記自己的塊，對這些知識庫的查詢也將使用此標籤集進行標記。</p>
+<p>使用「Tag」作為分塊方法的知識庫<b>不</b>參與 RAG 過程。</p>
+<p>標籤知識庫中的每個塊都是一個獨立的描述-標籤對。</p>
 
-<p>此區塊方法支援<b>XLSX</b>和<b>CSV/TXT</b>檔案格式。
-<p>如果檔案採用 <b>XLSX</b> 格式，則應包含兩列，不含標題：一列用於內容，另一列用於標籤，內容列位於標籤列之前。只要列的結構正確，多張紙也是可以接受的。
-<p>如果檔案為<b>CSV/TXT</b>格式，則必須採用UTF-8編碼，並以TAB作為分隔符號來分隔內容和標籤。
-<p>標籤欄中，標籤之間有英文<b>逗號</b>。
-<i>不符合上述規則的文字行將被忽略，並且每一對將被視為一個不同的區塊。
+<p>支援的檔案格式包括<b>XLSX</b>和<b>CSV/TXT</b>檔案格式。</p>
+<p>如果檔案是<b>XLSX</b>格式，則應包含兩欄，不帶標題：一欄用於標籤描述，另一欄用於標籤名稱，描述欄位於標籤欄之前。如果欄結構正確，則可以接受多個工作表。</p>
+<p>如果檔案是<b>CSV/TXT</b>格式，則必須使用UTF-8編碼，並使用TAB作為分隔符來分隔描述和標籤。</p>
+<p>標籤欄中，標籤之間用英文逗號分隔。</p>
+<i>不符合上述規則的文字行將被忽略。</i>
 `,
       useRaptor: '使用RAPTOR文件增強策略',
       useRaptorTip: '請參考 https://huggingface.co/papers/2401.18059',
@@ -326,7 +327,7 @@ export default {
       maxClusterMessage: '最大聚類數是必填項',
       randomSeed: '隨機種子',
       randomSeedMessage: '隨機種子是必填項',
-      promptTip: 'LLM提示用於總結。',
+      promptTip: '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
       maxTokenTip: '用於匯總的最大token數。',
       thresholdTip: '閾值越大，聚類越少。',
       maxClusterTip: '最大聚類數。',
@@ -351,6 +352,7 @@ export default {
         <li>在給你的知識庫文本塊批量打標籤之前，你需要先生成標籤集作為樣本。</li>
         <li>自動關鍵詞功能中的關鍵詞由 LLM 生成，此過程相對耗時，並且會產生一定的 Token 消耗。</li>
       </ul>
+      <p>詳情請參閱 https://ragflow.io/docs/dev/use_tag_sets。</p>
  `,
       tags: '標籤',
       addTag: '增加標籤',
@@ -668,6 +670,16 @@ export default {
       sureDelete: '您確定刪除該成員嗎？',
       quit: '退出',
       sureQuit: '確定退出加入的團隊嗎？',
+      secretKey: '密鑰',
+      publicKey: '公鑰',
+      secretKeyMessage: '請輸入私钥',
+      publicKeyMessage: '請輸入公钥',
+      hostMessage: '請輸入 host',
+      configuration: '配置',
+      langfuseDescription:
+        '追蹤、評估、提示管理和指標以調試和改進您的 LLM 應用程式。',
+      viewLangfuseSDocumentation: '查看 Langfuse 的文檔',
+      view: '查看',
     },
     message: {
       registered: '註冊成功',

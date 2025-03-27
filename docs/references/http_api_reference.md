@@ -9,6 +9,22 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 
 ---
 
+## ERROR CODES
+
+---
+
+| Code | Message               | Description                |
+|------|-----------------------|----------------------------|
+| 400  | Bad Request           | Invalid request parameters |
+| 401  | Unauthorized          | Unauthorized access        |
+| 403  | Forbidden             | Access denied              |
+| 404  | Not Found             | Resource not found         |
+| 500  | Internal Server Error | Server internal error      |
+| 1001 | Invalid Chunk ID      | Invalid Chunk ID           |
+| 1002 | Chunk Update Failed   | Chunk update failed        |
+
+---
+
 ## OpenAI-Compatible API
 
 ---
@@ -49,13 +65,13 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*
+- `model` (*Body parameter*) `string`, *Required*  
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*
+- `messages` (*Body parameter*) `list[object]`, *Required*  
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`
+- `stream` (*Body parameter*) `boolean`  
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
 
 #### Response
@@ -675,26 +691,6 @@ Failure:
 
 ---
 
-## Error Codes
-
----
-
-| Code | Message | Description |
-|------|---------|-------------|
-| 400  | Bad Request | Invalid request parameters |
-| 401  | Unauthorized | Unauthorized access |
-| 403  | Forbidden | Access denied |
-| 404  | Not Found | Resource not found |
-| 500  | Internal Server Error | Server internal error |
-| 1001 | Invalid Chunk ID | Invalid Chunk ID |
-| 1002 | Chunk Update Failed | Chunk update failed |
-
-
-
----
-
----
-
 ## FILE MANAGEMENT WITHIN DATASET
 
 ---
@@ -1235,6 +1231,7 @@ curl --request POST \
   The key terms or phrases to tag with the chunk.
 - `"questions"`(*Body parameter*), `list[string]`
   If there is a given question, the embedded chunks will be based on them
+
 #### Response
 
 Success:
@@ -1293,7 +1290,7 @@ curl --request GET \
 
 - `dataset_id`: (*Path parameter*)  
   The associated dataset ID.
-- `document_ids`: (*Path parameter*)  
+- `document_id`: (*Path parameter*)  
   The associated document ID.
 - `keywords`(*Filter parameter*), `string`  
   The keywords used to match chunk content.
@@ -1693,7 +1690,7 @@ curl --request POST \
     - All the variables in 'System' should be curly bracketed.
     - The default value is `[{"key": "knowledge", "optional": true}]`.
   - `"rerank_model"`: `string` If it is not specified, vector cosine similarity will be used; otherwise, reranking score will be used.
-  -  `top_k`: `int` Refers to the process of reordering or selecting the top-k items from a list or set based on a specific ranking criterion. Default to 1024.
+  - `top_k`: `int` Refers to the process of reordering or selecting the top-k items from a list or set based on a specific ranking criterion. Default to 1024.
   - `"empty_response"`: `string` If nothing is retrieved in the dataset for the user's question, this will be used as the response. To allow the LLM to improvise when nothing is found, leave this blank.
   - `"opener"`: `string` The opening greeting for the user. Defaults to `"Hi! I am your assistant, can I help you?"`.
   - `"show_quote`: `boolean` Indicates whether the source of text should be displayed. Defaults to `true`.
@@ -1916,7 +1913,7 @@ Lists chat assistants.
 #### Request
 
 - Method: GET
-- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}`
+- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -1924,7 +1921,7 @@ Lists chat assistants.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={chat_name}&id={chat_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -2292,8 +2289,10 @@ Failure:
 Asks a specified chat assistant a question to start an AI-powered conversation.
 
 :::tip NOTE
+
 - In streaming mode, not all responses include a reference, as this depends on the system's judgement.
 - In streaming mode, the last message is an empty message:
+
   ```json
   data:
   {
@@ -2301,6 +2300,7 @@ Asks a specified chat assistant a question to start an AI-powered conversation.
     "data": true
   }
   ```
+
 :::
 
 #### Request
@@ -2327,6 +2327,7 @@ curl --request POST \
      {
      }'
 ```
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/chats/{chat_id}/completions \
@@ -2358,6 +2359,7 @@ curl --request POST \
 #### Response
 
 Success without `session_id`:
+
 ```json
 data:{
     "code": 0,
@@ -2648,8 +2650,10 @@ Failure:
 Asks a specified agent a question to start an AI-powered conversation.
 
 :::tip NOTE
+
 - In streaming mode, not all responses include a reference, as this depends on the system's judgement.
 - In streaming mode, the last message is an empty message:
+
   ```json
   data:
   {
@@ -2657,6 +2661,7 @@ Asks a specified agent a question to start an AI-powered conversation.
     "data": true
   }
   ```
+
 :::
 
 #### Request
@@ -2673,9 +2678,12 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"user_id"`: `string`(optional)
   - `"sync_dsl"`: `boolean` (optional)
   - other parameters: `string`
+
 ##### Request example
+
 If the **Begin** component does not take parameters, the following code will create a session.
-```bash 
+
+```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
      --header 'Content-Type: application/json' \
@@ -2684,7 +2692,9 @@ curl --request POST \
      {
      }'
 ```
+
 If the **Begin** component takes parameters, the following code will create a session.
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2696,7 +2706,9 @@ curl --request POST \
           "file":"How is the weather tomorrow?"
      }'
 ```
+
 The following code will execute the completion process
+
 ```bash
 curl --request POST \
      --url http://{address}/api/v1/agents/{agent_id}/completions \
@@ -2730,7 +2742,9 @@ curl --request POST \
   Parameters specified in the **Begin** component.
 
 #### Response
+
 success without `session_id` provided and with no parameters specified in the **Begin** component:
+
 ```json
 data:{
     "code": 0,
@@ -2785,7 +2799,9 @@ data:{
 }
 data:
 ```
+
 Success with parameters specified in the **Begin** component:
+
 ```json
 data:{
     "code": 0,
@@ -3123,6 +3139,79 @@ Failure:
     "message": "The agent doesn't own the session cbd31e52f73911ef93b232903b842af6"
 }
 ```
+
+---
+
+### Related Questions
+
+**POST** `/api/v1/conversation/related_questions`
+
+Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
+
+:::tip NOTE
+The chat model dynamically determines the number of questions to generate based on the instruction, typically between five and ten.
+:::
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/conversation/related_questions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"question"`: `string`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/conversation/related_questions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '
+     {
+          "question": "What are the key advantages of Neovim over Vim?"
+     }'
+```
+
+##### Request Parameters
+
+- `"question"`: (*Body Parameter*), `string`
+  The original user question.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        "What makes Neovim superior to Vim in terms of features?",
+        "How do the benefits of Neovim compare to those of Vim?",
+        "What advantages does Neovim offer that are not present in Vim?",
+        "In what ways does Neovim outperform Vim in functionality?",
+        "What are the most significant improvements in Neovim compared to Vim?",
+        "What unique advantages does Neovim bring to the table over Vim?",
+        "How does the user experience in Neovim differ from Vim in terms of benefits?",
+        "What are the top reasons to switch from Vim to Neovim?",
+        "What features of Neovim are considered more advanced than those in Vim?"
+    ],
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 401,
+    "data": null,
+    "message": "<Unauthorized '401: Unauthorized'>"
+}
+```
+
 ---
 
 ## AGENT MANAGEMENT
