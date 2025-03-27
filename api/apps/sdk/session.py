@@ -357,7 +357,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
         }
         return jsonify(response)
 
-@manager.route('agents_openai/<agent_id>/chat/completions', methods=['POST'])  # noqa: F821
+@manager.route('/agents_openai/<agent_id>/chat/completions', methods=['POST'])  # noqa: F821
 @validate_request("model", "messages")  # noqa: F821
 @token_required
 def agents_completion_openai_compatibility (tenant_id, agent_id):
