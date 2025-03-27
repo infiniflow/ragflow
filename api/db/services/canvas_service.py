@@ -281,17 +281,16 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             "dsl": cvs.dsl
         }
         API4ConversationService.save(**conv)
-        if query:
-            yield "data: " + json.dumps(get_data_openai(
-                    id= session_id,
-                    model= agent_id,
-                    content= canvas.get_prologue(),
-                ),ensure_ascii=False) + "\n\n"
-            if stream: # Only send done signal in streaming mode
-                yield "data: [DONE]\n\n"
-            return
-        else:
-            conv = API4Conversation(**conv)
+        conv = API4Conversation(**conv)
+        yield "data: " + json.dumps(get_data_openai(
+                id= session_id,
+                model= agent_id,
+                content= canvas.get_prologue(),
+            ),ensure_ascii=False) + "\n\n"
+        if stream: # Only send done signal in streaming mode
+            yield "data: [DONE]\n\n"
+        return
+            
     else:
         e, conv = API4ConversationService.get_by_id(session_id)
         if not e:
@@ -335,7 +334,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     continue
                 for k in ans.keys():
                     final_ans[k] = ans[k]
-                completion_tokens += ans["content"]
+                completion_tokens += len(tiktokenenc.encode(str(ans["content"])))
                 yield "data: " + json.dumps(
                                         get_data_openai(
                                             id= session_id,
@@ -343,7 +342,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                                             content= ans["content"],
                                             object= "chat.completion.chunk",
                                             finish_reason= "stop" if not stream else None,
-                                            completion_tokens = completion_tokens,
+                                            completion_tokens= completion_tokens,
                                             prompt_tokens= prompt_tokens
                                         ),                                       
                                         ensure_ascii=False) + "\n\n"
