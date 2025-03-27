@@ -752,6 +752,8 @@ class Document(DataBaseModel):
         index=True)
     size = IntegerField(default=0, index=True)
     md5 = CharField(max_length=32, null=True, help_text="file md5 hash", index=True)
+    # 后端文档中，用来唯一定义一个文档的code
+    code = CharField(max_length=40, null=True, help_text="file code", index=True)
     token_num = IntegerField(default=0, index=True)
     chunk_num = IntegerField(default=0, index=True)
     progress = FloatField(default=0, index=True)

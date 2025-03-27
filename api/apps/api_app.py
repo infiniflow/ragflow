@@ -386,6 +386,9 @@ def upload():
 
     kb_name = request.form.get("kb_name").strip()
     tenant_id = objs[0].tenant_id
+    
+    # 获取可选的code参数
+    code = request.form.get("code", "").strip()
 
     try:
         e, kb = KnowledgebaseService.get_by_name(kb_name, tenant_id)
@@ -445,7 +448,8 @@ def upload():
             "location": location,
             "size": len(blob),
             "md5": md5_hash,
-            "thumbnail": thumbnail(filename, blob)
+            "thumbnail": thumbnail(filename, blob),
+            "code": code  # 添加code字段
         }
 
         form_data = request.form
