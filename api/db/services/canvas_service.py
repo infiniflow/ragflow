@@ -283,7 +283,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
         yield "data: " + json.dumps(get_data_openai(
-                id= session_id,
+                id= conv.id,
                 model= agent_id,
                 content= canvas.get_prologue(),
             ),ensure_ascii=False) + "\n\n"
