@@ -133,7 +133,6 @@ class TestAddChunk:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
         res = add_chunk(get_http_api_auth, dataset_id, document_id, payload)
-        print(res)
         assert res["code"] == expected_code
         if expected_code == 0:
             validate_chunk_details(dataset_id, document_id, payload, res)
