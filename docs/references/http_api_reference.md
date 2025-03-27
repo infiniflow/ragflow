@@ -175,7 +175,7 @@ Failure:
 ---
 ### Create agent completion
 
-**POST** `/api/v1/agents_openai/{agent_id}/agent/chat/completions`
+**POST** `/api/v1/agents_openai/{agent_id}/chat/completions`
 
 Creates a model response for a given chat conversation.
 
