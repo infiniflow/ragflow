@@ -45,7 +45,7 @@ class RAGFlowExcelParser:
                 raise Exception(f"****wxy: Failed to parse CSV and convert to Excel Workbook: {e_csv}")
 
         try:
-            return load_workbook(file_like_object)
+            return load_workbook(file_like_object,data_only= True)
         except Exception as e:
             logging.info(f"****wxy: openpyxl load error: {e}, try pandas instead")
             try:
