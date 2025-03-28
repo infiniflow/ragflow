@@ -5,6 +5,11 @@ import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 
+import ccardPng from '@/assets/ccard.png';
+import crossPng from '@/assets/cross.png';
+import mobilePng from '@/assets/mobile.png';
+import questionPng from '@/assets/question.png';
+import searchPng from '@/assets/search.png';
 import {
   useFetchDocumentInfosByIds,
   useFetchDocumentThumbnailsByIds,
@@ -227,6 +232,46 @@ const MessageItem = ({
                 }}
               />
             )}
+            <List className={styles.suggestionList}>
+              <List.Item className={styles.clickableItem}>
+                <a href="javascript:void(0)">
+                  <img src={searchPng} alt="" />
+                  <span>How can I help you today?</span>
+                </a>
+              </List.Item>
+              <List.Item className={styles.clickableItem}>
+                <a href="javascript:void(0)">
+                  <img src={mobilePng} alt="" />
+                  <span>
+                    What are the main differences between the iPhone 15 and
+                    iPhone 15 Pro?
+                  </span>
+                </a>
+              </List.Item>
+              <List.Item className={styles.clickableItem}>
+                <a href="javascript:void(0)">
+                  <img src={ccardPng} alt="" />
+                  <span>How much does an Apple Pencil cost?</span>
+                </a>
+              </List.Item>
+              <List.Item className={styles.clickableItem}>
+                <a href="javascript:void(0)">
+                  <img src={crossPng} alt="" />
+                  <span>How do I cancel an Apple Cloud?</span>
+                </a>
+              </List.Item>
+              <List.Item className={styles.clickableItem}>
+                <a href="javascript:void(0)">
+                  <img src={questionPng} alt="" />
+                  <span>View FAQs</span>
+                </a>
+              </List.Item>
+              <List.Item className={styles.clickableItem}>
+                <a href="javascript:void(0)">
+                  <span>Show more...</span>
+                </a>
+              </List.Item>
+            </List>
           </Flex>
         </div>
       </section>

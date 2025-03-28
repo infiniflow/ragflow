@@ -11,21 +11,17 @@ import {
   CloseCircleOutlined,
   InfoCircleOutlined,
   LoadingOutlined,
-  PaperClipOutlined,
-  SendOutlined,
 } from '@ant-design/icons';
 import type { GetProp, UploadFile } from 'antd';
 import {
   Button,
   Card,
-  Divider,
   Flex,
   Input,
   List,
   Space,
   Spin,
   Typography,
-  Upload,
   UploadProps,
 } from 'antd';
 import get from 'lodash/get';
@@ -39,6 +35,11 @@ import {
 } from 'react';
 import FileIcon from '../file-icon';
 import styles from './index.less';
+
+import classNames from 'classnames';
+import { ReactComponent as SendSvg } from '../../assets/svg/send.svg';
+import { ReactComponent as EmojiSvg } from '../../assets/svg/smiley.svg';
+import { ReactComponent as VoiceSvg } from '../../assets/svg/voice.svg';
 
 type FileType = Parameters<GetProp<UploadProps, 'beforeUpload'>>[0];
 const { Text } = Typography;
@@ -222,141 +223,171 @@ const MessageInput = ({
   }, [conversationId, setFileList]);
 
   return (
-    <Flex gap={1} vertical className={styles.messageInputWrapper}>
-      <TextArea
-        size="large"
-        placeholder={t('sendPlaceholder')}
-        value={value}
-        allowClear
-        disabled={disabled}
-        style={{
-          border: 'none',
-          boxShadow: 'none',
-          padding: '0px 10px',
-          marginTop: 10,
-        }}
-        autoSize={{ minRows: 2, maxRows: 10 }}
-        onKeyDown={handleKeyDown}
-        onChange={onInputChange}
-        onCompositionStart={handleCompositionStart}
-        onCompositionEnd={handleCompositionEnd}
-      />
-      <Divider style={{ margin: '5px 30px 10px 0px' }} />
-      <Flex justify="space-between" align="center">
-        {fileList.length > 0 && (
-          <List
-            grid={{
-              gutter: 16,
-              xs: 1,
-              sm: 1,
-              md: 1,
-              lg: 1,
-              xl: 2,
-              xxl: 4,
-            }}
-            dataSource={fileList}
-            className={styles.listWrapper}
-            renderItem={(item) => {
-              const id = getFileId(item);
-              const documentInfo = getDocumentInfoById(id);
-              const fileExtension = getExtension(documentInfo?.name ?? '');
-              const fileName = item.originFileObj?.name ?? '';
-
-              return (
-                <List.Item>
-                  <Card className={styles.documentCard}>
-                    <Flex gap={10} align="center">
-                      {item.status === 'uploading' ? (
-                        <Spin
-                          indicator={
-                            <LoadingOutlined style={{ fontSize: 24 }} spin />
-                          }
-                        />
-                      ) : item.status === 'error' ? (
-                        <InfoCircleOutlined size={30}></InfoCircleOutlined>
-                      ) : (
-                        <FileIcon id={id} name={fileName}></FileIcon>
-                      )}
-                      <Flex vertical style={{ width: '90%' }}>
-                        <Text
-                          ellipsis={{ tooltip: fileName }}
-                          className={styles.nameText}
-                        >
-                          <b> {fileName}</b>
-                        </Text>
-                        {item.status === 'error' ? (
-                          t('uploadFailed')
-                        ) : (
-                          <>
-                            {item.percent !== 100 ? (
-                              t('uploading')
-                            ) : !item.response ? (
-                              t('parsing')
-                            ) : (
-                              <Space>
-                                <span>{fileExtension?.toUpperCase()},</span>
-                                <span>
-                                  {formatBytes(
-                                    getDocumentInfoById(id)?.size ?? 0,
-                                  )}
-                                </span>
-                              </Space>
-                            )}
-                          </>
-                        )}
-                      </Flex>
-                    </Flex>
-
-                    {item.status !== 'uploading' && (
-                      <span className={styles.deleteIcon}>
-                        <CloseCircleOutlined
-                          onClick={() => handleRemove(item)}
-                        />
-                      </span>
-                    )}
-                  </Card>
-                </List.Item>
-              );
-            }}
+    <>
+      <Flex gap={20} vertical className={styles.suggestedReels}>
+        <div>
+          <label htmlFor="">Suggested Replies:</label>
+          <List className={styles.suggestedReelsUl}>
+            <List.Item>
+              <a href="javascript:void(0)">Work</a>
+            </List.Item>
+            <List.Item>
+              <a href="javascript:void(0)">School</a>
+            </List.Item>
+            <List.Item>
+              <a href="javascript:void(0)">Creative Projects</a>
+            </List.Item>
+          </List>
+        </div>
+      </Flex>
+      <Flex gap={1} vertical className={styles.messageInputWrapper}>
+        <Flex align="center" gap={8} className={styles.messageenterChatArea}>
+          <TextArea
+            size="large"
+            placeholder={t('sendPlaceholder')}
+            value={value}
+            // allowClear
+            disabled={disabled}
+            className={classNames({
+              [styles.inputWrapper]: fileList.length === 0,
+            })}
+            onKeyDown={handleKeyDown}
+            onChange={onInputChange}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
+            autoSize={{ minRows: 2, maxRows: 10 }}
           />
-        )}
-        <Flex
-          gap={5}
-          align="center"
-          justify="flex-end"
-          style={{
-            paddingRight: 10,
-            paddingBottom: 10,
-            width: fileList.length > 0 ? '50%' : '100%',
-          }}
-        >
-          {showUploadIcon && (
-            <Upload
-              onPreview={handlePreview}
-              onChange={handleChange}
-              multiple={false}
-              onRemove={handleRemove}
-              showUploadList={false}
-              beforeUpload={() => {
-                return false;
+          {/* <Divider style={{ margin: '5px 30px 10px 0px' }} /> */}
+          <Flex justify="space-between" align="center">
+            {fileList.length > 0 && (
+              <List
+                grid={{
+                  gutter: 16,
+                  xs: 1,
+                  sm: 1,
+                  md: 1,
+                  lg: 1,
+                  xl: 2,
+                  xxl: 4,
+                }}
+                dataSource={fileList}
+                className={styles.listWrapper}
+                renderItem={(item) => {
+                  const id = getFileId(item);
+                  const documentInfo = getDocumentInfoById(id);
+                  const fileExtension = getExtension(documentInfo?.name ?? '');
+                  const fileName = item.originFileObj?.name ?? '';
+
+                  return (
+                    <List.Item>
+                      <Card className={styles.documentCard}>
+                        <Flex gap={10} align="center">
+                          {item.status === 'uploading' ? (
+                            <Spin
+                              indicator={
+                                <LoadingOutlined
+                                  style={{ fontSize: 24 }}
+                                  spin
+                                />
+                              }
+                            />
+                          ) : item.status === 'error' ? (
+                            <InfoCircleOutlined size={30}></InfoCircleOutlined>
+                          ) : (
+                            <FileIcon id={id} name={fileName}></FileIcon>
+                          )}
+                          <Flex vertical style={{ width: '90%' }}>
+                            <Text
+                              ellipsis={{ tooltip: fileName }}
+                              className={styles.nameText}
+                            >
+                              <b> {fileName}</b>
+                            </Text>
+                            {item.status === 'error' ? (
+                              t('uploadFailed')
+                            ) : (
+                              <>
+                                {item.percent !== 100 ? (
+                                  t('uploading')
+                                ) : !item.response ? (
+                                  t('parsing')
+                                ) : (
+                                  <Space>
+                                    <span>{fileExtension?.toUpperCase()},</span>
+                                    <span>
+                                      {formatBytes(
+                                        getDocumentInfoById(id)?.size ?? 0,
+                                      )}
+                                    </span>
+                                  </Space>
+                                )}
+                              </>
+                            )}
+                          </Flex>
+                        </Flex>
+
+                        {item.status !== 'uploading' && (
+                          <span className={styles.deleteIcon}>
+                            <CloseCircleOutlined
+                              onClick={() => handleRemove(item)}
+                            />
+                          </span>
+                        )}
+                      </Card>
+                    </List.Item>
+                  );
+                }}
+              />
+            )}
+            <Flex
+              gap={5}
+              align="center"
+              justify="flex-end"
+              className={styles.inputWrapper}
+              style={{
+                width: fileList.length > 0 ? '50%' : '100%',
               }}
             >
-              <Button type={'primary'} disabled={disabled}>
-                <PaperClipOutlined />
+              {/* {showUploadIcon && (
+                <Upload
+                  onPreview={handlePreview}
+                  onChange={handleChange}
+                  multiple={false}
+                  className={styles.enterBtn}
+                  onRemove={handleRemove}
+                  showUploadList={false}
+                  beforeUpload={() => {
+                    return false;
+                  }}
+                >
+                  <Button
+                    type={'text'}
+                    disabled={disabled}
+                    icon={<Paperclip className={styles.PaperclipIcon} />}
+                    className={styles.enterBtn}
+                  ></Button>
+                </Upload>
+              )} */}
+              <Button type="primary" className={styles.enterBtn}>
+                <EmojiSvg className={styles.blueIcon} />
               </Button>
-            </Upload>
-          )}
-          <Button
-            type="primary"
-            onClick={handlePressEnter}
-            loading={sendLoading}
-            disabled={sendDisabled || isUploadingFile || sendLoading}
-          >
-            <SendOutlined />
-          </Button>
+              <Button type="primary" className={styles.enterBtn}>
+                <VoiceSvg className={styles.blueIcon} />
+              </Button>
+              <Button
+                type="primary"
+                onClick={handlePressEnter}
+                className={styles.enterBtn}
+                loading={sendLoading}
+                disabled={sendDisabled || isUploadingFile || sendLoading}
+              >
+                <SendSvg className={styles.send} />
+              </Button>
+            </Flex>
+          </Flex>
         </Flex>
       </Flex>
-    </Flex>
+    </>
   );
 };
 

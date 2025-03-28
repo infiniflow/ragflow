@@ -3,12 +3,15 @@
   .messageItemSection {
     display: inline-block;
   }
-  .messageItemSectionLeft {
-    width: 80%;
-  }
+  // .messageItemSectionLeft {
+  //   width: 80%;
+  // }
   .messageItemContent {
     display: inline-flex;
     gap: 20px;
+    .suggestionList {
+      display: none;
+    }
   }
   .messageItemContentReverse {
     flex-direction: row-reverse;
@@ -39,6 +42,7 @@
     }
   }
   .messageUserText {
+    color: @gray51;
     .chunkText();
     .messageTextBase();
     background-color: #f0f3f5;
@@ -56,12 +60,46 @@
 }
 
 .messageUserText,
-.messageText {
+.messageText,
+.messageTextDark {
   .messageCommon();
 }
 
 .messageItemLeft {
   text-align: left;
+  &:first-child {
+    .suggestionList {
+      display: block;
+      margin: 0 -4px;
+      .clickableItem {
+        float: left;
+        padding: 4px;
+        font-size: 14px;
+        white-space: nowrap;
+        border: 0;
+        a {
+          border: 1px solid #2f78e5a3;
+          border-radius: 50px;
+          padding: 8px 12px;
+          background: #fff;
+          max-width: 314px;
+          color: @gray51;
+          display: flex;
+          align-items: center;
+          img {
+            margin-right: 5px;
+          }
+          span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+        }
+      }
+      > .ant-spin-container {
+        display: flex;
+      }
+    }
+  }
 }
 .messageItemRight {
   text-align: right;

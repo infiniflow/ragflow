@@ -1,38 +1,127 @@
 .messageInputWrapper {
-  margin-right: 20px;
-  padding: '0px 0px 10px 0px';
-  background-color: #ffffff;
-  border: 1px solid #d9d9d9;
-  &:hover {
-    border-color: #40a9ff;
-    box-shadow: #40a9ff;
-  }
-  border-radius: 8px;
+  padding: 24px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 0;
+  border-top: 1px solid @borderColor;
   :global(.ant-input-affix-wrapper) {
     border-bottom-right-radius: 0;
     border-bottom-left-radius: 0;
   }
-}
+  .documentCard {
+    :global(.ant-card-body) {
+      padding: 10px;
+      position: relative;
+    }
+  }
+  .listWrapper {
+    padding: 0 10px;
+    overflow: auto;
+    max-height: 170px;
+  }
+  .messageenterChatArea {
+    background-color: #f7f9fa;
+    min-height: 64px;
+    padding: 0 16px;
+    border-radius: 16px;
+    .inputWrapper {
+      background-color: unset;
+      border: none;
+      padding-left: 0;
+      padding-right: 0;
+      max-height: 64px !important;
+      overflow-y: auto !important;
+      box-shadow: none;
+      &::-webkit-scrollbar {
+        display: none;
+      }
+      &::placeholder {
+        color: #494949a3;
+        top: 50%;
+        transform: translateY(-50%);
+        position: relative;
+      }
+      &:focus {
+        &::placeholder {
+          opacity: 0;
+        }
+        box-shadow: none !important;
+      }
+      span.anticon {
+        svg {
+          display: none;
+        }
+      }
+    }
+  }
 
-.documentCard {
-  :global(.ant-card-body) {
-    padding: 10px;
-    position: relative;
-    width: 100%;
+  .deleteIcon {
+    position: absolute;
+    right: -4px;
+    top: -4px;
+    color: #d92d20;
+  }
+  .enterBtn {
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: @white;
+    border: 0;
+    box-shadow: none;
+    border-radius: 6px;
+    svg {
+      &.blueIcon {
+        fill: @darkBlue;
+      }
+      &.send {
+        fill: #494949;
+      }
+      &.PaperclipIcon {
+        width: 15px;
+        height: auto;
+        path {
+          stroke: #494949;
+        }
+      }
+    }
+    &:not(:disabled):not(.ant-btn-disabled):hover {
+      background: #fff;
+    }
   }
 }
-.listWrapper {
-  padding: 0 10px;
-  overflow: auto;
-  max-height: 170px;
-  width: 100%;
-}
-.inputWrapper {
-  border-radius: 8px;
-}
-.deleteIcon {
-  position: absolute;
-  right: -4px;
-  top: -4px;
-  color: #d92d20;
+
+.suggestedReels {
+  padding: 12px 24px;
+  label {
+    font-weight: 400;
+    display: inline-block;
+    font-size: 14px;
+    line-height: 18px;
+    margin-bottom: 13px;
+  }
+  .suggestedReelsUl {
+    li {
+      display: inline-flex;
+      padding: 4px 8px 4px 0;
+      border: none;
+      &:last-child {
+        padding-right: 0;
+      }
+      a {
+        font-weight: 400;
+        font-size: 14px;
+        padding: 5px 16px;
+        background: @lightBlue;
+        transition: none;
+        color: @gray51;
+        border-radius: 4px;
+        &:hover {
+          background-color: @darkBlue;
+          color: @white;
+        }
+      }
+    }
+  }
 }

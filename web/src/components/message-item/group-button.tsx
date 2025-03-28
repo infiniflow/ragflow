@@ -1,21 +1,8 @@
-import { PromptIcon } from '@/assets/icon/Icon';
-import CopyToClipboard from '@/components/copy-to-clipboard';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
-import {
-  DeleteOutlined,
-  DislikeOutlined,
-  LikeOutlined,
-  PauseCircleOutlined,
-  SoundOutlined,
-  SyncOutlined,
-} from '@ant-design/icons';
-import { Radio, Tooltip } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import FeedbackModal from './feedback-modal';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
-import PromptModal from './prompt-modal';
 
 interface IProps {
   messageId: string;
@@ -50,7 +37,7 @@ export const AssistantGroupButton = ({
 
   return (
     <>
-      <Radio.Group size="small">
+      {/* <Radio.Group size="small">
         <Radio.Button value="a">
           <CopyToClipboard text={content}></CopyToClipboard>
         </Radio.Button>
@@ -77,8 +64,8 @@ export const AssistantGroupButton = ({
             <PromptIcon style={{ fontSize: '16px' }} />
           </Radio.Button>
         )}
-      </Radio.Group>
-      {visible && (
+      </Radio.Group> */}
+      {/* {visible && (
         <FeedbackModal
           visible={visible}
           hideModal={hideModal}
@@ -92,7 +79,7 @@ export const AssistantGroupButton = ({
           hideModal={hidePromptModal}
           prompt={prompt}
         ></PromptModal>
-      )}
+      )} */}
     </>
   );
 };
@@ -118,28 +105,29 @@ export const UserGroupButton = ({
   const { t } = useTranslation();
 
   return (
-    <Radio.Group size="small">
-      <Radio.Button value="a">
-        <CopyToClipboard text={content}></CopyToClipboard>
-      </Radio.Button>
-      {regenerateMessage && (
-        <Radio.Button
-          value="b"
-          onClick={regenerateMessage}
-          disabled={sendLoading}
-        >
-          <Tooltip title={t('chat.regenerate')}>
-            <SyncOutlined spin={sendLoading} />
-          </Tooltip>
-        </Radio.Button>
-      )}
-      {removeMessageById && (
-        <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
-          <Tooltip title={t('common.delete')}>
-            <DeleteOutlined spin={loading} />
-          </Tooltip>
-        </Radio.Button>
-      )}
-    </Radio.Group>
+    <div className="d-none"></div>
+    // <Radio.Group size="small">
+    //   <Radio.Button value="a">
+    //     <CopyToClipboard text={content}></CopyToClipboard>
+    //   </Radio.Button>
+    //   {regenerateMessage && (
+    //     <Radio.Button
+    //       value="b"
+    //       onClick={regenerateMessage}
+    //       disabled={sendLoading}
+    //     >
+    //       <Tooltip title={t('chat.regenerate')}>
+    //         <SyncOutlined spin={sendLoading} />
+    //       </Tooltip>
+    //     </Radio.Button>
+    //   )}
+    //   {removeMessageById && (
+    //     <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
+    //       <Tooltip title={t('common.delete')}>
+    //         <DeleteOutlined spin={loading} />
+    //       </Tooltip>
+    //     </Radio.Button>
+    //   )}
+    // </Radio.Group>
   );
 };

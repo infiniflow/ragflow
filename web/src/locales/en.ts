@@ -408,7 +408,7 @@ This auto-tag feature enhances retrieval by adding another layer of domain-speci
       chat: 'Chat',
       newChat: 'New chat',
       send: 'Send',
-      sendPlaceholder: 'Message the assistant...',
+      sendPlaceholder: 'Write your message here...',
       chatConfiguration: 'Chat Configuration',
       chatConfigurationDescription:
         ' Set up a chat assistant dedicated to your selected knowledge bases here! 💕',
