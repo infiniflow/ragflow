@@ -16,9 +16,11 @@
 
 import logging
 import json
+import math
 import re
-from rag.utils.doc_store_conn import MatchTextExpr
+from collections import defaultdict
 
+from rag.utils.doc_store_conn import MatchTextExpr
 from rag.nlp import rag_tokenizer, term_weight, synonym
 
 
@@ -212,12 +214,11 @@ class FulltextQueryer:
 
     def token_similarity(self, atks, btkss):
         def toDict(tks):
-            d = {}
             if isinstance(tks, str):
                 tks = tks.split()
-            for t, c in self.tw.weights(tks, preprocess=False):
-                if t not in d:
-                    d[t] = 0
+            d = defaultdict(int)
+            wts = self.tw.weights(tks, preprocess=False)
+            for i, (t, c) in enumerate(wts):
                 d[t] += c
             return d
 
@@ -233,11 +234,11 @@ class FulltextQueryer:
         s = 1e-9
         for k, v in qtwt.items():
             if k in dtwt:
-                s += v  # * dtwt[k]
+                s += v * dtwt[k]
         q = 1e-9
         for k, v in qtwt.items():
-            q += v
-        return s / q
+            q += v * v
+        return math.sqrt(3. * (s / q / math.log10( len(dtwt.keys()) + 512 )))
 
     def paragraph(self, content_tks: str, keywords: list = [], keywords_topn=30):
         if isinstance(content_tks, str):

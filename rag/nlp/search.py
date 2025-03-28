@@ -15,6 +15,7 @@
 #
 import logging
 import re
+from collections import OrderedDict
 from dataclasses import dataclass
 
 from rag.settings import TAG_FLD, PAGERANK_FLD
@@ -297,7 +298,7 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
-            content_ltks = sres.field[i][cfield].split()
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
