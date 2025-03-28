@@ -18,14 +18,36 @@ const GoogleForm = ({ onValuesChange, form, node }: IOperatorForm) => {
     >
       <DynamicInputVariable node={node}></DynamicInputVariable>
       <TopNItem initialValue={10}></TopNItem>
+      <Form.Item name={'provider'} label={t('googleprovider')}>
+        <Select
+          options={[
+            { value: 'SerpApi', label: 'SerpApi' },
+            { value: 'GoogleCustomSearch', label: 'GoogleCustomSearch' },
+            { value: 'OpenSearch', label: 'OpenSearch' },
+          ]}
+          allowClear={true}
+        ></Select>
+      </Form.Item>
       <Form.Item label={t('apiKey')} name={'api_key'}>
-        <Input></Input>
+        <Input placeholder="YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)"></Input>
       </Form.Item>
       <Form.Item label={t('country')} name={'country'}>
-        <Select options={GoogleCountryOptions}></Select>
+        <Select
+          showSearch
+          filterOption={(input, option) =>
+            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+          }
+          options={GoogleCountryOptions}
+        ></Select>
       </Form.Item>
       <Form.Item label={t('language')} name={'language'}>
-        <Select options={GoogleLanguageOptions}></Select>
+        <Select
+          showSearch
+          filterOption={(input, option) =>
+            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+          }
+          options={GoogleLanguageOptions}
+        ></Select>
       </Form.Item>
     </Form>
   );
