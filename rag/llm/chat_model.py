@@ -179,6 +179,7 @@ class Base(ABC):
         except Exception:
             pass
         return 0
+        
     def _calculate_dynamic_ctx(self, history):
         """Calculate dynamic context window size"""
         def count_tokens(text):
@@ -202,7 +203,6 @@ class Base(ABC):
             # Add role marker token overhead
             role_tokens = 4
             total_tokens += content_tokens + role_tokens
-
 
         # Apply 1.2x buffer ratio
         total_tokens_with_buffer = int(total_tokens * 1.2)
@@ -502,13 +502,10 @@ class ZhipuChat(Base):
 
 class OllamaChat(Base):
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else \
-            Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
+        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
 
     def chat(self, system, history, gen_conf):
-        
-
         if system:
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
@@ -531,12 +528,7 @@ class OllamaChat(Base):
             if "frequency_penalty" in gen_conf:
                 options["frequency_penalty"] = gen_conf["frequency_penalty"]
 
-            response = self.client.chat(
-                model=self.model_name,
-                messages=history,
-                options=options,
-                keep_alive=10
-            )
+            response = self.client.chat(model=self.model_name, messages=history, options=options, keep_alive=10)
             ans = response["message"]["content"].strip()
             token_count = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
             return ans, token_count
@@ -544,8 +536,6 @@ class OllamaChat(Base):
             return "**ERROR**: " + str(e), 0
 
     def chat_streamly(self, system, history, gen_conf):
-
-
         if system:
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
@@ -553,7 +543,6 @@ class OllamaChat(Base):
         try:
             # Calculate context size
             ctx_size = self._calculate_dynamic_ctx(history)
-            
             options = {
                 "num_ctx": ctx_size
             }
@@ -567,22 +556,15 @@ class OllamaChat(Base):
                 options["presence_penalty"] = gen_conf["presence_penalty"]
             if "frequency_penalty" in gen_conf:
                 options["frequency_penalty"] = gen_conf["frequency_penalty"]
-                
-            
+
             ans = ""
             try:
-                response = self.client.chat(
-                    model=self.model_name,
-                    messages=history,
-                    stream=True,
-                    options=options,
-                    keep_alive=10
-                )
+                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options, keep_alive=10 )
                 for resp in response:
                     if resp["done"]:
                         token_count = resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
                         yield token_count
-                    ans += resp["message"]["content"]
+                    ans = resp["message"]["content"]
                     yield ans
             except Exception as e:
                 yield ans + "\n**ERROR**: " + str(e)
