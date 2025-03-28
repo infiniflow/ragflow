@@ -296,7 +296,7 @@ export default {
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, xem https://huggingface.co/papers/2401.18059 để biết thêm thông tin',
       prompt: 'Nhắc nhở',
-      promptTip: 'Nhắc nhở LLM được sử dụng để tóm tắt.',
+      promptTip: 'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
       promptMessage: 'Nhắc nhở là bắt buộc',
       promptText: `Vui lòng tóm tắt các đoạn văn sau. Cẩn thận với các số, đừng bịa ra. Các đoạn văn như sau:
       {cluster_content}
@@ -329,7 +329,7 @@ export default {
       searchTags: 'Thẻ tìm kiếm',
       tagTable: 'Bảng',
       tagSet: 'Thư viện',
-      tagSetTip: `<p>Việc chọn các cơ sở kiến thức 'Tag' giúp gắn thẻ cho từng đoạn.</p> <p>Truy vấn đến các đoạn đó cũng sẽ kèm theo thẻ.</p> Quy trình này sẽ cải thiện độ chính xác của việc truy xuất bằng cách thêm nhiều thông tin hơn vào bộ dữ liệu, đặc biệt là khi có một tập hợp lớn các đoạn. <p>Sự khác biệt giữa thẻ và từ khóa:</p> <ul> <li>Thẻ là một tập hợp khép kín được người dùng định nghĩa và thao tác trong khi từ khóa là một tập hợp mở.</li> <li>Bạn cần tải lên các tập hợp thẻ với các mẫu trước khi sử dụng.</li> <li>Từ khóa được tạo bởi LLM, tốn kém và mất thời gian.</li> </ul>`,
+      tagSetTip: `<p>Việc chọn các cơ sở kiến thức 'Tag' giúp gắn thẻ cho từng đoạn.</p> <p>Truy vấn đến các đoạn đó cũng sẽ kèm theo thẻ.</p> Quy trình này sẽ cải thiện độ chính xác của việc truy xuất bằng cách thêm nhiều thông tin hơn vào bộ dữ liệu, đặc biệt là khi có một tập hợp lớn các đoạn. <p>Sự khác biệt giữa thẻ và từ khóa:</p> <ul> <li>Thẻ là một tập hợp khép kín được người dùng định nghĩa và thao tác trong khi từ khóa là một tập hợp mở.</li> <li>Bạn cần tải lên các tập hợp thẻ với các mẫu trước khi sử dụng.</li> <li>Từ khóa được tạo bởi LLM, tốn kém và mất thời gian.</li> </ul><p>Xem https://ragflow.io/docs/dev/use_tag_sets để biết thêm chi tiết.</p>`,
       topnTags: 'Thẻ Top-N',
       tags: 'Thẻ',
       addTag: 'Thêm thẻ',

@@ -125,6 +125,7 @@ dependencies = [
     "xxhash>=3.5.0,<4.0.0",
     "trio>=0.29.0",
     "langfuse>=2.60.0",
+    "debugpy>=1.8.13",
 ]
 
 [project.optional-dependencies]

@@ -139,7 +139,7 @@ def add_llm():
     req = request.json
     factory = req["llm_factory"]
     api_key = req.get("api_key", "x")
-    llm_name = req["llm_name"]
+    llm_name = req.get("llm_name")
 
     def apikey_json(keys):
         nonlocal req

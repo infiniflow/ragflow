@@ -258,7 +258,7 @@ class LLMBundle:
         if self.langfuse:
             generation = self.trace.generation(name="describe", metadata={"model": self.llm_name})
 
-        txt, used_tokens = self.mdl.describe(image, max_tokens)
+        txt, used_tokens = self.mdl.describe(image)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
             logging.error("LLMBundle.describe can't update token usage for {}/IMAGE2TEXT used_tokens: {}".format(self.tenant_id, used_tokens))
 

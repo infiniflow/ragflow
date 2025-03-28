@@ -829,7 +829,7 @@ class BedrockChat(Base):
     def chat(self, system, history, gen_conf):
         from botocore.exceptions import ClientError
         for k in list(gen_conf.keys()):
-            if k not in ["top_p", "max_tokens"]:
+            if k not in ["temperature"]:
                 del gen_conf[k]
         for item in history:
             if not isinstance(item["content"], list) and not isinstance(item["content"], tuple):
@@ -854,7 +854,7 @@ class BedrockChat(Base):
     def chat_streamly(self, system, history, gen_conf):
         from botocore.exceptions import ClientError
         for k in list(gen_conf.keys()):
-            if k not in ["top_p", "max_tokens"]:
+            if k not in ["temperature"]:
                 del gen_conf[k]
         for item in history:
             if not isinstance(item["content"], list) and not isinstance(item["content"], tuple):
