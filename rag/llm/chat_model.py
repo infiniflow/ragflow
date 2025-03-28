@@ -268,6 +268,7 @@ class AzureChat(Base):
     def __init__(self, key, model_name, **kwargs):
         api_key = json.loads(key).get("api_key", "")
         api_version = json.loads(key).get("api_version", "2024-02-01")
+        super().__init__(key, model_name, kwargs["base_url"])
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
 
@@ -1025,6 +1026,7 @@ class LmStudioChat(Base):
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
             base_url = os.path.join(base_url, "v1")
+        super().__init__(key, model_name, base_url)
         self.client = OpenAI(api_key="lm-studio", base_url=base_url)
         self.model_name = model_name
 

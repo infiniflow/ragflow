@@ -16,7 +16,7 @@
 
 
 import pytest
-from common import add_chunk, batch_create_datasets, bulk_upload_documents, delete_dataset, list_documnet, parse_documnet
+from common import add_chunk, batch_create_datasets, bulk_upload_documents, delete_chunks, delete_dataset, list_documnet, parse_documnet
 from libs.utils import wait_for
 
 
@@ -62,4 +62,25 @@ def add_chunks(get_http_api_auth, get_dataset_id_and_document_id):
     from time import sleep
 
     sleep(1)
-    yield dataset_id, document_id, chunk_ids
+    return dataset_id, document_id, chunk_ids
+
+
+@pytest.fixture(scope="function")
+def add_chunks_func(get_http_api_auth, get_dataset_id_and_document_id, request):
+    dataset_id, document_id = get_dataset_id_and_document_id
+
+    chunk_ids = []
+    for i in range(4):
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": f"chunk test {i}"})
+        chunk_ids.append(res["data"]["chunk"]["id"])
+
+    # issues/6487
+    from time import sleep
+
+    sleep(1)
+
+    def cleanup():
+        delete_chunks(get_http_api_auth, dataset_id, document_id, {"chunk_ids": chunk_ids})
+
+    request.addfinalizer(cleanup)
+    return dataset_id, document_id, chunk_ids
