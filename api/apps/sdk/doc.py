@@ -1165,6 +1165,9 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     condition = {"doc_id": document_id}
     if "chunk_ids" in req:
         unique_chunk_ids, duplicate_messages = check_duplicate_ids(req["chunk_ids"], "chunk")
+        # handle empty array case
+        if not unique_chunk_ids:
+            return get_result(message="delete 0 chunks")
         condition["id"] = unique_chunk_ids
     chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
     if chunk_number != 0:
@@ -1173,7 +1176,7 @@ def rm_chunk(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}")
     if duplicate_messages:
         return get_result(message=f"Partially deleted {chunk_number} chunks with {len(duplicate_messages)} errors", data={"success_count": chunk_number, "errors": duplicate_messages},)
-    return get_result(message=f"deleted {chunk_number} chunks")
+    return get_result(message=f"delete {chunk_number} chunks")
 
 
 @manager.route(  # noqa: F821
