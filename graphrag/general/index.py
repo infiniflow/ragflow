@@ -69,26 +69,27 @@ async def run_graphrag(
         embedding_model,
         callback,
     )
-    new_graph = None
-    if subgraph:
-        new_graph = await merge_subgraph(
-            tenant_id,
-            kb_id,
-            doc_id,
-            subgraph,
-            embedding_model,
-            callback,
-        )
+    if not subgraph:
+        return
+
+    subgraph_nodes = set(subgraph.nodes())
+    new_graph = await merge_subgraph(
+        tenant_id,
+        kb_id,
+        doc_id,
+        subgraph,
+        embedding_model,
+        callback,
+    )
+    assert new_graph is not None
 
     if not with_resolution or not with_community:
         return
 
-    if new_graph is None:
-        new_graph = await get_graph(tenant_id, kb_id)
-
-    if with_resolution and new_graph is not None:
+    if with_resolution:
         await resolve_entities(
             new_graph,
+            subgraph_nodes,
             tenant_id,
             kb_id,
             doc_id,
@@ -96,7 +97,7 @@ async def run_graphrag(
             embedding_model,
             callback,
         )
-    if with_community and new_graph is not None:
+    if with_community:
         await extract_community(
             new_graph,
             tenant_id,
@@ -190,7 +191,7 @@ async def merge_subgraph(
     embedding_model,
     callback,
 ):
-    graphrag_task_lock = RedisDistributedLock("graphrag_task", lock_value=doc_id, timeout=600)
+    graphrag_task_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value=doc_id, timeout=600)
     while True:
         if graphrag_task_lock.acquire():
             break
@@ -223,6 +224,7 @@ async def merge_subgraph(
 
 async def resolve_entities(
     graph,
+    subgraph_nodes: set[str],
     tenant_id: str,
     kb_id: str,
     doc_id: str,
@@ -230,17 +232,18 @@ async def resolve_entities(
     embed_bdl,
     callback,
 ):
-    graphrag_task_lock = RedisDistributedLock("graphrag_task", lock_value=doc_id, timeout=600)
+    graphrag_task_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value=doc_id, timeout=600)
     while True:
         if graphrag_task_lock.acquire():
             break
+        callback(msg=f"resolve_entities {doc_id} is waiting graphrag_task_lock")
         await trio.sleep(10)
 
     start = trio.current_time()
     er = EntityResolution(
         llm_bdl,
     )
-    reso = await er(graph, callback=callback)
+    reso = await er(graph, subgraph_nodes, callback=callback)
     graph = reso.graph
     change = reso.change
     callback(msg=f"Graph resolution removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges.")
@@ -261,10 +264,11 @@ async def extract_community(
     embed_bdl,
     callback,
 ):
-    graphrag_task_lock = RedisDistributedLock("graphrag_task", lock_value=doc_id, timeout=600)
+    graphrag_task_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value=doc_id, timeout=600)
     while True:
         if graphrag_task_lock.acquire():
             break
+        callback(msg=f"extract_community {doc_id} is waiting graphrag_task_lock")
         await trio.sleep(10)
 
     start = trio.current_time()

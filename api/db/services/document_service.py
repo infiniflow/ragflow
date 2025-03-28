@@ -27,7 +27,7 @@ import xxhash
 from peewee import fn
 
 from api import settings
-from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus
+from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
@@ -262,11 +262,18 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def accessible4deletion(cls, doc_id, user_id):
-        docs = cls.model.select(
-            cls.model.id).join(
+        docs = cls.model.select(cls.model.id
+        ).join(
             Knowledgebase, on=(
                 Knowledgebase.id == cls.model.kb_id)
-        ).where(cls.model.id == doc_id, Knowledgebase.created_by == user_id).paginate(0, 1)
+        ).join(
+            UserTenant, on=(
+                (UserTenant.tenant_id == Knowledgebase.created_by) & (UserTenant.user_id == user_id))
+        ).where(
+            cls.model.id == doc_id,
+            UserTenant.status == StatusEnum.VALID.value,
+            ((UserTenant.role == UserTenantRole.NORMAL) | (UserTenant.role == UserTenantRole.OWNER))
+        ).paginate(0, 1)
         docs = docs.dicts()
         if not docs:
             return False
