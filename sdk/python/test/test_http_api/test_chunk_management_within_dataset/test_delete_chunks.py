@@ -69,7 +69,7 @@ class TestChunkstDeletion:
             ),
             pytest.param(
                 "invalid_document_id",
-                102,
+                100,
                 "rm_chunk deleted chunks 0, expect 4",
                 marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "elasticsearch"], reason="issues/6611"),
             ),
