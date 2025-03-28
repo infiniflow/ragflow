@@ -172,6 +172,12 @@ def delete_chunks(auth, dataset_id, document_id, payload=None):
     return res.json()
 
 
+def retrieval_chunks(auth, payload=None):
+    url = f"{HOST_ADDRESS}/api/v1/retrieval"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
 def batch_add_chunks(auth, dataset_id, document_id, num):
     chunk_ids = []
     for i in range(num):
