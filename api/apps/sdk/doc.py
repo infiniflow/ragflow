@@ -1158,6 +1158,9 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    docs = DocumentService.get_by_ids([document_id])
+    if not docs:
+        raise LookupError(f"Can't find the document with ID {document_id}!")
     req = request.json
     condition = {"doc_id": document_id}
     if "chunk_ids" in req:
