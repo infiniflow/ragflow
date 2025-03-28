@@ -16,7 +16,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
     tar --exclude='.*' -cf - \
         /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
+        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc 
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     if [ "$LIGHTEN" != "1" ]; then \
         (tar -cf - \
@@ -59,6 +59,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y default-jdk && \
     apt install -y libatk-bridge2.0-0 && \
     apt install -y libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev && \
+    apt install -y libjemalloc-dev && \
     apt install -y python3-pip pipx nginx unzip curl wget git vim less
 
 RUN if [ "$NEED_MIRROR" == "1" ]; then \
@@ -177,19 +178,18 @@ RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
     echo $version_info > /ragflow/VERSION
 
 # production stage
-FROM public.ecr.aws/lambda/python:3.10 AS lambda
+FROM base AS production
 USER root
 
-RUN mkdir -p /var/task
-WORKDIR /var/task
+WORKDIR /ragflow
 
-# Copy environment
-ENV VIRTUAL_ENV=/var/task/.venv
-COPY --from=builder /ragflow/.venv ${VIRTUAL_ENV}
+# Copy Python environment and packages
+ENV VIRTUAL_ENV=/ragflow/.venv
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
-ENV PYTHONPATH=/var/task
 
-# Copy application code
+ENV PYTHONPATH=/ragflow/
+
 COPY web web
 COPY api api
 COPY conf conf
@@ -197,12 +197,15 @@ COPY deepdoc deepdoc
 COPY rag rag
 COPY agent agent
 COPY graphrag graphrag
+COPY agentic_reasoning agentic_reasoning
 COPY pyproject.toml uv.lock ./
+
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
-COPY docker/entrypoint.sh docker/entrypoint-parser.sh ./
+COPY docker/entrypoint.sh ./
+RUN chmod +x ./entrypoint*.sh
 
-COPY --from=builder /ragflow/web/dist /var/task/web/dist
-COPY --from=builder /ragflow/VERSION /var/task/VERSION
+# Copy compiled web pages
+COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 
-# Lambda entrypoint
-CMD ["api.ragflow_server"]
+COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+ENTRYPOINT ["./entrypoint.sh"]
