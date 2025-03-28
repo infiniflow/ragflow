@@ -201,7 +201,7 @@ COPY agentic_reasoning agentic_reasoning
 COPY pyproject.toml uv.lock ./
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
-COPY docker/entrypoint.sh docker/entrypoint-parser.sh ./
+COPY docker/entrypoint.sh ./
 RUN chmod +x ./entrypoint*.sh
 
 # Copy compiled web pages
