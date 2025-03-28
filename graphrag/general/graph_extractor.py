@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import tiktoken
 import trio
 
-from graphrag.general.extractor import Extractor, ENTITY_EXTRACTION_MAX_GLEANINGS, DEFAULT_ENTITY_TYPES
+from graphrag.general.extractor import Extractor, ENTITY_EXTRACTION_MAX_GLEANINGS
 from graphrag.general.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
 from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_limiter, split_string_by_multi_markers
 from rag.llm.chat_model import Base as CompletionLLM
@@ -91,11 +91,10 @@ class GraphExtractor(Extractor):
 
         # Wire defaults into the prompt variables
         self._prompt_variables = {
-            "entity_types": entity_types,
             self._tuple_delimiter_key: DEFAULT_TUPLE_DELIMITER,
             self._record_delimiter_key: DEFAULT_RECORD_DELIMITER,
             self._completion_delimiter_key: DEFAULT_COMPLETION_DELIMITER,
-            self._entity_types_key: ",".join(DEFAULT_ENTITY_TYPES),
+            self._entity_types_key: entity_types,
         }
 
     async def _process_single_content(self, chunk_key_dp: tuple[str, str], chunk_seq: int, num_chunks: int, out_results):
