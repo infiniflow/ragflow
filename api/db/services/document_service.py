@@ -320,6 +320,17 @@ class DocumentService(CommonService):
         if not doc_id:
             return
         return doc_id[0]["id"]
+    
+    @classmethod
+    @DB.connection_context()
+    def get_doc_ids_by_doc_names(cls, doc_names):
+        fields = [cls.model.id]
+        doc_ids = cls.model.select(*fields) \
+            .where(cls.model.name.in_(doc_names))
+        doc_ids = doc_ids.dicts()
+        if not doc_ids:
+            return
+        return [doc["id"] for doc in doc_ids]
 
     @classmethod
     @DB.connection_context()
