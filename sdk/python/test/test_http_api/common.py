@@ -35,42 +35,22 @@ DOCUMENT_NAME_LIMIT = 128
 
 # DATASET MANAGEMENT
 def create_dataset(auth, payload=None):
-    res = requests.post(
-        url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
-        headers=HEADERS,
-        auth=auth,
-        json=payload,
-    )
+    res = requests.post(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
 def list_dataset(auth, params=None):
-    res = requests.get(
-        url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
-        headers=HEADERS,
-        auth=auth,
-        params=params,
-    )
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
 def update_dataset(auth, dataset_id, payload=None):
-    res = requests.put(
-        url=f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}",
-        headers=HEADERS,
-        auth=auth,
-        json=payload,
-    )
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}", headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
 def delete_dataset(auth, payload=None):
-    res = requests.delete(
-        url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
-        headers=HEADERS,
-        auth=auth,
-        json=payload,
-    )
+    res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
@@ -127,12 +107,7 @@ def download_document(auth, dataset_id, document_id, save_path):
 
 def list_documnet(auth, dataset_id, params=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
-    res = requests.get(
-        url=url,
-        headers=HEADERS,
-        auth=auth,
-        params=params,
-    )
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
@@ -181,18 +156,19 @@ def add_chunk(auth, dataset_id, document_id, payload=None):
 
 def list_chunks(auth, dataset_id, document_id, params=None):
     url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
-    res = requests.get(
-        url=url,
-        headers=HEADERS,
-        auth=auth,
-        params=params,
-    )
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
 def update_chunk(auth, dataset_id, document_id, chunk_id, payload=None):
     url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_id}".format(dataset_id=dataset_id, document_id=document_id)
     res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def delete_chunks(auth, dataset_id, document_id, payload=None):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
