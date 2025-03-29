@@ -89,6 +89,7 @@ const ChatConfigurationModal = ({
     const finalValues = {
       dialog_id: initialDialog.id,
       ...nextValues,
+      llm_stats: values.llm_stats,
       vector_similarity_weight: 1 - nextValues.vector_similarity_weight,
       prompt_config: {
         ...nextValues.prompt_config,
@@ -129,11 +130,14 @@ const ChatConfigurationModal = ({
       if (icon) {
         fileList = [{ uid: '1', name: 'file', thumbUrl: icon, status: 'done' }];
       }
+      const currentLlmStats =
+        initialDialog.llm_stats ?? ModelVariableType.Precise;
       form.setFieldsValue({
         ...initialDialog,
         llm_setting:
           initialDialog.llm_setting ??
           settledModelVariableMap[ModelVariableType.Precise],
+        llm_stats: currentLlmStats,
         icon: fileList,
         llm_id: initialDialog.llm_id ?? modelId,
         vector_similarity_weight:
