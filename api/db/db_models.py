@@ -686,6 +686,7 @@ class Dialog(DataBaseModel):
     llm_id = CharField(max_length=128, null=False, help_text="default llm ID")
 
     llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4, "max_tokens": 512})
+    llm_stats = CharField(max_length=16, null=False, default="precise", help_text="improvise|precise|balance", index=True)
     prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced", index=True)
     prompt_config = JSONField(
         null=False,

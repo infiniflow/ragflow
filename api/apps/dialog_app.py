@@ -38,6 +38,7 @@ def set_dialog():
     top_n = req.get("top_n", 6)
     top_k = req.get("top_k", 1024)
     rerank_id = req.get("rerank_id", "")
+    llm_stats = req.get("llm_stats", "precise")
     if not rerank_id:
         req["rerank_id"] = ""
     similarity_threshold = req.get("similarity_threshold", 0.1)
@@ -92,7 +93,8 @@ def set_dialog():
                 "rerank_id": rerank_id,
                 "similarity_threshold": similarity_threshold,
                 "vector_similarity_weight": vector_similarity_weight,
-                "icon": icon
+                "icon": icon,
+                "llm_stats": llm_stats,
             }
             if not DialogService.save(**dia):
                 return get_data_error_result(message="Fail to new a dialog!")

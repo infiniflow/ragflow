@@ -42,6 +42,7 @@ export interface IDialog {
   llm_setting: Variable;
   llm_setting_type: string;
   name: string;
+  llm_stats: string;
   prompt_config: PromptConfig;
   prompt_type: string;
   status: string;
