@@ -19,6 +19,7 @@ import pandas as pd
 from openpyxl import Workbook, load_workbook
 
 from rag.nlp import find_codec
+from rag.settings import EXCEL_FLOAT_DECIMAL_PLACES
 
 
 class RAGFlowExcelParser:
@@ -57,6 +58,10 @@ class RAGFlowExcelParser:
 
     @staticmethod
     def _dataframe_to_workbook(df):
+        # Process dataframe to round floats
+        for col in df.select_dtypes(include=['float']).columns:
+            df[col] = df[col].apply(lambda x: round(x, EXCEL_FLOAT_DECIMAL_PLACES) if pd.notnull(x) else x)
+
         wb = Workbook()
         ws = wb.active
         ws.title = "Data"
@@ -69,6 +74,28 @@ class RAGFlowExcelParser:
                 ws.cell(row=row_num, column=col_num, value=value)
 
         return wb
+        
+    @staticmethod
+    def format_cell_value(value):
+        """Format cell values to control decimal places for numbers
+        
+        Args:
+            value: Cell value of any type
+            
+        Returns:
+            Formatted value with controlled decimal places for floats and percentages
+        """
+        if value is None:
+            return value
+        if isinstance(value, float):
+            return round(value, EXCEL_FLOAT_DECIMAL_PLACES)
+        if isinstance(value, str) and value.strip().endswith('%'):
+            try:
+                numeric_value = float(value.strip().rstrip('%')) / 100
+                return f"{round(numeric_value * 100, EXCEL_FLOAT_DECIMAL_PLACES)}%"
+            except ValueError:
+                pass
+        return value
 
     def html(self, fnm, chunk_rows=256):
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
@@ -97,7 +124,8 @@ class RAGFlowExcelParser:
                         if c.value is None:
                             tb += "<td></td>"
                         else:
-                            tb += f"<td>{c.value}</td>"
+                            formatted_value = self.format_cell_value(c.value)
+                            tb += f"<td>{formatted_value}</td>"
                     tb += "</tr>"
                 tb += "</table>\n"
                 tb_chunks.append(tb)
@@ -121,7 +149,8 @@ class RAGFlowExcelParser:
                     if not c.value:
                         continue
                     t = str(ti[i].value) if i < len(ti) else ""
-                    t += ("：" if t else "") + str(c.value)
+                    formatted_value = self.format_cell_value(c.value)
+                    t += ("：" if t else "") + str(formatted_value)
                     fields.append(t)
                 line = "; ".join(fields)
                 if sheetname.lower().find("sheet") < 0:
