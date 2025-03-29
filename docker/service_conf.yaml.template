@@ -37,6 +37,11 @@ redis:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
 #   region: 'region'
+#   endpoint_url: 'endpoint_url'
+#   bucket: 'bucket'
+#   prefix_path: 'prefix_path'
+#   signature_version: 'v4'
+#   addressing_style: 'path'
 # oss:
 #   access_key: '${ACCESS_KEY}'
 #   secret_key: '${SECRET_KEY}'
