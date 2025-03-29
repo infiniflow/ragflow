@@ -615,7 +615,7 @@ def document_rm():
     tenant_id = objs[0].tenant_id
     req = request.json
     try:
-        doc_ids = [DocumentService.get_doc_id_by_doc_name(doc_name) for doc_name in req.get("doc_names", [])]
+        doc_ids = DocumentService.get_doc_ids_by_doc_names(req.get("doc_names", []))
         for doc_id in req.get("doc_ids", []):
             if doc_id not in doc_ids:
                 doc_ids.append(doc_id)
@@ -633,11 +633,16 @@ def document_rm():
     FileService.init_knowledgebase_docs(pf_id, tenant_id)
 
     errors = ""
+    docs = DocumentService.get_by_ids(doc_ids)
+    doc_dic = {}
+    for doc in docs:
+        doc_dic[doc.id] = doc
+
     for doc_id in doc_ids:
         try:
-            e, doc = DocumentService.get_by_id(doc_id)
-            if not e:
+            if doc_id not in doc_dic:
                 return get_data_error_result(message="Document not found!")
+            doc = doc_dic[doc_id]
             tenant_id = DocumentService.get_tenant_id(doc_id)
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
