@@ -19,6 +19,25 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
 from api.utils.log_utils import initRootLogger
+import logging
+import sys
+import os
+import signal
+import time
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+import threading
+import uuid
+
+# Configure root logger to output to stdout
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+root_logger.addHandler(handler)
+
 initRootLogger("ragflow_server")
 
 import logging
