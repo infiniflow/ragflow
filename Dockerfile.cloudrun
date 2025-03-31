@@ -1,0 +1,115 @@
+# ---------------------------
+# Base Stage
+# ---------------------------
+FROM ubuntu:22.04 AS base
+USER root
+SHELL ["/bin/bash", "-c"]
+
+ARG NEED_MIRROR=0
+ARG LIGHTEN=0
+ENV LIGHTEN=${LIGHTEN}
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /ragflow
+
+# Setup apt and system deps
+RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    chmod 1777 /tmp && \
+    apt update && \
+    apt --no-install-recommends install -y \
+    ca-certificates libglib2.0-0 libglx-mesa0 libgl1 \
+    pkg-config libicu-dev libgdiplus default-jdk \
+    libatk-bridge2.0-0 libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev \
+    libjemalloc-dev python3-pip pipx nginx unzip curl wget git vim less && \
+    pipx install uv
+
+# Node.js 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt purge -y nodejs npm cargo && \
+    apt autoremove -y && \
+    apt update && \
+    apt install -y nodejs
+
+# Rust
+RUN apt update && apt install -y curl build-essential && \
+    curl --proto '=https' --tlsv1.2 --http1.1 -sSf https://sh.rustup.rs | bash -s -- -y --profile minimal && \
+    echo 'export PATH="/root/.cargo/bin:${PATH}"' >> /root/.bashrc
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# MSSQL ODBC Driver
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
+    apt update && \
+    ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17 || true
+
+# Copy dependencies manually from a pre-built deps image
+FROM base AS deps
+COPY --from=infiniflow/ragflow_deps:latest /huggingface.co /huggingface.co
+COPY --from=infiniflow/ragflow_deps:latest /nltk_data /root/nltk_data
+COPY --from=infiniflow/ragflow_deps:latest /tika-server-standard-3.0.0.jar /ragflow/
+COPY --from=infiniflow/ragflow_deps:latest /tika-server-standard-3.0.0.jar.md5 /ragflow/
+COPY --from=infiniflow/ragflow_deps:latest /cl100k_base.tiktoken /ragflow/
+COPY --from=infiniflow/ragflow_deps:latest /chrome-linux64-121-0-6167-85 /tmp/chrome
+COPY --from=infiniflow/ragflow_deps:latest /chromedriver-linux64-121-0-6167-85 /tmp/chromedriver
+COPY --from=infiniflow/ragflow_deps:latest /libssl1.1_1.1.1f-1ubuntu2_amd64.deb /tmp/
+
+RUN cp /huggingface.co/InfiniFlow/huqie/huqie.txt.trie /ragflow/rag/res/ && \
+    mkdir -p /ragflow/rag/res/deepdoc && \
+    tar --exclude='.*' -cf - \
+        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
+        /huggingface.co/InfiniFlow/deepdoc | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc && \
+    tar -cf - /huggingface.co/BAAI /huggingface.co/maidalun1020 | tar -xf - --strip-components=2 -C /root/.ragflow && \
+    unzip -q /tmp/chrome/chrome-linux64.zip -d /opt/ && \
+    ln -s /opt/chrome-linux64/chrome /usr/local/bin/google-chrome && \
+    unzip -j /tmp/chromedriver/chromedriver-linux64.zip chromedriver-linux64/chromedriver -d /usr/local/bin && \
+    dpkg -i /tmp/libssl1.1_1.1.1f-1ubuntu2_amd64.deb || true
+
+# ---------------------------
+# Builder Stage
+# ---------------------------
+FROM deps AS builder
+
+WORKDIR /ragflow
+COPY pyproject.toml uv.lock ./
+RUN uv sync --python 3.10 --frozen --all-extras
+
+COPY web web
+COPY docs docs
+RUN cd web && npm install && npm run build
+
+COPY .git /ragflow/.git
+RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
+    echo "RAGFlow version: $version_info" > /ragflow/VERSION
+
+# ---------------------------
+# Production Stage
+# ---------------------------
+FROM base AS production
+
+WORKDIR /ragflow
+ENV VIRTUAL_ENV=/ragflow/.venv
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+
+ENV PYTHONPATH=/ragflow/
+
+COPY web web
+COPY api api
+COPY conf conf
+COPY deepdoc deepdoc
+COPY rag rag
+COPY agent agent
+COPY graphrag graphrag
+COPY agentic_reasoning agentic_reasoning
+COPY pyproject.toml uv.lock ./
+
+COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
+COPY docker/entrypoint.sh ./
+RUN chmod +x ./entrypoint.sh
+
+COPY --from=builder /ragflow/web/dist /ragflow/web/dist
+COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+
+EXPOSE 80
+ENTRYPOINT ["./entrypoint.sh"]
