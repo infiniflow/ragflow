@@ -29,7 +29,7 @@ The page rank value must be an integer. Range: [0,100]
 :::
 
 :::tip NOTE
-If you set the page rank value to 1.7, it will be rounded down to 1.
+If you set the page rank value to a non-integer, say 1.7, it will be rounded down to the nearest integer, which in this case is 1.
 :::
 
 ## Mechanism
