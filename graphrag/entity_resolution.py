@@ -111,7 +111,7 @@ class EntityResolution(Extractor):
         connect_graph.add_edges_from(resolution_result)
         async with trio.open_nursery() as nursery:
             for sub_connect_graph in nx.connected_components(connect_graph):
-                merging_nodes = list(sub_connect_graph)
+                merging_nodes = list(sub_connect_graph.nodes())
                 nursery.start_soon(lambda: self._merge_graph_nodes(graph, merging_nodes, change))
 
         # Update pagerank
