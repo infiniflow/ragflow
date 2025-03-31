@@ -31,7 +31,7 @@ from api.utils.api_utils import get_result
 @token_required
 def create(tenant_id):
     req = request.json
-    ids = [i for i in req.get("dataset_ids", []) if i]
+    ids = [i for i in req.get("dataset_ids", []) if i] 
     for kb_id in ids:
         kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
         if not kbs:
@@ -40,6 +40,7 @@ def create(tenant_id):
         kb = kbs[0]
         if kb.chunk_num == 0:
             return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+    
     kbs = KnowledgebaseService.get_by_ids(ids) if ids else []
     embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
     embd_count = list(set(embd_ids))
@@ -176,6 +177,7 @@ def update(tenant_id, chat_id):
                 kb = kbs[0]
                 if kb.chunk_num == 0:
                     return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+                
             kbs = KnowledgebaseService.get_by_ids(ids)
             embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
             embd_count = list(set(embd_ids))
@@ -318,7 +320,7 @@ def list_chat(tenant_id):
         for kb_id in res["kb_ids"]:
             kb = KnowledgebaseService.query(id=kb_id)
             if not kb:
-                logging.WARN(f"Don't exist the kb {kb_id}")
+                logging.warning(f"The kb {kb_id} does not exist.")
                 continue
             kb_list.append(kb[0].to_json())
         del res["kb_ids"]

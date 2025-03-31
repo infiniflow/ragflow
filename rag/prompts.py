@@ -16,16 +16,15 @@
 import datetime
 import json
 import logging
-import os
 import re
 from collections import defaultdict
+
 import json_repair
+
+from api import settings
 from api.db import LLMType
-from api.db.services.document_service import DocumentService
-from api.db.services.llm_service import TenantLLMService, LLMBundle
-from api.utils.file_utils import get_project_base_directory
 from rag.settings import TAG_FLD
-from rag.utils import num_tokens_from_string, encoder
+from rag.utils import encoder, num_tokens_from_string
 
 
 def chunks_format(reference):
@@ -45,10 +44,12 @@ def chunks_format(reference):
 
 
 def llm_id2llm_type(llm_id):
+    from api.db.services.llm_service import TenantLLMService
+
     llm_id, _ = TenantLLMService.split_model_name_and_factory(llm_id)
-    fnm = os.path.join(get_project_base_directory(), "conf")
-    llm_factories = json.load(open(os.path.join(fnm, "llm_factories.json"), "r"))
-    for llm_factory in llm_factories["factory_llm_infos"]:
+
+    llm_factories = settings.FACTORY_LLM_INFOS
+    for llm_factory in llm_factories:
         for llm in llm_factory["llm"]:
             if llm_id == llm["llm_name"]:
                 return llm["model_type"].strip(",")[-1]
@@ -93,6 +94,8 @@ def message_fit_in(msg, max_length=4000):
 
 
 def kb_prompt(kbinfos, max_tokens):
+    from api.db.services.document_service import DocumentService
+
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
     used_token_count = 0
     chunks_num = 0
@@ -108,33 +111,74 @@ def kb_prompt(kbinfos, max_tokens):
     docs = {d.id: d.meta_fields for d in docs}
 
     doc2chunks = defaultdict(lambda: {"chunks": [], "meta": []})
-    for ck in kbinfos["chunks"][:chunks_num]:
-        doc2chunks[ck["docnm_kwd"]]["chunks"].append((f"URL: {ck['url']}\n" if "url" in ck else "") + ck["content_with_weight"])
+    for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
+        doc2chunks[ck["docnm_kwd"]]["chunks"].append((f"URL: {ck['url']}\n" if "url" in ck else "") + f"ID: {i}\n" + ck["content_with_weight"])
         doc2chunks[ck["docnm_kwd"]]["meta"] = docs.get(ck["doc_id"], {})
 
     knowledges = []
     for nm, cks_meta in doc2chunks.items():
-        txt = f"Document: {nm} \n"
+        txt = f"\nDocument: {nm} \n"
         for k, v in cks_meta["meta"].items():
             txt += f"{k}: {v}\n"
         txt += "Relevant fragments as following:\n"
         for i, chunk in enumerate(cks_meta["chunks"], 1):
-            txt += f"{i}. {chunk}\n"
+            txt += f"{chunk}\n"
         knowledges.append(txt)
     return knowledges
 
 
+def citation_prompt():
+    return """
+
+# Citation requirements:
+- Inserts CITATIONS in format '##i$$ ##j$$' where i,j are the ID of the content you are citing and encapsulated with '##' and '$$'.
+- Inserts the CITATION symbols at the end of a sentence, AND NO MORE than 4 citations.
+- DO NOT insert CITATION in the answer if the content is not from retrieved chunks.
+
+--- Example START ---
+<SYSTEM>: Here is the knowledge base:
+
+Document: Elon Musk Breaks Silence on Crypto, Warns Against Dogecoin ...
+URL: https://blockworks.co/news/elon-musk-crypto-dogecoin
+ID: 0
+The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it’s still his favorite crypto...
+
+Document: Elon Musk's Dogecoin tweet sparks social media frenzy
+ID: 1
+Musk said he is 'willing to serve' D.O.G.E. – shorthand for Dogecoin.
+
+Document: Causal effect of Elon Musk tweets on Dogecoin price
+ID: 2
+If you think of Dogecoin — the cryptocurrency based on a meme — you can’t help but also think of Elon Musk...
+
+Document: Elon Musk's Tweet Ignites Dogecoin's Future In Public Services
+ID: 3
+The market is heating up after Elon Musk's announcement about Dogecoin. Is this a new era for crypto?...
+
+      The above is the knowledge base.
+
+<USER>: What's the Elon's view on dogecoin?
+
+<ASSISTANT>: Musk has consistently expressed his fondness for Dogecoin, often citing its humor and the inclusion of dogs in its branding. He has referred to it as his favorite cryptocurrency ##0$$ ##1$$.
+Recently, Musk has hinted at potential future roles for Dogecoin. His tweets have sparked speculation about Dogecoin's potential integration into public services ##3$$.
+Overall, while Musk enjoys Dogecoin and often promotes it, he also warns against over-investing in it, reflecting both his personal amusement and caution regarding its speculative nature.
+
+--- Example END ---
+
+"""
+
+
 def keyword_extraction(chat_mdl, content, topn=3):
     prompt = f"""
-Role: You're a text analyzer. 
+Role: You're a text analyzer.
 Task: extract the most important keywords/phrases of a given piece of text content.
-Requirements: 
+Requirements:
   - Summarize the text content, and give top {topn} important keywords/phrases.
   - The keywords MUST be in language of the given piece of text content.
   - The keywords are delimited by ENGLISH COMMA.
   - Keywords ONLY in output.
 
-### Text Content 
+### Text Content
 {content}
 
 """
@@ -154,9 +198,9 @@ Requirements:
 
 def question_proposal(chat_mdl, content, topn=3):
     prompt = f"""
-Role: You're a text analyzer. 
+Role: You're a text analyzer.
 Task:  propose {topn} questions about a given piece of text content.
-Requirements: 
+Requirements:
   - Understand and summarize the text content, and propose top {topn} important questions.
   - The questions SHOULD NOT have overlapping meanings.
   - The questions SHOULD cover the main content of the text as much as possible.
@@ -164,7 +208,7 @@ Requirements:
   - One question per line.
   - Question ONLY in output.
 
-### Text Content 
+### Text Content
 {content}
 
 """
@@ -183,6 +227,8 @@ Requirements:
 
 
 def full_question(tenant_id, llm_id, messages, language=None):
+    from api.db.services.llm_service import LLMBundle
+
     if llm_id2llm_type(llm_id) == "image2text":
         chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
@@ -199,7 +245,7 @@ def full_question(tenant_id, llm_id, messages, language=None):
     prompt = f"""
 Role: A helpful assistant
 
-Task and steps: 
+Task and steps:
     1. Generate a full user question that would follow the conversation.
     2. If the user's question involves relative date, you need to convert it into absolute date based on the current date, which is {today}. For example: 'yesterday' would be converted to {yesterday}.
 
@@ -260,11 +306,11 @@ Output: What's the weather in Rochester on {tomorrow}?
 
 def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
     prompt = f"""
-Role: You're a text analyzer. 
+Role: You're a text analyzer.
 
 Task: Tag (put on some labels) to a given piece of text content based on the examples and the entire tag set.
 
-Steps:: 
+Steps::
   - Comprehend the tag/label set.
   - Comprehend examples which all consist of both text content and assigned tags with relevance score in format of JSON.
   - Summarize the text content, and tag it with top {topn} most relevant tags from the set of tag/label and the corresponding relevance score.
@@ -318,3 +364,57 @@ Output:
         except Exception as e:
             logging.exception(f"JSON parsing error: {result} -> {e}")
             raise e
+
+
+def vision_llm_describe_prompt(page=None) -> str:
+    prompt_en = """
+INSTRUCTION:
+Transcribe the content from the provided PDF page image into clean Markdown format.
+- Only output the content transcribed from the image.
+- Do NOT output this instruction or any other explanation.
+- If the content is missing or you do not understand the input, return an empty string.
+
+RULES:
+1. Do NOT generate examples, demonstrations, or templates.
+2. Do NOT output any extra text such as 'Example', 'Example Output', or similar.
+3. Do NOT generate any tables, headings, or content that is not explicitly present in the image.
+4. Transcribe content word-for-word. Do NOT modify, translate, or omit any content.
+5. Do NOT explain Markdown or mention that you are using Markdown.
+6. Do NOT wrap the output in ```markdown or ``` blocks.
+7. Only apply Markdown structure to headings, paragraphs, lists, and tables, strictly based on the layout of the image. Do NOT create tables unless an actual table exists in the image.
+8. Preserve the original language, information, and order exactly as shown in the image.
+"""
+
+    if page is not None:
+        prompt_en += f"\nAt the end of the transcription, add the page divider: `--- Page {page} ---`."
+
+    prompt_en += """
+FAILURE HANDLING:
+- If you do not detect valid content in the image, return an empty string.
+"""
+    return prompt_en
+
+
+def vision_llm_figure_describe_prompt() -> str:
+    prompt = """
+You are an expert visual data analyst. Analyze the image and provide a comprehensive description of its content. Focus on identifying the type of visual data representation (e.g., bar chart, pie chart, line graph, table, flowchart), its structure, and any text captions or labels included in the image.
+
+Tasks:
+1. Describe the overall structure of the visual representation. Specify if it is a chart, graph, table, or diagram.
+2. Identify and extract any axes, legends, titles, or labels present in the image. Provide the exact text where available.
+3. Extract the data points from the visual elements (e.g., bar heights, line graph coordinates, pie chart segments, table rows and columns).
+4. Analyze and explain any trends, comparisons, or patterns shown in the data.
+5. Capture any annotations, captions, or footnotes, and explain their relevance to the image.
+6. Only include details that are explicitly present in the image. If an element (e.g., axis, legend, or caption) does not exist or is not visible, do not mention it.
+
+Output format (include only sections relevant to the image content):
+- Visual Type: [Type]
+- Title: [Title text, if available]
+- Axes / Legends / Labels: [Details, if available]
+- Data Points: [Extracted data]
+- Trends / Insights: [Analysis and interpretation]
+- Captions / Annotations: [Text and relevance, if available]
+
+Ensure high accuracy, clarity, and completeness in your analysis, and includes only the information present in the image. Avoid unnecessary statements about missing elements.
+"""
+    return prompt

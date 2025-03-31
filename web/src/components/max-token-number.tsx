@@ -1,3 +1,4 @@
+
 import { useTranslate } from '@/hooks/common-hooks';
 import { Flex, Form, InputNumber, Slider } from 'antd';
 
@@ -6,7 +7,7 @@ interface IProps {
   max?: number;
 }
 
-const MaxTokenNumber = ({ initialValue = 128, max = 8000 }: IProps) => {
+const MaxTokenNumber = ({ initialValue = 512, max = 2048 }: IProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
 
   return (

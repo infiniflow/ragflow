@@ -14,11 +14,16 @@
 #  limitations under the License.
 #
 
+
 import pytest
-from common import delete_dataset
+from common import batch_create_datasets, delete_dataset
 
 
-@pytest.fixture(scope="function", autouse=True)
-def clear_datasets(get_http_api_auth):
-    yield
-    delete_dataset(get_http_api_auth)
+@pytest.fixture(scope="class")
+def get_dataset_ids(get_http_api_auth, request):
+    def cleanup():
+        delete_dataset(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    return batch_create_datasets(get_http_api_auth, 5)

@@ -489,7 +489,7 @@ def upload():
                 doc = doc.to_dict()
                 doc["tenant_id"] = tenant_id
                 bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
-                queue_tasks(doc, bucket, name)
+                queue_tasks(doc, bucket, name, 0)
             except Exception as e:
                 return server_error_response(e)
 

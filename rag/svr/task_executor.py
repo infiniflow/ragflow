@@ -20,15 +20,9 @@ import random
 import sys
 
 from api.utils.log_utils import initRootLogger, get_project_base_directory
-from graphrag.general.index import WithCommunity, WithResolution, Dealer
-from graphrag.light.graph_extractor import GraphExtractor as LightKGExt
-from graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
+from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.prompts import keyword_extraction, question_proposal, content_tagging
-
-CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
-CONSUMER_NAME = "task_executor_" + CONSUMER_NO
-initRootLogger(CONSUMER_NAME)
 
 import logging
 import os
@@ -42,9 +36,10 @@ from io import BytesIO
 from multiprocessing.context import TimeoutError
 from timeit import default_timer as timer
 import tracemalloc
-import resource
 import signal
 import trio
+import exceptiongroup
+import faulthandler
 
 import numpy as np
 from peewee import DoesNotExist
@@ -61,8 +56,8 @@ from rag.app import laws, paper, presentation, manual, qa, table, book, resume, 
     email, tag
 from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
-from rag.settings import DOC_MAXIMUM_SIZE, SVR_QUEUE_NAME, print_rag_settings, TAG_FLD, PAGERANK_FLD
-from rag.utils import num_tokens_from_string
+from rag.settings import DOC_MAXIMUM_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
+from rag.utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
@@ -89,7 +84,9 @@ FACTORY = {
 }
 
 UNACKED_ITERATOR = None
-CONSUMER_NAME = "task_consumer_" + CONSUMER_NO
+
+CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
+CONSUMER_NAME = "task_executor_" + CONSUMER_NO
 BOOT_AT = datetime.now().astimezone().isoformat(timespec="milliseconds")
 PENDING_TASKS = 0
 LAG_TASKS = 0
@@ -102,6 +99,7 @@ MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
 task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
 chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
+
 
 # SIGUSR1 handler: start tracemalloc and take snapshot
 def start_tracemalloc_and_snapshot(signum, frame):
@@ -118,7 +116,13 @@ def start_tracemalloc_and_snapshot(signum, frame):
     snapshot = tracemalloc.take_snapshot()
     snapshot.dump(snapshot_file)
     current, peak = tracemalloc.get_traced_memory()
-    max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if sys.platform == "win32":
+        import  psutil
+        process = psutil.Process()
+        max_rss = process.memory_info().rss / 1024
+    else:
+        import resource
+        max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     logging.info(f"taken snapshot {snapshot_file}. max RSS={max_rss / 1000:.2f} MB, current memory usage: {current / 10**6:.2f} MB, Peak memory usage: {peak / 10**6:.2f} MB")
 
 # SIGUSR2 handler: stop tracemalloc
@@ -135,48 +139,56 @@ class TaskCanceledException(Exception):
 
 
 def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
-    if prog is not None and prog < 0:
-        msg = "[ERROR]" + msg
-    cancel = TaskService.do_cancel(task_id)
+    try:
+        if prog is not None and prog < 0:
+            msg = "[ERROR]" + msg
+        cancel = TaskService.do_cancel(task_id)
 
-    if cancel:
-        msg += " [Canceled]"
-        prog = -1
+        if cancel:
+            msg += " [Canceled]"
+            prog = -1
 
-    if to_page > 0:
+        if to_page > 0:
+            if msg:
+                if from_page < to_page:
+                    msg = f"Page({from_page + 1}~{to_page + 1}): " + msg
         if msg:
-            if from_page < to_page:
-                msg = f"Page({from_page + 1}~{to_page + 1}): " + msg
-    if msg:
-        msg = datetime.now().strftime("%H:%M:%S") + " " + msg
-    d = {"progress_msg": msg}
-    if prog is not None:
-        d["progress"] = prog
+            msg = datetime.now().strftime("%H:%M:%S") + " " + msg
+        d = {"progress_msg": msg}
+        if prog is not None:
+            d["progress"] = prog
 
-    logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
-    TaskService.update_progress(task_id, d)
+        TaskService.update_progress(task_id, d)
 
-    close_connection()
-    if cancel:
-        raise TaskCanceledException(msg)
+        close_connection()
+        if cancel:
+            raise TaskCanceledException(msg)
+        logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
+    except DoesNotExist:
+        logging.warning(f"set_progress({task_id}) got exception DoesNotExist")
+    except Exception:
+        logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception")
 
 async def collect():
     global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS
     global UNACKED_ITERATOR
+    svr_queue_names = get_svr_queue_names()
     try:
         if not UNACKED_ITERATOR:
-            UNACKED_ITERATOR = REDIS_CONN.get_unacked_iterator(SVR_QUEUE_NAME, "rag_flow_svr_task_broker", CONSUMER_NAME)
+            UNACKED_ITERATOR = REDIS_CONN.get_unacked_iterator(svr_queue_names, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
         try:
             redis_msg = next(UNACKED_ITERATOR)
         except StopIteration:
-            redis_msg = REDIS_CONN.queue_consumer(SVR_QUEUE_NAME, "rag_flow_svr_task_broker", CONSUMER_NAME)
-        if not redis_msg:
-            await trio.sleep(1)
-            return None, None
+            for svr_queue_name in svr_queue_names:
+                redis_msg = REDIS_CONN.queue_consumer(svr_queue_name, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
+                if redis_msg:
+                    break
     except Exception:
         logging.exception("collect got exception")
         return None, None
 
+    if not redis_msg:
+        return None, None
     msg = redis_msg.get_message()
     if not msg:
         logging.error(f"collect got empty message of {redis_msg.get_msg_id()}")
@@ -347,6 +359,8 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], all_tags, {"topn": topn_tags})
             if not cached:
                 picked_examples = random.choices(examples, k=2) if len(examples)>2 else examples
+                if not picked_examples:
+                    picked_examples.append({"content": "This is an example", TAG_FLD: {'example': 1}})
                 async with chat_limiter:
                     cached = await trio.to_thread.run_sync(lambda: content_tagging(chat_mdl, d["content_with_weight"], all_tags, picked_examples, topn=topn_tags))
                 if cached:
@@ -390,7 +404,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
     cnts_ = np.array([])
     for i in range(0, len(cnts), batch_size):
-        vts, c = await trio.to_thread.run_sync(lambda: mdl.encode(cnts[i: i + batch_size]))
+        vts, c = await trio.to_thread.run_sync(lambda: mdl.encode([truncate(c, mdl.max_length-10) for c in cnts[i: i + batch_size]]))
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -453,24 +467,6 @@ async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
     return res, tk_count
 
 
-async def run_graphrag(row, chat_model, language, embedding_model, callback=None):
-    chunks = []
-    for d in settings.retrievaler.chunk_list(row["doc_id"], row["tenant_id"], [str(row["kb_id"])],
-                                             fields=["content_with_weight", "doc_id"]):
-        chunks.append((d["doc_id"], d["content_with_weight"]))
-
-    dealer = Dealer(LightKGExt if row["parser_config"]["graphrag"]["method"] != 'general' else GeneralKGExt,
-                    row["tenant_id"],
-                    str(row["kb_id"]),
-                    chat_model,
-                    chunks=chunks,
-                    language=language,
-                    entity_types=row["parser_config"]["graphrag"]["entity_types"],
-                    embed_bdl=embedding_model,
-                    callback=callback)
-    await dealer()
-
-
 async def do_handle_task(task):
     task_id = task["id"]
     task_from_page = task["from_page"]
@@ -521,29 +517,17 @@ async def do_handle_task(task):
         chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
     # Either using graphrag or Standard chunking methods
     elif task.get("task_type", "") == "graphrag":
+        global task_limiter
+        task_limiter = trio.CapacityLimiter(2)
         graphrag_conf = task_parser_config.get("graphrag", {})
         if not graphrag_conf.get("use_graphrag", False):
             return
         start_ts = timer()
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-        await run_graphrag(task, chat_model, task_language, embedding_model, progress_callback)
-        progress_callback(prog=1.0, msg="Knowledge Graph basic is done ({:.2f}s)".format(timer() - start_ts))
-        if graphrag_conf.get("resolution", False):
-            start_ts = timer()
-            with_res = WithResolution(
-                task["tenant_id"], str(task["kb_id"]), chat_model, embedding_model,
-                progress_callback
-            )
-            await with_res()
-            progress_callback(prog=1.0, msg="Knowledge Graph resolution is done ({:.2f}s)".format(timer() - start_ts))
-        if graphrag_conf.get("community", False):
-            start_ts = timer()
-            with_comm = WithCommunity(
-                task["tenant_id"], str(task["kb_id"]), chat_model, embedding_model,
-                progress_callback
-            )
-            await with_comm()
-            progress_callback(prog=1.0, msg="Knowledge Graph community is done ({:.2f}s)".format(timer() - start_ts))
+        with_resolution = graphrag_conf.get("resolution", False)
+        with_community = graphrag_conf.get("community", False)
+        await run_graphrag(task, task_language, with_resolution, with_community, chat_model, embedding_model, progress_callback)
+        progress_callback(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
         return
     else:
         # Standard chunking methods
@@ -610,6 +594,7 @@ async def handle_task():
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
+        await trio.sleep(5)
         return
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
@@ -622,7 +607,11 @@ async def handle_task():
         FAILED_TASKS += 1
         CURRENT_TASKS.pop(task["id"], None)
         try:
-            set_progress(task["id"], prog=-1, msg=f"[Exception]: {e}")
+            err_msg = str(e)
+            while isinstance(e, exceptiongroup.ExceptionGroup):
+                e = e.exceptions[0]
+                err_msg += ' -- ' + str(e)
+            set_progress(task["id"], prog=-1, msg=f"[Exception]: {err_msg}")
         except Exception:
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
@@ -635,7 +624,7 @@ async def report_status():
     while True:
         try:
             now = datetime.now()
-            group_info = REDIS_CONN.queue_info(SVR_QUEUE_NAME, "rag_flow_svr_task_broker")
+            group_info = REDIS_CONN.queue_info(get_svr_queue_name(0), SVR_CONSUMER_GROUP_NAME)
             if group_info is not None:
                 PENDING_TASKS = int(group_info.get("pending", 0))
                 LAG_TASKS = int(group_info.get("lag", 0))
@@ -673,8 +662,9 @@ async def main():
     logging.info(f'TaskExecutor: RAGFlow version: {get_ragflow_version()}')
     settings.init_settings()
     print_rag_settings()
-    signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)
-    signal.signal(signal.SIGUSR2, stop_tracemalloc)
+    if sys.platform != "win32":
+        signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)
+        signal.signal(signal.SIGUSR2, stop_tracemalloc)
     TRACE_MALLOC_ENABLED = int(os.environ.get('TRACE_MALLOC_ENABLED', "0"))
     if TRACE_MALLOC_ENABLED:
         start_tracemalloc_and_snapshot(None, None)
@@ -687,4 +677,6 @@ async def main():
     logging.error("BUG!!! You should not reach here!!!")
 
 if __name__ == "__main__":
+    faulthandler.enable()
+    initRootLogger(CONSUMER_NAME)
     trio.run(main)

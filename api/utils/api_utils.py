@@ -347,6 +347,11 @@ def valid_parameter(parameter, valid_values):
         return get_error_data_result(f"'{parameter}' is not in {valid_values}")
 
 
+def dataset_readonly_fields(field_name):
+    return field_name in ["chunk_count", "create_date", "create_time", "update_date", "update_time",
+                          "created_by", "document_count", "token_num", "status", "tenant_id", "id"]
+
+
 def get_parser_config(chunk_method, parser_config):
     if parser_config:
         return parser_config
@@ -394,9 +399,46 @@ def valid_parser_config(parser_config):
     for k in parser_config.keys():
         assert k in scopes, f"Abnormal 'parser_config'. Invalid key: {k}"
 
+    assert isinstance(parser_config.get("chunk_token_num", 1), int), "chunk_token_num should be int"
     assert 1 <= parser_config.get("chunk_token_num", 1) < 100000000, "chunk_token_num should be in range from 1 to 100000000"
+    assert isinstance(parser_config.get("task_page_size", 1), int), "task_page_size should be int"
     assert 1 <= parser_config.get("task_page_size", 1) < 100000000, "task_page_size should be in range from 1 to 100000000"
+    assert isinstance(parser_config.get("auto_keywords", 1), int), "auto_keywords should be int"
     assert 0 <= parser_config.get("auto_keywords", 0) < 32, "auto_keywords should be in range from 0 to 32"
+    assert isinstance(parser_config.get("auto_questions", 1), int), "auto_questions should be int"
     assert 0 <= parser_config.get("auto_questions", 0) < 10, "auto_questions should be in range from 0 to 10"
+    assert isinstance(parser_config.get("topn_tags", 1), int), "topn_tags should be int"
     assert 0 <= parser_config.get("topn_tags", 0) < 10, "topn_tags should be in range from 0 to 10"
     assert isinstance(parser_config.get("html4excel", False), bool), "html4excel should be True or False"
+    assert isinstance(parser_config.get("delimiter", ""), str), "delimiter should be str"
+
+
+def check_duplicate_ids(ids, id_type="item"):
+    """
+    Check for duplicate IDs in a list and return unique IDs and error messages.
+
+    Args: 
+        ids (list): List of IDs to check for duplicates
+        id_type (str): Type of ID for error messages (e.g., 'document', 'dataset', 'chunk')
+
+    Returns:
+        tuple: (unique_ids, error_messages)
+            - unique_ids (list): List of unique IDs
+            - error_messages (list): List of error messages for duplicate IDs
+    """
+    id_count = {}
+    duplicate_messages = []
+    
+    # Count occurrences of each ID
+    for id_value in ids:
+        id_count[id_value] = id_count.get(id_value, 0) + 1
+    
+    # Check for duplicates
+    for id_value, count in id_count.items():
+        if count > 1:
+            duplicate_messages.append(f"Duplicate {id_type} ids: {id_value}")
+    
+    # Return unique IDs and error messages
+    return list(set(ids)), duplicate_messages
+
+

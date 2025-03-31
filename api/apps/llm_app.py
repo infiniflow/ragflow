@@ -61,6 +61,7 @@ def set_api_key():
     msg = ""
     for llm in LLMService.query(fid=factory):
         if not embd_passed and llm.model_type == LLMType.EMBEDDING.value:
+            assert factory in EmbeddingModel, f"Embedding model from {factory} is not supported yet."
             mdl = EmbeddingModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
@@ -71,6 +72,7 @@ def set_api_key():
             except Exception as e:
                 msg += f"\nFail to access embedding model({llm.llm_name}) using this api key." + str(e)
         elif not chat_passed and llm.model_type == LLMType.CHAT.value:
+            assert factory in ChatModel, f"Chat model from {factory} is not supported yet."
             mdl = ChatModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
@@ -83,6 +85,7 @@ def set_api_key():
                 msg += f"\nFail to access model({llm.llm_name}) using this api key." + str(
                     e)
         elif not rerank_passed and llm.model_type == LLMType.RERANK:
+            assert factory in RerankModel, f"Re-rank model from {factory} is not supported yet."
             mdl = RerankModel[factory](
                 req["api_key"], llm.llm_name, base_url=req.get("base_url"))
             try:
@@ -135,6 +138,8 @@ def set_api_key():
 def add_llm():
     req = request.json
     factory = req["llm_factory"]
+    api_key = req.get("api_key", "x")
+    llm_name = req.get("llm_name")
 
     def apikey_json(keys):
         nonlocal req
@@ -143,7 +148,6 @@ def add_llm():
     if factory == "VolcEngine":
         # For VolcEngine, due to its special authentication method
         # Assemble ark_api_key endpoint_id into api_key
-        llm_name = req["llm_name"]
         api_key = apikey_json(["ark_api_key", "endpoint_id"])
 
     elif factory == "Tencent Hunyuan":
@@ -157,51 +161,37 @@ def add_llm():
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
         # Assemble bedrock_ak, bedrock_sk, bedrock_region
-        llm_name = req["llm_name"]
         api_key = apikey_json(["bedrock_ak", "bedrock_sk", "bedrock_region"])
 
     elif factory == "LocalAI":
-        llm_name = req["llm_name"] + "___LocalAI"
-        api_key = "xxxxxxxxxxxxxxx"
+        llm_name += "___LocalAI"
 
     elif factory == "HuggingFace":
-        llm_name = req["llm_name"] + "___HuggingFace"
-        api_key = "xxxxxxxxxxxxxxx"
+        llm_name += "___HuggingFace"
 
     elif factory == "OpenAI-API-Compatible":
-        llm_name = req["llm_name"] + "___OpenAI-API"
-        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
+        llm_name += "___OpenAI-API"
 
     elif factory == "VLLM":
-        llm_name = req["llm_name"] + "___VLLM"
-        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
+        llm_name += "___VLLM"
 
     elif factory == "XunFei Spark":
-        llm_name = req["llm_name"]
         if req["model_type"] == "chat":
-            api_key = req.get("spark_api_password", "xxxxxxxxxxxxxxx")
+            api_key = req.get("spark_api_password", "")
         elif req["model_type"] == "tts":
             api_key = apikey_json(["spark_app_id", "spark_api_secret", "spark_api_key"])
 
     elif factory == "BaiduYiyan":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["yiyan_ak", "yiyan_sk"])
 
     elif factory == "Fish Audio":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["fish_audio_ak", "fish_audio_refid"])
 
     elif factory == "Google Cloud":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["google_project_id", "google_region", "google_service_account_key"])
 
     elif factory == "Azure-OpenAI":
-        llm_name = req["llm_name"]
         api_key = apikey_json(["api_key", "api_version"])
-
-    else:
-        llm_name = req["llm_name"]
-        api_key = req.get("api_key", "xxxxxxxxxxxxxxx")
 
     llm = {
         "tenant_id": current_user.id,
@@ -216,6 +206,7 @@ def add_llm():
     msg = ""
     mdl_nm = llm["llm_name"].split("___")[0]
     if llm["model_type"] == LLMType.EMBEDDING.value:
+        assert factory in EmbeddingModel, f"Embedding model from {factory} is not supported yet."
         mdl = EmbeddingModel[factory](
             key=llm['api_key'],
             model_name=mdl_nm,
@@ -227,6 +218,7 @@ def add_llm():
         except Exception as e:
             msg += f"\nFail to access embedding model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.CHAT.value:
+        assert factory in ChatModel, f"Chat model from {factory} is not supported yet."
         mdl = ChatModel[factory](
             key=llm['api_key'],
             model_name=mdl_nm,
@@ -241,6 +233,7 @@ def add_llm():
             msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.RERANK:
+        assert factory in RerankModel, f"RE-rank model from {factory} is not supported yet."
         try:
             mdl = RerankModel[factory](
                 key=llm["api_key"],
@@ -256,6 +249,7 @@ def add_llm():
             msg += f"\nFail to access model({mdl_nm})." + str(
                 e)
     elif llm["model_type"] == LLMType.IMAGE2TEXT.value:
+        assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
         mdl = CvModel[factory](
             key=llm["api_key"],
             model_name=mdl_nm,
@@ -269,6 +263,7 @@ def add_llm():
         except Exception as e:
             msg += f"\nFail to access model({mdl_nm})." + str(e)
     elif llm["model_type"] == LLMType.TTS:
+        assert factory in TTSModel, f"TTS model from {factory} is not supported yet."
         mdl = TTSModel[factory](
             key=llm["api_key"], model_name=mdl_nm, base_url=llm["api_base"]
         )
@@ -351,8 +346,6 @@ def list_app():
 
         llm_set = set([m["llm_name"] + "@" + m["fid"] for m in llms])
         for o in objs:
-            if not o.api_key:
-                continue
             if o.llm_name + "@" + o.llm_factory in llm_set:
                 continue
             llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True})

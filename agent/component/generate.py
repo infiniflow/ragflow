@@ -216,6 +216,8 @@ class Generate(ComponentBase):
             return
 
         msg = self._canvas.get_history(self._param.message_history_window_size)
+        if msg and msg[0]['role'] == 'assistant':
+            msg.pop(0)
         if len(msg) < 1:
             msg.append({"role": "user", "content": "Output: "})
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))

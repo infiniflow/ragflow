@@ -15,18 +15,25 @@
 #
 import logging
 import re
-from threading import Lock
 import umap
 import numpy as np
 from sklearn.mixture import GaussianMixture
 import trio
 
-from graphrag.utils import get_llm_cache, get_embed_cache, set_embed_cache, set_llm_cache, chat_limiter
+from graphrag.utils import (
+    get_llm_cache,
+    get_embed_cache,
+    set_embed_cache,
+    set_llm_cache,
+    chat_limiter,
+)
 from rag.utils import truncate
 
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
-    def __init__(self, max_cluster, llm_model, embd_model, prompt, max_token=512, threshold=0.1):
+    def __init__(
+        self, max_cluster, llm_model, embd_model, prompt, max_token=512, threshold=0.1
+    ):
         self._max_cluster = max_cluster
         self._llm_model = llm_model
         self._embd_model = embd_model
@@ -34,22 +41,24 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         self._prompt = prompt
         self._max_token = max_token
 
-    def _chat(self, system, history, gen_conf):
+    async def _chat(self, system, history, gen_conf):
         response = get_llm_cache(self._llm_model.llm_name, system, history, gen_conf)
         if response:
             return response
-        response = self._llm_model.chat(system, history, gen_conf)
+        response = await trio.to_thread.run_sync(
+            lambda: self._llm_model.chat(system, history, gen_conf)
+        )
         response = re.sub(r"<think>.*</think>", "", response, flags=re.DOTALL)
         if response.find("**ERROR**") >= 0:
             raise Exception(response)
         set_llm_cache(self._llm_model.llm_name, system, response, history, gen_conf)
         return response
 
-    def _embedding_encode(self, txt):
+    async def _embedding_encode(self, txt):
         response = get_embed_cache(self._embd_model.llm_name, txt)
         if response is not None:
             return response
-        embds, _ = self._embd_model.encode([txt])
+        embds, _ = await trio.to_thread.run_sync(lambda: self._embd_model.encode([txt]))
         if len(embds) < 1 or len(embds[0]) < 1:
             raise Exception("Embedding error: ")
         embds = embds[0]
@@ -74,36 +83,48 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             return []
         chunks = [(s, a) for s, a in chunks if s and len(a) > 0]
 
-        async def summarize(ck_idx, lock):
+        async def summarize(ck_idx: list[int]):
             nonlocal chunks
-            try:
-                texts = [chunks[i][0] for i in ck_idx]
-                len_per_chunk = int((self._llm_model.max_length - self._max_token) / len(texts))
-                cluster_content = "\n".join([truncate(t, max(1, len_per_chunk)) for t in texts])
-                async with chat_limiter:
-                    cnt = await trio.to_thread.run_sync(lambda: self._chat("You're a helpful assistant.",
-                                            [{"role": "user",
-                                                "content": self._prompt.format(cluster_content=cluster_content)}],
-                                            {"temperature": 0.3, "max_tokens": self._max_token}
-                                            ))
-                cnt = re.sub("(······\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?)", "",
-                             cnt)
-                logging.debug(f"SUM: {cnt}")
-                embds, _ = self._embd_model.encode([cnt])
-                with lock:
-                    chunks.append((cnt, self._embedding_encode(cnt)))
-            except Exception as e:
-                logging.exception("summarize got exception")
-                return e
+            texts = [chunks[i][0] for i in ck_idx]
+            len_per_chunk = int(
+                (self._llm_model.max_length - self._max_token) / len(texts)
+            )
+            cluster_content = "\n".join(
+                [truncate(t, max(1, len_per_chunk)) for t in texts]
+            )
+            async with chat_limiter:
+                cnt = await self._chat(
+                    "You're a helpful assistant.",
+                    [
+                        {
+                            "role": "user",
+                            "content": self._prompt.format(
+                                cluster_content=cluster_content
+                            ),
+                        }
+                    ],
+                    {"temperature": 0.3, "max_tokens": self._max_token},
+                )
+            cnt = re.sub(
+                "(······\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?)",
+                "",
+                cnt,
+            )
+            logging.debug(f"SUM: {cnt}")
+            embds = await self._embedding_encode(cnt)
+            chunks.append((cnt, embds))
 
         labels = []
-        lock = Lock()
         while end - start > 1:
-            embeddings = [embd for _, embd in chunks[start: end]]
+            embeddings = [embd for _, embd in chunks[start:end]]
             if len(embeddings) == 2:
-                await summarize([start, start + 1], lock)
+                await summarize([start, start + 1])
                 if callback:
-                    callback(msg="Cluster one layer: {} -> {}".format(end - start, len(chunks) - end))
+                    callback(
+                        msg="Cluster one layer: {} -> {}".format(
+                            end - start, len(chunks) - end
+                        )
+                    )
                 labels.extend([0, 0])
                 layers.append((end, len(chunks)))
                 start = end
@@ -112,7 +133,9 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
             n_neighbors = int((len(embeddings) - 1) ** 0.8)
             reduced_embeddings = umap.UMAP(
-                n_neighbors=max(2, n_neighbors), n_components=min(12, len(embeddings) - 2), metric="cosine"
+                n_neighbors=max(2, n_neighbors),
+                n_components=min(12, len(embeddings) - 2),
+                metric="cosine",
             ).fit_transform(embeddings)
             n_clusters = self._get_optimal_clusters(reduced_embeddings, random_state)
             if n_clusters == 1:
@@ -127,18 +150,22 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             async with trio.open_nursery() as nursery:
                 for c in range(n_clusters):
                     ck_idx = [i + start for i in range(len(lbls)) if lbls[i] == c]
-                    if not ck_idx:
-                        continue
+                    assert len(ck_idx) > 0
                     async with chat_limiter:
-                        nursery.start_soon(lambda: summarize(ck_idx, lock))
+                        nursery.start_soon(lambda: summarize(ck_idx))
 
-            assert len(chunks) - end == n_clusters, "{} vs. {}".format(len(chunks) - end, n_clusters)
+            assert len(chunks) - end == n_clusters, "{} vs. {}".format(
+                len(chunks) - end, n_clusters
+            )
             labels.extend(lbls)
             layers.append((end, len(chunks)))
             if callback:
-                callback(msg="Cluster one layer: {} -> {}".format(end - start, len(chunks) - end))
+                callback(
+                    msg="Cluster one layer: {} -> {}".format(
+                        end - start, len(chunks) - end
+                    )
+                )
             start = end
             end = len(chunks)
 
         return chunks
-

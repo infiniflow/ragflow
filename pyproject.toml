@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.17.0"
+version = "0.17.2"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [
     { name = "Zhichang Yu", email = "yuzhichang@gmail.com" }
@@ -124,6 +124,8 @@ dependencies = [
     "flasgger>=0.9.7.1,<0.10.0",
     "xxhash>=3.5.0,<4.0.0",
     "trio>=0.29.0",
+    "langfuse>=2.60.0",
+    "debugpy>=1.8.13",
 ]
 
 [project.optional-dependencies]
@@ -136,5 +138,19 @@ full = [
     "transformers>=4.35.0,<5.0.0"
 ]
 
+[tool.setuptools]
+packages = ['rag', 'api', 'sdk', 'helm','agent', 'deepdoc', 'graphrag', 'flask_session', 'intergrations', 'agentic_reasoning']
+
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
+
+[tool.ruff]
+line-length = 200
+exclude = [
+    ".venv",
+    "rag/svr/discord_svr.py",
+]
+
+[tool.ruff.lint]
+extend-select = ["ASYNC", "ASYNC1"]
+ignore = ["E402"]

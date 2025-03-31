@@ -50,26 +50,29 @@ class CategorizeParam(GenerateParam):
         for c, desc in self.category_description.items():
             if desc.get("description"):
                 descriptions.append(
-                    "--------------------\nCategory: {}\nDescription: {}\n".format(c, desc["description"]))
+                    "\nCategory: {}\nDescription: {}".format(c, desc["description"]))
 
         self.prompt = """
-        You're a text classifier. You need to categorize the user’s questions into {} categories, 
-        namely: {}
-        Here's description of each category:
-        {}
+Role: You're a text classifier. 
+Task: You need to categorize the user’s questions into {} categories, namely: {}
 
-        You could learn from the following examples:
-        {}
-        You could learn from the above examples.
-        Just mention the category names, no need for any additional words.
-        
-        ---- Real Data ----
-        {}
+Here's description of each category:
+{}
+
+You could learn from the following examples:
+{}
+You could learn from the above examples.
+
+Requirements:
+- Just mention the category names, no need for any additional words.
+
+---- Real Data ----
+USER: {}\n
         """.format(
             len(self.category_description.keys()),
             "/".join(list(self.category_description.keys())),
             "\n".join(descriptions),
-            "- ".join(cate_lines),
+            "\n\n- ".join(cate_lines),
             chat_hist
         )
         return self.prompt
@@ -84,10 +87,17 @@ class Categorize(Generate, ABC):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         ans = chat_mdl.chat(self._param.get_prompt(input), [{"role": "user", "content": "\nCategory: "}],
                             self._param.gen_conf())
-        logging.debug(f"input: {input}, answer: {str(ans)}")
+        logging.debug(f"input: {input}, answer: {str(ans)}")    
+        # Count the number of times each category appears in the answer.
+        category_counts = {}
         for c in self._param.category_description.keys():
-            if ans.lower().find(c.lower()) >= 0:
-                return Categorize.be_output(self._param.category_description[c]["to"])
+            count = ans.lower().count(c.lower())
+            category_counts[c] = count
+            
+        # If a category is found, return the category with the highest count.
+        if any(category_counts.values()):
+            max_category = max(category_counts.items(), key=lambda x: x[1])
+            return Categorize.be_output(self._param.category_description[max_category[0]]["to"])
 
         return Categorize.be_output(list(self._param.category_description.items())[-1][1]["to"])
 

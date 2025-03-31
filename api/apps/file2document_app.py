@@ -38,8 +38,12 @@ def convert():
     file2documents = []
 
     try:
+        files = FileService.get_by_ids(file_ids)
+        files_set = dict({file.id: file for file in files})
         for file_id in file_ids:
-            e, file = FileService.get_by_id(file_id)
+            file = files_set[file_id]
+            if not file:
+                return get_data_error_result(message="File not found!")
             file_ids_list = [file_id]
             if file.type == FileType.FOLDER.value:
                 file_ids_list = FileService.get_all_innermost_file_ids(file_id, [])
@@ -86,6 +90,7 @@ def convert():
                         "file_id": id,
                         "document_id": doc.id,
                     })
+
                     file2documents.append(file2document.to_json())
         return get_json_result(data=file2documents)
     except Exception as e:

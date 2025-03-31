@@ -39,7 +39,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abnormal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation.
 
-   RAGFlow v0.17.0 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.17.2 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -179,17 +179,21 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    $ cd ragflow/docker
-   $ git checkout -f v0.17.0
+   $ git checkout -f v0.17.2
    ```
 
 3. Use the pre-built Docker images and start up the server:
 
    :::tip NOTE
-   The command below downloads the `v0.17.0-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.17.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.0` for the full edition `v0.17.0`.
+   The command below downloads the `v0.17.2-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.17.2-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.2` for the full edition `v0.17.2`.
    :::
 
    ```bash
+   # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
+
+   # To use GPU to accelerate embedding and DeepDoc tasks:
+   # docker compose -f docker-compose-gpu.yml up -d
    ```
 
 ```mdx-code-block
@@ -198,8 +202,8 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
 | RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
 | ------------------- | --------------- | ----------------------------------------- | ------------------------ |
-| `v0.17.0`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
-| `v0.17.0-slim`      | &approx;2       | ❌                                        | Stable release           |
+| `v0.17.2`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
+| `v0.17.2-slim`      | &approx;2       | ❌                                        | Stable release           |
 | `nightly`           | &approx;9       | :heavy_check_mark:                        | *Unstable* nightly build |
 | `nightly-slim`      | &approx;2       | ❌                                        | *Unstable* nightly build |
 
@@ -298,8 +302,8 @@ Once you have selected an embedding model and used it to parse a file, you are n
    _When the file parsing completes, its parsing status changes to **SUCCESS**._
 
 :::caution NOTE 
-- If your file parsing gets stuck at below 1%, see [this FAQ](https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent).
-- If your file parsing gets stuck at near completion, see [this FAQ](https://ragflow.io/docs/dev/faq#why-does-my-pdf-parsing-stall-near-completion-while-the-log-does-not-show-any-error)
+- If your file parsing gets stuck at below 1%, see [this FAQ](./faq.mdxfaq#why-does-my-document-parsing-stall-at-under-one-percent).
+- If your file parsing gets stuck at near completion, see [this FAQ](./faq.mdx#why-does-my-pdf-parsing-stall-near-completion-while-the-log-does-not-show-any-error)
 :::
 
 ## Intervene with file parsing

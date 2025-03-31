@@ -107,7 +107,7 @@ export default {
         'Lakukan tes pengambilan untuk memeriksa apakah RAGFlow dapat memulihkan konten yang diinginkan untuk LLM. ',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor. Jika kesamaan antara kueri dan potongan kurang dari ambang ini, potongan akan disaring.',
+        'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor. Jika kesamaan antara kueri dan potongan kurang dari ambang ini, potongan akan disaring. Secara default, ambang batas diatur ke 0,2. Itu berarti hanya potongan dengan skor kemiripan hibrida 20 atau lebih tinggi yang akan diambil.',
       vectorSimilarityWeight: 'Bobot kesamaan kata kunci',
       vectorSimilarityWeightTip:
         'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor atau skor rerank (0~1). Jumlah dari kedua bobot adalah 1.0.',
@@ -147,7 +147,7 @@ export default {
       changeSpecificCategory: 'Ubah kategori spesifik',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
-        'Dukungan untuk unggahan tunggal atau massal. Dilarang keras mengunggah data perusahaan atau file terlarang lainnya.',
+        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk demo.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
       chunk: 'Potongan',
       bulk: 'Massal',
       cancel: 'Batal',
@@ -156,7 +156,7 @@ export default {
       rerankTip: `Jika kosong. Ini menggunakan embedding dari kueri dan potongan untuk menghitung kesamaan kosinus vektor. Jika tidak, ini menggunakan skor rerank sebagai pengganti kesamaan kosinus vektor.`,
       topK: 'Top-K',
       topKTip: `K potongan akan dimasukkan ke dalam model rerank.`,
-      delimiter: `Pembatas`,
+      delimiter: `Pemisah untuk segmentasi teks`,
       html4excel: 'Excel ke HTML',
       html4excelTip: `Excel akan diparsing menjadi tabel HTML atau tidak. Jika FALSE, setiap baris di Excel akan dibentuk sebagai potongan.`,
     },
@@ -171,14 +171,14 @@ export default {
       languagePlaceholder: 'Silakan masukkan bahasa Anda!',
       permissions: 'Izin',
       embeddingModel: 'Model embedding',
-      chunkTokenNumber: 'Jumlah token potongan',
+      chunkTokenNumber: 'Ukuran potongan yang disarankan',
       chunkTokenNumberMessage: 'Jumlah token potongan diperlukan',
       embeddingModelTip:
         'Model embedding yang digunakan untuk embedding potongan. Tidak dapat diubah setelah basis pengetahuan memiliki potongan. Anda perlu menghapus semua potongan jika ingin mengubahnya.',
       permissionsTip:
         "Jika izinnya 'Tim', semua anggota tim dapat memanipulasi basis pengetahuan.",
       chunkTokenNumberTip:
-        'Ini menentukan jumlah token dari sebuah potongan secara kira-kira.',
+        'Ini menentukan jumlah token dari sebuah potongan secara kira-kira. Tidak ada blok baru yang akan dibuat kecuali jika sebuah pembatas ditemukan, bahkan jika ambang batas ini dilampaui.',
       chunkMethod: 'Metode potongan',
       chunkMethodTip: 'Instruksi ada di sebelah kanan.',
       upload: 'Unggah',
@@ -209,7 +209,7 @@ export default {
           Kami mengasumsikan manual memiliki struktur bagian hierarkis. Kami menggunakan judul bagian terendah sebagai poros untuk memotong dokumen.
           Jadi, gambar dan tabel dalam bagian yang sama tidak akan dipisahkan, dan ukuran potongan mungkin besar.
           </p>`,
-      naive: `<p>Format file yang didukung adalah <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML, HTML</b>.</p>
+      naive: `<p>Format file yang didukung adalah <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
           <p>Metode ini menerapkan cara naif untuk memotong file: </p>
           <p>
           <li>Teks berturut-turut akan dipotong menjadi potongan menggunakan model deteksi visual.</li>
@@ -291,7 +291,7 @@ export default {
       useRaptorTip:
         'Pemrosesan Abstraktif Rekursif untuk Pengambilan Terorganisasi Pohon, silakan merujuk ke https://huggingface.co/papers/2401.18059',
       prompt: 'Prompt',
-      promptTip: 'Prompt LLM yang digunakan untuk merangkas.',
+      promptTip: 'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
       promptText: `Silakan rangkum paragraf berikut. Berhati-hatilah dengan angka, jangan membuat hal-hal yang tidak ada. Paragraf sebagai berikut:
           {cluster_content}
@@ -355,7 +355,7 @@ export default {
       knowledgeBases: 'Basis Pengetahuan',
       knowledgeBasesMessage: 'Silakan pilih',
       knowledgeBasesTip: 'Pilih basis pengetahuan yang terkait.',
-      system: 'Sistem',
+      system: 'Prompt Sistem',
       systemInitialValue: `Anda adalah asisten cerdas. Silakan rangkum konten basis pengetahuan untuk menjawab pertanyaan. Silakan daftar data di basis pengetahuan dan jawab secara detail. Ketika semua konten basis pengetahuan tidak relevan dengan pertanyaan, jawaban Anda harus menyertakan kalimat "Jawaban yang Anda cari tidak ditemukan di basis pengetahuan!" Jawaban perlu mempertimbangkan riwayat obrolan.
           Berikut adalah basis pengetahuan:
           {knowledge}
@@ -367,9 +367,9 @@ export default {
       topNTip: `Tidak semua potongan yang skor kesamaannya di atas 'ambang kesamaan' akan diberikan ke LLM. LLM hanya dapat melihat potongan 'Top N' ini.`,
       variable: 'Variabel',
       variableTip: `Jika Anda menggunakan API dialog, variabel mungkin membantu Anda berbicara dengan klien Anda dengan strategi yang berbeda. 
-          Variabel digunakan untuk mengisi bagian 'Sistem' dalam prompt untuk memberikan petunjuk kepada LLM.
+          Variabel digunakan untuk mengisi bagian 'Prompt Sistem' dalam prompt untuk memberikan petunjuk kepada LLM.
           'knowledge' adalah variabel yang sangat khusus yang akan diisi dengan potongan yang diambil.
-          Semua variabel dalam 'Sistem' harus diberi kurung kurawal.`,
+          Semua variabel dalam 'Prompt Sistem' harus diberi kurung kurawal.`,
       add: 'Tambah',
       key: 'Kunci',
       optional: 'Opsional',
@@ -519,7 +519,7 @@ export default {
       img2txtModel: 'Model Img2txt',
       img2txtModelTip:
         'Model multi-modul default yang akan digunakan semua basis pengetahuan baru yang dibuat. Ini dapat menggambarkan gambar atau video.',
-      sequence2txtModel: 'Model Sequence2txt',
+      sequence2txtModel: 'Model Speech2txt',
       sequence2txtModelTip:
         'Model ASR default yang akan digunakan semua basis pengetahuan baru yang dibuat. Gunakan model ini untuk menerjemahkan suara ke teks yang sesuai.',
       rerankModel: 'Model Rerank',
@@ -652,7 +652,7 @@ export default {
       directory: 'Direktori',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
-        'Dukungan untuk unggahan tunggal atau massal. Dilarang keras mengunggah data perusahaan atau file terlarang lainnya.',
+        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk demo.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
       local: 'Unggahan lokal',
       s3: 'Unggahan S3',
       preview: 'Pratinjau',

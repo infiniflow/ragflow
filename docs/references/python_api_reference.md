@@ -18,6 +18,22 @@ pip install ragflow-sdk
 
 ---
 
+## ERROR CODES
+
+---
+
+| Code | Message              | Description                 |
+|------|----------------------|-----------------------------|
+| 400  | Bad Request          | Invalid request parameters  |
+| 401  | Unauthorized         | Unauthorized access         |
+| 403  | Forbidden            | Access denied               |
+| 404  | Not Found            | Resource not found          |
+| 500  | Internal Server Error| Server internal error       |
+| 1001 | Invalid Chunk ID     | Invalid Chunk ID            |
+| 1002 | Chunk Update Failed  | Chunk update failed         |
+
+---
+
 ## OpenAI-Compatible API
 
 ---
@@ -314,6 +330,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(name="kb_name")
+dataset = dataset[0]
 dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "chunk_method":"manual"})
 ```
 
@@ -875,11 +892,11 @@ The user query or query keywords. Defaults to `""`.
 
 ##### dataset_ids: `list[str]`, *Required*
 
-The IDs of the datasets to search. Defaults to `None`. If you do not set this argument, ensure that you set `document_ids`.
+The IDs of the datasets to search. Defaults to `None`. 
 
 ##### document_ids: `list[str]`
 
-The IDs of the documents to search. Defaults to `None`. You must ensure all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `dataset_ids`.
+The IDs of the documents to search. Defaults to `None`. You must ensure all selected documents use the same embedding model. Otherwise, an error will occur. 
 
 ##### page: `int`
 
@@ -990,8 +1007,6 @@ The LLM settings for the chat assistant to create. Defaults to `None`. When the 
   This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
 - `frequency penalty`: `float`  
   Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
-- `max_token`: `int`  
-  The maximum length of the model's output, measured in the number of tokens (words or pieces of words). Defaults to `512`. If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.
 
 ##### prompt: `Chat.Prompt`
 
@@ -1054,7 +1069,6 @@ A dictionary representing the attributes to update, with the following keys:
   - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
   - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have appeared in the conversation.
   - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model’s tendency to repeat the same words.
-  - `"max_token"`, `int` The maximum length of the model's output, measured in the number of tokens (words or pieces of words). Defaults to `512`. If disabled, you lift the maximum token limit, allowing the model to determine the number of tokens in its responses.
 - `"prompt"` : Instructions for the LLM to follow.
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
@@ -1471,8 +1485,8 @@ The parameters in `begin` component.
 from ragflow_sdk import RAGFlow, Agent
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-AGENT_ID = "AGENT_ID"
-agent = rag_object.list_agents(id = AGENT_id)[0]
+agent_id = "AGENT_ID"
+agent = rag_object.list_agents(id = agent_id)[0]
 session = agent.create_session()
 ```
 
@@ -1720,3 +1734,5 @@ for agent in rag_object.list_agents():
 ```
 
 ---
+
+
