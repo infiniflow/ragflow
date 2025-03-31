@@ -385,7 +385,8 @@ def get_data_openai(id=None,
                     completion_tokens=0, 
                     content = None, 
                     finish_reason= None,
-                    object="chat.completion"
+                    object="chat.completion",
+                    param=None,
 ):
    
     total_tokens= prompt_tokens + completion_tokens
@@ -394,6 +395,7 @@ def get_data_openai(id=None,
         "object": object,
         "created": int(time.time()) if created else None,
         "model": model,
+        "param":param,
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,

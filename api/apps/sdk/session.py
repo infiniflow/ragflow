@@ -372,30 +372,23 @@ def agents_completion_openai_compatibility (tenant_id, agent_id):
     filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
     prompt_tokens = sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages)
     if not filtered_messages:
-        return get_data_openai( 
-            id= agent_id,
+        return jsonify(get_data_openai( 
+            id=agent_id,
             content="No valid messages found (user or assistant).",
             finish_reason="stop",
             model=req.get("model", ""), 
-            completion_tokens= len(tiktokenenc.encode("No valid messages found (user or assistant).")),
+            completion_tokens=len(tiktokenenc.encode("No valid messages found (user or assistant).")),
             prompt_tokens=prompt_tokens, 
-            )
+        ))
+    
+    # Get the last user message as the question
+    question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
     
     if req.get("stream", True):
-        return Response(completionOpenAI(tenant_id, agent_id, messages, session_id=req.get("id", ""), stream=True), mimetype="text/event-stream")
+        return Response(completionOpenAI(tenant_id, agent_id, question, session_id=req.get("id", ""), stream=True), mimetype="text/event-stream")
     else:
-        answer = None
-        for ans in completionOpenAI(tenant_id, agent_id, messages, session_id=req.get("id", ""), stream=False):
-            answer = ans
-            break
-   
-        response = get_data_openai( 
-            id=agent_id,
-            content=answer, 
-            model=req.get("model", ""), 
-            prompt_tokens= sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages),
-            completion_tokens=len(tiktokenenc.encode(answer)),
-        )
+        # For non-streaming, just return the response directly
+        response = next(completionOpenAI(tenant_id, agent_id, question, session_id=req.get("id", ""), stream=False))
         return jsonify(response)
     
 
