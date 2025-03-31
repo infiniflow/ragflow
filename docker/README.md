@@ -82,18 +82,8 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `infiniflow/ragflow:v0.17.2`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
-      - `BAAI/bge-reranker-v2-m3`
       - `maidalun1020/bce-embedding-base_v1`
-      - `maidalun1020/bce-reranker-base_v1`
-    - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-      - `BAAI/bge-base-en-v1.5`
-      - `BAAI/bge-large-en-v1.5`
-      - `BAAI/bge-small-en-v1.5`
-      - `BAAI/bge-small-zh-v1.5`
-      - `jinaai/jina-embeddings-v2-base-en`
-      - `jinaai/jina-embeddings-v2-small-en`
-      - `nomic-ai/nomic-embed-text-v1.5`
-      - `sentence-transformers/all-MiniLM-L6-v2`
+
   
 > [!TIP]  
 > If you cannot download the RAGFlow Docker image, try the following mirrors.  
