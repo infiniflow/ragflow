@@ -208,4 +208,5 @@ RUN chmod +x ./entrypoint*.sh
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 
 COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+EXPOSE 80
 ENTRYPOINT ["./entrypoint.sh"]

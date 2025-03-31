@@ -112,7 +112,7 @@ def init_settings():
         "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,knowledge_graph:Knowledge Graph,email:Email,tag:Tag")
 
     HOST_IP = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("host", "127.0.0.1")
-    HOST_PORT = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("http_port")
+    HOST_PORT = 80
 
     SECRET_KEY = get_base_config(
         RAG_FLOW_SERVICE_NAME,
