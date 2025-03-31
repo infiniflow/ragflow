@@ -3,6 +3,9 @@
   background-color: rgba(255, 255, 255, 0.1);
   border-radius: 0;
   border-top: 1px solid @borderColor;
+  @media screen and (max-width: 575px) {
+    padding: 15px;
+  }
   :global(.ant-input-affix-wrapper) {
     border-bottom-right-radius: 0;
     border-bottom-left-radius: 0;
@@ -94,6 +97,9 @@
 
 .suggestedReels {
   padding: 12px 24px;
+  @media screen and (max-width: 575px) {
+    padding: 12px 15px;
+  }
   label {
     font-weight: 400;
     display: inline-block;
@@ -117,6 +123,12 @@
         transition: none;
         color: @gray51;
         border-radius: 4px;
+        @media screen and (max-width: 575px) {
+          padding: 5px 10px;
+        }
+        @media screen and (max-width: 380px) {
+          font-size: 13px;
+        }
         &:hover {
           background-color: @darkBlue;
           color: @white;

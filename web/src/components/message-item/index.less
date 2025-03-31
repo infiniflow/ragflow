@@ -29,7 +29,10 @@
     background-color: #2f78e5;
     word-break: break-word;
     color: #fff;
-    border-radius: 16px 16px 16px 0;
+    border-radius: 16px 16px 0 0;
+    p {
+      white-space: normal;
+    }
   }
   .messageTextDark {
     .chunkText();
@@ -70,7 +73,8 @@
   &:first-child {
     .suggestionList {
       display: block;
-      margin: 0 -4px;
+      margin: 0;
+      background: #fff;
       .clickableItem {
         float: left;
         padding: 4px;
@@ -86,6 +90,9 @@
           color: @gray51;
           display: flex;
           align-items: center;
+          @media screen and (max-width: 575px) {
+            max-width: 66vw;
+          }
           img {
             margin-right: 5px;
           }
@@ -103,4 +110,52 @@
 }
 .messageItemRight {
   text-align: right;
+}
+
+.afterAvtarMain {
+  gap: 0 !important;
+  border-radius: 16px 16px 0 16px;
+  overflow: hidden;
+  background: @darkBlue;
+  .documentListMain {
+    border: none;
+    border-radius: 0;
+    .documentListInner {
+      border: none;
+      padding-top: 0;
+    }
+    .assistantList {
+      border: none;
+      padding-top: 0;
+      color: @white;
+      background: @darkBlue;
+      a {
+        color: @white !important;
+      }
+    }
+  }
+}
+.userAfterAvtarMain {
+  background-color: #f0f3f5;
+  word-break: break-word;
+  text-align: justify;
+  border-radius: 16px 16px 0 16px;
+  gap: 0 !important;
+  .documentListMain {
+    border: none;
+    border-radius: 0;
+    .documentListInner {
+      border: none;
+      padding-top: 0;
+    }
+    .assistantList {
+      border: none;
+      padding-top: 0;
+      color: @white;
+      background: @darkBlue;
+      a {
+        color: @white !important;
+      }
+    }
+  }
 }

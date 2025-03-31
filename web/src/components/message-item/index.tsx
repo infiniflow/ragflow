@@ -94,6 +94,8 @@ const MessageItem = ({
     }
   }, [item.doc_ids, setDocumentIds, setIds, documentThumbnails]);
 
+  console.log('isAssistant', visibleAvatar);
+
   return (
     <div
       className={classNames(styles.messageItem, {
@@ -121,7 +123,15 @@ const MessageItem = ({
               <AssistantIcon />
             ))}
 
-          <Flex vertical gap={8} flex={1}>
+          <Flex
+            vertical
+            gap={8}
+            flex={1}
+            className={classNames({
+              [styles.afterAvtarMain]: isAssistant,
+              [styles.userAfterAvtarMain]: !isAssistant,
+            })}
+          >
             <Space>
               {isAssistant ? (
                 index !== 0 && (
@@ -135,15 +145,17 @@ const MessageItem = ({
                   ></AssistantGroupButton>
                 )
               ) : (
-                <UserGroupButton
-                  content={item.content}
-                  messageId={item.id}
-                  removeMessageById={removeMessageById}
-                  regenerateMessage={
-                    regenerateMessage && handleRegenerateMessage
-                  }
-                  sendLoading={sendLoading}
-                ></UserGroupButton>
+                <div>
+                  <UserGroupButton
+                    content={item.content}
+                    messageId={item.id}
+                    removeMessageById={removeMessageById}
+                    regenerateMessage={
+                      regenerateMessage && handleRegenerateMessage
+                    }
+                    sendLoading={sendLoading}
+                  ></UserGroupButton>
+                </div>
               )}
 
               {/* <b>{isAssistant ? '' : nickname}</b> */}
@@ -168,9 +180,10 @@ const MessageItem = ({
               <List
                 bordered
                 dataSource={referenceDocumentList}
+                className={styles.documentListMain}
                 renderItem={(item) => {
                   return (
-                    <List.Item>
+                    <List.Item className={styles.assistantList}>
                       <Flex gap={'small'} align="center">
                         <FileIcon
                           id={item.doc_id}
@@ -195,13 +208,14 @@ const MessageItem = ({
               <List
                 bordered
                 dataSource={documentList}
+                className={styles.documentListMain}
                 renderItem={(item) => {
                   // TODO:
                   // const fileThumbnail =
                   //   documentThumbnails[item.id] || documentThumbnails[item.id];
                   const fileExtension = getExtension(item.name);
                   return (
-                    <List.Item>
+                    <List.Item className={styles.documentListInner}>
                       <Flex gap={'small'} align="center">
                         <FileIcon id={item.id} name={item.name}></FileIcon>
 

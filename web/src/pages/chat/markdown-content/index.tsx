@@ -107,6 +107,7 @@ const MarkdownContent = ({
       const fileThumbnail = documentId ? fileThumbnails[documentId] : '';
       const fileExtension = documentId ? getExtension(document?.doc_name) : '';
       const imageId = chunkItem?.image_id;
+
       return (
         <Flex
           key={chunkItem?.id}
