@@ -16,17 +16,17 @@ if [[ -z "$WS" || $WS -lt 1 ]]; then
   WS=1
 fi
 
-function task_exe(){
-    JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
-    while [ 1 -eq 1 ];do
-      LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py $1;
-    done
-}
+# function task_exe(){
+#     JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
+#     while [ 1 -eq 1 ];do
+#       LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py $1;
+#     done
+# }
 
-for ((i=0;i<WS;i++))
-do
-  task_exe  $i &
-done
+# for ((i=0;i<WS;i++))
+# do
+#   task_exe  $i &
+# done
 
 while [ 1 -eq 1 ];do
     $PY api/ragflow_server.py
