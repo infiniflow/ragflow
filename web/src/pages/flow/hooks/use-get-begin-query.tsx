@@ -47,10 +47,8 @@ export const useBuildComponentIdSelectOptions = (
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
   const query: BeginQuery[] = getBeginNodeDataQuery();
 
-  // Limit the nodes inside iteration to only reference peer nodes with the same parentId and other external nodes other than their parent nodes
   const filterChildNodesToSameParentOrExternal = useCallback(
     (node: RAGFlowNodeType) => {
-      // Node inside iteration
       if (parentId) {
         return (
           (node.parentId === parentId || node.parentId === undefined) &&
@@ -68,7 +66,7 @@ export const useBuildComponentIdSelectOptions = (
       .filter(
         (x) =>
           x.id !== nodeId &&
-          !ExcludedNodes.some((y) => y === x.data.label) &&
+          !ExcludedNodes?.some((y) => y === x.data.label) &&
           filterChildNodesToSameParentOrExternal(x),
       )
       .map((x) => ({ label: x.data.name, value: x.id }));
@@ -76,11 +74,13 @@ export const useBuildComponentIdSelectOptions = (
 
   const groupedOptions = [
     {
+      key: 'component',
       label: <span>Component Output</span>,
       title: 'Component Output',
       options: componentIdOptions,
     },
     {
+      key: 'begin',
       label: <span>Begin Input</span>,
       title: 'Begin Input',
       options: query.map((x) => ({
