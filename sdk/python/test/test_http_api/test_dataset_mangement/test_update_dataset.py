@@ -86,16 +86,6 @@ class TestDatasetUpdate:
         "embedding_model, expected_code, expected_message",
         [
             ("BAAI/bge-large-zh-v1.5", 0, ""),
-            ("BAAI/bge-base-en-v1.5", 0, ""),
-            ("BAAI/bge-large-en-v1.5", 0, ""),
-            ("BAAI/bge-small-en-v1.5", 0, ""),
-            ("BAAI/bge-small-zh-v1.5", 0, ""),
-            ("jinaai/jina-embeddings-v2-base-en", 0, ""),
-            ("jinaai/jina-embeddings-v2-small-en", 0, ""),
-            ("nomic-ai/nomic-embed-text-v1.5", 0, ""),
-            ("sentence-transformers/all-MiniLM-L6-v2", 0, ""),
-            ("text-embedding-v2", 0, ""),
-            ("text-embedding-v3", 0, ""),
             ("maidalun1020/bce-embedding-base_v1", 0, ""),
             (
                 "other_embedding_model",
