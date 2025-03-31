@@ -13,353 +13,593 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
+from abc import ABC
+import builtins
 import json
-from copy import deepcopy
+import os
+import logging
 from functools import partial
+from typing import Tuple, Union
 
 import pandas as pd
+from agent import settings
 
-from agent.component import component_class
-from agent.component.base import ComponentBase
+_FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
+_DEPRECATED_PARAMS = "_deprecated_params"
+_USER_FEEDED_PARAMS = "_user_feeded_params"
+_IS_RAW_CONF = "_is_raw_conf"
 
 
-class Canvas:
-    """
-    dsl = {
-        "components": {
-            "begin": {
-                "obj":{
-                    "component_name": "Begin",
-                    "params": {},
-                },
-                "downstream": ["answer_0"],
-                "upstream": [],
-            },
-            "answer_0": {
-                "obj": {
-                    "component_name": "Answer",
-                    "params": {}
-                },
-                "downstream": ["retrieval_0"],
-                "upstream": ["begin", "generate_0"],
-            },
-            "retrieval_0": {
-                "obj": {
-                    "component_name": "Retrieval",
-                    "params": {}
-                },
-                "downstream": ["generate_0"],
-                "upstream": ["answer_0"],
-            },
-            "generate_0": {
-                "obj": {
-                    "component_name": "Generate",
-                    "params": {}
-                },
-                "downstream": ["answer_0"],
-                "upstream": ["retrieval_0"],
-            }
-        },
-        "history": [],
-        "messages": [],
-        "reference": [],
-        "path": [["begin"]],
-        "answer": []
-    }
-    """
+class ComponentParamBase(ABC):
+    def __init__(self):
+        self.output_var_name = "output"
+        self.message_history_window_size = 22
+        self.query = []
+        self.inputs = []
+        self.debug_inputs = []
 
-    def __init__(self, dsl: str, tenant_id=None):
-        self.path = []
-        self.history = []
-        self.messages = []
-        self.answer = []
-        self.components = {}
-        self.dsl = json.loads(dsl) if dsl else {
-            "components": {
-                "begin": {
-                    "obj": {
-                        "component_name": "Begin",
-                        "params": {
-                            "prologue": "Hi there!"
-                        }
-                    },
-                    "downstream": [],
-                    "upstream": [],
-                    "parent_id": ""
-                }
-            },
-            "history": [],
-            "messages": [],
-            "reference": [],
-            "path": [],
-            "answer": []
-        }
-        self._tenant_id = tenant_id
-        self._embed_id = ""
-        self.load()
+    def set_name(self, name: str):
+        self._name = name
+        return self
 
-    def load(self):
-        self.components = self.dsl["components"]
-        cpn_nms = set([])
-        for k, cpn in self.components.items():
-            cpn_nms.add(cpn["obj"]["component_name"])
+    def check(self):
+        raise NotImplementedError("Parameter Object should be checked.")
 
-        assert "Begin" in cpn_nms, "There have to be an 'Begin' component."
-        assert "Answer" in cpn_nms, "There have to be an 'Answer' component."
+    @classmethod
+    def _get_or_init_deprecated_params_set(cls):
+        if not hasattr(cls, _DEPRECATED_PARAMS):
+            setattr(cls, _DEPRECATED_PARAMS, set())
+        return getattr(cls, _DEPRECATED_PARAMS)
 
-        for k, cpn in self.components.items():
-            cpn_nms.add(cpn["obj"]["component_name"])
-            param = component_class(cpn["obj"]["component_name"] + "Param")()
-            param.update(cpn["obj"]["params"])
-            param.check()
-            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
-            if cpn["obj"].component_name == "Categorize":
-                for _, desc in param.category_description.items():
-                    if desc["to"] not in cpn["downstream"]:
-                        cpn["downstream"].append(desc["to"])
+    def _get_or_init_feeded_deprecated_params_set(self, conf=None):
+        if not hasattr(self, _FEEDED_DEPRECATED_PARAMS):
+            if conf is None:
+                setattr(self, _FEEDED_DEPRECATED_PARAMS, set())
+            else:
+                setattr(
+                    self,
+                    _FEEDED_DEPRECATED_PARAMS,
+                    set(conf[_FEEDED_DEPRECATED_PARAMS]),
+                )
+        return getattr(self, _FEEDED_DEPRECATED_PARAMS)
 
-        self.path = self.dsl["path"]
-        self.history = self.dsl["history"]
-        self.messages = self.dsl["messages"]
-        self.answer = self.dsl["answer"]
-        self.reference = self.dsl["reference"]
-        self._embed_id = self.dsl.get("embed_id", "")
+    def _get_or_init_user_feeded_params_set(self, conf=None):
+        if not hasattr(self, _USER_FEEDED_PARAMS):
+            if conf is None:
+                setattr(self, _USER_FEEDED_PARAMS, set())
+            else:
+                setattr(self, _USER_FEEDED_PARAMS, set(conf[_USER_FEEDED_PARAMS]))
+        return getattr(self, _USER_FEEDED_PARAMS)
+
+    def get_user_feeded(self):
+        return self._get_or_init_user_feeded_params_set()
+
+    def get_feeded_deprecated_params(self):
+        return self._get_or_init_feeded_deprecated_params_set()
+
+    @property
+    def _deprecated_params_set(self):
+        return {name: True for name in self.get_feeded_deprecated_params()}
 
     def __str__(self):
-        self.dsl["path"] = self.path
-        self.dsl["history"] = self.history
-        self.dsl["messages"] = self.messages
-        self.dsl["answer"] = self.answer
-        self.dsl["reference"] = self.reference
-        self.dsl["embed_id"] = self._embed_id
-        dsl = {
-            "components": {}
-        }
-        for k in self.dsl.keys():
-            if k in ["components"]:
-                continue
-            dsl[k] = deepcopy(self.dsl[k])
+        return json.dumps(self.as_dict(), ensure_ascii=False)
 
-        for k, cpn in self.components.items():
-            if k not in dsl["components"]:
-                dsl["components"][k] = {}
-            for c in cpn.keys():
-                if c == "obj":
-                    dsl["components"][k][c] = json.loads(str(cpn["obj"]))
+    def as_dict(self):
+        def _recursive_convert_obj_to_dict(obj):
+            ret_dict = {}
+            for attr_name in list(obj.__dict__):
+                if attr_name in [_FEEDED_DEPRECATED_PARAMS, _DEPRECATED_PARAMS, _USER_FEEDED_PARAMS, _IS_RAW_CONF]:
                     continue
-                dsl["components"][k][c] = deepcopy(cpn[c])
-        return json.dumps(dsl, ensure_ascii=False)
+                # get attr
+                attr = getattr(obj, attr_name)
+                if isinstance(attr, pd.DataFrame):
+                    ret_dict[attr_name] = attr.to_dict()
+                    continue
+                if attr and type(attr).__name__ not in dir(builtins):
+                    ret_dict[attr_name] = _recursive_convert_obj_to_dict(attr)
+                else:
+                    ret_dict[attr_name] = attr
 
-    def reset(self):
-        self.path = []
-        self.history = []
-        self.messages = []
-        self.answer = []
-        self.reference = []
-        for k, cpn in self.components.items():
-            self.components[k]["obj"].reset()
-        self._embed_id = ""
+            return ret_dict
 
-    def get_component_name(self, cid):
-        for n in self.dsl["graph"]["nodes"]:
-            if cid == n["id"]:
-                return n["data"]["name"]
-        return ""
+        return _recursive_convert_obj_to_dict(self)
 
-    def run(self, **kwargs):
-        if self.answer:
-            cpn_id = self.answer[0]
-            self.answer.pop(0)
-            try:
-                ans = self.components[cpn_id]["obj"].run(self.history, **kwargs)
-            except Exception as e:
-                ans = ComponentBase.be_output(str(e))
-            self.path[-1].append(cpn_id)
-            if kwargs.get("stream"):
-                for an in ans():
-                    yield an
-            else:
-                yield ans
+    def update(self, conf, allow_redundant=False):
+        update_from_raw_conf = conf.get(_IS_RAW_CONF, True)
+        if update_from_raw_conf:
+            deprecated_params_set = self._get_or_init_deprecated_params_set()
+            feeded_deprecated_params_set = (
+                self._get_or_init_feeded_deprecated_params_set()
+            )
+            user_feeded_params_set = self._get_or_init_user_feeded_params_set()
+            setattr(self, _IS_RAW_CONF, False)
+        else:
+            feeded_deprecated_params_set = (
+                self._get_or_init_feeded_deprecated_params_set(conf)
+            )
+            user_feeded_params_set = self._get_or_init_user_feeded_params_set(conf)
+
+        def _recursive_update_param(param, config, depth, prefix):
+            if depth > settings.PARAM_MAXDEPTH:
+                raise ValueError("Param define nesting too deep!!!, can not parse it")
+
+            inst_variables = param.__dict__
+            redundant_attrs = []
+            for config_key, config_value in config.items():
+                # redundant attr
+                if config_key not in inst_variables:
+                    if not update_from_raw_conf and config_key.startswith("_"):
+                        setattr(param, config_key, config_value)
+                    else:
+                        setattr(param, config_key, config_value)
+                        # redundant_attrs.append(config_key)
+                    continue
+
+                full_config_key = f"{prefix}{config_key}"
+
+                if update_from_raw_conf:
+                    # add user feeded params
+                    user_feeded_params_set.add(full_config_key)
+
+                    # update user feeded deprecated param set
+                    if full_config_key in deprecated_params_set:
+                        feeded_deprecated_params_set.add(full_config_key)
+
+                # supported attr
+                attr = getattr(param, config_key)
+                if type(attr).__name__ in dir(builtins) or attr is None:
+                    setattr(param, config_key, config_value)
+
+                else:
+                    # recursive set obj attr
+                    sub_params = _recursive_update_param(
+                        attr, config_value, depth + 1, prefix=f"{prefix}{config_key}."
+                    )
+                    setattr(param, config_key, sub_params)
+
+            if not allow_redundant and redundant_attrs:
+                raise ValueError(
+                    f"cpn `{getattr(self, '_name', type(self))}` has redundant parameters: `{[redundant_attrs]}`"
+                )
+
+            return param
+
+        return _recursive_update_param(param=self, config=conf, depth=0, prefix="")
+
+    def extract_not_builtin(self):
+        def _get_not_builtin_types(obj):
+            ret_dict = {}
+            for variable in obj.__dict__:
+                attr = getattr(obj, variable)
+                if attr and type(attr).__name__ not in dir(builtins):
+                    ret_dict[variable] = _get_not_builtin_types(attr)
+
+            return ret_dict
+
+        return _get_not_builtin_types(self)
+
+    def validate(self):
+        self.builtin_types = dir(builtins)
+        self.func = {
+            "ge": self._greater_equal_than,
+            "le": self._less_equal_than,
+            "in": self._in,
+            "not_in": self._not_in,
+            "range": self._range,
+        }
+        home_dir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
+        param_validation_path_prefix = home_dir + "/param_validation/"
+
+        param_name = type(self).__name__
+        param_validation_path = "/".join(
+            [param_validation_path_prefix, param_name + ".json"]
+        )
+
+        validation_json = None
+
+        try:
+            with open(param_validation_path, "r") as fin:
+                validation_json = json.loads(fin.read())
+        except BaseException:
             return
 
-        if not self.path:
-            self.components["begin"]["obj"].run(self.history, **kwargs)
-            self.path.append(["begin"])
+        self._validate_param(self, validation_json)
 
-        self.path.append([])
+    def _validate_param(self, param_obj, validation_json):
+        default_section = type(param_obj).__name__
+        var_list = param_obj.__dict__
 
-        ran = -1
-        waiting = []
-        without_dependent_checking = []
+        for variable in var_list:
+            attr = getattr(param_obj, variable)
 
-        def prepare2run(cpns):
-            nonlocal ran, ans
-            for c in cpns:
-                if self.path[-1] and c == self.path[-1][-1]:
+            if type(attr).__name__ in self.builtin_types or attr is None:
+                if variable not in validation_json:
                     continue
-                cpn = self.components[c]["obj"]
-                if cpn.component_name == "Answer":
-                    self.answer.append(c)
-                else:
-                    logging.debug(f"Canvas.prepare2run: {c}")
-                    if c not in without_dependent_checking:
-                        cpids = cpn.get_dependent_components()
-                        if any([cc not in self.path[-1] for cc in cpids]):
-                            if c not in waiting:
-                                waiting.append(c)
-                            continue
-                    yield "*'{}'* is running...🕞".format(self.get_component_name(c))
 
-                    if cpn.component_name.lower() == "iteration":
-                        st_cpn = cpn.get_start()
-                        assert st_cpn, "Start component not found for Iteration."
-                        if not st_cpn["obj"].end():
-                            cpn = st_cpn["obj"]
-                            c = cpn._id
+                validation_dict = validation_json[default_section][variable]
+                value = getattr(param_obj, variable)
+                value_legal = False
 
-                    try:
-                        ans = cpn.run(self.history, **kwargs)
-                    except Exception as e:
-                        logging.exception(f"Canvas.run got exception: {e}")
-                        self.path[-1].append(c)
-                        ran += 1
-                        raise e
-                    self.path[-1].append(c)
+                for op_type in validation_dict:
+                    if self.func[op_type](value, validation_dict[op_type]):
+                        value_legal = True
+                        break
 
-            ran += 1
+                if not value_legal:
+                    raise ValueError(
+                        "Plase check runtime conf, {} = {} does not match user-parameter restriction".format(
+                            variable, value
+                        )
+                    )
 
-        downstream = self.components[self.path[-2][-1]]["downstream"]
-        if not downstream and self.components[self.path[-2][-1]].get("parent_id"):
-            cid = self.path[-2][-1]
-            pid = self.components[cid]["parent_id"]
-            o, _ = self.components[cid]["obj"].output(allow_partial=False)
-            oo, _ = self.components[pid]["obj"].output(allow_partial=False)
-            self.components[pid]["obj"].set_output(pd.concat([oo, o], ignore_index=True).dropna())
-            downstream = [pid]
+            elif variable in validation_json:
+                self._validate_param(attr, validation_json)
 
-        for m in prepare2run(downstream):
-            yield {"content": m, "running_status": True}
+    @staticmethod
+    def check_string(param, descr):
+        if type(param).__name__ not in ["str"]:
+            raise ValueError(
+                descr + " {} not supported, should be string type".format(param)
+            )
 
-        while 0 <= ran < len(self.path[-1]):
-            logging.debug(f"Canvas.run: {ran} {self.path}")
-            cpn_id = self.path[-1][ran]
-            cpn = self.get_component(cpn_id)
-            if not any([cpn["downstream"], cpn.get("parent_id"), waiting]):
-                break
+    @staticmethod
+    def check_empty(param, descr):
+        if not param:
+            raise ValueError(
+                descr + " does not support empty value."
+            )
 
-            loop = self._find_loop()
-            if loop:
-                raise OverflowError(f"Too much loops: {loop}")
+    @staticmethod
+    def check_positive_integer(param, descr):
+        if type(param).__name__ not in ["int", "long"] or param <= 0:
+            raise ValueError(
+                descr + " {} not supported, should be positive integer".format(param)
+            )
 
-            if cpn["obj"].component_name.lower() in ["switch", "categorize", "relevant"]:
-                switch_out = cpn["obj"].output()[1].iloc[0, 0]
-                assert switch_out in self.components, \
-                    "{}'s output: {} not valid.".format(cpn_id, switch_out)
-                for m in prepare2run([switch_out]):
-                    yield {"content": m, "running_status": True}
-                continue
+    @staticmethod
+    def check_positive_number(param, descr):
+        if type(param).__name__ not in ["float", "int", "long"] or param <= 0:
+            raise ValueError(
+                descr + " {} not supported, should be positive numeric".format(param)
+            )
 
-            downstream = cpn["downstream"]
-            if not downstream and cpn.get("parent_id"):
-                pid = cpn["parent_id"]
-                _, o = cpn["obj"].output(allow_partial=False)
-                _, oo = self.components[pid]["obj"].output(allow_partial=False)
-                self.components[pid]["obj"].set_output(pd.concat([oo.dropna(axis=1), o.dropna(axis=1)], ignore_index=True).dropna())
-                downstream = [pid]
+    @staticmethod
+    def check_nonnegative_number(param, descr):
+        if type(param).__name__ not in ["float", "int", "long"] or param < 0:
+            raise ValueError(
+                descr
+                + " {} not supported, should be non-negative numeric".format(param)
+            )
 
-            for m in prepare2run(downstream):
-                yield {"content": m, "running_status": True}
+    @staticmethod
+    def check_decimal_float(param, descr):
+        if type(param).__name__ not in ["float", "int"] or param < 0 or param > 1:
+            raise ValueError(
+                descr
+                + " {} not supported, should be a float number in range [0, 1]".format(
+                    param
+                )
+            )
 
-            if ran >= len(self.path[-1]) and waiting:
-                without_dependent_checking = waiting
-                waiting = []
-                for m in prepare2run(without_dependent_checking):
-                    yield {"content": m, "running_status": True}
-                without_dependent_checking = []
-                ran -= 1
+    @staticmethod
+    def check_boolean(param, descr):
+        if type(param).__name__ != "bool":
+            raise ValueError(
+                descr + " {} not supported, should be bool type".format(param)
+            )
 
-        if self.answer:
-            cpn_id = self.answer[0]
-            self.answer.pop(0)
-            ans = self.components[cpn_id]["obj"].run(self.history, **kwargs)
-            self.path[-1].append(cpn_id)
-            if kwargs.get("stream"):
-                assert isinstance(ans, partial)
-                for an in ans():
-                    yield an
-            else:
-                yield ans
+    @staticmethod
+    def check_open_unit_interval(param, descr):
+        if type(param).__name__ not in ["float"] or param <= 0 or param >= 1:
+            raise ValueError(
+                descr + " should be a numeric number between 0 and 1 exclusively"
+            )
 
+    @staticmethod
+    def check_valid_value(param, descr, valid_values):
+        if param not in valid_values:
+            raise ValueError(
+                descr
+                + " {} is not supported, it should be in {}".format(param, valid_values)
+            )
+
+    @staticmethod
+    def check_defined_type(param, descr, types):
+        if type(param).__name__ not in types:
+            raise ValueError(
+                descr + " {} not supported, should be one of {}".format(param, types)
+            )
+    @staticmethod
+    def check_json(param, descr=""):
+        if type(param).__name__ != "str":
+            raise ValueError(
+                descr + " {} not supported, should be string type".format(param)
+            )
+        try:
+            json.loads(param)
+        except json.JSONDecodeError:
+            raise ValueError(
+                descr + " {} not supported, should be json string".format(param)
+            )
+    @staticmethod
+    def check_and_change_lower(param, valid_list, descr=""):
+        if type(param).__name__ != "str":
+            raise ValueError(
+                descr
+                + " {} not supported, should be one of {}".format(param, valid_list)
+            )
+
+        lower_param = param.lower()
+        if lower_param in valid_list:
+            return lower_param
         else:
-            raise Exception("The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow.")
+            raise ValueError(
+                descr
+                + " {} not supported, should be one of {}".format(param, valid_list)
+            )
 
-    def get_component(self, cpn_id):
-        return self.components[cpn_id]
+    @staticmethod
+    def _greater_equal_than(value, limit):
+        return value >= limit - settings.FLOAT_ZERO
 
-    def get_tenant_id(self):
-        return self._tenant_id
+    @staticmethod
+    def _less_equal_than(value, limit):
+        return value <= limit + settings.FLOAT_ZERO
 
-    def get_history(self, window_size):
-        convs = []
-        for role, obj in self.history[window_size * -1:]:
-            if isinstance(obj, list) and obj and all([isinstance(o, dict) for o in obj]):
-                convs.append({"role": role, "content": '\n'.join([str(s.get("content", "")) for s in obj])})
-            else:
-                convs.append({"role": role, "content": str(obj)})
-        return convs
-
-    def add_user_input(self, question):
-        self.history.append(("user", question))
-
-    def set_embedding_model(self, embed_id):
-        self._embed_id = embed_id
-
-    def get_embedding_model(self):
-        return self._embed_id
-
-    def _find_loop(self, max_loops=6):
-        path = self.path[-1][::-1]
-        if len(path) < 2:
-            return False
-
-        for i in range(len(path)):
-            if path[i].lower().find("answer") == 0 or path[i].lower().find("iterationitem") == 0:
-                path = path[:i]
+    @staticmethod
+    def _range(value, ranges):
+        in_range = False
+        for left_limit, right_limit in ranges:
+            if (
+                    left_limit - settings.FLOAT_ZERO
+                    <= value
+                    <= right_limit + settings.FLOAT_ZERO
+            ):
+                in_range = True
                 break
 
-        if len(path) < 2:
-            return False
+        return in_range
 
-        for loc in range(2, len(path) // 2):
-            pat = ",".join(path[0:loc])
-            path_str = ",".join(path)
-            if len(pat) >= len(path_str):
-                return False
-            loop = max_loops
-            while path_str.find(pat) == 0 and loop >= 0:
-                loop -= 1
-                if len(pat)+1 >= len(path_str):
-                    return False
-                path_str = path_str[len(pat)+1:]
-            if loop < 0:
-                pat = " => ".join([p.split(":")[0] for p in path[0:loc]])
-                return pat + " => " + pat
+    @staticmethod
+    def _in(value, right_value_list):
+        return value in right_value_list
 
+    @staticmethod
+    def _not_in(value, wrong_value_list):
+        return value not in wrong_value_list
+
+    def _warn_deprecated_param(self, param_name, descr):
+        if self._deprecated_params_set.get(param_name):
+            logging.warning(
+                f"{descr} {param_name} is deprecated and ignored in this version."
+            )
+
+    def _warn_to_deprecate_param(self, param_name, descr, new_param):
+        if self._deprecated_params_set.get(param_name):
+            logging.warning(
+                f"{descr} {param_name} will be deprecated in future release; "
+                f"please use {new_param} instead."
+            )
+            return True
         return False
 
-    def get_prologue(self):
-        return self.components["begin"]["obj"]._param.prologue
 
-    def set_global_param(self, **kwargs):
-        for k, v in kwargs.items():
-            for q in self.components["begin"]["obj"]._param.query:
-                if k != q["key"]:
+class ComponentBase(ABC):
+    component_name: str
+
+    def __str__(self):
+        """
+        {
+            "component_name": "Begin",
+            "params": {}
+        }
+        """
+        return """{{
+            "component_name": "{}",
+            "params": {},
+            "output": {},
+            "inputs": {}
+        }}""".format(self.component_name,
+                     self._param,
+                     json.dumps(json.loads(str(self._param)).get("output", {}), ensure_ascii=False),
+                     json.dumps(json.loads(str(self._param)).get("inputs", []), ensure_ascii=False)
+        )
+
+    def __init__(self, canvas, id, param: ComponentParamBase):
+        from agent.canvas import Canvas  # Local import to avoid cyclic dependency
+        assert isinstance(canvas, Canvas), "canvas must be an instance of Canvas"
+        self._canvas = canvas
+        self._id = id
+        self._param = param
+        self._param.check()
+
+    def get_dependent_components(self):
+        cpnts = set([para["component_id"].split("@")[0] for para in self._param.query \
+                     if para.get("component_id") \
+                     and para["component_id"].lower().find("answer") < 0 \
+                     and para["component_id"].lower().find("begin") < 0 \
+                    ])
+        return list(cpnts)
+
+    def run(self, history, **kwargs):
+        logging.debug("{}, history: {}, kwargs: {}".format(self, json.dumps(history, ensure_ascii=False),
+                                                              json.dumps(kwargs, ensure_ascii=False)))
+        self._param.debug_inputs = []
+        try:
+            res = self._run(history, **kwargs)
+            self.set_output(res)
+        except Exception as e:
+            self.set_output(pd.DataFrame([{"content": str(e)}]))
+            raise e
+
+        return res
+
+    def _run(self, history, **kwargs):
+        raise NotImplementedError()
+
+    def output(self, allow_partial=True) -> Tuple[str, Union[pd.DataFrame, partial]]:
+        o = getattr(self._param, self._param.output_var_name)
+        if not isinstance(o, partial):
+            if not isinstance(o, pd.DataFrame):
+                if isinstance(o, list):
+                    return self._param.output_var_name, pd.DataFrame(o).dropna()
+                if o is None:
+                    return self._param.output_var_name, pd.DataFrame()
+                return self._param.output_var_name, pd.DataFrame([{"content": str(o)}])
+            return self._param.output_var_name, o
+
+        if allow_partial or not isinstance(o, partial):
+            if not isinstance(o, partial) and not isinstance(o, pd.DataFrame):
+                return pd.DataFrame(o if isinstance(o, list) else [o]).dropna()
+            return self._param.output_var_name, o
+
+        outs = None
+        for oo in o():
+            if not isinstance(oo, pd.DataFrame):
+                outs = pd.DataFrame(oo if isinstance(oo, list) else [oo]).dropna()
+            else:
+                outs = oo.dropna()
+        return self._param.output_var_name, outs
+
+    def reset(self):
+        setattr(self._param, self._param.output_var_name, None)
+        self._param.inputs = []
+
+    def set_output(self, v):
+        setattr(self._param, self._param.output_var_name, v)
+
+    def get_input(self):
+        if self._param.debug_inputs:
+            return pd.DataFrame([{"content": v["value"]} for v in self._param.debug_inputs if v.get("value")])
+
+        reversed_cpnts = []
+        if len(self._canvas.path) > 1:
+            reversed_cpnts.extend(self._canvas.path[-2])
+        reversed_cpnts.extend(self._canvas.path[-1])
+        up_cpns = self.get_upstream()
+        reversed_up_cpnts = [cpn for cpn in reversed_cpnts if cpn in up_cpns]
+
+        if self._param.query:
+            self._param.inputs = []
+            outs = []
+            for q in self._param.query:
+                if q.get("component_id"):
+                    if q["component_id"].split("@")[0].lower().find("begin") >= 0:
+                        cpn_id, key = q["component_id"].split("@")
+                        for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
+                            if p["key"] == key:
+                                outs.append(pd.DataFrame([{"content": p.get("value", "")}]))
+                                self._param.inputs.append({"component_id": q["component_id"],
+                                                           "content": p.get("value", "")})
+                                break
+                        else:
+                            assert False, f"Can't find parameter '{key}' for {cpn_id}"
+                        continue
+                    if q["component_id"].lower().find("answer") == 0:
+                        txt = []
+                        for r, c in self._canvas.history[::-1][:self._param.message_history_window_size][::-1]:
+                            txt.append(f"{r.upper()}:{c}")
+                        txt = "\n".join(txt)
+                        self._param.inputs.append({"content": txt, "component_id": q["component_id"]})
+                        outs.append(pd.DataFrame([{"content": txt}]))
+                        continue
+                    outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
+                    self._param.inputs.append({"component_id": q["component_id"],
+                                               "content": "\n".join(
+                                                   [str(d["content"]) for d in outs[-1].to_dict('records')])})
+                elif q.get("value"):
+                    self._param.inputs.append({"component_id": None, "content": q["value"]})
+                    outs.append(pd.DataFrame([{"content": q["value"]}]))
+            if outs:
+                df = pd.concat(outs, ignore_index=True)
+                if "content" in df:
+                    df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
+                return df
+
+        upstream_outs = []
+
+        for u in reversed_up_cpnts[::-1]:
+            if self.get_component_name(u) in ["switch", "concentrator"]:
+                continue
+            if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":
+                o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
+                if o is not None:
+                    o["component_id"] = u
+                    upstream_outs.append(o)
                     continue
-                q["value"] = v
+            #if self.component_name.lower()!="answer" and u not in self._canvas.get_component(self._id)["upstream"]: continue
+            if self.component_name.lower().find("switch") < 0 \
+                    and self.get_component_name(u) in ["relevant", "categorize"]:
+                continue
+            if u.lower().find("answer") >= 0:
+                for r, c in self._canvas.history[::-1]:
+                    if r == "user":
+                        upstream_outs.append(pd.DataFrame([{"content": c, "component_id": u}]))
+                        break
+                break
+            if self.component_name.lower().find("answer") >= 0 and self.get_component_name(u) in ["relevant"]:
+                continue
+            o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
+            if o is not None:
+                o["component_id"] = u
+                upstream_outs.append(o)
+            break
 
-    def get_preset_param(self):
-        return self.components["begin"]["obj"]._param.query
+        assert upstream_outs, "Can't inference the where the component input is. Please identify whose output is this component's input."
 
-    def get_component_input_elements(self, cpnnm):
-        return self.components[cpnnm]["obj"].get_input_elements()
+        df = pd.concat(upstream_outs, ignore_index=True)
+        if "content" in df:
+            df = df.drop_duplicates(subset=['content']).reset_index(drop=True)
+
+        self._param.inputs = []
+        for _, r in df.iterrows():
+            self._param.inputs.append({"component_id": r["component_id"], "content": r["content"]})
+
+        return df
+
+    def get_input_elements(self):
+        assert self._param.query, "Please verify the input parameters first."
+        eles = []
+        for q in self._param.query:
+            if q.get("component_id"):
+                cpn_id = q["component_id"]
+                if cpn_id.split("@")[0].lower().find("begin") >= 0:
+                    cpn_id, key = cpn_id.split("@")
+                    eles.extend(self._canvas.get_component(cpn_id)["obj"]._param.query)
+                    continue
+                eles.append({"name": self._canvas.get_component_name(cpn_id), "key": cpn_id})
+            else:
+                eles.append({"key": q["value"], "name": q["value"], "value": q["value"]})
+        return eles
+
+    def get_stream_input(self):
+        reversed_cpnts = []
+        if len(self._canvas.path) > 1:
+            reversed_cpnts.extend(self._canvas.path[-2])
+        reversed_cpnts.extend(self._canvas.path[-1])
+        up_cpns = self.get_upstream()
+        reversed_up_cpnts = [cpn for cpn in reversed_cpnts if cpn in up_cpns]
+
+        for u in reversed_up_cpnts[::-1]:
+            if self.get_component_name(u) in ["switch", "answer"]:
+                continue
+            return self._canvas.get_component(u)["obj"].output()[1]
+
+    @staticmethod
+    def be_output(v):
+        return pd.DataFrame([{"content": v}])
+
+    def get_component_name(self, cpn_id):
+        from agent.canvas import Canvas  # Local import to avoid cyclic dependency
+        return self._canvas.get_component(cpn_id)["obj"].component_name.lower()
+
+    def debug(self, **kwargs):
+        return self._run([], **kwargs)
+
+    def get_parent(self):
+        pid = self._canvas.get_component(self._id)["parent_id"]
+        return self._canvas.get_component(pid)["obj"]
+
+    def get_upstream(self):
+        cpn_nms = self._canvas.get_component(self._id)['upstream']
+        return cpn_nms
