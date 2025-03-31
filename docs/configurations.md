@@ -90,6 +90,17 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `REDIS_PASSWORD`  
   The password for Redis.
 
+### Milvus
+
+- `MILVUS_PORT`  
+  The port used to expose the Milvus service to the host machine, allowing **external** access to the Milvus service running inside the Docker container. Defaults to `19530`.
+- `MILVUS_USER`  
+  The username for Milvus. Defaults to `root`.
+- `MILVUS_PASSWORD`  
+  The password for Milvus. Defaults to `Milvus`.
+- `MILVUS_DB`  
+  The database name for Milvus. Defaults to `default`.
+
 ### RAGFlow
 
 - `SVR_HTTP_PORT`  

@@ -1,0 +1,66 @@
+{
+  "collections": {
+    "kb_template": {
+      "fields": [
+        {
+          "name": "id",
+          "dtype": "INT64",
+          "is_primary": true
+        },
+        {
+          "name": "chunk_id",
+          "dtype": "VARCHAR",
+          "max_length": 65535
+        },
+        {
+          "name": "doc_id",
+          "dtype": "VARCHAR",
+          "max_length": 65535
+        },
+        {
+          "name": "doc_type",
+          "dtype": "VARCHAR",
+          "max_length": 255
+        },
+        {
+          "name": "doc_name",
+          "dtype": "VARCHAR",
+          "max_length": 255
+        },
+        {
+          "name": "doc_text",
+          "dtype": "VARCHAR",
+          "max_length": 65535
+        },
+        {
+          "name": "vector",
+          "dtype": "FLOAT_VECTOR",
+          "dim": 1536
+        },
+        {
+          "name": "kb_id",
+          "dtype": "INT64"
+        },
+        {
+          "name": "create_time",
+          "dtype": "INT64"
+        },
+        {
+          "name": "update_time",
+          "dtype": "INT64"
+        }
+      ],
+      "indexes": [
+        {
+          "field_name": "vector",
+          "index_type": "HNSW",
+          "metric_type": "IP",
+          "params": {
+            "M": 16,
+            "efConstruction": 128
+          }
+        }
+      ]
+    }
+  }
+} 
