@@ -27,7 +27,7 @@ import xxhash
 from peewee import fn
 
 from api import settings
-from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus
+from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
@@ -103,13 +103,13 @@ class DocumentService(CommonService):
         cls.clear_chunk_num(doc.id)
         try:
             settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
-            settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "community_report"], "source_id": doc.id},
+            settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
                                          {"remove": {"source_id": doc.id}},
                                          search.index_name(tenant_id), doc.kb_id)
             settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
                                          {"removed_kwd": "Y"},
                                          search.index_name(tenant_id), doc.kb_id)
-            settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "community_report"], "must_not": {"exists": "source_id"}},
+            settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
                                          search.index_name(tenant_id), doc.kb_id)
         except Exception:
             pass
@@ -262,11 +262,18 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def accessible4deletion(cls, doc_id, user_id):
-        docs = cls.model.select(
-            cls.model.id).join(
+        docs = cls.model.select(cls.model.id
+        ).join(
             Knowledgebase, on=(
                 Knowledgebase.id == cls.model.kb_id)
-        ).where(cls.model.id == doc_id, Knowledgebase.created_by == user_id).paginate(0, 1)
+        ).join(
+            UserTenant, on=(
+                (UserTenant.tenant_id == Knowledgebase.created_by) & (UserTenant.user_id == user_id))
+        ).where(
+            cls.model.id == doc_id,
+            UserTenant.status == StatusEnum.VALID.value,
+            ((UserTenant.role == UserTenantRole.NORMAL) | (UserTenant.role == UserTenantRole.OWNER))
+        ).paginate(0, 1)
         docs = docs.dicts()
         if not docs:
             return False
