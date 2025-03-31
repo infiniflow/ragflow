@@ -21,9 +21,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
     if [ "$LIGHTEN" != "1" ]; then \
         (tar -cf - \
             /huggingface.co/BAAI/bge-large-zh-v1.5 \
-            /huggingface.co/BAAI/bge-reranker-v2-m3 \
             /huggingface.co/maidalun1020/bce-embedding-base_v1 \
-            /huggingface.co/maidalun1020/bce-reranker-base_v1 \
             | tar -xf - --strip-components=2 -C /root/.ragflow) \
     fi
 
