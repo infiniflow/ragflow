@@ -19,8 +19,7 @@ from abc import ABC
 import requests
 from deepdoc.parser import HtmlParser
 from agent.component.base import ComponentBase, ComponentParamBase
-
-
+import logging
 class InvokeParam(ComponentParamBase):
     """
     Define the Crawler component parameters.
@@ -51,7 +50,8 @@ class Invoke(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         args = {}
         for para in self._param.variables:
-            if para.get("component_id"):
+            logging.info(f"Setting argument {para}")
+            if para.get("component_id") and para.get("key"):
                 if '@' in para["component_id"]:
                     component = para["component_id"].split('@')[0]
                     field = para["component_id"].split('@')[1]
@@ -61,16 +61,25 @@ class Invoke(ComponentBase, ABC):
                             if "value" in param:
                                 args[para["key"]] = param["value"]
                 else:
-                    cpn = self._canvas.get_component(para["component_id"])["obj"]
-                    if cpn.component_name.lower() == "answer":
-                        args[para["key"]] = self._canvas.get_history(1)[0]["content"]
-                        continue
-                    _, out = cpn.output(allow_partial=False)
-                    if not out.empty:
-                        args[para["key"]] = "\n".join(out["content"])
-            else:
+                    component = self._canvas.get_component(para["component_id"])
+                    if component is not None:
+                        cpn = component["obj"]
+                        if cpn.component_name.lower() == "answer":
+                            args[para["key"]] = self._canvas.get_history(1)[0]["content"]
+                            continue
+                        _, out = cpn.output(allow_partial=False)
+                        if not out.empty:
+                            args[para["key"]] = "\n".join(out["content"])
+            elif para.get("component_id") == ("allparambegin"): 
+                    begin_obj = self._canvas.get_component("begin")
+                    if begin_obj is not None:
+                        cpn = begin_obj["obj"]
+                        for ele in cpn._param.query:
+                            logging.info(f"Setting argument {ele}")
+                            args[ele["key"]] = ele["value"]
+            elif para.get("key"):
                 args[para["key"]] = para["value"]
-
+        logging.info(f"Invoke: args: {args}")
         url = self._param.url.strip()
         if url.find("http") != 0:
             url = "http://" + url
