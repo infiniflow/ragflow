@@ -24,6 +24,7 @@ from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
 from rag.app.tag import label_question
+from rag.prompts import kb_prompt
 from rag.utils.tavily_conn import Tavily
 
 
@@ -56,8 +57,6 @@ class Retrieval(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         query = self.get_input()
         query = str(query["content"][0]) if "content" in query else ""
-        lines = query.split('\n')
-        query = lines[-1] if lines else ""
         kbs = KnowledgebaseService.get_by_ids(self._param.kb_ids)
         if not kbs:
             return Retrieval.be_output("")
@@ -104,9 +103,7 @@ class Retrieval(ComponentBase, ABC):
                 df["empty_response"] = self._param.empty_response
             return df
 
-        df = pd.DataFrame(kbinfos["chunks"])
-        df["content"] = df["content_with_weight"]
-        del df["content_with_weight"]
+        df = pd.DataFrame({"content": kb_prompt(kbinfos, 200000)})
         logging.debug("{} {}".format(query, df))
         return df.dropna()
 
