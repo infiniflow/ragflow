@@ -56,8 +56,6 @@ class Retrieval(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         query = self.get_input()
         query = str(query["content"][0]) if "content" in query else ""
-        lines = query.split('\n')
-        query = lines[-1] if lines else ""
         kbs = KnowledgebaseService.get_by_ids(self._param.kb_ids)
         if not kbs:
             return Retrieval.be_output("")
