@@ -358,6 +358,44 @@ class Canvas:
                     continue
                 q["value"] = v
 
+    def add_item_global_param(self, key, value=None, optional=True, type="paragraph", description=""):
+        """
+        Add a new parameter item to the global parameters if it does not already exist.
+        
+        Args:
+            key (str): The parameter key/name
+            value (any, optional): The default value for the parameter. Defaults to None.
+            optional (bool, optional): Whether this parameter is optional. Defaults to True.
+            type (str, optional): The type of parameter. Defaults to "paragraph".
+            description (str, optional): Description of the parameter. Defaults to "".
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Check if the parameter already exists
+            for param in self.components["begin"]["obj"]._param.query:
+                if param["key"] == key:
+                    logging.info(f"Parameter '{key}' already exists. Skipping addition.")
+                    return False
+
+            # Add the parameter if it does not exist
+            param_item = {
+                "key": key,
+                "optional": optional,
+                "type": type,
+                "description": description
+            }
+            
+            if value is not None:
+                param_item["value"] = value
+                
+            self.components["begin"]["obj"]._param.query.append(param_item)
+            return True
+        except Exception as e:
+            logging.error(f"Failed to add parameter: {str(e)}")
+            return False
+
     def get_preset_param(self):
         return self.components["begin"]["obj"]._param.query
 

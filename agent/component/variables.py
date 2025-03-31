@@ -29,7 +29,7 @@ class VariablesExtractParam(GenerateParam):
 
     def __init__(self):
         super().__init__()
-        self.temperature = 0.9
+        self.temperature = 0.4
         self.prompt = ""
 
 
@@ -38,75 +38,14 @@ class VariablesExtractParam(GenerateParam):
 
 
 
-    def get_prompt(self, conv, params):
+    def get_prompt(self, conv:str, params:dict):
         prompt = f"""
-You are a data expert extracting information. DON'T generate anything except the information extracted by the template. 
-######################################
-Example
-######################################
-# Example 1
-REQUEST: Get 'UserName', 'Address' from the conversation.
-## Conversation
-    -ASSISTANT: What is your name?
-    -USER: My name is Jennifer, I live in Washington.
 
-## Output template: 
-```json
-{{
-    "UserName":"Jennifer",
-    "Address":"Washington"
-}}
-```
-###########
-# Example 2
-REQUEST: Get 'UserCode', 'Department' from the conversation.
-## Conversation
-    -USER: My employee code is 39211.
-    -ASSISTANT: What department are you in?
-    -USER: I am in HR department.
-## Output template: 
-```json
-{{
-    "UserCode":"39211",
-    "Department":"HR"
-}}
-```
-###########
-# Example 3
-REQUEST: Get 'Topic', 'The languages of the latest question' from the conversation.
-## Conversation
-    -USER: Xin chào.
-    -ASSISTANT: Chào bạn, Ngày mới tốt lành!
-    -USER: How are you?.
-## Output template: 
-```json
-{{
-    "Topic":"Greetings",
-    "The languages of the latest question":"English"
-}}
-```
-###########
-# Example 4
-REQUEST: Get 'The languages of the latest question', 'Topic' from the conversation.
-## Conversation
-    -USER: 今天是个美好的一天.
-    -ASSISTANT: 是的，如果你今天走在街上，那就太好了
-    -USER: 你知道哪里有意义吗？.
-## Output template: 
-```json
-{{
-    "Topic":"外出",
-    "The languages of the latest question":"Chinese"
-}}
-```
-###################
-# Real Data
-REQUEST: Get '{", ".join(params.keys())}' from the conversation.
-
-## Conversation
-    {conv}
-######################################
+You are a data expert extracting information. DON'T generate anything except the information extracted with flat JSON (no nested JSON or Array). 
+Get {", ".join([f"'{key}'" for key in params.keys()])} and any field from the conversation below.
+{conv}
 """
+        logging.info(f"VariablesExtract: get_prompt: {prompt}")
         return prompt
 
 
@@ -122,47 +61,51 @@ class VariablesExtract(Generate, ABC):
                     field = para["key"].split('@')[1]
                     field = field.strip()
                     if field:
-                        args[field]=""
+                        args[field] = ""
 
-        logging.info(f"VariablesExtract: _run: args: {args}")
-        query = self.get_input()
-        query = str(query["content"][0]) if "content" in query else ""
-        
-     
-        
-    
+        inputs = self.get_input()
+        query = "\n".join(i.strip() for i in inputs["content"] if i.strip())
         hist = self._canvas.get_history(self._param.message_history_window_size)
-        conv = []
+        initquestion = ""
+        conv = ["{}: {}".format("USER", query)]
         for m in hist:
             if m["role"] not in ["user"]:
                 continue
+            initquestion = m["content"]
             conv.append("{}: {}".format(m["role"].upper(), m["content"]))
         conv = "\n".join(conv)
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         ans = chat_mdl.chat(self._param.get_prompt(conv, args),
-                            [{"role": "user", "content": "Output template:"}], self._param.gen_conf())
+                            [{"role": "user", "content": "Output:"}], self._param.gen_conf())
         ans = re.sub(r"\s+", " ", ans)
         match = re.search(r"```json\s*(.*?)\s*```", ans, re.DOTALL)
         if match:
             ans = match.group(1)
-         
             logging.info(ans)
         if not ans:
             logging.info(ans)
-            return VariablesExtract.be_output(query)
+            return VariablesExtract.be_output(initquestion)
 
-        
         logging.info(f"ans: {ans}")
-       
-        try:
-            kwargs ={}
-            ans_json = json.loads(ans)
-            for v in ans_json:
-                if  ans_json[v] != "Unknown" and  ans_json[v] != "" and ans_json[v] != "None":
-                    kwargs[v] = "{}".format(ans_json[v]) 
 
+        try:
+            kwargs = {}
+            ans_json = json.loads(ans)
+    
+            for v in ans_json:
+                invalid_values = {"unknown", "none", "invalid", "not found", "not available", "not applicable", "", "null"}
+                data = "{}".format(ans_json[v]).strip()
+                if data.lower() in invalid_values:
+                    continue
+                if data:
+                    kwargs[v] = data.strip()
+
+                    # Add missing keys to global parameters
+                    self._canvas.add_item_global_param(key=v, value=data.strip(), description=f"Extracted variable: {v}")
+
+                    logging.info(f"Extracted variable: {v} = {kwargs[v]}")
             self._canvas.set_global_param(**kwargs)
-            logging.info("Begin: query: {}".format( self._canvas.components["begin"]["obj"]._param.query)) 
+            logging.info("Begin: query: {}".format(self._canvas.components["begin"]["obj"]._param.query))
 
             return VariablesExtract.be_output(query)
         except json.JSONDecodeError:
