@@ -19,10 +19,9 @@ from abc import ABC
 import requests
 from deepdoc.parser import HtmlParser
 from agent.component.base import ComponentBase, ComponentParamBase
-import logging
 class InvokeParam(ComponentParamBase):
     """
-    Define the Crawler component parameters.
+    Define the Invoke component parameters.
     """
 
     def __init__(self):
@@ -50,7 +49,6 @@ class Invoke(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         args = {}
         for para in self._param.variables:
-            logging.info(f"Setting argument {para}")
             if para.get("component_id") and para.get("key"):
                 if '@' in para["component_id"]:
                     component = para["component_id"].split('@')[0]
@@ -75,11 +73,9 @@ class Invoke(ComponentBase, ABC):
                     if begin_obj is not None:
                         cpn = begin_obj["obj"]
                         for ele in cpn._param.query:
-                            logging.info(f"Setting argument {ele}")
                             args[ele["key"]] = ele["value"]
             elif para.get("key"):
                 args[para["key"]] = para["value"]
-        logging.info(f"Invoke: args: {args}")
         url = self._param.url.strip()
         if url.find("http") != 0:
             url = "http://" + url
