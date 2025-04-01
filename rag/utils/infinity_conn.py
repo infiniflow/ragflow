@@ -565,11 +565,6 @@ class InfinityConnection(DocStoreConnection):
         return True
 
     def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:
-        # when id is an empty list, return 0, don't delete
-        if 'id' in condition and isinstance(condition['id'], list) and not condition['id']:
-            logger.debug(f"INFINITY skipped deleting with empty chunk_ids list")
-            return 0
-            
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
         table_name = f"{indexName}_{knowledgebaseId}"
