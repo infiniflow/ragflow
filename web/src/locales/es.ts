@@ -154,7 +154,7 @@ export default {
       topKTip: `K fragmentos serán alimentados a los modelos de reordenamiento.`,
       delimiter: `Delimitadores para segmentación de texto`,
       html4excel: 'Excel a HTML',
-      html4excelTip: `Excel se analizará en una tabla HTML o no. Si es FALSO, cada fila en Excel se formará como un fragmento.`,
+      html4excelTip: `Usar junto con el método de fragmentación General. Cuando está desactivado, los archivos de hoja de cálculo (XLSX, XLS (Excel97~2003)) se analizan línea por línea como pares clave-valor. Cuando está activado, los archivos de hoja de cálculo se convierten en tablas HTML. Si la tabla original tiene más de 12 filas, el sistema la dividirá automáticamente en varias tablas HTML cada 12 filas.`,
     },
 
     // Otros bloques de traducción

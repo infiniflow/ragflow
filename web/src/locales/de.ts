@@ -170,7 +170,7 @@ export default {
         'Ein Trennzeichen oder Separator kann aus einem oder mehreren Sonderzeichen bestehen. Bei mehreren Zeichen stellen Sie sicher, dass sie in Backticks (` `) eingeschlossen sind. Wenn Sie beispielsweise Ihre Trennzeichen so konfigurieren: \\n`##`;, dann werden Ihre Texte an Zeilenumbrüchen, doppelten Rautenzeichen (##) oder Semikolons getrennt. Setzen Sie Trennzeichen nur nachdem Sie das Mechanismus der Textsegmentierung und -chunking verstanden haben.',
       html4excel: 'Excel zu HTML',
       html4excelTip:
-        'Wenn aktiviert, wird die Tabelle in HTML-Tabellen umgewandelt, mit maximal 256 Zeilen pro Tabelle. Andernfalls wird sie in Schlüssel-Wert-Paare nach Zeilen umgewandelt.',
+        'Verwenden Sie dies zusammen mit der General-Schnittmethode. Wenn deaktiviert, werden Tabellenkalkulationsdateien (XLSX, XLS (Excel97~2003)) zeilenweise in Schlüssel-Wert-Paare analysiert. Wenn aktiviert, werden Tabellenkalkulationsdateien in HTML-Tabellen umgewandelt. Wenn die ursprüngliche Tabelle mehr als 12 Zeilen enthält, teilt das System sie automatisch alle 12 Zeilen in mehrere HTML-Tabellen auf.',
       autoKeywords: 'Auto-Schlüsselwort',
       autoKeywordsTip:
         'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren.',
@@ -355,7 +355,7 @@ export default {
       vietnamese: 'Vietnamesisch',
       pageRank: 'PageRank',
       pageRankTip:
-        'Dies erhöht den Relevanzwert der Wissensdatenbank. Sein Wert wird dem Relevanzwert aller abgerufenen Chunks aus dieser Wissensdatenbank hinzugefügt. Nützlich, wenn Sie innerhalb mehrerer Wissensdatenbanken suchen und einer bestimmten einen höheren PageRank-Wert zuweisen möchten.',
+        'Sie können während des Abrufs bestimmten Wissensdatenbanken eine höhere PageRank-Bewertung zuweisen. Die entsprechende Bewertung wird zu den hybriden Ähnlichkeitswerten der abgerufenen Chunks aus diesen Wissensdatenbanken addiert, wodurch deren Ranking erhöht wird. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/set_page_rank.',
       tagName: 'Tag',
       frequency: 'Häufigkeit',
       searchTags: 'Tags durchsuchen',
