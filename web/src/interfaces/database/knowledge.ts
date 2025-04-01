@@ -24,6 +24,7 @@ export interface IKnowledge {
   vector_similarity_weight: number;
   embd_id: string;
   nickname?: string;
+  operator_permission: number;
 }
 
 export interface Raptor {
