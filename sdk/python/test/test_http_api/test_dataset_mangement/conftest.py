@@ -16,14 +16,24 @@
 
 
 import pytest
-from common import batch_create_datasets, delete_dataset
+from common import batch_create_datasets, delete_datasets
 
 
 @pytest.fixture(scope="class")
-def get_dataset_ids(get_http_api_auth, request):
+def add_datasets(get_http_api_auth, request):
     def cleanup():
-        delete_dataset(get_http_api_auth)
+        delete_datasets(get_http_api_auth)
 
     request.addfinalizer(cleanup)
 
     return batch_create_datasets(get_http_api_auth, 5)
+
+
+@pytest.fixture(scope="function")
+def add_datasets_func(get_http_api_auth, request):
+    def cleanup():
+        delete_datasets(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    return batch_create_datasets(get_http_api_auth, 3)

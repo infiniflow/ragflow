@@ -75,9 +75,6 @@ class TestDatasetCreation:
             res = create_dataset(get_http_api_auth, payload)
             assert res["code"] == 0, f"Failed to create dataset {i}"
 
-
-@pytest.mark.usefixtures("clear_datasets")
-class TestAdvancedConfigurations:
     def test_avatar(self, get_http_api_auth, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {

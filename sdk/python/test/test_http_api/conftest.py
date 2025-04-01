@@ -14,9 +14,8 @@
 #  limitations under the License.
 #
 
-
 import pytest
-from common import delete_dataset
+from common import batch_create_datasets, bulk_upload_documents, delete_datasets
 from libs.utils.file_utils import (
     create_docx_file,
     create_eml_file,
@@ -34,7 +33,7 @@ from libs.utils.file_utils import (
 @pytest.fixture(scope="function")
 def clear_datasets(get_http_api_auth):
     yield
-    delete_dataset(get_http_api_auth)
+    delete_datasets(get_http_api_auth)
 
 
 @pytest.fixture
@@ -58,3 +57,38 @@ def generate_test_files(request, tmp_path):
             creator_func(file_path)
             files[file_type] = file_path
     return files
+
+
+@pytest.fixture(scope="class")
+def ragflow_tmp_dir(request, tmp_path_factory):
+    class_name = request.cls.__name__
+    return tmp_path_factory.mktemp(class_name)
+
+
+@pytest.fixture(scope="class")
+def add_dataset(request, get_http_api_auth):
+    def cleanup():
+        delete_datasets(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    dataset_ids = batch_create_datasets(get_http_api_auth, 1)
+    return dataset_ids[0]
+
+
+@pytest.fixture(scope="function")
+def add_dataset_func(request, get_http_api_auth):
+    def cleanup():
+        delete_datasets(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    dataset_ids = batch_create_datasets(get_http_api_auth, 1)
+    return dataset_ids[0]
+
+
+@pytest.fixture(scope="class")
+def add_document(get_http_api_auth, add_dataset, ragflow_tmp_dir):
+    dataset_id = add_dataset
+    document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 1, ragflow_tmp_dir)
+    return dataset_id, document_ids[0]
