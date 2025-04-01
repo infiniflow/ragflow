@@ -163,7 +163,14 @@
                 },
                 {
                     "llm_name": "qwq-plus",
-                    "tags": "LLM,CHAT,128k",
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwq-plus-latest",
+                    "tags": "LLM,CHAT,132k",
                     "max_tokens": 131072,
                     "model_type": "chat",
                     "is_tools": true
