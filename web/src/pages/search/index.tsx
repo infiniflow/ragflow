@@ -12,6 +12,7 @@ import {
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import { IReference } from '@/interfaces/database/chat';
 import {
+  Button,
   Card,
   Divider,
   Flex,
@@ -28,9 +29,11 @@ import {
   Tag,
   Tooltip,
 } from 'antd';
+import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
-import { useMemo, useState } from 'react';
+import { CircleStop, SendHorizontal } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MarkdownContent from '../chat/markdown-content';
 import { useSendQuestion, useShowMindMapDrawer } from './hooks';
@@ -64,6 +67,7 @@ const SearchPage = () => {
     isFirstRender,
     selectedDocumentIds,
     isSearchStrEmpty,
+    stopOutputMessage,
   } = useSendQuestion(checkedWithoutEmbeddingIdList);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
@@ -81,18 +85,35 @@ const SearchPage = () => {
     handleTestChunk(selectedDocumentIds, pageNumber, pageSize);
   };
 
+  const handleSearch = useCallback(() => {
+    sendQuestion(searchStr);
+  }, [searchStr, sendQuestion]);
+
   const InputSearch = (
     <Search
       value={searchStr}
       onChange={handleSearchStrChange}
       placeholder={t('header.search')}
       allowClear
-      enterButton
+      addonAfter={
+        sendingLoading ? (
+          <Button onClick={stopOutputMessage}>
+            <CircleStop />
+          </Button>
+        ) : (
+          <Button onClick={handleSearch}>
+            <SendHorizontal className="size-5 text-blue-500" />
+          </Button>
+        )
+      }
       onSearch={sendQuestion}
       size="large"
       loading={sendingLoading}
       disabled={checkedWithoutEmbeddingIdList.length === 0}
-      className={isFirstRender ? styles.globalInput : styles.partialInput}
+      className={classNames(
+        styles.searchInput,
+        isFirstRender ? styles.globalInput : styles.partialInput,
+      )}
     />
   );
 

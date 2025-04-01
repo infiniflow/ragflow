@@ -57,7 +57,9 @@ export const useSendNextMessage = () => {
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const { refetch } = useFetchFlow();
 
-  const { send, answer, done } = useSendMessageWithSse(api.runCanvas);
+  const { send, answer, done, stopOutputMessage } = useSendMessageWithSse(
+    api.runCanvas,
+  );
 
   const sendMessage = useCallback(
     async ({ message }: { message: Message; messages?: Message[] }) => {
@@ -134,5 +136,6 @@ export const useSendNextMessage = () => {
     derivedMessages,
     ref,
     removeMessageById,
+    stopOutputMessage,
   };
 };

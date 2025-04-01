@@ -40,6 +40,7 @@ const ChatContainer = ({ controller }: IProps) => {
     handlePressEnter,
     regenerateMessage,
     removeMessageById,
+    stopOutputMessage,
   } = useSendNextMessage(controller);
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -100,6 +101,7 @@ const ChatContainer = ({ controller }: IProps) => {
           createConversationBeforeUploadDocument={
             createConversationBeforeUploadDocument
           }
+          stopOutputMessage={stopOutputMessage}
         ></MessageInput>
       </Flex>
       <PdfDrawer
