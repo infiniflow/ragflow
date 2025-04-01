@@ -193,7 +193,7 @@ class Extractor:
         if len(nodes) <= 1:
             return
         change.added_updated_nodes.add(nodes[0])
-        change.removed_nodes.extend(nodes[1:])
+        change.removed_nodes.update(nodes[1:])
         nodes_set = set(nodes)
         node0_attrs = graph.nodes[nodes[0]]
         node0_neighbors = set(graph.neighbors(nodes[0]))
