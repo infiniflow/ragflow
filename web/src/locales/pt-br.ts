@@ -167,7 +167,7 @@ export default {
         'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \\n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula. Defina os delimitadores apenas após entender o mecanismo de segmentação e particionamento de texto.',
       html4excel: 'Excel para HTML',
       html4excelTip:
-        'Quando ativado, a planilha será analisada em tabelas HTML, com no máximo 256 linhas por tabela. Caso contrário, será analisada em pares chave-valor por linha.',
+        'Use em conjunto com o método de fragmentação General. Quando desativado, arquivos de planilhas (XLSX, XLS (Excel97~2003)) serão analisados linha por linha como pares chave-valor. Quando ativado, os arquivos de planilhas serão convertidos em tabelas HTML. Se a tabela original tiver mais de 12 linhas, o sistema dividirá automaticamente em várias tabelas HTML a cada 12 linhas.',
       autoKeywords: 'Palavras-chave automáticas',
       autoKeywordsTip:
         'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos.',
@@ -281,7 +281,7 @@ export default {
       entityTypes: 'Tipos de entidades',
       vietnamese: 'Vietnamita',
       pageRank: 'Ranking de páginas',
-      pageRankTip: `Isso aumenta a pontuação de relevância da base de conhecimento. Seu valor será adicionado à pontuação de relevância de todos os fragmentos recuperados dessa base de conhecimento. Útil ao pesquisar em múltiplas bases e querer priorizar uma específica.`,
+      pageRankTip: `Você pode atribuir uma pontuação PageRank mais alta a bases de conhecimento específicas durante a recuperação. A pontuação correspondente é adicionada às pontuações de similaridade híbrida dos fragmentos recuperados dessas bases de conhecimento, aumentando sua classificação. Veja https://ragflow.io/docs/dev/set_page_rank para mais detalhes.`,
       tagName: 'Etiqueta',
       frequency: 'Frequência',
       searchTags: 'Pesquisar etiquetas',

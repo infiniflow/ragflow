@@ -17,7 +17,9 @@ import {
 } from 'react';
 
 export const useSendQuestion = (kbIds: string[]) => {
-  const { send, answer, done } = useSendMessageWithSse(api.ask);
+  const { send, answer, done, stopOutputMessage } = useSendMessageWithSse(
+    api.ask,
+  );
   const { testChunk, loading } = useTestChunkRetrieval();
   const [sendingLoading, setSendingLoading] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState({} as IAnswer);
@@ -116,6 +118,7 @@ export const useSendQuestion = (kbIds: string[]) => {
     isFirstRender,
     selectedDocumentIds,
     isSearchStrEmpty: isEmpty(trim(searchStr)),
+    stopOutputMessage,
   };
 };
 
