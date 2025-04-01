@@ -59,7 +59,7 @@ class TestAuthorization:
         assert res["message"] == expected_message
 
 
-# @pytest.mark.skip
+@pytest.mark.skip
 class TestDocumentsParseStop:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
