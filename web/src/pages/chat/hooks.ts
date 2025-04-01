@@ -375,6 +375,10 @@ export const useSendNextMessage = (controller: AbortController) => {
   const { setConversationIsNew, getConversationIsNew } =
     useSetChatRouteParams();
 
+  const stopOutputMessage = useCallback(() => {
+    controller.abort();
+  }, [controller]);
+
   const sendMessage = useCallback(
     async ({
       message,
@@ -490,6 +494,7 @@ export const useSendNextMessage = (controller: AbortController) => {
     ref,
     derivedMessages,
     removeMessageById,
+    stopOutputMessage,
   };
 };
 
