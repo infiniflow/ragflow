@@ -163,7 +163,14 @@
                 },
                 {
                     "llm_name": "qwq-plus",
-                    "tags": "LLM,CHAT,128k",
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwq-plus-latest",
+                    "tags": "LLM,CHAT,132k",
                     "max_tokens": 131072,
                     "model_type": "chat",
                     "is_tools": true
@@ -415,56 +422,7 @@
             "logo": "",
             "tags": "TEXT EMBEDDING",
             "status": "1",
-            "llm": [
-                {
-                    "llm_name": "BAAI/bge-small-en-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "BAAI/bge-small-zh-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "BAAI/bge-base-en-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "BAAI/bge-large-en-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "sentence-transformers/all-MiniLM-L6-v2",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "nomic-ai/nomic-embed-text-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 8192,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "jinaai/jina-embeddings-v2-small-en",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 2147483648,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "jinaai/jina-embeddings-v2-base-en",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 2147483648,
-                    "model_type": "embedding"
-                }
-            ]
+            "llm": []
         },
         {
             "name": "Xinference",
@@ -484,12 +442,6 @@
                     "tags": "TEXT EMBEDDING,",
                     "max_tokens": 512,
                     "model_type": "embedding"
-                },
-                {
-                    "llm_name": "maidalun1020/bce-reranker-base_v1",
-                    "tags": "RE-RANK, 512",
-                    "max_tokens": 512,
-                    "model_type": "rerank"
                 }
             ]
         },
@@ -679,12 +631,6 @@
                     "tags": "TEXT EMBEDDING,",
                     "max_tokens": 1024,
                     "model_type": "embedding"
-                },
-                {
-                    "llm_name": "BAAI/bge-reranker-v2-m3",
-                    "tags": "RE-RANK,2k",
-                    "max_tokens": 2048,
-                    "model_type": "rerank"
                 }
             ]
         },

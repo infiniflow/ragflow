@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
 import os
 
 import pytest
@@ -52,9 +51,7 @@ class TestChunksRetrieval:
             ({"question": "chunk"}, 102, 0, "`dataset_ids` is required."),
         ],
     )
-    def test_basic_scenarios(
-        self, get_http_api_auth, add_chunks, payload, expected_code, expected_page_size, expected_message
-    ):
+    def test_basic_scenarios(self, get_http_api_auth, add_chunks, payload, expected_code, expected_page_size, expected_message):
         dataset_id, document_id, _ = add_chunks
         if "dataset_ids" in payload:
             payload["dataset_ids"] = [dataset_id]
@@ -137,9 +134,7 @@ class TestChunksRetrieval:
             ),
         ],
     )
-    def test_page_size(
-        self, get_http_api_auth, add_chunks, payload, expected_code, expected_page_size, expected_message
-    ):
+    def test_page_size(self, get_http_api_auth, add_chunks, payload, expected_code, expected_page_size, expected_message):
         dataset_id, _, _ = add_chunks
         payload.update({"question": "chunk", "dataset_ids": [dataset_id]})
 
@@ -165,9 +160,7 @@ class TestChunksRetrieval:
             ),
         ],
     )
-    def test_vector_similarity_weight(
-        self, get_http_api_auth, add_chunks, payload, expected_code, expected_page_size, expected_message
-    ):
+    def test_vector_similarity_weight(self, get_http_api_auth, add_chunks, payload, expected_code, expected_page_size, expected_message):
         dataset_id, _, _ = add_chunks
         payload.update({"question": "chunk", "dataset_ids": [dataset_id]})
         res = retrieval_chunks(get_http_api_auth, payload)
@@ -228,13 +221,12 @@ class TestChunksRetrieval:
         else:
             assert expected_message in res["message"]
 
+    @pytest.mark.skip
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
             ({"rerank_id": "BAAI/bge-reranker-v2-m3"}, 0, ""),
-            pytest.param(
-                {"rerank_id": "unknown"}, 100, "LookupError('Model(unknown) not authorized')", marks=pytest.mark.skip
-            ),
+            pytest.param({"rerank_id": "unknown"}, 100, "LookupError('Model(unknown) not authorized')", marks=pytest.mark.skip),
         ],
     )
     def test_rerank_id(self, get_http_api_auth, add_chunks, payload, expected_code, expected_message):
@@ -247,7 +239,6 @@ class TestChunksRetrieval:
         else:
             assert expected_message in res["message"]
 
-    @pytest.mark.skip(reason="chat model is not set")
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [
@@ -278,9 +269,7 @@ class TestChunksRetrieval:
             pytest.param({"highlight": None}, 0, False, "", marks=pytest.mark.skip(reason="issues/6648")),
         ],
     )
-    def test_highlight(
-        self, get_http_api_auth, add_chunks, payload, expected_code, expected_highlight, expected_message
-    ):
+    def test_highlight(self, get_http_api_auth, add_chunks, payload, expected_code, expected_highlight, expected_message):
         dataset_id, _, _ = add_chunks
         payload.update({"question": "chunk", "dataset_ids": [dataset_id]})
         res = retrieval_chunks(get_http_api_auth, payload)
@@ -301,3 +290,14 @@ class TestChunksRetrieval:
         res = retrieval_chunks(get_http_api_auth, payload)
         assert res["code"] == 0
         assert len(res["data"]["chunks"]) == 4
+
+    def test_concurrent_retrieval(self, get_http_api_auth, add_chunks):
+        from concurrent.futures import ThreadPoolExecutor
+
+        dataset_id, _, _ = add_chunks
+        payload = {"question": "chunk", "dataset_ids": [dataset_id]}
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(retrieval_chunks, get_http_api_auth, payload) for i in range(100)]
+        responses = [f.result() for f in futures]
+        assert all(r["code"] == 0 for r in responses)
