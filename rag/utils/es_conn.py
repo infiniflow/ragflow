@@ -180,17 +180,7 @@ class ESConnection(DocStoreConnection):
                 weights = m.fusion_params["weights"]
                 vector_similarity_weight = get_float(weights.split(",")[1])
         for m in matchExprs:
-            if isinstance(m, MatchTextExpr):
-                minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
-                if isinstance(minimum_should_match, float):
-                    minimum_should_match = str(int(minimum_should_match * 100)) + "%"
-                bqry.must.append(Q("query_string", fields=m.fields,
-                                   type="best_fields", query=m.matching_text,
-                                   minimum_should_match=minimum_should_match,
-                                   boost=1))
-                bqry.boost = 1.0 - vector_similarity_weight
-
-            elif isinstance(m, MatchDenseExpr):
+            if  isinstance(m, MatchDenseExpr):
                 assert (bqry is not None)
                 similarity = 0.0
                 if "similarity" in m.extra_options:
@@ -202,6 +192,16 @@ class ESConnection(DocStoreConnection):
                           filter=bqry.to_dict(),
                           similarity=similarity,
                           )
+        for m in matchExprs:
+            if isinstance(m, MatchTextExpr):
+                minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
+                if isinstance(minimum_should_match, float):
+                    minimum_should_match = str(int(minimum_should_match * 100)) + "%"
+                bqry.must.append(Q("query_string", fields=m.fields,
+                                   type="best_fields", query=m.matching_text,
+                                   minimum_should_match=minimum_should_match,
+                                   boost=1))
+                bqry.boost = 1.0 - vector_similarity_weight
 
         if bqry and rank_feature:
             for fld, sc in rank_feature.items():
