@@ -54,7 +54,7 @@ class TestUpdatedChunk:
             pytest.param(
                 {"content": 1},
                 100,
-                """TypeError("unsupported operand type(s) for +: \'int\' and \'str\'")""",
+                "TypeError('expected string or bytes-like object')",
                 marks=pytest.mark.skip,
             ),
             ({"content": "update chunk"}, 0, ""),

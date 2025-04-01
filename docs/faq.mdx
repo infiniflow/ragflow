@@ -9,6 +9,10 @@ Answers to questions about general features, troubleshooting, usage, and more.
 
 ---
 
+import TOCInline from '@theme/TOCInline';
+
+<TOCInline toc={toc} />
+
 ## General features
 
 ---
@@ -120,25 +124,24 @@ Yes, we support enhancing user queries based on existing context of an ongoing c
 
 ---
 
+### Key differences between AI search and chat?
+
+- **AI search**: This is a single-turn AI conversation using a predefined retrieval strategy (a hybrid search of weighted keyword similarity and weighted vector similarity) and the system's default chat model. It does not involve advanced RAG strategies like knowledge graph, auto-keyword, or auto-question. Retrieved chunks will be listed below the chat model's response.
+- **AI chat**: This is a multi-turn AI conversation where you can define your retrieval strategy (a weighted reranking score can be used to replace the weighted vector similarity in a hybrid search) and choose your chat model. In an AI chat, you can configure advanced RAG strategies, such as knowledge graphs, auto-keyword, and auto-question, for your specific case. Retrieved chunks are not displayed along with the answer.
+
+When debugging your chat assistant, you can use AI search as a reference to verify your model settings and retrieval strategy.
+
+---
+
 ## Troubleshooting
 
 ---
 
-### Issues with Docker images
-
----
-
-#### How to build the RAGFlow image from scratch?
+### How to build the RAGFlow image from scratch?
 
 See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
 
----
-
-### Issues with huggingface models
-
----
-
-#### Cannot access https://huggingface.co
+### Cannot access https://huggingface.co
 
 A locally deployed RAGflow downloads OCR and embedding modules from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
 
@@ -169,7 +172,7 @@ To fix this issue, use https://hf-mirror.com instead:
 
 ---
 
-#### `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
+### `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
 
 This error suggests that you do not have Internet access or are unable to connect to hf-mirror.com. Try the following:
 
@@ -182,17 +185,13 @@ This error suggests that you do not have Internet access or are unable to connec
 
 ---
 
-### Issues with RAGFlow servers
-
----
-
-#### `WARNING: can't find /raglof/rag/res/borker.tm`
+### `WARNING: can't find /raglof/rag/res/borker.tm`
 
 Ignore this warning and continue. All system warnings can be ignored.
 
 ---
 
-#### `network anomaly There is an abnormality in your network and you cannot connect to the server.`
+### `network anomaly There is an abnormality in your network and you cannot connect to the server.`
 
 ![anomaly](https://github.com/infiniflow/ragflow/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
 
@@ -215,11 +214,7 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
 
 ---
 
-### Issues with RAGFlow backend services
-
----
-
-#### `Realtime synonym is disabled, since no redis connection`
+### `Realtime synonym is disabled, since no redis connection`
 
 Ignore this warning and continue. All system warnings can be ignored.
 
@@ -227,7 +222,7 @@ Ignore this warning and continue. All system warnings can be ignored.
 
 ---
 
-#### Why does my document parsing stall at under one percent?
+### Why does my document parsing stall at under one percent?
 
 ![stall](https://github.com/infiniflow/ragflow/assets/93570324/3589cc25-c733-47d5-bbfc-fedb74a3da50)
 
@@ -244,7 +239,7 @@ Click the red cross beside the 'parsing status' bar, then restart the parsing pr
 
 ---
 
-#### Why does my pdf parsing stall near completion, while the log does not show any error?
+### Why does my pdf parsing stall near completion, while the log does not show any error?
 
 Click the red cross beside the 'parsing status' bar, then restart the parsing process to see if the issue remains. If the issue persists and your RAGFlow is deployed locally, the parsing process is likely killed due to insufficient RAM. Try increasing your memory allocation by increasing the `MEM_LIMIT` value in **docker/.env**.
 
@@ -265,13 +260,13 @@ docker compose up -d
 
 ---
 
-#### `Index failure`
+### `Index failure`
 
 An index failure usually indicates an unavailable Elasticsearch service.
 
 ---
 
-#### How to check the log of RAGFlow?
+### How to check the log of RAGFlow?
 
 ```bash
 tail -f ragflow/docker/ragflow-logs/*.log
@@ -279,7 +274,7 @@ tail -f ragflow/docker/ragflow-logs/*.log
 
 ---
 
-#### How to check the status of each component in RAGFlow?
+### How to check the status of each component in RAGFlow?
 
 1. Check the status of the Elasticsearch Docker container:
 
@@ -304,7 +299,7 @@ The status of a Docker container status does not necessarily reflect the status 
 
 ---
 
-#### `Exception: Can't connect to ES cluster`
+### `Exception: Can't connect to ES cluster`
 
 1. Check the status of the Elasticsearch Docker container:
 
@@ -328,19 +323,19 @@ The status of a Docker container status does not necessarily reflect the status 
 
 ---
 
-#### Can't start ES container and get `Elasticsearch did not exit normally`
+### Can't start ES container and get `Elasticsearch did not exit normally`
 
 This is because you forgot to update the `vm.max_map_count` value in **/etc/sysctl.conf** and your change to this value was reset after a system reboot.
 
 ---
 
-#### `{"data":null,"code":100,"message":"<NotFound '404: Not Found'>"}`
+### `{"data":null,"code":100,"message":"<NotFound '404: Not Found'>"}`
 
 Your IP address or port number may be incorrect. If you are using the default configurations, enter `http://<IP_OF_YOUR_MACHINE>` (**NOT 9380, AND NO PORT NUMBER REQUIRED!**) in your browser. This should work.
 
 ---
 
-#### `Ollama - Mistral instance running at 127.0.0.1:11434 but cannot add Ollama as model in RagFlow`
+### `Ollama - Mistral instance running at 127.0.0.1:11434 but cannot add Ollama as model in RagFlow`
 
 A correct Ollama IP address and port is crucial to adding models to Ollama:
 
@@ -351,37 +346,13 @@ See [Deploy a local LLM](./guides/models/deploy_local_llm.mdx) for more informat
 
 ---
 
-#### Do you offer examples of using DeepDoc to parse PDF or other files?
+### Do you offer examples of using DeepDoc to parse PDF or other files?
 
 Yes, we do. See the Python files under the **rag/app** folder.
 
 ---
 
-#### Why did I fail to upload a 128MB+ file to my locally deployed RAGFlow?
-
-Ensure that you update the **MAX_CONTENT_LENGTH** environment variable:
-
-1. In **ragflow/docker/.env**, uncomment environment variable `MAX_CONTENT_LENGTH`:
-
-   ```
-   MAX_CONTENT_LENGTH=176160768 # 168MB
-   ```
-
-2. Update **ragflow/docker/nginx/nginx.conf**:
-
-   ```
-   client_max_body_size 168M
-   ```
-
-3. Restart the RAGFlow server:
-
-   ```
-   docker compose up ragflow -d
-   ```
-
----
-
-#### `FileNotFoundError: [Errno 2] No such file or directory`
+### `FileNotFoundError: [Errno 2] No such file or directory`
 
 1. Check the status of the MinIO Docker container:
 
@@ -407,14 +378,6 @@ The status of a Docker container status does not necessarily reflect the status 
 
 ---
 
-### How to increase the length of RAGFlow responses?
-
-1. Right-click the desired dialog to display the **Chat Configuration** window.
-2. Switch to the **Model Setting** tab and adjust the **Max Tokens** slider to get the desired length.
-3. Click **OK** to confirm your change.
-
----
-
 ### How to run RAGFlow with a locally deployed LLM?
 
 You can use Ollama or Xinference to deploy local LLM. See [here](./guides/models/deploy_local_llm.mdx) for more information.
@@ -429,7 +392,7 @@ If your model is not currently supported but has APIs compatible with those of O
 
 ---
 
-### How to interconnect RAGFlow with Ollama?
+### How to integrate RAGFlow with Ollama?
 
 - If RAGFlow is locally deployed, ensure that your RAGFlow and Ollama are in the same LAN.
 - If you are using our online demo, ensure that the IP address of your Ollama server is public and accessible.
@@ -475,3 +438,14 @@ See [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md).
 See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
 
 ---
+
+### How to switch the document engine to Infinity?
+
+To switch your document engine from Elasticsearch to [Infinity](https://github.com/infiniflow/infinity):
+
+1. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
+2. Restart your Docker image: 
+
+```bash
+$ docker compose -f docker-compose.yml up -d
+```

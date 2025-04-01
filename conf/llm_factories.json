@@ -415,56 +415,7 @@
             "logo": "",
             "tags": "TEXT EMBEDDING",
             "status": "1",
-            "llm": [
-                {
-                    "llm_name": "BAAI/bge-small-en-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "BAAI/bge-small-zh-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "BAAI/bge-base-en-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "BAAI/bge-large-en-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "sentence-transformers/all-MiniLM-L6-v2",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "nomic-ai/nomic-embed-text-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 8192,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "jinaai/jina-embeddings-v2-small-en",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 2147483648,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "jinaai/jina-embeddings-v2-base-en",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 2147483648,
-                    "model_type": "embedding"
-                }
-            ]
+            "llm": []
         },
         {
             "name": "Xinference",
@@ -484,12 +435,6 @@
                     "tags": "TEXT EMBEDDING,",
                     "max_tokens": 512,
                     "model_type": "embedding"
-                },
-                {
-                    "llm_name": "maidalun1020/bce-reranker-base_v1",
-                    "tags": "RE-RANK, 512",
-                    "max_tokens": 512,
-                    "model_type": "rerank"
                 }
             ]
         },
@@ -679,12 +624,6 @@
                     "tags": "TEXT EMBEDDING,",
                     "max_tokens": 1024,
                     "model_type": "embedding"
-                },
-                {
-                    "llm_name": "BAAI/bge-reranker-v2-m3",
-                    "tags": "RE-RANK,2k",
-                    "max_tokens": 2048,
-                    "model_type": "rerank"
                 }
             ]
         },
@@ -909,184 +848,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
-            "llm": [
-                {
-                    "llm_name": "deepseek.r1-v1:0",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "ai21.j2-ultra-v1",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8191,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "ai21.j2-mid-v1",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8191,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "cohere.command-text-v14",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "cohere.command-light-text-v14",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "cohere.command-r-v1:0",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 131072,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "cohere.command-r-plus-v1:0",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "anthropic.claude-v2",
-                    "tags": "LLM,CHAT,100k",
-                    "max_tokens": 102400,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic.claude-v2:1",
-                    "tags": "LLM,CHAT,200k",
-                    "max_tokens": 204800,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "anthropic.claude-3-sonnet-20240229-v1:0",
-                    "tags": "LLM,CHAT,200k",
-                    "max_tokens": 204800,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "anthropic.claude-3-5-sonnet-20240620-v1:0",
-                    "tags": "LLM,CHAT,200k",
-                    "max_tokens": 204800,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "anthropic.claude-3-haiku-20240307-v1:0",
-                    "tags": "LLM,CHAT,200k",
-                    "max_tokens": 204800,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "anthropic.claude-3-opus-20240229-v1:0",
-                    "tags": "LLM,CHAT,200k",
-                    "max_tokens": 204800,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "anthropic.claude-instant-v1",
-                    "tags": "LLM,CHAT,100k",
-                    "max_tokens": 102400,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "amazon.titan-text-express-v1",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "amazon.titan-text-premier-v1:0",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32768,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "amazon.titan-text-lite-v1",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta.llama2-13b-chat-v1",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "meta.llama2-70b-chat-v1",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta.llama3-8b-instruct-v1:0",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "meta.llama3-70b-instruct-v1:0",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistral.mistral-7b-instruct-v0:2",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistral.mixtral-8x7b-instruct-v0:1",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistral.mistral-large-2402-v1:0",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "mistral.mistral-small-2402-v1:0",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "amazon.titan-embed-text-v2:0",
-                    "tags": "TEXT EMBEDDING",
-                    "max_tokens": 8192,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "cohere.embed-english-v3",
-                    "tags": "TEXT EMBEDDING",
-                    "max_tokens": 2048,
-                    "model_type": "embedding"
-                },
-                {
-                    "llm_name": "cohere.embed-multilingual-v3",
-                    "tags": "TEXT EMBEDDING",
-                    "max_tokens": 2048,
-                    "model_type": "embedding"
-                }
-            ]
+            "llm": []
         },
         {
             "name": "Gemini",

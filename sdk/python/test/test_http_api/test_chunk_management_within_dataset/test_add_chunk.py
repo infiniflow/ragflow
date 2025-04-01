@@ -28,7 +28,7 @@ def validate_chunk_details(dataset_id, document_id, payload, res):
     if "important_keywords" in payload:
         assert chunk["important_keywords"] == payload["important_keywords"]
     if "questions" in payload:
-        assert chunk["questions"] == payload["questions"]
+        assert chunk["questions"] == [str(q).strip() for q in payload.get("questions", []) if str(q).strip()]
 
 
 class TestAuthorization:
@@ -119,12 +119,7 @@ class TestAddChunk:
         "payload, expected_code, expected_message",
         [
             ({"content": "chunk test", "questions": ["a", "b", "c"]}, 0, ""),
-            pytest.param(
-                {"content": "chunk test", "questions": [""]},
-                0,
-                "",
-                marks=pytest.mark.skip(reason="issues/6404"),
-            ),
+            ({"content": "chunk test", "questions": [""]}, 0, ""),
             ({"content": "chunk test", "questions": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
             ({"content": "chunk test", "questions": ["a", "a"]}, 0, ""),
             ({"content": "chunk test", "questions": "abc"}, 102, "`questions` is required to be a list"),
