@@ -48,10 +48,25 @@ You start an AI conversation by creating an assistant.
 4. Update **Model Setting**:
 
    - In **Model**: you select the chat model. Though you have selected the default chat model in **System Model Settings**, RAGFlow allows you to choose an alternative chat model for your dialogue.
-   - **Preset configurations** refers to the level that the LLM improvises. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.
-   - **Temperature**: Level of the prediction randomness of the LLM. The higher the value, the more creative the LLM is.
-   - **Top P** is also known as "nucleus sampling". See [here](https://en.wikipedia.org/wiki/Top-p_sampling) for more information.
-   - **Max Tokens**: The maximum length of the LLM's responses. Note that the responses may be curtailed if this value is set too low.
+   - **Freedom**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
+   This parameter has three options:
+      - **Improvise**: Produces more creative responses.
+      - **Precise**: (Default) Produces more conservative responses.
+      - **Balance**: A middle ground between **Improvise** and **Precise**.
+   - **Temperature**: The randomness level of the model's output.  
+   Defaults to 0.1.
+      - Lower values lead to more deterministic and predictable outputs.
+      - Higher values lead to more creative and varied outputs.
+      - A temperature of zero results in the same output for the same prompt.
+   - **Top P**: Nucleus sampling.  
+      - Reduces the likelihood of generating repetitive or unnatural text by setting a threshold *P* and restricting the sampling to tokens with a cumulative probability exceeding *P*.
+      - Defaults to 0.3.
+   - **Presence penalty**: Encourages the model to include a more diverse range of tokens in the response.  
+      - A higher **presence penalty** value results in the model being more likely to generate tokens not yet been included in the generated text.
+      - Defaults to 0.4.
+   - **Frequency penalty**: Discourages the model from repeating the same words or phrases too frequently in the generated text.  
+      - A higher **frequency penalty** value results in the model being more conservative in its use of repeated tokens.
+      - Defaults to 0.7.
 
 5. Now, let's start the show:
 
