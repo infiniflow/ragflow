@@ -201,11 +201,16 @@ const MarkdownContent = ({
             const { children, className, node, ...rest } = props;
             const match = /language-(\w+)/.exec(className || '');
             return match ? (
-              <SyntaxHighlighter {...rest} PreTag="div" language={match[1]}>
+              <SyntaxHighlighter
+                {...rest}
+                PreTag="div"
+                language={match[1]}
+                wrapLongLines
+              >
                 {String(children).replace(/\n$/, '')}
               </SyntaxHighlighter>
             ) : (
-              <code {...rest} className={className}>
+              <code {...rest} className={classNames(className, 'text-wrap')}>
                 {children}
               </code>
             );
