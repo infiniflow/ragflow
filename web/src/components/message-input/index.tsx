@@ -11,8 +11,6 @@ import {
   CloseCircleOutlined,
   InfoCircleOutlined,
   LoadingOutlined,
-  PaperClipOutlined,
-  SendOutlined,
 } from '@ant-design/icons';
 import type { GetProp, UploadFile } from 'antd';
 import {
@@ -29,7 +27,7 @@ import {
   UploadProps,
 } from 'antd';
 import get from 'lodash/get';
-import { CircleStop } from 'lucide-react';
+import { CircleStop, Paperclip, SendHorizontal } from 'lucide-react';
 import {
   ChangeEventHandler,
   memo,
@@ -153,6 +151,14 @@ const MessageInput = ({
 
   const isUploadingFile = fileList.some((x) => x.status === 'uploading');
 
+  const handlePressEnter = useCallback(async () => {
+    if (isUploadingFile) return;
+    const ids = getFileIds(fileList.filter((x) => isUploadSuccess(x)));
+
+    onPressEnter(ids);
+    setFileList([]);
+  }, [fileList, onPressEnter, isUploadingFile]);
+
   const handleKeyDown = useCallback(
     async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // check if it was shift + enter
@@ -165,19 +171,6 @@ const MessageInput = ({
     },
     [sendDisabled, isUploadingFile, sendLoading, handlePressEnter],
   );
-
-  const handlePressEnter = useCallback(async () => {
-    if (isUploadingFile) return;
-    const ids = getFileIds(fileList.filter((x) => isUploadSuccess(x)));
-
-    onPressEnter(ids);
-    setFileList([]);
-  }, [fileList, onPressEnter, isUploadingFile]);
-
-  const [isComposing, setIsComposing] = useState(false);
-
-  const handleCompositionStart = () => setIsComposing(true);
-  const handleCompositionEnd = () => setIsComposing(false);
 
   const handleRemove = useCallback(
     async (file: UploadFile) => {
@@ -245,8 +238,6 @@ const MessageInput = ({
         autoSize={{ minRows: 2, maxRows: 10 }}
         onKeyDown={handleKeyDown}
         onChange={onInputChange}
-        onCompositionStart={handleCompositionStart}
-        onCompositionEnd={handleCompositionEnd}
       />
       <Divider style={{ margin: '5px 30px 10px 0px' }} />
       <Flex justify="space-between" align="center">
@@ -349,13 +340,13 @@ const MessageInput = ({
               }}
             >
               <Button type={'primary'} disabled={disabled}>
-                <PaperClipOutlined />
+                <Paperclip className="size-4" />
               </Button>
             </Upload>
           )}
           {sendLoading ? (
             <Button onClick={handleStopOutputMessage}>
-              <CircleStop />
+              <CircleStop className="size-5" />
             </Button>
           ) : (
             <Button
@@ -364,7 +355,7 @@ const MessageInput = ({
               loading={sendLoading}
               disabled={sendDisabled || isUploadingFile || sendLoading}
             >
-              <SendOutlined />
+              <SendHorizontal className="size-5" />
             </Button>
           )}
         </Flex>
