@@ -94,7 +94,7 @@ class GraphExtractor(Extractor):
             self._tuple_delimiter_key: DEFAULT_TUPLE_DELIMITER,
             self._record_delimiter_key: DEFAULT_RECORD_DELIMITER,
             self._completion_delimiter_key: DEFAULT_COMPLETION_DELIMITER,
-            self._entity_types_key: entity_types,
+            self._entity_types_key: ",".join(entity_types),
         }
 
     async def _process_single_content(self, chunk_key_dp: tuple[str, str], chunk_seq: int, num_chunks: int, out_results):

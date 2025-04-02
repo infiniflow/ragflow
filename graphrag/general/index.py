@@ -72,41 +72,51 @@ async def run_graphrag(
     if not subgraph:
         return
 
-    subgraph_nodes = set(subgraph.nodes())
-    new_graph = await merge_subgraph(
-        tenant_id,
-        kb_id,
-        doc_id,
-        subgraph,
-        embedding_model,
-        callback,
-    )
-    assert new_graph is not None
+    graphrag_task_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value=doc_id, timeout=3600)
+    while True:
+        if graphrag_task_lock.acquire():
+            break
+        callback(msg=f"merge_subgraph {doc_id} is waiting graphrag_task_lock")
+        await trio.sleep(20)
 
-    if not with_resolution or not with_community:
-        return
-
-    if with_resolution:
-        await resolve_entities(
-            new_graph,
-            subgraph_nodes,
+    try:
+        subgraph_nodes = set(subgraph.nodes())
+        new_graph = await merge_subgraph(
             tenant_id,
             kb_id,
             doc_id,
-            chat_model,
+            subgraph,
             embedding_model,
             callback,
         )
-    if with_community:
-        await extract_community(
-            new_graph,
-            tenant_id,
-            kb_id,
-            doc_id,
-            chat_model,
-            embedding_model,
-            callback,
-        )
+        assert new_graph is not None
+
+        if not with_resolution or not with_community:
+            return
+
+        if with_resolution:
+            await resolve_entities(
+                new_graph,
+                subgraph_nodes,
+                tenant_id,
+                kb_id,
+                doc_id,
+                chat_model,
+                embedding_model,
+                callback,
+            )
+        if with_community:
+            await extract_community(
+                new_graph,
+                tenant_id,
+                kb_id,
+                doc_id,
+                chat_model,
+                embedding_model,
+                callback,
+            )
+    finally:
+        graphrag_task_lock.release()
     now = trio.current_time()
     callback(msg=f"GraphRAG for doc {doc_id} done in {now - start:.2f} seconds.")
     return
@@ -191,13 +201,6 @@ async def merge_subgraph(
     embedding_model,
     callback,
 ):
-    graphrag_task_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value=doc_id, timeout=600)
-    while True:
-        if graphrag_task_lock.acquire():
-            break
-        callback(msg=f"merge_subgraph {doc_id} is waiting graphrag_task_lock")
-        await trio.sleep(10)
-
     start = trio.current_time()
     change = GraphChange()
     old_graph = await get_graph(tenant_id, kb_id)
@@ -214,7 +217,6 @@ async def merge_subgraph(
         new_graph.nodes[node_name]["pagerank"] = pagerank
 
     await set_graph(tenant_id, kb_id, embedding_model, new_graph, change, callback)
-    graphrag_task_lock.release()
     now = trio.current_time()
     callback(
         msg=f"merging subgraph for doc {doc_id} into the global graph done in {now - start:.2f} seconds."
@@ -232,13 +234,6 @@ async def resolve_entities(
     embed_bdl,
     callback,
 ):
-    graphrag_task_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value=doc_id, timeout=600)
-    while True:
-        if graphrag_task_lock.acquire():
-            break
-        callback(msg=f"resolve_entities {doc_id} is waiting graphrag_task_lock")
-        await trio.sleep(10)
-
     start = trio.current_time()
     er = EntityResolution(
         llm_bdl,
@@ -250,7 +245,6 @@ async def resolve_entities(
     callback(msg="Graph resolution updated pagerank.")
 
     await set_graph(tenant_id, kb_id, embed_bdl, graph, change, callback)
-    graphrag_task_lock.release()
     now = trio.current_time()
     callback(msg=f"Graph resolution done in {now - start:.2f}s.")
 
@@ -264,13 +258,6 @@ async def extract_community(
     embed_bdl,
     callback,
 ):
-    graphrag_task_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value=doc_id, timeout=600)
-    while True:
-        if graphrag_task_lock.acquire():
-            break
-        callback(msg=f"extract_community {doc_id} is waiting graphrag_task_lock")
-        await trio.sleep(10)
-
     start = trio.current_time()
     ext = CommunityReportsExtractor(
         llm_bdl,
@@ -326,7 +313,6 @@ async def extract_community(
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             raise Exception(error_message)
 
-    graphrag_task_lock.release()
     now = trio.current_time()
     callback(
         msg=f"Graph indexed {len(cr.structured_output)} communities in {now - start:.2f}s."
