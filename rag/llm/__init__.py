@@ -107,7 +107,8 @@ from .cv_model import (
     YiCV,
     HunyuanCV,
     AnthropicCV,
-    SILICONFLOWCV
+    SILICONFLOWCV,
+    GPUStackCV,
 )
 
 from .rerank_model import (
@@ -145,7 +146,7 @@ from .tts_model import (
     SparkTTS,
     XinferenceTTS,
     GPUStackTTS,
-    SILICONFLOWTTS
+    SILICONFLOWTTS,
 )
 
 EmbeddingModel = {
@@ -202,6 +203,7 @@ CvModel = {
     "Tencent Hunyuan": HunyuanCV,
     "Anthropic": AnthropicCV,
     "SILICONFLOW": SILICONFLOWCV,
+    "GPUStack": GPUStackCV,
 }
 
 ChatModel = {

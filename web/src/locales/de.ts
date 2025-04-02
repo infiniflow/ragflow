@@ -170,7 +170,7 @@ export default {
         'Ein Trennzeichen oder Separator kann aus einem oder mehreren Sonderzeichen bestehen. Bei mehreren Zeichen stellen Sie sicher, dass sie in Backticks (` `) eingeschlossen sind. Wenn Sie beispielsweise Ihre Trennzeichen so konfigurieren: \\n`##`;, dann werden Ihre Texte an Zeilenumbrüchen, doppelten Rautenzeichen (##) oder Semikolons getrennt. Setzen Sie Trennzeichen nur nachdem Sie das Mechanismus der Textsegmentierung und -chunking verstanden haben.',
       html4excel: 'Excel zu HTML',
       html4excelTip:
-        'Wenn aktiviert, wird die Tabelle in HTML-Tabellen umgewandelt, mit maximal 256 Zeilen pro Tabelle. Andernfalls wird sie in Schlüssel-Wert-Paare nach Zeilen umgewandelt.',
+        'Verwenden Sie dies zusammen mit der General-Schnittmethode. Wenn deaktiviert, werden Tabellenkalkulationsdateien (XLSX, XLS (Excel97~2003)) zeilenweise in Schlüssel-Wert-Paare analysiert. Wenn aktiviert, werden Tabellenkalkulationsdateien in HTML-Tabellen umgewandelt. Wenn die ursprüngliche Tabelle mehr als 12 Zeilen enthält, teilt das System sie automatisch alle 12 Zeilen in mehrere HTML-Tabellen auf.',
       autoKeywords: 'Auto-Schlüsselwort',
       autoKeywordsTip:
         'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren.',
@@ -355,7 +355,7 @@ export default {
       vietnamese: 'Vietnamesisch',
       pageRank: 'PageRank',
       pageRankTip:
-        'Dies erhöht den Relevanzwert der Wissensdatenbank. Sein Wert wird dem Relevanzwert aller abgerufenen Chunks aus dieser Wissensdatenbank hinzugefügt. Nützlich, wenn Sie innerhalb mehrerer Wissensdatenbanken suchen und einer bestimmten einen höheren PageRank-Wert zuweisen möchten.',
+        'Sie können während des Abrufs bestimmten Wissensdatenbanken eine höhere PageRank-Bewertung zuweisen. Die entsprechende Bewertung wird zu den hybriden Ähnlichkeitswerten der abgerufenen Chunks aus diesen Wissensdatenbanken addiert, wodurch deren Ranking erhöht wird. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/set_page_rank.',
       tagName: 'Tag',
       frequency: 'Häufigkeit',
       searchTags: 'Tags durchsuchen',
@@ -624,19 +624,19 @@ export default {
         'Das Standard-Chat-LLM, das alle neu erstellten Wissensdatenbanken verwenden werden.',
       embeddingModel: 'Embedding-Modell',
       embeddingModelTip:
-        'Das Standard-Embedding-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden.',
+        'Das Standard-Einbettungsmodell für jede neu erstellte Wissensdatenbank. Wenn Sie kein Einbettungsmodell in der Dropdown-Liste finden, prüfen Sie, ob Sie die RAGFlow Slim Edition verwenden (die keine Einbettungsmodelle enthält), oder überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       img2txtModel: 'Img2txt-Modell',
       img2txtModelTip:
-        'Das Standard-Multimodul-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden. Es kann ein Bild oder Video beschreiben.',
+        'Das Standardmodell img2txt für jede neu erstellte Wissensdatenbank. Es beschreibt ein Bild oder Video. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       sequence2txtModel: 'Sequence2txt-Modell',
       sequence2txtModelTip:
-        'Das Standard-ASR-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden. Verwenden Sie dieses Modell, um Stimmen in entsprechenden Text zu übersetzen.',
+        'Das Standard-ASR-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden. Verwenden Sie dieses Modell, um Stimmen in entsprechenden Text zu übersetzen. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       rerankModel: 'Rerank-Modell',
       rerankModelTip:
-        'Das Standard-Rerank-Modell wird verwendet, um Chunks neu zu ordnen, die durch Benutzerfragen abgerufen wurden.',
+        'Das Standard-Rerank-Modell zum Reranking von Textabschnitten. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       ttsModel: 'TTS-Modell',
       ttsModelTip:
-        'Das Standard-TTS-Modell wird verwendet, um auf Anfrage Sprache während Gesprächen zu generieren.',
+        'Das Standard-Text-to-Speech-Modell. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       workspace: 'Arbeitsbereich',
       upgrade: 'Upgrade',
       addLlmTitle: 'LLM hinzufügen',

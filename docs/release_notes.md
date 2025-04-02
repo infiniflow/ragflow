@@ -11,6 +11,13 @@ Key features, improvements and bug fixes in the latest releases.
 
 Released on March 13, 2025.
 
+### Compatibility changes
+
+- Removes the **Max_tokens** setting from **Chat configuration**.
+- Removes the **Max_tokens** setting from **Generate**, **Rewrite**, **Categorize**, **Keyword** agent components.
+
+From this release onwards, if you still see RAGFlow's responses being cut short or truncated, check the **Max_tokens** setting of your model provider.
+
 ### Improvements
 
 - Adds OpenAI-compatible APIs.
@@ -270,7 +277,7 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 #### Added documents
 
 - [Configurations](https://ragflow.io/docs/dev/configurations)
-- [Manage team members](https://ragflow.io/docs/dev/manage_team_members)
+- [Manage team members](./guides/team/manage_team_members.md)
 - [Run health check on RAGFlow's dependencies](https://ragflow.io/docs/dev/run_health_check)
 
 ## v0.13.0

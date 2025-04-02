@@ -17,11 +17,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import (
-    INVALID_API_TOKEN,
-    batch_add_chunks,
-    list_chunks,
-)
+from common import INVALID_API_TOKEN, batch_add_chunks, list_chunks
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -153,8 +149,9 @@ class TestChunksList:
         assert all(r["code"] == 0 for r in responses)
         assert all(len(r["data"]["chunks"]) == 5 for r in responses)
 
-    def test_default(self, get_http_api_auth, get_dataset_id_and_document_id):
-        dataset_id, document_id = get_dataset_id_and_document_id
+    def test_default(self, get_http_api_auth, add_document):
+        dataset_id, document_id = add_document
+
         res = list_chunks(get_http_api_auth, dataset_id, document_id)
         chunks_count = res["data"]["doc"]["chunk_count"]
         batch_add_chunks(get_http_api_auth, dataset_id, document_id, 31)

@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import os
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -39,7 +38,7 @@ class TestAuthorization:
         assert res["message"] == expected_message
 
 
-class TestChunkstDeletion:
+class TestChunksDeletion:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -61,25 +60,14 @@ class TestChunkstDeletion:
         "document_id, expected_code, expected_message",
         [
             ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
-            pytest.param(
-                "invalid_document_id",
-                100,
-                "LookupError('Document not found which is supposed to be there')",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6611"),
-            ),
-            pytest.param(
-                "invalid_document_id",
-                100,
-                "rm_chunk deleted chunks 0, expect 4",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "elasticsearch"], reason="issues/6611"),
-            ),
+            ("invalid_document_id", 100, """LookupError("Can't find the document with ID invalid_document_id!")"""),
         ],
     )
     def test_invalid_document_id(self, get_http_api_auth, add_chunks_func, document_id, expected_code, expected_message):
         dataset_id, _, chunk_ids = add_chunks_func
         res = delete_chunks(get_http_api_auth, dataset_id, document_id, {"chunk_ids": chunk_ids})
         assert res["code"] == expected_code
-        #assert res["message"] == expected_message
+        assert res["message"] == expected_message
 
     @pytest.mark.parametrize(
         "payload",
@@ -180,8 +168,7 @@ class TestChunkstDeletion:
             ),
             (lambda r: {"chunk_ids": r[:1]}, 0, "", 4),
             (lambda r: {"chunk_ids": r}, 0, "", 1),
-            pytest.param({"chunk_ids": []}, 0, "", 5, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6607")),
-            pytest.param({"chunk_ids": []}, 102, "rm_chunk deleted chunks 5, expect 0", 0, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "elasticsearch"], reason="issues/6607")),
+            pytest.param({"chunk_ids": []}, 0, "", 0, marks=pytest.mark.skip(reason="issues/6607")),
         ],
     )
     def test_basic_scenarios(

@@ -37,6 +37,7 @@ const ChatContainer = () => {
     ref,
     derivedMessages,
     hasError,
+    stopOutputMessage,
   } = useSendSharedMessage();
   const sendDisabled = useSendButtonDisabled(value);
 
@@ -105,6 +106,7 @@ const ChatContainer = () => {
           sendLoading={sendLoading}
           uploadMethod="external_upload_and_parse"
           showUploadIcon={false}
+          stopOutputMessage={stopOutputMessage}
         ></MessageInput>
       </Flex>
       {visible && (
