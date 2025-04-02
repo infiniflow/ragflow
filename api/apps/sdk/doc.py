@@ -1169,14 +1169,13 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
     if chunk_number != 0:
         DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
-    message = f"deleted {chunk_number} chunks"
     if "chunk_ids" in req and chunk_number != len(unique_chunk_ids):
-        if len(unique_chunk_ids) > 0:
-            message = f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}"
-    elif duplicate_messages:
-        return get_result(message=f"Partially deleted {chunk_number} chunks with {len(duplicate_messages)} errors", data={"success_count": chunk_number, "errors": duplicate_messages})
-    
-    return get_result(message=message)
+        if len(unique_chunk_ids) == 0:
+            return get_result(message=f"deleted {chunk_number} chunks")
+        return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}")
+    if duplicate_messages:
+        return get_result(message=f"Partially deleted {chunk_number} chunks with {len(duplicate_messages)} errors", data={"success_count": chunk_number, "errors": duplicate_messages},)
+    return get_result(message=f"deleted {chunk_number} chunks")
 
 
 @manager.route(  # noqa: F821
