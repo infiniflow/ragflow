@@ -180,8 +180,7 @@ class TestChunkstDeletion:
             ),
             (lambda r: {"chunk_ids": r[:1]}, 0, "", 4),
             (lambda r: {"chunk_ids": r}, 0, "", 1),
-            pytest.param({"chunk_ids": []}, 0, "deleted 5 chunks", 0, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6607")),
-            pytest.param({"chunk_ids": []}, 0, "deleted 5 chunks", 0, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "elasticsearch"], reason="issues/6607")),
+            pytest.param({"chunk_ids": []}, 0, "deleted 5 chunks", 0),
         ],
     )
     def test_basic_scenarios(
