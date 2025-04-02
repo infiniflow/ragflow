@@ -29,6 +29,7 @@ import {
   UploadProps,
 } from 'antd';
 import get from 'lodash/get';
+import { CircleStop } from 'lucide-react';
 import {
   ChangeEventHandler,
   memo,
@@ -72,6 +73,7 @@ interface IProps {
   isShared?: boolean;
   showUploadIcon?: boolean;
   createConversationBeforeUploadDocument?(message: string): Promise<any>;
+  stopOutputMessage?(): void;
 }
 
 const getBase64 = (file: FileType): Promise<string> =>
@@ -94,6 +96,7 @@ const MessageInput = ({
   showUploadIcon = true,
   createConversationBeforeUploadDocument,
   uploadMethod = 'upload_and_parse',
+  stopOutputMessage,
 }: IProps) => {
   const { t } = useTranslate('chat');
   const { removeDocument } = useRemoveNextDocument();
@@ -160,7 +163,7 @@ const MessageInput = ({
       event.preventDefault();
       handlePressEnter();
     },
-    [fileList, onPressEnter, isUploadingFile],
+    [sendDisabled, isUploadingFile, sendLoading, handlePressEnter],
   );
 
   const handlePressEnter = useCallback(async () => {
@@ -198,6 +201,10 @@ const MessageInput = ({
     },
     [removeDocument, deleteDocument, isShared],
   );
+
+  const handleStopOutputMessage = useCallback(() => {
+    stopOutputMessage?.();
+  }, [stopOutputMessage]);
 
   const getDocumentInfoById = useCallback(
     (id: string) => {
@@ -346,14 +353,20 @@ const MessageInput = ({
               </Button>
             </Upload>
           )}
-          <Button
-            type="primary"
-            onClick={handlePressEnter}
-            loading={sendLoading}
-            disabled={sendDisabled || isUploadingFile || sendLoading}
-          >
-            <SendOutlined />
-          </Button>
+          {sendLoading ? (
+            <Button onClick={handleStopOutputMessage}>
+              <CircleStop />
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              onClick={handlePressEnter}
+              loading={sendLoading}
+              disabled={sendDisabled || isUploadingFile || sendLoading}
+            >
+              <SendOutlined />
+            </Button>
+          )}
         </Flex>
       </Flex>
     </Flex>

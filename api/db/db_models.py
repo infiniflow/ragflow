@@ -424,13 +424,18 @@ def init_database_tables(alter_fields=[]):
     for name, obj in members:
         if obj != DataBaseModel and issubclass(obj, DataBaseModel):
             table_objs.append(obj)
-            logging.debug(f"start create table {obj.__name__}")
-            try:
-                obj.create_table()
-                logging.debug(f"create table success: {obj.__name__}")
-            except Exception as e:
-                logging.exception(e)
-                create_failed_list.append(obj.__name__)
+
+            if not obj.table_exists():
+                logging.debug(f"start create table {obj.__name__}")
+                try:
+                    obj.create_table()
+                    logging.debug(f"create table success: {obj.__name__}")
+                except Exception as e:
+                    logging.exception(e)
+                    create_failed_list.append(obj.__name__)
+            else:
+                logging.debug(f"table {obj.__name__} already exists, skip creation.")
+
     if create_failed_list:
         logging.error(f"create tables failed: {create_failed_list}")
         raise Exception(f"create tables failed: {create_failed_list}")
@@ -792,94 +797,93 @@ class UserCanvasVersion(DataBaseModel):
 
 
 def migrate_db():
-    with DB.transaction():
-        migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
-        try:
-            migrate(migrator.add_column("file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID")))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID")))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("dialog", "top_k", IntegerField(default=1024)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.alter_column_type("tenant_llm", "api_key", CharField(max_length=2048, null=True, help_text="API KEY", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("api_token", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("tenant", "tts_id", CharField(max_length=256, null=True, help_text="default tts model ID", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("api_4_conversation", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("task", "retry_count", IntegerField(default=0)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.alter_column_type("api_token", "dialog_id", CharField(max_length=32, null=True, index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("tenant_llm", "max_tokens", IntegerField(default=8192, index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("api_4_conversation", "dsl", JSONField(null=True, default={})))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("knowledgebase", "pagerank", IntegerField(default=0, index=False)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("api_token", "beta", CharField(max_length=255, null=True, index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("task", "digest", TextField(null=True, help_text="task digest", default="")))
-        except Exception:
-            pass
+    migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
+    try:
+        migrate(migrator.add_column("file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("dialog", "top_k", IntegerField(default=1024)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("tenant_llm", "api_key", CharField(max_length=2048, null=True, help_text="API KEY", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_token", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("tenant", "tts_id", CharField(max_length=256, null=True, help_text="default tts model ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("task", "retry_count", IntegerField(default=0)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("api_token", "dialog_id", CharField(max_length=32, null=True, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("tenant_llm", "max_tokens", IntegerField(default=8192, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "dsl", JSONField(null=True, default={})))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "pagerank", IntegerField(default=0, index=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_token", "beta", CharField(max_length=255, null=True, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("task", "digest", TextField(null=True, help_text="task digest", default="")))
+    except Exception:
+        pass
 
-        try:
-            migrate(migrator.add_column("task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default="")))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("document", "meta_fields", JSONField(null=True, default={})))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("task", "task_type", CharField(max_length=32, null=False, default="")))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("task", "priority", IntegerField(default=0)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)))
-        except Exception:
-            pass
-        try:
-            migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
-        except Exception:
-            pass
+    try:
+        migrate(migrator.add_column("task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default="")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("document", "meta_fields", JSONField(null=True, default={})))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("task", "task_type", CharField(max_length=32, null=False, default="")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("task", "priority", IntegerField(default=0)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
+    except Exception:
+        pass

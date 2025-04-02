@@ -158,7 +158,7 @@ export default {
       topKTip: `K potongan akan dimasukkan ke dalam model rerank.`,
       delimiter: `Pemisah untuk segmentasi teks`,
       html4excel: 'Excel ke HTML',
-      html4excelTip: `Excel akan diparsing menjadi tabel HTML atau tidak. Jika FALSE, setiap baris di Excel akan dibentuk sebagai potongan.`,
+      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel97~2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris.`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -515,18 +515,18 @@ export default {
         'Model LLM obrolan default yang akan digunakan semua basis pengetahuan baru yang dibuat.',
       embeddingModel: 'Model Embedding',
       embeddingModelTip:
-        'Model embedding default yang akan digunakan semua basis pengetahuan baru yang dibuat.',
+        'Model embedding default untuk setiap basis pengetahuan baru yang dibuat. Jika Anda tidak dapat menemukan model embedding dari dropdown, periksa apakah Anda menggunakan RAGFlow slim edition (yang tidak menyertakan model embedding) atau periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
       img2txtModel: 'Model Img2txt',
       img2txtModelTip:
-        'Model multi-modul default yang akan digunakan semua basis pengetahuan baru yang dibuat. Ini dapat menggambarkan gambar atau video.',
+        'Model img2txt default untuk setiap basis pengetahuan yang baru dibuat. Model ini menggambarkan gambar atau video. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
       sequence2txtModel: 'Model Speech2txt',
       sequence2txtModelTip:
-        'Model ASR default yang akan digunakan semua basis pengetahuan baru yang dibuat. Gunakan model ini untuk menerjemahkan suara ke teks yang sesuai.',
+        'Model ASR default yang akan digunakan semua basis pengetahuan baru yang dibuat. Gunakan model ini untuk menerjemahkan suara ke teks yang sesuai. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
       rerankModel: 'Model Rerank',
-      rerankModelTip: `Model rerank default digunakan untuk mererank potongan yang diambil oleh pertanyaan pengguna.`,
+      rerankModelTip: `Model rerank default untuk reranking potongan teks. Jika Anda tidak dapat menemukan model dari dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.`,
       ttsModel: 'Model TTS',
       ttsModelTip:
-        'Model TTS default akan digunakan untuk menghasilkan ucapan selama percakapan atas permintaan.',
+        'Model text-to-speech default. Jika Anda tidak dapat menemukan model dari dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
       workspace: 'Ruang Kerja',
       upgrade: 'Tingkatkan',
       addLlmTitle: 'Tambahkan LLM',

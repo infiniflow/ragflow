@@ -154,7 +154,7 @@ export default {
       topKTip: `K fragmentos serán alimentados a los modelos de reordenamiento.`,
       delimiter: `Delimitadores para segmentación de texto`,
       html4excel: 'Excel a HTML',
-      html4excelTip: `Excel se analizará en una tabla HTML o no. Si es FALSO, cada fila en Excel se formará como un fragmento.`,
+      html4excelTip: `Usar junto con el método de fragmentación General. Cuando está desactivado, los archivos de hoja de cálculo (XLSX, XLS (Excel97~2003)) se analizan línea por línea como pares clave-valor. Cuando está activado, los archivos de hoja de cálculo se convierten en tablas HTML. Si la tabla original tiene más de 12 filas, el sistema la dividirá automáticamente en varias tablas HTML cada 12 filas.`,
     },
 
     // Otros bloques de traducción
@@ -345,19 +345,19 @@ export default {
         'El modelo LLM de chat predeterminado que todas las nuevas bases de conocimiento utilizarán.',
       embeddingModel: 'Modelo de embeddings',
       embeddingModelTip:
-        'El modelo de embeddings predeterminado que todas las nuevas bases de conocimiento utilizarán.',
+        'El modelo de incrustación predeterminado para cada nueva base de conocimiento creada. Si no puedes encontrar un modelo de incrustación en el menú desplegable, verifica si estás utilizando la edición slim de RAGFlow (que no incluye modelos de incrustación) o consulta https://ragflow.io/docs/dev/supported_models para comprobar si tu proveedor de modelos admite este modelo.',
       img2txtModel: 'Modelo de img2txt',
       img2txtModelTip:
-        'El modelo multimódulo predeterminado que todas las nuevas bases de conocimiento utilizarán. Puede describir una imagen o video.',
+        'El modelo predeterminado img2txt para cada base de conocimiento recién creada. Describe una imagen o video. Si no puedes encontrar un modelo en el menú desplegable, consulta https://ragflow.io/docs/dev/supported_models para ver si tu proveedor de modelos admite este modelo.',
       sequence2txtModel: 'Modelo de secuencia a texto',
       sequence2txtModelTip:
-        'El modelo ASR predeterminado que todas las nuevas bases de conocimiento utilizarán. Usa este modelo para transcribir voces a texto correspondiente.',
+        'El modelo ASR predeterminado que todas las nuevas bases de conocimiento utilizarán. Usa este modelo para transcribir voces a texto correspondiente. Si no puedes encontrar un modelo en el menú desplegable, consulta https://ragflow.io/docs/dev/supported_models para ver si tu proveedor de modelos admite este modelo.',
       rerankModel: 'Modelo de reordenamiento',
       rerankModelTip:
-        'El modelo de reordenamiento predeterminado que se usará para reordenar los fragmentos recuperados por las preguntas de los usuarios.',
+        'El modelo de rerank predeterminado para reranking de fragmentos. Si no encuentra un modelo en el menú desplegable, consulte https://ragflow.io/docs/dev/supported_models para comprobar si su proveedor de modelos es compatible con este modelo.',
       ttsModel: 'Modelo TTS',
       ttsModelTip:
-        'El modelo TTS predeterminado que se usará para generar discurso durante las conversaciones cuando se solicite.',
+        'El modelo de text-to-speech predeterminado. Si no encuentra un modelo en el menú desplegable, consulte https://ragflow.io/docs/dev/supported_models para comprobar si su proveedor de modelos es compatible con este modelo.',
       workspace: 'Espacio de trabajo',
       upgrade: 'Actualizar',
       addLlmTitle: 'Agregar LLM',
