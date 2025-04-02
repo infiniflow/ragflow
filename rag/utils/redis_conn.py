@@ -318,4 +318,4 @@ class RedisDistributedLock:
         return self.lock.acquire(token=self.lock_value)
 
     def release(self):
-        return self.lock.release()
+        REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
