@@ -290,12 +290,12 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   在 `/etc/hosts` 中添加以下代码，将 **conf/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：
+   在 `/etc/hosts` 中添加以下代码，目的是将 **conf/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：
 
    ```
    127.0.0.1       es01 infinity mysql minio redis
    ```
-
+   修改 docker/service_config.yaml.template 文件，将 mysql 端口更新为 5455，将 es 端口更新为 1200
 4. 如果无法访问 HuggingFace，可以把环境变量 `HF_ENDPOINT` 设成相应的镜像站点：
 
    ```bash
@@ -324,7 +324,15 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
    _以下界面说明系统已经成功启动：_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-
+8. 开发完成后停止 RAGFlow 服务
+   停止 RAGFlow 前端服务：
+   ```bash
+   pkill npm
+   ```
+   停止 RAGFlow 后端服务：
+   ```bash
+   pkill -f "docker/entrypoint.sh"
+   ```
 ## 📚 技术文档
 
 - [Quickstart](https://ragflow.io/docs/dev/)
