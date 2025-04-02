@@ -39,4 +39,4 @@ _After accepting the team invite, you should be able to view and update the team
 
 ## Leave a joined team
 
-![Image](https://github.com/user-attachments/assets/4e4c6971-131b-490b-85d8-b362e0811b86)
+![quit](https://github.com/user-attachments/assets/a9d812a9-382d-4913-83b9-d72cb5e7c953)

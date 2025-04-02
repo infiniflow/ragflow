@@ -11,6 +11,13 @@ Key features, improvements and bug fixes in the latest releases.
 
 Released on March 13, 2025.
 
+### Compatibility changes
+
+- Removes the **Max_tokens** setting from **Chat configuration**.
+- Removes the **Max_tokens** setting from **Generate**, **Rewrite**, **Categorize**, **Keyword** agent components.
+
+From this release onwards, if you still see RAGFlow's responses being cut short or truncated, check the **Max_tokens** setting of your model provider.
+
 ### Improvements
 
 - Adds OpenAI-compatible APIs.
