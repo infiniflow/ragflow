@@ -145,7 +145,7 @@ def set_tenant_info(get_auth):
     tenant_info = {
         "tenant_id": tenant_id,
         "llm_id": "glm-4-flash@ZHIPU-AI",
-        "embd_id": "embedding-3@ZHIPU-AI",
+        "embd_id": "BAAI/bge-large-zh-v1.5@BAAI",
         "img2txt_id": "glm-4v@ZHIPU-AI",
         "asr_id": "",
         "tts_id": None,
