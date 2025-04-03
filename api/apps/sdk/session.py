@@ -21,7 +21,7 @@ import tiktoken
 from flask import Response, jsonify, request
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
-from api.db.services.canvas_service import completion as agent_completion ,completionOpenAI
+from api.db.services.canvas_service import completion as agent_completion, completionOpenAI
 from agent.canvas import Canvas
 from api.db import LLMType, StatusEnum
 from api.db.db_models import APIToken
@@ -31,8 +31,7 @@ from api.db.services.dialog_service import DialogService, ask, chat
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import get_uuid
-from api.utils.api_utils import get_data_openai, get_error_data_result, validate_request
-from api.utils.api_utils import get_result, token_required
+from api.utils.api_utils import get_result, token_required, get_data_openai, get_error_data_result, validate_request
 from api.db.services.llm_service import LLMBundle
 
 
