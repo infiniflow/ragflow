@@ -291,7 +291,8 @@ export default {
       useRaptorTip:
         'Pemrosesan Abstraktif Rekursif untuk Pengambilan Terorganisasi Pohon, silakan merujuk ke https://huggingface.co/papers/2401.18059',
       prompt: 'Prompt',
-      promptTip: 'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
+      promptTip:
+        'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
       promptText: `Silakan rangkum paragraf berikut. Berhati-hatilah dengan angka, jangan membuat hal-hal yang tidak ada. Paragraf sebagai berikut:
           {cluster_content}
@@ -602,6 +603,8 @@ export default {
         'Silakan tambahkan model embedding dan LLM di <b>Pengaturan > Penyedia Model</b> terlebih dahulu.',
       apiVersion: 'Versi API',
       apiVersionMessage: 'Silakan masukkan versi API',
+      modelsToBeAddedTooltip:
+        'Jika penyedia model Anda tidak tercantum tetapi mengklaim kompatibel dengan OpenAI, pilih kartu OpenAI-API-compatible untuk menambahkan model yang relevan.',
     },
     message: {
       registered: 'Terdaftar!',

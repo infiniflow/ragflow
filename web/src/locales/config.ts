@@ -3,12 +3,12 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
 
 import { LanguageAbbreviation } from '@/constants/common';
+import translation_de from './de';
 import translation_en from './en';
 import translation_es from './es';
 import translation_id from './id';
 import translation_ja from './ja';
 import translation_pt_br from './pt-br';
-import translation_de from './de';
 import { createTranslationTable, flattenObject } from './until';
 import translation_vi from './vi';
 import translation_zh from './zh';
@@ -44,7 +44,16 @@ export const translationTable = createTranslationTable(
     pt_brFlattened,
     deFlattened,
   ],
-  ['English', 'Vietnamese', 'Spanish', 'zh', 'zh-TRADITIONAL', 'ja', 'pt-BR', 'Deutsch'],
+  [
+    'English',
+    'Vietnamese',
+    'Spanish',
+    'zh',
+    'zh-TRADITIONAL',
+    'ja',
+    'pt-BR',
+    'Deutsch',
+  ],
 );
 i18n
   .use(initReactI18next)

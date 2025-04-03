@@ -37,6 +37,7 @@ export default {
       embedIntoSite: 'Embed into webpage',
       previousPage: 'Previous',
       nextPage: 'Next',
+      add: 'Add',
     },
     login: {
       login: 'Sign in',
@@ -326,7 +327,8 @@ export default {
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information.',
       prompt: 'Prompt',
-      promptTip: 'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
+      promptTip:
+        'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
       {cluster_content}
@@ -706,6 +708,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Traces, evals, prompt management and metrics to debug and improve your LLM application.',
       viewLangfuseSDocumentation: "View Langfuse's documentation",
       view: 'View',
+      modelsToBeAddedTooltip:
+        'If your model provider is not listed but claims to be "OpenAI-compatible", select the OpenAI-API-compatible card to add the relevant model(s). ',
     },
     message: {
       registered: 'Registered!',
