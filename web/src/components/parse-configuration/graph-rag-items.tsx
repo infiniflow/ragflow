@@ -39,6 +39,22 @@ type GraphRagItemsProps = {
   marginBottom?: boolean;
 };
 
+export function UseGraphRagItem() {
+  const { t } = useTranslate('knowledgeConfiguration');
+
+  return (
+    <Form.Item
+      name={['parser_config', 'graphrag', 'use_graphrag']}
+      label={t('useGraphRag')}
+      initialValue={false}
+      valuePropName="checked"
+      tooltip={t('useGraphRagTip')}
+    >
+      <Switch />
+    </Form.Item>
+  );
+}
+
 // The three types "table", "resume" and "one" do not display this configuration.
 const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
@@ -62,15 +78,7 @@ const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
 
   return (
     <DatasetConfigurationContainer className={cn({ 'mb-4': marginBottom })}>
-      <Form.Item
-        name={['parser_config', 'graphrag', 'use_graphrag']}
-        label={t('useGraphRag')}
-        initialValue={false}
-        valuePropName="checked"
-        tooltip={t('useGraphRagTip')}
-      >
-        <Switch />
-      </Form.Item>
+      <UseGraphRagItem></UseGraphRagItem>
       <Form.Item
         shouldUpdate={(prevValues, curValues) =>
           prevValues.parser_config.graphrag.use_graphrag !==

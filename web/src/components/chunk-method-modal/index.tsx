@@ -32,7 +32,8 @@ import LayoutRecognize from '../layout-recognize';
 import ParseConfiguration, {
   showRaptorParseConfiguration,
 } from '../parse-configuration';
-import GraphRagItems, {
+import {
+  UseGraphRagItem,
   showGraphRagItems,
 } from '../parse-configuration/graph-rag-items';
 import styles from './index.less';
@@ -316,7 +317,7 @@ const ChunkMethodModal: React.FC<IProps> = ({
             <ParseConfiguration></ParseConfiguration>
           </DatasetConfigurationContainer>
         )}
-        {showGraphRagItems(selectedTag) && <GraphRagItems></GraphRagItems>}
+        {showGraphRagItems(selectedTag) && <UseGraphRagItem></UseGraphRagItem>}
         {showEntityTypes && <EntityTypesItem></EntityTypesItem>}
       </Form>
     </Modal>
