@@ -44,7 +44,7 @@ You start an AI conversation by creating an assistant.
      - If **Rerank model** is selected, the hybrid score system uses keyword similarity and reranker score, and the default weight assigned to the reranker score is 1-0.7=0.3.
    - **Variable** refers to the variables (keys) to be used in the system prompt. `{knowledge}` is a reserved variable. Click **Add** to add more variables for the system prompt.
       - If you are uncertain about the logic behind **Variable**, leave it *as-is*.
-      - As of v0.17.2, if you add self-defined variables here, the only way you can pass in their values is to call:
+      - As of v0.17.2, if you add custom variables here, the only way you can pass in their values is to call:
          - HTTP method [Converse with chat assistant](../../references/http_api_reference.md#converse-with-chat-assistant), or
          - Python method [Converse with chat assistant](../../references/python_api_reference.md#converse-with-chat-assistant).
 
