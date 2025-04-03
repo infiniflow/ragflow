@@ -295,7 +295,6 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
    ```
    127.0.0.1       es01 infinity mysql minio redis
    ```
-   修改 conf/service_config.yaml 文件，将 mysql 端口更新为 5455，将 es 端口更新为 1200
 4. 如果无法访问 HuggingFace，可以把环境变量 `HF_ENDPOINT` 设成相应的镜像站点：
 
    ```bash
