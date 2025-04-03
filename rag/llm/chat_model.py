@@ -238,6 +238,48 @@ class XinferenceChat(Base):
             base_url = os.path.join(base_url, "v1")
         super().__init__(key, model_name, base_url)
 
+    def chat_streamly(self, system, history, gen_conf):
+        if system:
+            history.insert(0, {"role": "system", "content": system})
+        ans = ""
+        total_tokens = 0
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=history,
+                stream=True,
+                **gen_conf)
+            for resp in response:
+                if not resp.choices:
+                    continue
+                if not resp.choices[0].delta.content:
+                    resp.choices[0].delta.content = ""
+                if hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+                    if ans.find("<think>") < 0:
+                        ans += "<think>"
+                    ans = ans.replace("</think>", "")
+                    ans += resp.choices[0].delta.reasoning_content + "</think>"
+                else:
+                    ans += resp.choices[0].delta.content
+
+                tol = self.total_token_count(resp)
+                if not tol:
+                    total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
+                else:
+                    total_tokens = tol
+
+                if resp.choices[0].finish_reason == "length":
+                    if is_chinese(ans):
+                        ans += LENGTH_NOTIFICATION_CN
+                    else:
+                        ans += LENGTH_NOTIFICATION_EN
+                yield ans
+
+        except openai.APIError as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield total_tokens
+
 
 class HuggingFaceChat(Base):
     def __init__(self, key=None, model_name="", base_url=""):

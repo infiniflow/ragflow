@@ -349,6 +349,8 @@ def chat(dialog, messages, stream=True, **kwargs):
     if stream:
         last_ans = ""
         answer = ""
+        if "max_tokens" not in gen_conf:
+            gen_conf["max_tokens"] = chat_mdl.max_length
         for ans in chat_mdl.chat_streamly(prompt + prompt4citation, msg[1:], gen_conf):
             if thought:
                 ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
