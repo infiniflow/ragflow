@@ -23,15 +23,11 @@ from api.db import LLMType
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
 from api.db.services.canvas_service import completion as agent_completion ,completionOpenAI
-from api.db.services.dialog_service import ask, chat
 from agent.canvas import Canvas
 from api.db import LLMType, StatusEnum
 from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
-from api.db.services.canvas_service import completion as agent_completion
-from api.db.services.conversation_service import ConversationService, iframe_completion
-from api.db.services.conversation_service import completion as rag_completion
 from api.db.services.dialog_service import DialogService, ask, chat
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
