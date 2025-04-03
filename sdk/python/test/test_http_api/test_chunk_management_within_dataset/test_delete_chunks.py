@@ -168,7 +168,7 @@ class TestChunksDeletion:
             ),
             (lambda r: {"chunk_ids": r[:1]}, 0, "", 4),
             (lambda r: {"chunk_ids": r}, 0, "", 1),
-            pytest.param({"chunk_ids": []}, 0, "", 0, marks=pytest.mark.skip(reason="issues/6607")),
+            ({"chunk_ids": []}, 0, "", 0),
         ],
     )
     def test_basic_scenarios(
