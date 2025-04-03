@@ -509,7 +509,7 @@ export default {
       baseUrlTip:
         'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan base url ini dengan kunci API.',
       modify: 'Ubah',
-      systemModelSettings: 'Pengaturan Model Sistem',
+      systemModelSettings: 'Tetapkan model default',
       chatModel: 'Model Obrolan',
       chatModelTip:
         'Model LLM obrolan default yang akan digunakan semua basis pengetahuan baru yang dibuat.',

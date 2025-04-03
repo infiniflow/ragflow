@@ -379,7 +379,7 @@ export default {
       addTag: 'Tag hinzufügen',
       useGraphRag: 'Wissensgraph extrahieren',
       useGraphRagTip:
-        'Konstruieren Sie einen Wissensgraphen über extrahierte Datei-Chunks, um mehrschrittige Frage-Antwort-Prozesse zu verbessern.',
+        'Erstellen Sie einen Wissensgraph über Dateiabschnitte der aktuellen Wissensbasis, um die Beantwortung von Fragen mit mehreren Schritten und verschachtelter Logik zu verbessern. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/construct_knowledge_graph.',
       graphRagMethod: 'Methode',
       graphRagMethodTip: `Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
           General: Verwendet von github.com/microsoft/graphrag bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren`,
@@ -618,7 +618,7 @@ export default {
       baseUrlTip:
         'Wenn Ihr API-Schlüssel von OpenAI stammt, ignorieren Sie dies. Andere Zwischenanbieter geben diese Basis-URL mit dem API-Schlüssel an.',
       modify: 'Ändern',
-      systemModelSettings: 'Systemmodelleinstellungen',
+      systemModelSettings: 'Standardmodelle festlegen',
       chatModel: 'Chat-Modell',
       chatModelTip:
         'Das Standard-Chat-LLM, das alle neu erstellten Wissensdatenbanken verwenden werden.',

@@ -340,7 +340,7 @@ export default {
       graphRagMethodTip: `Light: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - HKUDS/LightRAG: "LightRAG: Tạo sinh tăng cường truy xuất đơn giản và nhanh chóng".
       General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.`,
       useGraphRagTip:
-        'Sau khi các tệp được chia thành các đoạn nhỏ, tất cả các đoạn này sẽ được sử dụng để tạo biểu đồ tri thức, từ đó hỗ trợ suy luận cho các bài toán phức tạp và nhiều bước.',
+        'Xây dựng một biểu đồ tri thức trên các đoạn tệp của cơ sở tri thức hiện tại để tăng cường khả năng trả lời câu hỏi đa bước liên quan đến logic lồng nhau. Xem https://ragflow.io/docs/dev/construct_knowledge_graph để biết thêm chi tiết.',
       resolution: 'Hợp nhất thực thể',
       resolutionTip:
         'Quy trình phân giải sẽ hợp nhất các thực thể có cùng ý nghĩa lại với nhau, giúp đồ thị trở nên cô đọng và chính xác hơn. Các thực thể sau đây nên được hợp nhất: President Trump, Donald Trump, Donald J. Trump, Donald John Trump.',
@@ -555,7 +555,7 @@ export default {
       baseUrlTip:
         'Nếu khóa API của bạn từ OpenAI, chỉ cần bỏ qua nó. Bất kỳ nhà cung cấp trung gian nào khác sẽ cung cấp URL cơ sở này với khóa API.',
       modify: 'Sửa đổi',
-      systemModelSettings: 'Cài đặt mô hình hệ thống',
+      systemModelSettings: 'Thiết lập mô hình mặc định',
       chatModel: 'Mô hình trò chuyện',
       chatModelTip:
         'LLM trò chuyện mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng.',

@@ -498,7 +498,7 @@ export default {
       baseUrlTip:
         'Se sua chave da API for do OpenAI, ignore isso. Outros provedores intermediários fornecerão essa URL base com a chave da API.',
       modify: 'Modificar',
-      systemModelSettings: 'Configurações do Modelo do Sistema',
+      systemModelSettings: 'Definir modelos padrão',
       chatModel: 'Modelo de chat',
       chatModelTip:
         'O modelo LLM padrão que todos os novos bancos de conhecimento usarão.',
