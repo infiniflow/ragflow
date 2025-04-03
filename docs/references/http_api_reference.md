@@ -1167,7 +1167,7 @@ Success:
     "data": {
         "chunks": [
             {
-                "available_int": 1,
+                "available": true,
                 "content": "This is a test content.",
                 "docnm_kwd": "1.txt",
                 "document_id": "b330ec2e91ec11efbc510242ac120004",
