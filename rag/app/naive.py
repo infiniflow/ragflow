@@ -44,23 +44,33 @@ class Docx(DocxParser):
         if not img:
             return None
         img = img[0]
-        embed = img.xpath('.//a:blip/@r:embed')[0]
-        related_part = document.part.related_parts[embed]
         try:
-            image_blob = related_part.image.blob
-        except UnrecognizedImageError:
-            logging.info("Unrecognized image format. Skipping image.")
-            return None
-        except UnexpectedEndOfFileError:
-            logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
-            return None
-        except InvalidImageStreamError:
-            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-            return None
-        try:
-            image = Image.open(BytesIO(image_blob)).convert('RGB')
-            return image
-        except Exception:
+            embed_list = img.xpath('.//a:blip/@r:embed')
+            if not embed_list:
+                logging.info("No embed attribute found for image")
+                return None
+
+            embed = embed_list[0]
+            related_part = document.part.related_parts[embed]
+            try:
+                image_blob = related_part.image.blob
+            except UnrecognizedImageError:
+                logging.info("Unrecognized image format. Skipping image.")
+                return None
+            except UnexpectedEndOfFileError:
+                logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
+                return None
+            except InvalidImageStreamError:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                return None
+            try:
+                image = Image.open(BytesIO(image_blob)).convert('RGB')
+                return image
+            except Exception as e:
+                logging.error(f"Failed to open image: {e}")
+                return None
+        except Exception as e:
+            logging.error(f"Unexpected error in get_picture: {e}")
             return None
 
     def __clean(self, line):
