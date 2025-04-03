@@ -324,7 +324,7 @@ def chat(dialog, messages, stream=True, **kwargs):
             f"  - Create retriever: {create_retriever_time_cost:.1f}ms\n"
             f"  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n"
             f"  - Bind LLM: {bind_llm_time_cost:.1f}ms\n"
-            f"  - Tune question: {refine_question_time_cost:.1f}ms\n"
+            f"  - Multi-turn optimization: {refine_question_time_cost:.1f}ms\n"
             f"  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n"
             f"  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n"
             f"  - Retrieval: {retrieval_time_cost:.1f}ms\n"

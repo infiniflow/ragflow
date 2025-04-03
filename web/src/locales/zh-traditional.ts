@@ -37,6 +37,7 @@ export default {
       embedIntoSite: '嵌入網站',
       previousPage: '上一頁',
       nextPage: '下一頁',
+      add: '添加',
     },
     login: {
       login: '登入',
@@ -327,7 +328,8 @@ export default {
       maxClusterMessage: '最大聚類數是必填項',
       randomSeed: '隨機種子',
       randomSeedMessage: '隨機種子是必填項',
-      promptTip: '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
+      promptTip:
+        '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
       maxTokenTip: '用於匯總的最大token數。',
       thresholdTip: '閾值越大，聚類越少。',
       maxClusterTip: '最大聚類數。',
@@ -576,9 +578,11 @@ export default {
       chatModel: '聊天模型',
       chatModelTip: '所有新創建的知識庫都會使用默認的聊天模型。',
       ttsModel: '語音合成模型',
-      ttsModelTip: '默認的tts模型會被用於在對話過程中請求語音生成時使用。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+      ttsModelTip:
+        '默認的tts模型會被用於在對話過程中請求語音生成時使用。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
       embeddingModel: '嵌入模型',
-      embeddingModelTip: '如未顯示可選模型，請檢查你是否在使用 RAGFlow slim 版（不含嵌入模型）；或根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。',
+      embeddingModelTip:
+        '如未顯示可選模型，請檢查你是否在使用 RAGFlow slim 版（不含嵌入模型）；或根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。',
       img2txtModel: 'img2Txt模型',
       img2txtModelTip:
         '所有新創建的知識庫都將使用默認的 img2txt 模型。它可以描述圖片或視頻。如未顯示可選模型，請根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。',
@@ -679,6 +683,8 @@ export default {
         '追蹤、評估、提示管理和指標以調試和改進您的 LLM 應用程式。',
       viewLangfuseSDocumentation: '查看 Langfuse 的文檔',
       view: '查看',
+      modelsToBeAddedTooltip:
+        '若您的模型供應商未列於此處，但宣稱與 OpenAI 相容，可透過選擇「OpenAI-API-compatible」卡片來設定相關模型。',
     },
     message: {
       registered: '註冊成功',
