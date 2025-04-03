@@ -67,6 +67,9 @@ try:
 except Exception:
     logging.info("can't import package 'torch'")
 
+# Excel number format settings - Configure the number of decimal places for float values in Excel files
+EXCEL_FLOAT_DECIMAL_PLACES = int(os.getenv("EXCEL_FLOAT_DECIMAL_PLACES", "4"))
+
 def print_rag_settings():
     logging.info(f"MAX_CONTENT_LENGTH: {DOC_MAXIMUM_SIZE}")
     logging.info(f"MAX_FILE_COUNT_PER_USER: {int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))}")
