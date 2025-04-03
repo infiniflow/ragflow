@@ -262,7 +262,8 @@ export default {
       useRaptorTip:
         'Processamento Abstrativo Recursivo para Recuperação Organizada em Árvore. Veja mais em https://huggingface.co/papers/2401.18059.',
       prompt: 'Prompt',
-      promptTip: 'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
+      promptTip:
+        'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
       promptMessage: 'O prompt é obrigatório',
       promptText: `Por favor, resuma os seguintes parágrafos. Tenha cuidado com os números, não invente informações. Os parágrafos são os seguintes:
       {cluster_content}
@@ -594,6 +595,8 @@ export default {
       sureDelete: 'Tem certeza de que deseja remover este membro?',
       quit: 'Sair',
       sureQuit: 'Tem certeza de que deseja sair da equipe que você ingressou?',
+      modelsToBeAddedTooltip:
+        'Se o seu provedor de modelo não estiver listado, mas afirmar ser compatível com a OpenAI, selecione o card OpenAI-API-compatible para adicionar o(s) modelo(s) relevante(s). ',
     },
     message: {
       registered: 'Registrado!',

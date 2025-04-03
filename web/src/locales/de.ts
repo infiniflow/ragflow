@@ -334,7 +334,8 @@ export default {
       useRaptorTip:
         'Rekursive Abstrakte Verarbeitung für Baumorganisierten Abruf, weitere Informationen unter https://huggingface.co/papers/2401.18059.',
       prompt: 'Prompt',
-      promptTip: 'Verwenden Sie den Systemprompt, um die Aufgabe für das LLM zu beschreiben, festzulegen, wie es antworten soll, und andere verschiedene Anforderungen zu skizzieren. Der Systemprompt wird oft in Verbindung mit Schlüsseln (Variablen) verwendet, die als verschiedene Dateninputs für das LLM dienen. Verwenden Sie einen Schrägstrich `/` oder die (x)-Schaltfläche, um die zu verwendenden Schlüssel anzuzeigen.',
+      promptTip:
+        'Verwenden Sie den Systemprompt, um die Aufgabe für das LLM zu beschreiben, festzulegen, wie es antworten soll, und andere verschiedene Anforderungen zu skizzieren. Der Systemprompt wird oft in Verbindung mit Schlüsseln (Variablen) verwendet, die als verschiedene Dateninputs für das LLM dienen. Verwenden Sie einen Schrägstrich `/` oder die (x)-Schaltfläche, um die zu verwendenden Schlüssel anzuzeigen.',
       promptMessage: 'Prompt ist erforderlich',
       promptText: `Bitte fassen Sie die folgenden Absätze zusammen. Seien Sie vorsichtig mit den Zahlen, erfinden Sie keine Dinge. Absätze wie folgt:
         {cluster_content}
@@ -726,6 +727,8 @@ export default {
       quit: 'Verlassen',
       sureQuit:
         'Sind Sie sicher, dass Sie das Team, dem Sie beigetreten sind, verlassen möchten?',
+      modelsToBeAddedTooltip:
+        'Wenn Ihr Modellanbieter nicht aufgeführt ist, aber behauptet, „OpenAI-kompatibel“ zu sein, wählen Sie die Karte OpenAI-API-compatible, um das/die entsprechende(n) Modell(e) hinzuzufügen.',
     },
     message: {
       registered: 'Registriert!',
