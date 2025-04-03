@@ -22,6 +22,7 @@ import valkey as redis
 from rag import settings
 from rag.utils import singleton
 from valkey.lock import Lock
+import trio
 
 class RedisMsg:
     def __init__(self, consumer, queue_name, group_name, msg_id, message):
@@ -316,6 +317,13 @@ class RedisDistributedLock:
     def acquire(self):
         REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
         return self.lock.acquire(token=self.lock_value)
+
+    async def spin_acquire(self):
+        REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
+        while True:
+            if self.lock.acquire(token=self.lock_value):
+                break
+            await trio.sleep(10)
 
     def release(self):
         REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
