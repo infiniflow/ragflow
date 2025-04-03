@@ -27,7 +27,6 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_data_openai
 import tiktoken
 from peewee import fn
-import logging
 class CanvasTemplateService(CommonService):
     model = CanvasTemplate
 
