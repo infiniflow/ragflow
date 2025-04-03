@@ -2536,7 +2536,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - other parameters: `string`
 
 :::info IMPORTANT
-You can include self-defined parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) agent component.
+You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) agent component.
 :::
 
 ##### Request example
