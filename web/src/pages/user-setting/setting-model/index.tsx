@@ -30,6 +30,7 @@ import TencentCloudModal from './Tencent-modal';
 import ApiKeyModal from './api-key-modal';
 import AzureOpenAIModal from './azure-openai-modal';
 import BedrockModal from './bedrock-modal';
+import FastEmbedModal from './fastembed-modal';
 import FishAudioModal from './fish-audio-modal';
 import GoogleModal from './google-modal';
 import {
@@ -38,6 +39,7 @@ import {
   useSubmitApiKey,
   useSubmitAzure,
   useSubmitBedrock,
+  useSubmitFastEmbed,
   useSubmitFishAudio,
   useSubmitGoogle,
   useSubmitHunyuan,
@@ -251,6 +253,14 @@ const UserSettingModel = () => {
     AzureAddingLoading,
   } = useSubmitAzure();
 
+  const {
+    fastEmbedAddingLoading,
+    onFastEmbedAddingOk,
+    fastEmbedAddingVisible,
+    hideFastEmbedAddingModal,
+    showFastEmbedAddingModal,
+  } = useSubmitFastEmbed();
+
   const ModalMap = useMemo(
     () => ({
       [LLMFactory.Bedrock]: showBedrockAddingModal,
@@ -262,6 +272,7 @@ const UserSettingModel = () => {
       [LLMFactory.TencentCloud]: showTencentCloudAddingModal,
       [LLMFactory.GoogleCloud]: showGoogleAddingModal,
       [LLMFactory.AzureOpenAI]: showAzureAddingModal,
+      [LLMFactory.FastEmbed]: showFastEmbedAddingModal,
     }),
     [
       showBedrockAddingModal,
@@ -273,6 +284,7 @@ const UserSettingModel = () => {
       showFishAudioAddingModal,
       showGoogleAddingModal,
       showAzureAddingModal,
+      showFastEmbedAddingModal,
     ],
   );
 
@@ -467,6 +479,13 @@ const UserSettingModel = () => {
         loading={AzureAddingLoading}
         llmFactory={LLMFactory.AzureOpenAI}
       ></AzureOpenAIModal>
+      <FastEmbedModal
+        visible={fastEmbedAddingVisible}
+        hideModal={hideFastEmbedAddingModal}
+        onOk={onFastEmbedAddingOk}
+        loading={fastEmbedAddingLoading}
+        llmFactory={LLMFactory.FastEmbed}
+      ></FastEmbedModal>
     </section>
   );
 };
