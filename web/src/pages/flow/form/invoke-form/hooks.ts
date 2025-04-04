@@ -6,14 +6,14 @@ import {
   useMemo,
 } from 'react';
 import { v4 as uuid } from 'uuid';
-import { IGenerateParameter, IInvokeVariable } from '../../interface';
+import { IInvokeVariable } from '../../interface';
 import useGraphStore from '../../store';
 
 export const useHandleOperateParameters = (nodeId: string) => {
   const { getNode, updateNodeForm } = useGraphStore((state) => state);
   const node = getNode(nodeId);
-  const dataSource: IGenerateParameter[] = useMemo(
-    () => get(node, 'data.form.variables', []) as IGenerateParameter[],
+  const dataSource: IInvokeVariable[] = useMemo(
+    () => get(node, 'data.form.variables', []),
     [node],
   );
 
@@ -74,7 +74,7 @@ export const useHandleOperateParameters = (nodeId: string) => {
     [dataSource, nodeId, updateNodeForm],
   );
 
-  const handleSave = (row: IGenerateParameter) => {
+  const handleSave = (row: IInvokeVariable) => {
     const newData = [...dataSource];
     const index = newData.findIndex((item) => row.id === item.id);
     const item = newData[index];

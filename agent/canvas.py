@@ -17,6 +17,7 @@ import logging
 import json
 from copy import deepcopy
 from functools import partial
+from typing import Dict, Any, List, Union
 
 import pandas as pd
 
@@ -347,10 +348,8 @@ class Canvas:
                 return pat + " => " + pat
 
         return False
-
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue
-
     def set_global_param(self, **kwargs):
         for k, v in kwargs.items():
             for q in self.components["begin"]["obj"]._param.query:
