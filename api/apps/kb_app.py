@@ -51,11 +51,9 @@ def create():
             message=f"Dataset name length is {len(dataset_name)} which is large than {DATASET_NAME_LIMIT}")
 
     dataset_name = dataset_name.strip()
-    dataset_name = duplicate_name(
-        KnowledgebaseService.query,
-        name=dataset_name,
-        tenant_id=current_user.id,
-        status=StatusEnum.VALID.value)
+    dataset_list = KnowledgebaseService.query(name=dataset_name, tenant_id=current_user.id, status=StatusEnum.VALID.value)
+    if(len(dataset_list) > 0):
+        return get_data_error_result(message=" Duplicate Dataset name")
     try:
         req["id"] = get_uuid()
         req["tenant_id"] = current_user.id
