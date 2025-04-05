@@ -82,18 +82,8 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `infiniflow/ragflow:v0.17.2`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
-      - `BAAI/bge-reranker-v2-m3`
       - `maidalun1020/bce-embedding-base_v1`
-      - `maidalun1020/bce-reranker-base_v1`
-    - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-      - `BAAI/bge-base-en-v1.5`
-      - `BAAI/bge-large-en-v1.5`
-      - `BAAI/bge-small-en-v1.5`
-      - `BAAI/bge-small-zh-v1.5`
-      - `jinaai/jina-embeddings-v2-base-en`
-      - `jinaai/jina-embeddings-v2-small-en`
-      - `nomic-ai/nomic-embed-text-v1.5`
-      - `sentence-transformers/all-MiniLM-L6-v2`
+
   
 > [!TIP]  
 > If you cannot download the RAGFlow Docker image, try the following mirrors.  
@@ -145,6 +135,24 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `user`: The username for MinIO.
   - `password`: The password for MinIO.
   - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
+
+- `oss`
+  - `access_key`: The access key ID used to authenticate requests to the OSS service.
+  - `secret_key`: The secret access key used to authenticate requests to the OSS service.
+  - `endpoint_url`: The URL of the OSS service endpoint.
+  - `region`: The OSS region where the bucket is located.
+  - `bucket`: The name of the OSS bucket where files will be stored. When you want to store all files in a specified bucket, you need this configuration item.
+  - `prefix_path`: Optional. A prefix path to prepend to file names in the OSS bucket, which can help organize files within the bucket.
+
+- `s3`:
+  - `access_key`: The access key ID used to authenticate requests to the S3 service.
+  - `secret_key`: The secret access key used to authenticate requests to the S3 service.
+  - `endpoint_url`: The URL of the S3-compatible service endpoint. This is necessary when using an S3-compatible protocol instead of the default AWS S3 endpoint.
+  - `bucket`: The name of the S3 bucket where files will be stored. When you want to store all files in a specified bucket, you need this configuration item.
+  - `region`: The AWS region where the S3 bucket is located. This is important for directing requests to the correct data center.
+  - `signature_version`: Optional. The version of the signature to use for authenticating requests. Common versions include `v4`.
+  - `addressing_style`: Optional. The style of addressing to use for the S3 endpoint. This can be `path` or `virtual`.
+  - `prefix_path`: Optional. A prefix path to prepend to file names in the S3 bucket, which can help organize files within the bucket.
 
 - `oauth`  
   The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.

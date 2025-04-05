@@ -37,6 +37,7 @@ export default {
       embedIntoSite: 'Embed into webpage',
       previousPage: 'Previous',
       nextPage: 'Next',
+      add: 'Add',
     },
     login: {
       login: 'Sign in',
@@ -111,7 +112,7 @@ export default {
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. That means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
       vectorSimilarityWeight: 'Keyword similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
@@ -165,7 +166,7 @@ export default {
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
       html4excel: 'Excel to HTML',
-      html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables, and at most 256 rows for one table. Otherwise, it will be parsed into key-value pairs by row.`,
+      html4excelTip: `Use with the General chunk method. When disabled, spreadsheets (XLSX or XLS(Excel97~2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows.`,
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the chat model specified in 'System model settings'. You can check or update the added keywords for a chunk from the chunk list. `,
       autoQuestions: 'Auto-question',
@@ -326,7 +327,8 @@ export default {
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information.',
       prompt: 'Prompt',
-      promptTip: 'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
+      promptTip:
+        'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
       {cluster_content}
@@ -345,7 +347,7 @@ The above is the content you need to summarize.`,
       entityTypes: 'Entity types',
       vietnamese: 'Vietnamese',
       pageRank: 'Page rank',
-      pageRankTip: `This increases the relevance score of the knowledge base. Its value will be added to the relevance score of all retrieved chunks from this knowledge base. Useful when you are searching within multiple knowledge bases and wanting to assign a higher pagerank score to a specific one.`,
+      pageRankTip: `You can assign a higher PageRank score to specific knowledge bases during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these knowledge bases, increasing their ranking. See https://ragflow.io/docs/dev/set_page_rank for details.`,
       tagName: 'Tag',
       frequency: 'Frequency',
       searchTags: 'Search tags',
@@ -595,21 +597,21 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       systemModelSettings: 'System Model Settings',
       chatModel: 'Chat model',
       chatModelTip:
-        'The default chat LLM all the newly created knowledgebase will use.',
+        'The default chat model for each newly created knowledge base.',
       embeddingModel: 'Embedding model',
       embeddingModelTip:
-        'The default embedding model all the newly created knowledgebase will use.',
+        'The default embedding model for each newly created knowledge base. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       img2txtModel: 'Img2txt model',
       img2txtModelTip:
-        'The default multi-module model all the newly created knowledgebase will use. It can describe a picture or video.',
+        'The default img2txt model for each newly created knowledge base. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       sequence2txtModel: 'Speech2txt model',
       sequence2txtModelTip:
-        'The default ASR model all the newly created knowledgebase will use. Use this model to translate voices to corresponding text.',
+        'The default ASR model for each newly created knowledgebase. Use this model to translate voices to corresponding text.',
       rerankModel: 'Rerank model',
-      rerankModelTip: `The default rerank model is used to rerank chunks retrieved by users' questions.`,
+      rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
       ttsModel: 'TTS Model',
       ttsModelTip:
-        'The default TTS model will be used to generate speech during conversations upon request.',
+        'The default text-to-speech model. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       workspace: 'Workspace',
       upgrade: 'Upgrade',
       addLlmTitle: 'Add LLM',
@@ -706,6 +708,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Traces, evals, prompt management and metrics to debug and improve your LLM application.',
       viewLangfuseSDocumentation: "View Langfuse's documentation",
       view: 'View',
+      modelsToBeAddedTooltip:
+        'If your model provider is not listed but claims to be "OpenAI-compatible", select the OpenAI-API-compatible card to add the relevant model(s). ',
     },
     message: {
       registered: 'Registered!',

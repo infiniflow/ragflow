@@ -7,6 +7,7 @@ import {
 } from '@/interfaces/database/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
+  deleteKnowledgeGraph,
   getKnowledgeGraph,
   listTag,
   removeTag,
@@ -392,3 +393,28 @@ export function useFetchKnowledgeGraph() {
 
   return { data, loading };
 }
+
+export const useRemoveKnowledgeGraph = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['removeKnowledgeGraph'],
+    mutationFn: async () => {
+      const { data } = await deleteKnowledgeGraph(knowledgeBaseId);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchKnowledgeGraph'],
+        });
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, removeKnowledgeGraph: mutateAsync };
+};

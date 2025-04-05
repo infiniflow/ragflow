@@ -37,6 +37,7 @@ export default {
       embedIntoSite: '嵌入网站',
       previousPage: '上一页',
       nextPage: '下一页',
+      add: '添加',
     },
     login: {
       login: '登录',
@@ -161,9 +162,9 @@ export default {
       topKTip: `K块将被送入Rerank型号。`,
       delimiter: `文本分段标识符`,
       delimiterTip:
-        '支持多字符作为分隔符，多字符分隔符用 ` 包裹。如配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+        '支持多字符作为分隔符，多字符用 `` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
       html4excel: '表格转HTML',
-      html4excelTip: `开启后电子表格会被解析为 HTML 表格，每张表格最多 256 行，否则会按行解析为键值对。`,
+      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel97~2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。`,
       autoKeywords: '自动关键词提取',
       autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用“系统模型设置”中设置的默认聊天模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。`,
       autoQuestions: '自动问题提取',
@@ -344,14 +345,14 @@ export default {
       maxClusterMessage: '最大聚类数是必填项',
       randomSeed: '随机种子',
       randomSeedMessage: '随机种子是必填项',
-      promptTip: '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
+      promptTip:
+        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
       maxTokenTip: '用于汇总的最大token数。',
       thresholdTip: '阈值越大，聚类越少。',
       maxClusterTip: '最大聚类数。',
       entityTypes: '实体类型',
       pageRank: '页面排名',
-      pageRankTip: `这用于提高相关性得分。所有检索到的块的相关性得分将加上此数字。
-当您想首先搜索给定的知识库时，请设置比其他知识库更高的 pagerank 得分。`,
+      pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dev/set_page_rank。`,
       tagName: '标签',
       frequency: '频次',
       searchTags: '搜索标签',
@@ -592,19 +593,21 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       modify: '修改',
       systemModelSettings: '系统模型设置',
       chatModel: '聊天模型',
-      chatModelTip: '所有新创建的知识库都会使用默认的聊天LLM。',
+      chatModelTip: '所有新创建的知识库都会使用默认的聊天模型。',
       ttsModel: 'TTS模型',
-      ttsModelTip: '默认的tts模型会被用于在对话过程中请求语音生成时使用',
+      ttsModelTip:
+        '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
       embeddingModel: '嵌入模型',
-      embeddingModelTip: '所有新创建的知识库都将使用的默认嵌入模型。',
+      embeddingModelTip:
+        '所有新创建的知识库使用的默认嵌入模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含嵌入模型)；或根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
       img2txtModel: 'Img2txt模型',
       img2txtModelTip:
-        '所有新创建的知识库都将使用默认的多模块模型。 它可以描述图片或视频。',
+        '所有新创建的知识库都将使用默认的 img2txt 模型。 它可以描述图片或视频。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
       sequence2txtModel: 'Speech2txt模型',
       sequence2txtModelTip:
-        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。',
+        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
       rerankModel: 'Rerank模型',
-      rerankModelTip: `默认的重读模型用于用户问题检索到重读块。`,
+      rerankModelTip: `默认的 reranking 模型。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。`,
       workspace: '工作空间',
       upgrade: '升级',
       addLlmTitle: '添加 LLM',
@@ -699,6 +702,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '跟踪、评估、提示管理和指标，以调试和改进您的 LLM 应用程序。',
       viewLangfuseSDocumentation: '查看 Langfuse 的文档',
       view: '查看',
+      modelsToBeAddedTooltip:
+        '如果你的模型供应商在这里没有列出，但是宣称 OpenAI-compatible，可以通过选择卡片 OpenAI-API-compatible 设置相关模型。',
     },
     message: {
       registered: '注册成功',

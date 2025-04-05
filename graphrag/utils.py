@@ -439,7 +439,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     if change.removed_edges:
         async with trio.open_nursery() as nursery:
             for from_node, to_node in change.removed_edges:
-                nursery.start_soon(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node}, search.index_name(tenant_id), kb_id))
+                 nursery.start_soon(lambda: trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node}, search.index_name(tenant_id), kb_id)))
     now = trio.current_time()
     if callback:
         callback(msg=f"set_graph removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges from index in {now - start:.2f}s.")
@@ -459,7 +459,10 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
             node_attrs = graph.nodes[node]
             nursery.start_soon(lambda: graph_node_to_chunk(kb_id, embd_mdl, node, node_attrs, chunks))
         for from_node, to_node in change.added_updated_edges:
-            edge_attrs = graph.edges[from_node, to_node]
+            edge_attrs = graph.get_edge_data(from_node, to_node)
+            if not edge_attrs:
+                # added_updated_edges could record a non-existing edge if both from_node and to_node participate in nodes merging.
+                continue
             nursery.start_soon(lambda: graph_edge_to_chunk(kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks))
     now = trio.current_time()
     if callback:

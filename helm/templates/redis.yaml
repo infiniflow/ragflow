@@ -7,6 +7,9 @@ metadata:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis
 spec:
+  {{- with .Values.redis.storage.className }}
+  storageClassName: {{ . }}
+  {{- end }}
   accessModes:
     - ReadWriteOnce
   resources:

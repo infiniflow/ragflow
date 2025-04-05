@@ -164,7 +164,7 @@ export default {
       topKTip: `K khối sẽ được đưa vào các mô hình xếp hạng lại.`,
       delimiter: 'Dấu phân cách cho phân đoạn văn bản',
       html4excel: 'Excel sang HTML',
-      html4excelTip: `Excel sẽ được phân tích cú pháp thành bảng HTML hay không. Nếu là FALSE, mỗi hàng trong Excel sẽ được tạo thành một khối.`,
+      html4excelTip: `Sử dụng cùng với phương pháp cắt khúc General. Khi chưa được bật, tệp bảng tính (XLSX, XLS (Excel97~2003)) sẽ được phân tích theo dòng thành các cặp khóa-giá trị. Khi bật, tệp bảng tính sẽ được phân tích thành bảng HTML. Nếu bảng gốc vượt quá 12 dòng, hệ thống sẽ tự động chia thành nhiều bảng HTML mỗi 12 dòng.`,
       autoKeywords: 'Từ khóa tự động',
       autoKeywordsTip: `Tự động trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng trong các truy vấn chứa các từ khóa đó. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi mô hình trò chuyện được chỉ định trong "Cài đặt mô hình hệ thống". Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối.`,
       autoQuestions: 'Câu hỏi tự động',
@@ -296,7 +296,8 @@ export default {
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, xem https://huggingface.co/papers/2401.18059 để biết thêm thông tin',
       prompt: 'Nhắc nhở',
-      promptTip: 'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
+      promptTip:
+        'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
       promptMessage: 'Nhắc nhở là bắt buộc',
       promptText: `Vui lòng tóm tắt các đoạn văn sau. Cẩn thận với các số, đừng bịa ra. Các đoạn văn như sau:
       {cluster_content}
@@ -315,7 +316,7 @@ export default {
       entityTypes: 'Loại thực thể',
       vietnamese: 'Tiếng Việt',
       pageRank: 'Xếp hạng trang',
-      pageRankTip: `Điều này được sử dụng để tăng điểm liên quan. Điểm liên quan với tất cả các khối được truy xuất sẽ cộng với số này, Khi bạn muốn tìm kiếm cơ sở kiến thức đã cho ở vị trí đầu tiên, hãy đặt điểm "Page Rank" cao hơn những điểm khác.`,
+      pageRankTip: `Bạn có thể gán điểm PageRank cao hơn cho các cơ sở kiến thức cụ thể trong quá trình truy xuất. Điểm tương ứng được cộng vào điểm tương đồng lai của các đoạn được truy xuất từ các cơ sở kiến thức này, làm tăng thứ hạng của chúng. Xem https://ragflow.io/docs/dev/set_page_rank để biết thêm chi tiết.`,
       tag: `<p>Cơ sở kiến thức sử dụng phương pháp phân đoạn 'Tag' hoạt động như một tập hợp thẻ. Các cơ sở kiến thức khác có thể sử dụng nó để gắn thẻ cho các đoạn của riêng chúng và các truy vấn tới các cơ sở kiến thức này cũng sẽ được gắn thẻ bằng tập hợp thẻ này.</p>
       <p>Cơ sở kiến thức sử dụng 'Tag' làm phương pháp phân đoạn sẽ <b>NOT</b> tham gia vào quy trình Tạo tăng cường truy xuất (RAG).</p>
       <p>Mỗi đoạn trong cơ sở kiến thức này là một cặp mô tả-thẻ độc lập.</p>
@@ -561,18 +562,18 @@ export default {
         'LLM trò chuyện mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng.',
       embeddingModel: 'Mô hình nhúng',
       embeddingModelTip:
-        'Mô hình nhúng mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng.',
+        'Mô hình nhúng mặc định cho từng cơ sở tri thức mới được tạo. Nếu bạn không tìm thấy mô hình nhúng từ danh sách thả xuống, hãy kiểm tra xem bạn có đang sử dụng phiên bản RAGFlow slim (không bao gồm các mô hình nhúng) hay không, hoặc kiểm tra https://ragflow.io/docs/dev/supported_models để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
       img2txtModel: 'Mô hình img2txt',
       img2txtModelTip:
-        'Mô hình đa mô-đun mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng. Nó có thể mô tả hình ảnh hoặc video.',
+        'Mô hình img2txt mặc định cho mỗi cơ sở tri thức mới được tạo. Nó mô tả một bức tranh hoặc video. Nếu bạn không thể tìm thấy mô hình từ danh sách thả xuống, hãy kiểm tra https://ragflow.io/docs/dev/supported_models để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
       sequence2txtModel: 'Mô hình speech2txt',
       sequence2txtModelTip:
-        'Mô hình ASR mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng. Sử dụng mô hình này để chuyển đổi giọng nói thành văn bản tương ứng.',
+        'Mô hình ASR mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng. Sử dụng mô hình này để chuyển đổi giọng nói thành văn bản tương ứng. Nếu bạn không thể tìm thấy mô hình từ danh sách thả xuống, hãy kiểm tra https://ragflow.io/docs/dev/supported_models để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
       rerankModel: 'Mô hình xếp hạng lại',
-      rerankModelTip: `Mô hình xếp hạng lại mặc định được sử dụng để xếp hạng lại các khối được truy xuất bởi các câu hỏi của người dùng.`,
+      rerankModelTip: `Mô hình rerank mặc định để reranking các đoạn văn bản. Nếu bạn không tìm thấy mô hình nào từ danh sách thả xuống, hãy kiểm tra https://ragflow.io/docs/dev/supported_models để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.`,
       ttsModel: 'Mô hình TTS',
       ttsModelTip:
-        'Mô hình TTS mặc định sẽ được sử dụng để tạo giọng nói trong quá trình trò chuyện theo yêu cầu.',
+        'Mô hình text-to-speech mặc định. Nếu bạn không tìm thấy mô hình nào từ danh sách thả xuống, hãy kiểm tra https://ragflow.io/docs/dev/supported_models để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
       workspace: 'Không gian làm việc',
       upgrade: 'Nâng cấp',
       addLlmTitle: 'Thêm LLM',
@@ -661,6 +662,8 @@ export default {
       sureQuit: `Bạn có chắc chắn muốn rời khỏi nhóm mà bạn đã tham gia không?`,
       FishAudioAKMessage: `Vui lòng nhập KEY API`,
       FishAudioRefIDMessage: `Vui lòng nhập ID của model tham chiếu (để trống để sử dụng model mặc định)`,
+      modelsToBeAddedTooltip:
+        'Nếu nhà cung cấp mô hình của bạn không có trong danh sách nhưng tuyên bố tương thích với "OpenAI", hãy chọn thẻ OpenAI-API-compatible để thêm mô hình liên quan.',
     },
     message: {
       registered: 'Đã đăng ký!',
