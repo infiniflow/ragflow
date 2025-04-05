@@ -107,7 +107,7 @@ def search_pages_path(pages_dir):
 def register_page(page_path):
     path = f"{page_path}"
 
-    page_name = page_path.stem.rstrip("_app")
+    page_name = page_path.stem.split('_app', 1)[0]
     module_name = ".".join(
         page_path.parts[page_path.parts.index("api"): -1] + (page_name,)
     )
