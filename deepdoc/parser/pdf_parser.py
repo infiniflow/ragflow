@@ -1013,6 +1013,8 @@ class RAGFlowPdfParser:
                 except Exception as e:
                     logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
                     self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
+                finally:
+                    self.pdf.close()
 
                 self.total_page = len(self.pdf.pages)
         except Exception:
@@ -1034,8 +1036,7 @@ class RAGFlowPdfParser:
             dfs(outlines, 0)
         except Exception as e:
             logging.warning(f"Outlines exception: {e}")
-        finally:
-            self.pdf.close()
+
         if not self.outlines:
             logging.warning("Miss outlines")
 
