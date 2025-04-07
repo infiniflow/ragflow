@@ -36,7 +36,7 @@
   <a href="https://ragflow.io/docs/dev/">Dokumentasi</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/4214">Peta Jalan</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/MFpqqKyB">Discord</a> |
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
@@ -332,7 +332,7 @@ Lihat [Roadmap RAGFlow 2025](https://github.com/infiniflow/ragflow/issues/4214)
 
 ## 🏄 Komunitas
 
-- [Discord](https://discord.gg/MFpqqKyB)
+- [Discord](https://discord.gg/NjYzJD3GM3)
 - [Twitter](https://twitter.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
