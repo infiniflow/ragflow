@@ -223,11 +223,11 @@ def update(tenant_id, chat_id):
             return get_error_data_result(f"`rerank_model` {req.get('rerank_id')} doesn't exist")
     if "name" in req:
         if not req.get("name"):
-            return get_error_data_result(message="`name` is not empty.")
+            return get_error_data_result(message="`name` cannot be empty.")
         if req["name"].lower() != res["name"].lower() \
                 and len(
             DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 0:
-            return get_error_data_result(message="Duplicated chat name in updating dataset.")
+            return get_error_data_result(message="Duplicated chat name in updating chat.")
     if "prompt_config" in req:
         res["prompt_config"].update(req["prompt_config"])
         for p in res["prompt_config"]["parameters"]:
