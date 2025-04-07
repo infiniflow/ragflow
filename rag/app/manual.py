@@ -158,11 +158,19 @@ class Docx(DocxParser):
                 while i < len(r.cells):
                     span = 1
                     c = r.cells[i]
+
+                    begin = i
                     for j in range(i+1, len(r.cells)):
                         if c.text == r.cells[j].text:
                             span += 1
+                            i = j + 1
+                        else:
                             i = j
-                    i += 1
+                            break
+
+                    if begin == i:
+                        i = i + 1
+
                     html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                 html += "</tr>"
             html += "</table>"
