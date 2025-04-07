@@ -46,9 +46,9 @@ class TestChatAssistantUpdate:
             ({"name": "valid_name"}, 0, ""),
             pytest.param({"name": "a" * (CHAT_ASSISTANT_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param({"name": ""}, 102, "`name` is empty.", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param({"name": "test_chat_assistant_1"}, 102, "Duplicated chat name in updating chat.", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param({"name": "TEST_CHAT_ASSISTANT_1"}, 102, "Duplicated chat name in updating chat.", marks=pytest.mark.skip(reason="issues/")),
+            ({"name": ""}, 102, "`name` cannot be empty."),
+            ({"name": "test_chat_assistant_1"}, 102, "Duplicated chat name in updating chat."),
+            ({"name": "TEST_CHAT_ASSISTANT_1"}, 102, "Duplicated chat name in updating chat."),
         ],
     )
     def test_name(self, get_http_api_auth, add_chat_assistants_func, payload, expected_code, expected_message):
