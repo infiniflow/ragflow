@@ -23,7 +23,7 @@ You cannot invite users to a team unless you are its owner.
 ## Prerequisites
 
 1. Ensure that your Email address that received the team invitation is associated with a RAGFlow user account.
-2. To view and update the team owner's shared knowledge base, The team owner must set a knowledge base's **Permissions** to **Team**.
+2. To view and update the team owner's shared knowledge base, the team owner must set a knowledge base's **Permissions** to **Team**.
 
 ## Accept or decline team invite
 
@@ -39,4 +39,4 @@ _After accepting the team invite, you should be able to view and update the team
 
 ## Leave a joined team
 
-![quit](https://github.com/user-attachments/assets/a9d812a9-382d-4913-83b9-d72cb5e7c953)
+![leave_team](https://github.com/user-attachments/assets/16f31462-27e5-4a13-b9dc-dd7f1bcc43f0)

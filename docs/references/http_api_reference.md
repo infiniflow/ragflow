@@ -2679,9 +2679,13 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"sync_dsl"`: `boolean` (optional)
   - other parameters: `string`
 
+:::info IMPORTANT
+You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) agent component.
+:::
+
 ##### Request example
 
-If the **Begin** component does not take parameters, the following code will create a session.
+- If the **Begin** component does not take parameters, the following code will create a session.
 
 ```bash
 curl --request POST \
@@ -2693,7 +2697,7 @@ curl --request POST \
      }'
 ```
 
-If the **Begin** component takes parameters, the following code will create a session.
+- If the **Begin** component takes parameters, the following code will create a session.  
 
 ```bash
 curl --request POST \

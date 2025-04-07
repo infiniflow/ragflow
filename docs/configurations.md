@@ -74,6 +74,8 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 
 ### MinIO
 
+RAGFlow utilizes MinIO as its object storage solution, leveraging its scalability to store and manage all uploaded files.
+
 - `MINIO_CONSOLE_PORT`  
   The port used to expose the MinIO console interface to the host machine, allowing **external** access to the web-based console running inside the Docker container. Defaults to `9001`
 - `MINIO_PORT`  
