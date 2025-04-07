@@ -108,7 +108,7 @@ Yes, we do.
 
 ---
 
-### Is it possible to share dialogue through URL?
+### Do you support sharing dialogue through URL?
 
 No, this feature is not supported.
 
@@ -449,3 +449,7 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
 ```bash
 $ docker compose -f docker-compose.yml up -d
 ```
+
+### Where are my uploaded files stored in RAGFlow's image?
+
+All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
