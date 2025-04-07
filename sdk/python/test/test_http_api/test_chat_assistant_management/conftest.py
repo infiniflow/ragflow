@@ -31,3 +31,19 @@ def add_chat_assistants(request, get_http_api_auth, add_chunks):
         chat_assistant_ids.append(res["data"]["id"])
 
     return dataset_id, document_id, chunk_ids, chat_assistant_ids
+
+
+@pytest.fixture(scope="function")
+def add_chat_assistants_func(request, get_http_api_auth, add_chunks):
+    def cleanup():
+        delete_chat_assistants(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    dataset_id, document_id, chunk_ids = add_chunks
+    chat_assistant_ids = []
+    for i in range(5):
+        res = create_chat_assistant(get_http_api_auth, {"name": f"test_chat_assistant_{i}", "dataset_ids": [dataset_id]})
+        chat_assistant_ids.append(res["data"]["id"])
+
+    return dataset_id, document_id, chunk_ids, chat_assistant_ids
