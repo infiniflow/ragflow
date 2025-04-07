@@ -432,36 +432,3 @@ def check_duplicate_ids(ids, id_type="item"):
 
     # Return unique IDs and error messages
     return list(set(ids)), duplicate_messages
-
-
-def get_tools() -> list:
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "get_current_time",
-                "description": "Very useful when you want to know the current time.",
-                "strict": True,
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_current_weather",
-                "description": "Very useful when you want to query the weather of a specified city.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "City or district, such as Singapore, Hangzhou, Yuhang District, etc.",
-                        }
-                    },
-                    "required": ["location"],
-                    "additionalProperties": False,
-                },
-                "strict": True,
-            },
-        },
-    ]
-    return tools

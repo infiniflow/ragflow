@@ -704,7 +704,6 @@ class QWenChat(Base):
             tool_arguments = ""
             finish_completion = False
             reasoning_start = False
-            counter = 1
             while not finish_completion:
                 for resp in response:
                     if resp.status_code == HTTPStatus.OK:
@@ -717,7 +716,9 @@ class QWenChat(Base):
                                 ans = "<think>" + ans
                             else:
                                 ans = ans + "</think>"
+
                         if "tool_calls" not in assistant_output:
+                            reasoning_start = False
                             tk_count += self.total_token_count(resp)
                             if resp.output.choices[0].get("finish_reason", "") == "length":
                                 if is_chinese([ans]):
@@ -754,7 +755,6 @@ class QWenChat(Base):
                                 tool_arguments = ""
                                 toolcall_message = None
                                 response = Generation.call(self.model_name, messages=history, result_format="message", tools=self.tools, stream=True, incremental_output=incremental_output, **gen_conf)
-                            counter += 1
                     else:
                         yield (
                             ans + "\n**ERROR**: " + resp.output.choices[0].message
