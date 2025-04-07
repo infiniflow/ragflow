@@ -118,7 +118,7 @@ def create_agent_session(tenant_id, agent_id):
 
     for ans in canvas.run(stream=False):
         pass
-    
+
     cvs.dsl = json.loads(str(canvas))
     conv = {"id": get_uuid(), "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
     API4ConversationService.save(**conv)
@@ -245,6 +245,11 @@ def chat_completion_openai_like(tenant_id, chat_id):
     msg = None
     msg = [m for m in messages if m["role"] != "system" and (m["role"] != "assistant" or msg)]
 
+    # tools = get_tools()
+    # toolcall_session = SimpleFunctionCallServer()
+    tools = None
+    toolcall_session = None
+
     if req.get("stream", True):
         # The value for the usage field on all chunks except for the last one will be null.
         # The usage field on the last chunk contains token usage statistics for the entire request.
@@ -264,7 +269,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
             }
 
             try:
-                for ans in chat(dia, msg, True):
+                for ans in chat(dia, msg, True, toolcall_session=toolcall_session, tools=tools):
                     answer = ans["answer"]
 
                     reasoning_match = re.search(r"<think>(.*?)</think>", answer, flags=re.DOTALL)
@@ -327,7 +332,7 @@ def chat_completion_openai_like(tenant_id, chat_id):
         return resp
     else:
         answer = None
-        for ans in chat(dia, msg, False):
+        for ans in chat(dia, msg, False, toolcall_session=toolcall_session, tools=tools):
             # focus answer content only
             answer = ans
             break
