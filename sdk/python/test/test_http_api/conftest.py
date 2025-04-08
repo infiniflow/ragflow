@@ -14,9 +14,9 @@
 #  limitations under the License.
 #
 
-
 import pytest
-from common import delete_dataset
+from common import add_chunk, batch_create_datasets, bulk_upload_documents, delete_chat_assistants, delete_datasets, list_documnets, parse_documnets
+from libs.utils import wait_for
 from libs.utils.file_utils import (
     create_docx_file,
     create_eml_file,
@@ -31,10 +31,25 @@ from libs.utils.file_utils import (
 )
 
 
-@pytest.fixture(scope="function", autouse=True)
+@wait_for(30, 1, "Document parsing timeout")
+def condition(_auth, _dataset_id):
+    res = list_documnets(_auth, _dataset_id)
+    for doc in res["data"]["docs"]:
+        if doc["run"] != "DONE":
+            return False
+    return True
+
+
+@pytest.fixture(scope="function")
 def clear_datasets(get_http_api_auth):
     yield
-    delete_dataset(get_http_api_auth)
+    delete_datasets(get_http_api_auth)
+
+
+@pytest.fixture(scope="function")
+def clear_chat_assistants(get_http_api_auth):
+    yield
+    delete_chat_assistants(get_http_api_auth)
 
 
 @pytest.fixture
@@ -58,3 +73,56 @@ def generate_test_files(request, tmp_path):
             creator_func(file_path)
             files[file_type] = file_path
     return files
+
+
+@pytest.fixture(scope="class")
+def ragflow_tmp_dir(request, tmp_path_factory):
+    class_name = request.cls.__name__
+    return tmp_path_factory.mktemp(class_name)
+
+
+@pytest.fixture(scope="class")
+def add_dataset(request, get_http_api_auth):
+    def cleanup():
+        delete_datasets(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    dataset_ids = batch_create_datasets(get_http_api_auth, 1)
+    return dataset_ids[0]
+
+
+@pytest.fixture(scope="function")
+def add_dataset_func(request, get_http_api_auth):
+    def cleanup():
+        delete_datasets(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    dataset_ids = batch_create_datasets(get_http_api_auth, 1)
+    return dataset_ids[0]
+
+
+@pytest.fixture(scope="class")
+def add_document(get_http_api_auth, add_dataset, ragflow_tmp_dir):
+    dataset_id = add_dataset
+    document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 1, ragflow_tmp_dir)
+    return dataset_id, document_ids[0]
+
+
+@pytest.fixture(scope="class")
+def add_chunks(get_http_api_auth, add_document):
+    dataset_id, document_id = add_document
+    parse_documnets(get_http_api_auth, dataset_id, {"document_ids": [document_id]})
+    condition(get_http_api_auth, dataset_id)
+
+    chunk_ids = []
+    for i in range(4):
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": f"chunk test {i}"})
+        chunk_ids.append(res["data"]["chunk"]["id"])
+
+    # issues/6487
+    from time import sleep
+
+    sleep(1)
+    return dataset_id, document_id, chunk_ids

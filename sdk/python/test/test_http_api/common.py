@@ -26,54 +26,37 @@ HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
 DATASETS_API_URL = "/api/v1/datasets"
 FILE_API_URL = "/api/v1/datasets/{dataset_id}/documents"
 FILE_CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/chunks"
+CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks"
+CHAT_ASSISTANT_API_URL = "/api/v1/chats"
 
 INVALID_API_TOKEN = "invalid_key_123"
 DATASET_NAME_LIMIT = 128
 DOCUMENT_NAME_LIMIT = 128
+CHAT_ASSISTANT_LIMIT = 255
 
 
 # DATASET MANAGEMENT
 def create_dataset(auth, payload=None):
-    res = requests.post(
-        url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
-        headers=HEADERS,
-        auth=auth,
-        json=payload,
-    )
+    res = requests.post(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def list_dataset(auth, params=None):
-    res = requests.get(
-        url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
-        headers=HEADERS,
-        auth=auth,
-        params=params,
-    )
+def list_datasets(auth, params=None):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
 def update_dataset(auth, dataset_id, payload=None):
-    res = requests.put(
-        url=f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}",
-        headers=HEADERS,
-        auth=auth,
-        json=payload,
-    )
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}", headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def delete_dataset(auth, payload=None):
-    res = requests.delete(
-        url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
-        headers=HEADERS,
-        auth=auth,
-        json=payload,
-    )
+def delete_datasets(auth, payload=None):
+    res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def create_datasets(auth, num):
+def batch_create_datasets(auth, num):
     ids = []
     for i in range(num):
         res = create_dataset(auth, {"name": f"dataset_{i}"})
@@ -110,18 +93,6 @@ def upload_documnets(auth, dataset_id, files_path=None):
             f.close()
 
 
-def batch_upload_documents(auth, dataset_id, num, tmp_path):
-    fps = []
-    for i in range(num):
-        fp = create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt")
-        fps.append(fp)
-    res = upload_documnets(auth, dataset_id, fps)
-    document_ids = []
-    for document in res["data"]:
-        document_ids.append(document["id"])
-    return document_ids
-
-
 def download_document(auth, dataset_id, document_id, save_path):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
     res = requests.get(url=url, auth=auth, stream=True)
@@ -136,14 +107,9 @@ def download_document(auth, dataset_id, document_id, save_path):
     return res
 
 
-def list_documnet(auth, dataset_id, params=None):
+def list_documnets(auth, dataset_id, params=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
-    res = requests.get(
-        url=url,
-        headers=HEADERS,
-        auth=auth,
-        params=params,
-    )
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
@@ -153,19 +119,103 @@ def update_documnet(auth, dataset_id, document_id, payload=None):
     return res.json()
 
 
-def delete_documnet(auth, dataset_id, payload=None):
+def delete_documnets(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def parse_documnet(auth, dataset_id, payload=None):
+def parse_documnets(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def stop_parse_documnet(auth, dataset_id, payload=None):
+def stop_parse_documnets(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def bulk_upload_documents(auth, dataset_id, num, tmp_path):
+    fps = []
+    for i in range(num):
+        fp = create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt")
+        fps.append(fp)
+    res = upload_documnets(auth, dataset_id, fps)
+    document_ids = []
+    for document in res["data"]:
+        document_ids.append(document["id"])
+    return document_ids
+
+
+# CHUNK MANAGEMENT WITHIN DATASET
+def add_chunk(auth, dataset_id, document_id, payload=None):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def list_chunks(auth, dataset_id, document_id, params=None):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
+    return res.json()
+
+
+def update_chunk(auth, dataset_id, document_id, chunk_id, payload=None):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_id}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def delete_chunks(auth, dataset_id, document_id, payload=None):
+    url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
+    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def retrieval_chunks(auth, payload=None):
+    url = f"{HOST_ADDRESS}/api/v1/retrieval"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def batch_add_chunks(auth, dataset_id, document_id, num):
+    chunk_ids = []
+    for i in range(num):
+        res = add_chunk(auth, dataset_id, document_id, {"content": f"chunk test {i}"})
+        chunk_ids.append(res["data"]["chunk"]["id"])
+    return chunk_ids
+
+
+# CHAT ASSISTANT MANAGEMENT
+def create_chat_assistant(auth, payload=None):
+    url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def list_chat_assistants(auth, params=None):
+    url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}"
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
+    return res.json()
+
+
+def update_chat_assistant(auth, chat_assistant_id, payload=None):
+    url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}/{chat_assistant_id}"
+    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def delete_chat_assistants(auth, payload=None):
+    url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}"
+    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def batch_create_chat_assistants(auth, num):
+    chat_assistant_ids = []
+    for i in range(num):
+        res = create_chat_assistant(auth, {"name": f"test_chat_assistant_{i}"})
+        chat_assistant_ids.append(res["data"]["id"])
+    return chat_assistant_ids

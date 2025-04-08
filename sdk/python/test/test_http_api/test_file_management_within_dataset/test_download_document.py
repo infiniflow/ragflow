@@ -18,13 +18,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import (
-    INVALID_API_TOKEN,
-    batch_upload_documents,
-    create_datasets,
-    download_document,
-    upload_documnets,
-)
+from common import INVALID_API_TOKEN, bulk_upload_documents, download_document, upload_documnets
 from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import compare_by_hash
 from requests import codes
@@ -42,14 +36,8 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(
-        self, get_http_api_auth, tmp_path, auth, expected_code, expected_message
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = download_document(
-            auth, ids[0], document_ids[0], tmp_path / "ragflow_tes.txt"
-        )
+    def test_invalid_auth(self, tmp_path, auth, expected_code, expected_message):
+        res = download_document(auth, "dataset_id", "document_id", tmp_path / "ragflow_tes.txt")
         assert res.status_code == codes.ok
         with (tmp_path / "ragflow_tes.txt").open("r") as f:
             response_json = json.load(f)
@@ -57,43 +45,42 @@ class TestAuthorization:
         assert response_json["message"] == expected_message
 
 
-class TestDownloadDocument:
-    @pytest.mark.parametrize(
-        "generate_test_files",
-        [
-            "docx",
-            "excel",
-            "ppt",
-            "image",
-            "pdf",
-            "txt",
-            "md",
-            "json",
-            "eml",
-            "html",
-        ],
-        indirect=True,
+@pytest.mark.parametrize(
+    "generate_test_files",
+    [
+        "docx",
+        "excel",
+        "ppt",
+        "image",
+        "pdf",
+        "txt",
+        "md",
+        "json",
+        "eml",
+        "html",
+    ],
+    indirect=True,
+)
+def test_file_type_validation(get_http_api_auth, add_dataset, generate_test_files, request):
+    dataset_id = add_dataset
+    fp = generate_test_files[request.node.callspec.params["generate_test_files"]]
+    res = upload_documnets(get_http_api_auth, dataset_id, [fp])
+    document_id = res["data"][0]["id"]
+
+    res = download_document(
+        get_http_api_auth,
+        dataset_id,
+        document_id,
+        fp.with_stem("ragflow_test_download"),
     )
-    def test_file_type_validation(
-        self, get_http_api_auth, generate_test_files, request
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
-        fp = generate_test_files[request.node.callspec.params["generate_test_files"]]
-        res = upload_documnets(get_http_api_auth, ids[0], [fp])
-        document_id = res["data"][0]["id"]
+    assert res.status_code == codes.ok
+    assert compare_by_hash(
+        fp,
+        fp.with_stem("ragflow_test_download"),
+    )
 
-        res = download_document(
-            get_http_api_auth,
-            ids[0],
-            document_id,
-            fp.with_stem("ragflow_test_download"),
-        )
-        assert res.status_code == codes.ok
-        assert compare_by_hash(
-            fp,
-            fp.with_stem("ragflow_test_download"),
-        )
 
+class TestDocumentDownload:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
@@ -104,13 +91,11 @@ class TestDownloadDocument:
             ),
         ],
     )
-    def test_invalid_document_id(
-        self, get_http_api_auth, tmp_path, document_id, expected_code, expected_message
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
+    def test_invalid_document_id(self, get_http_api_auth, add_documents, tmp_path, document_id, expected_code, expected_message):
+        dataset_id, _ = add_documents
         res = download_document(
             get_http_api_auth,
-            ids[0],
+            dataset_id,
             document_id,
             tmp_path / "ragflow_test_download_1.txt",
         )
@@ -131,11 +116,8 @@ class TestDownloadDocument:
             ),
         ],
     )
-    def test_invalid_dataset_id(
-        self, get_http_api_auth, tmp_path, dataset_id, expected_code, expected_message
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
+    def test_invalid_dataset_id(self, get_http_api_auth, add_documents, tmp_path, dataset_id, expected_code, expected_message):
+        _, document_ids = add_documents
         res = download_document(
             get_http_api_auth,
             dataset_id,
@@ -148,45 +130,43 @@ class TestDownloadDocument:
         assert response_json["code"] == expected_code
         assert response_json["message"] == expected_message
 
-    def test_same_file_repeat(self, get_http_api_auth, tmp_path):
+    def test_same_file_repeat(self, get_http_api_auth, add_documents, tmp_path, ragflow_tmp_dir):
         num = 5
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
+        dataset_id, document_ids = add_documents
         for i in range(num):
             res = download_document(
                 get_http_api_auth,
-                ids[0],
+                dataset_id,
                 document_ids[0],
                 tmp_path / f"ragflow_test_download_{i}.txt",
             )
             assert res.status_code == codes.ok
             assert compare_by_hash(
-                tmp_path / "ragflow_test_upload_0.txt",
+                ragflow_tmp_dir / "ragflow_test_upload_0.txt",
                 tmp_path / f"ragflow_test_download_{i}.txt",
             )
 
-    def test_concurrent_download(self, get_http_api_auth, tmp_path):
-        document_count = 20
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(
-            get_http_api_auth, ids[0], document_count, tmp_path
+
+def test_concurrent_download(get_http_api_auth, add_dataset, tmp_path):
+    document_count = 20
+    dataset_id = add_dataset
+    document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_count, tmp_path)
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [
+            executor.submit(
+                download_document,
+                get_http_api_auth,
+                dataset_id,
+                document_ids[i],
+                tmp_path / f"ragflow_test_download_{i}.txt",
+            )
+            for i in range(document_count)
+        ]
+    responses = [f.result() for f in futures]
+    assert all(r.status_code == codes.ok for r in responses)
+    for i in range(document_count):
+        assert compare_by_hash(
+            tmp_path / f"ragflow_test_upload_{i}.txt",
+            tmp_path / f"ragflow_test_download_{i}.txt",
         )
-
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(
-                    download_document,
-                    get_http_api_auth,
-                    ids[0],
-                    document_ids[i],
-                    tmp_path / f"ragflow_test_download_{i}.txt",
-                )
-                for i in range(document_count)
-            ]
-        responses = [f.result() for f in futures]
-        assert all(r.status_code == codes.ok for r in responses)
-        for i in range(document_count):
-            assert compare_by_hash(
-                tmp_path / f"ragflow_test_upload_{i}.txt",
-                tmp_path / f"ragflow_test_download_{i}.txt",
-            )

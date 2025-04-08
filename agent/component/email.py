@@ -82,7 +82,10 @@ class Email(ComponentBase, ABC):
             logging.info(f"Connecting to SMTP server {self._param.smtp_server}:{self._param.smtp_port}")
             
             context = smtplib.ssl.create_default_context()
-            with smtplib.SMTP_SSL(self._param.smtp_server, self._param.smtp_port, context=context) as server:
+            with smtplib.SMTP(self._param.smtp_server, self._param.smtp_port) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
                 # Login
                 logging.info(f"Attempting to login with email: {self._param.email}")
                 server.login(self._param.email, self._param.password)

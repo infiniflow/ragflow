@@ -27,7 +27,7 @@ In contrast, chunks created from [knowledge graph construction](./construct_know
 
 ### Similarity threshold
 
-This sets the bar for retrieving chunks: chunks with similarities below the threshold will be filtered out. By default, the threshold is set to 0.2.
+This sets the bar for retrieving chunks: chunks with similarities below the threshold will be filtered out. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.
 
 ### Keyword similarity weight
 

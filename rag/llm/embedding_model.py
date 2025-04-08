@@ -252,7 +252,8 @@ class ZhipuEmbed(Base):
 
 class OllamaEmbed(Base):
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"])
+        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else \
+            Client(host=kwargs["base_url"], headers={"Authorization": f"Bear {key}"})
         self.model_name = model_name
 
     def encode(self, texts: list):
@@ -831,9 +832,8 @@ class GPUStackEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        if base_url.split("/")[-1] != "v1-openai":
-            base_url = os.path.join(base_url, "v1-openai")
+        if base_url.split("/")[-1] != "v1":
+            base_url = os.path.join(base_url, "v1")
 
-        print(key,base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name

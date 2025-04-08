@@ -113,7 +113,7 @@ export default {
         'Führen Sie einen Abruftest durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
       similarityThreshold: 'Ähnlichkeitsschwelle',
       similarityThresholdTip:
-        'RAGFlow verwendet entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit oder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Neuordnungsbewertung während des Abrufs. Dieser Parameter legt den Schwellenwert für Ähnlichkeiten zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einer Ähnlichkeitsbewertung unter diesem Schwellenwert wird von den Ergebnissen ausgeschlossen.',
+        'RAGFlow verwendet entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit oder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Neuordnungsbewertung während des Abrufs. Dieser Parameter legt den Schwellenwert für Ähnlichkeiten zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einer Ähnlichkeitsbewertung unter diesem Schwellenwert wird von den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 0,2 festgelegt. Das bedeutet, dass nur Textblöcke mit einer hybriden Ähnlichkeitsbewertung von 20 oder höher abgerufen werden.',
       vectorSimilarityWeight: 'Schlüsselwortähnlichkeitsgewicht',
       vectorSimilarityWeightTip:
         'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Neuordnungsbewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
@@ -170,13 +170,13 @@ export default {
         'Ein Trennzeichen oder Separator kann aus einem oder mehreren Sonderzeichen bestehen. Bei mehreren Zeichen stellen Sie sicher, dass sie in Backticks (` `) eingeschlossen sind. Wenn Sie beispielsweise Ihre Trennzeichen so konfigurieren: \\n`##`;, dann werden Ihre Texte an Zeilenumbrüchen, doppelten Rautenzeichen (##) oder Semikolons getrennt. Setzen Sie Trennzeichen nur nachdem Sie das Mechanismus der Textsegmentierung und -chunking verstanden haben.',
       html4excel: 'Excel zu HTML',
       html4excelTip:
-        'Wenn aktiviert, wird die Tabelle in HTML-Tabellen umgewandelt, mit maximal 256 Zeilen pro Tabelle. Andernfalls wird sie in Schlüssel-Wert-Paare nach Zeilen umgewandelt.',
+        'Verwenden Sie dies zusammen mit der General-Schnittmethode. Wenn deaktiviert, werden Tabellenkalkulationsdateien (XLSX, XLS (Excel97~2003)) zeilenweise in Schlüssel-Wert-Paare analysiert. Wenn aktiviert, werden Tabellenkalkulationsdateien in HTML-Tabellen umgewandelt. Wenn die ursprüngliche Tabelle mehr als 12 Zeilen enthält, teilt das System sie automatisch alle 12 Zeilen in mehrere HTML-Tabellen auf.',
       autoKeywords: 'Auto-Schlüsselwort',
       autoKeywordsTip:
         'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren.',
       autoQuestions: 'Auto-Frage',
       autoQuestionsTip:
-        'Extrahiert automatisch N Fragen für jeden Chunk, um deren Ranking für Anfragen mit diesen Fragen zu erhöhen. Sie können die hinzugefügten Fragen für einen Chunk in der Chunk-Liste überprüfen oder aktualisieren. Diese Funktion unterbricht den Chunking-Prozess nicht, wenn ein Fehler auftritt, außer dass sie möglicherweise ein leeres Ergebnis zum ursprünglichen Chunk hinzufügt. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen LLM verbraucht werden.',
+        'Um die Ranking-Ergebnisse zu verbessern, extrahieren Sie N Fragen für jeden Wissensdatenbank-Chunk mithilfe des im "Systemmodell-Setup" definierten Chatmodells. Beachten Sie, dass dies zusätzliche Token verbraucht. Die Ergebnisse können in der Chunk-Liste eingesehen und bearbeitet werden. Fehler bei der Fragenextraktion blockieren den Chunking-Prozess nicht; leere Ergebnisse werden dem ursprünglichen Chunk hinzugefügt.',
       redo: 'Möchten Sie die vorhandenen {{chunkNum}} Chunks löschen?',
       setMetaData: 'Metadaten festlegen',
       pleaseInputJson: 'Bitte JSON eingeben',
@@ -321,21 +321,21 @@ export default {
   <p>Dieser Ansatz teilt Dateien mit der 'naiven'/'Allgemeinen' Methode auf. Er teilt ein Dokument in Segmente und kombiniert dann benachbarte Segmente, bis die Token-Anzahl den durch 'Chunk-Token-Anzahl' festgelegten Schwellenwert überschreitet, woraufhin ein Chunk erstellt wird.</p>
   <p>Die Chunks werden dann dem LLM zugeführt, um Entitäten und Beziehungen für einen Wissensgraphen und eine Mind Map zu extrahieren.</p>
   <p>Stellen Sie sicher, dass Sie die <b>Entitätstypen</b> festlegen.</p>`,
-      tag: `<p>Eine Wissensdatenbank, die 'Tag' als Chunking-Methode verwendet, soll von anderen Wissensdatenbanken verwendet werden, um Tags zu ihren Chunks hinzuzufügen, deren Abfragen ebenfalls mit Tags versehen werden.</p>
-  <p>Eine Wissensdatenbank, die 'Tag' als Chunking-Methode verwendet, soll <b>NICHT</b> am RAG-Verfahren beteiligt sein.</p>
-  <p>Die Chunks in dieser Wissensdatenbank sind Beispiele für Tags, die das gesamte Tag-Set und die Relevanz zwischen Chunk und Tags zeigen.</p>
-  
-  <p>Diese Chunk-Methode unterstützt die Dateiformate <b>XLSX</b> und <b>CSV/TXT</b>.</p>
-  <p>Wenn eine Datei im <b>XLSX</b>-Format vorliegt, sollte sie zwei Spalten ohne Kopfzeilen enthalten: eine für Inhalte und die andere für Tags, wobei die Inhaltsspalte der Tags-Spalte vorangeht. Mehrere Blätter sind akzeptabel, vorausgesetzt, die Spalten sind richtig strukturiert.</p>
-  <p>Wenn eine Datei im <b>CSV/TXT</b>-Format vorliegt, muss sie UTF-8-kodiert sein und TAB als Trennzeichen verwenden, um Inhalte und Tags zu trennen.</p>
-  <p>In der Tags-Spalte befinden sich englische <b>Kommas</b> zwischen den Tags.</p>
-  <i>Textzeilen, die nicht den obigen Regeln folgen, werden ignoriert, und jedes Paar wird als eigenständiger Chunk betrachtet.</i>
+      tag: `<p>Eine Wissensdatenbank, die die 'Tag'-Chunk-Methode verwendet, fungiert als Tag-Set. Andere Wissensdatenbanken können es verwenden, um ihre eigenen Chunks zu taggen, und Abfragen an diese Wissensdatenbanken werden ebenfalls mit diesem Tag-Set getaggt.</p>
+      <p>Die Wissensdatenbank, die 'Tag' als Chunk-Methode verwendet, ist <b>NICHT</b> an einem Retrieval-Augmented Generation (RAG)-Prozess beteiligt.</p>
+      <p>Jeder Chunk in dieser Wissensdatenbank ist ein unabhängiges Beschreibungs-Tag-Paar.</p>
+      <p>Zu den unterstützten Dateiformaten gehören <b>XLSX</b> und <b>CSV/TXT</b>:</p>
+      <p>Wenn eine Datei im <b>XLSX</b>-Format vorliegt, sollte sie zwei Spalten ohne Überschriften enthalten: eine für Tag-Beschreibungen und die andere für Tag-Namen, wobei die Spalte "Beschreibung" vor der Spalte "Tag" steht. Mehrere Blätter sind zulässig, sofern die Spalten ordnungsgemäß strukturiert sind.</p>
+      <p>Wenn eine Datei im <b>CSV/TXT</b>-Format vorliegt, muss sie UTF-8-kodiert sein, wobei TAB als Trennzeichen zum Trennen von Beschreibungen und Tags verwendet wird.</p>
+      <p>In einer Tag-Spalte wird das <b>Komma</b> verwendet, um Tags zu trennen.</p>
+      <i>Textzeilen, die nicht den obigen Regeln entsprechen, werden ignoriert.</i>
   `,
       useRaptor: 'RAPTOR zur Verbesserung des Abrufs verwenden',
       useRaptorTip:
         'Rekursive Abstrakte Verarbeitung für Baumorganisierten Abruf, weitere Informationen unter https://huggingface.co/papers/2401.18059.',
       prompt: 'Prompt',
-      promptTip: 'LLM-Prompt für die Zusammenfassung.',
+      promptTip:
+        'Verwenden Sie den Systemprompt, um die Aufgabe für das LLM zu beschreiben, festzulegen, wie es antworten soll, und andere verschiedene Anforderungen zu skizzieren. Der Systemprompt wird oft in Verbindung mit Schlüsseln (Variablen) verwendet, die als verschiedene Dateninputs für das LLM dienen. Verwenden Sie einen Schrägstrich `/` oder die (x)-Schaltfläche, um die zu verwendenden Schlüssel anzuzeigen.',
       promptMessage: 'Prompt ist erforderlich',
       promptText: `Bitte fassen Sie die folgenden Absätze zusammen. Seien Sie vorsichtig mit den Zahlen, erfinden Sie keine Dinge. Absätze wie folgt:
         {cluster_content}
@@ -356,7 +356,7 @@ export default {
       vietnamese: 'Vietnamesisch',
       pageRank: 'PageRank',
       pageRankTip:
-        'Dies erhöht den Relevanzwert der Wissensdatenbank. Sein Wert wird dem Relevanzwert aller abgerufenen Chunks aus dieser Wissensdatenbank hinzugefügt. Nützlich, wenn Sie innerhalb mehrerer Wissensdatenbanken suchen und einer bestimmten einen höheren PageRank-Wert zuweisen möchten.',
+        'Sie können während des Abrufs bestimmten Wissensdatenbanken eine höhere PageRank-Bewertung zuweisen. Die entsprechende Bewertung wird zu den hybriden Ähnlichkeitswerten der abgerufenen Chunks aus diesen Wissensdatenbanken addiert, wodurch deren Ranking erhöht wird. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/set_page_rank.',
       tagName: 'Tag',
       frequency: 'Häufigkeit',
       searchTags: 'Tags durchsuchen',
@@ -373,13 +373,14 @@ export default {
     <li>Sie müssen Tag-Sets in bestimmten Formaten hochladen, bevor Sie die Auto-Tag-Funktion ausführen.</li>
     <li>Die Auto-Schlüsselwort-Funktion ist vom LLM abhängig und verbraucht eine erhebliche Anzahl an Tokens.</li>
   </ul>
+  <p>Siehe https://ragflow.io/docs/dev/use_tag_sets für Details.</p>
         `,
       topnTags: 'Top-N Tags',
       tags: 'Tags',
       addTag: 'Tag hinzufügen',
       useGraphRag: 'Wissensgraph extrahieren',
       useGraphRagTip:
-        'Konstruieren Sie einen Wissensgraphen über extrahierte Datei-Chunks, um mehrschrittige Frage-Antwort-Prozesse zu verbessern.',
+        'Erstellen Sie einen Wissensgraph über Dateiabschnitte der aktuellen Wissensbasis, um die Beantwortung von Fragen mit mehreren Schritten und verschachtelter Logik zu verbessern. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/construct_knowledge_graph.',
       graphRagMethod: 'Methode',
       graphRagMethodTip: `Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
           General: Verwendet von github.com/microsoft/graphrag bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren`,
@@ -618,25 +619,25 @@ export default {
       baseUrlTip:
         'Wenn Ihr API-Schlüssel von OpenAI stammt, ignorieren Sie dies. Andere Zwischenanbieter geben diese Basis-URL mit dem API-Schlüssel an.',
       modify: 'Ändern',
-      systemModelSettings: 'Systemmodelleinstellungen',
+      systemModelSettings: 'Standardmodelle festlegen',
       chatModel: 'Chat-Modell',
       chatModelTip:
         'Das Standard-Chat-LLM, das alle neu erstellten Wissensdatenbanken verwenden werden.',
       embeddingModel: 'Embedding-Modell',
       embeddingModelTip:
-        'Das Standard-Embedding-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden.',
+        'Das Standard-Einbettungsmodell für jede neu erstellte Wissensdatenbank. Wenn Sie kein Einbettungsmodell in der Dropdown-Liste finden, prüfen Sie, ob Sie die RAGFlow Slim Edition verwenden (die keine Einbettungsmodelle enthält), oder überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       img2txtModel: 'Img2txt-Modell',
       img2txtModelTip:
-        'Das Standard-Multimodul-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden. Es kann ein Bild oder Video beschreiben.',
+        'Das Standardmodell img2txt für jede neu erstellte Wissensdatenbank. Es beschreibt ein Bild oder Video. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       sequence2txtModel: 'Sequence2txt-Modell',
       sequence2txtModelTip:
-        'Das Standard-ASR-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden. Verwenden Sie dieses Modell, um Stimmen in entsprechenden Text zu übersetzen.',
+        'Das Standard-ASR-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden. Verwenden Sie dieses Modell, um Stimmen in entsprechenden Text zu übersetzen. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       rerankModel: 'Rerank-Modell',
       rerankModelTip:
-        'Das Standard-Rerank-Modell wird verwendet, um Chunks neu zu ordnen, die durch Benutzerfragen abgerufen wurden.',
+        'Das Standard-Rerank-Modell zum Reranking von Textabschnitten. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       ttsModel: 'TTS-Modell',
       ttsModelTip:
-        'Das Standard-TTS-Modell wird verwendet, um auf Anfrage Sprache während Gesprächen zu generieren.',
+        'Das Standard-Text-to-Speech-Modell. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       workspace: 'Arbeitsbereich',
       upgrade: 'Upgrade',
       addLlmTitle: 'LLM hinzufügen',
@@ -726,6 +727,8 @@ export default {
       quit: 'Verlassen',
       sureQuit:
         'Sind Sie sicher, dass Sie das Team, dem Sie beigetreten sind, verlassen möchten?',
+      modelsToBeAddedTooltip:
+        'Wenn Ihr Modellanbieter nicht aufgeführt ist, aber behauptet, „OpenAI-kompatibel“ zu sein, wählen Sie die Karte OpenAI-API-compatible, um das/die entsprechende(n) Modell(e) hinzuzufügen.',
     },
     message: {
       registered: 'Registriert!',

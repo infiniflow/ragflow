@@ -36,7 +36,7 @@
   <a href="https://ragflow.io/docs/dev/">Documentação</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/zd4qPW6t">Discord</a> |
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
@@ -353,7 +353,7 @@ Veja o [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214)
 
 ## 🏄 Comunidade
 
-- [Discord](https://discord.gg/zd4qPW6t)
+- [Discord](https://discord.gg/NjYzJD3GM3)
 - [Twitter](https://twitter.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 

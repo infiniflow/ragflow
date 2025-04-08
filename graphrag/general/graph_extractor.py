@@ -6,14 +6,14 @@ Reference:
 """
 
 import re
-from typing import Any, Callable
+from typing import Any
 from dataclasses import dataclass
 import tiktoken
 import trio
 
-from graphrag.general.extractor import Extractor, ENTITY_EXTRACTION_MAX_GLEANINGS, DEFAULT_ENTITY_TYPES
+from graphrag.general.extractor import Extractor, ENTITY_EXTRACTION_MAX_GLEANINGS
 from graphrag.general.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
-from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_limiter
+from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_limiter, split_string_by_multi_markers
 from rag.llm.chat_model import Base as CompletionLLM
 import networkx as nx
 from rag.utils import num_tokens_from_string
@@ -53,10 +53,6 @@ class GraphExtractor(Extractor):
         llm_invoker: CompletionLLM,
         language: str | None = "English",
         entity_types: list[str] | None = None,
-        get_entity: Callable | None = None,
-        set_entity: Callable | None = None,
-        get_relation: Callable | None = None,
-        set_relation: Callable | None = None,
         tuple_delimiter_key: str | None = None,
         record_delimiter_key: str | None = None,
         input_text_key: str | None = None,
@@ -66,7 +62,7 @@ class GraphExtractor(Extractor):
         max_gleanings: int | None = None,
         on_error: ErrorHandlerFn | None = None,
     ):
-        super().__init__(llm_invoker, language, entity_types, get_entity, set_entity, get_relation, set_relation)
+        super().__init__(llm_invoker, language, entity_types)
         """Init method definition."""
         # TODO: streamline construction
         self._llm = llm_invoker
@@ -95,11 +91,10 @@ class GraphExtractor(Extractor):
 
         # Wire defaults into the prompt variables
         self._prompt_variables = {
-            "entity_types": entity_types,
             self._tuple_delimiter_key: DEFAULT_TUPLE_DELIMITER,
             self._record_delimiter_key: DEFAULT_RECORD_DELIMITER,
             self._completion_delimiter_key: DEFAULT_COMPLETION_DELIMITER,
-            self._entity_types_key: ",".join(DEFAULT_ENTITY_TYPES),
+            self._entity_types_key: ",".join(entity_types),
         }
 
     async def _process_single_content(self, chunk_key_dp: tuple[str, str], chunk_seq: int, num_chunks: int, out_results):
@@ -121,8 +116,7 @@ class GraphExtractor(Extractor):
 
         # Repeat to ensure we maximize entity count
         for i in range(self._max_gleanings):
-            text = perform_variable_replacements(CONTINUE_PROMPT, history=history, variables=variables)
-            history.append({"role": "user", "content": text})
+            history.append({"role": "user", "content": CONTINUE_PROMPT})
             async with chat_limiter:
                 response = await trio.to_thread.run_sync(lambda: self._chat("", history, gen_conf))
             token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + response)
@@ -138,11 +132,19 @@ class GraphExtractor(Extractor):
             token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + response)
             if continuation != "YES":
                 break
-        record_delimiter = variables.get(self._record_delimiter_key, DEFAULT_RECORD_DELIMITER)
-        tuple_delimiter = variables.get(self._tuple_delimiter_key, DEFAULT_TUPLE_DELIMITER)
-        records = [re.sub(r"^\(|\)$", "", r.strip()) for r in results.split(record_delimiter)]
-        records = [r for r in records if r.strip()]
-        maybe_nodes, maybe_edges = self._entities_and_relations(chunk_key, records, tuple_delimiter)
+
+        records = split_string_by_multi_markers(
+            results,
+            [self._prompt_variables[self._record_delimiter_key], self._prompt_variables[self._completion_delimiter_key]],
+        )
+        rcds = []
+        for record in records:
+            record = re.search(r"\((.*)\)", record)
+            if record is None:
+                continue
+            rcds.append(record.group(1))
+        records = rcds
+        maybe_nodes, maybe_edges = self._entities_and_relations(chunk_key, records, self._prompt_variables[self._tuple_delimiter_key])
         out_results.append((maybe_nodes, maybe_edges, token_count))
         if self.callback:
             self.callback(0.5+0.1*len(out_results)/num_chunks, msg = f"Entities extraction of chunk {chunk_seq} {len(out_results)}/{num_chunks} done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {token_count} tokens.")

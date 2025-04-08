@@ -22,6 +22,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
+import { CircleHelp } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import SettingTitle from '../components/setting-title';
 import { isLocalLlmFactory } from '../utils';
@@ -49,6 +50,7 @@ import {
 } from './hooks';
 import HunyuanModal from './hunyuan-modal';
 import styles from './index.less';
+import { LangfuseCard } from './langfuse';
 import OllamaModal from './ollama-modal';
 import SparkModal from './spark-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
@@ -303,7 +305,14 @@ const UserSettingModel = () => {
     },
     {
       key: '2',
-      label: t('modelsToBeAdded'),
+      label: (
+        <div className="flex items-center gap-2">
+          {t('modelsToBeAdded')}
+          <Tooltip title={t('modelsToBeAddedTooltip')}>
+            <CircleHelp className="size-4" />
+          </Tooltip>
+        </div>
+      ),
       children: (
         <List
           grid={{
@@ -358,7 +367,8 @@ const UserSettingModel = () => {
   ];
 
   return (
-    <section id="xx" className={styles.modelWrapper}>
+    <section id="xx" className="w-full space-y-6">
+      <LangfuseCard></LangfuseCard>
       <Spin spinning={loading}>
         <section className={styles.modelContainer}>
           <SettingTitle

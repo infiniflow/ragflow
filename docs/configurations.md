@@ -74,6 +74,8 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 
 ### MinIO
 
+RAGFlow utilizes MinIO as its object storage solution, leveraging its scalability to store and manage all uploaded files.
+
 - `MINIO_CONSOLE_PORT`  
   The port used to expose the MinIO console interface to the host machine, allowing **external** access to the web-based console running inside the Docker container. Defaults to `9001`
 - `MINIO_PORT`  
@@ -101,19 +103,9 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
   - `infiniflow/ragflow:v0.17.2`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
-      - `BAAI/bge-reranker-v2-m3`
       - `maidalun1020/bce-embedding-base_v1`
-      - `maidalun1020/bce-reranker-base_v1`
-    - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-      - `BAAI/bge-base-en-v1.5`
-      - `BAAI/bge-large-en-v1.5`
-      - `BAAI/bge-small-en-v1.5`
-      - `BAAI/bge-small-zh-v1.5`
-      - `jinaai/jina-embeddings-v2-base-en`
-      - `jinaai/jina-embeddings-v2-small-en`
-      - `nomic-ai/nomic-embed-text-v1.5`
-      - `sentence-transformers/all-MiniLM-L6-v2`
-  
+
+
 :::tip NOTE  
 If you cannot download the RAGFlow Docker image, try the following mirrors.  
 

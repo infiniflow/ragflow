@@ -40,11 +40,6 @@ def create(tenant_id):
         kb = kbs[0]
         if kb.chunk_num == 0:
             return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
-        
-        # Check if all documents in the knowledge base have been parsed
-        is_done, error_msg = KnowledgebaseService.is_parsed_done(kb_id)
-        if not is_done:
-            return get_error_data_result(error_msg)
     
     kbs = KnowledgebaseService.get_by_ids(ids) if ids else []
     embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
@@ -183,11 +178,6 @@ def update(tenant_id, chat_id):
                 if kb.chunk_num == 0:
                     return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
                 
-                # Check if all documents in the knowledge base have been parsed
-                is_done, error_msg = KnowledgebaseService.is_parsed_done(kb_id)
-                if not is_done:
-                    return get_error_data_result(error_msg)
-                
             kbs = KnowledgebaseService.get_by_ids(ids)
             embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
             embd_count = list(set(embd_ids))
@@ -233,11 +223,11 @@ def update(tenant_id, chat_id):
             return get_error_data_result(f"`rerank_model` {req.get('rerank_id')} doesn't exist")
     if "name" in req:
         if not req.get("name"):
-            return get_error_data_result(message="`name` is not empty.")
+            return get_error_data_result(message="`name` cannot be empty.")
         if req["name"].lower() != res["name"].lower() \
                 and len(
             DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 0:
-            return get_error_data_result(message="Duplicated chat name in updating dataset.")
+            return get_error_data_result(message="Duplicated chat name in updating chat.")
     if "prompt_config" in req:
         res["prompt_config"].update(req["prompt_config"])
         for p in res["prompt_config"]["parameters"]:

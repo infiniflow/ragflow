@@ -18,6 +18,22 @@ pip install ragflow-sdk
 
 ---
 
+## ERROR CODES
+
+---
+
+| Code | Message              | Description                 |
+|------|----------------------|-----------------------------|
+| 400  | Bad Request          | Invalid request parameters  |
+| 401  | Unauthorized         | Unauthorized access         |
+| 403  | Forbidden            | Access denied               |
+| 404  | Not Found            | Resource not found          |
+| 500  | Internal Server Error| Server internal error       |
+| 1001 | Invalid Chunk ID     | Invalid Chunk ID            |
+| 1002 | Chunk Update Failed  | Chunk update failed         |
+
+---
+
 ## OpenAI-Compatible API
 
 ---
@@ -314,25 +330,9 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(name="kb_name")
+dataset = dataset[0]
 dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "chunk_method":"manual"})
 ```
-
----
-
-## Error Codes
-
----
-
-| Code | Message | Description |
-|------|---------|-------------|
-| 400  | Bad Request | Invalid request parameters |
-| 401  | Unauthorized | Unauthorized access |
-| 403  | Forbidden | Access denied |
-| 404  | Not Found | Resource not found |
-| 500  | Internal Server Error | Server internal error |
-| 1001 | Invalid Chunk ID | Invalid Chunk ID |
-| 1002 | Chunk Update Failed | Chunk update failed |
-
 
 ---
 
@@ -892,11 +892,11 @@ The user query or query keywords. Defaults to `""`.
 
 ##### dataset_ids: `list[str]`, *Required*
 
-The IDs of the datasets to search. Defaults to `None`. If you do not set this argument, ensure that you set `document_ids`.
+The IDs of the datasets to search. Defaults to `None`. 
 
 ##### document_ids: `list[str]`
 
-The IDs of the documents to search. Defaults to `None`. You must ensure all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `dataset_ids`.
+The IDs of the documents to search. Defaults to `None`. You must ensure all selected documents use the same embedding model. Otherwise, an error will occur. 
 
 ##### page: `int`
 

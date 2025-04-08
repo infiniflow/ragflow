@@ -21,6 +21,7 @@ from libs.utils import encode_avatar
 from libs.utils.file_utils import create_image_file
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -39,6 +40,7 @@ class TestAuthorization:
         assert res["message"] == expected_message
 
 
+@pytest.mark.usefixtures("clear_datasets")
 class TestDatasetCreation:
     @pytest.mark.parametrize(
         "payload, expected_code",
@@ -73,8 +75,6 @@ class TestDatasetCreation:
             res = create_dataset(get_http_api_auth, payload)
             assert res["code"] == 0, f"Failed to create dataset {i}"
 
-
-class TestAdvancedConfigurations:
     def test_avatar(self, get_http_api_auth, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {
@@ -142,28 +142,6 @@ class TestAdvancedConfigurations:
         "name, embedding_model, expected_code",
         [
             ("BAAI/bge-large-zh-v1.5", "BAAI/bge-large-zh-v1.5", 0),
-            ("BAAI/bge-base-en-v1.5", "BAAI/bge-base-en-v1.5", 0),
-            ("BAAI/bge-large-en-v1.5", "BAAI/bge-large-en-v1.5", 0),
-            ("BAAI/bge-small-en-v1.5", "BAAI/bge-small-en-v1.5", 0),
-            ("BAAI/bge-small-zh-v1.5", "BAAI/bge-small-zh-v1.5", 0),
-            (
-                "jinaai/jina-embeddings-v2-base-en",
-                "jinaai/jina-embeddings-v2-base-en",
-                0,
-            ),
-            (
-                "jinaai/jina-embeddings-v2-small-en",
-                "jinaai/jina-embeddings-v2-small-en",
-                0,
-            ),
-            ("nomic-ai/nomic-embed-text-v1.5", "nomic-ai/nomic-embed-text-v1.5", 0),
-            (
-                "sentence-transformers/all-MiniLM-L6-v2",
-                "sentence-transformers/all-MiniLM-L6-v2",
-                0,
-            ),
-            ("text-embedding-v2", "text-embedding-v2", 0),
-            ("text-embedding-v3", "text-embedding-v3", 0),
             (
                 "maidalun1020/bce-embedding-base_v1",
                 "maidalun1020/bce-embedding-base_v1",
@@ -172,9 +150,7 @@ class TestAdvancedConfigurations:
             ("other_embedding_model", "other_embedding_model", 102),
         ],
     )
-    def test_embedding_model(
-        self, get_http_api_auth, name, embedding_model, expected_code
-    ):
+    def test_embedding_model(self, get_http_api_auth, name, embedding_model, expected_code):
         payload = {"name": name, "embedding_model": embedding_model}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == expected_code

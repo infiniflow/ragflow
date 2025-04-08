@@ -16,22 +16,13 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import (
-    INVALID_API_TOKEN,
-    batch_upload_documents,
-    create_datasets,
-    list_documnet,
-)
+from common import INVALID_API_TOKEN, list_documnets
 from libs.auth import RAGFlowHttpApiAuth
 
 
 def is_sorted(data, field, descending=True):
     timestamps = [ds[field] for ds in data]
-    return (
-        all(a >= b for a, b in zip(timestamps, timestamps[1:]))
-        if descending
-        else all(a <= b for a, b in zip(timestamps, timestamps[1:]))
-    )
+    return all(a >= b for a, b in zip(timestamps, timestamps[1:])) if descending else all(a <= b for a, b in zip(timestamps, timestamps[1:]))
 
 
 class TestAuthorization:
@@ -46,23 +37,19 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(
-        self, get_http_api_auth, auth, expected_code, expected_message
-    ):
-        ids = create_datasets(get_http_api_auth, 1)
-        res = list_documnet(auth, ids[0])
+    def test_invalid_auth(self, auth, expected_code, expected_message):
+        res = list_documnets(auth, "dataset_id")
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
-class TestDocumentList:
-    def test_default(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
-        batch_upload_documents(get_http_api_auth, ids[0], 31, tmp_path)
-        res = list_documnet(get_http_api_auth, ids[0])
+class TestDocumentsList:
+    def test_default(self, get_http_api_auth, add_documents):
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id)
         assert res["code"] == 0
-        assert len(res["data"]["docs"]) == 30
-        assert res["data"]["total"] == 31
+        assert len(res["data"]["docs"]) == 5
+        assert res["data"]["total"] == 5
 
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
@@ -75,11 +62,8 @@ class TestDocumentList:
             ),
         ],
     )
-    def test_invalid_dataset_id(
-        self, get_http_api_auth, dataset_id, expected_code, expected_message
-    ):
-        create_datasets(get_http_api_auth, 1)
-        res = list_documnet(get_http_api_auth, dataset_id)
+    def test_invalid_dataset_id(self, get_http_api_auth, dataset_id, expected_code, expected_message):
+        res = list_documnets(get_http_api_auth, dataset_id)
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -96,29 +80,28 @@ class TestDocumentList:
                 100,
                 0,
                 "1064",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
             pytest.param(
                 {"page": "a", "page_size": 2},
                 100,
                 0,
                 """ValueError("invalid literal for int() with base 10: \'a\'")""",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
         ],
     )
     def test_page(
         self,
         get_http_api_auth,
-        tmp_path,
+        add_documents,
         params,
         expected_code,
         expected_page_size,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        batch_upload_documents(get_http_api_auth, ids[0], 5, tmp_path)
-        res = list_documnet(get_http_api_auth, ids[0], params=params)
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_page_size
@@ -129,39 +112,38 @@ class TestDocumentList:
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
-            ({"page_size": None}, 0, 30, ""),
+            ({"page_size": None}, 0, 5, ""),
             ({"page_size": 0}, 0, 0, ""),
             ({"page_size": 1}, 0, 1, ""),
-            ({"page_size": 32}, 0, 31, ""),
+            ({"page_size": 6}, 0, 5, ""),
             ({"page_size": "1"}, 0, 1, ""),
             pytest.param(
                 {"page_size": -1},
                 100,
                 0,
                 "1064",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
             pytest.param(
                 {"page_size": "a"},
                 100,
                 0,
                 """ValueError("invalid literal for int() with base 10: \'a\'")""",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
         ],
     )
     def test_page_size(
         self,
         get_http_api_auth,
-        tmp_path,
+        add_documents,
         params,
         expected_code,
         expected_page_size,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        batch_upload_documents(get_http_api_auth, ids[0], 31, tmp_path)
-        res = list_documnet(get_http_api_auth, ids[0], params=params)
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_page_size
@@ -194,29 +176,28 @@ class TestDocumentList:
                 0,
                 lambda r: (is_sorted(r["data"]["docs"], "name", False)),
                 "",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
             pytest.param(
                 {"orderby": "unknown"},
                 102,
                 0,
                 "orderby should be create_time or update_time",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
         ],
     )
     def test_orderby(
         self,
         get_http_api_auth,
-        tmp_path,
+        add_documents,
         params,
         expected_code,
         assertions,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        batch_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
-        res = list_documnet(get_http_api_auth, ids[0], params=params)
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -256,7 +237,7 @@ class TestDocumentList:
                 0,
                 lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
                 "",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
             (
                 {"desc": "False"},
@@ -281,22 +262,21 @@ class TestDocumentList:
                 102,
                 0,
                 "desc should be true or false",
-                marks=pytest.mark.xfail(reason="issues/5851"),
+                marks=pytest.mark.skip(reason="issues/5851"),
             ),
         ],
     )
     def test_desc(
         self,
         get_http_api_auth,
-        tmp_path,
+        add_documents,
         params,
         expected_code,
         assertions,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        batch_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
-        res = list_documnet(get_http_api_auth, ids[0], params=params)
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -307,17 +287,16 @@ class TestDocumentList:
     @pytest.mark.parametrize(
         "params, expected_num",
         [
-            ({"keywords": None}, 3),
-            ({"keywords": ""}, 3),
+            ({"keywords": None}, 5),
+            ({"keywords": ""}, 5),
             ({"keywords": "0"}, 1),
-            ({"keywords": "ragflow_test_upload"}, 3),
+            ({"keywords": "ragflow_test_upload"}, 5),
             ({"keywords": "unknown"}, 0),
         ],
     )
-    def test_keywords(self, get_http_api_auth, tmp_path, params, expected_num):
-        ids = create_datasets(get_http_api_auth, 1)
-        batch_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
-        res = list_documnet(get_http_api_auth, ids[0], params=params)
+    def test_keywords(self, get_http_api_auth, add_documents, params, expected_num):
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == expected_num
         assert res["data"]["total"] == expected_num
@@ -325,8 +304,8 @@ class TestDocumentList:
     @pytest.mark.parametrize(
         "params, expected_code, expected_num, expected_message",
         [
-            ({"name": None}, 0, 3, ""),
-            ({"name": ""}, 0, 3, ""),
+            ({"name": None}, 0, 5, ""),
+            ({"name": ""}, 0, 5, ""),
             ({"name": "ragflow_test_upload_0.txt"}, 0, 1, ""),
             (
                 {"name": "unknown.txt"},
@@ -339,15 +318,14 @@ class TestDocumentList:
     def test_name(
         self,
         get_http_api_auth,
-        tmp_path,
+        add_documents,
         params,
         expected_code,
         expected_num,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        batch_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
-        res = list_documnet(get_http_api_auth, ids[0], params=params)
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["name"] in [None, ""]:
@@ -360,8 +338,8 @@ class TestDocumentList:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_num, expected_message",
         [
-            (None, 0, 3, ""),
-            ("", 0, 3, ""),
+            (None, 0, 5, ""),
+            ("", 0, 5, ""),
             (lambda r: r[0], 0, 1, ""),
             ("unknown.txt", 102, 0, "You don't own the document unknown.txt."),
         ],
@@ -369,19 +347,18 @@ class TestDocumentList:
     def test_id(
         self,
         get_http_api_auth,
-        tmp_path,
+        add_documents,
         document_id,
         expected_code,
         expected_num,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
+        dataset_id, document_ids = add_documents
         if callable(document_id):
             params = {"id": document_id(document_ids)}
         else:
             params = {"id": document_id}
-        res = list_documnet(get_http_api_auth, ids[0], params=params)
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
 
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -410,41 +387,36 @@ class TestDocumentList:
     def test_name_and_id(
         self,
         get_http_api_auth,
-        tmp_path,
+        add_documents,
         document_id,
         name,
         expected_code,
         expected_num,
         expected_message,
     ):
-        ids = create_datasets(get_http_api_auth, 1)
-        document_ids = batch_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
+        dataset_id, document_ids = add_documents
         if callable(document_id):
             params = {"id": document_id(document_ids), "name": name}
         else:
             params = {"id": document_id, "name": name}
 
-        res = list_documnet(get_http_api_auth, ids[0], params=params)
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_num
         else:
             assert res["message"] == expected_message
 
-    def test_concurrent_list(self, get_http_api_auth, tmp_path):
-        ids = create_datasets(get_http_api_auth, 1)
-        batch_upload_documents(get_http_api_auth, ids[0], 3, tmp_path)
+    def test_concurrent_list(self, get_http_api_auth, add_documents):
+        dataset_id, _ = add_documents
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(list_documnet, get_http_api_auth, ids[0])
-                for i in range(100)
-            ]
+            futures = [executor.submit(list_documnets, get_http_api_auth, dataset_id) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
-    def test_invalid_params(self, get_http_api_auth):
-        ids = create_datasets(get_http_api_auth, 1)
+    def test_invalid_params(self, get_http_api_auth, add_documents):
+        dataset_id, _ = add_documents
         params = {"a": "b"}
-        res = list_documnet(get_http_api_auth, ids[0], params=params)
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == 0
-        assert len(res["data"]["docs"]) == 0
+        assert len(res["data"]["docs"]) == 5

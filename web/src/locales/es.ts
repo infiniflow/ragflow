@@ -102,7 +102,7 @@ export default {
         '¡Último paso! Después del éxito, deja el resto al AI de RAGFlow. Por favor, tenga en cuenta que los cambios realizados aquí no se guardan automáticamente. Si ajusta la configuración predeterminada aquí, como el peso de similitud de palabras clave, asegúrese de actualizar la configuración relacionada de manera sincronizada en la configuración del asistente de chat o en la configuración del operador de recuperación.',
       similarityThreshold: 'Umbral de similitud',
       similarityThresholdTip:
-        'Usamos una puntuación de similitud híbrida para evaluar la distancia entre dos líneas de texto. Se pondera la similitud de palabras clave y la similitud coseno de vectores. Si la similitud entre la consulta y el fragmento es menor que este umbral, el fragmento será filtrado.',
+        'Usamos una puntuación de similitud híbrida para evaluar la distancia entre dos líneas de texto. Se pondera la similitud de palabras clave y la similitud coseno de vectores. Si la similitud entre la consulta y el fragmento es menor que este umbral, el fragmento será filtrado. Por defecto, el umbral se establece en 0.2. Eso significa que solo se recuperarán los fragmentos con una puntuación de similitud híbrida de 20 o más.',
       vectorSimilarityWeight: 'Peso de similitud de palabras clave',
       vectorSimilarityWeightTip:
         'Usamos una puntuación de similitud híbrida para evaluar la distancia entre dos líneas de texto. Se pondera la similitud de palabras clave y la similitud coseno de vectores o la puntuación de reordenamiento (0~1). La suma de ambos pesos es 1.0.',
@@ -154,7 +154,7 @@ export default {
       topKTip: `K fragmentos serán alimentados a los modelos de reordenamiento.`,
       delimiter: `Delimitadores para segmentación de texto`,
       html4excel: 'Excel a HTML',
-      html4excelTip: `Excel se analizará en una tabla HTML o no. Si es FALSO, cada fila en Excel se formará como un fragmento.`,
+      html4excelTip: `Usar junto con el método de fragmentación General. Cuando está desactivado, los archivos de hoja de cálculo (XLSX, XLS (Excel97~2003)) se analizan línea por línea como pares clave-valor. Cuando está activado, los archivos de hoja de cálculo se convierten en tablas HTML. Si la tabla original tiene más de 12 filas, el sistema la dividirá automáticamente en varias tablas HTML cada 12 filas.`,
     },
 
     // Otros bloques de traducción
@@ -339,25 +339,25 @@ export default {
       baseUrlTip:
         'Si tu clave API es de OpenAI, ignora esto. Cualquier otro proveedor intermedio proporcionará esta URL base junto con la clave API.',
       modify: 'Modificar',
-      systemModelSettings: 'Configuración del modelo del sistema',
+      systemModelSettings: 'Establecer modelos predeterminados',
       chatModel: 'Modelo de chat',
       chatModelTip:
         'El modelo LLM de chat predeterminado que todas las nuevas bases de conocimiento utilizarán.',
       embeddingModel: 'Modelo de embeddings',
       embeddingModelTip:
-        'El modelo de embeddings predeterminado que todas las nuevas bases de conocimiento utilizarán.',
+        'El modelo de incrustación predeterminado para cada nueva base de conocimiento creada. Si no puedes encontrar un modelo de incrustación en el menú desplegable, verifica si estás utilizando la edición slim de RAGFlow (que no incluye modelos de incrustación) o consulta https://ragflow.io/docs/dev/supported_models para comprobar si tu proveedor de modelos admite este modelo.',
       img2txtModel: 'Modelo de img2txt',
       img2txtModelTip:
-        'El modelo multimódulo predeterminado que todas las nuevas bases de conocimiento utilizarán. Puede describir una imagen o video.',
+        'El modelo predeterminado img2txt para cada base de conocimiento recién creada. Describe una imagen o video. Si no puedes encontrar un modelo en el menú desplegable, consulta https://ragflow.io/docs/dev/supported_models para ver si tu proveedor de modelos admite este modelo.',
       sequence2txtModel: 'Modelo de secuencia a texto',
       sequence2txtModelTip:
-        'El modelo ASR predeterminado que todas las nuevas bases de conocimiento utilizarán. Usa este modelo para transcribir voces a texto correspondiente.',
+        'El modelo ASR predeterminado que todas las nuevas bases de conocimiento utilizarán. Usa este modelo para transcribir voces a texto correspondiente. Si no puedes encontrar un modelo en el menú desplegable, consulta https://ragflow.io/docs/dev/supported_models para ver si tu proveedor de modelos admite este modelo.',
       rerankModel: 'Modelo de reordenamiento',
       rerankModelTip:
-        'El modelo de reordenamiento predeterminado que se usará para reordenar los fragmentos recuperados por las preguntas de los usuarios.',
+        'El modelo de rerank predeterminado para reranking de fragmentos. Si no encuentra un modelo en el menú desplegable, consulte https://ragflow.io/docs/dev/supported_models para comprobar si su proveedor de modelos es compatible con este modelo.',
       ttsModel: 'Modelo TTS',
       ttsModelTip:
-        'El modelo TTS predeterminado que se usará para generar discurso durante las conversaciones cuando se solicite.',
+        'El modelo de text-to-speech predeterminado. Si no encuentra un modelo en el menú desplegable, consulte https://ragflow.io/docs/dev/supported_models para comprobar si su proveedor de modelos es compatible con este modelo.',
       workspace: 'Espacio de trabajo',
       upgrade: 'Actualizar',
       addLlmTitle: 'Agregar LLM',
@@ -434,6 +434,8 @@ export default {
         'Por favor agrega tanto el modelo de embeddings como el LLM en <b>Configuración > Proveedores de Modelos</b> primero.',
       apiVersion: 'Versión de la API',
       apiVersionMessage: '¡Por favor ingresa la versión de la API!',
+      modelsToBeAddedTooltip:
+        'Si tu proveedor de modelos no aparece en la lista pero afirma ser compatible con OpenAI, selecciona la tarjeta OpenAI-API-compatible para añadir el/los modelo(s) correspondiente(s).',
     },
     message: {
       registered: '¡Registrado!',
