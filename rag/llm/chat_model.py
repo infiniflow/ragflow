@@ -558,6 +558,8 @@ class BaiChuanChat(Base):
 
 class QWenChat(Base):
     def __init__(self, key, model_name=Generation.Models.qwen_turbo, **kwargs):
+        super().__init__(key, model_name, base_url=None)
+
         import dashscope
 
         dashscope.api_key = key
@@ -825,6 +827,8 @@ class QWenChat(Base):
 
 class ZhipuChat(Base):
     def __init__(self, key, model_name="glm-3-turbo", **kwargs):
+        super().__init__(key, model_name, base_url=None)
+
         self.client = ZhipuAI(api_key=key)
         self.model_name = model_name
 
@@ -884,6 +888,8 @@ class ZhipuChat(Base):
 
 class OllamaChat(Base):
     def __init__(self, key, model_name, **kwargs):
+        super().__init__(key, model_name, base_url=None)
+
         self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
 
@@ -954,6 +960,8 @@ class OllamaChat(Base):
 
 class LocalAIChat(Base):
     def __init__(self, key, model_name, base_url):
+        super().__init__(key, model_name, base_url=None)
+
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         if base_url.split("/")[-1] != "v1":
@@ -989,6 +997,8 @@ class LocalLLM(Base):
             return do_rpc
 
     def __init__(self, key, model_name):
+        super().__init__(key, model_name, base_url=None)
+
         from jina import Client
 
         self.client = Client(port=12345, protocol="grpc", asyncio=True)
@@ -1035,6 +1045,8 @@ class LocalLLM(Base):
 
 class VolcEngineChat(Base):
     def __init__(self, key, model_name, base_url="https://ark.cn-beijing.volces.com/api/v3"):
+        super().__init__(key, model_name, base_url=None)
+
         """
         Since do not want to modify the original database fields, and the VolcEngine authentication method is quite special,
         Assemble ark_api_key, ep_id into api_key, store it as a dictionary type, and parse it for use
@@ -1053,6 +1065,8 @@ class MiniMaxChat(Base):
         model_name,
         base_url="https://api.minimax.chat/v1/text/chatcompletion_v2",
     ):
+        super().__init__(key, model_name, base_url=None)
+
         if not base_url:
             base_url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
         self.base_url = base_url
@@ -1131,6 +1145,8 @@ class MiniMaxChat(Base):
 
 class MistralChat(Base):
     def __init__(self, key, model_name, base_url=None):
+        super().__init__(key, model_name, base_url=None)
+
         from mistralai.client import MistralClient
 
         self.client = MistralClient(api_key=key)
@@ -1184,6 +1200,8 @@ class MistralChat(Base):
 
 class BedrockChat(Base):
     def __init__(self, key, model_name, **kwargs):
+        super().__init__(key, model_name, base_url=None)
+
         import boto3
 
         self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
@@ -1263,6 +1281,8 @@ class BedrockChat(Base):
 
 class GeminiChat(Base):
     def __init__(self, key, model_name, base_url=None):
+        super().__init__(key, model_name, base_url=None)
+
         from google.generativeai import GenerativeModel, client
 
         client.configure(api_key=key)
@@ -1323,6 +1343,8 @@ class GeminiChat(Base):
 
 class GroqChat(Base):
     def __init__(self, key, model_name, base_url=""):
+        super().__init__(key, model_name, base_url=None)
+
         from groq import Groq
 
         self.client = Groq(api_key=key)
@@ -1425,6 +1447,8 @@ class PPIOChat(Base):
 
 class CoHereChat(Base):
     def __init__(self, key, model_name, base_url=""):
+        super().__init__(key, model_name, base_url=None)
+
         from cohere import Client
 
         self.client = Client(api_key=key)
@@ -1547,6 +1571,8 @@ class YiChat(Base):
 
 class ReplicateChat(Base):
     def __init__(self, key, model_name, base_url=None):
+        super().__init__(key, model_name, base_url=None)
+
         from replicate.client import Client
 
         self.model_name = model_name
@@ -1594,6 +1620,8 @@ class ReplicateChat(Base):
 
 class HunyuanChat(Base):
     def __init__(self, key, model_name, base_url=None):
+        super().__init__(key, model_name, base_url=None)
+
         from tencentcloud.common import credential
         from tencentcloud.hunyuan.v20230901 import hunyuan_client
 
@@ -1697,6 +1725,8 @@ class SparkChat(Base):
 
 class BaiduYiyanChat(Base):
     def __init__(self, key, model_name, base_url=None):
+        super().__init__(key, model_name, base_url=None)
+
         import qianfan
 
         key = json.loads(key)
@@ -1748,6 +1778,8 @@ class BaiduYiyanChat(Base):
 
 class AnthropicChat(Base):
     def __init__(self, key, model_name, base_url=None):
+        super().__init__(key, model_name, base_url=None)
+
         import anthropic
 
         self.client = anthropic.Anthropic(api_key=key)
@@ -1828,6 +1860,8 @@ class AnthropicChat(Base):
 
 class GoogleChat(Base):
     def __init__(self, key, model_name, base_url=None):
+        super().__init__(key, model_name, base_url=None)
+
         import base64
 
         from google.oauth2 import service_account
