@@ -225,9 +225,12 @@ class CommonService:
         #     pid: Record ID
         # Returns:
         #     Tuple of (success, record)
-        obj = cls.model.get_or_none(cls.model.id == pid)
-        if obj:
-            return True, obj
+        try:
+            obj = cls.model.get_or_none(cls.model.id == pid)
+            if obj:
+                return True, obj
+        except Exception:
+            pass
         return False, None
 
     @classmethod
