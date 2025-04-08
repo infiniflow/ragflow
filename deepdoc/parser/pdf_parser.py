@@ -1004,38 +1004,44 @@ class RAGFlowPdfParser:
         start = timer()
         try:
             with sys.modules[LOCK_KEY_pdfplumber]:
-                self.pdf = pdfplumber.open(fnm) if isinstance(
-                    fnm, str) else pdfplumber.open(BytesIO(fnm))
-                self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
-                                    enumerate(self.pdf.pages[page_from:page_to])]
+                with (pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))) as pdf:
+                    self.pdf = pdf
+                    self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
+                                        enumerate(self.pdf.pages[page_from:page_to])]
+
                 try:
                     self.page_chars = [[c for c in page.dedupe_chars().chars if self._has_color(c)] for page in self.pdf.pages[page_from:page_to]]
                 except Exception as e:
                     logging.warning(f"Failed to extract characters for pages {page_from}-{page_to}: {str(e)}")
                     self.page_chars = [[] for _ in range(page_to - page_from)]  # If failed to extract, using empty list instead.
-                finally:
-                    self.pdf.close()
 
                 self.total_page = len(self.pdf.pages)
+
         except Exception:
             logging.exception("RAGFlowPdfParser __images__")
         logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
 
         self.outlines = []
         try:
-            self.pdf = pdf2_read(fnm if isinstance(fnm, str) else BytesIO(fnm))
-            outlines = self.pdf.outline
+            with (pdf2_read(fnm if isinstance(fnm, str)
+                            else BytesIO(fnm))) as pdf:
+                self.pdf = pdf
 
-            def dfs(arr, depth):
-                for a in arr:
-                    if isinstance(a, dict):
-                        self.outlines.append((a["/Title"], depth))
-                        continue
-                    dfs(a, depth + 1)
+                outlines = self.pdf.outline
+                def dfs(arr, depth):
+                    for a in arr:
+                        if isinstance(a, dict):
+                            self.outlines.append((a["/Title"], depth))
+                            continue
+                        dfs(a, depth + 1)
 
-            dfs(outlines, 0)
+                dfs(outlines, 0)
+
         except Exception as e:
             logging.warning(f"Outlines exception: {e}")
+
+        finally:
+            self.pdf.close()
 
         if not self.outlines:
             logging.warning("Miss outlines")
