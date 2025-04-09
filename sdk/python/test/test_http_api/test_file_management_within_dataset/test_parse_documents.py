@@ -21,6 +21,25 @@ from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import wait_for
 
 
+@wait_for(30, 1, "Document parsing timeout")
+def condition(_auth, _dataset_id, _document_ids=None):
+    res = list_documnets(_auth, _dataset_id)
+    target_docs = res["data"]["docs"]
+
+    if _document_ids is None:
+        for doc in target_docs:
+            if doc["run"] != "DONE":
+                return False
+        return True
+
+    target_ids = set(_document_ids)
+    for doc in target_docs:
+        if doc["id"] in target_ids:
+            if doc.get("run") != "DONE":
+                return False
+    return True
+
+
 def validate_document_details(auth, dataset_id, document_ids):
     for document_id in document_ids:
         res = list_documnets(auth, dataset_id, params={"id": document_id})
@@ -82,14 +101,6 @@ class TestDocumentsParse:
         ],
     )
     def test_basic_scenarios(self, get_http_api_auth, add_documents_func, payload, expected_code, expected_message):
-        @wait_for(10, 1, "Document parsing timeout")
-        def condition(_auth, _dataset_id, _document_ids):
-            for _document_id in _document_ids:
-                res = list_documnets(_auth, _dataset_id, {"id": _document_id})
-                if res["data"]["docs"][0]["run"] != "DONE":
-                    return False
-            return True
-
         dataset_id, document_ids = add_documents_func
         if callable(payload):
             payload = payload(document_ids)
@@ -134,14 +145,6 @@ class TestDocumentsParse:
         ],
     )
     def test_parse_partial_invalid_document_id(self, get_http_api_auth, add_documents_func, payload):
-        @wait_for(10, 1, "Document parsing timeout")
-        def condition(_auth, _dataset_id):
-            res = list_documnets(_auth, _dataset_id)
-            for doc in res["data"]["docs"]:
-                if doc["run"] != "DONE":
-                    return False
-            return True
-
         dataset_id, document_ids = add_documents_func
         if callable(payload):
             payload = payload(document_ids)
@@ -154,14 +157,6 @@ class TestDocumentsParse:
         validate_document_details(get_http_api_auth, dataset_id, document_ids)
 
     def test_repeated_parse(self, get_http_api_auth, add_documents_func):
-        @wait_for(10, 1, "Document parsing timeout")
-        def condition(_auth, _dataset_id):
-            res = list_documnets(_auth, _dataset_id)
-            for doc in res["data"]["docs"]:
-                if doc["run"] != "DONE":
-                    return False
-            return True
-
         dataset_id, document_ids = add_documents_func
         res = parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 0
@@ -172,14 +167,6 @@ class TestDocumentsParse:
         assert res["code"] == 0
 
     def test_duplicate_parse(self, get_http_api_auth, add_documents_func):
-        @wait_for(10, 1, "Document parsing timeout")
-        def condition(_auth, _dataset_id):
-            res = list_documnets(_auth, _dataset_id)
-            for doc in res["data"]["docs"]:
-                if doc["run"] != "DONE":
-                    return False
-            return True
-
         dataset_id, document_ids = add_documents_func
         res = parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids + document_ids})
         assert res["code"] == 0

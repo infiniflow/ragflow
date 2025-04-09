@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import INVALID_API_TOKEN, list_datasets
+from common import INVALID_API_TOKEN, delete_datasets, list_chat_assistants
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -38,16 +38,15 @@ class TestAuthorization:
         ],
     )
     def test_invalid_auth(self, auth, expected_code, expected_message):
-        res = list_datasets(auth)
+        res = list_chat_assistants(auth)
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
-@pytest.mark.usefixtures("add_datasets")
-class TestDatasetsList:
+@pytest.mark.usefixtures("add_chat_assistants")
+class TestChatAssistantsList:
     def test_default(self, get_http_api_auth):
-        res = list_datasets(get_http_api_auth, params={})
-
+        res = list_chat_assistants(get_http_api_auth)
         assert res["code"] == 0
         assert len(res["data"]) == 5
 
@@ -76,7 +75,7 @@ class TestDatasetsList:
         ],
     )
     def test_page(self, get_http_api_auth, params, expected_code, expected_page_size, expected_message):
-        res = list_datasets(get_http_api_auth, params=params)
+        res = list_chat_assistants(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]) == expected_page_size
@@ -115,7 +114,7 @@ class TestDatasetsList:
         expected_page_size,
         expected_message,
     ):
-        res = list_datasets(get_http_api_auth, params=params)
+        res = list_chat_assistants(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]) == expected_page_size
@@ -167,7 +166,7 @@ class TestDatasetsList:
         assertions,
         expected_message,
     ):
-        res = list_datasets(get_http_api_auth, params=params)
+        res = list_chat_assistants(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -243,7 +242,7 @@ class TestDatasetsList:
         assertions,
         expected_message,
     ):
-        res = list_datasets(get_http_api_auth, params=params)
+        res = list_chat_assistants(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -256,12 +255,12 @@ class TestDatasetsList:
         [
             ({"name": None}, 0, 5, ""),
             ({"name": ""}, 0, 5, ""),
-            ({"name": "dataset_1"}, 0, 1, ""),
-            ({"name": "unknown"}, 102, 0, "You don't own the dataset unknown"),
+            ({"name": "test_chat_assistant_1"}, 0, 1, ""),
+            ({"name": "unknown"}, 102, 0, "The chat doesn't exist"),
         ],
     )
     def test_name(self, get_http_api_auth, params, expected_code, expected_num, expected_message):
-        res = list_datasets(get_http_api_auth, params=params)
+        res = list_chat_assistants(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["name"] in [None, ""]:
@@ -272,30 +271,30 @@ class TestDatasetsList:
             assert res["message"] == expected_message
 
     @pytest.mark.parametrize(
-        "dataset_id, expected_code, expected_num, expected_message",
+        "chat_assistant_id, expected_code, expected_num, expected_message",
         [
             (None, 0, 5, ""),
             ("", 0, 5, ""),
             (lambda r: r[0], 0, 1, ""),
-            ("unknown", 102, 0, "You don't own the dataset unknown"),
+            ("unknown", 102, 0, "The chat doesn't exist"),
         ],
     )
     def test_id(
         self,
         get_http_api_auth,
-        add_datasets,
-        dataset_id,
+        add_chat_assistants,
+        chat_assistant_id,
         expected_code,
         expected_num,
         expected_message,
     ):
-        dataset_ids = add_datasets
-        if callable(dataset_id):
-            params = {"id": dataset_id(dataset_ids)}
+        _, _, _, chat_assistant_ids = add_chat_assistants
+        if callable(chat_assistant_id):
+            params = {"id": chat_assistant_id(chat_assistant_ids)}
         else:
-            params = {"id": dataset_id}
+            params = {"id": chat_assistant_id}
 
-        res = list_datasets(get_http_api_auth, params=params)
+        res = list_chat_assistants(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["id"] in [None, ""]:
@@ -306,31 +305,31 @@ class TestDatasetsList:
             assert res["message"] == expected_message
 
     @pytest.mark.parametrize(
-        "dataset_id, name, expected_code, expected_num, expected_message",
+        "chat_assistant_id, name, expected_code, expected_num, expected_message",
         [
-            (lambda r: r[0], "dataset_0", 0, 1, ""),
-            (lambda r: r[0], "dataset_1", 0, 0, ""),
-            (lambda r: r[0], "unknown", 102, 0, "You don't own the dataset unknown"),
-            ("id", "dataset_0", 102, 0, "You don't own the dataset id"),
+            (lambda r: r[0], "test_chat_assistant_0", 0, 1, ""),
+            (lambda r: r[0], "test_chat_assistant_1", 102, 0, "The chat doesn't exist"),
+            (lambda r: r[0], "unknown", 102, 0, "The chat doesn't exist"),
+            ("id", "chat_assistant_0", 102, 0, "The chat doesn't exist"),
         ],
     )
     def test_name_and_id(
         self,
         get_http_api_auth,
-        add_datasets,
-        dataset_id,
+        add_chat_assistants,
+        chat_assistant_id,
         name,
         expected_code,
         expected_num,
         expected_message,
     ):
-        dataset_ids = add_datasets
-        if callable(dataset_id):
-            params = {"id": dataset_id(dataset_ids), "name": name}
+        _, _, _, chat_assistant_ids = add_chat_assistants
+        if callable(chat_assistant_id):
+            params = {"id": chat_assistant_id(chat_assistant_ids), "name": name}
         else:
-            params = {"id": dataset_id, "name": name}
+            params = {"id": chat_assistant_id, "name": name}
 
-        res = list_datasets(get_http_api_auth, params=params)
+        res = list_chat_assistants(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]) == expected_num
@@ -339,12 +338,21 @@ class TestDatasetsList:
 
     def test_concurrent_list(self, get_http_api_auth):
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_datasets, get_http_api_auth) for i in range(100)]
+            futures = [executor.submit(list_chat_assistants, get_http_api_auth) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
     def test_invalid_params(self, get_http_api_auth):
         params = {"a": "b"}
-        res = list_datasets(get_http_api_auth, params=params)
+        res = list_chat_assistants(get_http_api_auth, params=params)
+        assert res["code"] == 0
+        assert len(res["data"]) == 5
+
+    def test_list_chats_after_deleting_associated_dataset(self, get_http_api_auth, add_chat_assistants):
+        dataset_id, _, _, _ = add_chat_assistants
+        res = delete_datasets(get_http_api_auth, {"ids": [dataset_id]})
+        assert res["code"] == 0
+
+        res = list_chat_assistants(get_http_api_auth)
         assert res["code"] == 0
         assert len(res["data"]) == 5

@@ -505,7 +505,7 @@ export default {
       baseUrlTip:
         'APIキーがOpenAIからのものであれば無視してください。他の中間プロバイダーはAPIキーと共にこのベースURLを提供します。',
       modify: '変更',
-      systemModelSettings: 'システムモデル設定',
+      systemModelSettings: 'デフォルトモデルを設定',
       chatModel: 'チャットモデル',
       chatModelTip:
         '新しく作成されたナレッジベースが使用するデフォルトのチャットLLM。',

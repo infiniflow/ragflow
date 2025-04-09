@@ -252,15 +252,15 @@ class Canvas:
             if loop:
                 raise OverflowError(f"Too much loops: {loop}")
 
+            downstream = []
             if cpn["obj"].component_name.lower() in ["switch", "categorize", "relevant"]:
                 switch_out = cpn["obj"].output()[1].iloc[0, 0]
                 assert switch_out in self.components, \
                     "{}'s output: {} not valid.".format(cpn_id, switch_out)
-                for m in prepare2run([switch_out]):
-                    yield {"content": m, "running_status": True}
-                continue
+                downstream = [switch_out]
+            else:
+                downstream = cpn["downstream"]
 
-            downstream = cpn["downstream"]
             if not downstream and cpn.get("parent_id"):
                 pid = cpn["parent_id"]
                 _, o = cpn["obj"].output(allow_partial=False)

@@ -13,9 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
 import functools
 import json
+import logging
 import random
 import time
 from base64 import b64encode
@@ -27,59 +27,60 @@ from uuid import uuid1
 
 import requests
 from flask import (
-    Response, jsonify, send_file, make_response,
+    Response,
+    jsonify,
+    make_response,
+    send_file,
+)
+from flask import (
     request as flask_request,
 )
 from itsdangerous import URLSafeTimedSerializer
 from werkzeug.http import HTTP_STATUS_CODES
 
-from api.db.db_models import APIToken
 from api import settings
+from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
+from api.db.db_models import APIToken
+from api.utils import CustomJSONEncoder, get_uuid, json_dumps
 
-from api.utils import CustomJSONEncoder, get_uuid
-from api.utils import json_dumps
-from api.constants import REQUEST_WAIT_SEC, REQUEST_MAX_WAIT_SEC
-
-requests.models.complexjson.dumps = functools.partial(
-    json.dumps, cls=CustomJSONEncoder)
+requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
 
 def request(**kwargs):
     sess = requests.Session()
-    stream = kwargs.pop('stream', sess.stream)
-    timeout = kwargs.pop('timeout', None)
-    kwargs['headers'] = {
-        k.replace(
-            '_',
-            '-').upper(): v for k,
-                                v in kwargs.get(
-            'headers',
-            {}).items()}
+    stream = kwargs.pop("stream", sess.stream)
+    timeout = kwargs.pop("timeout", None)
+    kwargs["headers"] = {k.replace("_", "-").upper(): v for k, v in kwargs.get("headers", {}).items()}
     prepped = requests.Request(**kwargs).prepare()
 
     if settings.CLIENT_AUTHENTICATION and settings.HTTP_APP_KEY and settings.SECRET_KEY:
         timestamp = str(round(time() * 1000))
         nonce = str(uuid1())
-        signature = b64encode(HMAC(settings.SECRET_KEY.encode('ascii'), b'\n'.join([
-            timestamp.encode('ascii'),
-            nonce.encode('ascii'),
-            settings.HTTP_APP_KEY.encode('ascii'),
-            prepped.path_url.encode('ascii'),
-            prepped.body if kwargs.get('json') else b'',
-            urlencode(
-                sorted(
-                    kwargs['data'].items()),
-                quote_via=quote,
-                safe='-._~').encode('ascii')
-            if kwargs.get('data') and isinstance(kwargs['data'], dict) else b'',
-        ]), 'sha1').digest()).decode('ascii')
+        signature = b64encode(
+            HMAC(
+                settings.SECRET_KEY.encode("ascii"),
+                b"\n".join(
+                    [
+                        timestamp.encode("ascii"),
+                        nonce.encode("ascii"),
+                        settings.HTTP_APP_KEY.encode("ascii"),
+                        prepped.path_url.encode("ascii"),
+                        prepped.body if kwargs.get("json") else b"",
+                        urlencode(sorted(kwargs["data"].items()), quote_via=quote, safe="-._~").encode("ascii") if kwargs.get("data") and isinstance(kwargs["data"], dict) else b"",
+                    ]
+                ),
+                "sha1",
+            ).digest()
+        ).decode("ascii")
 
-        prepped.headers.update({
-            'TIMESTAMP': timestamp,
-            'NONCE': nonce,
-            'APP-KEY': settings.HTTP_APP_KEY,
-            'SIGNATURE': signature,
-        })
+        prepped.headers.update(
+            {
+                "TIMESTAMP": timestamp,
+                "NONCE": nonce,
+                "APP-KEY": settings.HTTP_APP_KEY,
+                "SIGNATURE": signature,
+            }
+        )
 
     return sess.send(prepped, stream=stream, timeout=timeout)
 
@@ -87,7 +88,7 @@ def request(**kwargs):
 def get_exponential_backoff_interval(retries, full_jitter=False):
     """Calculate the exponential backoff wait time."""
     # Will be zero if factor equals 0
-    countdown = min(REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC * (2 ** retries))
+    countdown = min(REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC * (2**retries))
     # Full jitter according to
     # https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
     if full_jitter:
@@ -96,12 +97,9 @@ def get_exponential_backoff_interval(retries, full_jitter=False):
     return max(0, countdown)
 
 
-def get_data_error_result(code=settings.RetCode.DATA_ERROR,
-                          message='Sorry! Data missing!'):
+def get_data_error_result(code=settings.RetCode.DATA_ERROR, message="Sorry! Data missing!"):
     logging.exception(Exception(message))
-    result_dict = {
-        "code": code,
-        "message": message}
+    result_dict = {"code": code, "message": message}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
@@ -119,23 +117,27 @@ def server_error_response(e):
     except BaseException:
         pass
     if len(e.args) > 1:
-        return get_json_result(
-            code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+        return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
     if repr(e).find("index_not_found_exception") >= 0:
-        return get_json_result(code=settings.RetCode.EXCEPTION_ERROR,
-                               message="No chunk found, please upload file and parse it.")
+        return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
 
     return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
 
 
 def error_response(response_code, message=None):
     if message is None:
-        message = HTTP_STATUS_CODES.get(response_code, 'Unknown Error')
+        message = HTTP_STATUS_CODES.get(response_code, "Unknown Error")
 
-    return Response(json.dumps({
-        'message': message,
-        'code': response_code,
-    }), status=response_code, mimetype='application/json')
+    return Response(
+        json.dumps(
+            {
+                "message": message,
+                "code": response_code,
+            }
+        ),
+        status=response_code,
+        mimetype="application/json",
+    )
 
 
 def validate_request(*args, **kwargs):
@@ -160,13 +162,10 @@ def validate_request(*args, **kwargs):
             if no_arguments or error_arguments:
                 error_string = ""
                 if no_arguments:
-                    error_string += "required argument are missing: {}; ".format(
-                        ",".join(no_arguments))
+                    error_string += "required argument are missing: {}; ".format(",".join(no_arguments))
                 if error_arguments:
-                    error_string += "required argument values: {}".format(
-                        ",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
-                return get_json_result(
-                    code=settings.RetCode.ARGUMENT_ERROR, message=error_string)
+                    error_string += "required argument values: {}".format(",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
+                return get_json_result(code=settings.RetCode.ARGUMENT_ERROR, message=error_string)
             return func(*_args, **_kwargs)
 
         return decorated_function
@@ -180,8 +179,7 @@ def not_allowed_parameters(*params):
             input_arguments = flask_request.json or flask_request.form.to_dict()
             for param in params:
                 if param in input_arguments:
-                    return get_json_result(
-                        code=settings.RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
+                    return get_json_result(code=settings.RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
             return f(*args, **kwargs)
 
         return wrapper
@@ -190,14 +188,14 @@ def not_allowed_parameters(*params):
 
 
 def is_localhost(ip):
-    return ip in {'127.0.0.1', '::1', '[::1]', 'localhost'}
+    return ip in {"127.0.0.1", "::1", "[::1]", "localhost"}
 
 
 def send_file_in_mem(data, filename):
     if not isinstance(data, (str, bytes)):
         data = json_dumps(data)
     if isinstance(data, str):
-        data = data.encode('utf-8')
+        data = data.encode("utf-8")
 
     f = BytesIO()
     f.write(data)
@@ -206,7 +204,7 @@ def send_file_in_mem(data, filename):
     return send_file(f, as_attachment=True, attachment_filename=filename)
 
 
-def get_json_result(code=settings.RetCode.SUCCESS, message='success', data=None):
+def get_json_result(code=settings.RetCode.SUCCESS, message="success", data=None):
     response = {"code": code, "message": message, "data": data}
     return jsonify(response)
 
@@ -214,27 +212,24 @@ def get_json_result(code=settings.RetCode.SUCCESS, message='success', data=None)
 def apikey_required(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
-        token = flask_request.headers.get('Authorization').split()[1]
+        token = flask_request.headers.get("Authorization").split()[1]
         objs = APIToken.query(token=token)
         if not objs:
-            return build_error_result(
-                message='API-KEY is invalid!', code=settings.RetCode.FORBIDDEN
-            )
-        kwargs['tenant_id'] = objs[0].tenant_id
+            return build_error_result(message="API-KEY is invalid!", code=settings.RetCode.FORBIDDEN)
+        kwargs["tenant_id"] = objs[0].tenant_id
         return func(*args, **kwargs)
 
     return decorated_function
 
 
-def build_error_result(code=settings.RetCode.FORBIDDEN, message='success'):
+def build_error_result(code=settings.RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = jsonify(response)
     response.status_code = code
     return response
 
 
-def construct_response(code=settings.RetCode.SUCCESS,
-                       message='success', data=None, auth=None):
+def construct_response(code=settings.RetCode.SUCCESS, message="success", data=None, auth=None):
     result_dict = {"code": code, "message": message, "data": data}
     response_dict = {}
     for key, value in result_dict.items():
@@ -253,7 +248,7 @@ def construct_response(code=settings.RetCode.SUCCESS,
     return response
 
 
-def construct_result(code=settings.RetCode.DATA_ERROR, message='data is missing'):
+def construct_result(code=settings.RetCode.DATA_ERROR, message="data is missing"):
     result_dict = {"code": code, "message": message}
     response = {}
     for key, value in result_dict.items():
@@ -264,7 +259,7 @@ def construct_result(code=settings.RetCode.DATA_ERROR, message='data is missing'
     return jsonify(response)
 
 
-def construct_json_result(code=settings.RetCode.SUCCESS, message='success', data=None):
+def construct_json_result(code=settings.RetCode.SUCCESS, message="success", data=None):
     if data is None:
         return jsonify({"code": code, "message": message})
     else:
@@ -286,7 +281,7 @@ def construct_error_response(e):
 def token_required(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
-        authorization_str = flask_request.headers.get('Authorization')
+        authorization_str = flask_request.headers.get("Authorization")
         if not authorization_str:
             return get_json_result(data=False, message="`Authorization` can't be empty")
         authorization_list = authorization_str.split()
@@ -295,11 +290,8 @@ def token_required(func):
         token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
-            return get_json_result(
-                data=False, message='Authentication error: API key is invalid!',
-                code=settings.RetCode.AUTHENTICATION_ERROR
-            )
-        kwargs['tenant_id'] = objs[0].tenant_id
+            return get_json_result(data=False, message="Authentication error: API key is invalid!", code=settings.RetCode.AUTHENTICATION_ERROR)
+        kwargs["tenant_id"] = objs[0].tenant_id
         return func(*args, **kwargs)
 
     return decorated_function
@@ -316,11 +308,11 @@ def get_result(code=settings.RetCode.SUCCESS, message="", data=None):
     return jsonify(response)
 
 
-def get_error_data_result(message='Sorry! Data missing!', code=settings.RetCode.DATA_ERROR,
-                          ):
-    result_dict = {
-        "code": code,
-        "message": message}
+def get_error_data_result(
+    message="Sorry! Data missing!",
+    code=settings.RetCode.DATA_ERROR,
+):
+    result_dict = {"code": code, "message": message}
     response = {}
     for key, value in result_dict.items():
         if value is None and key != "code":
@@ -348,8 +340,7 @@ def valid_parameter(parameter, valid_values):
 
 
 def dataset_readonly_fields(field_name):
-    return field_name in ["chunk_count", "create_date", "create_time", "update_date", "update_time",
-                          "created_by", "document_count", "token_num", "status", "tenant_id", "id"]
+    return field_name in ["chunk_count", "create_date", "create_time", "update_date", "update_time", "created_by", "document_count", "token_num", "status", "tenant_id", "id"]
 
 
 def get_parser_config(chunk_method, parser_config):
@@ -358,8 +349,7 @@ def get_parser_config(chunk_method, parser_config):
     if not chunk_method:
         chunk_method = "naive"
     key_mapping = {
-        "naive": {"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False, "layout_recognize": "DeepDOC",
-                  "raptor": {"use_raptor": False}},
+        "naive": {"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}},
         "qa": {"raptor": {"use_raptor": False}},
         "tag": None,
         "resume": None,
@@ -370,10 +360,10 @@ def get_parser_config(chunk_method, parser_config):
         "laws": {"raptor": {"use_raptor": False}},
         "presentation": {"raptor": {"use_raptor": False}},
         "one": None,
-        "knowledge_graph": {"chunk_token_num": 8192, "delimiter": "\\n!?;。；！？",
-                            "entity_types": ["organization", "person", "location", "event", "time"]},
+        "knowledge_graph": {"chunk_token_num": 8192, "delimiter": "\\n!?;。；！？", "entity_types": ["organization", "person", "location", "event", "time"]},
         "email": None,
-        "picture": None}
+        "picture": None,
+    }
     parser_config = key_mapping[chunk_method]
     return parser_config
 
@@ -421,21 +411,23 @@ def get_data_openai(id=None,
 def valid_parser_config(parser_config):
     if not parser_config:
         return
-    scopes = set([
-        "chunk_token_num",
-        "delimiter",
-        "raptor",
-        "graphrag",
-        "layout_recognize",
-        "task_page_size",
-        "pages",
-        "html4excel",
-        "auto_keywords",
-        "auto_questions",
-        "tag_kb_ids",
-        "topn_tags",
-        "filename_embd_weight"
-    ])
+    scopes = set(
+        [
+            "chunk_token_num",
+            "delimiter",
+            "raptor",
+            "graphrag",
+            "layout_recognize",
+            "task_page_size",
+            "pages",
+            "html4excel",
+            "auto_keywords",
+            "auto_questions",
+            "tag_kb_ids",
+            "topn_tags",
+            "filename_embd_weight",
+        ]
+    )
     for k in parser_config.keys():
         assert k in scopes, f"Abnormal 'parser_config'. Invalid key: {k}"
 
@@ -457,7 +449,7 @@ def check_duplicate_ids(ids, id_type="item"):
     """
     Check for duplicate IDs in a list and return unique IDs and error messages.
 
-    Args: 
+    Args:
         ids (list): List of IDs to check for duplicates
         id_type (str): Type of ID for error messages (e.g., 'document', 'dataset', 'chunk')
 
@@ -468,17 +460,15 @@ def check_duplicate_ids(ids, id_type="item"):
     """
     id_count = {}
     duplicate_messages = []
-    
+
     # Count occurrences of each ID
     for id_value in ids:
         id_count[id_value] = id_count.get(id_value, 0) + 1
-    
+
     # Check for duplicates
     for id_value, count in id_count.items():
         if count > 1:
             duplicate_messages.append(f"Duplicate {id_type} ids: {id_value}")
-    
+
     # Return unique IDs and error messages
     return list(set(ids)), duplicate_messages
-
-

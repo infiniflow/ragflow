@@ -96,12 +96,7 @@ class TestUpdatedChunk:
         "payload, expected_code, expected_message",
         [
             ({"questions": ["a", "b", "c"]}, 0, ""),
-            pytest.param(
-                {"questions": [""]},
-                0,
-                "",
-                marks=pytest.mark.skip(reason="issues/6539"),
-            ),
+            ({"questions": [""]}, 0, ""),
             ({"questions": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
             ({"questions": ["a", "a"]}, 0, ""),
             ({"questions": "abc"}, 102, "`questions` should be a list"),
