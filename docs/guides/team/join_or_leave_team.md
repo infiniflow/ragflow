@@ -39,4 +39,4 @@ _After accepting the team invite, you should be able to view and update the team
 
 ## Leave a joined team
 
-![leave_team](https://github.com/user-attachments/assets/16f31462-27e5-4a13-b9dc-dd7f1bcc43f0)
+![leave_team](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/quit.jpg)

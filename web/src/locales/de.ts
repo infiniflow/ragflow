@@ -164,7 +164,7 @@ export default {
       rerankTip:
         'Wenn leer gelassen, verwendet RAGFlow eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit; wenn ein Neuordnungsmodell ausgewählt wird, ersetzt eine gewichtete Neuordnungsbewertung die gewichtete Vektorkosinus-Ähnlichkeit. Bitte beachten Sie, dass die Verwendung eines Neuordnungsmodells die Antwortzeit des Systems erheblich erhöht.',
       topK: 'Top-K',
-      topKTip: 'K Chunks werden in das Neuordnungsmodell eingespeist.',
+      topKTip: 'In Verbindung mit dem Rerank model wird mit dieser Einstellung die Anzahl der Textblöcke festgelegt, die an das angegebene reranking model gesendet werden.',
       delimiter: 'Trennzeichen für Textsegmentierung',
       delimiterTip:
         'Ein Trennzeichen oder Separator kann aus einem oder mehreren Sonderzeichen bestehen. Bei mehreren Zeichen stellen Sie sicher, dass sie in Backticks (` `) eingeschlossen sind. Wenn Sie beispielsweise Ihre Trennzeichen so konfigurieren: \\n`##`;, dann werden Ihre Texte an Zeilenumbrüchen, doppelten Rautenzeichen (##) oder Semikolons getrennt. Setzen Sie Trennzeichen nur nachdem Sie das Mechanismus der Textsegmentierung und -chunking verstanden haben.',
@@ -424,7 +424,7 @@ export default {
       sendPlaceholder: 'Nachricht an den Assistenten...',
       chatConfiguration: 'Chat-Konfiguration',
       chatConfigurationDescription:
-        'Richten Sie hier einen Chat-Assistenten ein, der für Ihre ausgewählten Wissensdatenbanken dediziert ist! 💕',
+        'Richten Sie einen Chat-Assistenten für die ausgewählten Datensätze (Wissensbasen) hier ein! 💕',
       assistantName: 'Assistentenname',
       assistantNameMessage: 'Assistentenname ist erforderlich',
       namePlaceholder: 'z.B. Lebenslauf-Jarvis',
@@ -454,7 +454,7 @@ export default {
         'Nicht alle Chunks mit einem Ähnlichkeitswert über dem "Ähnlichkeitsschwellenwert" werden an das LLM gesendet. Dies wählt die "Top N" Chunks aus den abgerufenen aus.',
       variable: 'Variable',
       variableTip:
-        'Variablen können bei der Entwicklung flexiblerer Strategien helfen, insbesondere wenn Sie unsere Chat-Assistenten-Management-APIs verwenden. Diese Variablen werden von "System" als Teil der Prompts für das LLM verwendet. Die Variable {knowledge} ist eine reservierte spezielle Variable, die Ihre ausgewählte(n) Wissensdatenbank(en) repräsentiert, und alle Variablen sollten in geschweifte Klammern {} eingeschlossen sein.',
+        'In Kombination mit den APIs zur Verwaltung von Chat-Assistenten von RAGFlow können Variablen dazu beitragen, flexiblere System-Prompt-Strategien zu entwickeln. Die definierten Variablen werden von „System-Prompt“ als Teil der Prompts für das LLM verwendet. {knowledge} ist eine spezielle reservierte Variable, die Teile darstellt, die aus den angegebenen Wissensbasen abgerufen werden, und alle Variablen sollten in geschweiften Klammern {} im „System-Prompt“ eingeschlossen werden. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/set_chat_variables.',
       add: 'Hinzufügen',
       key: 'Schlüssel',
       optional: 'Optional',
