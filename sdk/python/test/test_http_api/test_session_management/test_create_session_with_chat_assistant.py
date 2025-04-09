@@ -109,6 +109,5 @@ class TestSessionWithChatAssistantCreate:
         res = delete_chat_assistants(get_http_api_auth, {"ids": [chat_assistant_ids[0]]})
         assert res["code"] == 0
         res = create_session_with_chat_assistant(get_http_api_auth, chat_assistant_ids[0], {"name": "valid_name"})
-        print(res)
         assert res["code"] == 102
         assert res["message"] == "You do not own the assistant."

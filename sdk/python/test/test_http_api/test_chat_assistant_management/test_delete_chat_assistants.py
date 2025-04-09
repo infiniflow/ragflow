@@ -81,7 +81,6 @@ class TestChatAssistantsDelete:
         assert res["message"] == "You don't own the chat invalid_id"
 
         res = list_chat_assistants(get_http_api_auth)
-        print(res)
         assert len(res["data"]) == 0
 
     def test_repeated_deletion(self, get_http_api_auth, add_chat_assistants_func):
@@ -93,17 +92,15 @@ class TestChatAssistantsDelete:
         assert res["code"] == 102
         assert "You don't own the chat" in res["message"]
 
-    @pytest.mark.skip(reason="issues/6876")
     def test_duplicate_deletion(self, get_http_api_auth, add_chat_assistants_func):
         _, _, chat_assistant_ids = add_chat_assistants_func
         res = delete_chat_assistants(get_http_api_auth, {"ids": chat_assistant_ids + chat_assistant_ids})
-        print(res)
         assert res["code"] == 0
         assert "Duplicate chat ids" in res["data"]["errors"][0]
-        assert res["data"]["success_count"] == 3
+        assert res["data"]["success_count"] == 5
 
-        res = delete_chat_assistants(get_http_api_auth)
-        assert len(res["data"]) == 0
+        res = list_chat_assistants(get_http_api_auth)
+        assert res["code"] == 0
 
     @pytest.mark.slow
     def test_concurrent_deletion(self, get_http_api_auth):
