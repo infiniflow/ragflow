@@ -15,7 +15,7 @@
 #
 
 import pytest
-from common import CHAT_ASSISTANT_LIMIT, INVALID_API_TOKEN, create_chat_assistant
+from common import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN, create_chat_assistant
 from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import encode_avatar
 from libs.utils.file_utils import create_image_file
@@ -46,7 +46,7 @@ class TestChatAssistantCreate:
         "payload, expected_code, expected_message",
         [
             ({"name": "valid_name"}, 0, ""),
-            pytest.param({"name": "a" * (CHAT_ASSISTANT_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
+            pytest.param({"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
             ({"name": ""}, 102, "`name` is required."),
             ({"name": "duplicated_name"}, 102, "Duplicated chat name in creating chat."),
