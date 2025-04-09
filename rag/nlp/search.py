@@ -363,7 +363,6 @@ class Dealer:
 
         sres = self.search(req, [index_name(tid) for tid in tenant_ids],
                            kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
-        ranks["total"] = sres.total
 
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
@@ -425,7 +424,7 @@ class Dealer:
                                                        v in sorted(ranks["doc_aggs"].items(),
                                                                    key=lambda x: x[1]["count"] * -1)]
         ranks["chunks"] = ranks["chunks"][:page_size]
-
+        ranks["total"] = len(ranks["chunks"])
         return ranks
 
     def sql_retrieval(self, sql, fetch_size=128, format="json"):
