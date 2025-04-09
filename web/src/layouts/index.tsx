@@ -4,6 +4,9 @@ import { Outlet } from 'umi';
 import '../locales/config';
 import Header from './components/header';
 
+import { Toaster as Sonner } from '@/components/ui/sonner';
+import { Toaster } from '@/components/ui/toaster';
+
 import styles from './index.less';
 
 const { Content } = Layout;
@@ -29,6 +32,8 @@ const App: React.FC = () => {
         >
           <Outlet />
         </Content>
+        <Toaster />
+        <Sonner position={'top-right'} expand richColors closeButton></Sonner>
       </Layout>
     </Layout>
   );
