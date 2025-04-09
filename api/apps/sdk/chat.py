@@ -23,8 +23,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from api.utils import get_uuid
-from api.utils.api_utils import get_error_data_result, token_required
-from api.utils.api_utils import get_result
+from api.utils.api_utils import get_error_data_result, token_required, get_result, check_duplicate_ids
+
 
 
 @manager.route('/chats', methods=['POST'])  # noqa: F821
@@ -252,6 +252,8 @@ def update(tenant_id, chat_id):
 @manager.route('/chats', methods=['DELETE'])  # noqa: F821
 @token_required
 def delete(tenant_id):
+    errors = []
+    success_count = 0
     req = request.json
     if not req:
         ids = None
@@ -264,12 +266,37 @@ def delete(tenant_id):
             id_list.append(dia.id)
     else:
         id_list = ids
-    for id in id_list:
+
+    unique_id_list, duplicate_messages = check_duplicate_ids(id_list, "assistant")
+
+    for id in unique_id_list:
         if not DialogService.query(tenant_id=tenant_id, id=id, status=StatusEnum.VALID.value):
-            return get_error_data_result(message=f"You don't own the chat {id}")
+            errors.append(f"Assistant({id}) not found.")
+            continue
         temp_dict = {"status": StatusEnum.INVALID.value}
         DialogService.update_by_id(id, temp_dict)
+        success_count += 1
+        
+    if errors:
+        if success_count > 0:
+            return get_result(
+                data={"success_count": success_count, "errors": errors},
+                message=f"Partially deleted {success_count} chats with {len(errors)} errors"
+            )
+        else:
+            return get_error_data_result(message="; ".join(errors))
+    
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(
+                message=f"Partially deleted {success_count} chats with {len(duplicate_messages)} errors", 
+                data={"success_count": success_count, "errors": duplicate_messages}
+            )
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
+    
     return get_result()
+
 
 
 @manager.route('/chats', methods=['GET'])  # noqa: F821

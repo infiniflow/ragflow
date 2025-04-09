@@ -337,6 +337,7 @@ class TestDatasetsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.slow
     def test_concurrent_list(self, get_http_api_auth):
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(list_datasets, get_http_api_auth) for i in range(100)]
