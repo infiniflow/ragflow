@@ -31,7 +31,7 @@ from api.db.services.dialog_service import DialogService, ask, chat
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import get_uuid
-from api.utils.api_utils import get_result, token_required, get_data_openai, get_error_data_result, validate_request
+from api.utils.api_utils import get_result, token_required, get_data_openai, get_error_data_result, validate_request, check_duplicate_ids
 from api.db.services.llm_service import LLMBundle
 
 
@@ -240,8 +240,13 @@ def chat_completion_openai_like(tenant_id, chat_id):
     dia = dia[0]
 
     # Filter system and non-sense assistant messages
-    msg = None
-    msg = [m for m in messages if m["role"] != "system" and (m["role"] != "assistant" or msg)]
+    msg = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        if m["role"] == "assistant" and not msg:
+            continue
+        msg.append(m)
 
     # tools = get_tools()
     # toolcall_session = SimpleFunctionCallServer()
@@ -542,6 +547,9 @@ def list_agent_session(tenant_id, agent_id):
 def delete(tenant_id, chat_id):
     if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You don't own the chat")
+    
+    errors = []
+    success_count = 0
     req = request.json
     convs = ConversationService.query(dialog_id=chat_id)
     if not req:
@@ -555,17 +563,44 @@ def delete(tenant_id, chat_id):
             conv_list.append(conv.id)
     else:
         conv_list = ids
+    
+    unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
+    conv_list = unique_conv_ids
+    
     for id in conv_list:
         conv = ConversationService.query(id=id, dialog_id=chat_id)
         if not conv:
-            return get_error_data_result(message="The chat doesn't own the session")
+            errors.append(f"The chat doesn't own the session {id}")
+            continue
         ConversationService.delete_by_id(id)
+        success_count += 1
+    
+    if errors:
+        if success_count > 0:
+            return get_result(
+                data={"success_count": success_count, "errors": errors},
+                message=f"Partially deleted {success_count} sessions with {len(errors)} errors"
+            )
+        else:
+            return get_error_data_result(message="; ".join(errors))
+    
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(
+                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors", 
+                data={"success_count": success_count, "errors": duplicate_messages}
+            )
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
+    
     return get_result()
 
 
 @manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
 @token_required
 def delete_agent_session(tenant_id, agent_id):
+    errors = []
+    success_count = 0
     req = request.json
     cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
     if not cvs:
@@ -587,11 +622,35 @@ def delete_agent_session(tenant_id, agent_id):
     else:
         conv_list = ids
 
+    unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
+    conv_list = unique_conv_ids
+
     for session_id in conv_list:
         conv = API4ConversationService.query(id=session_id, dialog_id=agent_id)
         if not conv:
-            return get_error_data_result(f"The agent doesn't own the session ${session_id}")
+            errors.append(f"The agent doesn't own the session {session_id}")
+            continue
         API4ConversationService.delete_by_id(session_id)
+        success_count += 1
+    
+    if errors:
+        if success_count > 0:
+            return get_result(
+                data={"success_count": success_count, "errors": errors},
+                message=f"Partially deleted {success_count} sessions with {len(errors)} errors"
+            )
+        else:
+            return get_error_data_result(message="; ".join(errors))
+    
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(
+                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors", 
+                data={"success_count": success_count, "errors": duplicate_messages}
+            )
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
+    
     return get_result()
 
 

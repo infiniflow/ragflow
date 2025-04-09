@@ -154,7 +154,7 @@ The chunking method of the dataset to create. Available options:
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
 - `chunk_method`=`"naive"`:  
-  `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+  `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
 - `chunk_method`=`"qa"`:  
   `{"raptor": {"user_raptor": False}}`
 - `chunk_method`=`"manuel"`:  
@@ -174,7 +174,7 @@ The parser configuration of the dataset. A `ParserConfig` object's attributes va
 - `chunk_method`=`"one"`:  
   `None`
 - `chunk_method`=`"knowledge-graph"`:  
-  `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
+  `{"chunk_token_num":128,"delimiter":"\\n","entity_types":["organization","person","location","event","time"]}`
 - `chunk_method`=`"email"`:  
   `None`
 
@@ -403,7 +403,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `"email"`: Email
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
   - `"chunk_method"`=`"naive"`:  
-    `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
   - `chunk_method`=`"qa"`:  
     `{"raptor": {"user_raptor": False}}`
   - `chunk_method`=`"manuel"`:  
@@ -423,7 +423,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `chunk_method`=`"one"`:  
     `None`
   - `chunk_method`=`"knowledge-graph"`:  
-    `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
+    `{"chunk_token_num":128,"delimiter":"\\n","entity_types":["organization","person","location","event","time"]}`
   - `chunk_method`=`"email"`:  
     `None`
 
@@ -543,7 +543,7 @@ A `Document` object contains the following attributes:
 - `status`: `str` Reserved for future use.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
   - `chunk_method`=`"naive"`:  
-    `{"chunk_token_num":128,"delimiter":"\\n!?;。；！？","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
   - `chunk_method`=`"qa"`:  
     `{"raptor": {"user_raptor": False}}`
   - `chunk_method`=`"manuel"`:  
@@ -563,7 +563,7 @@ A `Document` object contains the following attributes:
   - `chunk_method`=`"one"`:  
     `None`
   - `chunk_method`=`"knowledge-graph"`:  
-    `{"chunk_token_num":128,"delimiter": "\\n!?;。；！？","entity_types":["organization","person","location","event","time"]}`
+    `{"chunk_token_num":128,"delimiter": "\\n","entity_types":["organization","person","location","event","time"]}`
   - `chunk_method`=`"email"`:  
     `None`
 

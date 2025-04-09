@@ -236,6 +236,7 @@ class TestDatasetUpdate:
         res = update_dataset(get_http_api_auth, dataset_id, {"unknown_field": 0})
         assert res["code"] == 100
 
+    @pytest.mark.slow
     def test_concurrent_update(self, get_http_api_auth, add_dataset_func):
         dataset_id = add_dataset_func
 
