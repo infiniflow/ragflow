@@ -23,7 +23,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from api.utils import get_uuid
-from api.utils.api_utils import get_error_data_result, token_required
+from api.utils.api_utils import get_error_data_result, token_required, check_duplicate_ids
 from api.utils.api_utils import get_result
 
 
@@ -223,11 +223,11 @@ def update(tenant_id, chat_id):
             return get_error_data_result(f"`rerank_model` {req.get('rerank_id')} doesn't exist")
     if "name" in req:
         if not req.get("name"):
-            return get_error_data_result(message="`name` cannot be empty.")
+            return get_error_data_result(message="`name` is not empty.")
         if req["name"].lower() != res["name"].lower() \
                 and len(
             DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 0:
-            return get_error_data_result(message="Duplicated chat name in updating chat.")
+            return get_error_data_result(message="Duplicated chat name in updating dataset.")
     if "prompt_config" in req:
         res["prompt_config"].update(req["prompt_config"])
         for p in res["prompt_config"]["parameters"]:
@@ -252,6 +252,8 @@ def update(tenant_id, chat_id):
 @manager.route('/chats', methods=['DELETE'])  # noqa: F821
 @token_required
 def delete(tenant_id):
+    errors = []
+    success_count = 0
     req = request.json
     if not req:
         ids = None
@@ -264,12 +266,33 @@ def delete(tenant_id):
             id_list.append(dia.id)
     else:
         id_list = ids
-    for id in id_list:
+
+    unique_id_list, duplicate_messages = check_duplicate_ids(id_list, "assistant")
+
+    for id in unique_id_list:
         if not DialogService.query(tenant_id=tenant_id, id=id, status=StatusEnum.VALID.value):
-            return get_error_data_result(message=f"You don't own the chat {id}")
+            errors.append(f"Assistant({id}) not found.")
+            continue
         temp_dict = {"status": StatusEnum.INVALID.value}
         DialogService.update_by_id(id, temp_dict)
-    return get_result()
+        success_count += 1
+
+    if errors:
+        if success_count > 0:
+            return get_result(
+                data={"success_count": success_count, "errors": errors},
+                message=f"Partially deleted {success_count} datasets with {len(errors)} errors"
+            )
+        else:
+            return get_error_data_result(message="; ".join(errors))
+
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(message=f"Partially deleted {success_count} assistant with {len(duplicate_messages)} errors", data={"success_count": success_count, "errors": duplicate_messages},)
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
+
+    return get_result(code=settings.RetCode.SUCCESS)
 
 
 @manager.route('/chats', methods=['GET'])  # noqa: F821
