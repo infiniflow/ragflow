@@ -110,12 +110,3 @@ while True:
         cont = ans.content
 ```
 
-## Frequently asked questions
-
-### How to check if my variable settings were properly used?
-
-To verify that your variable settings were applied correctly, click the light bulb icon above the latest successful dialogue. This will display the exact prompt sent to the model, showing how your variables were incorporated.
-
-
-
-
