@@ -211,7 +211,7 @@ class Base(ABC):
                     # For non-rate limit errors or the last attempt, return an error message
                     if attempt == self.max_retries - 1:
                         error_code = ERROR_MAX_RETRIES
-                    return f"{ERROR_PREFIX}: {error_code} - {str(e)}. response: {response}", 0
+                    return f"{ERROR_PREFIX}: {error_code} - {str(e)}", 0
 
     def _wrap_toolcall_message(self, stream):
         final_tool_calls = {}
