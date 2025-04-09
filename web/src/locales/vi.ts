@@ -161,7 +161,7 @@ export default {
       rerankPlaceholder: 'Vui lòng chọn',
       rerankTip: `Nếu để trống, RAGFlow sẽ sử dụng kết hợp giữa độ tương đồng từ khóa được trọng số và độ tương đồng vectơ cosin được trọng số; nếu chọn mô hình xếp hạng lại, điểm xếp hạng được tính lại sẽ thay thế độ tương đồng vectơ cosin được trọng số.`,
       topK: 'Top-K',
-      topKTip: `K khối sẽ được đưa vào các mô hình xếp hạng lại.`,
+      topKTip: `Sử dụng cùng với Rerank model, thiết lập này xác định số lượng đoạn văn cần gửi đến mô hình reranking được chỉ định.`,
       delimiter: 'Dấu phân cách cho phân đoạn văn bản',
       html4excel: 'Excel sang HTML',
       html4excelTip: `Sử dụng cùng với phương pháp cắt khúc General. Khi chưa được bật, tệp bảng tính (XLSX, XLS (Excel97~2003)) sẽ được phân tích theo dòng thành các cặp khóa-giá trị. Khi bật, tệp bảng tính sẽ được phân tích thành bảng HTML. Nếu bảng gốc vượt quá 12 dòng, hệ thống sẽ tự động chia thành nhiều bảng HTML mỗi 12 dòng.`,
@@ -383,7 +383,7 @@ export default {
       sendPlaceholder: 'Nhắn tin cho Trợ lý...',
       chatConfiguration: 'Cấu hình Chat',
       chatConfigurationDescription:
-        'Tại đây, hãy trang điểm cho một trợ lý chuyên dụng cho các cơ sở kiến thức đặc biệt của bạn! 💕',
+        'Thiết lập trợ lý trò chuyện cho các tập dữ liệu đã chọn (cơ sở tri thức) tại đây. 💕',
       assistantName: 'Tên trợ lý',
       assistantNameMessage: 'Tên trợ lý là bắt buộc',
       namePlaceholder: 'ví dụ: Resume Jarvis',
@@ -408,10 +408,7 @@ export default {
       topN: 'Top N',
       topNTip: `Không phải tất cả các khối có điểm tương đồng vượt quá 'ngưỡng tương đồng' sẽ được cung cấp cho LLMs. LLM chỉ có thể xem 'Top N' khối này.`,
       variable: 'Biến',
-      variableTip: `Nếu bạn sử dụng API thoại, các biến có thể giúp bạn trò chuyện với khách hàng của mình bằng các chiến lược khác nhau.
-      Các biến được sử dụng để điền vào phần 'Hệ thống' trong lời nhắc để cung cấp cho LLM một gợi ý.
-      'knowledge' là một biến rất đặc biệt sẽ được điền bằng các khối được truy xuất.
-      Tất cả các biến trong 'Hệ thống' phải được đặt trong dấu ngoặc nhọn.`,
+      variableTip: `Sử dụng cùng với các API quản lý trợ lý trò chuyện của RAGFlow, các biến có thể giúp phát triển các chiến lược lời nhắc hệ thống linh hoạt hơn. Các biến được định nghĩa sẽ được sử dụng bởi 'Lời nhắc hệ thống' như một phần của lời nhắc cho LLM. {knowledge} là một biến đặc biệt được bảo lưu, đại diện cho các phần được truy xuất từ cơ sở tri thức được chỉ định, và tất cả các biến nên được đặt trong ngoặc nhọn {} trong 'Lời nhắc hệ thống'. Xem https://ragflow.io/docs/dev/set_chat_variables để biết thêm chi tiết.`,
       add: 'Thêm',
       key: 'Khóa',
       optional: 'Tùy chọn',

@@ -70,7 +70,7 @@ In a knowledge graph, a community is a cluster of entities linked by relationshi
 3. Click **Knowledge graph** to view the details of the generated graph.
 4. To use the created knowledge graph, do either of the following:
    
-   - In your **Chat Configuration** dialogue, click the **Assistant Setting** tab to add the corresponding knowledge base(s) and click the **Prompt Engine** tab to switch on the **Use knowledge graph** toggle.
+   - In your **Chat Configuration** dialogue, click the **Assistant settings** tab to add the corresponding knowledge base(s) and click the **Prompt engine** tab to switch on the **Use knowledge graph** toggle.
    - If you are using an agent, click the **Retrieval** agent component to specify the knowledge base(s) and switch on the **Use knowledge graph** toggle.
 
 ## Frequently asked questions

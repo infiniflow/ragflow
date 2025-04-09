@@ -443,13 +443,26 @@ See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
 
 To switch your document engine from Elasticsearch to [Infinity](https://github.com/infiniflow/infinity):
 
-1. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
-2. Restart your Docker image: 
+1. Stop all running containers:  
 
-```bash
-$ docker compose -f docker-compose.yml up -d
-```
+   ```bash
+   $ docker compose -f docker/docker-compose.yml down -v
+   ```
+:::caution WARNING
+`-v` will delete all Docker container volumes, and the existing data will be cleared.
+:::
+
+2. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
+3. Restart your Docker image: 
+
+   ```bash
+   $ docker compose -f docker-compose.yml up -d
+   ```
+
+---
 
 ### Where are my uploaded files stored in RAGFlow's image?
 
 All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
+
+---

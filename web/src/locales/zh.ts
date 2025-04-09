@@ -159,7 +159,7 @@ export default {
       rerankPlaceholder: '请选择',
       rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。`,
       topK: 'Top-K',
-      topKTip: `K块将被送入Rerank型号。`,
+      topKTip: `与 Rerank 模型配合使用，用于设置传给 Rerank 模型的文本块数量。`,
       delimiter: `文本分段标识符`,
       delimiterTip:
         '支持多字符作为分隔符，多字符用 `` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
@@ -418,7 +418,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       send: '发送',
       sendPlaceholder: '消息概要助手...',
       chatConfiguration: '聊天配置',
-      chatConfigurationDescription: '在这里，为你的专业知识库装扮专属助手！ 💕',
+      chatConfigurationDescription: '为你的知识库配置专属聊天助手！ 💕',
       assistantName: '助理姓名',
       assistantNameMessage: '助理姓名是必填项',
       namePlaceholder: '例如 贾维斯简历',
@@ -444,10 +444,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       topN: 'Top N',
       topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
       variable: '变量',
-      variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
-      这些变量用于填写提示中的“系统提示词”部分，以便给LLM一个提示。
-      “知识”是一个非常特殊的变量，它将用检索到的块填充。
-      “系统提示词”中的所有变量都应该用大括号括起来。`,
+      variableTip: `你可以通过对话 API，并配合变量设置来动态调整大模型的系统提示词。
+      {knowledge}为系统预留变量，代表从指定知识库召回的文本块。
+      “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/dev/set_chat_variables。`,
       add: '新增',
       key: '关键字',
       optional: '可选的',
