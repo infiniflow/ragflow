@@ -240,8 +240,13 @@ def chat_completion_openai_like(tenant_id, chat_id):
     dia = dia[0]
 
     # Filter system and non-sense assistant messages
-    msg = None
-    msg = [m for m in messages if m["role"] != "system" and (m["role"] != "assistant" or msg)]
+    msg = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        if m["role"] == "assistant" and not msg:
+            continue
+        msg.append(m)
 
     # tools = get_tools()
     # toolcall_session = SimpleFunctionCallServer()
