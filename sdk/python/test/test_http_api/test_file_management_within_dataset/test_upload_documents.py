@@ -186,6 +186,7 @@ class TestDocumentsUpload:
         res = list_datasets(get_http_api_auth, {"id": dataset_id})
         assert res["data"][0]["document_count"] == expected_document_count
 
+    @pytest.mark.slow
     def test_concurrent_upload(self, get_http_api_auth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
 

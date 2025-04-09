@@ -291,6 +291,7 @@ class TestChunksRetrieval:
         assert res["code"] == 0
         assert len(res["data"]["chunks"]) == 4
 
+    @pytest.mark.slow
     def test_concurrent_retrieval(self, get_http_api_auth, add_chunks):
         from concurrent.futures import ThreadPoolExecutor
 

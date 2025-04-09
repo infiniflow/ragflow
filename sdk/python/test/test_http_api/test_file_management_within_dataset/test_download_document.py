@@ -147,6 +147,7 @@ class TestDocumentDownload:
             )
 
 
+@pytest.mark.slow
 def test_concurrent_download(get_http_api_auth, add_dataset, tmp_path):
     document_count = 20
     dataset_id = add_dataset

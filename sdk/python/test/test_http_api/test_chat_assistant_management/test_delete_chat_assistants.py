@@ -52,7 +52,7 @@ class TestChatAssistantsDelete:
         ],
     )
     def test_basic_scenarios(self, get_http_api_auth, add_chat_assistants_func, payload, expected_code, expected_message, remaining):
-        _, _, _, chat_assistant_ids = add_chat_assistants_func
+        _, _, chat_assistant_ids = add_chat_assistants_func
         if callable(payload):
             payload = payload(chat_assistant_ids)
         res = delete_chat_assistants(get_http_api_auth, payload)
@@ -73,7 +73,7 @@ class TestChatAssistantsDelete:
         ],
     )
     def test_delete_partial_invalid_id(self, get_http_api_auth, add_chat_assistants_func, payload):
-        _, _, _, chat_assistant_ids = add_chat_assistants_func
+        _, _, chat_assistant_ids = add_chat_assistants_func
         if callable(payload):
             payload = payload(chat_assistant_ids)
         res = delete_chat_assistants(get_http_api_auth, payload)
@@ -85,7 +85,7 @@ class TestChatAssistantsDelete:
         assert len(res["data"]) == 0
 
     def test_repeated_deletion(self, get_http_api_auth, add_chat_assistants_func):
-        _, _, _, chat_assistant_ids = add_chat_assistants_func
+        _, _, chat_assistant_ids = add_chat_assistants_func
         res = delete_chat_assistants(get_http_api_auth, {"ids": chat_assistant_ids})
         assert res["code"] == 0
 
@@ -95,7 +95,7 @@ class TestChatAssistantsDelete:
 
     @pytest.mark.skip(reason="issues/6876")
     def test_duplicate_deletion(self, get_http_api_auth, add_chat_assistants_func):
-        _, _, _, chat_assistant_ids = add_chat_assistants_func
+        _, _, chat_assistant_ids = add_chat_assistants_func
         res = delete_chat_assistants(get_http_api_auth, {"ids": chat_assistant_ids + chat_assistant_ids})
         print(res)
         assert res["code"] == 0
@@ -105,6 +105,7 @@ class TestChatAssistantsDelete:
         res = delete_chat_assistants(get_http_api_auth)
         assert len(res["data"]) == 0
 
+    @pytest.mark.slow
     def test_concurrent_deletion(self, get_http_api_auth):
         ids = batch_create_chat_assistants(get_http_api_auth, 100)
 

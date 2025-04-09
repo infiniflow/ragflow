@@ -15,7 +15,17 @@
 #
 
 import pytest
-from common import add_chunk, batch_create_datasets, bulk_upload_documents, delete_chat_assistants, delete_datasets, list_documnets, parse_documnets
+from common import (
+    add_chunk,
+    batch_create_datasets,
+    bulk_upload_documents,
+    create_chat_assistant,
+    delete_chat_assistants,
+    delete_datasets,
+    delete_session_with_chat_assistants,
+    list_documnets,
+    parse_documnets,
+)
 from libs.utils import wait_for
 from libs.utils.file_utils import (
     create_docx_file,
@@ -41,15 +51,30 @@ def condition(_auth, _dataset_id):
 
 
 @pytest.fixture(scope="function")
-def clear_datasets(get_http_api_auth):
-    yield
-    delete_datasets(get_http_api_auth)
+def clear_datasets(request, get_http_api_auth):
+    def cleanup():
+        delete_datasets(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
 
 
 @pytest.fixture(scope="function")
-def clear_chat_assistants(get_http_api_auth):
-    yield
-    delete_chat_assistants(get_http_api_auth)
+def clear_chat_assistants(request, get_http_api_auth):
+    def cleanup():
+        delete_chat_assistants(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+
+@pytest.fixture(scope="function")
+def clear_session_with_chat_assistants(request, get_http_api_auth, add_chat_assistants):
+    _, _, chat_assistant_ids = add_chat_assistants
+
+    def cleanup():
+        for chat_assistant_id in chat_assistant_ids:
+            delete_session_with_chat_assistants(get_http_api_auth, chat_assistant_id)
+
+    request.addfinalizer(cleanup)
 
 
 @pytest.fixture
@@ -126,3 +151,22 @@ def add_chunks(get_http_api_auth, add_document):
 
     sleep(1)
     return dataset_id, document_id, chunk_ids
+
+
+@pytest.fixture(scope="class")
+def add_chat_assistants(request, get_http_api_auth, add_document):
+    def cleanup():
+        delete_chat_assistants(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    dataset_id, document_id = add_document
+    parse_documnets(get_http_api_auth, dataset_id, {"document_ids": [document_id]})
+    condition(get_http_api_auth, dataset_id)
+
+    chat_assistant_ids = []
+    for i in range(5):
+        res = create_chat_assistant(get_http_api_auth, {"name": f"test_chat_assistant_{i}", "dataset_ids": [dataset_id]})
+        chat_assistant_ids.append(res["data"]["id"])
+
+    return dataset_id, document_id, chat_assistant_ids

@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import CHAT_ASSISTANT_LIMIT, INVALID_API_TOKEN, list_chat_assistants, update_chat_assistant
+from common import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN, list_chat_assistants, update_chat_assistant
 from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import encode_avatar
 from libs.utils.file_utils import create_image_file
@@ -44,7 +44,7 @@ class TestChatAssistantUpdate:
         "payload, expected_code, expected_message",
         [
             ({"name": "valid_name"}, 0, ""),
-            pytest.param({"name": "a" * (CHAT_ASSISTANT_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
+            pytest.param({"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
             ({"name": ""}, 102, "`name` cannot be empty."),
             ({"name": "test_chat_assistant_1"}, 102, "Duplicated chat name in updating chat."),
@@ -52,7 +52,7 @@ class TestChatAssistantUpdate:
         ],
     )
     def test_name(self, get_http_api_auth, add_chat_assistants_func, payload, expected_code, expected_message):
-        _, _, _, chat_assistant_ids = add_chat_assistants_func
+        _, _, chat_assistant_ids = add_chat_assistants_func
 
         res = update_chat_assistant(get_http_api_auth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code, res
@@ -72,7 +72,7 @@ class TestChatAssistantUpdate:
         ],
     )
     def test_dataset_ids(self, get_http_api_auth, add_chat_assistants_func, dataset_ids, expected_code, expected_message):
-        dataset_id, _, _, chat_assistant_ids = add_chat_assistants_func
+        dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         payload = {"name": "ragflow test"}
         if callable(dataset_ids):
             payload["dataset_ids"] = dataset_ids(dataset_id)
@@ -88,7 +88,7 @@ class TestChatAssistantUpdate:
             assert res["message"] == expected_message
 
     def test_avatar(self, get_http_api_auth, add_chat_assistants_func, tmp_path):
-        dataset_id, _, _, chat_assistant_ids = add_chat_assistants_func
+        dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {"name": "avatar_test", "avatar": encode_avatar(fn), "dataset_ids": [dataset_id]}
         res = update_chat_assistant(get_http_api_auth, chat_assistant_ids[0], payload)
@@ -129,7 +129,7 @@ class TestChatAssistantUpdate:
         ],
     )
     def test_llm(self, get_http_api_auth, add_chat_assistants_func, llm, expected_code, expected_message):
-        dataset_id, _, _, chat_assistant_ids = add_chat_assistants_func
+        dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm}
         res = update_chat_assistant(get_http_api_auth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code
@@ -196,7 +196,7 @@ class TestChatAssistantUpdate:
         ],
     )
     def test_prompt(self, get_http_api_auth, add_chat_assistants_func, prompt, expected_code, expected_message):
-        dataset_id, _, _, chat_assistant_ids = add_chat_assistants_func
+        dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         payload = {"name": "prompt_test", "dataset_ids": [dataset_id], "prompt": prompt}
         res = update_chat_assistant(get_http_api_auth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code

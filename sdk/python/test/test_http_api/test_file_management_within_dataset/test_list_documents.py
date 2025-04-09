@@ -406,6 +406,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.slow
     def test_concurrent_list(self, get_http_api_auth, add_documents):
         dataset_id, _ = add_documents
 

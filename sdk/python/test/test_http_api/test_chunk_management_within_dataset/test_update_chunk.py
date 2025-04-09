@@ -206,6 +206,7 @@ class TestUpdatedChunk:
         if expected_code != 0:
             assert res["message"] == expected_message
 
+    @pytest.mark.slow
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6554")
     def test_concurrent_update_chunk(self, get_http_api_auth, add_chunks):
         chunk_num = 50
