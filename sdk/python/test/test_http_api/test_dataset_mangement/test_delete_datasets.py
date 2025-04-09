@@ -117,6 +117,7 @@ class TestDatasetsDeletion:
         res = list_datasets(get_http_api_auth)
         assert len(res["data"]) == 0
 
+    @pytest.mark.slow
     def test_concurrent_deletion(self, get_http_api_auth):
         ids = batch_create_datasets(get_http_api_auth, 100)
 
