@@ -1247,6 +1247,10 @@ This delimiter is used to split the input text into several text pieces echo of 
         knowledge: 'knowledge',
         chat: 'chat',
       },
+      prompt: 'Prompt',
+      promptTip:
+        'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
+      promptMessage: 'Prompt is required',
     },
   },
 };
