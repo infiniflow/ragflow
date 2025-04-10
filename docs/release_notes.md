@@ -74,7 +74,7 @@ Released on March 3, 2025.
 
 ### New features
 
-- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt Engine** tab of your chat assistant dialogue.
+- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
 - AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue.
 - AI chat: Supports starting a chat without specifying knowledge bases.
 - AI chat: HTML files can also be previewed and referenced, in addition to PDF files.

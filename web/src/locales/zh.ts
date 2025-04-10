@@ -534,7 +534,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
       reasoning: '推理',
       reasoningTip:
-        '是否像 Deepseek-R1 / OpenAI o1一样通过推理产生答案。启用后，允许模型在遇到未知情况时将代理搜索过程集成到推理工作流中，自行动态检索外部知识，并通过推理生成最终答案。',
+        '在问答过程中是否启用推理工作流，例如Deepseek-R1或OpenAI o1等模型所采用的方式。启用后，该功能允许模型访问外部知识，并借助思维链推理等技术逐步解决复杂问题。通过将问题分解为可处理的步骤，这种方法增强了模型提供准确回答的能力，从而在需要逻辑推理和多步思考的任务上表现更优。',
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',

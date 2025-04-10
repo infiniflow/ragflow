@@ -19,7 +19,7 @@ You start an AI conversation by creating an assistant.
 
    > RAGFlow offers you the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
 
-2. Update **Assistant Settings**:
+2. Update **Assistant settings**:
 
    - **Assistant name** is the name of your chat assistant. Each assistant corresponds to a dialogue with a unique combination of knowledge bases, prompts, hybrid search configurations, and large model settings.
    - **Empty response**:
@@ -28,7 +28,7 @@ You start an AI conversation by creating an assistant.
    - **Show quote**: This is a key feature of RAGFlow and enabled by default. RAGFlow does not work like a black box. Instead, it clearly shows the sources of information that its responses are based on.
    - Select the corresponding knowledge bases. You can select one or multiple knowledge bases, but ensure that they use the same embedding model, otherwise an error would occur.
 
-3. Update **Prompt Engine**:
+3. Update **Prompt engine**:
 
    - In **System**, you fill in the prompts for your LLM, you can also leave the default prompt as-is for the beginning.
    - **Similarity threshold** sets the similarity "bar" for each chunk of text. The default is 0.2. Text chunks with lower similarity scores are filtered out of the final response.
