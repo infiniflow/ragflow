@@ -1200,6 +1200,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         me: '仅限自己',
         team: '团队',
       },
+      systemPrompt: '系统提示词',
+      prompt: '提示词',
+      promptMessage: '提示词是必填项',
+      promptTip:
+        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
     },
     footer: {
       profile: 'All rights reserved @ React',
