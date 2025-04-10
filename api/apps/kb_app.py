@@ -19,7 +19,6 @@ import os
 from flask import request
 from flask_login import login_required, current_user
 
-from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
