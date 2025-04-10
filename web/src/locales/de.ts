@@ -554,7 +554,7 @@ export default {
       selectLanguage: 'Sprache auswählen',
       reasoning: 'Schlussfolgerung',
       reasoningTip:
-        'Ob Antworten durch Denkprozesse wie DeepSeek-R1/OpenAI o1 generiert werden sollen. Wenn aktiviert, integriert das Chat-Modell Deep Research autonom während der Beantwortung von Fragen, wenn es auf ein unbekanntes Thema trifft. Dies beinhaltet, dass das Chat-Modell dynamisch externe Kenntnisse durchsucht und endgültige Antworten durch Denkprozesse generiert.',
+        'Ob beim Frage-Antwort-Prozess ein logisches Arbeitsverfahren aktiviert werden soll, wie es bei Modellen wie Deepseek-R1 oder OpenAI o1 der Fall ist. Wenn aktiviert, ermöglicht diese Funktion dem Modell, auf externes Wissen zuzugreifen und komplexe Fragen schrittweise mithilfe von Techniken wie der „Chain-of-Thought“-Argumentation zu lösen. Durch die Zerlegung von Problemen in überschaubare Schritte verbessert dieser Ansatz die Fähigkeit des Modells, präzise Antworten zu liefern, was die Leistung bei Aufgaben, die logisches Denken und mehrschrittige Überlegungen erfordern, steigert.',
       tavilyApiKeyTip:
         'Wenn hier ein API-Schlüssel korrekt eingestellt ist, werden Tavily-basierte Websuchen verwendet, um den Abruf aus der Wissensdatenbank zu ergänzen.',
       tavilyApiKeyMessage: 'Bitte geben Sie Ihren Tavily-API-Schlüssel ein',
