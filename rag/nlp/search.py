@@ -363,7 +363,6 @@ class Dealer:
 
         sres = self.search(req, [index_name(tid) for tid in tenant_ids],
                            kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
-        ranks["total"] = sres.total
 
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
@@ -383,6 +382,8 @@ class Dealer:
         if doc_ids:
             similarity_threshold = 0
             page_size = 30
+        filtered_count = (sim >= similarity_threshold).sum()    
+        ranks["total"] = int(filtered_count) # Convert from np.int64 to Python int otherwise JSON serializable error
         for i in idx:
             if sim[i] < similarity_threshold:
                 break
