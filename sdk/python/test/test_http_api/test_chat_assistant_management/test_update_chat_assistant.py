@@ -13,9 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
 import pytest
-from common import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN, create_chat_assistant
+from common import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN, list_chat_assistants, update_chat_assistant
 from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import encode_avatar
 from libs.utils.file_utils import create_image_file
@@ -35,72 +34,70 @@ class TestAuthorization:
         ],
     )
     def test_invalid_auth(self, auth, expected_code, expected_message):
-        res = create_chat_assistant(auth)
+        res = update_chat_assistant(auth, "chat_assistant_id")
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
-@pytest.mark.usefixtures("clear_chat_assistants")
-class TestChatAssistantCreate:
+class TestChatAssistantUpdate:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
             ({"name": "valid_name"}, 0, ""),
             pytest.param({"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
-            ({"name": ""}, 102, "`name` is required."),
-            ({"name": "duplicated_name"}, 102, "Duplicated chat name in creating chat."),
-            ({"name": "case insensitive"}, 102, "Duplicated chat name in creating chat."),
+            ({"name": ""}, 102, "`name` cannot be empty."),
+            ({"name": "test_chat_assistant_1"}, 102, "Duplicated chat name in updating chat."),
+            ({"name": "TEST_CHAT_ASSISTANT_1"}, 102, "Duplicated chat name in updating chat."),
         ],
     )
-    def test_name(self, get_http_api_auth, add_chunks, payload, expected_code, expected_message):
-        payload["dataset_ids"] = []  # issues/
-        if payload["name"] == "duplicated_name":
-            create_chat_assistant(get_http_api_auth, payload)
-        elif payload["name"] == "case insensitive":
-            create_chat_assistant(get_http_api_auth, {"name": payload["name"].upper()})
+    def test_name(self, get_http_api_auth, add_chat_assistants_func, payload, expected_code, expected_message):
+        _, _, chat_assistant_ids = add_chat_assistants_func
 
-        res = create_chat_assistant(get_http_api_auth, payload)
+        res = update_chat_assistant(get_http_api_auth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
-            assert res["data"]["name"] == payload["name"]
+            res = list_chat_assistants(get_http_api_auth, {"id": chat_assistant_ids[0]})
+            assert res["data"][0]["name"] == payload.get("name")
         else:
             assert res["message"] == expected_message
 
     @pytest.mark.parametrize(
         "dataset_ids, expected_code, expected_message",
         [
-            ([], 0, ""),
+            pytest.param([], 0, "", marks=pytest.mark.skip(reason="issues/")),
             (lambda r: [r], 0, ""),
             (["invalid_dataset_id"], 102, "You don't own the dataset invalid_dataset_id"),
             ("invalid_dataset_id", 102, "You don't own the dataset i"),
         ],
     )
-    def test_dataset_ids(self, get_http_api_auth, add_chunks, dataset_ids, expected_code, expected_message):
-        dataset_id, _, _ = add_chunks
+    def test_dataset_ids(self, get_http_api_auth, add_chat_assistants_func, dataset_ids, expected_code, expected_message):
+        dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         payload = {"name": "ragflow test"}
         if callable(dataset_ids):
             payload["dataset_ids"] = dataset_ids(dataset_id)
         else:
             payload["dataset_ids"] = dataset_ids
 
-        res = create_chat_assistant(get_http_api_auth, payload)
+        res = update_chat_assistant(get_http_api_auth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
-            assert res["data"]["name"] == payload["name"]
+            res = list_chat_assistants(get_http_api_auth, {"id": chat_assistant_ids[0]})
+            assert res["data"][0]["name"] == payload.get("name")
         else:
             assert res["message"] == expected_message
 
-    def test_avatar(self, get_http_api_auth, tmp_path):
+    def test_avatar(self, get_http_api_auth, add_chat_assistants_func, tmp_path):
+        dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
-        payload = {"name": "avatar_test", "avatar": encode_avatar(fn), "dataset_ids": []}
-        res = create_chat_assistant(get_http_api_auth, payload)
+        payload = {"name": "avatar_test", "avatar": encode_avatar(fn), "dataset_ids": [dataset_id]}
+        res = update_chat_assistant(get_http_api_auth, chat_assistant_ids[0], payload)
         assert res["code"] == 0
 
     @pytest.mark.parametrize(
         "llm, expected_code, expected_message",
         [
-            ({}, 0, ""),
+            ({}, 100, "ValueError"),
             ({"model_name": "glm-4"}, 0, ""),
             ({"model_name": "unknown"}, 102, "`model_name` unknown doesn't exist"),
             ({"temperature": 0}, 0, ""),
@@ -131,29 +128,30 @@ class TestChatAssistantCreate:
             pytest.param({"unknown": "unknown"}, 0, "", marks=pytest.mark.skip),
         ],
     )
-    def test_llm(self, get_http_api_auth, add_chunks, llm, expected_code, expected_message):
-        dataset_id, _, _ = add_chunks
+    def test_llm(self, get_http_api_auth, add_chat_assistants_func, llm, expected_code, expected_message):
+        dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm}
-        res = create_chat_assistant(get_http_api_auth, payload)
+        res = update_chat_assistant(get_http_api_auth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code == 0:
+            res = list_chat_assistants(get_http_api_auth, {"id": chat_assistant_ids[0]})
             if llm:
                 for k, v in llm.items():
-                    assert res["data"]["llm"][k] == v
+                    assert res["data"][0]["llm"][k] == v
             else:
-                assert res["data"]["llm"]["model_name"] == "glm-4-flash@ZHIPU-AI"
-                assert res["data"]["llm"]["temperature"] == 0.1
-                assert res["data"]["llm"]["top_p"] == 0.3
-                assert res["data"]["llm"]["presence_penalty"] == 0.4
-                assert res["data"]["llm"]["frequency_penalty"] == 0.7
-                assert res["data"]["llm"]["max_tokens"] == 512
+                assert res["data"][0]["llm"]["model_name"] == "glm-4-flash@ZHIPU-AI"
+                assert res["data"][0]["llm"]["temperature"] == 0.1
+                assert res["data"][0]["llm"]["top_p"] == 0.3
+                assert res["data"][0]["llm"]["presence_penalty"] == 0.4
+                assert res["data"][0]["llm"]["frequency_penalty"] == 0.7
+                assert res["data"][0]["llm"]["max_tokens"] == 512
         else:
-            assert res["message"] == expected_message
+            assert expected_message in res["message"]
 
     @pytest.mark.parametrize(
         "prompt, expected_code, expected_message",
         [
-            ({}, 0, ""),
+            ({}, 100, "ValueError"),
             ({"similarity_threshold": 0}, 0, ""),
             ({"similarity_threshold": 1}, 0, ""),
             pytest.param({"similarity_threshold": -1}, 0, "", marks=pytest.mark.skip),
@@ -197,40 +195,31 @@ class TestChatAssistantCreate:
             pytest.param({"unknown": "unknown"}, 0, "", marks=pytest.mark.skip),
         ],
     )
-    def test_prompt(self, get_http_api_auth, add_chunks, prompt, expected_code, expected_message):
-        dataset_id, _, _ = add_chunks
+    def test_prompt(self, get_http_api_auth, add_chat_assistants_func, prompt, expected_code, expected_message):
+        dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         payload = {"name": "prompt_test", "dataset_ids": [dataset_id], "prompt": prompt}
-        res = create_chat_assistant(get_http_api_auth, payload)
+        res = update_chat_assistant(get_http_api_auth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code == 0:
+            res = list_chat_assistants(get_http_api_auth, {"id": chat_assistant_ids[0]})
             if prompt:
                 for k, v in prompt.items():
                     if k == "keywords_similarity_weight":
-                        assert res["data"]["prompt"][k] == 1 - v
+                        assert res["data"][0]["prompt"][k] == 1 - v
                     else:
-                        assert res["data"]["prompt"][k] == v
+                        assert res["data"][0]["prompt"][k] == v
             else:
-                assert res["data"]["prompt"]["similarity_threshold"] == 0.2
-                assert res["data"]["prompt"]["keywords_similarity_weight"] == 0.7
-                assert res["data"]["prompt"]["top_n"] == 6
-                assert res["data"]["prompt"]["variables"] == [{"key": "knowledge", "optional": False}]
-                assert res["data"]["prompt"]["rerank_model"] == ""
-                assert res["data"]["prompt"]["empty_response"] == "Sorry! No relevant content was found in the knowledge base!"
-                assert res["data"]["prompt"]["opener"] == "Hi! I'm your assistant, what can I do for you?"
-                assert res["data"]["prompt"]["show_quote"] is True
+                assert res["data"]["prompt"][0]["similarity_threshold"] == 0.2
+                assert res["data"]["prompt"][0]["keywords_similarity_weight"] == 0.7
+                assert res["data"]["prompt"][0]["top_n"] == 6
+                assert res["data"]["prompt"][0]["variables"] == [{"key": "knowledge", "optional": False}]
+                assert res["data"]["prompt"][0]["rerank_model"] == ""
+                assert res["data"]["prompt"][0]["empty_response"] == "Sorry! No relevant content was found in the knowledge base!"
+                assert res["data"]["prompt"][0]["opener"] == "Hi! I'm your assistant, what can I do for you?"
+                assert res["data"]["prompt"][0]["show_quote"] is True
                 assert (
-                    res["data"]["prompt"]["prompt"]
+                    res["data"]["prompt"][0]["prompt"]
                     == 'You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.'
                 )
         else:
-            assert res["message"] == expected_message
-
-
-@pytest.mark.usefixtures("clear_chat_assistants")
-class TestChatAssistantCreate2:
-    def test_unparsed_document(self, get_http_api_auth, add_document):
-        dataset_id, _ = add_document
-        payload = {"name": "prompt_test", "dataset_ids": [dataset_id]}
-        res = create_chat_assistant(get_http_api_auth, payload)
-        assert res["code"] == 102
-        assert "doesn't own parsed file" in res["message"]
+            assert expected_message in res["message"]

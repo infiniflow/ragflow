@@ -159,7 +159,7 @@ export default {
       rerankPlaceholder: '請選擇',
       rerankTip: `如果是空的。它使用查詢和塊的嵌入來構成矢量餘弦相似性。否則，它使用rerank評分代替矢量餘弦相似性。`,
       topK: 'Top-K',
-      topKTip: `K塊將被送入Rerank型號。`,
+      topKTip: `與 Rerank 模型配合使用，用於設定傳給 Rerank 模型的文本塊數量。`,
       delimiter: `文字分段標識符`,
       delimiterTip:
         '支持多字符作為分隔符，多字符用 `` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建议文本块大小」設定的大小進行拼裝。在设置文本分段標識符之前，請確保您已理解上述文本分段切片機制。',
@@ -359,7 +359,7 @@ export default {
       addTag: '增加標籤',
       useGraphRag: '提取知識圖譜',
       useGraphRagTip:
-        '文件分塊後，所有區塊將用於知識圖譜生成，這對多跳和複雜問題的推理有很大幫助。',
+        '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/dev/construct_knowledge_graph。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：實體和關係提取提示來自 GitHub - HKUDS/LightRAG：“LightRAG：簡單快速的檢索增強生成”<br>
  一般：實體和關係擷取提示來自 GitHub - microsoft/graphrag：基於模組化圖形的檢索增強生成 (RAG) 系統，`,
@@ -401,7 +401,7 @@ export default {
       send: '發送',
       sendPlaceholder: '消息概要助手...',
       chatConfiguration: '聊天配置',
-      chatConfigurationDescription: '在這裡，為你的專業知識庫裝扮專屬助手！💕',
+      chatConfigurationDescription: '為你的知識庫配置專屬聊天助手！💕',
       assistantName: '助理姓名',
       assistantNameMessage: '助理姓名是必填項',
       namePlaceholder: '例如 賈維斯簡歷',
@@ -427,10 +427,9 @@ export default {
       topN: 'Top N',
       topNTip: `並非所有相似度得分高於“相似度閾值”的塊都會被提供給法學碩士。LLM 只能看到這些“Top N”塊。`,
       variable: '變量',
-      variableTip: `如果您使用对话 API，变量可能会帮助您使用不同的策略与客户聊天。
-        这些变量用于填写提示中的“系统提示词”部分，以便给LLM一个提示。
-        “知识”是一个非常特殊的变量，它将用检索到的块填充。
-        “系统提示词”中的所有变量都应该用大括号括起来。`,
+      variableTip: `你可以透過對話 API，並配合變數設定來動態調整大模型的系統提示詞。
+      {knowledge}為系統預留變數，代表從指定知識庫召回的文本塊。
+     「系統提示詞」中的所有變數都必須用大括號{}括起來。詳見 https://ragflow.io/docs/dev/set_chat_variables。`,
       add: '新增',
       key: '關鍵字',
       optional: '可選的',
@@ -574,7 +573,7 @@ export default {
       baseUrlTip:
         '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
       modify: '修改',
-      systemModelSettings: '系統模型設置',
+      systemModelSettings: '設定預設模型',
       chatModel: '聊天模型',
       chatModelTip: '所有新創建的知識庫都會使用默認的聊天模型。',
       ttsModel: '語音合成模型',

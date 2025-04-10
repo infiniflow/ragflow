@@ -57,14 +57,14 @@ async def run_graphrag(
 
     subgraph = await generate_subgraph(
         LightKGExt
-        if row["parser_config"]["graphrag"]["method"] != "general"
+        if row["kb_parser_config"]["graphrag"]["method"] != "general"
         else GeneralKGExt,
         tenant_id,
         kb_id,
         doc_id,
         chunks,
         language,
-        row["parser_config"]["graphrag"]["entity_types"],
+        row["kb_parser_config"]["graphrag"]["entity_types"],
         chat_model,
         embedding_model,
         callback,

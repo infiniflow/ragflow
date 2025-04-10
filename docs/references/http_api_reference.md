@@ -403,7 +403,7 @@ curl --request POST \
     - `"chunk_token_count"`: Defaults to `128`.
     - `"layout_recognize"`: Defaults to `true`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
+    - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
@@ -411,7 +411,7 @@ curl --request POST \
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
   - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:  
     - `"chunk_token_count"`: Defaults to `128`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
+    - `"delimiter"`: Defaults to `"\n"`.
     - `"entity_types"`: Defaults to `["organization","person","location","event","time"]`
 
 #### Response
@@ -436,7 +436,7 @@ Success:
         "name": "test_1",
         "parser_config": {
             "chunk_token_num": 128,
-            "delimiter": "\\n!?;。；！？",
+            "delimiter": "\\n",
             "html4excel": false,
             "layout_recognize": true,
             "raptor": {
@@ -658,7 +658,7 @@ Success:
             "chunk_method": "knowledge_graph",
             "parser_config": {
                 "chunk_token_num": 8192,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "entity_types": [
                     "organization",
                     "person",
@@ -746,7 +746,7 @@ Success:
             "name": "1.txt",
             "parser_config": {
                 "chunk_token_num": 128,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
@@ -835,7 +835,7 @@ curl --request PUT \
     - `"chunk_token_count"`: Defaults to `128`.
     - `"layout_recognize"`: Defaults to `true`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
+    - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
@@ -843,7 +843,7 @@ curl --request PUT \
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
   - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_count"`: Defaults to `128`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
+    - `"delimiter"`: Defaults to `"\n"`.
     - `"entity_types"`: Defaults to `["organization","person","location","event","time"]`
 
 #### Response
@@ -978,7 +978,7 @@ Success:
                 "name": "Test_2.txt",
                 "parser_config": {
                     "chunk_token_count": 128,
-                    "delimiter": "\n!?。；！？",
+                    "delimiter": "\n",
                     "layout_recognize": true,
                     "task_page_size": 12
                 },
@@ -1335,7 +1335,7 @@ Success:
             "name": "1.txt",
             "parser_config": {
                 "chunk_token_num": 128,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
@@ -2679,9 +2679,13 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"sync_dsl"`: `boolean` (optional)
   - other parameters: `string`
 
+:::info IMPORTANT
+You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) agent component.
+:::
+
 ##### Request example
 
-If the **Begin** component does not take parameters, the following code will create a session.
+- If the **Begin** component does not take parameters, the following code will create a session.
 
 ```bash
 curl --request POST \
@@ -2693,7 +2697,7 @@ curl --request POST \
      }'
 ```
 
-If the **Begin** component takes parameters, the following code will create a session.
+- If the **Begin** component takes parameters, the following code will create a session.  
 
 ```bash
 curl --request POST \
