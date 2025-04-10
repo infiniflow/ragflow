@@ -39,13 +39,15 @@ const DynamicVariablesForm = ({ node }: IProps) => {
       title: t('key'),
       dataIndex: 'key',
       key: 'key',
-      onCell: (record: IInvokeVariable) => ({
-        record,
-        editable: true,
-        dataIndex: 'key',
-        title: 'key',
-        handleSave,
-      }),
+      onCell: (record: IInvokeVariable) => {
+        return {
+          record,
+          editable: record.component_id !== 'allparambegin',
+          dataIndex: 'key',
+          title: 'key',
+          handleSave,
+        };
+      },
     },
     {
       title: t('componentId'),
@@ -58,7 +60,10 @@ const DynamicVariablesForm = ({ node }: IProps) => {
           <Select
             style={{ width: '100%' }}
             allowClear
-            options={options}
+            options={[
+              ...options,
+              { label: t('allparambegin'), value: 'allparambegin' },
+            ]}
             value={text}
             disabled={trim(record.value) !== ''}
             onChange={handleComponentIdChange(record)}

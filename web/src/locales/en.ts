@@ -1247,6 +1247,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         knowledge: 'knowledge',
         chat: 'chat',
       },
+      allparambegin: 'All parameters of begin',
     },
   },
 };
