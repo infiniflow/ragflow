@@ -54,6 +54,13 @@ const DynamicVariableForm = ({ node }: IProps) => {
                 className={styles.variableType}
               >
                 <Select
+                  placeholder={t('common.pleaseSelect')}
+                  filterOption={(input, option) =>
+                    (option?.label ?? '')
+                      .toLowerCase()
+                      .includes(input.toLowerCase())
+                  }
+                  showSearch
                   options={options}
                   onChange={handleTypeChange(name)}
                 ></Select>
@@ -68,7 +75,24 @@ const DynamicVariableForm = ({ node }: IProps) => {
                       className={styles.variableValue}
                     >
                       {type === VariableType.Reference ? (
-                        <Select
+                        <Select<{
+                          label: JSX.Element;
+                          title: string;
+                          options: {
+                            label: string;
+                            value: string;
+                          }[];
+                        }>
+                          showSearch
+                          filterOption={(input, option) => {
+                            //filter sub options by input only show the options that include the input
+                            return (option?.options ?? []).some(
+                              (x: { label: string; value: string }) =>
+                                x.label
+                                  .toLowerCase()
+                                  .includes(input.toLowerCase()),
+                            );
+                          }}
                           placeholder={t('common.pleaseSelect')}
                           options={valueOptions}
                         ></Select>

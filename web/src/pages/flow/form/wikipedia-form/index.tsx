@@ -19,7 +19,13 @@ const WikipediaForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       <DynamicInputVariable node={node}></DynamicInputVariable>
       <TopNItem initialValue={10}></TopNItem>
       <Form.Item label={t('language')} name={'language'}>
-        <Select options={LanguageOptions}></Select>
+        <Select
+          showSearch
+          filterOption={(input, option) =>
+            (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+          }
+          options={LanguageOptions}
+        ></Select>
       </Form.Item>
     </Form>
   );
