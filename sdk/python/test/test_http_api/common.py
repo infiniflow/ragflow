@@ -28,11 +28,14 @@ FILE_API_URL = "/api/v1/datasets/{dataset_id}/documents"
 FILE_CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/chunks"
 CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks"
 CHAT_ASSISTANT_API_URL = "/api/v1/chats"
+SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
+SESSION_WITH_AGENT_API_URL = "/api/v1/agents/{agent_id}/sessions"
 
 INVALID_API_TOKEN = "invalid_key_123"
 DATASET_NAME_LIMIT = 128
 DOCUMENT_NAME_LIMIT = 128
-CHAT_ASSISTANT_LIMIT = 255
+CHAT_ASSISTANT_NAME_LIMIT = 255
+SESSION_WITH_CHAT_NAME_LIMIT = 255
 
 
 # DATASET MANAGEMENT
@@ -216,6 +219,31 @@ def delete_chat_assistants(auth, payload=None):
 def batch_create_chat_assistants(auth, num):
     chat_assistant_ids = []
     for i in range(num):
-        res = create_chat_assistant(auth, {"name": f"test_chat_assistant_{i}"})
+        res = create_chat_assistant(auth, {"name": f"test_chat_assistant_{i}", "dataset_ids": []})
         chat_assistant_ids.append(res["data"]["id"])
     return chat_assistant_ids
+
+
+# SESSION MANAGEMENT
+def create_session_with_chat_assistant(auth, chat_assistant_id, payload=None):
+    url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}".format(chat_id=chat_assistant_id)
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def list_session_with_chat_assistants(auth, chat_assistant_id, params=None):
+    url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}".format(chat_id=chat_assistant_id)
+    res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
+    return res.json()
+
+
+def update_session_with_chat_assistant(auth, chat_assistant_id, session_id, payload=None):
+    url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}/{session_id}".format(chat_id=chat_assistant_id)
+    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def delete_session_with_chat_assistants(auth, chat_assistant_id, payload=None):
+    url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}".format(chat_id=chat_assistant_id)
+    res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()

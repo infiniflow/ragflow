@@ -288,7 +288,7 @@ class TestChatAssistantsList:
         expected_num,
         expected_message,
     ):
-        _, _, _, chat_assistant_ids = add_chat_assistants
+        _, _, chat_assistant_ids = add_chat_assistants
         if callable(chat_assistant_id):
             params = {"id": chat_assistant_id(chat_assistant_ids)}
         else:
@@ -323,7 +323,7 @@ class TestChatAssistantsList:
         expected_num,
         expected_message,
     ):
-        _, _, _, chat_assistant_ids = add_chat_assistants
+        _, _, chat_assistant_ids = add_chat_assistants
         if callable(chat_assistant_id):
             params = {"id": chat_assistant_id(chat_assistant_ids), "name": name}
         else:
@@ -336,6 +336,7 @@ class TestChatAssistantsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.slow
     def test_concurrent_list(self, get_http_api_auth):
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(list_chat_assistants, get_http_api_auth) for i in range(100)]
@@ -349,7 +350,7 @@ class TestChatAssistantsList:
         assert len(res["data"]) == 5
 
     def test_list_chats_after_deleting_associated_dataset(self, get_http_api_auth, add_chat_assistants):
-        dataset_id, _, _, _ = add_chat_assistants
+        dataset_id, _, _ = add_chat_assistants
         res = delete_datasets(get_http_api_auth, {"ids": [dataset_id]})
         assert res["code"] == 0
 
