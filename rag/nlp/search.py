@@ -383,6 +383,8 @@ class Dealer:
         if doc_ids:
             similarity_threshold = 0
             page_size = 30
+        filtered_count = sum(1 for s in sim if s >= similarity_threshold)
+        ranks["total"] = filtered_count
         for i in idx:
             if sim[i] < similarity_threshold:
                 break
