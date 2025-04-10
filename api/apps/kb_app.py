@@ -19,6 +19,7 @@ import os
 from flask import request
 from flask_login import login_required, current_user
 
+from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -50,12 +51,15 @@ def create():
             message=f"Dataset name length is {len(dataset_name)} which is large than {DATASET_NAME_LIMIT}")
 
     dataset_name = dataset_name.strip()
-    dataset_list = KnowledgebaseService.query(name=dataset_name, tenant_id=current_user.id, status=StatusEnum.VALID.value)
-    if(len(dataset_list) > 0):
-        return get_data_error_result(message=" Duplicate Dataset name")
+    dataset_name = duplicate_name(
+        KnowledgebaseService.query,
+        name=dataset_name,
+        tenant_id=current_user.id,
+        status=StatusEnum.VALID.value)
     try:
         req["id"] = get_uuid()
         req["tenant_id"] = current_user.id
+        req["name"] = dataset_name
         req["created_by"] = current_user.id
         e, t = TenantService.get_by_id(current_user.id)
         if not e:
