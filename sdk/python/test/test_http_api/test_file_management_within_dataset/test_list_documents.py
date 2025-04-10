@@ -18,11 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from common import INVALID_API_TOKEN, list_documnets
 from libs.auth import RAGFlowHttpApiAuth
-
-
-def is_sorted(data, field, descending=True):
-    timestamps = [ds[field] for ds in data]
-    return all(a >= b for a, b in zip(timestamps, timestamps[1:])) if descending else all(a <= b for a, b in zip(timestamps, timestamps[1:]))
+from libs.utils import is_sorted
 
 
 class TestAuthorization:
@@ -153,38 +149,11 @@ class TestDocumentsList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            (
-                {"orderby": None},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"orderby": "create_time"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"orderby": "update_time"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "update_time", True)),
-                "",
-            ),
-            pytest.param(
-                {"orderby": "name", "desc": "False"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "name", False)),
-                "",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
-            pytest.param(
-                {"orderby": "unknown"},
-                102,
-                0,
-                "orderby should be create_time or update_time",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
+            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", True)), ""),
+            pytest.param({"orderby": "name", "desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "name", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
+            pytest.param({"orderby": "unknown"}, 102, 0, "orderby should be create_time or update_time", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
     def test_orderby(
@@ -208,62 +177,15 @@ class TestDocumentsList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            (
-                {"desc": None},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "true"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "True"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": True},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            pytest.param(
-                {"desc": "false"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
-                "",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
-            (
-                {"desc": "False"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": False},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": "False", "orderby": "update_time"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "update_time", False)),
-                "",
-            ),
-            pytest.param(
-                {"desc": "unknown"},
-                102,
-                0,
-                "desc should be true or false",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
+            ({"desc": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"desc": True}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            pytest.param({"desc": "false"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
+            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
+            ({"desc": False}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", False)), ""),
+            pytest.param({"desc": "unknown"}, 102, 0, "desc should be true or false", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
     def test_desc(

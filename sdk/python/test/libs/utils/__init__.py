@@ -56,3 +56,8 @@ def wait_for(timeout=10, interval=1, error_msg="Timeout"):
         return wrapper
 
     return decorator
+
+
+def is_sorted(data, field, descending=True):
+    timestamps = [ds[field] for ds in data]
+    return all(a >= b for a, b in zip(timestamps, timestamps[1:])) if descending else all(a <= b for a, b in zip(timestamps, timestamps[1:]))
