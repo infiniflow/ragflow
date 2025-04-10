@@ -27,6 +27,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from deepdoc.parser.utils import get_text
 from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import ExcelParser
+from rag.settings import EXCEL_FLOAT_DECIMAL_PLACES
 
 
 class Excel(ExcelParser):
@@ -118,7 +119,11 @@ def column_data_type(arr):
         if arr[i] is None:
             continue
         try:
-            arr[i] = trans[ty](str(arr[i]))
+            if ty == "float":
+                # Round float values to the configured number of decimal places
+                arr[i] = round(float(str(arr[i])), EXCEL_FLOAT_DECIMAL_PLACES)
+            else:
+                arr[i] = trans[ty](str(arr[i]))
         except Exception:
             arr[i] = None
     # if ty == "text":
