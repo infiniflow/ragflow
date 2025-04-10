@@ -517,7 +517,7 @@ export default {
       keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。`,
       reasoning: '推理',
       reasoningTip:
-        '是否像 DeepSeek-R1 / OpenAI o1 一樣通過推理產生答案。啟用後，允許模型在遇到未知情況時將代理搜索過程整合到推理工作流中，自行動態檢索外部知識，並通過推理生成最終答案。',
+        '在問答過程中是否啟用推理工作流程，例如Deepseek-R1或OpenAI o1等模型所採用的方式。啟用後，該功能允許模型存取外部知識，並借助思維鏈推理等技術逐步解決複雜問題。通過將問題分解為可處理的步驟，這種方法增強了模型提供準確回答的能力，從而在需要邏輯推理和多步思考的任務上表現更優。',
       tavilyApiKeyTip:
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
       tavilyApiKeyMessage: '請輸入你的 Tavily API Key',

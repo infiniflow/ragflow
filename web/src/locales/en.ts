@@ -405,7 +405,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       newConversation: 'New conversation',
       createAssistant: 'Create an Assistant',
       assistantSetting: 'Assistant settings',
-      promptEngine: 'Prompt Engine',
+      promptEngine: 'Prompt engine',
       modelSetting: 'Model Setting',
       chat: 'Chat',
       newChat: 'New chat',
@@ -533,7 +533,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       selectLanguage: 'Select a language',
       reasoning: 'Reasoning',
       reasoningTip:
-        'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
+        `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1 or OpenAI o1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
       tavilyApiKeyTip:
         'If an API key is correctly set here, Tavily-based web searches will be used to supplement knowledge base retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
@@ -551,7 +551,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       passwordDescription:
         'Please enter your current password to change your password.',
       model: 'Model providers',
-      modelDescription: 'Set the model parameter and API KEY here.',
+      modelDescription: 'Configure model parameters and API KEY here.',
       team: 'Team',
       system: 'System',
       logout: 'Log out',

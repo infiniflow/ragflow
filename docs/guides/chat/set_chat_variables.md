@@ -17,7 +17,7 @@ In RAGFlow, variables are closely linked with the system prompt. When you add a 
 
 ## Where to set variables
 
-Hover your mouse over your chat assistant, click **Edit** to open its **Chat Configuration** dialogue, then click the **Prompt Engine** tab. Here, you can work on your variables in the **System prompt** field and the **Variable** section:
+Hover your mouse over your chat assistant, click **Edit** to open its **Chat Configuration** dialogue, then click the **Prompt engine** tab. Here, you can work on your variables in the **System prompt** field and the **Variable** section:
 
 ![set_variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/prompt_engine.jpg)
 
@@ -33,7 +33,7 @@ In the **Variable** section, you add, remove, or update variables.
 It does not currently make a difference whether you set `{knowledge}` to optional or mandatory, but note that this design will be updated at a later point.
 :::
 
-From v0.17.0 onward, you can start an AI chat without specifying knowledge bases. In this case, we recommend removing the `{knowledge}` variable to prevent unnecessary references and keeping the **Empty response** field empty to avoid errors.
+From v0.17.0 onward, you can start an AI chat without specifying knowledge bases. In this case, we recommend removing the `{knowledge}` variable to prevent unnecessary reference and keeping the **Empty response** field empty to avoid errors.
 
 ### Custom variables
 
@@ -46,12 +46,14 @@ Besides `{knowledge}`, you can also define your own variables to pair with the s
 
 ## 2. Update system prompt
 
-After you add or remove variables in the **Variable** section, ensure your changes are reflected in the system prompt to avoid inconsistencies and errors. Here's an example:
+After you add or remove variables in the **Variable** section, ensure your changes are reflected in the system prompt to avoid inconsistencies or errors. Here's an example:
 
 ```
 You are an intelligent assistant. Please answer the question by summarizing chunks from the specified knowledge base(s)...
 
 Your answers should follow a professional and {style} style.
+
+...
 
 Here is the knowledge base:
 {knowledge}
