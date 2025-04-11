@@ -37,9 +37,9 @@ const validateMessages = {
 };
 
 enum ConfigurationSegmented {
-  AssistantSetting = 'Assistant settings',
-  PromptEngine = 'Prompt engine',
-  ModelSetting = 'Model settings',
+  AssistantSetting = 'Assistant Setting',
+  PromptEngine = 'Prompt Engine',
+  ModelSetting = 'Model Setting',
 }
 
 const segmentedMap = {

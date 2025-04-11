@@ -5,6 +5,7 @@ import {
   useRemoveNextDocument,
   useUploadAndParseDocument,
 } from '@/hooks/document-hooks';
+import { cn } from '@/lib/utils';
 import { getExtension } from '@/utils/document-util';
 import { formatBytes } from '@/utils/file-util';
 import {
@@ -222,7 +223,11 @@ const MessageInput = ({
   }, [conversationId, setFileList]);
 
   return (
-    <Flex gap={1} vertical className={styles.messageInputWrapper}>
+    <Flex
+      gap={1}
+      vertical
+      className={cn(styles.messageInputWrapper, 'dark:bg-black')}
+    >
       <TextArea
         size="large"
         placeholder={t('sendPlaceholder')}
