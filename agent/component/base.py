@@ -461,13 +461,6 @@ class ComponentBase(ABC):
         if self._param.debug_inputs:
             return pd.DataFrame([{"content": v["value"]} for v in self._param.debug_inputs if v.get("value")])
 
-        reversed_cpnts = []
-        if len(self._canvas.path) > 1:
-            reversed_cpnts.extend(self._canvas.path[-2])
-        reversed_cpnts.extend(self._canvas.path[-1])
-        up_cpns = self.get_upstream()
-        reversed_up_cpnts = [cpn for cpn in reversed_cpnts if cpn in up_cpns]
-
         if self._param.query:
             self._param.inputs = []
             outs = []
@@ -508,33 +501,47 @@ class ComponentBase(ABC):
                 return df
 
         upstream_outs = []
+        reversed_cpnts = []
+        if len(self._canvas.path) > 1:
+            reversed_cpnts.extend(self._canvas.path[-2])
+        reversed_cpnts.extend(self._canvas.path[-1])
 
-        for u in reversed_up_cpnts[::-1]:
-            if self.get_component_name(u) in ["switch", "concentrator"]:
-                continue
-            if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":
+        def get_outs(cpnt: ComponentBase):
+            up_cpns = cpnt.get_upstream()
+            reversed_up_cpnts = [cpn for cpn in reversed_cpnts if cpn in up_cpns]
+            
+            for u in reversed_up_cpnts[::-1]:
+                if self.get_component_name(u) in ["switch", "concentrator"]:
+                    get_outs(self._canvas.get_component(u)["obj"])
+                    continue
+                if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":
+                    o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
+                    if o is not None:
+                        o["component_id"] = u
+                        upstream_outs.append(o)
+                        continue
+                #if self.component_name.lower()!="answer" and u not in self._canvas.get_component(self._id)["upstream"]: continue
+                if self.component_name.lower().find("switch") < 0 \
+                        and self.get_component_name(u) in ["relevant", "categorize"]:
+                    get_outs(self._canvas.get_component(u)["obj"])
+                    continue
+                if u.lower().find("answer") >= 0:
+                    for r, c in self._canvas.history[::-1]:
+                        if r == "user":
+                            upstream_outs.append(pd.DataFrame([{"content": c, "component_id": u}]))
+                            break
+                    break
+                if self.component_name.lower().find("answer") >= 0 and self.get_component_name(u) in ["relevant"]:
+                    continue
                 o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
                 if o is not None:
                     o["component_id"] = u
                     upstream_outs.append(o)
-                    continue
-            #if self.component_name.lower()!="answer" and u not in self._canvas.get_component(self._id)["upstream"]: continue
-            if self.component_name.lower().find("switch") < 0 \
-                    and self.get_component_name(u) in ["relevant", "categorize"]:
-                continue
-            if u.lower().find("answer") >= 0:
-                for r, c in self._canvas.history[::-1]:
-                    if r == "user":
-                        upstream_outs.append(pd.DataFrame([{"content": c, "component_id": u}]))
-                        break
                 break
-            if self.component_name.lower().find("answer") >= 0 and self.get_component_name(u) in ["relevant"]:
-                continue
-            o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
-            if o is not None:
-                o["component_id"] = u
-                upstream_outs.append(o)
-            break
+
+            pass
+
+        get_outs(self)
 
         assert upstream_outs, "Can't inference the where the component input is. Please identify whose output is this component's input."
 
