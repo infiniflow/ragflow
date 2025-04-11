@@ -382,7 +382,8 @@ class Dealer:
         if doc_ids:
             similarity_threshold = 0
             page_size = 30
-        filtered_count = (sim >= similarity_threshold).sum()    
+        sim_np = np.array(sim)
+        filtered_count = (sim_np >= similarity_threshold).sum()    
         ranks["total"] = int(filtered_count) # Convert from np.int64 to Python int otherwise JSON serializable error
         for i in idx:
             if sim[i] < similarity_threshold:
