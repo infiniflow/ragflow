@@ -89,7 +89,6 @@ def save():
 @login_required
 def get(canvas_id):
     e, c = UserCanvasService.get_by_tenant_id(canvas_id)
-    logging.info(f"get canvas_id: {canvas_id} c: {c}")
     if not e:
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c)

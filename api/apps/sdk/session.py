@@ -18,7 +18,7 @@ import re
 import time
 
 import tiktoken
-from flask import Response, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
 from api.db.services.canvas_service import completion as agent_completion, completionOpenAI
@@ -34,7 +34,7 @@ from api.utils import get_uuid
 from api.utils.api_utils import get_result, token_required, get_data_openai, get_error_data_result, validate_request, check_duplicate_ids
 from api.db.services.llm_service import LLMBundle
 
-
+manager = Blueprint("session", __name__)
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required

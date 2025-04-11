@@ -22,7 +22,7 @@ import { IOperatorForm } from '../../interface';
 const buildCategorizeObjectFromList = (list: Array<ICategorizeItem>) => {
   return list.reduce<ICategorizeItemResult>((pre, cur) => {
     if (cur?.name) {
-      pre[cur.name] = omit(cur, 'name');
+      pre[`${cur.name}`.trim()] = omit(cur, 'name');
     }
     return pre;
   }, {});
