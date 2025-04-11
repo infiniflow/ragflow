@@ -242,7 +242,7 @@ RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
@@ -252,7 +252,7 @@ docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-s
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 소스 코드로 서비스를 시작합니다.
