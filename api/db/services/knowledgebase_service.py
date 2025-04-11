@@ -402,7 +402,6 @@ class KnowledgebaseService(CommonService):
         Only use this function when init system
         """
         ok, kb = cls.get_by_id(kb_id)
-        print(f"before {kb.doc_num=}")
         if not ok:
             return
         kb.doc_num = doc_num
