@@ -65,6 +65,28 @@ services:
       retries: 120
     restart: on-failure
 
+  opengauss:
+    image: opengauss/opengauss:latest
+    container_name: ragflow-opengauss
+    env_file: .env
+    ports:
+      - ${OPENGAUSS_PORT:-6601}:5432
+    environment:
+      - GS_USERNAME=${OPENGAUSS_USER:-opengauss_user}
+      - GS_PASSWORD=${OPENGAUSS_PASSWORD:-Ragflow@123}
+      - GS_DB=${OPENGAUSS_DATABASE:-ragflow}
+      - TZ=${TIMEZONE}
+    volumes:
+      - opengauss_data:/var/lib/opengauss/data
+      - ./init_og.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -lntp | grep tcp6 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - ragflow
+    restart: on-failure
 
   mysql:
     # mysql:5.7 linux/arm64 image is unavailable.
@@ -140,6 +162,8 @@ volumes:
   minio_data:
     driver: local
   redis_data:
+    driver: local
+  opengauss_data:
     driver: local
 
 networks:
