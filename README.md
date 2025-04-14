@@ -78,7 +78,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
-- 2025-03-19 Figures from PDF/DOCX can be parsed via multimodal LLM.
+- 2025-03-19 Supports using a multi-modal model to make sense of images within PDF or DOCX files.
 - 2025-02-28 Combined with Internet search (Tavily), supports reasoning like Deep Research for any LLMs.
 - 2025-01-26 Optimizes knowledge graph extraction and application, offering various configuration options.
 - 2024-12-18 Upgrades Document Layout Analysis model in DeepDoc.
