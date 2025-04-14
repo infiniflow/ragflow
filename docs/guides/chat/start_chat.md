@@ -19,7 +19,7 @@ You start an AI conversation by creating an assistant.
 
    > RAGFlow offers you the flexibility of choosing a different chat model for each dialogue, while allowing you to set the default models in **System Model Settings**.
 
-2. Update **Assistant Setting**:
+2. Update **Assistant settings**:
 
    - **Assistant name** is the name of your chat assistant. Each assistant corresponds to a dialogue with a unique combination of knowledge bases, prompts, hybrid search configurations, and large model settings.
    - **Empty response**:
@@ -28,7 +28,7 @@ You start an AI conversation by creating an assistant.
    - **Show quote**: This is a key feature of RAGFlow and enabled by default. RAGFlow does not work like a black box. Instead, it clearly shows the sources of information that its responses are based on.
    - Select the corresponding knowledge bases. You can select one or multiple knowledge bases, but ensure that they use the same embedding model, otherwise an error would occur.
 
-3. Update **Prompt Engine**:
+3. Update **Prompt engine**:
 
    - In **System**, you fill in the prompts for your LLM, you can also leave the default prompt as-is for the beginning.
    - **Similarity threshold** sets the similarity "bar" for each chunk of text. The default is 0.2. Text chunks with lower similarity scores are filtered out of the final response.
@@ -44,14 +44,32 @@ You start an AI conversation by creating an assistant.
      - If **Rerank model** is selected, the hybrid score system uses keyword similarity and reranker score, and the default weight assigned to the reranker score is 1-0.7=0.3.
    - **Variable** refers to the variables (keys) to be used in the system prompt. `{knowledge}` is a reserved variable. Click **Add** to add more variables for the system prompt.
       - If you are uncertain about the logic behind **Variable**, leave it *as-is*.
+      - As of v0.17.2, if you add custom variables here, the only way you can pass in their values is to call:
+         - HTTP method [Converse with chat assistant](../../references/http_api_reference.md#converse-with-chat-assistant), or
+         - Python method [Converse with chat assistant](../../references/python_api_reference.md#converse-with-chat-assistant).
 
 4. Update **Model Setting**:
 
    - In **Model**: you select the chat model. Though you have selected the default chat model in **System Model Settings**, RAGFlow allows you to choose an alternative chat model for your dialogue.
-   - **Preset configurations** refers to the level that the LLM improvises. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.
-   - **Temperature**: Level of the prediction randomness of the LLM. The higher the value, the more creative the LLM is.
-   - **Top P** is also known as "nucleus sampling". See [here](https://en.wikipedia.org/wiki/Top-p_sampling) for more information.
-   - **Max Tokens**: The maximum length of the LLM's responses. Note that the responses may be curtailed if this value is set too low.
+   - **Freedom**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
+   This parameter has three options:
+      - **Improvise**: Produces more creative responses.
+      - **Precise**: (Default) Produces more conservative responses.
+      - **Balance**: A middle ground between **Improvise** and **Precise**.
+   - **Temperature**: The randomness level of the model's output.  
+   Defaults to 0.1.
+      - Lower values lead to more deterministic and predictable outputs.
+      - Higher values lead to more creative and varied outputs.
+      - A temperature of zero results in the same output for the same prompt.
+   - **Top P**: Nucleus sampling.  
+      - Reduces the likelihood of generating repetitive or unnatural text by setting a threshold *P* and restricting the sampling to tokens with a cumulative probability exceeding *P*.
+      - Defaults to 0.3.
+   - **Presence penalty**: Encourages the model to include a more diverse range of tokens in the response.  
+      - A higher **presence penalty** value results in the model being more likely to generate tokens not yet been included in the generated text.
+      - Defaults to 0.4.
+   - **Frequency penalty**: Discourages the model from repeating the same words or phrases too frequently in the generated text.  
+      - A higher **frequency penalty** value results in the model being more conservative in its use of repeated tokens.
+      - Defaults to 0.7.
 
 5. Now, let's start the show:
 

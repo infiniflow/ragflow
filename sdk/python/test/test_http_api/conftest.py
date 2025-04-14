@@ -15,7 +15,18 @@
 #
 
 import pytest
-from common import batch_create_datasets, bulk_upload_documents, delete_datasets
+from common import (
+    add_chunk,
+    batch_create_datasets,
+    bulk_upload_documents,
+    create_chat_assistant,
+    delete_chat_assistants,
+    delete_datasets,
+    delete_session_with_chat_assistants,
+    list_documnets,
+    parse_documnets,
+)
+from libs.utils import wait_for
 from libs.utils.file_utils import (
     create_docx_file,
     create_eml_file,
@@ -30,10 +41,40 @@ from libs.utils.file_utils import (
 )
 
 
+@wait_for(30, 1, "Document parsing timeout")
+def condition(_auth, _dataset_id):
+    res = list_documnets(_auth, _dataset_id)
+    for doc in res["data"]["docs"]:
+        if doc["run"] != "DONE":
+            return False
+    return True
+
+
 @pytest.fixture(scope="function")
-def clear_datasets(get_http_api_auth):
-    yield
-    delete_datasets(get_http_api_auth)
+def clear_datasets(request, get_http_api_auth):
+    def cleanup():
+        delete_datasets(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+
+@pytest.fixture(scope="function")
+def clear_chat_assistants(request, get_http_api_auth):
+    def cleanup():
+        delete_chat_assistants(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+
+@pytest.fixture(scope="function")
+def clear_session_with_chat_assistants(request, get_http_api_auth, add_chat_assistants):
+    _, _, chat_assistant_ids = add_chat_assistants
+
+    def cleanup():
+        for chat_assistant_id in chat_assistant_ids:
+            delete_session_with_chat_assistants(get_http_api_auth, chat_assistant_id)
+
+    request.addfinalizer(cleanup)
 
 
 @pytest.fixture
@@ -92,3 +133,40 @@ def add_document(get_http_api_auth, add_dataset, ragflow_tmp_dir):
     dataset_id = add_dataset
     document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 1, ragflow_tmp_dir)
     return dataset_id, document_ids[0]
+
+
+@pytest.fixture(scope="class")
+def add_chunks(get_http_api_auth, add_document):
+    dataset_id, document_id = add_document
+    parse_documnets(get_http_api_auth, dataset_id, {"document_ids": [document_id]})
+    condition(get_http_api_auth, dataset_id)
+
+    chunk_ids = []
+    for i in range(4):
+        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": f"chunk test {i}"})
+        chunk_ids.append(res["data"]["chunk"]["id"])
+
+    # issues/6487
+    from time import sleep
+
+    sleep(1)
+    return dataset_id, document_id, chunk_ids
+
+
+@pytest.fixture(scope="class")
+def add_chat_assistants(request, get_http_api_auth, add_document):
+    def cleanup():
+        delete_chat_assistants(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    dataset_id, document_id = add_document
+    parse_documnets(get_http_api_auth, dataset_id, {"document_ids": [document_id]})
+    condition(get_http_api_auth, dataset_id)
+
+    chat_assistant_ids = []
+    for i in range(5):
+        res = create_chat_assistant(get_http_api_auth, {"name": f"test_chat_assistant_{i}", "dataset_ids": [dataset_id]})
+        chat_assistant_ids.append(res["data"]["id"])
+
+    return dataset_id, document_id, chat_assistant_ids

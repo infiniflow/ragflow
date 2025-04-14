@@ -44,7 +44,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Building C extensions: libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
-        sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
+        sed -i 's|http://ports.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
+        sed -i 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
     fi; \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \

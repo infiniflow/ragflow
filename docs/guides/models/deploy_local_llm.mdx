@@ -3,11 +3,11 @@ sidebar_position: 2
 slug: /deploy_local_llm
 ---
 
-# Deploy LLM locally
+# Deploy local models
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Run models locally using Ollama, Xinference, or other frameworks.
+Deploy and run local models using Ollama, Xinference, or other frameworks.
 
 ---
 
@@ -28,7 +28,7 @@ This user guide does not intend to cover much of the installation or configurati
 - For a complete list of supported models and variants, see the [Ollama model library](https://ollama.com/library).
 :::
 
-### 1. Deploy ollama using docker
+### 1. Deploy Ollama using Docker
 
 ```bash
 sudo docker run --name ollama -p 11434:11434 ollama/ollama
@@ -36,14 +36,14 @@ time=2024-12-02T02:20:21.360Z level=INFO source=routes.go:1248 msg="Listening on
 time=2024-12-02T02:20:21.360Z level=INFO source=common.go:49 msg="Dynamic LLM libraries" runners="[cpu cpu_avx cpu_avx2 cuda_v11 cuda_v12]"
 ```
 
-Ensure ollama is listening on all IP address:
+Ensure Ollama is listening on all IP address:
 ```bash
 sudo ss -tunlp | grep 11434
 tcp   LISTEN 0      4096                  0.0.0.0:11434      0.0.0.0:*    users:(("docker-proxy",pid=794507,fd=4))
 tcp   LISTEN 0      4096                     [::]:11434         [::]:*    users:(("docker-proxy",pid=794513,fd=4))
 ```
 
-Pull models as you need. It's recommended to start with `llama3.2` (a 3B chat model) and `bge-m3` (a 567M embedding model):
+Pull models as you need. We recommend that you start with `llama3.2` (a 3B chat model) and `bge-m3` (a 567M embedding model):
 ```bash
 sudo docker exec ollama ollama pull llama3.2
 pulling dde5aa3fc5ff... 100% ▕████████████████▏ 2.0 GB
@@ -58,20 +58,20 @@ success
 
 ### 2. Ensure Ollama is accessible
 
-If RAGFlow runs in Docker and Ollama runs on the same host machine, check if ollama is accessible from inside the RAGFlow container:
+- If RAGFlow runs in Docker and Ollama runs on the same host machine, check if Ollama is accessible from inside the RAGFlow container:
 ```bash
 sudo docker exec -it ragflow-server bash
-root@8136b8c3e914:/ragflow# curl  http://host.docker.internal:11434/
+curl  http://host.docker.internal:11434/
 Ollama is running
 ```
 
-If RAGFlow runs from source code and Ollama runs on the same host machine, check if ollama is accessible from RAGFlow host machine:
+- If RAGFlow is launched from source code and Ollama runs on the same host machine as RAGFlow, check if Ollama is accessible from RAGFlow's host machine:
 ```bash
 curl  http://localhost:11434/
 Ollama is running
 ```
 
-If RAGFlow and Ollama run on different machines, check if ollama is accessible from RAGFlow host machine:
+- If RAGFlow and Ollama run on different machines, check if Ollama is accessible from RAGFlow's host machine:
 ```bash
 curl  http://${IP_OF_OLLAMA_MACHINE}:11434/
 Ollama is running
@@ -88,8 +88,8 @@ In RAGFlow, click on your logo on the top right of the page **>** **Model provid
 
 In the popup window, complete basic settings for Ollama:
 
-1. Ensure model name and type match those been pulled at step 1, For example, (`llama3.2`, `chat`), (`bge-m3`, `embedding`).
-2. Ensure that the base URL match which been determined at step 2.
+1. Ensure that your model name and type match those been pulled at step 1 (Deploy Ollama using Docker). For example, (`llama3.2` and `chat`) or (`bge-m3` and `embedding`).
+2. Ensure that the base URL match the URL determined at step 2 (Ensure Ollama is accessible).
 3. OPTIONAL: Switch on the toggle under **Does it support Vision?** if your model includes an image-to-text model.
 
 
@@ -104,15 +104,12 @@ Max retries exceeded with url: /api/chat (Caused by NewConnectionError('<urllib3
 
 Click on your logo **>** **Model providers** **>** **System Model Settings** to update your model:
    
-*You should now be able to find **llama3.2** from the dropdown list under **Chat model**, and **bge-m3** from the dropdown list under **Embedding model**.*
-
-> If your local model is an embedding model, you should find your local model under **Embedding model**.
+- *You should now be able to find **llama3.2** from the dropdown list under **Chat model**, and **bge-m3** from the dropdown list under **Embedding model**.*
+- _If your local model is an embedding model, you should find it under **Embedding model**._
 
 ### 7. Update Chat Configuration
 
-Update your chat model accordingly in **Chat Configuration**:
-
-> If your local model is an embedding model, update it on the configuration page of your knowledge base.
+Update your model(s) accordingly in **Chat Configuration**.
 
 ## Deploy a local model using Xinference
 

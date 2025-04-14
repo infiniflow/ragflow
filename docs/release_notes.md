@@ -11,6 +11,13 @@ Key features, improvements and bug fixes in the latest releases.
 
 Released on March 13, 2025.
 
+### Compatibility changes
+
+- Removes the **Max_tokens** setting from **Chat configuration**.
+- Removes the **Max_tokens** setting from **Generate**, **Rewrite**, **Categorize**, **Keyword** agent components.
+
+From this release onwards, if you still see RAGFlow's responses being cut short or truncated, check the **Max_tokens** setting of your model provider.
+
 ### Improvements
 
 - Adds OpenAI-compatible APIs.
@@ -67,8 +74,8 @@ Released on March 3, 2025.
 
 ### New features
 
-- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt Engine** tab of your chat assistant dialogue.
-- AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant Setting** tab of your chat assistant dialogue.
+- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
+- AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue.
 - AI chat: Supports starting a chat without specifying knowledge bases.
 - AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
 - Dataset: Adds a **PDF parser**, aka **Document parser**, dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options.

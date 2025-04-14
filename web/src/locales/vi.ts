@@ -161,7 +161,7 @@ export default {
       rerankPlaceholder: 'Vui lòng chọn',
       rerankTip: `Nếu để trống, RAGFlow sẽ sử dụng kết hợp giữa độ tương đồng từ khóa được trọng số và độ tương đồng vectơ cosin được trọng số; nếu chọn mô hình xếp hạng lại, điểm xếp hạng được tính lại sẽ thay thế độ tương đồng vectơ cosin được trọng số.`,
       topK: 'Top-K',
-      topKTip: `K khối sẽ được đưa vào các mô hình xếp hạng lại.`,
+      topKTip: `Sử dụng cùng với Rerank model, thiết lập này xác định số lượng đoạn văn cần gửi đến mô hình reranking được chỉ định.`,
       delimiter: 'Dấu phân cách cho phân đoạn văn bản',
       html4excel: 'Excel sang HTML',
       html4excelTip: `Sử dụng cùng với phương pháp cắt khúc General. Khi chưa được bật, tệp bảng tính (XLSX, XLS (Excel97~2003)) sẽ được phân tích theo dòng thành các cặp khóa-giá trị. Khi bật, tệp bảng tính sẽ được phân tích thành bảng HTML. Nếu bảng gốc vượt quá 12 dòng, hệ thống sẽ tự động chia thành nhiều bảng HTML mỗi 12 dòng.`,
@@ -296,7 +296,8 @@ export default {
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, xem https://huggingface.co/papers/2401.18059 để biết thêm thông tin',
       prompt: 'Nhắc nhở',
-      promptTip: 'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
+      promptTip:
+        'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
       promptMessage: 'Nhắc nhở là bắt buộc',
       promptText: `Vui lòng tóm tắt các đoạn văn sau. Cẩn thận với các số, đừng bịa ra. Các đoạn văn như sau:
       {cluster_content}
@@ -340,7 +341,7 @@ export default {
       graphRagMethodTip: `Light: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - HKUDS/LightRAG: "LightRAG: Tạo sinh tăng cường truy xuất đơn giản và nhanh chóng".
       General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.`,
       useGraphRagTip:
-        'Sau khi các tệp được chia thành các đoạn nhỏ, tất cả các đoạn này sẽ được sử dụng để tạo biểu đồ tri thức, từ đó hỗ trợ suy luận cho các bài toán phức tạp và nhiều bước.',
+        'Xây dựng một biểu đồ tri thức trên các đoạn tệp của cơ sở tri thức hiện tại để tăng cường khả năng trả lời câu hỏi đa bước liên quan đến logic lồng nhau. Xem https://ragflow.io/docs/dev/construct_knowledge_graph để biết thêm chi tiết.',
       resolution: 'Hợp nhất thực thể',
       resolutionTip:
         'Quy trình phân giải sẽ hợp nhất các thực thể có cùng ý nghĩa lại với nhau, giúp đồ thị trở nên cô đọng và chính xác hơn. Các thực thể sau đây nên được hợp nhất: President Trump, Donald Trump, Donald J. Trump, Donald John Trump.',
@@ -382,7 +383,7 @@ export default {
       sendPlaceholder: 'Nhắn tin cho Trợ lý...',
       chatConfiguration: 'Cấu hình Chat',
       chatConfigurationDescription:
-        'Tại đây, hãy trang điểm cho một trợ lý chuyên dụng cho các cơ sở kiến thức đặc biệt của bạn! 💕',
+        'Thiết lập trợ lý trò chuyện cho các tập dữ liệu đã chọn (cơ sở tri thức) tại đây. 💕',
       assistantName: 'Tên trợ lý',
       assistantNameMessage: 'Tên trợ lý là bắt buộc',
       namePlaceholder: 'ví dụ: Resume Jarvis',
@@ -407,10 +408,7 @@ export default {
       topN: 'Top N',
       topNTip: `Không phải tất cả các khối có điểm tương đồng vượt quá 'ngưỡng tương đồng' sẽ được cung cấp cho LLMs. LLM chỉ có thể xem 'Top N' khối này.`,
       variable: 'Biến',
-      variableTip: `Nếu bạn sử dụng API thoại, các biến có thể giúp bạn trò chuyện với khách hàng của mình bằng các chiến lược khác nhau.
-      Các biến được sử dụng để điền vào phần 'Hệ thống' trong lời nhắc để cung cấp cho LLM một gợi ý.
-      'knowledge' là một biến rất đặc biệt sẽ được điền bằng các khối được truy xuất.
-      Tất cả các biến trong 'Hệ thống' phải được đặt trong dấu ngoặc nhọn.`,
+      variableTip: `Sử dụng cùng với các API quản lý trợ lý trò chuyện của RAGFlow, các biến có thể giúp phát triển các chiến lược lời nhắc hệ thống linh hoạt hơn. Các biến được định nghĩa sẽ được sử dụng bởi 'Lời nhắc hệ thống' như một phần của lời nhắc cho LLM. {knowledge} là một biến đặc biệt được bảo lưu, đại diện cho các phần được truy xuất từ cơ sở tri thức được chỉ định, và tất cả các biến nên được đặt trong ngoặc nhọn {} trong 'Lời nhắc hệ thống'. Xem https://ragflow.io/docs/dev/set_chat_variables để biết thêm chi tiết.`,
       add: 'Thêm',
       key: 'Khóa',
       optional: 'Tùy chọn',
@@ -555,7 +553,7 @@ export default {
       baseUrlTip:
         'Nếu khóa API của bạn từ OpenAI, chỉ cần bỏ qua nó. Bất kỳ nhà cung cấp trung gian nào khác sẽ cung cấp URL cơ sở này với khóa API.',
       modify: 'Sửa đổi',
-      systemModelSettings: 'Cài đặt mô hình hệ thống',
+      systemModelSettings: 'Thiết lập mô hình mặc định',
       chatModel: 'Mô hình trò chuyện',
       chatModelTip:
         'LLM trò chuyện mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng.',
@@ -661,6 +659,8 @@ export default {
       sureQuit: `Bạn có chắc chắn muốn rời khỏi nhóm mà bạn đã tham gia không?`,
       FishAudioAKMessage: `Vui lòng nhập KEY API`,
       FishAudioRefIDMessage: `Vui lòng nhập ID của model tham chiếu (để trống để sử dụng model mặc định)`,
+      modelsToBeAddedTooltip:
+        'Nếu nhà cung cấp mô hình của bạn không có trong danh sách nhưng tuyên bố tương thích với "OpenAI", hãy chọn thẻ OpenAI-API-compatible để thêm mô hình liên quan.',
     },
     message: {
       registered: 'Đã đăng ký!',
@@ -1148,6 +1148,10 @@ export default {
         minus: 'Dash',
         semicolon: 'Semicolon',
       },
+      prompt: 'Nhắc nhở',
+      promptTip:
+        'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
+      promptMessage: 'Nhắc nhở là bắt buộc',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import os
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -169,8 +168,7 @@ class TestChunksDeletion:
             ),
             (lambda r: {"chunk_ids": r[:1]}, 0, "", 4),
             (lambda r: {"chunk_ids": r}, 0, "", 1),
-            pytest.param({"chunk_ids": []}, 0, "", 5, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6607")),
-            pytest.param({"chunk_ids": []}, 102, "rm_chunk deleted chunks 5, expect 0", 0, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "elasticsearch"], reason="issues/6607")),
+            ({"chunk_ids": []}, 0, "", 0),
         ],
     )
     def test_basic_scenarios(
