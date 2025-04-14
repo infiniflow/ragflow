@@ -325,6 +325,10 @@ export const useRunNextDocument = () => {
       run: number;
       shouldDelete: boolean;
     }) => {
+      queryClient.invalidateQueries({
+        queryKey: ['fetchDocumentList'],
+      });
+
       const ret = await kbService.document_run({
         doc_ids: documentIds,
         run,
