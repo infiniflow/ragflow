@@ -265,7 +265,7 @@ Esta imagem tem cerca de 2 GB de tamanho e depende de serviços externos de LLM 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 Criar uma imagem Docker incluindo modelos de incorporação
@@ -275,7 +275,7 @@ Esta imagem tem cerca de 9 GB de tamanho. Como inclui modelos de incorporação,
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 Lançar o serviço a partir do código-fonte para desenvolvimento
