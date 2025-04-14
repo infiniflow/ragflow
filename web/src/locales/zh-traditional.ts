@@ -537,6 +537,7 @@ export default {
       model: '模型提供商',
       modelDescription: '在此設置模型參數和 API KEY。',
       team: '團隊',
+      api: 'API',
       logout: '登出',
       system: '系統',
       username: '使用者名稱',
