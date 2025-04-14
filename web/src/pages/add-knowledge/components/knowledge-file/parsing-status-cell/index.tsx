@@ -90,9 +90,7 @@ export const ParsingStatusCell = ({ record }: IProps) => {
   const text = record.run;
   const runningStatus = RunningStatusMap[text];
   const { t } = useTranslation();
-  const { handleRunDocumentByIds, loading } = useHandleRunDocumentByIds(
-    record.id,
-  );
+  const { handleRunDocumentByIds } = useHandleRunDocumentByIds(record.id);
 
   const isRunning = isParserRunning(text);
 
@@ -130,9 +128,7 @@ export const ParsingStatusCell = ({ record }: IProps) => {
         cancelText={t('common.cancel')}
       >
         <div
-          className={classNames(styles.operationIcon, {
-            [styles.operationIconSpin]: loading,
-          })}
+          className={classNames(styles.operationIcon)}
           onClick={
             record.chunk_num === 0 ? handleOperationIconClick(false) : () => {}
           }
