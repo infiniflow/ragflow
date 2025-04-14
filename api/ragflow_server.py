@@ -61,8 +61,8 @@ def update_progress():
             stop_event.wait(6)
         except Exception:
             logging.exception("update_progress exception")
-            if redis_lock.acquired:
-                redis_lock.release()
+        finally:
+            redis_lock.release()
 
 def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
