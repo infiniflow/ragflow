@@ -37,6 +37,7 @@ export default {
       embedIntoSite: 'Embed into webpage',
       previousPage: 'Previous',
       nextPage: 'Next',
+      add: 'Add',
     },
     login: {
       login: 'Sign in',
@@ -160,7 +161,7 @@ export default {
       rerankPlaceholder: 'Please select',
       rerankTip: `If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time.`,
       topK: 'Top-K',
-      topKTip: `K chunks will be sent into the rerank model.`,
+      topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
       delimiter: `Delimiter for text`,
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
@@ -326,7 +327,8 @@ export default {
       useRaptorTip:
         'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information.',
       prompt: 'Prompt',
-      promptTip: 'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
+      promptTip:
+        'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
       {cluster_content}
@@ -368,7 +370,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTag: 'Add tag',
       useGraphRag: 'Extract knowledge graph',
       useGraphRagTip:
-        'Construct a knowledge graph over extracted file chunks to enhance multi-hop question answering.',
+        'Construct a knowledge graph over file chunks of the current knowledge base to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
       graphRagMethod: 'Method',
       graphRagMethodTip: `Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
         General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
@@ -402,16 +404,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     chat: {
       newConversation: 'New conversation',
       createAssistant: 'Create an Assistant',
-      assistantSetting: 'Assistant Setting',
-      promptEngine: 'Prompt Engine',
-      modelSetting: 'Model Setting',
+      assistantSetting: 'Assistant settings',
+      promptEngine: 'Prompt engine',
+      modelSetting: 'Model settings',
       chat: 'Chat',
       newChat: 'New chat',
       send: 'Send',
       sendPlaceholder: 'Message the assistant...',
       chatConfiguration: 'Chat Configuration',
       chatConfigurationDescription:
-        ' Set up a chat assistant dedicated to your selected knowledge bases here! 💕',
+        ' Set up a chat assistant for your selected datasets (knowledge bases) here! 💕',
       assistantName: 'Assistant name',
       assistantNameMessage: 'Assistant name is required',
       namePlaceholder: 'e.g. Resume Jarvis',
@@ -438,7 +440,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       topN: 'Top N',
       topNTip: `Not all chunks with similarity score above the 'similarity threshold' will be sent to the LLM. This selects 'Top N' chunks from the retrieved ones.`,
       variable: 'Variable',
-      variableTip: `Variables can assist in developing more flexible strategies, particularly when you are using our chat assistant management APIs. These variables will be used by 'System prompt' as part of the prompts for the LLM. The variable {knowledge} is a reserved special variable representing your selected knowledge base(s), and all variables should be enclosed in curly braces {}.`,
+      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified knowledge base(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/dev/set_chat_variables for details.`,
       add: 'Add',
       key: 'Key',
       optional: 'Optional',
@@ -530,8 +532,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       locale: 'Locale',
       selectLanguage: 'Select a language',
       reasoning: 'Reasoning',
-      reasoningTip:
-        'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
+      reasoningTip: `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1 or OpenAI o1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
       tavilyApiKeyTip:
         'If an API key is correctly set here, Tavily-based web searches will be used to supplement knowledge base retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
@@ -549,7 +550,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       passwordDescription:
         'Please enter your current password to change your password.',
       model: 'Model providers',
-      modelDescription: 'Set the model parameter and API KEY here.',
+      modelDescription: 'Configure model parameters and API KEY here.',
       team: 'Team',
       system: 'System',
       logout: 'Log out',
@@ -592,7 +593,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       baseUrlTip:
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
       modify: 'Modify',
-      systemModelSettings: 'System Model Settings',
+      systemModelSettings: 'Set default models',
       chatModel: 'Chat model',
       chatModelTip:
         'The default chat model for each newly created knowledge base.',
@@ -706,6 +707,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Traces, evals, prompt management and metrics to debug and improve your LLM application.',
       viewLangfuseSDocumentation: "View Langfuse's documentation",
       view: 'View',
+      modelsToBeAddedTooltip:
+        'If your model provider is not listed but claims to be "OpenAI-compatible", select the OpenAI-API-compatible card to add the relevant model(s). ',
     },
     message: {
       registered: 'Registered!',
@@ -1243,6 +1246,10 @@ This delimiter is used to split the input text into several text pieces echo of 
         knowledge: 'knowledge',
         chat: 'chat',
       },
+      prompt: 'Prompt',
+      promptTip:
+        'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
+      promptMessage: 'Prompt is required',
     },
   },
 };

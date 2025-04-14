@@ -13,10 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-
 import pytest
-from common import add_chunk, delete_chunks, list_documnets, parse_documnets
+from common import create_chat_assistant, delete_chat_assistants, list_documnets, parse_documnets
 from libs.utils import wait_for
 
 
@@ -30,23 +28,19 @@ def condition(_auth, _dataset_id):
 
 
 @pytest.fixture(scope="function")
-def add_chunks_func(request, get_http_api_auth, add_document):
+def add_chat_assistants_func(request, get_http_api_auth, add_document):
+    def cleanup():
+        delete_chat_assistants(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
     dataset_id, document_id = add_document
     parse_documnets(get_http_api_auth, dataset_id, {"document_ids": [document_id]})
     condition(get_http_api_auth, dataset_id)
 
-    chunk_ids = []
-    for i in range(4):
-        res = add_chunk(get_http_api_auth, dataset_id, document_id, {"content": f"chunk test {i}"})
-        chunk_ids.append(res["data"]["chunk"]["id"])
+    chat_assistant_ids = []
+    for i in range(5):
+        res = create_chat_assistant(get_http_api_auth, {"name": f"test_chat_assistant_{i}", "dataset_ids": [dataset_id]})
+        chat_assistant_ids.append(res["data"]["id"])
 
-    # issues/6487
-    from time import sleep
-
-    sleep(1)
-
-    def cleanup():
-        delete_chunks(get_http_api_auth, dataset_id, document_id, {"chunk_ids": chunk_ids})
-
-    request.addfinalizer(cleanup)
-    return dataset_id, document_id, chunk_ids
+    return dataset_id, document_id, chat_assistant_ids

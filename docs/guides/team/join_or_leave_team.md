@@ -5,7 +5,7 @@ slug: /join_or_leave_team
 
 # Join or leave a team
 
-Accept a team invite to join a team, decline a team invite, or leave a team.
+Accept an invite to join a team, decline an invite, or leave a team.
 
 ---
 
@@ -23,7 +23,7 @@ You cannot invite users to a team unless you are its owner.
 ## Prerequisites
 
 1. Ensure that your Email address that received the team invitation is associated with a RAGFlow user account.
-2. To view and update the team owner's shared knowledge base, The team owner must set a knowledge base's **Permissions** to **Team**.
+2. The team owner should share his knowledge bases by setting their **Permission** to **Team**.
 
 ## Accept or decline team invite
 
@@ -39,4 +39,4 @@ _After accepting the team invite, you should be able to view and update the team
 
 ## Leave a joined team
 
-![quit](https://github.com/user-attachments/assets/a9d812a9-382d-4913-83b9-d72cb5e7c953)
+![leave_team](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/quit.jpg)

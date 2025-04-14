@@ -140,6 +140,7 @@ class TestDocumentsDeletion:
         assert res["data"]["total"] == 0
 
 
+@pytest.mark.slow
 def test_concurrent_deletion(get_http_api_auth, add_dataset, tmp_path):
     documnets_num = 100
     dataset_id = add_dataset

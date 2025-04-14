@@ -161,7 +161,8 @@ export default {
       rerankTip:
         'Se deixado vazio, o RAGFlow usará uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada; se um modelo de reranking for selecionado, uma pontuação de reranking ponderada substituirá a similaridade de cosseno vetorial ponderada. Esteja ciente de que usar um modelo de reranking aumentará significativamente o tempo de resposta do sistema.',
       topK: 'Top-K',
-      topKTip: 'K fragmentos serão alimentados em modelos de reranking.',
+      topKTip:
+        'Usado em conjunto com o Rerank model, essa configuração define o número de trechos de texto a serem enviados ao modelo reranking especificado.',
       delimiter: 'Delimitadores para segmentação de texto',
       delimiterTip:
         'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \\n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula. Defina os delimitadores apenas após entender o mecanismo de segmentação e particionamento de texto.',
@@ -262,7 +263,8 @@ export default {
       useRaptorTip:
         'Processamento Abstrativo Recursivo para Recuperação Organizada em Árvore. Veja mais em https://huggingface.co/papers/2401.18059.',
       prompt: 'Prompt',
-      promptTip: 'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
+      promptTip:
+        'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
       promptMessage: 'O prompt é obrigatório',
       promptText: `Por favor, resuma os seguintes parágrafos. Tenha cuidado com os números, não invente informações. Os parágrafos são os seguintes:
       {cluster_content}
@@ -336,7 +338,7 @@ export default {
       sendPlaceholder: 'Envie uma mensagem para o assistente...',
       chatConfiguration: 'Configuração do Chat',
       chatConfigurationDescription:
-        'Configure aqui um assistente de chat dedicado às bases de conhecimento selecionadas! 💕',
+        'Configure um assistente de bate-papo para os conjuntos de dados selecionados (bases de conhecimento) aqui! 💕',
       assistantName: 'Nome do assistente',
       assistantNameMessage: 'O nome do assistente é obrigatório',
       namePlaceholder: 'Ex.: Jarvis Currículos',
@@ -362,7 +364,7 @@ export default {
       topN: 'Top N',
       topNTip: `Nem todos os fragmentos com pontuação de similaridade acima do 'limiar de similaridade' serão enviados ao LLM. Isso seleciona os 'Top N' fragmentos recuperados.`,
       variable: 'Variável',
-      variableTip: `As variáveis podem ajudar a desenvolver estratégias mais flexíveis, especialmente ao usar nossas APIs de gerenciamento de assistentes de chat. Essas variáveis serão usadas pelo 'Sistema' como parte dos prompts para o LLM. A variável {knowledge} é uma variável especial reservada que representa suas bases de conhecimento selecionadas, e todas as variáveis devem estar entre chaves { }.`,
+      variableTip: `Usados em conjunto com as APIs de gerenciamento de assistente de bate-papo do RAGFlow, as variáveis podem ajudar a desenvolver estratégias de prompt do sistema mais flexíveis. As variáveis definidas serão usadas pelo 'Prompt do sistema' como parte dos prompts para o LLM. {knowledge} é uma variável especial reservada que representa partes recuperadas de base(s) de conhecimento especificada(s), e todas as variáveis devem ser cercadas por chaves {} no 'Prompt do sistema'. Veja https://ragflow.io/docs/dev/set_chat_variables para mais detalhes.`,
       add: 'Adicionar',
       key: 'Chave',
       optional: 'Opcional',
@@ -498,7 +500,7 @@ export default {
       baseUrlTip:
         'Se sua chave da API for do OpenAI, ignore isso. Outros provedores intermediários fornecerão essa URL base com a chave da API.',
       modify: 'Modificar',
-      systemModelSettings: 'Configurações do Modelo do Sistema',
+      systemModelSettings: 'Definir modelos padrão',
       chatModel: 'Modelo de chat',
       chatModelTip:
         'O modelo LLM padrão que todos os novos bancos de conhecimento usarão.',
@@ -594,6 +596,8 @@ export default {
       sureDelete: 'Tem certeza de que deseja remover este membro?',
       quit: 'Sair',
       sureQuit: 'Tem certeza de que deseja sair da equipe que você ingressou?',
+      modelsToBeAddedTooltip:
+        'Se o seu provedor de modelo não estiver listado, mas afirmar ser compatível com a OpenAI, selecione o card OpenAI-API-compatible para adicionar o(s) modelo(s) relevante(s). ',
     },
     message: {
       registered: 'Registrado!',
@@ -1118,14 +1122,18 @@ export default {
       addCategory: 'Adicionar categoria',
       categoryName: 'Nome da categoria',
       nextStep: 'Próximo passo',
-      footer: {
-        profile: 'Todos os direitos reservados @ React',
-      },
-      layout: {
-        file: 'arquivo',
-        knowledge: 'conhecimento',
-        chat: 'bate-papo',
-      },
+      prompt: 'Prompt',
+      promptTip:
+        'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
+      promptMessage: 'O prompt é obrigatório',
+    },
+    footer: {
+      profile: 'Todos os direitos reservados @ React',
+    },
+    layout: {
+      file: 'arquivo',
+      knowledge: 'conhecimento',
+      chat: 'bate-papo',
     },
   },
 };

@@ -57,14 +57,14 @@ async def run_graphrag(
 
     subgraph = await generate_subgraph(
         LightKGExt
-        if row["parser_config"]["graphrag"]["method"] != "general"
+        if row["kb_parser_config"]["graphrag"]["method"] != "general"
         else GeneralKGExt,
         tenant_id,
         kb_id,
         doc_id,
         chunks,
         language,
-        row["parser_config"]["graphrag"]["entity_types"],
+        row["kb_parser_config"]["graphrag"]["entity_types"],
         chat_model,
         embedding_model,
         callback,
@@ -72,12 +72,9 @@ async def run_graphrag(
     if not subgraph:
         return
 
-    graphrag_task_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value=doc_id, timeout=3600)
-    while True:
-        if graphrag_task_lock.acquire():
-            break
-        callback(msg=f"merge_subgraph {doc_id} is waiting graphrag_task_lock")
-        await trio.sleep(20)
+    graphrag_task_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value=doc_id, timeout=1200)
+    await graphrag_task_lock.spin_acquire()
+    callback(msg=f"run_graphrag {doc_id} graphrag_task_lock acquired")
 
     try:
         subgraph_nodes = set(subgraph.nodes())
@@ -95,6 +92,8 @@ async def run_graphrag(
             return
 
         if with_resolution:
+            await graphrag_task_lock.spin_acquire()
+            callback(msg=f"run_graphrag {doc_id} graphrag_task_lock acquired")
             await resolve_entities(
                 new_graph,
                 subgraph_nodes,
@@ -106,6 +105,8 @@ async def run_graphrag(
                 callback,
             )
         if with_community:
+            await graphrag_task_lock.spin_acquire()
+            callback(msg=f"run_graphrag {doc_id} graphrag_task_lock acquired")
             await extract_community(
                 new_graph,
                 tenant_id,

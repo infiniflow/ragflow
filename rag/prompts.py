@@ -39,7 +39,10 @@ def chunks_format(reference):
         "dataset_id": get_value(chunk, "kb_id", "dataset_id"),
         "image_id": get_value(chunk, "image_id", "img_id"),
         "positions": get_value(chunk, "positions", "position_int"),
-        "url": chunk.get("url")
+        "url": chunk.get("url"),
+        "similarity": chunk.get("similarity"),
+        "vector_similarity": chunk.get("vector_similarity"),
+        "term_similarity": chunk.get("term_similarity"),
     } for chunk in reference.get("chunks", [])]
 
 

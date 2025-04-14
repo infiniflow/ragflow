@@ -145,6 +145,9 @@ def chat(dialog, messages, stream=True, **kwargs):
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        toolcall_session, tools = kwargs.get("toolcall_session"), kwargs.get("tools")
+        if toolcall_session and tools:
+            chat_mdl.bind_tools(toolcall_session, tools)
 
     bind_llm_ts = timer()
 
@@ -324,7 +327,7 @@ def chat(dialog, messages, stream=True, **kwargs):
             f"  - Create retriever: {create_retriever_time_cost:.1f}ms\n"
             f"  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n"
             f"  - Bind LLM: {bind_llm_time_cost:.1f}ms\n"
-            f"  - Tune question: {refine_question_time_cost:.1f}ms\n"
+            f"  - Multi-turn optimization: {refine_question_time_cost:.1f}ms\n"
             f"  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n"
             f"  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n"
             f"  - Retrieval: {retrieval_time_cost:.1f}ms\n"
@@ -338,7 +341,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         langfuse_output = {"time_elapsed:": re.sub(r"\n", "  \n", langfuse_output), "created_at": time.time()}
 
         # Add a condition check to call the end method only if langfuse_tracer exists
-        if langfuse_tracer and 'langfuse_generation' in locals():
+        if langfuse_tracer and "langfuse_generation" in locals():
             langfuse_generation.end(output=langfuse_output)
 
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
