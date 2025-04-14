@@ -284,10 +284,20 @@ def chat(dialog, messages, stream=True, **kwargs):
                 )
             else:
                 idx = set([])
-                for r in re.finditer(r"##([0-9]+)\$\$", answer):
-                    i = int(r.group(1))
-                    if i < len(kbinfos["chunks"]):
-                        idx.add(i)
+                if normal_matches := re.finditer(r"##([0-9]+)\$\$", answer):
+                    for match in normal_matches:
+                        i = int(match.group(1))
+                        if i < len(kbinfos["chunks"]):
+                            idx.add(i)
+                elif abnormal_matches := re.finditer(r"\(\s*ID:\s*(\d+)\s*\)|ID[: ]+\s*(\d+)", answer):
+                    for match in abnormal_matches:
+                        full_match = match.group(0)
+                        id = match.group(1) or match.group(2)
+                        if id:
+                            i = int(id)
+                            if i < len(kbinfos["chunks"]):
+                                idx.add(i)
+                            answer = answer.replace(full_match, f"##{i}$$")
 
             idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
             recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
