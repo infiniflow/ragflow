@@ -75,7 +75,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
-- 2025-03-19 Gambar dalam PDF dan DOCX dapat diurai dan dideskripsikan menggunakan model besar multimoda.
+- 2025-03-19 Mendukung penggunaan model multi-modal untuk memahami gambar di dalam file PDF atau DOCX.
 - 2025-02-28 dikombinasikan dengan pencarian Internet (TAVILY), mendukung penelitian mendalam untuk LLM apa pun.
 - 2025-01-26 Optimalkan ekstraksi dan penerapan grafik pengetahuan dan sediakan berbagai opsi konfigurasi.
 - 2024-12-18 Meningkatkan model Analisis Tata Letak Dokumen di DeepDoc.
