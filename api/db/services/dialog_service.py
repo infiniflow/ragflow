@@ -271,8 +271,10 @@ def chat(dialog, messages, stream=True, **kwargs):
         if len(ans) == 2:
             think = ans[0] + "</think>"
             answer = ans[1]
+
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
             answer = re.sub(r"##[ij]\$\$", "", answer, flags=re.DOTALL)
+            idx = set([])
             if not re.search(r"##[0-9]+\$\$", answer):
                 answer, idx = retriever.insert_citations(
                     answer,
@@ -283,11 +285,20 @@ def chat(dialog, messages, stream=True, **kwargs):
                     vtweight=dialog.vector_similarity_weight,
                 )
             else:
-                idx = set([])
-                for r in re.finditer(r"##([0-9]+)\$\$", answer):
-                    i = int(r.group(1))
+                for match in re.finditer(r"##([0-9]+)\$\$", answer):
+                    i = int(match.group(1))
                     if i < len(kbinfos["chunks"]):
                         idx.add(i)
+
+            # handle (ID: 1), ID: 2 etc.
+            for match in re.finditer(r"\(\s*ID:\s*(\d+)\s*\)|ID[: ]+\s*(\d+)", answer):
+                full_match = match.group(0)
+                id = match.group(1) or match.group(2)
+                if id:
+                    i = int(id)
+                    if i < len(kbinfos["chunks"]):
+                        idx.add(i)
+                    answer = answer.replace(full_match, f"##{i}$$")
 
             idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
             recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
