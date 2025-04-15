@@ -440,7 +440,7 @@ Success:
             "html4excel": false,
             "layout_recognize": true,
             "raptor": {
-                "user_raptor": false
+                "use_raptor": false
             }
         },
         "permission": "me",
@@ -750,7 +750,7 @@ Success:
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "run": "UNSTART",
@@ -1339,7 +1339,7 @@ Success:
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
