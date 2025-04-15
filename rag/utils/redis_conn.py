@@ -301,6 +301,16 @@ class RedisDB:
         """
         return bool(self.lua_delete_if_equal(keys=[key], args=[expected_value], client=self.REDIS))
 
+    def delete(self, key) -> bool:
+        try:
+            self.REDIS.delete(key)
+            return True
+        except Exception as e:
+            logging.warning("RedisDB.delete " + str(key) + " got exception: " + str(e))
+            self.__open__()
+        return False
+    
+    
 REDIS_CONN = RedisDB()
 
 

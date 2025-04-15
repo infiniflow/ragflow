@@ -661,7 +661,7 @@ async def report_status():
                     if expired == 0:
                         logging.info(f"{consumer_name} expired, removed")
                         REDIS_CONN.srem("TASKEXE", consumer_name)
-                redis_lock.release()
+                        REDIS_CONN.delete(consumer_name)
         except Exception:
             logging.exception("report_status got exception")
         await trio.sleep(30)
