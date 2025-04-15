@@ -19,8 +19,7 @@ import pytest
 from common import (
     DATASET_NAME_LIMIT,
     INVALID_API_TOKEN,
-    batch_create_datasets,
-    list_dataset,
+    list_datasets,
     update_dataset,
 )
 from libs.auth import RAGFlowHttpApiAuth
@@ -30,7 +29,6 @@ from libs.utils.file_utils import create_image_file
 # TODO: Missing scenario for updating embedding_model with chunk_count != 0
 
 
-@pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -43,14 +41,12 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(self, get_http_api_auth, auth, expected_code, expected_message):
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        res = update_dataset(auth, ids[0], {"name": "new_name"})
+    def test_invalid_auth(self, auth, expected_code, expected_message):
+        res = update_dataset(auth, "dataset_id")
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
-@pytest.mark.usefixtures("clear_datasets")
 class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "name, expected_code, expected_message",
@@ -72,12 +68,12 @@ class TestDatasetUpdate:
             ("DATASET_1", 102, "Duplicated dataset name in updating dataset."),
         ],
     )
-    def test_name(self, get_http_api_auth, name, expected_code, expected_message):
-        ids = batch_create_datasets(get_http_api_auth, 2)
-        res = update_dataset(get_http_api_auth, ids[0], {"name": name})
+    def test_name(self, get_http_api_auth, add_datasets_func, name, expected_code, expected_message):
+        dataset_ids = add_datasets_func
+        res = update_dataset(get_http_api_auth, dataset_ids[0], {"name": name})
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_dataset(get_http_api_auth, {"id": ids[0]})
+            res = list_datasets(get_http_api_auth, {"id": dataset_ids[0]})
             assert res["data"][0]["name"] == name
         else:
             assert res["message"] == expected_message
@@ -95,12 +91,12 @@ class TestDatasetUpdate:
             (None, 102, "`embedding_model` can't be empty"),
         ],
     )
-    def test_embedding_model(self, get_http_api_auth, embedding_model, expected_code, expected_message):
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        res = update_dataset(get_http_api_auth, ids[0], {"embedding_model": embedding_model})
+    def test_embedding_model(self, get_http_api_auth, add_dataset_func, embedding_model, expected_code, expected_message):
+        dataset_id = add_dataset_func
+        res = update_dataset(get_http_api_auth, dataset_id, {"embedding_model": embedding_model})
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_dataset(get_http_api_auth, {"id": ids[0]})
+            res = list_datasets(get_http_api_auth, {"id": dataset_id})
             assert res["data"][0]["embedding_model"] == embedding_model
         else:
             assert res["message"] == expected_message
@@ -129,12 +125,12 @@ class TestDatasetUpdate:
             ),
         ],
     )
-    def test_chunk_method(self, get_http_api_auth, chunk_method, expected_code, expected_message):
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        res = update_dataset(get_http_api_auth, ids[0], {"chunk_method": chunk_method})
+    def test_chunk_method(self, get_http_api_auth, add_dataset_func, chunk_method, expected_code, expected_message):
+        dataset_id = add_dataset_func
+        res = update_dataset(get_http_api_auth, dataset_id, {"chunk_method": chunk_method})
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_dataset(get_http_api_auth, {"id": ids[0]})
+            res = list_datasets(get_http_api_auth, {"id": dataset_id})
             if chunk_method != "":
                 assert res["data"][0]["chunk_method"] == chunk_method
             else:
@@ -142,38 +138,38 @@ class TestDatasetUpdate:
         else:
             assert res["message"] == expected_message
 
-    def test_avatar(self, get_http_api_auth, tmp_path):
-        ids = batch_create_datasets(get_http_api_auth, 1)
+    def test_avatar(self, get_http_api_auth, add_dataset_func, tmp_path):
+        dataset_id = add_dataset_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {"avatar": encode_avatar(fn)}
-        res = update_dataset(get_http_api_auth, ids[0], payload)
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 0
 
-    def test_description(self, get_http_api_auth):
-        ids = batch_create_datasets(get_http_api_auth, 1)
+    def test_description(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
         payload = {"description": "description"}
-        res = update_dataset(get_http_api_auth, ids[0], payload)
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 0
 
-        res = list_dataset(get_http_api_auth, {"id": ids[0]})
+        res = list_datasets(get_http_api_auth, {"id": dataset_id})
         assert res["data"][0]["description"] == "description"
 
-    def test_pagerank(self, get_http_api_auth):
-        ids = batch_create_datasets(get_http_api_auth, 1)
+    def test_pagerank(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
         payload = {"pagerank": 1}
-        res = update_dataset(get_http_api_auth, ids[0], payload)
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 0
 
-        res = list_dataset(get_http_api_auth, {"id": ids[0]})
+        res = list_datasets(get_http_api_auth, {"id": dataset_id})
         assert res["data"][0]["pagerank"] == 1
 
-    def test_similarity_threshold(self, get_http_api_auth):
-        ids = batch_create_datasets(get_http_api_auth, 1)
+    def test_similarity_threshold(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
         payload = {"similarity_threshold": 1}
-        res = update_dataset(get_http_api_auth, ids[0], payload)
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 0
 
-        res = list_dataset(get_http_api_auth, {"id": ids[0]})
+        res = list_datasets(get_http_api_auth, {"id": dataset_id})
         assert res["data"][0]["similarity_threshold"] == 1
 
     @pytest.mark.parametrize(
@@ -187,29 +183,28 @@ class TestDatasetUpdate:
             ("other_permission", 102),
         ],
     )
-    def test_permission(self, get_http_api_auth, permission, expected_code):
-        ids = batch_create_datasets(get_http_api_auth, 1)
+    def test_permission(self, get_http_api_auth, add_dataset_func, permission, expected_code):
+        dataset_id = add_dataset_func
         payload = {"permission": permission}
-        res = update_dataset(get_http_api_auth, ids[0], payload)
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == expected_code
 
-        res = list_dataset(get_http_api_auth, {"id": ids[0]})
+        res = list_datasets(get_http_api_auth, {"id": dataset_id})
         if expected_code == 0 and permission != "":
             assert res["data"][0]["permission"] == permission
         if permission == "":
             assert res["data"][0]["permission"] == "me"
 
-    def test_vector_similarity_weight(self, get_http_api_auth):
-        ids = batch_create_datasets(get_http_api_auth, 1)
+    def test_vector_similarity_weight(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
         payload = {"vector_similarity_weight": 1}
-        res = update_dataset(get_http_api_auth, ids[0], payload)
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 0
 
-        res = list_dataset(get_http_api_auth, {"id": ids[0]})
+        res = list_datasets(get_http_api_auth, {"id": dataset_id})
         assert res["data"][0]["vector_similarity_weight"] == 1
 
     def test_invalid_dataset_id(self, get_http_api_auth):
-        batch_create_datasets(get_http_api_auth, 1)
         res = update_dataset(get_http_api_auth, "invalid_dataset_id", {"name": "invalid_dataset_id"})
         assert res["code"] == 102
         assert res["message"] == "You don't own the dataset"
@@ -230,21 +225,22 @@ class TestDatasetUpdate:
             {"update_time": 1741671443339},
         ],
     )
-    def test_modify_read_only_field(self, get_http_api_auth, payload):
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        res = update_dataset(get_http_api_auth, ids[0], payload)
+    def test_modify_read_only_field(self, get_http_api_auth, add_dataset_func, payload):
+        dataset_id = add_dataset_func
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 101
         assert "is readonly" in res["message"]
 
-    def test_modify_unknown_field(self, get_http_api_auth):
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        res = update_dataset(get_http_api_auth, ids[0], {"unknown_field": 0})
+    def test_modify_unknown_field(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
+        res = update_dataset(get_http_api_auth, dataset_id, {"unknown_field": 0})
         assert res["code"] == 100
 
-    def test_concurrent_update(self, get_http_api_auth):
-        ids = batch_create_datasets(get_http_api_auth, 1)
+    @pytest.mark.slow
+    def test_concurrent_update(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(update_dataset, get_http_api_auth, ids[0], {"name": f"dataset_{i}"}) for i in range(100)]
+            futures = [executor.submit(update_dataset, get_http_api_auth, dataset_id, {"name": f"dataset_{i}"}) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)

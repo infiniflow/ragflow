@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from random import randint
 
 import pytest
-from common import INVALID_API_TOKEN, delete_documnet, update_chunk
+from common import INVALID_API_TOKEN, delete_documnets, update_chunk
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -96,12 +96,7 @@ class TestUpdatedChunk:
         "payload, expected_code, expected_message",
         [
             ({"questions": ["a", "b", "c"]}, 0, ""),
-            pytest.param(
-                {"questions": [""]},
-                0,
-                "",
-                marks=pytest.mark.skip(reason="issues/6539"),
-            ),
+            ({"questions": [""]}, 0, ""),
             ({"questions": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
             ({"questions": ["a", "a"]}, 0, ""),
             ({"questions": "abc"}, 102, "`questions` should be a list"),
@@ -211,6 +206,7 @@ class TestUpdatedChunk:
         if expected_code != 0:
             assert res["message"] == expected_message
 
+    @pytest.mark.slow
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6554")
     def test_concurrent_update_chunk(self, get_http_api_auth, add_chunks):
         chunk_num = 50
@@ -233,7 +229,7 @@ class TestUpdatedChunk:
 
     def test_update_chunk_to_deleted_document(self, get_http_api_auth, add_chunks):
         dataset_id, document_id, chunk_ids = add_chunks
-        delete_documnet(get_http_api_auth, dataset_id, {"ids": [document_id]})
+        delete_documnets(get_http_api_auth, dataset_id, {"ids": [document_id]})
         res = update_chunk(get_http_api_auth, dataset_id, document_id, chunk_ids[0])
         assert res["code"] == 102
         assert res["message"] == f"Can't find this chunk {chunk_ids[0]}"

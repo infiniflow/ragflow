@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import binascii
+from datetime import datetime
 import logging
 import re
 import time
@@ -31,6 +32,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle, TenantLLMService
+from api.utils import current_timestamp, datetime_format
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
@@ -41,6 +43,39 @@ from rag.utils.tavily_conn import Tavily
 
 class DialogService(CommonService):
     model = Dialog
+
+    @classmethod
+    def save(cls, **kwargs):
+        """Save a new record to database.
+
+        This method creates a new record in the database with the provided field values,
+        forcing an insert operation rather than an update.
+
+        Args:
+            **kwargs: Record field values as keyword arguments.
+
+        Returns:
+            Model instance: The created record object.
+        """
+        sample_obj = cls.model(**kwargs).save(force_insert=True)
+        return sample_obj
+
+    @classmethod
+    def update_many_by_id(cls, data_list):
+        """Update multiple records by their IDs.
+
+        This method updates multiple records in the database, identified by their IDs.
+        It automatically updates the update_time and update_date fields for each record.
+
+        Args:
+            data_list (list): List of dictionaries containing record data to update.
+                             Each dictionary must include an 'id' field.
+        """
+        with DB.atomic():
+            for data in data_list:
+                data["update_time"] = current_timestamp()
+                data["update_date"] = datetime_format(datetime.now())
+                cls.model.update(data).where(cls.model.id == data["id"]).execute()
 
     @classmethod
     @DB.connection_context()
@@ -145,6 +180,9 @@ def chat(dialog, messages, stream=True, **kwargs):
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        toolcall_session, tools = kwargs.get("toolcall_session"), kwargs.get("tools")
+        if toolcall_session and tools:
+            chat_mdl.bind_tools(toolcall_session, tools)
 
     bind_llm_ts = timer()
 
@@ -268,8 +306,10 @@ def chat(dialog, messages, stream=True, **kwargs):
         if len(ans) == 2:
             think = ans[0] + "</think>"
             answer = ans[1]
+
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
             answer = re.sub(r"##[ij]\$\$", "", answer, flags=re.DOTALL)
+            idx = set([])
             if not re.search(r"##[0-9]+\$\$", answer):
                 answer, idx = retriever.insert_citations(
                     answer,
@@ -280,11 +320,20 @@ def chat(dialog, messages, stream=True, **kwargs):
                     vtweight=dialog.vector_similarity_weight,
                 )
             else:
-                idx = set([])
-                for r in re.finditer(r"##([0-9]+)\$\$", answer):
-                    i = int(r.group(1))
+                for match in re.finditer(r"##([0-9]+)\$\$", answer):
+                    i = int(match.group(1))
                     if i < len(kbinfos["chunks"]):
                         idx.add(i)
+
+            # handle (ID: 1), ID: 2 etc.
+            for match in re.finditer(r"\(\s*ID:\s*(\d+)\s*\)|ID[: ]+\s*(\d+)", answer):
+                full_match = match.group(0)
+                id = match.group(1) or match.group(2)
+                if id:
+                    i = int(id)
+                    if i < len(kbinfos["chunks"]):
+                        idx.add(i)
+                    answer = answer.replace(full_match, f"##{i}$$")
 
             idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
             recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
@@ -324,7 +373,7 @@ def chat(dialog, messages, stream=True, **kwargs):
             f"  - Create retriever: {create_retriever_time_cost:.1f}ms\n"
             f"  - Bind embedding: {bind_embedding_time_cost:.1f}ms\n"
             f"  - Bind LLM: {bind_llm_time_cost:.1f}ms\n"
-            f"  - Tune question: {refine_question_time_cost:.1f}ms\n"
+            f"  - Multi-turn optimization: {refine_question_time_cost:.1f}ms\n"
             f"  - Bind reranker: {bind_reranker_time_cost:.1f}ms\n"
             f"  - Generate keyword: {generate_keyword_time_cost:.1f}ms\n"
             f"  - Retrieval: {retrieval_time_cost:.1f}ms\n"
@@ -338,7 +387,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         langfuse_output = {"time_elapsed:": re.sub(r"\n", "  \n", langfuse_output), "created_at": time.time()}
 
         # Add a condition check to call the end method only if langfuse_tracer exists
-        if langfuse_tracer and 'langfuse_generation' in locals():
+        if langfuse_tracer and "langfuse_generation" in locals():
             langfuse_generation.end(output=langfuse_output)
 
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
@@ -420,11 +469,11 @@ Please write the SQL, only SQL, without any other explanations or text.
         Table name: {};
         Table of database fields are as follows:
         {}
-        
+
         Question are as follows:
         {}
         Please write the SQL, only SQL, without any other explanations or text.
-        
+
 
         The SQL error you provided last time is as follows:
         {}
@@ -447,7 +496,7 @@ Please write the SQL, only SQL, without any other explanations or text.
 
     # compose Markdown table
     columns = (
-        "|" + "|".join([re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"], tbl["columns"][i]["name"])) for i in column_idx]) + ("|Source|" if docid_idx and docid_idx else "|")
+            "|" + "|".join([re.sub(r"(/.*|（[^（）]+）)", "", field_map.get(tbl["columns"][i]["name"], tbl["columns"][i]["name"])) for i in column_idx]) + ("|Source|" if docid_idx and docid_idx else "|")
     )
 
     line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and docid_idx else "")

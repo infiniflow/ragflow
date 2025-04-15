@@ -325,6 +325,10 @@ export const useRunNextDocument = () => {
       run: number;
       shouldDelete: boolean;
     }) => {
+      queryClient.invalidateQueries({
+        queryKey: ['fetchDocumentList'],
+      });
+
       const ret = await kbService.document_run({
         doc_ids: documentIds,
         run,
@@ -345,12 +349,17 @@ export const useRunNextDocument = () => {
 
 export const useFetchDocumentInfosByIds = () => {
   const [ids, setDocumentIds] = useState<string[]>([]);
+
+  const idList = useMemo(() => {
+    return ids.filter((x) => typeof x === 'string' && x !== '');
+  }, [ids]);
+
   const { data } = useQuery<IDocumentInfo[]>({
-    queryKey: ['fetchDocumentInfos', ids],
-    enabled: ids.length > 0,
+    queryKey: ['fetchDocumentInfos', idList],
+    enabled: idList.length > 0,
     initialData: [],
     queryFn: async () => {
-      const { data } = await kbService.document_infos({ doc_ids: ids });
+      const { data } = await kbService.document_infos({ doc_ids: idList });
       if (data.code === 0) {
         return data.data;
       }

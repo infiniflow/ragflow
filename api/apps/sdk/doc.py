@@ -1170,6 +1170,8 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     if chunk_number != 0:
         DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
     if "chunk_ids" in req and chunk_number != len(unique_chunk_ids):
+        if len(unique_chunk_ids) == 0:
+            return get_result(message=f"deleted {chunk_number} chunks")
         return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}")
     if duplicate_messages:
         return get_result(message=f"Partially deleted {chunk_number} chunks with {len(duplicate_messages)} errors", data={"success_count": chunk_number, "errors": duplicate_messages},)
@@ -1260,7 +1262,7 @@ def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     if "questions" in req:
         if not isinstance(req["questions"], list):
             return get_error_data_result("`questions` should be a list")
-        d["question_kwd"] = req.get("questions")
+        d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
     if "available" in req:
         d["available_int"] = int(req["available"])

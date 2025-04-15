@@ -108,7 +108,7 @@ Yes, we do.
 
 ---
 
-### Is it possible to share dialogue through URL?
+### Do you support sharing dialogue through URL?
 
 No, this feature is not supported.
 
@@ -119,7 +119,7 @@ No, this feature is not supported.
 Yes, we support enhancing user queries based on existing context of an ongoing conversation:
 
 1. On the **Chat** page, hover over the desired assistant and select **Edit**.
-2. In the **Chat Configuration** popup, click the **Prompt Engine** tab.
+2. In the **Chat Configuration** popup, click the **Prompt engine** tab.
 3. Switch on **Multi-turn optimization** to enable this feature.
 
 ---
@@ -419,7 +419,7 @@ It is not recommended to manually change the 32-file batch upload limit. However
 This error occurs because there are too many chunks matching your search criteria. Try reducing the **TopN** and increasing **Similarity threshold** to fix this issue:
 
 1. Click **Chat** in the middle top of the page.
-2. Right-click the desired conversation > **Edit** > **Prompt Engine**
+2. Right-click the desired conversation > **Edit** > **Prompt engine**
 3. Reduce the **TopN** and/or raise **Similarity threshold**.
 4. Click **OK** to confirm your changes.
 
@@ -443,9 +443,26 @@ See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
 
 To switch your document engine from Elasticsearch to [Infinity](https://github.com/infiniflow/infinity):
 
-1. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
-2. Restart your Docker image: 
+1. Stop all running containers:  
 
-```bash
-$ docker compose -f docker-compose.yml up -d
-```
+   ```bash
+   $ docker compose -f docker/docker-compose.yml down -v
+   ```
+:::caution WARNING
+`-v` will delete all Docker container volumes, and the existing data will be cleared.
+:::
+
+2. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
+3. Restart your Docker image: 
+
+   ```bash
+   $ docker compose -f docker-compose.yml up -d
+   ```
+
+---
+
+### Where are my uploaded files stored in RAGFlow's image?
+
+All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
+
+---

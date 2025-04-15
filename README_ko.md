@@ -36,7 +36,7 @@
   <a href="https://ragflow.io/docs/dev/">Document</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/MFpqqKyB">Discord</a> |
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
@@ -55,13 +55,10 @@
 
 ## 🔥 업데이트
 
+- 2025-03-19 PDF 또는 DOCX 파일 내의 이미지를 이해하기 위해 다중 모드 모델을 사용하는 것을 지원합니다.
 - 2025-02-28 인터넷 검색(TAVILY)과 결합되어 모든 LLM에 대한 심층 연구를 지원합니다.
-- 2025-02-05 'SILICONFLOW' 모델 목록을 업데이트하고 Deepseek-R1/DeepSeek-V3에 대한 지원을 추가합니다.
 - 2025-01-26 지식 그래프 추출 및 적용을 최적화하고 다양한 구성 옵션을 제공합니다.
 - 2024-12-18 DeepDoc의 문서 레이아웃 분석 모델 업그레이드.
-- 2024-12-04 지식베이스에 대한 페이지랭크 점수를 지원합니다.
-
-- 2024-11-22 에이전트의 변수 정의 및 사용을 개선했습니다.
 - 2024-11-01 파싱된 청크에 키워드 추출 및 관련 질문 생성을 추가하여 재현율을 향상시킵니다.
 - 2024-08-22 RAG를 통해 SQL 문에 텍스트를 지원합니다.
 
@@ -242,7 +239,7 @@ RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 소스 코드로 Docker 이미지를 컴파일합니다(임베딩 모델 포함)
@@ -252,7 +249,7 @@ docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-s
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 소스 코드로 서비스를 시작합니다.
@@ -328,7 +325,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 
 ## 🏄 커뮤니티
 
-- [Discord](https://discord.gg/MFpqqKyB)
+- [Discord](https://discord.gg/NjYzJD3GM3)
 - [Twitter](https://twitter.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 

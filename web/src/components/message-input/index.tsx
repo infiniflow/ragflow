@@ -5,14 +5,13 @@ import {
   useRemoveNextDocument,
   useUploadAndParseDocument,
 } from '@/hooks/document-hooks';
+import { cn } from '@/lib/utils';
 import { getExtension } from '@/utils/document-util';
 import { formatBytes } from '@/utils/file-util';
 import {
   CloseCircleOutlined,
   InfoCircleOutlined,
   LoadingOutlined,
-  PaperClipOutlined,
-  SendOutlined,
 } from '@ant-design/icons';
 import type { GetProp, UploadFile } from 'antd';
 import {
@@ -29,6 +28,7 @@ import {
   UploadProps,
 } from 'antd';
 import get from 'lodash/get';
+import { CircleStop, Paperclip, SendHorizontal } from 'lucide-react';
 import {
   ChangeEventHandler,
   memo,
@@ -72,6 +72,7 @@ interface IProps {
   isShared?: boolean;
   showUploadIcon?: boolean;
   createConversationBeforeUploadDocument?(message: string): Promise<any>;
+  stopOutputMessage?(): void;
 }
 
 const getBase64 = (file: FileType): Promise<string> =>
@@ -94,6 +95,7 @@ const MessageInput = ({
   showUploadIcon = true,
   createConversationBeforeUploadDocument,
   uploadMethod = 'upload_and_parse',
+  stopOutputMessage,
 }: IProps) => {
   const { t } = useTranslate('chat');
   const { removeDocument } = useRemoveNextDocument();
@@ -150,6 +152,14 @@ const MessageInput = ({
 
   const isUploadingFile = fileList.some((x) => x.status === 'uploading');
 
+  const handlePressEnter = useCallback(async () => {
+    if (isUploadingFile) return;
+    const ids = getFileIds(fileList.filter((x) => isUploadSuccess(x)));
+
+    onPressEnter(ids);
+    setFileList([]);
+  }, [fileList, onPressEnter, isUploadingFile]);
+
   const handleKeyDown = useCallback(
     async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // check if it was shift + enter
@@ -160,21 +170,8 @@ const MessageInput = ({
       event.preventDefault();
       handlePressEnter();
     },
-    [fileList, onPressEnter, isUploadingFile],
+    [sendDisabled, isUploadingFile, sendLoading, handlePressEnter],
   );
-
-  const handlePressEnter = useCallback(async () => {
-    if (isUploadingFile) return;
-    const ids = getFileIds(fileList.filter((x) => isUploadSuccess(x)));
-
-    onPressEnter(ids);
-    setFileList([]);
-  }, [fileList, onPressEnter, isUploadingFile]);
-
-  const [isComposing, setIsComposing] = useState(false);
-
-  const handleCompositionStart = () => setIsComposing(true);
-  const handleCompositionEnd = () => setIsComposing(false);
 
   const handleRemove = useCallback(
     async (file: UploadFile) => {
@@ -199,6 +196,10 @@ const MessageInput = ({
     [removeDocument, deleteDocument, isShared],
   );
 
+  const handleStopOutputMessage = useCallback(() => {
+    stopOutputMessage?.();
+  }, [stopOutputMessage]);
+
   const getDocumentInfoById = useCallback(
     (id: string) => {
       return documentInfos.find((x) => x.id === id);
@@ -222,7 +223,11 @@ const MessageInput = ({
   }, [conversationId, setFileList]);
 
   return (
-    <Flex gap={1} vertical className={styles.messageInputWrapper}>
+    <Flex
+      gap={1}
+      vertical
+      className={cn(styles.messageInputWrapper, 'dark:bg-black')}
+    >
       <TextArea
         size="large"
         placeholder={t('sendPlaceholder')}
@@ -238,8 +243,6 @@ const MessageInput = ({
         autoSize={{ minRows: 2, maxRows: 10 }}
         onKeyDown={handleKeyDown}
         onChange={onInputChange}
-        onCompositionStart={handleCompositionStart}
-        onCompositionEnd={handleCompositionEnd}
       />
       <Divider style={{ margin: '5px 30px 10px 0px' }} />
       <Flex justify="space-between" align="center">
@@ -342,18 +345,24 @@ const MessageInput = ({
               }}
             >
               <Button type={'primary'} disabled={disabled}>
-                <PaperClipOutlined />
+                <Paperclip className="size-4" />
               </Button>
             </Upload>
           )}
-          <Button
-            type="primary"
-            onClick={handlePressEnter}
-            loading={sendLoading}
-            disabled={sendDisabled || isUploadingFile || sendLoading}
-          >
-            <SendOutlined />
-          </Button>
+          {sendLoading ? (
+            <Button onClick={handleStopOutputMessage}>
+              <CircleStop className="size-5" />
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              onClick={handlePressEnter}
+              loading={sendLoading}
+              disabled={sendDisabled || isUploadingFile || sendLoading}
+            >
+              <SendHorizontal className="size-5" />
+            </Button>
+          )}
         </Flex>
       </Flex>
     </Flex>

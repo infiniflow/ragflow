@@ -16,16 +16,9 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import (
-    INVALID_API_TOKEN,
-    list_documnet,
-)
+from common import INVALID_API_TOKEN, list_documnets
 from libs.auth import RAGFlowHttpApiAuth
-
-
-def is_sorted(data, field, descending=True):
-    timestamps = [ds[field] for ds in data]
-    return all(a >= b for a, b in zip(timestamps, timestamps[1:])) if descending else all(a <= b for a, b in zip(timestamps, timestamps[1:]))
+from libs.utils import is_sorted
 
 
 class TestAuthorization:
@@ -40,17 +33,16 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(self, get_dataset_id_and_document_ids, auth, expected_code, expected_message):
-        dataset_id, _ = get_dataset_id_and_document_ids
-        res = list_documnet(auth, dataset_id)
+    def test_invalid_auth(self, auth, expected_code, expected_message):
+        res = list_documnets(auth, "dataset_id")
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
-class TestDocumentList:
-    def test_default(self, get_http_api_auth, get_dataset_id_and_document_ids):
-        dataset_id, _ = get_dataset_id_and_document_ids
-        res = list_documnet(get_http_api_auth, dataset_id)
+class TestDocumentsList:
+    def test_default(self, get_http_api_auth, add_documents):
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == 5
         assert res["data"]["total"] == 5
@@ -66,8 +58,8 @@ class TestDocumentList:
             ),
         ],
     )
-    def test_invalid_dataset_id(self, get_http_api_auth, get_dataset_id_and_document_ids, dataset_id, expected_code, expected_message):
-        res = list_documnet(get_http_api_auth, dataset_id)
+    def test_invalid_dataset_id(self, get_http_api_auth, dataset_id, expected_code, expected_message):
+        res = list_documnets(get_http_api_auth, dataset_id)
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -98,14 +90,14 @@ class TestDocumentList:
     def test_page(
         self,
         get_http_api_auth,
-        get_dataset_id_and_document_ids,
+        add_documents,
         params,
         expected_code,
         expected_page_size,
         expected_message,
     ):
-        dataset_id, _ = get_dataset_id_and_document_ids
-        res = list_documnet(get_http_api_auth, dataset_id, params=params)
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_page_size
@@ -140,14 +132,14 @@ class TestDocumentList:
     def test_page_size(
         self,
         get_http_api_auth,
-        get_dataset_id_and_document_ids,
+        add_documents,
         params,
         expected_code,
         expected_page_size,
         expected_message,
     ):
-        dataset_id, _ = get_dataset_id_and_document_ids
-        res = list_documnet(get_http_api_auth, dataset_id, params=params)
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_page_size
@@ -157,51 +149,24 @@ class TestDocumentList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            (
-                {"orderby": None},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"orderby": "create_time"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"orderby": "update_time"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "update_time", True)),
-                "",
-            ),
-            pytest.param(
-                {"orderby": "name", "desc": "False"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "name", False)),
-                "",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
-            pytest.param(
-                {"orderby": "unknown"},
-                102,
-                0,
-                "orderby should be create_time or update_time",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
+            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", True)), ""),
+            pytest.param({"orderby": "name", "desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "name", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
+            pytest.param({"orderby": "unknown"}, 102, 0, "orderby should be create_time or update_time", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
     def test_orderby(
         self,
         get_http_api_auth,
-        get_dataset_id_and_document_ids,
+        add_documents,
         params,
         expected_code,
         assertions,
         expected_message,
     ):
-        dataset_id, _ = get_dataset_id_and_document_ids
-        res = list_documnet(get_http_api_auth, dataset_id, params=params)
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -212,75 +177,28 @@ class TestDocumentList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            (
-                {"desc": None},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "true"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "True"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": True},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            pytest.param(
-                {"desc": "false"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
-                "",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
-            (
-                {"desc": "False"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": False},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": "False", "orderby": "update_time"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "update_time", False)),
-                "",
-            ),
-            pytest.param(
-                {"desc": "unknown"},
-                102,
-                0,
-                "desc should be true or false",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
+            ({"desc": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"desc": True}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            pytest.param({"desc": "false"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
+            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
+            ({"desc": False}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", False)), ""),
+            pytest.param({"desc": "unknown"}, 102, 0, "desc should be true or false", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
     def test_desc(
         self,
         get_http_api_auth,
-        get_dataset_id_and_document_ids,
+        add_documents,
         params,
         expected_code,
         assertions,
         expected_message,
     ):
-        dataset_id, _ = get_dataset_id_and_document_ids
-        res = list_documnet(get_http_api_auth, dataset_id, params=params)
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -298,9 +216,9 @@ class TestDocumentList:
             ({"keywords": "unknown"}, 0),
         ],
     )
-    def test_keywords(self, get_http_api_auth, get_dataset_id_and_document_ids, params, expected_num):
-        dataset_id, _ = get_dataset_id_and_document_ids
-        res = list_documnet(get_http_api_auth, dataset_id, params=params)
+    def test_keywords(self, get_http_api_auth, add_documents, params, expected_num):
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == expected_num
         assert res["data"]["total"] == expected_num
@@ -322,14 +240,14 @@ class TestDocumentList:
     def test_name(
         self,
         get_http_api_auth,
-        get_dataset_id_and_document_ids,
+        add_documents,
         params,
         expected_code,
         expected_num,
         expected_message,
     ):
-        dataset_id, _ = get_dataset_id_and_document_ids
-        res = list_documnet(get_http_api_auth, dataset_id, params=params)
+        dataset_id, _ = add_documents
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["name"] in [None, ""]:
@@ -351,18 +269,18 @@ class TestDocumentList:
     def test_id(
         self,
         get_http_api_auth,
-        get_dataset_id_and_document_ids,
+        add_documents,
         document_id,
         expected_code,
         expected_num,
         expected_message,
     ):
-        dataset_id, document_ids = get_dataset_id_and_document_ids
+        dataset_id, document_ids = add_documents
         if callable(document_id):
             params = {"id": document_id(document_ids)}
         else:
             params = {"id": document_id}
-        res = list_documnet(get_http_api_auth, dataset_id, params=params)
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
 
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -391,36 +309,37 @@ class TestDocumentList:
     def test_name_and_id(
         self,
         get_http_api_auth,
-        get_dataset_id_and_document_ids,
+        add_documents,
         document_id,
         name,
         expected_code,
         expected_num,
         expected_message,
     ):
-        dataset_id, document_ids = get_dataset_id_and_document_ids
+        dataset_id, document_ids = add_documents
         if callable(document_id):
             params = {"id": document_id(document_ids), "name": name}
         else:
             params = {"id": document_id, "name": name}
 
-        res = list_documnet(get_http_api_auth, dataset_id, params=params)
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_num
         else:
             assert res["message"] == expected_message
 
-    def test_concurrent_list(self, get_http_api_auth, get_dataset_id_and_document_ids):
-        dataset_id, _ = get_dataset_id_and_document_ids
+    @pytest.mark.slow
+    def test_concurrent_list(self, get_http_api_auth, add_documents):
+        dataset_id, _ = add_documents
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_documnet, get_http_api_auth, dataset_id) for i in range(100)]
+            futures = [executor.submit(list_documnets, get_http_api_auth, dataset_id) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
-    def test_invalid_params(self, get_http_api_auth, get_dataset_id_and_document_ids):
-        dataset_id, _ = get_dataset_id_and_document_ids
+    def test_invalid_params(self, get_http_api_auth, add_documents):
+        dataset_id, _ = add_documents
         params = {"a": "b"}
-        res = list_documnet(get_http_api_auth, dataset_id, params=params)
+        res = list_documnets(get_http_api_auth, dataset_id, params=params)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == 5

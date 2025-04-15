@@ -65,14 +65,6 @@ An embedding model converts chunks into embeddings. It cannot be changed once th
 The following embedding models can be deployed locally:
 
 - BAAI/bge-large-zh-v1.5
-- BAAI/bge-base-en-v1.5
-- BAAI/bge-large-en-v1.5
-- BAAI/bge-small-en-v1.5
-- BAAI/bge-small-zh-v1.5
-- jinaai/jina-embeddings-v2-base-en
-- jinaai/jina-embeddings-v2-small-en
-- nomic-ai/nomic-embed-text-v1.5
-- sentence-transformers/all-MiniLM-L6-v2
 - maidalun1020/bce-embedding-base_v1
 
 ### Upload file

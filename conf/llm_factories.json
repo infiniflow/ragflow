@@ -103,7 +103,7 @@
                     "tags": "LLM,CHAT,64K",
                     "max_tokens": 65792,
                     "model_type": "chat",
-                    "is_tools": false        
+                    "is_tools": false
                 },
                 {
                     "llm_name": "deepseek-v3",
@@ -163,7 +163,14 @@
                 },
                 {
                     "llm_name": "qwq-plus",
-                    "tags": "LLM,CHAT,128k",
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwq-plus-latest",
+                    "tags": "LLM,CHAT,132k",
                     "max_tokens": 131072,
                     "model_type": "chat",
                     "is_tools": true
@@ -191,8 +198,15 @@
                 },
                 {
                     "llm_name": "qwen-plus",
-                    "tags": "LLM,CHAT,32K",
-                    "max_tokens": 32768,
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-plus-latest",
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
                     "model_type": "chat",
                     "is_tools": true
                 },
@@ -860,7 +874,7 @@
                     "llm_name": "gemini-2.0-flash-001",
                     "tags": "LLM,CHAT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
@@ -872,6 +886,12 @@
                 },
                 {
                     "llm_name": "gemini-1.5-flash",
+                    "tags": "LLM,IMAGE2TEXT,1024K",
+                    "max_tokens": 1048576,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "gemini-2.5-pro-exp-03-25",
                     "tags": "LLM,IMAGE2TEXT,1024K",
                     "max_tokens": 1048576,
                     "model_type": "image2text"
