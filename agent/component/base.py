@@ -475,9 +475,6 @@ class ComponentBase(ABC):
                 if q.get("component_id"):
                     if q["component_id"].split("@")[0].lower().find("begin") >= 0:
                         cpn_id, key = q["component_id"].split("@")
-                        # 如果参数是tenantSchema，则跳出循环
-                        if key == "tenantSchema":
-                            continue
                         for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
                             if p["key"] == key:
                                 outs.append(pd.DataFrame([{"content": p.get("value", "")}]))
@@ -550,30 +547,6 @@ class ComponentBase(ABC):
             self._param.inputs.append({"component_id": r["component_id"], "content": r["content"]})
 
         return df
-
-    def get_tenant_schema(self):
-        """
-        获取租户schema
-
-        返回:
-            str: tenant_schema对应的值，如果未找到则返回None
-            (相当于Java中的返回String类型)
-        """
-        if self._param.query:
-            self._param.inputs = []
-            outs = []
-            for q in self._param.query:
-                if q.get("component_id"):
-                    if q["component_id"].split("@")[0].lower().find("begin") >= 0:
-                        cpn_id, key = q["component_id"].split("@")
-                        # 如果参数是tenant_schema，则跳出循环
-                        if key == "tenant_schema":
-                            for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
-                                if p["key"] == key:
-                                    return p.get("value", "")
-                            else:
-                                assert False, f"Can't find parameter '{key}' for {cpn_id}"
-
 
     def get_input_elements(self):
         assert self._param.query, "Please verify the input parameters first."
