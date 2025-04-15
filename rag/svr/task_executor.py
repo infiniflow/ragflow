@@ -58,7 +58,7 @@ from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from rag.settings import DOC_MAXIMUM_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
 from rag.utils import num_tokens_from_string, truncate
-from rag.utils.redis_conn import REDIS_CONN
+from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
 
@@ -99,6 +99,7 @@ MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
 task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
 chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
+WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
 
 
 # SIGUSR1 handler: start tracemalloc and take snapshot
@@ -621,6 +622,7 @@ async def handle_task():
 async def report_status():
     global CONSUMER_NAME, BOOT_AT, PENDING_TASKS, LAG_TASKS, DONE_TASKS, FAILED_TASKS
     REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
+    redis_lock = RedisDistributedLock("clean_task_executor", lock_value=CONSUMER_NAME, timeout=60)
     while True:
         try:
             now = datetime.now()
@@ -646,6 +648,20 @@ async def report_status():
             expired = REDIS_CONN.zcount(CONSUMER_NAME, 0, now.timestamp() - 60 * 30)
             if expired > 0:
                 REDIS_CONN.zpopmin(CONSUMER_NAME, expired)
+
+            # clean task executor
+            if redis_lock.acquire():
+                task_executors = REDIS_CONN.smembers("TASKEXE")
+                for consumer_name in task_executors:
+                    if consumer_name == CONSUMER_NAME:
+                        continue
+                    expired = REDIS_CONN.zcount(
+                        consumer_name, now.timestamp() - WORKER_HEARTBEAT_TIMEOUT, now.timestamp() + 10
+                    )
+                    if expired == 0:
+                        logging.info(f"{consumer_name} expired, removed")
+                        REDIS_CONN.srem("TASKEXE", consumer_name)
+                redis_lock.release()
         except Exception:
             logging.exception("report_status got exception")
         await trio.sleep(30)
