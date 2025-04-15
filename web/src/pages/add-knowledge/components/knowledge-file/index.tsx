@@ -119,11 +119,13 @@ const KnowledgeFile = () => {
         </div>
       ),
     },
+    /*
     {
       title: t('chunkNumber'),
       dataIndex: 'chunk_num',
       key: 'chunk_num',
     },
+    */
     {
       title: t('uploadDate'),
       dataIndex: 'create_time',
@@ -132,6 +134,7 @@ const KnowledgeFile = () => {
         return formatDate(value);
       },
     },
+    /*
     {
       title: t('chunkMethod'),
       dataIndex: 'parser_id',
@@ -140,6 +143,7 @@ const KnowledgeFile = () => {
         return parserList.find((x) => x.value === text)?.label;
       },
     },
+    */
     {
       title: t('enabled'),
       key: 'status',
