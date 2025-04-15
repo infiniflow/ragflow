@@ -52,7 +52,7 @@ def chunks_format(reference):
 def llm_id2llm_type(llm_id):
     from api.db.services.llm_service import TenantLLMService
 
-    llm_id, _ = TenantLLMService.split_model_name_and_factory(llm_id)
+    llm_id, *_ = TenantLLMService.split_model_name_and_factory(llm_id)
 
     llm_factories = settings.FACTORY_LLM_INFOS
     for llm_factory in llm_factories:
