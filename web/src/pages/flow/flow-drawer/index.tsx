@@ -177,9 +177,14 @@ const FormDrawer = ({
             )}
             <CloseOutlined onClick={hideModal} />
           </Flex>
-          <span className={styles.operatorDescription}>
-            {t(`${lowerFirst(operatorName)}Description`)}
-          </span>
+          <Flex vertical gap="small">
+            {node?.id && (
+              <p style={{ fontSize: '12px', color: '#aaa' }}>ID: {node.id}</p>
+            )}
+            <span className={styles.operatorDescription}>
+              {t(`${lowerFirst(operatorName)}Description`)}
+            </span>
+          </Flex>
         </Flex>
       }
       placement="right"

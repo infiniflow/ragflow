@@ -133,6 +133,7 @@ if __name__ == '__main__':
             port=settings.HOST_PORT,
             application=app,
             threaded=True,
+            reloader_type='stat',
             use_reloader=RuntimeConfig.DEBUG,
             use_debugger=RuntimeConfig.DEBUG,
         )

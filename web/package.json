@@ -142,6 +142,9 @@
   "engines": {
     "node": ">=18.20.4"
   },
+  "volta": {
+    "node": "22.14.0"
+  },
   "overrides": {
     "@radix-ui/react-dismissable-layer": "1.1.4"
   }

@@ -17,7 +17,7 @@ import json
 import time
 import traceback
 from uuid import uuid4
-from agent.canvas import Canvas
+from agent.canvas import Canvas, modify_dsl_kb_ids
 from api.db import TenantPermission
 from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation
 from api.db.services.api_service import API4ConversationService
@@ -121,13 +121,25 @@ class UserCanvasService(CommonService):
         return list(angents.dicts()), count
    
 
-def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
+def completion(tenant_id, agent_id, question, tenant_schema=None, session_id=None, stream=True, dynamic_kb_config: dict = None, **kwargs):
     e, cvs = UserCanvasService.get_by_id(agent_id)
     assert e, "Agent not found."
     assert cvs.user_id == tenant_id, "You do not own the agent."
-    if not isinstance(cvs.dsl,str):
-        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
-    canvas = Canvas(cvs.dsl, tenant_id)
+
+    original_dsl = cvs.dsl
+    if not isinstance(original_dsl, str):
+        original_dsl = json.dumps(original_dsl, ensure_ascii=False)
+    
+    dsl_to_run = original_dsl
+    if dynamic_kb_config:
+        try:
+            dsl_to_run = modify_dsl_kb_ids(dsl_to_run, dynamic_kb_config)
+        except Exception as mod_e:
+            # 如果修改失败，可以选择报错或使用原始DSL继续
+            print(f"Error modifying DSL with dynamic_kb_config: {mod_e}")
+            # 这里选择报错，也可以选择忽略并继续 yield "data:" + json.dumps(...)
+
+    canvas = Canvas(dsl_to_run, tenant_id, tenant_schema)
     canvas.reset()
     message_id = str(uuid4())
     if not session_id:
@@ -152,14 +164,27 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
             "user_id": kwargs.get("user_id", "") if isinstance(kwargs, dict) else "",
             "message": [{"role": "assistant", "content": canvas.get_prologue(), "created_at": time.time()}],
             "source": "agent",
-            "dsl": cvs.dsl
+            "dsl": json.loads(original_dsl) # Save original DSL
         }
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
     else:
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
-        canvas = Canvas(json.dumps(conv.dsl), tenant_id)
+        
+        original_conv_dsl = conv.dsl # Store original dsl from conversation
+        if not isinstance(original_conv_dsl, str):
+             original_conv_dsl = json.dumps(original_conv_dsl, ensure_ascii=False)
+
+        dsl_to_run = original_conv_dsl
+        if dynamic_kb_config:
+            try:
+                dsl_to_run = modify_dsl_kb_ids(dsl_to_run, dynamic_kb_config)
+            except Exception as mod_e:
+                print(f"Error modifying DSL with dynamic_kb_config: {mod_e}")
+                # Decide how to handle error: maybe yield an error message
+
+        canvas = Canvas(dsl_to_run, tenant_id, tenant_schema) # Use potentially modified dsl
         canvas.messages.append({"role": "user", "content": question, "id": message_id})
         canvas.add_user_input(question)
         if not conv.message:
@@ -194,12 +219,19 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
             canvas.history.append(("assistant", final_ans["content"]))
             if final_ans.get("reference"):
                 canvas.reference.append(final_ans["reference"])
-            conv.dsl = json.loads(str(canvas))
-            API4ConversationService.append_message(conv.id, conv.to_dict())
+            # DO NOT update conv.dsl here with canvas.__str__() as it contains the dynamic changes
+            # Instead, update only messages and references in the existing conv object before saving
+            conv.message = canvas.messages # Update messages directly
+            conv.reference = canvas.reference # Update references directly
+            API4ConversationService.append_message(conv.id, conv.to_dict()) # Save with original dsl
         except Exception as e:
             traceback.print_exc()
-            conv.dsl = json.loads(str(canvas))
-            API4ConversationService.append_message(conv.id, conv.to_dict())
+            # conv.dsl = json.loads(str(canvas)) # Avoid saving modified DSL
+            # Save with original dsl structure, potentially updating only messages/references if needed
+            # Ensure the error handling path also saves the correct state
+            temp_conv_for_save = conv.to_dict()
+            temp_conv_for_save['message'] = canvas.messages # Update messages before saving
+            API4ConversationService.append_message(conv.id, temp_conv_for_save) # Save with original dsl
             yield "data:" + json.dumps({"code": 500, "message": str(e),
                                         "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                        ensure_ascii=False) + "\n\n"
@@ -213,14 +245,16 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
             canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
             if final_ans.get("reference"):
                 canvas.reference.append(final_ans["reference"])
-            conv.dsl = json.loads(str(canvas))
-
+            # conv.dsl = json.loads(str(canvas)) # Avoid saving modified DSL
+            conv.message = canvas.messages
+            conv.reference = canvas.reference
             result = {"answer": final_ans["content"], "reference": final_ans.get("reference", []) , "param": canvas.get_preset_param()}
             result = structure_answer(conv, result, message_id, session_id)
-            API4ConversationService.append_message(conv.id, conv.to_dict())
+            API4ConversationService.append_message(conv.id, conv.to_dict()) # Save with original dsl
             yield result
             break
-def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
+
+def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True, dynamic_kb_config: dict = None, **kwargs):
     """Main function for OpenAI-compatible completions, structured similarly to the completion function."""
     tiktokenenc = tiktoken.get_encoding("cl100k_base")
     e, cvs = UserCanvasService.get_by_id(agent_id)
@@ -241,10 +275,25 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
         )
         return
     
-    if not isinstance(cvs.dsl, str):
-        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
-    
-    canvas = Canvas(cvs.dsl, tenant_id)
+    original_dsl = cvs.dsl
+    if not isinstance(original_dsl, str):
+        original_dsl = json.dumps(original_dsl, ensure_ascii=False)
+
+    dsl_to_run = original_dsl
+    if dynamic_kb_config:
+        try:
+            dsl_to_run = modify_dsl_kb_ids(dsl_to_run, dynamic_kb_config)
+        except Exception as mod_e:
+            print(f"Error modifying DSL with dynamic_kb_config: {mod_e}")
+            # Yield error in OpenAI format
+            yield get_data_openai(
+                id=session_id, model=agent_id, content=f"**ERROR**: Failed to apply dynamic KB config: {mod_e}",
+                completion_tokens=len(tiktokenenc.encode(f"**ERROR**: Failed to apply dynamic KB config: {mod_e}")),
+                prompt_tokens=len(tiktokenenc.encode(str(question)))
+            )
+            return
+
+    canvas = Canvas(dsl_to_run, tenant_id)
     canvas.reset()
     message_id = str(uuid4())
     
@@ -279,7 +328,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             "user_id": kwargs.get("user_id", "") if isinstance(kwargs, dict) else "",
             "message": [{"role": "assistant", "content": canvas.get_prologue(), "created_at": time.time()}],
             "source": "agent",
-            "dsl": cvs.dsl
+            "dsl": json.loads(original_dsl) # Save original DSL
         }
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
@@ -295,7 +344,25 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             )
             return
         
-        canvas = Canvas(json.dumps(conv.dsl), tenant_id)
+        original_conv_dsl = conv.dsl # Store original dsl from conversation
+        if not isinstance(original_conv_dsl, str):
+             original_conv_dsl = json.dumps(original_conv_dsl, ensure_ascii=False)
+
+        dsl_to_run = original_conv_dsl
+        if dynamic_kb_config:
+            try:
+                dsl_to_run = modify_dsl_kb_ids(dsl_to_run, dynamic_kb_config)
+            except Exception as mod_e:
+                print(f"Error modifying DSL with dynamic_kb_config: {mod_e}")
+                # Yield error in OpenAI format
+                yield get_data_openai(
+                    id=session_id, model=agent_id, content=f"**ERROR**: Failed to apply dynamic KB config: {mod_e}",
+                    completion_tokens=len(tiktokenenc.encode(f"**ERROR**: Failed to apply dynamic KB config: {mod_e}")),
+                    prompt_tokens=len(tiktokenenc.encode(str(question)))
+                )
+                return
+
+        canvas = Canvas(dsl_to_run, tenant_id) # Use potentially modified dsl
         canvas.messages.append({"role": "user", "content": question, "id": message_id})
         canvas.add_user_input(question)
         
@@ -356,27 +423,22 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             canvas.history.append(("assistant", final_ans["content"]))
             if final_ans.get("reference"):
                 canvas.reference.append(final_ans["reference"])
-            conv.dsl = json.loads(str(canvas))
-            API4ConversationService.append_message(conv.id, conv.to_dict())
+            # conv.dsl = json.loads(str(canvas)) # Avoid saving modified DSL
+            # Update messages and references directly before saving
+            conv.message = canvas.messages
+            conv.reference = canvas.reference
+            API4ConversationService.append_message(conv.id, conv.to_dict()) # Save with original dsl
             
-            yield "data: [DONE]\n\n"
+            yield "data: [DONE]\\n\\n"
             
         except Exception as e:
             traceback.print_exc()
-            conv.dsl = json.loads(str(canvas))
-            API4ConversationService.append_message(conv.id, conv.to_dict())
-            yield "data: " + json.dumps(
-                get_data_openai(
-                    id=session_id,
-                    model=agent_id,
-                    content="**ERROR**: " + str(e),
-                    finish_reason="stop",
-                    completion_tokens=len(tiktokenenc.encode("**ERROR**: " + str(e))),
-                    prompt_tokens=prompt_tokens
-                ),
-                ensure_ascii=False
-            ) + "\n\n"
-            yield "data: [DONE]\n\n"
+            # conv.dsl = json.loads(str(canvas)) # Avoid saving modified DSL
+            # Ensure the error handling path also saves the correct state (original DSL)
+            temp_conv_for_save = conv.to_dict()
+            temp_conv_for_save['message'] = canvas.messages # Update messages before saving
+            API4ConversationService.append_message(conv.id, temp_conv_for_save) # Save with original dsl
+            yield "data: [DONE]\\n\\n"
     
     else:  # Non-streaming mode
         try:
@@ -396,8 +458,10 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             canvas.history.append(("assistant", final_ans["content"]))
             if final_ans.get("reference"):
                 canvas.reference.append(final_ans["reference"])
-            conv.dsl = json.loads(str(canvas))
-            API4ConversationService.append_message(conv.id, conv.to_dict())
+            # conv.dsl = json.loads(str(canvas)) # Avoid saving modified DSL
+            conv.message = canvas.messages
+            conv.reference = canvas.reference
+            API4ConversationService.append_message(conv.id, conv.to_dict()) # Save with original dsl
             
             # Return the response in OpenAI format
             yield get_data_openai(
@@ -412,8 +476,11 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             
         except Exception as e:
             traceback.print_exc()
-            conv.dsl = json.loads(str(canvas))
-            API4ConversationService.append_message(conv.id, conv.to_dict())
+            # conv.dsl = json.loads(str(canvas)) # Avoid saving modified DSL
+            # Ensure the error handling path also saves the correct state (original DSL)
+            temp_conv_for_save = conv.to_dict()
+            temp_conv_for_save['message'] = canvas.messages # Update messages before saving
+            API4ConversationService.append_message(conv.id, temp_conv_for_save) # Save with original dsl
             yield get_data_openai(
                 id=session_id,
                 model=agent_id,

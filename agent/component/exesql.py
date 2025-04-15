@@ -79,6 +79,10 @@ class ExeSQL(Generate, ABC):
         ans = self.get_input()
         ans = "".join([str(a) for a in ans["content"]]) if "content" in ans else ""
         ans = self._refactor(ans)
+        # 如果tenant_schema为空,转换为空字符串
+        # 先获取一次结果并保存
+        schema = self._canvas.get_tenant_schema()
+        tenant_schema = "" if not schema else f"/**mycat:schema={schema}*/"
         if self._param.db_type in ["mysql", "mariadb"]:
             db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
                                  port=self._param.port, password=self._param.password)
@@ -110,7 +114,7 @@ class ExeSQL(Generate, ABC):
                 if not single_sql:
                     break
                 try:
-                    cursor.execute(single_sql)
+                    cursor.execute(tenant_schema + single_sql)
                     if cursor.rowcount == 0:
                         sql_res.append({"content": "No record in the database!"})
                         break

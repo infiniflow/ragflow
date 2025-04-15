@@ -24,6 +24,48 @@ from agent.component import component_class
 from agent.component.base import ComponentBase
 
 
+def modify_dsl_kb_ids(dsl_str: str, config: dict) -> str:
+    """Modifies the kb_ids for specified Retrieval nodes in a DSL string.
+
+    Args:
+        dsl_str: The JSON string representation of the DSL.
+        config: A dictionary where keys are node IDs and values are lists of kb_ids.
+                e.g., {"retrieval_node_id_1": ["kb_id_a", "kb_id_b"]}
+
+    Returns:
+        A JSON string representation of the modified DSL.
+    """
+    try:
+        dsl_data = json.loads(dsl_str)
+        # Use deepcopy to avoid modifying the original dict if it was passed around
+        modified_dsl_data = deepcopy(dsl_data)
+        components = modified_dsl_data.get("components", {})
+
+        for node_id, kb_ids in config.items():
+            if node_id in components:
+                component_config = components[node_id]
+                # Ensure it's a Retrieval node before modifying (optional but safer)
+                if component_config.get("obj", {}).get("component_name") == "Retrieval":
+                    if "params" in component_config.get("obj", {}):
+                        component_config["obj"]["params"]["kb_ids"] = kb_ids
+                        logging.info(f"Dynamically updated kb_ids for node '{node_id}' to {kb_ids}")
+                    else:
+                        logging.warning(f"Node '{node_id}' found, but 'params' structure missing for dynamic KB update.")
+                else:
+                    # Log if the target node is not a Retrieval node
+                     logging.warning(f"Attempted to dynamically update KB for node '{node_id}', but it is not a Retrieval component.")
+            else:
+                logging.warning(f"Node ID '{node_id}' not found in DSL components for dynamic KB update.")
+
+        return json.dumps(modified_dsl_data, ensure_ascii=False)
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to parse DSL string: {e}")
+        raise ValueError(f"Invalid DSL string provided for modification: {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during DSL modification: {e}")
+        raise
+
+
 class Canvas:
     """
     dsl = {
@@ -69,7 +111,7 @@ class Canvas:
     }
     """
 
-    def __init__(self, dsl: str, tenant_id=None):
+    def __init__(self, dsl: str, tenant_id=None, tenant_schema=None):
         self.path = []
         self.history = []
         self.messages = []
@@ -96,6 +138,7 @@ class Canvas:
             "answer": []
         }
         self._tenant_id = tenant_id
+        self._tenant_schema = tenant_schema
         self._embed_id = ""
         self.load()
 
@@ -299,6 +342,9 @@ class Canvas:
 
     def get_tenant_id(self):
         return self._tenant_id
+
+    def get_tenant_schema(self):
+        return self._tenant_schema
 
     def get_history(self, window_size):
         convs = []
