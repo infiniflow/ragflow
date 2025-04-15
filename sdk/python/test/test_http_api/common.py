@@ -247,3 +247,11 @@ def delete_session_with_chat_assistants(auth, chat_assistant_id, payload=None):
     url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}".format(chat_id=chat_assistant_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
+    session_ids = []
+    for i in range(num):
+        res = create_session_with_chat_assistant(auth, chat_assistant_id, {"name": f"session_with_chat_assistant_{i}"})
+        session_ids.append(res["data"]["id"])
+    return session_ids
