@@ -1206,6 +1206,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       promptMessage: '提示词是必填项',
       promptTip:
         '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
+      knowledgeBasesTip: '选择关联的知识库，或者在下方选择包含知识库ID的变量。',
+      knowledgeBaseVars: '知识库变量',
     },
     footer: {
       profile: 'All rights reserved @ React',

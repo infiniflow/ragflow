@@ -19,7 +19,7 @@ import json
 import os
 import logging
 from functools import partial
-from typing import Tuple, Union
+from typing import Any, Tuple, Union
 
 import pandas as pd
 
@@ -457,6 +457,33 @@ class ComponentBase(ABC):
     def set_output(self, v):
         setattr(self._param, self._param.output_var_name, v)
 
+    def _fetch_outputs_from(self, sources: list[dict[str, Any]]) -> list[pd.DataFrame]:
+        outs = []
+        for q in sources:
+            if q.get("component_id"):
+                if q["component_id"].split("@")[0].lower().find("begin") >= 0:
+                    cpn_id, key = q["component_id"].split("@")
+                    for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
+                        if p["key"] == key:
+                            outs.append(pd.DataFrame([{"content": p.get("value", "")}]))
+                            break
+                    else:
+                        assert False, f"Can't find parameter '{key}' for {cpn_id}"
+                    continue
+
+                if q["component_id"].lower().find("answer") == 0:
+                    txt = []
+                    for r, c in self._canvas.history[::-1][:self._param.message_history_window_size][::-1]:
+                        txt.append(f"{r.upper()}:{c}")
+                    txt = "\n".join(txt)
+                    outs.append(pd.DataFrame([{"content": txt}]))
+                    continue
+
+                outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
+            elif q.get("value"):
+                outs.append(pd.DataFrame([{"content": q["value"]}]))
+        return outs
+
     def get_input(self):
         if self._param.debug_inputs:
             return pd.DataFrame([{"content": v["value"]} for v in self._param.debug_inputs if v.get("value")])
@@ -470,37 +497,24 @@ class ComponentBase(ABC):
 
         if self._param.query:
             self._param.inputs = []
-            outs = []
-            for q in self._param.query:
-                if q.get("component_id"):
-                    if q["component_id"].split("@")[0].lower().find("begin") >= 0:
-                        cpn_id, key = q["component_id"].split("@")
-                        for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
-                            if p["key"] == key:
-                                outs.append(pd.DataFrame([{"content": p.get("value", "")}]))
-                                self._param.inputs.append({"component_id": q["component_id"],
-                                                           "content": p.get("value", "")})
-                                break
-                        else:
-                            assert False, f"Can't find parameter '{key}' for {cpn_id}"
-                        continue
+            outs = self._fetch_outputs_from(self._param.query)
 
-                    if q["component_id"].lower().find("answer") == 0:
-                        txt = []
-                        for r, c in self._canvas.history[::-1][:self._param.message_history_window_size][::-1]:
-                            txt.append(f"{r.upper()}:{c}")
-                        txt = "\n".join(txt)
-                        self._param.inputs.append({"content": txt, "component_id": q["component_id"]})
-                        outs.append(pd.DataFrame([{"content": txt}]))
-                        continue
+            for out in outs:
+                records = out.to_dict("records")
+                content: str
 
-                    outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
-                    self._param.inputs.append({"component_id": q["component_id"],
-                                               "content": "\n".join(
-                                                   [str(d["content"]) for d in outs[-1].to_dict('records')])})
-                elif q.get("value"):
-                    self._param.inputs.append({"component_id": None, "content": q["value"]})
-                    outs.append(pd.DataFrame([{"content": q["value"]}]))
+                if len(records) > 1:
+                    content = "\n".join(
+                        [str(d["content"]) for d in records]
+                    )
+                else:
+                    content = records[0]["content"]
+
+                self._param.inputs.append({
+                    "component_id": records[0].get("component_id"),
+                    "content": content
+                })
+
             if outs:
                 df = pd.concat(outs, ignore_index=True)
                 if "content" in df:
