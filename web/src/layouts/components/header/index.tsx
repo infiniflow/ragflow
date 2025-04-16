@@ -71,7 +71,7 @@ const RagHeader = () => {
           onClick={handleLogoClick}
           className={styles.logoWrapper}
         >
-          <img src="/logo.svg" alt="" className={styles.appIcon} />
+          <img src="/BR.png" alt="" className={`${styles.appIcon} w-[180px] h-[40px]`} />
           <span className={styles.appName}>{appConf.appName}</span>
         </Space>
       </a>

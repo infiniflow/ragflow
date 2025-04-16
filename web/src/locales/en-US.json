@@ -1,0 +1,13 @@
+{
+  // ...existing code...
+  "setting": {
+    // ...existing code...
+    "teamMembers": "Members",
+    "departments": "Departments",
+    "groups": "Groups",
+    "departmentsContent": "Departments management content",
+    "groupsContent": "Groups management content",
+    // ...existing code...
+  }
+  // ...existing code...
+}

@@ -1,0 +1,280 @@
+{
+  "id": 15,
+  "title": "SOP助手",
+  "description": "一个专业的SOP文档助手，能够根据产品名称帮助查找相应的标准作业流程文件。",
+  "canvas_type": "chatbot",
+  "dsl": {
+    "answer": [],
+    "components": {
+      "begin": {
+        "downstream": ["answer:0"],
+        "obj": {
+          "component_name": "Begin",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "prologue": "你好，我是宝捷小瑞-SOP助手，请您输入产品名称，我会帮您找到相应的SOP文件。如果您有进一步需求，请告诉我！",
+            "query": []
+          }
+        },
+        "upstream": []
+      },
+      "answer:0": {
+        "downstream": ["Retrieval:CommonTreesSip"],
+        "obj": {
+          "component_name": "Answer",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "post_answers": [],
+            "query": []
+          }
+        },
+        "upstream": ["begin", "Generate:ReadyZoosHide"]
+      },
+      "Retrieval:CommonTreesSip": {
+        "downstream": ["Generate:ReadyZoosHide"],
+        "obj": {
+          "component_name": "Retrieval",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "empty_response": "",
+            "inputs": [],
+            "kb_ids": ["9e12fd500dcf11f09d726e6971d6fb3e"],
+            "keywords_similarity_weight": 0.28,
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [{"component_id":"answer:0","type":"reference"}],
+            "rerank_id": "",
+            "similarity_threshold": 0.33,
+            "top_k": 1024,
+            "top_n": 1
+          }
+        },
+        "upstream": ["answer:0"]
+      },
+      "Generate:ReadyZoosHide": {
+        "downstream": ["answer:0"],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": true,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "qwen-max@Tongyi-Qianwen",
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "## 角色设定  \n你是工厂的生产部长，负责查询客户关于产品的作业指导问题。\n所有回答必须基于 {Retrieval:CommonTreesSip}的内容，不得扩展。\n\nSOP知识库检索输入：  \n {Retrieval:CommonTreesSip}\n\n## 任务要求\n\n你只需要做以下两个事情：\n        -如果 {Retrieval:CommonTreesSip}为空回复时，回复\"未找到该产品的SOP文件\"；\n        -如果 {Retrieval:CommonTreesSip}有内容，回复\"完整SOP文件已附在对话后，请查阅\"，标注引用文件；\n\n### **输入示例**\n```\n {Retrieval:CommonTreesSip}\n```\n\n### **输出示例**\n```\n未找到该产品的SOP文件。\n```\n```\n完整SOP文件已附在对话后，请查阅。\n```\n",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": ["Retrieval:CommonTreesSip"]
+      }
+    },
+    "embed_id": "",
+    "graph": {
+      "edges": [
+        {
+          "id": "xy-edge__begin-answer:0c",
+          "markerEnd": "logo",
+          "source": "begin",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "answer:0",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__answer:0b-Retrieval:CommonTreesSipc",
+          "markerEnd": "logo",
+          "source": "answer:0",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:CommonTreesSip",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Retrieval:CommonTreesSipb-Generate:ReadyZoosHidec",
+          "markerEnd": "logo",
+          "source": "Retrieval:CommonTreesSip",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:ReadyZoosHide",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:ReadyZoosHideb-answer:0c",
+          "markerEnd": "logo",
+          "source": "Generate:ReadyZoosHide",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "answer:0",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        }
+      ],
+      "nodes": [
+        {
+          "data": {
+            "form": {
+              "prologue": "你好，我是宝捷小瑞-SOP助手，请您输入产品名称，我会帮您找到相应的SOP文件。如果您有进一步需求，请告诉我！",
+              "query": []
+            },
+            "label": "Begin",
+            "name": "begin"
+          },
+          "dragging": false,
+          "id": "begin",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -513.910145693701,
+            "y": -16.75438061618018
+          },
+          "selected": false,
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "beginNode"
+        },
+        {
+          "data": {
+            "form": {},
+            "label": "Answer",
+            "name": "对话_0"
+          },
+          "dragging": false,
+          "id": "answer:0",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -266.77547355234844,
+            "y": -115.30622213031475
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode"
+        },
+        {
+          "data": {
+            "form": {
+              "kb_ids": ["9e12fd500dcf11f09d726e6971d6fb3e"],
+              "keywords_similarity_weight": 0.28,
+              "query": [
+                {
+                  "component_id": "answer:0",
+                  "type": "reference"
+                }
+              ],
+              "similarity_threshold": 0.33,
+              "top_n": 1,
+              "use_kg": false
+            },
+            "label": "Retrieval",
+            "name": "知识检索_0"
+          },
+          "dragging": false,
+          "id": "Retrieval:CommonTreesSip",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "position": {
+            "x": -4.433365840569806,
+            "y": -124.35537133602455
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "retrievalNode"
+        },
+        {
+          "data": {
+            "form": {
+              "cite": true,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "qwen-max@Tongyi-Qianwen",
+              "maxTokensEnabled": false,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "## 角色设定  \n你是工厂的生产部长，负责查询客户关于产品的作业指导问题。\n所有回答必须基于 {Retrieval:CommonTreesSip}的内容，不得扩展。\n\nSOP知识库检索输入：  \n {Retrieval:CommonTreesSip}\n\n## 任务要求\n\n你只需要做以下两个事情：\n        -如果 {Retrieval:CommonTreesSip}为空回复时，回复\"未找到该产品的SOP文件\"；\n        -如果 {Retrieval:CommonTreesSip}有内容，回复\"完整SOP文件已附在对话后，请查阅\"，标注引用文件；\n\n### **输入示例**\n```\n {Retrieval:CommonTreesSip}\n```\n\n### **输出示例**\n```\n未找到该产品的SOP文件。\n```\n```\n完整SOP文件已附在对话后，请查阅。\n```\n",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "Generate",
+            "name": "生成回答_0"
+          },
+          "dragging": false,
+          "id": "Generate:ReadyZoosHide",
+          "measured": {
+            "height": 102,
+            "width": 200
+          },
+          "position": {
+            "x": 284.1783833861401,
+            "y": -14.482991869392713
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
+        }
+      ]
+    },
+    "history": [],
+    "messages": [],
+    "path": [],
+    "reference": []
+  },
+  "avatar": "data:image/png;base64,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"
+}

@@ -84,7 +84,7 @@ export default {
     },
     knowledgeDetails: {
       dataset: 'Dataset',
-      testing: 'Retrieval testing',
+      // testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
       knowledgeGraph: 'Knowledge graph',

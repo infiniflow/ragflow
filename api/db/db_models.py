@@ -515,7 +515,7 @@ class InvitationCode(DataBaseModel):
     visit_time = DateTimeField(null=True, index=True)
     user_id = CharField(max_length=32, null=True, index=True)
     tenant_id = CharField(max_length=32, null=True, index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    status = CharField(maxlength=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     class Meta:
         db_table = "invitation_code"
@@ -525,7 +525,7 @@ class LLMFactories(DataBaseModel):
     name = CharField(max_length=128, null=False, help_text="LLM factory name", primary_key=True)
     logo = TextField(null=True, help_text="llm logo base64")
     tags = CharField(max_length=255, null=False, help_text="LLM, Text Embedding, Image2Text, ASR", index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    status = CharField(maxlength=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
         return self.name
@@ -543,7 +543,7 @@ class LLM(DataBaseModel):
 
     tags = CharField(max_length=255, null=False, help_text="LLM, Text Embedding, Image2Text, Chat, 32k...", index=True)
     is_tools =  BooleanField(null=False, help_text="support tools", default=False)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    status = CharField(maxlength=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
         return self.llm_name
@@ -556,10 +556,10 @@ class LLM(DataBaseModel):
 class TenantLLM(DataBaseModel):
     tenant_id = CharField(max_length=32, null=False, index=True)
     llm_factory = CharField(max_length=128, null=False, help_text="LLM factory name", index=True)
-    model_type = CharField(max_length=128, null=True, help_text="LLM, Text Embedding, Image2Text, ASR", index=True)
-    llm_name = CharField(max_length=128, null=True, help_text="LLM name", default="", index=True)
-    api_key = CharField(max_length=2048, null=True, help_text="API KEY", index=True)
-    api_base = CharField(max_length=255, null=True, help_text="API Base")
+    model_type = CharField(maxlength=128, null=True, help_text="LLM, Text Embedding, Image2Text, ASR", index=True)
+    llm_name = CharField(maxlength=128, null=True, help_text="LLM name", default="", index=True)
+    api_key = CharField(maxlength=2048, null=True, help_text="API KEY", index=True)
+    api_base = CharField(maxlength=255, null=True, help_text="API Base")
     max_tokens = IntegerField(default=8192, index=True)
     used_tokens = IntegerField(default=0, index=True)
 
@@ -572,10 +572,10 @@ class TenantLLM(DataBaseModel):
 
 
 class TenantLangfuse(DataBaseModel):
-    tenant_id = CharField(max_length=32, null=False, primary_key=True)
-    secret_key = CharField(max_length=2048, null=False, help_text="SECRET KEY", index=True)
-    public_key = CharField(max_length=2048, null=False, help_text="PUBLIC KEY", index=True)
-    host = CharField(max_length=128, null=False, help_text="HOST", index=True)
+    tenant_id = CharField(maxlength=32, null=False, primary_key=True)
+    secret_key = CharField(maxlength=2048, null=False, help_text="SECRET KEY", index=True)
+    public_key = CharField(maxlength=2048, null=False, help_text="PUBLIC KEY", index=True)
+    host = CharField(maxlength=128, null=False, help_text="HOST", index=True)
 
     def __str__(self):
         return "Langfuse host" + self.host
@@ -585,25 +585,25 @@ class TenantLangfuse(DataBaseModel):
 
 
 class Knowledgebase(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
+    id = CharField(maxlength=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=128, null=False, help_text="KB name", index=True)
-    language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
+    tenant_id = CharField(maxlength=32, null=False, index=True)
+    name = CharField(maxlength=128, null=False, help_text="KB name", index=True)
+    language = CharField(maxlength=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
     description = TextField(null=True, help_text="KB description")
-    embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID", index=True)
-    permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
-    created_by = CharField(max_length=32, null=False, index=True)
+    embd_id = CharField(maxlength=128, null=False, help_text="default embedding model ID", index=True)
+    permission = CharField(maxlength=16, null=False, help_text="me|team", default="me", index=True)
+    created_by = CharField(maxlength=32, null=False, index=True)
     doc_num = IntegerField(default=0, index=True)
     token_num = IntegerField(default=0, index=True)
     chunk_num = IntegerField(default=0, index=True)
     similarity_threshold = FloatField(default=0.2, index=True)
     vector_similarity_weight = FloatField(default=0.3, index=True)
 
-    parser_id = CharField(max_length=32, null=False, help_text="default parser ID", default=ParserType.NAIVE.value, index=True)
+    parser_id = CharField(maxlength=32, null=False, help_text="default parser ID", default=ParserType.NAIVE.value, index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
     pagerank = IntegerField(default=0, index=False)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    status = CharField(maxlength=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
         return self.name
@@ -613,16 +613,16 @@ class Knowledgebase(DataBaseModel):
 
 
 class Document(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
+    id = CharField(maxlength=32, primary_key=True)
     thumbnail = TextField(null=True, help_text="thumbnail base64 string")
-    kb_id = CharField(max_length=256, null=False, index=True)
-    parser_id = CharField(max_length=32, null=False, help_text="default parser ID", index=True)
+    kb_id = CharField(maxlength=256, null=False, index=True)
+    parser_id = CharField(maxlength=32, null=False, help_text="default parser ID", index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
-    source_type = CharField(max_length=128, null=False, default="local", help_text="where dose this document come from", index=True)
-    type = CharField(max_length=32, null=False, help_text="file extension", index=True)
-    created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
-    name = CharField(max_length=255, null=True, help_text="file name", index=True)
-    location = CharField(max_length=255, null=True, help_text="where dose it store", index=True)
+    source_type = CharField(maxlength=128, null=False, default="local", help_text="where dose this document come from", index=True)
+    type = CharField(maxlength=32, null=False, help_text="file extension", index=True)
+    created_by = CharField(maxlength=32, null=False, help_text="who created it", index=True)
+    name = CharField(maxlength=255, null=True, help_text="file name", index=True)
+    location = CharField(maxlength=255, null=True, help_text="where dose it store", index=True)
     size = IntegerField(default=0, index=True)
     token_num = IntegerField(default=0, index=True)
     chunk_num = IntegerField(default=0, index=True)
@@ -632,43 +632,43 @@ class Document(DataBaseModel):
     process_duation = FloatField(default=0)
     meta_fields = JSONField(null=True, default={})
 
-    run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    run = CharField(maxlength=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
+    status = CharField(maxlength=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     class Meta:
         db_table = "document"
 
 
 class File(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    parent_id = CharField(max_length=32, null=False, help_text="parent folder id", index=True)
-    tenant_id = CharField(max_length=32, null=False, help_text="tenant id", index=True)
-    created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
-    name = CharField(max_length=255, null=False, help_text="file name or folder name", index=True)
-    location = CharField(max_length=255, null=True, help_text="where dose it store", index=True)
+    id = CharField(maxlength=32, primary_key=True)
+    parent_id = CharField(maxlength=32, null=False, help_text="parent folder id", index=True)
+    tenant_id = CharField(maxlength=32, null=False, help_text="tenant id", index=True)
+    created_by = CharField(maxlength=32, null=False, help_text="who created it", index=True)
+    name = CharField(maxlength=255, null=False, help_text="file name or folder name", index=True)
+    location = CharField(maxlength=255, null=True, help_text="where dose it store", index=True)
     size = IntegerField(default=0, index=True)
-    type = CharField(max_length=32, null=False, help_text="file extension", index=True)
-    source_type = CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)
+    type = CharField(maxlength=32, null=False, help_text="file extension", index=True)
+    source_type = CharField(maxlength=128, null=False, default="", help_text="where dose this document come from", index=True)
 
     class Meta:
         db_table = "file"
 
 
 class File2Document(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    file_id = CharField(max_length=32, null=True, help_text="file id", index=True)
-    document_id = CharField(max_length=32, null=True, help_text="document id", index=True)
+    id = CharField(maxlength=32, primary_key=True)
+    file_id = CharField(maxlength=32, null=True, help_text="file id", index=True)
+    document_id = CharField(maxlength=32, null=True, help_text="document id", index=True)
 
     class Meta:
         db_table = "file2document"
 
 
 class Task(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    doc_id = CharField(max_length=32, null=False, index=True)
+    id = CharField(maxlength=32, primary_key=True)
+    doc_id = CharField(maxlength=32, null=False, index=True)
     from_page = IntegerField(default=0)
     to_page = IntegerField(default=100000000)
-    task_type = CharField(max_length=32, null=False, default="")
+    task_type = CharField(maxlength=32, null=False, default="")
     priority = IntegerField(default=0)
 
     begin_at = DateTimeField(null=True, index=True)
@@ -682,16 +682,16 @@ class Task(DataBaseModel):
 
 
 class Dialog(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=255, null=True, help_text="dialog application name", index=True)
+    id = CharField(maxlength=32, primary_key=True)
+    tenant_id = CharField(maxlength=32, null=False, index=True)
+    name = CharField(maxlength=255, null=True, help_text="dialog application name", index=True)
     description = TextField(null=True, help_text="Dialog description")
     icon = TextField(null=True, help_text="icon base64 string")
-    language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
-    llm_id = CharField(max_length=128, null=False, help_text="default llm ID")
+    language = CharField(maxlength=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
+    llm_id = CharField(maxlength=128, null=False, help_text="default llm ID")
 
     llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4, "max_tokens": 512})
-    prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced", index=True)
+    prompt_type = CharField(maxlength=16, null=False, default="simple", help_text="simple|advanced", index=True)
     prompt_config = JSONField(
         null=False,
         default={"system": "", "prologue": "Hi! I'm your assistant, what can I do for you?", "parameters": [], "empty_response": "Sorry! No relevant content was found in the knowledge base!"},
@@ -704,35 +704,35 @@ class Dialog(DataBaseModel):
 
     top_k = IntegerField(default=1024)
 
-    do_refer = CharField(max_length=1, null=False, default="1", help_text="it needs to insert reference index into answer or not")
+    do_refer = CharField(maxlength=1, null=False, default="1", help_text="it needs to insert reference index into answer or not")
 
-    rerank_id = CharField(max_length=128, null=False, help_text="default rerank model ID")
+    rerank_id = CharField(maxlength=128, null=False, help_text="default rerank model ID")
 
     kb_ids = JSONField(null=False, default=[])
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    status = CharField(maxlength=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     class Meta:
         db_table = "dialog"
 
 
 class Conversation(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    dialog_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=255, null=True, help_text="converastion name", index=True)
+    id = CharField(maxlength=32, primary_key=True)
+    dialog_id = CharField(maxlength=32, null=False, index=True)
+    name = CharField(maxlength=255, null=True, help_text="converastion name", index=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
-    user_id = CharField(max_length=255, null=True, help_text="user_id", index=True)
+    user_id = CharField(maxlength=255, null=True, help_text="user_id", index=True)
 
     class Meta:
         db_table = "conversation"
 
 
 class APIToken(DataBaseModel):
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    token = CharField(max_length=255, null=False, index=True)
-    dialog_id = CharField(max_length=32, null=True, index=True)
-    source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
-    beta = CharField(max_length=255, null=True, index=True)
+    tenant_id = CharField(maxlength=32, null=False, index=True)
+    token = CharField(maxlength=255, null=False, index=True)
+    dialog_id = CharField(maxlength=32, null=True, index=True)
+    source = CharField(maxlength=16, null=True, help_text="none|agent|dialog", index=True)
+    beta = CharField(maxlength=255, null=True, index=True)
 
     class Meta:
         db_table = "api_token"
@@ -740,13 +740,13 @@ class APIToken(DataBaseModel):
 
 
 class API4Conversation(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    dialog_id = CharField(max_length=32, null=False, index=True)
-    user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
+    id = CharField(maxlength=32, primary_key=True)
+    dialog_id = CharField(maxlength=32, null=False, index=True)
+    user_id = CharField(maxlength=255, null=False, help_text="user_id", index=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     tokens = IntegerField(default=0)
-    source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
+    source = CharField(maxlength=16, null=True, help_text="none|agent|dialog", index=True)
     dsl = JSONField(null=True, default={})
     duration = FloatField(default=0, index=True)
     round = IntegerField(default=0, index=True)
@@ -757,14 +757,14 @@ class API4Conversation(DataBaseModel):
 
 
 class UserCanvas(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
+    id = CharField(maxlength=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
-    user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
+    user_id = CharField(maxlength=255, null=False, help_text="user_id", index=True)
+    title = CharField(maxlength=255, null=True, help_text="Canvas title")
 
-    permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
+    permission = CharField(maxlength=16, null=False, help_text="me|team", default="me", index=True)
     description = TextField(null=True, help_text="Canvas description")
-    canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_type = CharField(maxlength=32, null=True, help_text="Canvas type", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -772,12 +772,12 @@ class UserCanvas(DataBaseModel):
 
 
 class CanvasTemplate(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
+    id = CharField(maxlength=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
+    title = CharField(maxlength=255, null=True, help_text="Canvas title")
 
     description = TextField(null=True, help_text="Canvas description")
-    canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_type = CharField(maxlength=32, null=True, help_text="Canvas type", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -785,10 +785,10 @@ class CanvasTemplate(DataBaseModel):
 
 
 class UserCanvasVersion(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    user_canvas_id = CharField(max_length=255, null=False, help_text="user_canvas_id", index=True)
+    id = CharField(maxlength=32, primary_key=True)
+    user_canvas_id = CharField(maxlength=255, null=False, help_text="user_canvas_id", index=True)
 
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
+    title = CharField(maxlength=255, null=True, help_text="Canvas title")
     description = TextField(null=True, help_text="Canvas description")
     dsl = JSONField(null=True, default={})
 
@@ -796,18 +796,61 @@ class UserCanvasVersion(DataBaseModel):
         db_table = "user_canvas_version"
 
 
+class Department(DataBaseModel):
+    id = CharField(maxlength=32, primary_key=True)
+    tenant_id = CharField(maxlength=32, null=False, index=True)
+    name = CharField(maxlength=100, null=False, help_text="部门名称", index=True)
+    description = TextField(null=True, help_text="部门描述")
+    parent_id = CharField(maxlength=32, null=True, help_text="上级部门ID", index=True)
+    status = CharField(maxlength=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "department"
+
+
+class DepartmentUser(DataBaseModel):
+    id = CharField(maxlength=32, primary_key=True)
+    department_id = CharField(maxlength=32, null=False, index=True)
+    user_id = CharField(maxlength=32, null=False, index=True)
+    status = CharField(maxlength=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "department_user"
+
+
+class Group(DataBaseModel):
+    id = CharField(maxlength=32, primary_key=True)
+    tenant_id = CharField(maxlength=32, null=False, index=True)
+    name = CharField(maxlength=100, null=False, help_text="群组名称", index=True)
+    description = TextField(null=True, help_text="群组描述")
+    status = CharField(maxlength=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "group"
+
+
+class GroupUser(DataBaseModel):
+    id = CharField(maxlength=32, primary_key=True)
+    group_id = CharField(maxlength=32, null=False, index=True)
+    user_id = CharField(maxlength=32, null=False, index=True)
+    status = CharField(maxlength=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "group_user"
+
+
 def migrate_db():
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
     try:
-        migrate(migrator.add_column("file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)))
+        migrate(migrator.add_column("file", "source_type", CharField(maxlength=128, null=False, default="", help_text="where dose this document come from", index=True)))
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID")))
+        migrate(migrator.add_column("tenant", "rerank_id", CharField(maxlength=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID")))
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID")))
+        migrate(migrator.add_column("dialog", "rerank_id", CharField(maxlength=128, null=False, default="", help_text="default rerank model ID")))
     except Exception:
         pass
     try:
@@ -815,19 +858,19 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.alter_column_type("tenant_llm", "api_key", CharField(max_length=2048, null=True, help_text="API KEY", index=True)))
+        migrate(migrator.alter_column_type("tenant_llm", "api_key", CharField(maxlength=2048, null=True, help_text="API KEY", index=True)))
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("api_token", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
+        migrate(migrator.add_column("api_token", "source", CharField(maxlength=16, null=True, help_text="none|agent|dialog", index=True)))
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("tenant", "tts_id", CharField(max_length=256, null=True, help_text="default tts model ID", index=True)))
+        migrate(migrator.add_column("tenant", "tts_id", CharField(maxlength=256, null=True, help_text="default tts model ID", index=True)))
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("api_4_conversation", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
+        migrate(migrator.add_column("api_4_conversation", "source", CharField(maxlength=16, null=True, help_text="none|agent|dialog", index=True)))
     except Exception:
         pass
     try:
@@ -835,7 +878,7 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.alter_column_type("api_token", "dialog_id", CharField(max_length=32, null=True, index=True)))
+        migrate(migrator.alter_column_type("api_token", "dialog_id", CharField(maxlength=32, null=True, index=True)))
     except Exception:
         pass
     try:
@@ -851,7 +894,7 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("api_token", "beta", CharField(max_length=255, null=True, index=True)))
+        migrate(migrator.add_column("api_token", "beta", CharField(maxlength=255, null=True, index=True)))
     except Exception:
         pass
     try:
@@ -864,7 +907,7 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True)))
+        migrate(migrator.add_column("conversation", "user_id", CharField(maxlength=255, null=True, help_text="user_id", index=True)))
     except Exception:
         pass
     try:
@@ -872,7 +915,7 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("task", "task_type", CharField(max_length=32, null=False, default="")))
+        migrate(migrator.add_column("task", "task_type", CharField(maxlength=32, null=False, default="")))
     except Exception:
         pass
     try:
@@ -880,7 +923,7 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)))
+        migrate(migrator.add_column("user_canvas", "permission", CharField(maxlength=16, null=False, help_text="me|team", default="me", index=True)))
     except Exception:
         pass
     try:

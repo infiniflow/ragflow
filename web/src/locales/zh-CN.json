@@ -1,0 +1,13 @@
+{
+  // ...existing code...
+  "setting": {
+    // ...existing code...
+    "teamMembers": "成员",
+    "departments": "部门",
+    "groups": "群组",
+    "departmentsContent": "部门管理内容",
+    "groupsContent": "群组管理内容",
+    // ...existing code...
+  }
+  // ...existing code...
+}

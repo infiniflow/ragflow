@@ -63,15 +63,16 @@ const KnowledgeSidebar = () => {
   const items: MenuItem[] = useMemo(() => {
     const list = [
       getItem(
-        KnowledgeRouteKey.Dataset, // TODO: Change icon color when selected
+        KnowledgeRouteKey.Dataset,
         KnowledgeRouteKey.Dataset,
         <DatasetIcon />,
       ),
-      getItem(
-        KnowledgeRouteKey.Testing,
-        KnowledgeRouteKey.Testing,
-        <TestingIcon />,
-      ),
+      // 注释掉检索测试选项
+      // getItem(
+      //   KnowledgeRouteKey.Testing,
+      //   KnowledgeRouteKey.Testing,
+      //   <TestingIcon />,
+      // ),
       getItem(
         KnowledgeRouteKey.Configuration,
         KnowledgeRouteKey.Configuration,
