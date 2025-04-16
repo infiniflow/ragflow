@@ -31,7 +31,7 @@ from api.db.services.llm_service import LLMBundle
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wraper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
-from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_docx, tokenize_table
+from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
 from rag.utils import num_tokens_from_string
 
 
@@ -396,7 +396,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         if kwargs.get("section_only", False):
             return chunks
 
-        res.extend(tokenize_chunks_docx(chunks, doc, is_english, images))
+        res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         return res
 
@@ -508,14 +508,25 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
     st = timer()
-    chunks = naive_merge(
-        sections, int(parser_config.get(
-            "chunk_token_num", 128)), parser_config.get(
-            "delimiter", "\n!?。；！？"))
-    if kwargs.get("section_only", False):
-        return chunks
+    if section_images:
+        chunks, images = naive_merge_with_images(sections, section_images,
+                                        int(parser_config.get(
+                                            "chunk_token_num", 128)), parser_config.get(
+                                            "delimiter", "\n!?。；！？"))
+        if kwargs.get("section_only", False):
+            return chunks
+        
+        res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
+    else:
+        chunks = naive_merge(
+            sections, int(parser_config.get(
+                "chunk_token_num", 128)), parser_config.get(
+                "delimiter", "\n!?。；！？"))
+        if kwargs.get("section_only", False):
+            return chunks
 
-    res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
+        res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
+    
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
     return res
 
