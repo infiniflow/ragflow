@@ -3169,7 +3169,7 @@ The chat model dynamically determines the number of questions to generate based 
 ##### Request example
 
 ```bash
-curl --request DELETE \
+curl --request POST \
      --url http://{address}/api/v1/conversation/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
