@@ -150,7 +150,7 @@ wheels = [
 
 [[package]]
 name = "akshare"
-version = "1.16.60"
+version = "1.16.77"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -171,9 +171,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "xlrd" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/46/0a/cd9dacaec5b437fd10a21f022c90e055adade935375d47230b2e6ae6b609/akshare-1.16.60.tar.gz", hash = "sha256:f7ce998316954e64c737d99da2afb37275f94f6447d4bb9af83691b135b12c81" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/94/90/ae63cd06d24bbfd0e79b0f4e1ac35a28af30ef9c7b9faee22e90deee3ae7/akshare-1.16.77.tar.gz", hash = "sha256:7f8d9f9fad15dda3d2736c3079ee4726e003701f9450574dc653e6047aa76ecc" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/67/a9/dcd31299b4eb4d098148aef115e104d20d3d38dd36b0336510f44635c533/akshare-1.16.60-py3-none-any.whl", hash = "sha256:d8a5c8611dbffc0deddce7b2c3fdb168f0cd053fc0ebc5f0a4ac775c539db9d2" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/51/85/c0ccc7d8b3697997cc36351bb16377a37f31ff92fd82ac2a52c08ce05a0f/akshare-1.16.77-py3-none-any.whl", hash = "sha256:7e330514d2f851bb9938d5b469602918703951cbaa0e0961851ae39249d8a265" },
 ]
 
 [[package]]
@@ -2987,6 +2987,25 @@ wheels = [
 ]
 
 [[package]]
+name = "mcp"
+version = "1.6.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "httpx" },
+    { name = "httpx-sse" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "sse-starlette" },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/95/d2/f587cb965a56e992634bebc8611c5b579af912b74e04eb9164bd49527d21/mcp-1.6.0.tar.gz", hash = "sha256:d9324876de2c5637369f43161cd71eebfd803df5a95e46225cab8d280e366723" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/10/30/20a7f33b0b884a9d14dd3aa94ff1ac9da1479fe2ad66dd9e2736075d2506/mcp-1.6.0-py3-none-any.whl", hash = "sha256:7bd24c6ea042dbec44c754f100984d186620d8b841ec30f1b19eda9b93a634d0" },
+]
+
+[[package]]
 name = "mdurl"
 version = "0.1.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -4352,6 +4371,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pydantic-settings"
+version = "2.8.1"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/88/82/c79424d7d8c29b994fb01d277da57b0a9b09cc03c3ff875f9bd8a86b2145/pydantic_settings-2.8.1.tar.gz", hash = "sha256:d5c663dfbe9db9d5e1c646b2e161da12f0d734d422ee56f567d0ea2cee4e8585" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/0b/53/a64f03044927dc47aafe029c42a5b7aabc38dfb813475e0e1bf71c4a59d0/pydantic_settings-2.8.1-py3-none-any.whl", hash = "sha256:81942d5ac3d905f7f3ee1a70df5dfb62d5569c12f51a5a647defc1c3d9ee2e9c" },
+]
+
+[[package]]
 name = "pydash"
 version = "7.0.7"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -4797,6 +4829,7 @@ dependencies = [
     { name = "langfuse" },
     { name = "markdown" },
     { name = "markdown-to-json" },
+    { name = "mcp" },
     { name = "mini-racer" },
     { name = "minio" },
     { name = "mistralai" },
@@ -4830,6 +4863,7 @@ dependencies = [
     { name = "python-pptx" },
     { name = "pywencai" },
     { name = "qianfan" },
+    { name = "ragflow-sdk" },
     { name = "ranx" },
     { name = "readability-lxml" },
     { name = "replicate" },
@@ -4932,6 +4966,7 @@ requires-dist = [
     { name = "langfuse", specifier = ">=2.60.0" },
     { name = "markdown", specifier = "==3.6" },
     { name = "markdown-to-json", specifier = "==2.1.1" },
+    { name = "mcp", specifier = ">=1.6.0" },
     { name = "mini-racer", specifier = ">=0.12.4,<0.13.0" },
     { name = "minio", specifier = "==7.2.4" },
     { name = "mistralai", specifier = "==0.4.2" },
@@ -4965,6 +5000,7 @@ requires-dist = [
     { name = "python-pptx", specifier = ">=1.0.2,<2.0.0" },
     { name = "pywencai", specifier = "==0.12.2" },
     { name = "qianfan", specifier = "==0.4.6" },
+    { name = "ragflow-sdk", specifier = ">=0.17.1" },
     { name = "ranx", specifier = "==0.3.20" },
     { name = "readability-lxml", specifier = "==0.8.1" },
     { name = "replicate", specifier = "==0.31.0" },
@@ -5004,6 +5040,20 @@ requires-dist = [
     { name = "zhipuai", specifier = "==2.0.1" },
 ]
 provides-extras = ["full"]
+
+[[package]]
+name = "ragflow-sdk"
+version = "0.17.1"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "beartype" },
+    { name = "pytest" },
+    { name = "requests" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/ac/2e/754ad701c79ccedeb83482f0aae0ea1c5613fc6dc48020549885ec987f9c/ragflow_sdk-0.17.1.tar.gz", hash = "sha256:f02f9692df282a5e67c578c974adbc1bc27f979b60d05fa2a4870adca29057a7" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/f2/a3/166715dd2d78c338087b8505c95b6cd68625b941a42b2d32a760369ef46e/ragflow_sdk-0.17.1-py3-none-any.whl", hash = "sha256:64c85fa41aa4462665cdef5ba0c02cf3697244961c764e8ea21f7ceef10f9d70" },
+]
 
 [[package]]
 name = "ranx"
@@ -5791,6 +5841,31 @@ wheels = [
 ]
 
 [[package]]
+name = "sse-starlette"
+version = "2.2.1"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "starlette" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/71/a4/80d2a11af59fe75b48230846989e93979c892d3a20016b42bb44edb9e398/sse_starlette-2.2.1.tar.gz", hash = "sha256:54470d5f19274aeed6b2d473430b08b4b379ea851d953b11d7f1c4a2c118b419" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/d9/e0/5b8bd393f27f4a62461c5cf2479c75a2cc2ffa330976f9f00f5f6e4f50eb/sse_starlette-2.2.1-py3-none-any.whl", hash = "sha256:6410a3d3ba0c89e7675d4c273a301d64649c03a5ef1ca101f10b47f895fd0e99" },
+]
+
+[[package]]
+name = "starlette"
+version = "0.46.2"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "anyio" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/ce/20/08dfcd9c983f6a6f4a1000d934b9e6d626cff8d2eeb77a89a68eef20a2b7/starlette-0.46.2.tar.gz", hash = "sha256:7f7361f34eed179294600af672f565727419830b54b7b084efe44bb82d2fccd5" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/8b/0c/9d30a4ebeb6db2b25a841afbb80f6ef9a854fc3b41be131d249a977b4959/starlette-0.46.2-py3-none-any.whl", hash = "sha256:595633ce89f8ffa71a015caed34a5b2dc1c0cdb3f0f1fbd1e69339cf2abeec35" },
+]
+
+[[package]]
 name = "statsmodels"
 version = "0.14.4"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -6264,6 +6339,20 @@ wheels = [
 [package.optional-dependencies]
 socks = [
     { name = "pysocks" },
+]
+
+[[package]]
+name = "uvicorn"
+version = "0.34.1"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "h11" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/86/37/dd92f1f9cedb5eaf74d9999044306e06abe65344ff197864175dbbd91871/uvicorn-0.34.1.tar.gz", hash = "sha256:af981725fc4b7ffc5cb3b0e9eda6258a90c4b52cb2a83ce567ae0a7ae1757afc" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/5f/38/a5801450940a858c102a7ad9e6150146a25406a119851c993148d56ab041/uvicorn-0.34.1-py3-none-any.whl", hash = "sha256:984c3a8c7ca18ebaad15995ee7401179212c59521e67bfc390c07fa2b8d2e065" },
 ]
 
 [[package]]
