@@ -9,8 +9,10 @@ import {
   useUploadNextDocument,
 } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { UploadFile } from 'antd';
+import { TableRowSelection } from 'antd/es/table/interface';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
 import { KnowledgeRouteKey } from './constant';
@@ -126,7 +128,7 @@ export const useChangeDocumentParser = (documentId: string) => {
 export const useGetRowSelection = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
-  const rowSelection = {
+  const rowSelection: TableRowSelection<IDocumentInfo> = {
     selectedRowKeys,
     onChange: (newSelectedRowKeys: React.Key[]) => {
       setSelectedRowKeys(newSelectedRowKeys);

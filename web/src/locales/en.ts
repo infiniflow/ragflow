@@ -379,6 +379,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       community: 'Community reports generation',
       communityTip:
         'In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See here for more information: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+      theDocumentBeingParsedCannotBeDeleted:
+        'The document being parsed cannot be deleted',
     },
     chunk: {
       chunk: 'Chunk',
