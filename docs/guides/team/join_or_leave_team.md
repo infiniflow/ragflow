@@ -27,7 +27,11 @@ You cannot invite users to a team unless you are its owner.
 
 ## Accept or decline team invite
 
-Click on your avatar in the top right corner of the page, then select **Team** in the left-hand panel to access the **Team** page.
+1. You will be notified when you receive an invitation to join a team:
+
+![team_notification](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/team_notification.jpg)
+
+2. Click on your avatar in the top right corner of the page, then select **Team** in the left-hand panel to access the **Team** page.
 
 ![team](https://github.com/user-attachments/assets/0eac2503-26bc-4568-b3f2-bcd84069a07a)
 
