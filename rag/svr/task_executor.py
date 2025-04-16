@@ -18,6 +18,8 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 import random
 import sys
+import threading
+import time
 
 from api.utils.log_utils import initRootLogger, get_project_base_directory
 from graphrag.general.index import run_graphrag
@@ -100,6 +102,14 @@ MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDER
 task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
 chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
+stop_event = threading.Event()
+
+
+def signal_handler(sig, frame):
+    logging.info("Received interrupt signal, shutting down...")
+    stop_event.set()
+    time.sleep(1)
+    sys.exit(0)
 
 
 # SIGUSR1 handler: start tracemalloc and take snapshot
@@ -667,6 +677,33 @@ async def report_status():
         await trio.sleep(30)
 
 
+def recover_pending_tasks():
+    redis_lock = RedisDistributedLock("recover_pending_tasks", lock_value=CONSUMER_NAME, timeout=60)
+    svr_queue_names = get_svr_queue_names()
+    while not stop_event.is_set():
+        try:
+            if redis_lock.acquire():
+                for queue_name in svr_queue_names:
+                    msgs = REDIS_CONN.get_pending_msg(queue=queue_name, group_name=SVR_CONSUMER_GROUP_NAME)
+                    msgs = [msg for msg in msgs if msg['consumer'] != CONSUMER_NAME]
+                    if len(msgs) == 0:
+                        continue
+
+                    task_executors = REDIS_CONN.smembers("TASKEXE")
+                    task_executor_set = {t for t in task_executors}
+                    msgs = [msg for msg in msgs if msg['consumer'] not in task_executor_set]
+                    for msg in msgs:
+                        logging.info(
+                            f"Recover pending task: {msg['message_id']}, consumer: {msg['consumer']}, "
+                            f"time since delivered: {msg['time_since_delivered'] / 1000} s"
+                        )
+                        REDIS_CONN.requeue_msg(queue_name, SVR_CONSUMER_GROUP_NAME, msg['message_id'])
+
+            stop_event.wait(60)
+        except Exception:
+            logging.warning("recover_pending_tasks got exception")
+
+
 async def main():
     logging.info(r"""
   ______           __      ______                     __            
@@ -685,9 +722,14 @@ async def main():
     if TRACE_MALLOC_ENABLED:
         start_tracemalloc_and_snapshot(None, None)
 
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    threading.Thread(name="RecoverPendingTask", target=recover_pending_tasks).start()
+
     async with trio.open_nursery() as nursery:
         nursery.start_soon(report_status)
-        while True:
+        while not stop_event.is_set():
             async with task_limiter:
                 nursery.start_soon(handle_task)
     logging.error("BUG!!! You should not reach here!!!")
