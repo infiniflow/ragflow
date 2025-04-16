@@ -287,6 +287,33 @@ class Pdf(PdfParser):
 
 
 class Markdown(MarkdownParser):
+    def get_pictures(self, text):
+        """Download and open all images from markdown text."""
+        import requests
+        
+        # Match both ![alt](url) and <img src="url"> patterns
+        img_patterns = [
+            r'!\[(?:[^\]]*)\]\(([^)]+)\)',  # ![alt](url) format
+            r'<img[^>]+src=[\'"](.*?)[\'"]'  # <img src="url"> format
+        ]
+        
+        images = []
+        # Find all image URLs in text
+        for pattern in img_patterns:
+            matches = re.finditer(pattern, text)
+            for match in matches:
+                url = match.group(1)
+                try:
+                    response = requests.get(url, stream=True)
+                    if response.status_code == 200:
+                        img = Image.open(BytesIO(response.content)).convert('RGB')
+                        images.append(img)
+                except Exception as e:
+                    logging.error(f"Failed to download/open image from {url}: {e}")
+                    continue
+                    
+        return images if images else None
+
     def __call__(self, filename, binary=None):
         if binary:
             encoding = find_codec(binary)
@@ -335,6 +362,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     pdf_parser = None
+    section_images = None
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
 
@@ -432,7 +460,20 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections, tables = Markdown(int(parser_config.get("chunk_token_num", 128)))(filename, binary)
+        markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
+        sections, tables = markdown_parser(filename, binary)
+        
+        # Process images for each section
+        section_images = []
+        for section_text in sections:
+            images = markdown_parser.get_pictures(section_text) if section_text else None
+            if images:
+                # If multiple images found, combine them using concat_img
+                combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
+                section_images.append(combined_image)
+            else:
+                section_images.append(None)
+                
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
 
