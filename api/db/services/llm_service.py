@@ -160,9 +160,8 @@ class TenantLLMService(CommonService):
     @DB.connection_context()
     def increase_usage(cls, tenant_id, llm_type, used_tokens, llm_name=None):
         try:
-            if DB.is_closed():
+            if not DB.is_connection_usable():
                 DB.connect()
-            DB.execute_sql("SELECT 1")
         except Exception:
             DB.close()
             DB.connect()
