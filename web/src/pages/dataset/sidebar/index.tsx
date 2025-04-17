@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import { Banknote, LayoutGrid, Trash2, User } from 'lucide-react';
+import { Banknote, LayoutGrid, User } from 'lucide-react';
 import { useHandleMenuClick } from './hooks';
 
 const items = [
@@ -61,13 +61,6 @@ export function SideBar() {
           );
         })}
       </div>
-      <Button
-        variant="outline"
-        className="absolute bottom-6 left-6 right-6 text-colors-text-functional-danger border-colors-text-functional-danger"
-      >
-        <Trash2 />
-        Delete dataset
-      </Button>
     </aside>
   );
 }
