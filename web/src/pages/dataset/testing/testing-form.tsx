@@ -1,12 +1,17 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { RerankFormFields } from '@/components/rerank';
-import { SimilaritySliderFormField } from '@/components/similarity-slider';
-import { Button } from '@/components/ui/button';
+import {
+  initialKeywordsSimilarityWeightValue,
+  initialSimilarityThresholdValue,
+  keywordsSimilarityWeightSchema,
+  SimilaritySliderFormField,
+  similarityThresholdSchema,
+} from '@/components/similarity-slider';
 import {
   Form,
   FormControl,
@@ -15,29 +20,45 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { LoadingButton } from '@/components/ui/loading-button';
 import { Textarea } from '@/components/ui/textarea';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
+import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { trim } from 'lodash';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export default function TestingForm() {
   const { t } = useTranslation();
 
+  const { loading, setValues, refetch } = useTestRetrieval();
+
   const formSchema = z.object({
     question: z.string().min(1, {
       message: t('knowledgeDetails.testTextPlaceholder'),
     }),
+    ...similarityThresholdSchema,
+    ...keywordsSimilarityWeightSchema,
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: {},
+    defaultValues: {
+      ...initialSimilarityThresholdValue,
+      ...initialKeywordsSimilarityWeightValue,
+    },
   });
 
   const question = form.watch('question');
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log(values);
+  const values = useWatch({ control: form.control });
+
+  useEffect(() => {
+    setValues(values as Required<z.infer<typeof formSchema>>);
+  }, [setValues, values]);
+
+  function onSubmit() {
+    refetch();
   }
 
   return (
@@ -48,7 +69,7 @@ export default function TestingForm() {
           isTooltipShown
         ></SimilaritySliderFormField>
         <RerankFormFields></RerankFormFields>
-        <UseKnowledgeGraphFormField name="prompt_config.use_kg"></UseKnowledgeGraphFormField>
+        <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
         <FormField
           control={form.control}
           name="question"
@@ -66,15 +87,16 @@ export default function TestingForm() {
             </FormItem>
           )}
         />
-        <Button
+        <LoadingButton
           variant={'tertiary'}
           size={'sm'}
           type="submit"
           className="w-full"
           disabled={!!!trim(question)}
+          loading={loading}
         >
           {t('knowledgeDetails.testingLabel')}
-        </Button>
+        </LoadingButton>
       </form>
     </Form>
   );
