@@ -14,11 +14,15 @@
 #  limitations under the License.
 #
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from ragflow_sdk import RAGFlow
+import requests
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
 import mcp.types as types
@@ -26,25 +30,55 @@ from mcp.server.lowlevel import Server
 from mcp.server.sse import SseServerTransport
 
 BASE_URL = "http://127.0.0.1:9380"
-API_KEY = ""
 HOST = "127.0.0.1"
 PORT = "9382"
 
 
 class RAGFlowConnector:
-    def __init__(self, base_url: str, api_key: str):
+    def __init__(self, base_url: str, version="v1"):
         self.base_url = base_url
-        self.api_key = api_key
-        self.client = RAGFlow(base_url=base_url, api_key=api_key)
+        self.version = version
+        self.api_url = f"{self.base_url}/api/{self.version}"
 
-    def ragflow_retrival(self, kb_ids: list[str], document_ids: list[str], question: str) -> list[types.TextContent]:
-        try:
+    def bind_api_key(self, api_key: str):
+        self.api_key = api_key
+        self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.api_key)}
+
+    def post(self, path, json=None, stream=False, files=None):
+        if not self.api_key:
+            return None
+        res = requests.post(url=self.api_url + path, json=json, headers=self.authorization_header, stream=stream, files=files)
+        return res
+
+    def retrival(
+        self, dataset_ids, document_ids=None, question="", page=1, page_size=30, similarity_threshold=0.2, vector_similarity_weight=0.3, top_k=1024, rerank_id: str | None = None, keyword: bool = False
+    ):
+        if document_ids is None:
+            document_ids = []
+        data_json = {
+            "page": page,
+            "page_size": page_size,
+            "similarity_threshold": similarity_threshold,
+            "vector_similarity_weight": vector_similarity_weight,
+            "top_k": top_k,
+            "rerank_id": rerank_id,
+            "keyword": keyword,
+            "question": question,
+            "dataset_ids": dataset_ids,
+            "document_ids": document_ids,
+        }
+        # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
+        res = self.post("/retrieval", json=data_json)
+        if not res:
+            raise Exception([types.TextContent(type="text", text=res.get("Cannot process this operation."))])
+
+        res = res.json()
+        if res.get("code") == 0:
             chunks = []
-            for c in self.client.retrieve(dataset_ids=kb_ids, document_ids=document_ids, question=question):
-                chunks.append(str(c.to_json()))
+            for chunk_data in res["data"].get("chunks"):
+                chunks.append(json.dumps(chunk_data))
             return [types.TextContent(type="text", text="\n".join(chunks))]
-        except Exception:
-            return [types.TextContent(type="text", text="")]
+        raise Exception([types.TextContent(type="text", text=res.get("message"))])
 
 
 class RAGFlowCtx:
@@ -54,7 +88,7 @@ class RAGFlowCtx:
 
 @asynccontextmanager
 async def server_lifespan(server: Server) -> AsyncIterator[dict]:
-    ctx = RAGFlowCtx(RAGFlowConnector(base_url=BASE_URL, api_key=API_KEY))
+    ctx = RAGFlowCtx(RAGFlowConnector(base_url=BASE_URL))
 
     try:
         yield {"ragflow_ctx": ctx}
@@ -70,15 +104,12 @@ sse = SseServerTransport("/messages/")
 async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
-            name="calculate_sum", description="Add two numbers together", inputSchema={"type": "object", "properties": {"a": {"type": "number"}, "b": {"type": "number"}}, "required": ["a", "b"]}
-        ),
-        types.Tool(
-            name="ragflow_retrival",
-            description="Retrive relavant chunks of given kb_ids and document_ids(optional) from RAGFlow retrave interface based on question.",
+            name="retrival",
+            description="Retrive relavant chunks of given dataset_ids and document_ids(optional) from RAGFlow retrave interface based on question.",
             inputSchema={
                 "type": "object",
-                "properties": {"kb_ids": {"type": "array", "items": {"type": "string"}}, "documents_ids": {"type": "array", "items": {"type": "string"}}, "question": {"type": "string"}},
-                "required": ["kb_ids", "question"],
+                "properties": {"dataset_ids": {"type": "array", "items": {"type": "string"}}, "documents_ids": {"type": "array", "items": {"type": "string"}}, "question": {"type": "string"}},
+                "required": ["dataset_ids", "question"],
             },
         ),
     ]
@@ -91,28 +122,45 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent | type
     if not ragflow_ctx:
         raise ValueError("Get RAGFlow Context failed")
     connector = ragflow_ctx.conn
+
+    api_key = ctx.session._init_options.capabilities.experimental["headers"]["api_key"]
+    if not api_key:
+        raise ValueError("RAGFlow API_KEY is required.")
+    connector.bind_api_key(api_key)
+
     if name == "ragflow_retrival":
-        return connector.ragflow_retrival(kb_ids=arguments["kb_ids"], document_ids=arguments["document_ids"], question=arguments["question"])
+        return connector.retrival(dataset_ids=arguments["dataset_ids"], document_ids=arguments["document_ids"], question=arguments["question"])
     raise ValueError(f"Tool not found: {name}")
 
 
 async def handle_sse(request):
     async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-        await app.run(streams[0], streams[1], app.create_initialization_options())
+        await app.run(streams[0], streams[1], app.create_initialization_options(experimental_capabilities={"headers": dict(request.headers)}))
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.url.path.startswith("/sse") or request.url.path.startswith("/messages"):
+            api_key = request.headers.get("api_key")
+            if not api_key:
+                return JSONResponse({"error": "Missing unauthorization header"}, status_code=401)
+        return await call_next(request)
 
 
 starlette_app = Starlette(
+    debug=True,
     routes=[
         Route("/sse", endpoint=handle_sse),
         Mount("/messages/", app=sse.handle_post_message),
-    ]
+    ],
+    middleware=[Middleware(AuthMiddleware)],
 )
 
 
 if __name__ == "__main__":
     """
     Launch example:
-        uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --api_key=ragflow-xxxxxxxxxxxx
+        uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380
     """
 
     import argparse
@@ -125,14 +173,16 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="RAGFlow MCP Server, `base_url` and `api_key` are needed.")
     parser.add_argument("--base_url", type=str, default="http://127.0.0.1:9380", help="api_url: http://<host_address>")
-    parser.add_argument("--api_key", type=str, help="RAGFlow api_key")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="RAGFlow MCP SERVER host")
     parser.add_argument("--port", type=str, default="9382", help="RAGFlow MCP SERVER port")
     args = parser.parse_args()
 
     BASE_URL = os.environ.get("RAGFLOW_MCP_BASE_URL", args.base_url)
-    API_KEY = os.environ.get("RAGFLOW_API_KEY_FOR_MCP", args.api_key)
     HOST = os.environ.get("RAGFLOW_MCP_HOST", args.host)
     PORT = os.environ.get("RAGFLOW_MCP_PORT", args.port)
 
-    uvicorn.run(starlette_app, host=HOST, port=int(PORT))
+    uvicorn.run(
+        starlette_app,
+        host=HOST,
+        port=int(PORT),
+    )
