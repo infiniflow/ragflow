@@ -56,7 +56,7 @@ def perform_variable_replacements(
     def replace_all(input: str) -> str:
         result = input
         for k, v in variables.items():
-            result = result.replace(f"{{{k}}}", v)
+            result = result.replace(f"{{{k}}}", str(v))
         return result
 
     result = replace_all(result)
