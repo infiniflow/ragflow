@@ -68,6 +68,7 @@ def equivalent_condition_to_str(condition: dict, table_instance=None) -> str | N
             inCond = list()
             for item in v:
                 if isinstance(item, str):
+                    item = item.replace("'","''")
                     inCond.append(f"'{item}'")
                 else:
                     inCond.append(str(item))
