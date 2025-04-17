@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 8
 slug: /construct_knowledge_graph
 ---
 
