@@ -71,7 +71,7 @@ const LlmSettingItems = ({ prefix, formItemLayout = {} }: IProps) => {
           <div className="w-1/4 min-w-32">
             <Form.Item
               label={t('freedom')}
-              name="parameter"
+              name="llm_stats"
               tooltip={t('freedomTip')}
               initialValue={ModelVariableType.Precise}
               labelCol={{ span: 0 }}
