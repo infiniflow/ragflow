@@ -453,5 +453,11 @@ export const useDeleteTaskExecutor = () => {
     },
   });
 
-  return { data, loading, deleteTaskExecutor: mutateAsync };
+  return {
+    data,
+    loading,
+    deleteTaskExecutor: mutateAsync,
+    refetchSystemStatus: () =>
+      queryClient.invalidateQueries({ queryKey: ['fetchSystemStatus'] }),
+  };
 };

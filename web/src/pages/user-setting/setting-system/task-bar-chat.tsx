@@ -24,6 +24,7 @@ import styles from './index.less';
 
 interface IProps {
   data: Record<string, TaskExecutorHeartbeatItem[]>;
+  onRefresh?: () => void; // Add a refresh callback prop
 }
 
 const CustomTooltip = ({ active, payload, ...restProps }: any) => {
@@ -53,12 +54,18 @@ const CustomTooltip = ({ active, payload, ...restProps }: any) => {
   return null;
 };
 
-const TaskBarChat = ({ data }: IProps) => {
+const TaskBarChat = ({ data, onRefresh }: IProps) => {
   const { t } = useTranslation();
-  const { deleteTaskExecutor, loading } = useDeleteTaskExecutor();
+  const { deleteTaskExecutor, loading, refetchSystemStatus } =
+    useDeleteTaskExecutor();
 
   const handleDelete = async (executorId: string) => {
     await deleteTaskExecutor(executorId);
+    // Call both refetch methods to ensure data is reloaded
+    refetchSystemStatus();
+    if (onRefresh) {
+      onRefresh();
+    }
   };
 
   return Object.entries(data).map(([key, val]) => {
