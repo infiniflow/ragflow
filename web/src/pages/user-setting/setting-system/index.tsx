@@ -88,7 +88,9 @@ const SystemInfo = () => {
                     ></TaskBarChat>
                   ) : (
                     <Text className={styles.error}>
-                      {typeof info.error === 'string' ? info.error : ''}
+                      {typeof (info as { error?: string }).error === 'string'
+                        ? (info as { error?: string }).error
+                        : ''}
                     </Text>
                   )
                 ) : (

@@ -142,4 +142,8 @@ export const listTenant = () => request.get(api.listTenant);
 export const agreeTenant = (tenantId: string) =>
   request.put(api.agreeTenant(tenantId));
 
+export const deleteTaskExecutor = (taskExecutorId: string) => {
+  return request.delete(api.deleteTaskExecutor(taskExecutorId));
+};
+
 export default userService;

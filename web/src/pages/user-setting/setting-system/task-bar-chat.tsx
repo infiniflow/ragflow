@@ -1,19 +1,22 @@
 import { TaskExecutorHeartbeatItem } from '@/interfaces/database/user-setting';
-import { Divider, Flex } from 'antd';
+import { Button, Divider, Flex, Popconfirm, Tooltip } from 'antd';
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  Tooltip as ChartTooltip,
   Legend,
   Rectangle,
   ResponsiveContainer,
-  Tooltip,
   XAxis,
 } from 'recharts';
 
+import { useDeleteTaskExecutor } from '@/hooks/user-setting-hooks';
 import { formatDate, formatTime } from '@/utils/date';
+import { DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { get } from 'lodash';
+import { useTranslation } from 'react-i18next';
 import JsonView from 'react18-json-view';
 import 'react18-json-view/src/style.css';
 
@@ -51,6 +54,13 @@ const CustomTooltip = ({ active, payload, ...restProps }: any) => {
 };
 
 const TaskBarChat = ({ data }: IProps) => {
+  const { t } = useTranslation();
+  const { deleteTaskExecutor, loading } = useDeleteTaskExecutor();
+
+  const handleDelete = async (executorId: string) => {
+    await deleteTaskExecutor(executorId);
+  };
+
   return Object.entries(data).map(([key, val]) => {
     const data = val.map((x) => ({
       ...x,
@@ -62,10 +72,26 @@ const TaskBarChat = ({ data }: IProps) => {
     const domain = [firstItem?.now, lastItem?.now];
     return (
       <Flex key={key} className={styles.taskBar} vertical>
-        <div className="flex gap-8">
+        <div className="flex gap-8 items-center">
           <b className={styles.taskBarTitle}>ID: {key}</b>
           <b className={styles.taskBarTitle}>Lag: {lastItem?.lag}</b>
           <b className={styles.taskBarTitle}>Pending: {lastItem?.pending}</b>
+          <div className="flex-grow"></div>
+          <Popconfirm
+            title={t('common.deleteConfirm')}
+            onConfirm={() => handleDelete(key)}
+            okText={t('common.yes')}
+            cancelText={t('common.no')}
+          >
+            <Tooltip title={t('common.delete')}>
+              <Button
+                type="text"
+                danger
+                icon={<DeleteOutlined />}
+                loading={loading}
+              />
+            </Tooltip>
+          </Popconfirm>
         </div>
         <ResponsiveContainer>
           <BarChart data={data}>
@@ -81,7 +107,7 @@ const TaskBarChat = ({ data }: IProps) => {
               tickMargin={20}
             />
             <CartesianGrid strokeDasharray="3 3" />
-            <Tooltip
+            <ChartTooltip
               wrapperStyle={{ pointerEvents: 'auto' }}
               content={<CustomTooltip></CustomTooltip>}
               trigger="click"

@@ -121,6 +121,8 @@ export default {
   removeSystemToken: `${api_host}/system/token`,
   getSystemConfig: `${api_host}/system/config`,
   setLangfuseConfig: `${api_host}/langfuse/api_key`,
+  deleteTaskExecutor: (executorId = ':executorId') =>
+    `${api_host}/system/task_executor/${executorId}`,
 
   // flow
   listTemplates: `${api_host}/canvas/templates`,

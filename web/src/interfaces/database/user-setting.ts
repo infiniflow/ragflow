@@ -23,25 +23,41 @@ export interface IUserInfo {
 export type TaskExecutorElapsed = Record<string, number[]>;
 
 export interface TaskExecutorHeartbeatItem {
-  boot_at: string;
-  current: null;
+  now: number;
+  lag: number;
+  pending: number;
   done: number;
   failed: number;
-  lag: number;
-  name: string;
-  now: string;
-  pending: number;
+  [key: string]: any;
 }
 
 export interface ISystemStatus {
-  es: Es;
-  storage: Storage;
-  database: Database;
-  redis: Redis;
-  task_executor_heartbeat: Record<string, TaskExecutorHeartbeatItem[]>;
+  doc_engine: {
+    status: string;
+    elapsed: string;
+    [key: string]: any;
+  };
+  storage: {
+    status: string;
+    storage: string;
+    elapsed: string;
+    [key: string]: any;
+  };
+  database: {
+    status: string;
+    database: string;
+    elapsed: string;
+    [key: string]: any;
+  };
+  redis: {
+    status: string;
+    elapsed: string;
+    [key: string]: any;
+  };
+  task_executor_heartbeats: Record<string, TaskExecutorHeartbeatItem[]>;
 }
 
-interface Redis {
+export interface Redis {
   status: string;
   elapsed: number;
   error: string;
@@ -60,7 +76,7 @@ export interface Database {
   error: string;
 }
 
-interface Es {
+export interface Es {
   status: string;
   elapsed: number;
   error: string;

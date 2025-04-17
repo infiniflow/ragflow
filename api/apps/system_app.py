@@ -319,3 +319,53 @@ def get_config():
     return get_json_result(data={
         "registerEnabled": settings.REGISTER_ENABLED
     })
+
+
+@manager.route("/task_executor/<executor_id>", methods=["DELETE"])  # noqa: F821
+@login_required
+def delete_task_executor(executor_id):
+    """
+    Remove a task executor from the system.
+    ---
+    tags:
+      - System
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: executor_id
+        type: string
+        required: true
+        description: The ID of the task executor to remove.
+    responses:
+      200:
+        description: Task executor removed successfully.
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: Deletion status.
+            message:
+              type: string
+              description: Information about the deletion.
+    """
+    try:
+        # Check if task executor exists
+        task_executors = REDIS_CONN.smembers("TASKEXE")
+        if executor_id not in task_executors:
+            return get_data_error_result(message=f"Task executor {executor_id} not found!")
+        
+        # Remove task executor from set
+        removed = REDIS_CONN.srem("TASKEXE", executor_id)
+        
+        # Delete associated heartbeat data
+        REDIS_CONN.REDIS.delete(executor_id)
+        
+        return get_json_result(data={
+            "success": bool(removed),
+            "message": f"Task executor {executor_id} removed successfully with all associated heartbeat data"
+        })
+    except Exception as e:
+        logging.exception(f"Failed to delete task executor {executor_id}")
+        return server_error_response(e)

@@ -13,6 +13,7 @@ import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
 import userService, {
   addTenantUser,
   agreeTenant,
+  deleteTaskExecutor,
   deleteTenantUser,
   listTenant,
   listTenantUser,
@@ -430,4 +431,27 @@ export const useFetchLangfuseConfig = () => {
   });
 
   return { data, loading };
+};
+
+export const useDeleteTaskExecutor = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteTaskExecutor'],
+    mutationFn: async (executorId: string) => {
+      const { data } = await deleteTaskExecutor(executorId);
+      if (data.code === 0) {
+        message.success(t('message.deleted'));
+        queryClient.invalidateQueries({ queryKey: ['fetchSystemStatus'] });
+      }
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading, deleteTaskExecutor: mutateAsync };
 };
