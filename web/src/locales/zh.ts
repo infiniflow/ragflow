@@ -232,6 +232,7 @@ export default {
       methodExamplesDescription: '提出以下屏幕截图以促进理解。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
+      advancedSettings: '参数配置',
       book: `<p><b>支持格式：</b>DOCX、PDF、TXT</p>
       <p><b>适用场景：</b></p><p>
       适用于多章节设备手册，建议为PDF文件设置<i>页码范围</i>（如第5-30页）以聚焦核心内容。</p>`,
