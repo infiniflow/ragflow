@@ -78,7 +78,14 @@ class Invoke(ComponentBase, ABC):
                         _, out = cpn.output(allow_partial=False)
                         if not out.empty:
                             args[para["key"]] = "\n".join(out["content"])
-         
+            elif para.get("key") == "begin":
+                    component_obj = self._canvas.get_component(component)
+                    if component_obj is not None:
+                        cpn = component_obj["obj"]
+                        for param in cpn._param.query:
+                            if param["key"] == para["key"]:
+                                if "value" in param:
+                                    args[para["key"]] = param["value"]
             elif para.get("key"):
                 args[para["key"]] = para["value"]
         url = self._param.url.strip()

@@ -35,7 +35,7 @@ export const useGetBeginNodeDataQueryIsSafe = () => {
 const ExcludedNodes = [
   Operator.Categorize,
   Operator.Relevant,
-  // Operator.Begin,
+  Operator.Begin,
   Operator.Note,
 ];
 
