@@ -60,10 +60,7 @@ const DynamicVariablesForm = ({ node }: IProps) => {
           <Select
             style={{ width: '100%' }}
             allowClear
-            options={[
-              ...options,
-              { label: t('allparambegin'), value: 'allparambegin' },
-            ]}
+            options={[...options]}
             value={text}
             disabled={trim(record.value) !== ''}
             onChange={handleComponentIdChange(record)}

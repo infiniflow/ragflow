@@ -53,11 +53,21 @@ class Invoke(ComponentBase, ABC):
                 if '@' in para["component_id"]:
                     component = para["component_id"].split('@')[0]
                     field = para["component_id"].split('@')[1]
-                    cpn = self._canvas.get_component(component)["obj"]
-                    for param in cpn._param.query:
-                        if param["key"] == field:
-                            if "value" in param:
-                                args[para["key"]] = param["value"]
+                    component_obj = self._canvas.get_component(component)
+                    if component_obj is not None:
+                        cpn = component_obj["obj"]
+                        for param in cpn._param.query:
+                            if param["key"] == field:
+                                if "value" in param:
+                                    args[para["key"]] = param["value"]
+                elif  para.get("component_id") == "begin":
+                    component_obj = self._canvas.get_component(component)
+                    if component_obj is not None:
+                        cpn = component_obj["obj"]
+                        for param in cpn._param.query:
+                            if param["key"] == para["key"]:
+                                if "value" in param:
+                                    args[para["key"]] = param["value"]
                 else:
                     component = self._canvas.get_component(para["component_id"])
                     if component is not None:
@@ -68,12 +78,7 @@ class Invoke(ComponentBase, ABC):
                         _, out = cpn.output(allow_partial=False)
                         if not out.empty:
                             args[para["key"]] = "\n".join(out["content"])
-            elif para.get("component_id") == ("allparambegin"): 
-                    begin_obj = self._canvas.get_component("begin")
-                    if begin_obj is not None:
-                        cpn = begin_obj["obj"]
-                        for ele in cpn._param.query:
-                            args[ele["key"]] = ele["value"]
+         
             elif para.get("key"):
                 args[para["key"]] = para["value"]
         url = self._param.url.strip()
