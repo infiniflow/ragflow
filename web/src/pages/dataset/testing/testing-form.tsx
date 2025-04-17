@@ -4,55 +4,37 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import { RerankFormFields } from '@/components/rerank';
+import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
-import { FormSlider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
-
-const options = [
-  { label: 'xx', value: 'xx' },
-  { label: 'ii', value: 'ii' },
-];
-
-const groupOptions = [
-  { label: 'scsdv', options },
-  { label: 'thtyu', options: [{ label: 'jj', value: 'jj' }] },
-];
-
-const formSchema = z.object({
-  username: z.number().min(2, {
-    message: 'Username must be at least 2 characters.',
-  }),
-  a: z.number().min(2, {
-    message: 'Username must be at least 2 characters.',
-  }),
-  b: z.string().min(2, {
-    message: 'Username must be at least 2 characters.',
-  }),
-  c: z.number().min(2, {
-    message: 'Username must be at least 2 characters.',
-  }),
-  d: z.string().min(2, {
-    message: 'Username must be at least 2 characters.',
-  }),
-});
+import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
+import { trim } from 'lodash';
+import { useTranslation } from 'react-i18next';
 
 export default function TestingForm() {
+  const { t } = useTranslation();
+
+  const formSchema = z.object({
+    question: z.string().min(1, {
+      message: t('knowledgeDetails.testTextPlaceholder'),
+    }),
+  });
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      username: 0,
-    },
+    defaultValues: {},
   });
+
+  const question = form.watch('question');
 
   function onSubmit(values: z.infer<typeof formSchema>) {
     console.log(values);
@@ -61,88 +43,25 @@ export default function TestingForm() {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <SimilaritySliderFormField
+          vectorSimilarityWeightName="keywords_similarity_weight"
+          isTooltipShown
+        ></SimilaritySliderFormField>
+        <RerankFormFields></RerankFormFields>
+        <UseKnowledgeGraphFormField name="prompt_config.use_kg"></UseKnowledgeGraphFormField>
         <FormField
           control={form.control}
-          name="username"
+          name="question"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Username</FormLabel>
-              <FormControl>
-                <FormSlider {...field}></FormSlider>
-              </FormControl>
-              <FormDescription>
-                This is your public display name.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="a"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Username</FormLabel>
-              <FormControl>
-                <FormSlider {...field}></FormSlider>
-              </FormControl>
-              <FormDescription>
-                This is your public display name.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="b"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Username</FormLabel>
-              <RAGFlowSelect
-                value={field.value}
-                onChange={field.onChange}
-                FormControlComponent={FormControl}
-                options={groupOptions}
-              ></RAGFlowSelect>
-              <FormDescription>
-                This is your public display name.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="c"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Username</FormLabel>
-              <FormControl>
-                <FormSlider {...field}></FormSlider>
-              </FormControl>
-              <FormDescription>
-                This is your public display name.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="d"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Username</FormLabel>
+              <FormLabel>{t('knowledgeDetails.testText')}</FormLabel>
               <FormControl>
                 <Textarea
                   {...field}
                   className="bg-colors-background-inverse-weak"
                 ></Textarea>
               </FormControl>
-              <FormDescription>
-                This is your public display name.
-              </FormDescription>
+
               <FormMessage />
             </FormItem>
           )}
@@ -152,8 +71,9 @@ export default function TestingForm() {
           size={'sm'}
           type="submit"
           className="w-full"
+          disabled={!!!trim(question)}
         >
-          Test
+          {t('knowledgeDetails.testingLabel')}
         </Button>
       </form>
     </Form>
