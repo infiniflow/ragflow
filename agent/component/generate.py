@@ -74,29 +74,30 @@ class Generate(ComponentBase):
         return list(cpnts)
 
     def set_cite(self, retrieval_res, answer):
-        retrieval_res = retrieval_res.dropna(subset=["vector", "content_ltks"]).reset_index(drop=True)
         if "empty_response" in retrieval_res.columns:
             retrieval_res["empty_response"].fillna("", inplace=True)
+        chunks = retrieval_res["chunks"][0]
         answer, idx = settings.retrievaler.insert_citations(answer,
-                                                            [ck["content_ltks"] for _, ck in retrieval_res.iterrows()],
-                                                            [ck["vector"] for _, ck in retrieval_res.iterrows()],
+                                                            [ck["content_ltks"] for ck in chunks],
+                                                            [ck["vector"] for ck in chunks],
                                                             LLMBundle(self._canvas.get_tenant_id(), LLMType.EMBEDDING,
                                                                       self._canvas.get_embedding_model()), tkweight=0.7,
                                                             vtweight=0.3)
         doc_ids = set([])
         recall_docs = []
         for i in idx:
-            did = retrieval_res.loc[int(i), "doc_id"]
+            did = chunks[int(i)]["doc_id"]
             if did in doc_ids:
                 continue
             doc_ids.add(did)
-            recall_docs.append({"doc_id": did, "doc_name": retrieval_res.loc[int(i), "docnm_kwd"]})
+            recall_docs.append({"doc_id": did, "doc_name": chunks[int(i)]["docnm_kwd"]})
 
-        del retrieval_res["vector"]
-        del retrieval_res["content_ltks"]
+        for c in chunks:
+            del c["vector"]
+            del c["content_ltks"]
 
         reference = {
-            "chunks": [ck.to_dict() for _, ck in retrieval_res.iterrows()],
+            "chunks": chunks,
             "doc_aggs": recall_docs
         }
 
@@ -200,7 +201,7 @@ class Generate(ComponentBase):
         ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
         ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
 
-        if self._param.cite and "content_ltks" in retrieval_res.columns and "vector" in retrieval_res.columns:
+        if self._param.cite and "chunks" in retrieval_res.columns:
             res = self.set_cite(retrieval_res, ans)
             return pd.DataFrame([res])
 
@@ -229,7 +230,7 @@ class Generate(ComponentBase):
             answer = ans
             yield res
 
-        if self._param.cite and "content_ltks" in retrieval_res.columns and "vector" in retrieval_res.columns:
+        if self._param.cite and "chunks" in retrieval_res.columns:
             res = self.set_cite(retrieval_res, answer)
             yield res
 

@@ -103,7 +103,7 @@ class Retrieval(ComponentBase, ABC):
                 df["empty_response"] = self._param.empty_response
             return df
 
-        df = pd.DataFrame({"content": kb_prompt(kbinfos, 200000)})
+        df = pd.DataFrame({"content": kb_prompt(kbinfos, 200000), "chunks": kbinfos["chunks"]})
         logging.debug("{} {}".format(query, df))
         return df.dropna()
 
