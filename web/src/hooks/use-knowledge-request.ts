@@ -1,3 +1,4 @@
+import { INextTestingResult } from '@/interfaces/database/knowledge';
 import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import kbService from '@/services/knowledge-service';
 import { useQuery } from '@tanstack/react-query';
@@ -33,14 +34,18 @@ export const useTestRetrieval = () => {
     data,
     isFetching: loading,
     refetch,
-  } = useQuery<any>({
+  } = useQuery<INextTestingResult>({
     queryKey: [KnowledgeApiAction.TestRetrieval, queryParams],
-    initialData: {},
-    // enabled: !!values?.question && !!knowledgeBaseId,
+    initialData: {
+      chunks: [],
+      doc_aggs: [],
+      total: 0,
+    },
     enabled: false,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.retrieval_test(queryParams);
+      console.log('🚀 ~ queryFn: ~ data:', data);
       return data?.data ?? {};
     },
   });
