@@ -152,7 +152,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     ck_idx = [i + start for i in range(len(lbls)) if lbls[i] == c]
                     assert len(ck_idx) > 0
                     async with chat_limiter:
-                        nursery.start_soon(lambda: summarize(ck_idx))
+                        nursery.start_soon(summarize, ck_idx)
 
             assert len(chunks) - end == n_clusters, "{} vs. {}".format(
                 len(chunks) - end, n_clusters

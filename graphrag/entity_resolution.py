@@ -103,7 +103,7 @@ class EntityResolution(Extractor):
                     continue
                 for i in range(0, len(candidate_resolution_i[1]), resolution_batch_size):
                     candidate_batch = candidate_resolution_i[0], candidate_resolution_i[1][i:i + resolution_batch_size]
-                    nursery.start_soon(lambda: self._resolve_candidate(candidate_batch, resolution_result))
+                    nursery.start_soon(self._resolve_candidate, candidate_batch, resolution_result)
         callback(msg=f"Resolved {num_candidates} candidate pairs, {len(resolution_result)} of them are selected to merge.")
 
         change = GraphChange()
@@ -112,7 +112,7 @@ class EntityResolution(Extractor):
         async with trio.open_nursery() as nursery:
             for sub_connect_graph in nx.connected_components(connect_graph):
                 merging_nodes = list(sub_connect_graph)
-                nursery.start_soon(lambda: self._merge_graph_nodes(graph, merging_nodes, change))
+                nursery.start_soon(self._merge_graph_nodes, graph, merging_nodes, change)
 
         # Update pagerank
         pr = nx.pagerank(graph)
