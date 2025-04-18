@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import re
 from functools import partial
 import pandas as pd
@@ -76,7 +77,7 @@ class Generate(ComponentBase):
     def set_cite(self, retrieval_res, answer):
         if "empty_response" in retrieval_res.columns:
             retrieval_res["empty_response"].fillna("", inplace=True)
-        chunks = retrieval_res["chunks"][0]
+        chunks = json.loads(retrieval_res["chunks"][0])
         answer, idx = settings.retrievaler.insert_citations(answer,
                                                             [ck["content_ltks"] for ck in chunks],
                                                             [ck["vector"] for ck in chunks],

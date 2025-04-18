@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import logging
 from abc import ABC
 
@@ -103,7 +104,7 @@ class Retrieval(ComponentBase, ABC):
                 df["empty_response"] = self._param.empty_response
             return df
 
-        df = pd.DataFrame({"content": kb_prompt(kbinfos, 200000), "chunks": kbinfos["chunks"]})
+        df = pd.DataFrame({"content": kb_prompt(kbinfos, 200000), "chunks": json.dumps(kbinfos["chunks"])})
         logging.debug("{} {}".format(query, df))
         return df.dropna()
 
