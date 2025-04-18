@@ -22,7 +22,7 @@ from timeit import default_timer as timer
 
 from docx import Document
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
-from markdown import markdown
+import markdown 
 from PIL import Image
 from tika import parser
 
@@ -535,5 +535,5 @@ if __name__ == "__main__":
 
     def dummy(prog=None, msg=""):
         pass
-    
+
     chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
