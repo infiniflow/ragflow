@@ -4863,7 +4863,6 @@ dependencies = [
     { name = "python-pptx" },
     { name = "pywencai" },
     { name = "qianfan" },
-    { name = "ragflow-sdk" },
     { name = "ranx" },
     { name = "readability-lxml" },
     { name = "replicate" },
@@ -5000,7 +4999,6 @@ requires-dist = [
     { name = "python-pptx", specifier = ">=1.0.2,<2.0.0" },
     { name = "pywencai", specifier = "==0.12.2" },
     { name = "qianfan", specifier = "==0.4.6" },
-    { name = "ragflow-sdk", specifier = ">=0.17.1" },
     { name = "ranx", specifier = "==0.3.20" },
     { name = "readability-lxml", specifier = "==0.8.1" },
     { name = "replicate", specifier = "==0.31.0" },
@@ -5040,20 +5038,6 @@ requires-dist = [
     { name = "zhipuai", specifier = "==2.0.1" },
 ]
 provides-extras = ["full"]
-
-[[package]]
-name = "ragflow-sdk"
-version = "0.17.1"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-dependencies = [
-    { name = "beartype" },
-    { name = "pytest" },
-    { name = "requests" },
-]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/ac/2e/754ad701c79ccedeb83482f0aae0ea1c5613fc6dc48020549885ec987f9c/ragflow_sdk-0.17.1.tar.gz", hash = "sha256:f02f9692df282a5e67c578c974adbc1bc27f979b60d05fa2a4870adca29057a7" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/f2/a3/166715dd2d78c338087b8505c95b6cd68625b941a42b2d32a760369ef46e/ragflow_sdk-0.17.1-py3-none-any.whl", hash = "sha256:64c85fa41aa4462665cdef5ba0c02cf3697244961c764e8ea21f7ceef10f9d70" },
-]
 
 [[package]]
 name = "ranx"
