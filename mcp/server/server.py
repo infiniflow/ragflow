@@ -181,6 +181,20 @@ if __name__ == "__main__":
     HOST = os.environ.get("RAGFLOW_MCP_HOST", args.host)
     PORT = os.environ.get("RAGFLOW_MCP_PORT", args.port)
 
+    print(
+        r"""
+__  __  ____ ____       ____  _____ ______     _______ ____
+|  \/  |/ ___|  _ \     / ___|| ____|  _ \ \   / / ____|  _ \
+| |\/| | |   | |_) |    \___ \|  _| | |_) \ \ / /|  _| | |_) |
+| |  | | |___|  __/      ___) | |___|  _ < \ V / | |___|  _ <
+|_|  |_|\____|_|        |____/|_____|_| \_\ \_/  |_____|_| \_\
+    """,
+        flush=True,
+    )
+    print(f"MCP host: {HOST}", flush=True)
+    print(f"MCP port: {PORT}", flush=True)
+    print(f"MCP base_url: {BASE_URL}", flush=True)
+
     uvicorn.run(
         starlette_app,
         host=HOST,
