@@ -54,7 +54,7 @@ class RAGFlowConnector:
         res = requests.get(url=self.api_url + path, params=params, headers=self.authorization_header, json=json)
         return res
 
-    def list_datasets(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
+    def list_datasets(self, page: int = 1, page_size: int = 1000, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
         res = self._get("/datasets", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
         if not res:
             raise Exception([types.TextContent(type="text", text=res.get("Cannot process this operation."))])
