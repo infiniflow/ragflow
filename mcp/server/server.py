@@ -76,7 +76,7 @@ class RAGFlowConnector:
         if res.get("code") == 0:
             chunks = []
             for chunk_data in res["data"].get("chunks"):
-                chunks.append(json.dumps(chunk_data))
+                chunks.append(json.dumps(chunk_data, ensure_ascii=False))
             return [types.TextContent(type="text", text="\n".join(chunks))]
         raise Exception([types.TextContent(type="text", text=res.get("message"))])
 
@@ -105,7 +105,7 @@ async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="retrival",
-            description="Retrive relavant chunks of given dataset_ids and document_ids(optional) from RAGFlow retrave interface based on question.",
+            description="Retrieve relevant chunks of given dataset_ids and document_ids(optional) from RAGFlow retrieve interface based on question.",
             inputSchema={
                 "type": "object",
                 "properties": {"dataset_ids": {"type": "array", "items": {"type": "string"}}, "documents_ids": {"type": "array", "items": {"type": "string"}}, "question": {"type": "string"}},
