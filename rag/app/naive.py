@@ -464,7 +464,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         
         # Process images for each section
         section_images = []
-        for section_text in sections:
+        for section_text, _ in sections:
             images = markdown_parser.get_pictures(section_text) if section_text else None
             if images:
                 # If multiple images found, combine them using concat_img
