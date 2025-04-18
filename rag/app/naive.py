@@ -23,8 +23,6 @@ from timeit import default_timer as timer
 from docx import Document
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
 from markdown import markdown
-from markdown.extensions import Extension
-from markdown.treeprocessors import Treeprocessor
 from PIL import Image
 from tika import parser
 
@@ -289,22 +287,18 @@ class Pdf(PdfParser):
 
 
 class Markdown(MarkdownParser):
+    def get_picture_urls(self, text):
+        from bs4 import BeautifulSoup
+        md = markdown.Markdown()
+        html_content = md.convert(text)
+        soup = BeautifulSoup(html_content, 'html.parser')
+        html_images = [img.get('src') for img in soup.find_all('img') if img.get('src')]
+        return html_images
+    
     def get_pictures(self, text):
         """Download and open all images from markdown text."""
         import requests
-
-        class ImgExtractor(Treeprocessor):
-            def run(self, doc):
-                return [img.get('src') for img in doc.iter('img')]
-
-        class ImgExtension(Extension):
-            def extendMarkdown(self, md):
-                md.treeprocessors.register(ImgExtractor(md), 'img_extractor', 15)
-
-        md_converter = markdown.Markdown(extensions=[ImgExtension()])
-        md_converter.convert(text)
-        image_urls = md_converter.treeprocessors['img_extractor'].run(md_converter.tree)
-        
+        image_urls = self.get_picture_urls(text)
         images = []
         # Find all image URLs in text
         for url in image_urls:
@@ -541,5 +535,5 @@ if __name__ == "__main__":
 
     def dummy(prog=None, msg=""):
         pass
-
+    
     chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
