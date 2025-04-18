@@ -147,25 +147,33 @@ def validate_request(*args, **kwargs):
             input_arguments = flask_request.json or flask_request.form.to_dict()
             no_arguments = []
             error_arguments = []
+
             for arg in args:
-                if arg not in input_arguments:
+                value = input_arguments.get(arg, None)
+                if value is None or (isinstance(value, str) and not value.strip()):
                     no_arguments.append(arg)
+
             for k, v in kwargs.items():
                 config_value = input_arguments.get(k, None)
-                if config_value is None:
+                if config_value is None or (isinstance(config_value, str) and not config_value.strip()):
                     no_arguments.append(k)
                 elif isinstance(v, (tuple, list)):
                     if config_value not in v:
                         error_arguments.append((k, set(v)))
                 elif config_value != v:
                     error_arguments.append((k, v))
+
             if no_arguments or error_arguments:
                 error_string = ""
                 if no_arguments:
-                    error_string += "required argument are missing: {}; ".format(",".join(no_arguments))
+                    error_string += "required argument are missing or empty: {}; ".format(
+                        ",".join(no_arguments))
                 if error_arguments:
-                    error_string += "required argument values: {}".format(",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
-                return get_json_result(code=settings.RetCode.ARGUMENT_ERROR, message=error_string)
+                    error_string += "required argument values: {}".format(
+                        ",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
+                return get_json_result(
+                    code=settings.RetCode.ARGUMENT_ERROR, message=error_string)
+
             return func(*_args, **_kwargs)
 
         return decorated_function
