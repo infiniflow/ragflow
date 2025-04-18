@@ -23,6 +23,8 @@ from timeit import default_timer as timer
 from docx import Document
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
 from markdown import markdown
+from markdown.extensions import Extension
+from markdown.treeprocessors import Treeprocessor
 from PIL import Image
 from tika import parser
 
@@ -290,27 +292,30 @@ class Markdown(MarkdownParser):
     def get_pictures(self, text):
         """Download and open all images from markdown text."""
         import requests
-        
-        # Match both ![alt](url) and <img src="url"> patterns
-        img_patterns = [
-            r'!\[(?:[^\]]*)\]\(([^)]+)\)',  # ![alt](url) format
-            r'<img[^>]+src=[\'"](.*?)[\'"]'  # <img src="url"> format
-        ]
+
+        class ImgExtractor(Treeprocessor):
+            def run(self, doc):
+                return [img.get('src') for img in doc.iter('img')]
+
+        class ImgExtension(Extension):
+            def extendMarkdown(self, md):
+                md.treeprocessors.register(ImgExtractor(md), 'img_extractor', 15)
+
+        md_converter = markdown.Markdown(extensions=[ImgExtension()])
+        md_converter.convert(text)
+        image_urls = md_converter.treeprocessors['img_extractor'].run(md_converter.tree)
         
         images = []
         # Find all image URLs in text
-        for pattern in img_patterns:
-            matches = re.finditer(pattern, text)
-            for match in matches:
-                url = match.group(1)
-                try:
-                    response = requests.get(url, stream=True)
-                    if response.status_code == 200:
-                        img = Image.open(BytesIO(response.content)).convert('RGB')
-                        images.append(img)
-                except Exception as e:
-                    logging.error(f"Failed to download/open image from {url}: {e}")
-                    continue
+        for url in image_urls:
+            try:
+                response = requests.get(url, stream=True)
+                if response.status_code == 200:
+                    img = Image.open(BytesIO(response.content)).convert('RGB')
+                    images.append(img)
+            except Exception as e:
+                logging.error(f"Failed to download/open image from {url}: {e}")
+                continue
                     
         return images if images else None
 
