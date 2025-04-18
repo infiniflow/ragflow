@@ -19,12 +19,14 @@ import traceback
 from uuid import uuid4
 from agent.canvas import Canvas
 from api.db import TenantPermission
-from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation
+from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation,UserCanvasPermission
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.conversation_service import structure_answer
 from api.utils import get_uuid
 from api.utils.api_utils import get_data_openai
+from flask_login import current_user
+
 import tiktoken
 from peewee import fn
 class CanvasTemplateService(CommonService):
@@ -38,7 +40,12 @@ class UserCanvasService(CommonService):
     @DB.connection_context()
     def get_list(cls, tenant_id,
                  page_number, items_per_page, orderby, desc, id, title):
-        agents = cls.model.select()
+        user_id=current_user.id
+        permitted_canvas_ids = UserCanvasPermission.select(UserCanvasPermission.user_canvas_id) \
+            .where(UserCanvasPermission.user_id == user_id)
+
+        agents = cls.model.select() \
+            .where(cls.model.id.in_(permitted_canvas_ids))
         if id:
             agents = agents.where(cls.model.id == id)
         if title:
@@ -52,7 +59,20 @@ class UserCanvasService(CommonService):
         agents = agents.paginate(page_number, items_per_page)
 
         return list(agents.dicts())
-   
+        
+    @classmethod
+    @DB.connection_context()
+    def update_permissions(cls, canvas_ids, user_ids, permission):
+        UserCanvasPermission.delete().where(UserCanvasPermission.user_canvas_id.in_(canvas_ids)).execute()
+
+        permissions = []
+        for canvas_id in canvas_ids:
+            for user_id in user_ids:
+                permissions.append(UserCanvasPermission(user_canvas_id=canvas_id, user_id=user_id, permission=permission))
+        UserCanvasPermission.bulk_create(permissions)
+
+        return len(permissions)
+
     @classmethod
     @DB.connection_context()
     def get_by_tenant_id(cls, pid):

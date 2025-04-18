@@ -311,6 +311,7 @@ def getversion( version_id):
             return get_json_result(data=version.to_dict())
     except Exception as e:
         return get_json_result(data=f"Error getting history file: {e}")
+    
 @manager.route('/listteam', methods=['GET'])  # noqa: F821
 @login_required
 def list_kbs():
@@ -327,6 +328,7 @@ def list_kbs():
         return get_json_result(data={"kbs": kbs, "total": total})
     except Exception as e:
         return server_error_response(e)
+    
 @manager.route('/setting', methods=['POST'])  # noqa: F821
 @validate_request("id", "title", "permission")
 @login_required
@@ -350,3 +352,22 @@ def setting():
             code=RetCode.OPERATING_ERROR)
     num= UserCanvasService.update_by_id(req["id"], flow)
     return get_json_result(data=num)
+
+@manager.route('/update_permissions', methods=['POST'])  # noqa: F821
+@validate_request("canvas_ids", "user_ids", "permission")
+@login_required
+def update_permissions():
+    req = request.json
+    canvas_ids = req["canvas_ids"]
+    user_ids = req["user_ids"]
+    permission = req["permission"]
+
+    # 检测当前用户是否是被修改的canvas的owner
+    for canvas_id in canvas_ids:
+        e, canvas = UserCanvasService.get_by_id(canvas_id)
+        if not e or canvas.user_id != current_user.id:
+            return get_json_result(data=False, message='Only owner of canvas authorized for this operation.', code=RetCode.OPERATING_ERROR)
+
+    # 执行权限批量修改
+    updated_count = UserCanvasService.update_permissions(canvas_ids, user_ids, permission)
+    return get_json_result(data={"updated_count": updated_count})

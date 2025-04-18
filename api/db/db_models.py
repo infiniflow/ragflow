@@ -795,7 +795,14 @@ class UserCanvasVersion(DataBaseModel):
     class Meta:
         db_table = "user_canvas_version"
 
+class UserCanvasPermission(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    user_id = CharField(max_length=32, null=False, index=True, help_text="User ID")
+    user_canvas_id = CharField(max_length=32, null=False, index=True, help_text="User Canvas ID")
 
+    class Meta:
+        db_table = "user_canvas_permission"
+        
 def migrate_db():
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
     try:
