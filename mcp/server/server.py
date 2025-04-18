@@ -136,7 +136,7 @@ async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="retrival",
-            description="Retrieve relevant chunks of given dataset_ids and document_ids(optional) from RAGFlow retrieve interface based on question. Here are the information of all available databases, including description and id for each dataset. If you cannot decide how many dataset is relevant for given question, just dump all datasets id to this function."
+            description="Retrieve relevant chunks from the RAGFlow retrieve interface based on the question, using the specified dataset_ids and optionally document_ids. Below is the list of all available datasets, including their descriptions and IDs. If you're unsure which datasets are relevant to the question, simply pass all dataset IDs to the function."
             + dataset_description,
             inputSchema={
                 "type": "object",
