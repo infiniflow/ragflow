@@ -44,11 +44,29 @@ class RAGFlowConnector:
         self.api_key = api_key
         self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.api_key)}
 
-    def post(self, path, json=None, stream=False, files=None):
+    def _post(self, path, json=None, stream=False, files=None):
         if not self.api_key:
             return None
         res = requests.post(url=self.api_url + path, json=json, headers=self.authorization_header, stream=stream, files=files)
         return res
+
+    def _get(self, path, params=None, json=None):
+        res = requests.get(url=self.api_url + path, params=params, headers=self.authorization_header, json=json)
+        return res
+
+    def list_datasets(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
+        res = self._get("/datasets", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
+        if not res:
+            raise Exception([types.TextContent(type="text", text=res.get("Cannot process this operation."))])
+
+        res = res.json()
+        if res.get("code") == 0:
+            result_list = []
+            for data in res["data"]:
+                d = {"description": data["description"], "id": data["id"]}
+                result_list.append(json.dumps(d, ensure_ascii=False))
+            return "\n".join(result_list)
+        return ""
 
     def retrival(
         self, dataset_ids, document_ids=None, question="", page=1, page_size=30, similarity_threshold=0.2, vector_similarity_weight=0.3, top_k=1024, rerank_id: str | None = None, keyword: bool = False
@@ -68,7 +86,7 @@ class RAGFlowConnector:
             "document_ids": document_ids,
         }
         # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
-        res = self.post("/retrieval", json=data_json)
+        res = self._post("/retrieval", json=data_json)
         if not res:
             raise Exception([types.TextContent(type="text", text=res.get("Cannot process this operation."))])
 
@@ -102,10 +120,24 @@ sse = SseServerTransport("/messages/")
 
 @app.list_tools()
 async def list_tools() -> list[types.Tool]:
+    ctx = app.request_context
+    ragflow_ctx = ctx.lifespan_context["ragflow_ctx"]
+    if not ragflow_ctx:
+        raise ValueError("Get RAGFlow Context failed")
+    connector = ragflow_ctx.conn
+
+    api_key = ctx.session._init_options.capabilities.experimental["headers"]["api_key"]
+    if not api_key:
+        raise ValueError("RAGFlow API_KEY is required.")
+    connector.bind_api_key(api_key)
+
+    dataset_description = connector.list_datasets()
+
     return [
         types.Tool(
             name="retrival",
-            description="Retrieve relevant chunks of given dataset_ids and document_ids(optional) from RAGFlow retrieve interface based on question.",
+            description="Retrieve relevant chunks of given dataset_ids and document_ids(optional) from RAGFlow retrieve interface based on question. Here are the information of all available databases, including description and id for each dataset. If you cannot decide how many dataset is relevant for given question, just dump all datasets id to this function."
+            + dataset_description,
             inputSchema={
                 "type": "object",
                 "properties": {"dataset_ids": {"type": "array", "items": {"type": "string"}}, "documents_ids": {"type": "array", "items": {"type": "string"}}, "question": {"type": "string"}},
