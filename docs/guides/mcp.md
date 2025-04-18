@@ -23,7 +23,7 @@ All you need to do is stand on the right place and strike out command, assuming 
 uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380
 ```
 
-For testing purposes, there is a [MCP client example](#example_mcp_client) provided, free to take!
+For testing purposes, there is an [MCP client example](#example_mcp_client) provided, free to take!
 
 #### Required Arguments
 
