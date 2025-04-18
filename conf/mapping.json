@@ -3,13 +3,14 @@
     "index": {
       "number_of_shards": 2,
       "number_of_replicas": 0,
-      "refresh_interval": "1000ms"
-    },
-    "similarity": {
-      "scripted_sim": {
-        "type": "scripted",
-        "script": {
-          "source": "double idf = Math.log(1+(field.docCount-term.docFreq+0.5)/(term.docFreq + 0.5))/Math.log(1+((field.docCount-0.5)/1.5)); return query.boost * idf * Math.min(doc.freq, 1);"
+      "refresh_interval": "1000ms",
+      "knn": true,
+      "similarity": {
+        "scripted_sim": {
+          "type": "scripted",
+          "script": {
+            "source": "double idf = Math.log(1+(field.docCount-term.docFreq+0.5)/(term.docFreq + 0.5))/Math.log(1+((field.docCount-0.5)/1.5)); return query.boost * idf * Math.min(doc.freq, 1);"
+          }
         }
       }
     }
@@ -156,46 +157,46 @@
         }
       },
       {
-        "dense_vector": {
+        "knn_vector": {
           "match": "*_512_vec",
           "mapping": {
-            "type": "dense_vector",
+            "type": "knn_vector",
             "index": true,
-            "similarity": "cosine",
-            "dims": 512
+            "space_type": "cosinesimil",
+            "dimension": 512
           }
         }
       },
       {
-        "dense_vector": {
+        "knn_vector": {
           "match": "*_768_vec",
           "mapping": {
-            "type": "dense_vector",
+            "type": "knn_vector",
             "index": true,
-            "similarity": "cosine",
-            "dims": 768
+            "space_type": "cosinesimil",
+            "dimension": 768
           }
         }
       },
       {
-        "dense_vector": {
+        "knn_vector": {
           "match": "*_1024_vec",
           "mapping": {
-            "type": "dense_vector",
+            "type": "knn_vector",
             "index": true,
-            "similarity": "cosine",
-            "dims": 1024
+            "space_type": "cosinesimil",
+            "dimension": 1024
           }
         }
       },
       {
-        "dense_vector": {
+        "knn_vector": {
           "match": "*_1536_vec",
           "mapping": {
-            "type": "dense_vector",
+            "type": "knn_vector",
             "index": true,
-            "similarity": "cosine",
-            "dims": 1536
+            "space_type": "cosinesimil",
+            "dimension": 1536
           }
         }
       },
