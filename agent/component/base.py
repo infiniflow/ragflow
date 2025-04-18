@@ -384,6 +384,11 @@ class ComponentBase(ABC):
             "params": {}
         }
         """
+        out = getattr(self._param, self._param.output_var_name)
+        if isinstance(out, pd.DataFrame) and "chunks" in out:
+            del out["chunks"]
+            setattr(self._param, self._param.output_var_name, out)
+
         return """{{
             "component_name": "{}",
             "params": {},
