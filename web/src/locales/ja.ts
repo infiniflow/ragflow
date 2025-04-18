@@ -1078,6 +1078,10 @@ export default {
       contentTip: 'content: メールの内容（オプション）',
       jsonUploadTypeErrorMessage: 'jsonファイルをアップロードしてください',
       jsonUploadContentErrorMessage: 'jsonファイルエラー',
+      prompt: 'プロンプト',
+      promptTip:
+        'LLMのタスクを説明し、どのように応答すべきかを指定し、他のさまざまな要件を概説するためにシステムプロンプトを使用します。システムプロンプトは、LLMのさまざまなデータ入力として機能するキー（変数）と共に使用されることがよくあります。使用するキーを表示するには、スラッシュ `/` または (x) ボタンを使用します。',
+      promptMessage: 'プロンプトは必須です',
     },
     footer: {
       profile: 'All rights reserved @ React',

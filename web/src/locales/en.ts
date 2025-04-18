@@ -379,6 +379,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       community: 'Community reports generation',
       communityTip:
         'In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See here for more information: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+      theDocumentBeingParsedCannotBeDeleted:
+        'The document being parsed cannot be deleted',
     },
     chunk: {
       chunk: 'Chunk',
@@ -405,8 +407,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       newConversation: 'New conversation',
       createAssistant: 'Create an Assistant',
       assistantSetting: 'Assistant settings',
-      promptEngine: 'Prompt Engine',
-      modelSetting: 'Model Setting',
+      promptEngine: 'Prompt engine',
+      modelSetting: 'Model settings',
       chat: 'Chat',
       newChat: 'New chat',
       send: 'Send',
@@ -532,8 +534,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       locale: 'Locale',
       selectLanguage: 'Select a language',
       reasoning: 'Reasoning',
-      reasoningTip:
-        'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
+      reasoningTip: `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1 or OpenAI o1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
       tavilyApiKeyTip:
         'If an API key is correctly set here, Tavily-based web searches will be used to supplement knowledge base retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
@@ -551,7 +552,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       passwordDescription:
         'Please enter your current password to change your password.',
       model: 'Model providers',
-      modelDescription: 'Set the model parameter and API KEY here.',
+      modelDescription: 'Configure model parameters and API KEY here.',
       team: 'Team',
       system: 'System',
       logout: 'Log out',
@@ -1247,6 +1248,10 @@ This delimiter is used to split the input text into several text pieces echo of 
         knowledge: 'knowledge',
         chat: 'chat',
       },
+      prompt: 'Prompt',
+      promptTip:
+        'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
+      promptMessage: 'Prompt is required',
     },
   },
 };

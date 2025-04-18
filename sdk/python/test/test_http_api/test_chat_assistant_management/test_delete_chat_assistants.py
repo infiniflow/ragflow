@@ -63,12 +63,11 @@ class TestChatAssistantsDelete:
         res = list_chat_assistants(get_http_api_auth)
         assert len(res["data"]) == remaining
 
-    @pytest.mark.skip(reason="issues/6875")
     @pytest.mark.parametrize(
         "payload",
         [
             lambda r: {"ids": ["invalid_id"] + r},
-            lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:3]},
+            lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:5]},
             lambda r: {"ids": r + ["invalid_id"]},
         ],
     )
@@ -77,8 +76,9 @@ class TestChatAssistantsDelete:
         if callable(payload):
             payload = payload(chat_assistant_ids)
         res = delete_chat_assistants(get_http_api_auth, payload)
-        assert res["code"] == 102
-        assert res["message"] == "You don't own the chat invalid_id"
+        assert res["code"] == 0
+        assert res["data"]["errors"][0] == "Assistant(invalid_id) not found."
+        assert res["data"]["success_count"] == 5
 
         res = list_chat_assistants(get_http_api_auth)
         assert len(res["data"]) == 0

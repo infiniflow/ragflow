@@ -196,6 +196,7 @@ export default {
         '該文件與知識圖譜相關聯。刪除後，相關節點和關係資訊將被刪除，但圖不會立即更新。更新圖動作是在解析承載知識圖譜提取任務的新文件的過程中執行的。 ',
       plainText: 'Naive',
       reRankModelWaring: '重排序模型非常耗時。',
+      theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
@@ -399,7 +400,7 @@ export default {
       chat: '聊天',
       newChat: '新建聊天',
       send: '發送',
-      sendPlaceholder: '消息概要助手...',
+      sendPlaceholder: '給助理髮送消息...',
       chatConfiguration: '聊天配置',
       chatConfigurationDescription: '為你的知識庫配置專屬聊天助手！💕',
       assistantName: '助理姓名',
@@ -517,7 +518,7 @@ export default {
       keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。`,
       reasoning: '推理',
       reasoningTip:
-        '是否像 DeepSeek-R1 / OpenAI o1 一樣通過推理產生答案。啟用後，允許模型在遇到未知情況時將代理搜索過程整合到推理工作流中，自行動態檢索外部知識，並通過推理生成最終答案。',
+        '在問答過程中是否啟用推理工作流程，例如Deepseek-R1或OpenAI o1等模型所採用的方式。啟用後，該功能允許模型存取外部知識，並借助思維鏈推理等技術逐步解決複雜問題。通過將問題分解為可處理的步驟，這種方法增強了模型提供準確回答的能力，從而在需要邏輯推理和多步思考的任務上表現更優。',
       tavilyApiKeyTip:
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
       tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
@@ -537,6 +538,7 @@ export default {
       model: '模型提供商',
       modelDescription: '在此設置模型參數和 API KEY。',
       team: '團隊',
+      api: 'API',
       logout: '登出',
       system: '系統',
       username: '使用者名稱',
@@ -1145,6 +1147,9 @@ export default {
       categoryName: '分類名稱',
       nextStep: '下一步',
       insertVariableTip: `輸入 / 插入變數`,
+      promptMessage: '提示詞是必填項',
+      promptTip:
+        '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

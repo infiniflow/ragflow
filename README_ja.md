@@ -55,12 +55,10 @@
 
 ## 🔥 最新情報
 
+- 2025-03-19 PDFまたはDOCXファイル内の画像を理解するために、多モーダルモデルを使用することをサポートします。
 - 2025-02-28 インターネット検索 (TAVILY) と組み合わせて、あらゆる LLM の詳細な調査をサポートします。
-- 2025-02-05 シリコン フローの St およびモデル リストを更新し、Deep Seek-R1/Deep Seek-V3 のサポートを追加しました。
 - 2025-01-26 ナレッジ グラフの抽出と適用を最適化し、さまざまな構成オプションを提供します。
 - 2024-12-18 DeepDoc のドキュメント レイアウト分析モデルをアップグレードします。
-- 2024-12-04 ナレッジ ベースへのページランク スコアをサポートしました。
-- 2024-11-22 エージェントでの変数の定義と使用法を改善しました。
 - 2024-11-01 再現の精度を向上させるために、解析されたチャンクにキーワード抽出と関連質問の生成を追加しました。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
 
@@ -242,7 +240,7 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 ソースコードをコンパイルした Docker イメージ（埋め込みモデルを含む）
@@ -252,7 +250,7 @@ docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-s
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 ソースコードからサービスを起動する方法

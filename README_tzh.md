@@ -54,12 +54,10 @@
 
 ## 🔥 近期更新
 
+- 2025-03-19 PDF和DOCX中的圖支持用多模態大模型去解析得到描述.
 - 2025-02-28 結合網路搜尋（Tavily），對於任意大模型實現類似 Deep Research 的推理功能.
-- 2025-02-05 更新「SILICONFLOW」的型號清單並新增 Deepseek-R1/DeepSeek-V3 的支援。
 - 2025-01-26 最佳化知識圖譜的擷取與應用，提供了多種配置選擇。
 - 2024-12-18 升級了 DeepDoc 的文檔佈局分析模型。
-- 2024-12-04 支援知識庫的 Pagerank 分數。
-- 2024-11-22 完善了 Agent 中的變數定義和使用。
 - 2024-11-01 對解析後的 chunk 加入關鍵字抽取和相關問題產生以提高回想的準確度。
 - 2024-08-22 支援用 RAG 技術實現從自然語言到 SQL 語句的轉換。
 
@@ -253,7 +251,7 @@ RAGFlow 預設使用 Elasticsearch 儲存文字和向量資料. 如果要切換�
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+docker build --platform linux/amd64 --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 原始碼編譯 Docker 映像（包含 embedding 模型）
@@ -263,7 +261,7 @@ docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t in
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 以原始碼啟動服務

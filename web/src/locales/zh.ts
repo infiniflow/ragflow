@@ -196,6 +196,7 @@ export default {
         '该文档与知识图谱相关联。删除后，相关节点和关系信息将被删除，但图不会立即更新。更新图动作是在解析承载知识图谱提取任务的新文档的过程中执行的。',
       plainText: 'Naive',
       reRankModelWaring: '重排序模型非常耗时。',
+      theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
       titleDescription: '在这里更新您的知识库详细信息，尤其是切片方法。',
@@ -416,7 +417,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       chat: '聊天',
       newChat: '新建聊天',
       send: '发送',
-      sendPlaceholder: '消息概要助手...',
+      sendPlaceholder: '给助理发送消息...',
       chatConfiguration: '聊天配置',
       chatConfigurationDescription: '为你的知识库配置专属聊天助手！ 💕',
       assistantName: '助理姓名',
@@ -534,7 +535,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       keywordTip: `应用 LLM 分析用户的问题，提取在相关性计算中要强调的关键词。`,
       reasoning: '推理',
       reasoningTip:
-        '是否像 Deepseek-R1 / OpenAI o1一样通过推理产生答案。启用后，允许模型在遇到未知情况时将代理搜索过程集成到推理工作流中，自行动态检索外部知识，并通过推理生成最终答案。',
+        '在问答过程中是否启用推理工作流，例如Deepseek-R1或OpenAI o1等模型所采用的方式。启用后，该功能允许模型访问外部知识，并借助思维链推理等技术逐步解决复杂问题。通过将问题分解为可处理的步骤，这种方法增强了模型提供准确回答的能力，从而在需要逻辑推理和多步思考的任务上表现更优。',
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',
@@ -556,6 +557,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       team: '团队',
       system: '系统',
       logout: '登出',
+      api: 'API',
       username: '用户名',
       usernameMessage: '请输入用户名',
       photo: '头像',
@@ -1200,6 +1202,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         me: '仅限自己',
         team: '团队',
       },
+      systemPrompt: '系统提示词',
+      prompt: '提示词',
+      promptMessage: '提示词是必填项',
+      promptTip:
+        '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
     },
     footer: {
       profile: 'All rights reserved @ React',

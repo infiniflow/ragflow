@@ -161,7 +161,8 @@ export default {
       rerankTip:
         'Se deixado vazio, o RAGFlow usará uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada; se um modelo de reranking for selecionado, uma pontuação de reranking ponderada substituirá a similaridade de cosseno vetorial ponderada. Esteja ciente de que usar um modelo de reranking aumentará significativamente o tempo de resposta do sistema.',
       topK: 'Top-K',
-      topKTip: 'Usado em conjunto com o Rerank model, essa configuração define o número de trechos de texto a serem enviados ao modelo reranking especificado.',
+      topKTip:
+        'Usado em conjunto com o Rerank model, essa configuração define o número de trechos de texto a serem enviados ao modelo reranking especificado.',
       delimiter: 'Delimitadores para segmentação de texto',
       delimiterTip:
         'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \\n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula. Defina os delimitadores apenas após entender o mecanismo de segmentação e particionamento de texto.',
@@ -1121,14 +1122,18 @@ export default {
       addCategory: 'Adicionar categoria',
       categoryName: 'Nome da categoria',
       nextStep: 'Próximo passo',
-      footer: {
-        profile: 'Todos os direitos reservados @ React',
-      },
-      layout: {
-        file: 'arquivo',
-        knowledge: 'conhecimento',
-        chat: 'bate-papo',
-      },
+      prompt: 'Prompt',
+      promptTip:
+        'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
+      promptMessage: 'O prompt é obrigatório',
+    },
+    footer: {
+      profile: 'Todos os direitos reservados @ React',
+    },
+    layout: {
+      file: 'arquivo',
+      knowledge: 'conhecimento',
+      chat: 'bate-papo',
     },
   },
 };

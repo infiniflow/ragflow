@@ -277,7 +277,7 @@ async def extract_community(
     for stru, rep in zip(community_structure, community_reports):
         obj = {
             "report": rep,
-            "evidences": "\n".join([f["explanation"] for f in stru["findings"]]),
+            "evidences": "\n".join([f.get("explanation", "") for f in stru["findings"]]),
         }
         chunk = {
             "id": get_uuid(),

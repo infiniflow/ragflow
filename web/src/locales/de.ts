@@ -164,7 +164,8 @@ export default {
       rerankTip:
         'Wenn leer gelassen, verwendet RAGFlow eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit; wenn ein Neuordnungsmodell ausgewählt wird, ersetzt eine gewichtete Neuordnungsbewertung die gewichtete Vektorkosinus-Ähnlichkeit. Bitte beachten Sie, dass die Verwendung eines Neuordnungsmodells die Antwortzeit des Systems erheblich erhöht.',
       topK: 'Top-K',
-      topKTip: 'In Verbindung mit dem Rerank model wird mit dieser Einstellung die Anzahl der Textblöcke festgelegt, die an das angegebene reranking model gesendet werden.',
+      topKTip:
+        'In Verbindung mit dem Rerank model wird mit dieser Einstellung die Anzahl der Textblöcke festgelegt, die an das angegebene reranking model gesendet werden.',
       delimiter: 'Trennzeichen für Textsegmentierung',
       delimiterTip:
         'Ein Trennzeichen oder Separator kann aus einem oder mehreren Sonderzeichen bestehen. Bei mehreren Zeichen stellen Sie sicher, dass sie in Backticks (` `) eingeschlossen sind. Wenn Sie beispielsweise Ihre Trennzeichen so konfigurieren: \\n`##`;, dann werden Ihre Texte an Zeilenumbrüchen, doppelten Rautenzeichen (##) oder Semikolons getrennt. Setzen Sie Trennzeichen nur nachdem Sie das Mechanismus der Textsegmentierung und -chunking verstanden haben.',
@@ -553,7 +554,7 @@ export default {
       selectLanguage: 'Sprache auswählen',
       reasoning: 'Schlussfolgerung',
       reasoningTip:
-        'Ob Antworten durch Denkprozesse wie DeepSeek-R1/OpenAI o1 generiert werden sollen. Wenn aktiviert, integriert das Chat-Modell Deep Research autonom während der Beantwortung von Fragen, wenn es auf ein unbekanntes Thema trifft. Dies beinhaltet, dass das Chat-Modell dynamisch externe Kenntnisse durchsucht und endgültige Antworten durch Denkprozesse generiert.',
+        'Ob beim Frage-Antwort-Prozess ein logisches Arbeitsverfahren aktiviert werden soll, wie es bei Modellen wie Deepseek-R1 oder OpenAI o1 der Fall ist. Wenn aktiviert, ermöglicht diese Funktion dem Modell, auf externes Wissen zuzugreifen und komplexe Fragen schrittweise mithilfe von Techniken wie der „Chain-of-Thought“-Argumentation zu lösen. Durch die Zerlegung von Problemen in überschaubare Schritte verbessert dieser Ansatz die Fähigkeit des Modells, präzise Antworten zu liefern, was die Leistung bei Aufgaben, die logisches Denken und mehrschrittige Überlegungen erfordern, steigert.',
       tavilyApiKeyTip:
         'Wenn hier ein API-Schlüssel korrekt eingestellt ist, werden Tavily-basierte Websuchen verwendet, um den Abruf aus der Wissensdatenbank zu ergänzen.',
       tavilyApiKeyMessage: 'Bitte geben Sie Ihren Tavily-API-Schlüssel ein',
@@ -1221,6 +1222,10 @@ export default {
       nextStep: 'Nächster Schritt',
       datatype: 'MIME-Typ der HTTP-Anfrage',
       insertVariableTip: 'Eingabe / Variablen einfügen',
+      prompt: 'Prompt',
+      promptTip:
+        'Verwenden Sie den Systemprompt, um die Aufgabe für das LLM zu beschreiben, festzulegen, wie es antworten soll, und andere verschiedene Anforderungen zu skizzieren. Der Systemprompt wird oft in Verbindung mit Schlüsseln (Variablen) verwendet, die als verschiedene Dateninputs für das LLM dienen. Verwenden Sie einen Schrägstrich `/` oder die (x)-Schaltfläche, um die zu verwendenden Schlüssel anzuzeigen.',
+      promptMessage: 'Prompt ist erforderlich',
     },
     footer: {
       profile: 'Alle Rechte vorbehalten @ React',

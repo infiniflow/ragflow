@@ -440,7 +440,7 @@ Success:
             "html4excel": false,
             "layout_recognize": true,
             "raptor": {
-                "user_raptor": false
+                "use_raptor": false
             }
         },
         "permission": "me",
@@ -750,7 +750,7 @@ Success:
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "run": "UNSTART",
@@ -1339,7 +1339,7 @@ Success:
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
@@ -3169,7 +3169,7 @@ The chat model dynamically determines the number of questions to generate based 
 ##### Request example
 
 ```bash
-curl --request DELETE \
+curl --request POST \
      --url http://{address}/api/v1/conversation/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \

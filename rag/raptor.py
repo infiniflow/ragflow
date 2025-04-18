@@ -77,11 +77,11 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         return optimal_clusters
 
     async def __call__(self, chunks, random_state, callback=None):
-        layers = [(0, len(chunks))]
-        start, end = 0, len(chunks)
         if len(chunks) <= 1:
             return []
         chunks = [(s, a) for s, a in chunks if s and len(a) > 0]
+        layers = [(0, len(chunks))]
+        start, end = 0, len(chunks)
 
         async def summarize(ck_idx: list[int]):
             nonlocal chunks
@@ -152,7 +152,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     ck_idx = [i + start for i in range(len(lbls)) if lbls[i] == c]
                     assert len(ck_idx) > 0
                     async with chat_limiter:
-                        nursery.start_soon(lambda: summarize(ck_idx))
+                        nursery.start_soon(summarize, ck_idx)
 
             assert len(chunks) - end == n_clusters, "{} vs. {}".format(
                 len(chunks) - end, n_clusters
