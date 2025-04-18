@@ -28,10 +28,17 @@ import { trim } from 'lodash';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export default function TestingForm() {
-  const { t } = useTranslation();
+type TestingFormProps = Pick<
+  ReturnType<typeof useTestRetrieval>,
+  'loading' | 'refetch' | 'setValues'
+>;
 
-  const { loading, setValues, refetch } = useTestRetrieval();
+export default function TestingForm({
+  loading,
+  refetch,
+  setValues,
+}: TestingFormProps) {
+  const { t } = useTranslation();
 
   const formSchema = z.object({
     question: z.string().min(1, {
