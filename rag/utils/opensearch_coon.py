@@ -23,7 +23,6 @@ import os
 import copy
 from opensearchpy import OpenSearch, NotFoundError
 from opensearchpy import UpdateByQuery, Q, Search, Index
-from opensearchpy.helpers.query import Query
 from opensearchpy import ConnectionTimeout
 from rag import settings
 from rag.settings import TAG_FLD, PAGERANK_FLD
@@ -557,22 +556,3 @@ class OSConnection(DocStoreConnection):
                 return None
         logger.error("OSConnection.sql timeout for 3 times!")
         return None
-    
-    #in elsactic python sdk, knn method is supported
-    #But in opensearch python sdk, no knn method is available
-    #Here is the new method __knn for opensearch_connector 
-    def __knn(self,field,k,query_vector=None,boost=None,filter=None,min_score=None,):
-        """
-        Add a k-nearest neighbor (kNN) search for OpenSearch.
-
-        :arg field: the name of the vector field to search against
-        :arg k: number of nearest neighbors to return as top hits
-        :arg query_vector: the vector to search for
-        :arg query_vector_builder: A dictionary indicating how to build a query vector
-        :arg boost: A floating-point boost factor for kNN scores
-        :arg filter: query to filter the documents that can match
-        :arg min_score: the minimum similarity required for a document to be considered a match, as a float value
-        """
-        source = {"knn":{}}
-        source["knn"][field] = {"vector":query_vector,"k":k,"filter":filter,min_score:min_score}
-        return source
