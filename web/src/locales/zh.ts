@@ -762,6 +762,23 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       uploadLimit: '文件大小不能超过10M，文件总数不超过128个',
       destinationFolder: '目标文件夹',
     },
+    mcp: {
+      chatModel: '聊天模型',
+      chatModelTip: '您选择的聊天模型必须支持工具调用(function calling)',
+    },
+    mcpserver: {
+      mcpServer: 'MCP Server',
+      mcpServerTip:
+        '请填写基于SSE的MCP Server地址，格式:“http(s)://127.0.0.1:8080/xxx”',
+      mcpServerMessage:
+        '请填写基于SSE的MCP Server地址，格式:“http(s)://127.0.0.1:8080/xxx”',
+      addMessage: '新增MCP Server',
+      mcpAddr: 'MCP Server 地址',
+      parameter: 'MCP Server 信息',
+      operation: '操作',
+      add: '新增',
+      placeholder: '请输入MCP Server地址,以http(s)://开头',
+    },
     flow: {
       flow: '工作流',
       noMoreData: '没有更多数据了',
@@ -794,6 +811,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       run: '运行',
       save: '保存',
       title: 'ID：',
+      mCPSSEClient: 'MCP SSE客户端',
+      mCPSSEClientDescription:
+        '基于SSE的MCP客户端，MCP Server信息 地址也只能填写基于SSE 的MCP SERVER',
       beginDescription: '这是流程开始的地方',
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应”。`,

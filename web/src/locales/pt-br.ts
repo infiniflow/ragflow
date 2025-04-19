@@ -658,6 +658,25 @@ export default {
         'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Para o RAGFlow implantado localmente: o limite total de tamanho de arquivo por upload é de 1GB, com um limite de upload em lote de 32 arquivos. Não há limite para o número total de arquivos por conta. Para o demo.ragflow.io: o limite total de tamanho de arquivo por upload é de 10MB, com cada arquivo não excedendo 10MB e um máximo de 128 arquivos por conta.',
       destinationFolder: 'Pasta de destino',
     },
+    mcp: {
+      chatModel: 'modelo de chat',
+      chatModelTip:
+        'O modelo de chat que escolher deve suportar a chamada de função',
+    },
+    mcpserver: {
+      mcpServer: 'MCP Server',
+      mcpServerTip:
+        'Preencher o endereço do servidor MCP com base no formato SSE,: "http(s)://127.0.0.1:8080/xxx"',
+      mcpServerMessage:
+        'Preencher o endereço do servidor MCP com base no formato SSE,: "http(s)://127.0.0.1:8080/xxx"',
+      addMessage: 'Adicionar servidor MCP',
+      mcpAddr: 'MCP Server 地址',
+      parameter: 'Endereço do servidor MCP',
+      operation: 'operar',
+      add: 'Novo',
+      placeholder:
+        'Por favor, introduza o endereço do servidor MCP, começando por http(s)://',
+    },
     flow: {
       cite: 'Citar',
       citeTip: 'dicaDeCitação',
@@ -683,6 +702,9 @@ export default {
       run: 'Executar',
       save: 'Salvar',
       title: 'ID:',
+      mCPSSEClient: 'MCP SSE Client',
+      mCPSSEClientDescription:
+        'For MCP clients based on SSE, the MCP Server information address can only be filled in with MCP SERVER based on SSE',
       beginDescription: 'Aqui é onde o fluxo começa.',
       answerDescription: `Um componente que serve como a interface entre o ser humano e o bot, recebendo entradas do usuário e exibindo as respostas do agente.`,
       retrievalDescription: `Um componente que recupera informações de bases de conhecimento especificadas (conjuntos de dados). Certifique-se de que as bases de conhecimento que você seleciona utilizam o mesmo modelo de incorporação.`,

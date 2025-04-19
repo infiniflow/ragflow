@@ -666,6 +666,25 @@ export default {
         'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。demo.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
       destinationFolder: '保存先フォルダ',
     },
+    mcp: {
+      chatModel: 'チャットモデル',
+      chatModelTip:
+        '選択したチャットモデルは関数呼び出しをサポートしている必要があります',
+    },
+    mcpserver: {
+      mcpServer: 'MCP Server',
+      mcpServerTip:
+        'SSE に基づいて MCP サーバーのアドレスを入力してください。形式: "http(s)://127.0.0.1:8080/xxx"',
+      mcpServerMessage:
+        'SSE に基づいて MCP サーバーのアドレスを入力してください。形式: "http(s)://127.0.0.1:8080/xxx"',
+      addMessage: 'MCPサーバーの追加',
+      mcpAddr: 'MCP Server 地址',
+      parameter: 'MCPサーバーアドレス',
+      operation: '操作する',
+      add: '新しい',
+      placeholder:
+        'http(s):// で始まる MCP サーバーのアドレスを入力してください。',
+    },
     flow: {
       cite: '引用',
       citeTip: '引用に関するヒント',
@@ -691,6 +710,9 @@ export default {
       run: '実行',
       save: '保存',
       title: 'ID:',
+      mCPSSEClient: 'MCP SSE Client',
+      mCPSSEClientDescription:
+        'For MCP clients based on SSE, the MCP Server information address can only be filled in with MCP SERVER based on SSE',
       beginDescription: 'ここからフローが始まります。',
       answerDescription: `人間とボットの間のインターフェースとして機能し、ユーザーの入力を受け取り、エージェントの応答を表示するコンポーネント。`,
       retrievalDescription: `指定されたナレッジベースから情報を取得し、情報が見つからない場合は「空の応答」を返すコンポーネント。正しいナレッジベースが選択されていることを確認してください。`,

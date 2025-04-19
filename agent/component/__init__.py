@@ -48,6 +48,7 @@ from .crawler import Crawler, CrawlerParam
 from .invoke import Invoke, InvokeParam
 from .template import Template, TemplateParam
 from .email import Email, EmailParam
+from .mcpsseclient import MCPSSEClient, MCPSSEClientParam
 from .iteration import Iteration, IterationParam
 from .iterationitem import IterationItem, IterationItemParam
 
@@ -129,5 +130,7 @@ __all__ = [
     "TemplateParam",
     "Email",
     "EmailParam",
-    "component_class"
+    "component_class",
+    "MCPSSEClientParam",
+    "MCPSSEClient",
 ]

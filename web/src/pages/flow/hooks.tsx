@@ -53,6 +53,7 @@ import {
   initialIterationValues,
   initialJin10Values,
   initialKeywordExtractValues,
+  initialMCPSSEClientValues,
   initialMessageValues,
   initialNoteValues,
   initialPubMedValues,
@@ -108,6 +109,10 @@ export const useInitializeOperatorParams = () => {
         llm_id: llmId,
       },
       [Operator.Message]: initialMessageValues,
+      [Operator.MCPSSEClient]: {
+        ...initialMCPSSEClientValues,
+        llm_id: llmId,
+      },
       [Operator.KeywordExtract]: {
         ...initialKeywordExtractValues,
         llm_id: llmId,

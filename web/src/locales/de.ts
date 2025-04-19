@@ -789,6 +789,25 @@ export default {
         'Jede Datei darf 10MB nicht überschreiten, und die Gesamtzahl der Dateien darf 128 nicht überschreiten.',
       destinationFolder: 'Zielordner',
     },
+    mcp: {
+      chatModel: 'Chat Model',
+      chatModelTip:
+        'The chat model you choose must support tools(function calling)',
+    },
+    mcpserver: {
+      mcpServer: 'MCP Server',
+      mcpServerTip:
+        'Please fill in the MCP Server address based on SSE, format: "http(s)://127.0.0.1:8080/xxx"',
+      mcpServerMessage:
+        'Please fill in the MCP Server address based on SSE, format: "http(s)://127.0.0.1:8080/xxx"',
+      addMessage: 'Add MCP Server',
+      mcpAddr: 'MCP Server address',
+      parameter: 'MCP Server info',
+      operation: 'Operation',
+      add: 'Add',
+      placeholder:
+        'Please enter the MCP Server address, starting with http(s)://',
+    },
     flow: {
       cite: 'Zitieren',
       citeTip: 'Zitiertipp',
@@ -814,6 +833,9 @@ export default {
       run: 'Ausführen',
       save: 'Speichern',
       title: 'ID:',
+      mCPSSEClient: 'MCP SSE Client',
+      mCPSSEClientDescription:
+        'For MCP clients based on SSE, the MCP Server information address can only be filled in with MCP SERVER based on SSE',
       beginDescription: 'Hier beginnt der Ablauf.',
       answerDescription:
         'Eine Komponente, die als Schnittstelle zwischen Mensch und Bot dient, Benutzereingaben empfängt und die Antworten des Agenten anzeigt.',

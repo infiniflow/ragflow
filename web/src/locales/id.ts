@@ -661,6 +661,25 @@ export default {
         'Ukuran file tidak boleh melebihi 10M, dan jumlah total file tidak boleh melebihi 128',
       destinationFolder: 'Folder tujuan',
     },
+    mcp: {
+      chatModel: 'Chat Model',
+      chatModelTip:
+        'The chat model you choose must support tools(function calling)',
+    },
+    mcpserver: {
+      mcpServer: 'MCP Server',
+      mcpServerTip:
+        'Please fill in the MCP Server address based on SSE, format: "http(s)://127.0.0.1:8080/xxx"\n',
+      mcpServerMessage:
+        'Please fill in the MCP Server address based on SSE, format: "http(s)://127.0.0.1:8080/xxx"\n',
+      addMessage: 'Add MCP Server',
+      mcpAddr: 'MCP Server address',
+      parameter: 'MCP Server info',
+      operation: 'Operation',
+      add: 'Add',
+      placeholder:
+        'Please enter the MCP Server address, starting with http(s)://',
+    },
     flow: {
       cite: 'Kutip',
       citeTip: 'tipKutip',
@@ -686,6 +705,9 @@ export default {
       run: 'Jalankan',
       save: 'Simpan',
       title: 'ID:',
+      mCPSSEClient: 'MCP SSE Client',
+      mCPSSEClientDescription:
+        'For MCP clients based on SSE, the MCP Server information address can only be filled in with MCP SERVER based on SSE',
       beginDescription: 'Ini adalah tempat aliran dimulai.',
       answerDescription: `Komponen yang berfungsi sebagai antarmuka antara manusia dan bot, menerima input pengguna dan menampilkan respons agen.`,
       retrievalDescription: `Komponen yang mengambil informasi dari basis pengetahuan yang ditentukan dan mengembalikan 'Respon kosong' jika tidak ada informasi yang ditemukan. Pastikan basis pengetahuan yang benar dipilih.`,

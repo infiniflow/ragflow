@@ -48,6 +48,7 @@ import {
 import SingleDebugDrawer from './single-debug-drawer';
 
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import McpSseClientForm from '@/pages/flow/form/mcp-sse-client-form';
 import { FlowFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
 import IterationForm from '../form/iteration-from';
@@ -63,6 +64,7 @@ interface IProps {
 const FormMap = {
   [Operator.Begin]: BeginForm,
   [Operator.Retrieval]: RetrievalForm,
+  [Operator.MCPSSEClient]: McpSseClientForm,
   [Operator.Generate]: GenerateForm,
   [Operator.Answer]: AnswerForm,
   [Operator.Categorize]: CategorizeForm,

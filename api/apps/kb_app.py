@@ -59,6 +59,7 @@ def create():
     try:
         req["id"] = get_uuid()
         req["tenant_id"] = current_user.id
+        req["name"] = dataset_name
         req["created_by"] = current_user.id
         e, t = TenantService.get_by_id(current_user.id)
         if not e:
