@@ -22,7 +22,6 @@ from typing import List
 import json
 import logging
 from mcp import ClientSession
-from flask_login import current_user
 from mcp.client.sse import sse_client
 
 from api.db.services.llm_service import TenantLLMService
