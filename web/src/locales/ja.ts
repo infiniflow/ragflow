@@ -710,6 +710,9 @@ export default {
       run: '実行',
       save: '保存',
       title: 'ID:',
+      mCPSSEClient: 'MCP SSE Client',
+      mCPSSEClientDescription:
+        'For MCP clients based on SSE, the MCP Server information address can only be filled in with MCP SERVER based on SSE',
       beginDescription: 'ここからフローが始まります。',
       answerDescription: `人間とボットの間のインターフェースとして機能し、ユーザーの入力を受け取り、エージェントの応答を表示するコンポーネント。`,
       retrievalDescription: `指定されたナレッジベースから情報を取得し、情報が見つからない場合は「空の応答」を返すコンポーネント。正しいナレッジベースが選択されていることを確認してください。`,

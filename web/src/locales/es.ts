@@ -536,6 +536,9 @@ export default {
       run: 'Ejecutar',
       save: 'Guardar',
       title: 'ID:',
+      mCPSSEClient: 'MCP SSE Client',
+      mCPSSEClientDescription:
+        'For MCP clients based on SSE, the MCP Server information address can only be filled in with MCP SERVER based on SSE',
       beginDescription: 'Este es el punto donde comienza el flujo.',
       answerDescription:
         'Un componente que sirve como interfaz entre el humano y el bot, recibiendo las entradas del usuario y mostrando las respuestas del agente.',

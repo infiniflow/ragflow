@@ -763,6 +763,9 @@ export default {
       run: 'Chạy',
       save: 'Lưu',
       title: 'ID:',
+      mCPSSEClient: 'MCP SSE Client',
+      mCPSSEClientDescription:
+        'For MCP clients based on SSE, the MCP Server information address can only be filled in with MCP SERVER based on SSE',
       beginDescription: 'Đây là nơi bắt đầu luồng công việc.',
       answerDescription: `Một thành phần đóng vai trò như giao diện giữa người và bot, nhận đầu vào của người dùng và hiển thị phản hồi của tác nhân.`,
       retrievalDescription: `Một thành phần truy xuất thông tin từ một cơ sở kiến thức được chỉ định và trả về 'Phản hồi trống' nếu không tìm thấy thông tin. Đảm bảo chọn đúng cơ sở kiến thức.`,

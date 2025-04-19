@@ -816,7 +816,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       save: 'Save',
       title: 'ID:',
       mCPSSEClient: 'MCP SSE Client',
-      mCPSSEClientDescription: 'MCP client based on SSE',
+      mCPSSEClientDescription:
+        'For MCP clients based on SSE, the MCP Server information address can only be filled in with MCP SERVER based on SSE',
       beginDescription: 'This is where the flow begins.',
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
       retrievalDescription: `A component that retrieves information from specified knowledge bases (datasets). Ensure that the knowledge bases you select use the same embedding model.`,

@@ -702,6 +702,9 @@ export default {
       run: 'Executar',
       save: 'Salvar',
       title: 'ID:',
+      mCPSSEClient: 'MCP SSE Client',
+      mCPSSEClientDescription:
+        'For MCP clients based on SSE, the MCP Server information address can only be filled in with MCP SERVER based on SSE',
       beginDescription: 'Aqui é onde o fluxo começa.',
       answerDescription: `Um componente que serve como a interface entre o ser humano e o bot, recebendo entradas do usuário e exibindo as respostas do agente.`,
       retrievalDescription: `Um componente que recupera informações de bases de conhecimento especificadas (conjuntos de dados). Certifique-se de que as bases de conhecimento que você seleciona utilizam o mesmo modelo de incorporação.`,
