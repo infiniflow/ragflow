@@ -380,6 +380,33 @@ export const useSubmitAzure = () => {
   };
 };
 
+export const useSubmitFastEmbed = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: fastEmbedAddingVisible,
+    hideModal: hideFastEmbedAddingModal,
+    showModal: showFastEmbedAddingModal,
+  } = useSetModalState();
+
+  const onFastEmbedAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideFastEmbedAddingModal();
+      }
+    },
+    [hideFastEmbedAddingModal, addLlm],
+  );
+
+  return {
+    fastEmbedAddingLoading: loading,
+    onFastEmbedAddingOk,
+    fastEmbedAddingVisible,
+    hideFastEmbedAddingModal,
+    showFastEmbedAddingModal,
+  };
+};
+
 export const useHandleDeleteLlm = (llmFactory: string) => {
   const { deleteLlm } = useDeleteLlm();
   const showDeleteConfirm = useShowDeleteConfirm();
