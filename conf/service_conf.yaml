@@ -24,6 +24,12 @@ redis:
   db: 1
   password: 'infini_rag_flow'
   host: 'localhost:6379'
+og:
+  host: 'ragflow-opengauss'
+  port: 5432
+  user: 'opengauss_user'
+  password: 'Ragflow@123'
+  database: 'ragflow'
 
 # postgres:
 #   name: 'rag_flow'
