@@ -720,6 +720,24 @@ export default {
         'Kích thước tệp không được vượt quá 10M và tổng số tệp không được vượt quá 128',
       destinationFolder: 'Thư mục đích',
     },
+    mcp: {
+      chatModel: 'Mô hình trò chuyện',
+      chatModelTip: 'Mô hình trò chuyện bạn chọn phải hỗ trợ chức năng gọi',
+    },
+    mcpserver: {
+      mcpServer: 'MCP Server',
+      mcpServerTip:
+        'Vui lòng điền địa chỉ Máy chủ MCP dựa trên SSE, định dạng: "http(s)://127.0.0.1:8080/xxx"\n',
+      mcpServerMessage:
+        'Vui lòng điền địa chỉ Máy chủ MCP dựa trên SSE, định dạng: "http(s)://127.0.0.1:8080/xxx"\n',
+      addMessage: 'Mới MCP Server',
+      mcpAddr: 'MCP Server Địa chỉ',
+      parameter: 'MCP Server thông tin',
+      operation: 'vận hành',
+      add: 'Mới',
+      placeholder: 'Vui lòng nhập địa chỉ máy chủ MCP, bắt đầu bằng http(s)://',
+    },
+
     flow: {
       cite: 'Dẫn nguồn',
       citeTip: 'Mẹo dẫn nguồn',

@@ -21,6 +21,7 @@ import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
 import { ReactComponent as InvokeIcon } from '@/assets/svg/invoke-ai.svg';
 import { ReactComponent as Jin10Icon } from '@/assets/svg/jin10.svg';
 import { ReactComponent as NoteIcon } from '@/assets/svg/note.svg';
+import { ReactComponent as MCPSSEClientIcon } from '@/assets/svg/plugin.svg';
 import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
 import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
 import { ReactComponent as TemplateIcon } from '@/assets/svg/template.svg';
@@ -68,6 +69,7 @@ export const BeginId = 'begin';
 
 export enum Operator {
   Begin = 'Begin',
+  MCPSSEClient = 'MCPSSEClient',
   Retrieval = 'Retrieval',
   Generate = 'Generate',
   Answer = 'Answer',
@@ -120,6 +122,7 @@ export const operatorIconMap = {
   [Operator.RewriteQuestion]: FormOutlined,
   [Operator.KeywordExtract]: KeywordIcon,
   [Operator.DuckDuckGo]: DuckIcon,
+  [Operator.MCPSSEClient]: MCPSSEClientIcon,
   [Operator.Baidu]: BaiduIcon,
   [Operator.Wikipedia]: WikipediaIcon,
   [Operator.PubMed]: PubMedIcon,
@@ -183,6 +186,14 @@ export const operatorMap: Record<
   [Operator.Categorize]: {
     backgroundColor: '#ffebcd',
     color: '#cc8a26',
+  },
+  [Operator.MCPSSEClient]: {
+    backgroundColor: '#c5ddc7',
+    color: 'red',
+    width: 70,
+    height: 70,
+    fontSize: 12,
+    iconFontSize: 16,
   },
   [Operator.Message]: {
     backgroundColor: '#c5ddc7',
@@ -289,6 +300,9 @@ export const operatorMap: Record<
 export const componentMenuList = [
   {
     name: Operator.Retrieval,
+  },
+  {
+    name: Operator.MCPSSEClient,
   },
   {
     name: Operator.Generate,
@@ -445,6 +459,11 @@ export const initialCategorizeValues = {
   ...initialLlmBaseValues,
   message_history_window_size: 1,
   category_description: {},
+  ...initialQueryBaseValues,
+};
+export const initialMCPSSEClientValues = {
+  ...initialLlmBaseValues,
+  mcpServers: [],
   ...initialQueryBaseValues,
 };
 
@@ -663,6 +682,16 @@ export const RestrictedUpstreamMap = {
     Operator.Message,
     Operator.Relevant,
   ],
+
+  [Operator.MCPSSEClient]: [
+    Operator.Begin,
+    Operator.Message,
+    Operator.Generate,
+    Operator.Retrieval,
+    Operator.RewriteQuestion,
+    Operator.Categorize,
+    Operator.Relevant,
+  ],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Generate]: [Operator.Begin, Operator.Relevant],
   [Operator.Message]: [
@@ -719,6 +748,7 @@ export const NodeMap = {
   [Operator.Begin]: 'beginNode',
   [Operator.Categorize]: 'categorizeNode',
   [Operator.Retrieval]: 'retrievalNode',
+  [Operator.MCPSSEClient]: 'ragNode',
   [Operator.Generate]: 'generateNode',
   [Operator.Answer]: 'logicNode',
   [Operator.Message]: 'messageNode',

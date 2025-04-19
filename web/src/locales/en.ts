@@ -771,6 +771,25 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Each file must not exceed 10MB, and the total number of files must not exceed 128.',
       destinationFolder: 'Destination folder',
     },
+    mcp: {
+      chatModel: 'Chat Model',
+      chatModelTip:
+        'The chat model you choose must support tools(function calling)',
+    },
+    mcpserver: {
+      mcpServer: 'MCP Server',
+      mcpServerTip:
+        'Please fill in the MCP Server address based on SSE, format: "http(s)://127.0.0.1:8080/xxx"\n',
+      mcpServerMessage:
+        'Please fill in the MCP Server address based on SSE, format: "http(s)://127.0.0.1:8080/xxx"\n',
+      addMessage: 'Add MCP Server',
+      mcpAddr: 'MCP Server address',
+      parameter: 'MCP Server info',
+      operation: 'Operation',
+      add: 'Add',
+      placeholder:
+        'Please enter the MCP Server address, starting with http(s)://',
+    },
     flow: {
       cite: 'Cite',
       citeTip: 'citeTip',
@@ -796,6 +815,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       run: 'Run',
       save: 'Save',
       title: 'ID:',
+      mCPSSEClient: 'MCP SSE Client',
+      mCPSSEClientDescription: 'MCP client based on SSE',
       beginDescription: 'This is where the flow begins.',
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
       retrievalDescription: `A component that retrieves information from specified knowledge bases (datasets). Ensure that the knowledge bases you select use the same embedding model.`,

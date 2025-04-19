@@ -744,6 +744,23 @@ export default {
         '本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。',
       destinationFolder: '目標資料夾',
     },
+    mcp: {
+      chatModel: '聊天模型',
+      chatModelTip: '您選擇的聊天模型必須支援工具呼叫(function calling)',
+    },
+    mcpserver: {
+      mcpServer: 'MCP Server',
+      mcpServerTip:
+        '請填寫基於SSE的MCP Server位址，格式:“http(s)://127.0.0.1:8080/xxx”',
+      mcpServerMessage:
+        '請填寫基於SSE的MCP Server位址，格式:“http(s)://127.0.0.1:8080/xxx”',
+      addMessage: '新增MCP Server',
+      mcpAddr: 'MCP Server 位址',
+      parameter: 'MCP Server 資訊',
+      operation: '操作',
+      add: '新增',
+      placeholder: '請輸入MCP Server位址,以http(s)://開頭',
+    },
     flow: {
       cite: '引用',
       citeTip: 'citeTip',
@@ -769,7 +786,8 @@ export default {
       run: '運行',
       save: '儲存',
       title: 'ID：',
-
+      mCPSSEClient: 'MCP SSE客戶端',
+      mCPSSEClientDescription: '基於SSE的MCP客戶端',
       beginDescription: '這是流程開始的地方',
       answerDescription: `該組件用作機器人與人類之間的介面。它接收使用者的輸入並顯示機器人的計算結果。`,
       retrievalDescription: `此元件用於從知識庫中檢索相關資訊。選擇知識庫。如果沒有檢索到任何內容，將傳回「空響應」。`,

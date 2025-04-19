@@ -658,6 +658,25 @@ export default {
         'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Para o RAGFlow implantado localmente: o limite total de tamanho de arquivo por upload é de 1GB, com um limite de upload em lote de 32 arquivos. Não há limite para o número total de arquivos por conta. Para o demo.ragflow.io: o limite total de tamanho de arquivo por upload é de 10MB, com cada arquivo não excedendo 10MB e um máximo de 128 arquivos por conta.',
       destinationFolder: 'Pasta de destino',
     },
+    mcp: {
+      chatModel: 'modelo de chat',
+      chatModelTip:
+        'O modelo de chat que escolher deve suportar a chamada de função',
+    },
+    mcpserver: {
+      mcpServer: 'MCP Server',
+      mcpServerTip:
+        'Preencher o endereço do servidor MCP com base no formato SSE,: "http(s)://127.0.0.1:8080/xxx"',
+      mcpServerMessage:
+        'Preencher o endereço do servidor MCP com base no formato SSE,: "http(s)://127.0.0.1:8080/xxx"',
+      addMessage: 'Adicionar servidor MCP',
+      mcpAddr: 'MCP Server 地址',
+      parameter: 'Endereço do servidor MCP',
+      operation: 'operar',
+      add: 'Novo',
+      placeholder:
+        'Por favor, introduza o endereço do servidor MCP, começando por http(s)://',
+    },
     flow: {
       cite: 'Citar',
       citeTip: 'dicaDeCitação',

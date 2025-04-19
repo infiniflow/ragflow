@@ -661,6 +661,25 @@ export default {
         'Ukuran file tidak boleh melebihi 10M, dan jumlah total file tidak boleh melebihi 128',
       destinationFolder: 'Folder tujuan',
     },
+    mcp: {
+      chatModel: 'Chat Model',
+      chatModelTip:
+        'The chat model you choose must support tools(function calling)',
+    },
+    mcpserver: {
+      mcpServer: 'MCP Server',
+      mcpServerTip:
+        'Please fill in the MCP Server address based on SSE, format: "http(s)://127.0.0.1:8080/xxx"\n',
+      mcpServerMessage:
+        'Please fill in the MCP Server address based on SSE, format: "http(s)://127.0.0.1:8080/xxx"\n',
+      addMessage: 'Add MCP Server',
+      mcpAddr: 'MCP Server address',
+      parameter: 'MCP Server info',
+      operation: 'Operation',
+      add: 'Add',
+      placeholder:
+        'Please enter the MCP Server address, starting with http(s)://',
+    },
     flow: {
       cite: 'Kutip',
       citeTip: 'tipKutip',
