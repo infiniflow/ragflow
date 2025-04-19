@@ -282,6 +282,28 @@ class RedisDB:
             )
             self.__open__()
 
+    def get_pending_msg(self, queue, group_name):
+        try:
+            messages = self.REDIS.xpending_range(queue, group_name, '-', '+', 10)
+            return messages
+        except Exception as e:
+            if 'No such key' not in (str(e) or ''):
+                logging.warning(
+                    "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
+                )
+        return []
+
+    def requeue_msg(self, queue: str, group_name: str, msg_id: str):
+        try:
+            messages = self.REDIS.xrange(queue, msg_id, msg_id)
+            if messages:
+                self.REDIS.xadd(queue, messages[0][1])
+                self.REDIS.xack(queue, group_name, msg_id)
+        except Exception as e:
+            logging.warning(
+                "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
+            )
+
     def queue_info(self, queue, group_name) -> dict | None:
         try:
             groups = self.REDIS.xinfo_groups(queue)
@@ -301,6 +323,16 @@ class RedisDB:
         """
         return bool(self.lua_delete_if_equal(keys=[key], args=[expected_value], client=self.REDIS))
 
+    def delete(self, key) -> bool:
+        try:
+            self.REDIS.delete(key)
+            return True
+        except Exception as e:
+            logging.warning("RedisDB.delete " + str(key) + " got exception: " + str(e))
+            self.__open__()
+        return False
+    
+    
 REDIS_CONN = RedisDB()
 
 
