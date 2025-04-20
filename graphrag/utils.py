@@ -414,16 +414,15 @@ async def get_graph(tenant_id, kb_id):
         "knowledge_graph_kwd": ["graph"]
     }
     res = await trio.to_thread.run_sync(lambda: settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id]))
-    if res.total == 0:
-        return None
-    for id in res.ids:
-        try:
-            g = json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]), edges="edges")
-            if "source_id" not in g.graph:
-                g.graph["source_id"] = res.field[id]["source_id"]
-            return g
-        except Exception:
-            continue
+    if not res.total == 0:
+        for id in res.ids:
+            try:
+                g = json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]), edges="edges")
+                if "source_id" not in g.graph:
+                    g.graph["source_id"] = res.field[id]["source_id"]
+                return g
+            except Exception:
+                continue
     result = await rebuild_graph(tenant_id, kb_id)
     return result
 
@@ -566,16 +565,18 @@ async def rebuild_graph(tenant_id, kb_id):
                                  OrderByExpr(),
                                  i, bs, search.index_name(tenant_id), [kb_id]
                                  ))
-        tot = settings.docStoreConn.getTotal(es_res)
-        if tot == 0:
+        # tot = settings.docStoreConn.getTotal(es_res)
+        es_res = settings.docStoreConn.getFields(es_res, flds)
+
+        if len(es_res) == 0:
             break
 
-        es_res = settings.docStoreConn.getFields(es_res, flds)
         for id, d in es_res.items():
-            assert d["knowledge_graph_kwd"] == "relation"
+            assert d["knowledge_graph_kwd"] == "entity"
             src_ids.update(d.get("source_id", []))
-            attrs = json.load(d["content_with_weight"])
-            graph.add_node(d["entity_kwd"], **attrs)
+            attrs = json.loads(d["content_with_weight"])
+            entity_kwd = d["entity_kwd"][0] if isinstance(d["entity_kwd"], list) else d["entity_kwd"]   # judge infinity or es output
+            graph.add_node(entity_kwd, **attrs)
 
     for i in range(0, 1024*bs, bs):
         es_res = await trio.to_thread.run_sync(lambda: settings.docStoreConn.search(flds, [],
@@ -584,18 +585,23 @@ async def rebuild_graph(tenant_id, kb_id):
                                  OrderByExpr(),
                                  i, bs, search.index_name(tenant_id), [kb_id]
                                  ))
-        tot = settings.docStoreConn.getTotal(es_res)
-        if tot == 0:
-            return None
-
+        # tot = settings.docStoreConn.getTotal(es_res)
         es_res = settings.docStoreConn.getFields(es_res, flds)
+
+        if len(es_res) == 0:
+            break
+
         for id, d in es_res.items():
             assert d["knowledge_graph_kwd"] == "relation"
             src_ids.update(d.get("source_id", []))
-            if graph.has_node(d["from_entity_kwd"]) and graph.has_node(d["to_entity_kwd"]):
-                attrs = json.load(d["content_with_weight"])
-                graph.add_edge(d["from_entity_kwd"], d["to_entity_kwd"], **attrs)
+            from_entity_kwd = d["from_entity_kwd"][0] if isinstance(d["from_entity_kwd"], list) else d["from_entity_kwd"]
+            to_entity_kwd = d["to_entity_kwd"][0] if isinstance(d["to_entity_kwd"], list) else d["to_entity_kwd"]
+            if graph.has_node(from_entity_kwd) and graph.has_node(to_entity_kwd):
+                attrs = json.loads(d["content_with_weight"])
+                graph.add_edge(from_entity_kwd, to_entity_kwd, **attrs)
 
+    if len(graph.nodes) == 0:
+        return None
     src_ids = sorted(src_ids)
     graph.graph["source_id"] = src_ids
     return graph
