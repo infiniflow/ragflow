@@ -50,10 +50,10 @@ class MCPSSEClient(ComponentBase, ABC):
 
         llm_id = self._param.llm_id
         if not llm_id:
-            return MCPSSEClient.be_output("模型选择错误")
+            return MCPSSEClient.be_output("model error")
         mcp_servers = self._param.variables
         if not mcp_servers:
-            return MCPSSEClient.be_output("mcp server服务列表为空")
+            return MCPSSEClient.be_output("mcp server is empty")
 
         mcp_servers = [mcp_server['value']  for mcp_server in mcp_servers if mcp_server['value']]
         params = {}
@@ -62,11 +62,10 @@ class MCPSSEClient(ComponentBase, ABC):
         params['temperature'] = self._param.temperature if self._param.temperature else 0.5
         params['top_p'] = self._param.top_p if self._param.top_p else 3
         params['server_list'] = mcp_servers if mcp_servers else []
-        #获取选择的模型配置信息
         split = llm_id.split("@")
         query = TenantLLMService.query(tenant_id=self._canvas.get_tenant_id(), llm_name=split[0], llm_factory=split[1])
         if not query:
-            return MCPSSEClient.be_output("模型配置信息错误")
+            return MCPSSEClient.be_output("model error")
         params['model_name'] =query[0].llm_name
         params['base_url'] = query[0].api_base
         params['api_key'] = query[0].api_key
@@ -86,7 +85,7 @@ class MCPSSEClient(ComponentBase, ABC):
         for line in lines:
             if ':' in line:
                 role_part, content = line.split(':', 1)
-                role_part = role_part.strip().lower()  # 统一转小写
+                role_part = role_part.strip().lower()
                 content = content.strip()
                 if role_part == 'assistant':
                     dialogue.append({'role': 'assistant', 'content': content})
@@ -119,20 +118,16 @@ class MCPClient:
 
         self.model_name = model_name
         self.server_urls = server_list
-        self.sessions = {}  # 存储服务器的映射：server_id -> (session, session_context, streams_context)
-        self.tool_mapping = {}  # 工具映射：prefixed_name -> (session, original_tool_name)
+        self.sessions = {}
+        self.tool_mapping = {}
 
-        # 初始化 OpenAI 异步客户端
         self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
 
     async def initialize_sessions(self):
-        """
-        初始化SSE 服务器的连接，并获取可用工具列表。
-        """
+
         for i, server_url in enumerate(self.server_urls):
 
             server_id = f"server_{ uuid.uuid1().hex}"
-            # 创建 SSE 客户端并进入上下文
             streams_context = sse_client(url=server_url)
             streams = await streams_context.__aenter__()
             session_context = ClientSession(*streams)
@@ -148,14 +143,13 @@ class MCPClient:
 
     async def cleanup(self):
         for server_id, (session, session_context, streams_context) in self.sessions.items():
-            await session_context.__aexit__(None, None, None)  # 退出会话上下文
-            await streams_context.__aexit__(None, None, None)  # 退出 SSE 流上下文
+            await session_context.__aexit__(None, None, None)
+            await streams_context.__aexit__(None, None, None)
 
     async def process_query(self, query: List,params:dict) -> str:
 
-        messages = query  # 初始化消息列表
+        messages = query
 
-        # 收集所有可用工具
         available_tools = []
         for server_id, (session, _, _) in self.sessions.items():
             response = await session.list_tools()
@@ -170,7 +164,6 @@ class MCPClient:
                     },
                 })
 
-        # 向模型发送初始请求
         response = await self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
@@ -182,10 +175,9 @@ class MCPClient:
             max_tokens=params['max_tokens'],
         )
 
-        final_answer = None  # 存储最终回复内容
+        final_answer = None
         message = response.choices[0].message
 
-        # 处理工具调用
         if  message.tool_calls:
             for tool_call in message.tool_calls:
                 prefixed_name = tool_call.function.name
@@ -195,7 +187,7 @@ class MCPClient:
                     try:
                         result = await session.call_tool(original_tool_name, tool_args)
                     except Exception as e:
-                        result = {"content": f"调用工具 {original_tool_name} 出错：{str(e)}"}
+                        result = {"content": f"call tool {original_tool_name} exception：{str(e)}"}
                     messages.extend([
                         {
                             "role": "assistant",
@@ -208,9 +200,8 @@ class MCPClient:
                         {"role": "tool", "tool_call_id": tool_call.id, "content": str(result.content)},
                     ])
                 else:
-                    logging.info(f"工具 {prefixed_name} 未找到")
+                    logging.info(f"Tool {prefixed_name} not found")
 
-            # 获取工具调用后的后续回复
             response = await self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
@@ -231,7 +222,7 @@ class MCPClient:
             try:
               return  await self.process_query(messages,params)
             except Exception as e:
-                logging.error(f"发生错误: {str(e)}")
-                return "发生错误"
+                logging.error(f"error: {str(e)}")
+                return "error"
 
 
