@@ -353,10 +353,11 @@ class Dealer:
             return ranks
 
         RERANK_LIMIT = 64
-        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": page, "size": RERANK_LIMIT,
+        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": page, "size": min(page_size, RERANK_LIMIT),
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
                "available_int": 1}
+
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
@@ -373,7 +374,8 @@ class Dealer:
             sim, tsim, vsim = self.rerank(
                 sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
                 rank_feature=rank_feature)
-        idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
+        # Already paginated in search function
+        idx = np.argsort(sim * -1)[:page_size]
 
 
         dim = len(sres.query_vector)
