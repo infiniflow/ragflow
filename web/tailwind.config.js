@@ -40,6 +40,7 @@ module.exports = {
         'colors-text-inverse-strong': 'var(--colors-text-inverse-strong)',
         'colors-text-persist-light': 'var(--colors-text-persist-light)',
         'colors-text-inverse-weak': 'var(--colors-text-inverse-weak)',
+        'text-delete-red': 'var(--text-delete-red)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',
