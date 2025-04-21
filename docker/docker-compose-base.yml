@@ -43,7 +43,7 @@ services:
     volumes:
       - osdata01:/usr/share/opensearch/data
     ports:
-      - ${ES_PORT}:9200
+      - ${OS_PORT}:9201
     env_file: .env
     environment:
       - node.name=opensearch01
@@ -58,13 +58,14 @@ services:
       - cluster.routing.allocation.disk.watermark.high=3gb
       - cluster.routing.allocation.disk.watermark.flood_stage=2gb
       - TZ=${TIMEZONE}
+      - http.port=9201
     mem_limit: ${MEM_LIMIT}
     ulimits:
       memlock:
         soft: -1
         hard: -1
     healthcheck:
-      test: ["CMD-SHELL", "curl http://localhost:9200"]
+      test: ["CMD-SHELL", "curl http://localhost:9201"]
       interval: 10s
       timeout: 10s
       retries: 120
