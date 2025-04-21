@@ -1,7 +1,6 @@
----
-sidebar_position: 7
-slug: /MCP server
----
+______________________________________________________________________
+
+## sidebar_position: 4 slug: /MCP server
 
 # Overview of RAGFlow Model Context Protocol (MCP) Server
 
@@ -9,27 +8,53 @@ The RAGFlow MCP server operates as an independent component that complements the
 
 The MCP server currently offers a specific tool to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
 
-• **retrieve**: Fetches relevant chunks from specified `dataset_ids` and optional `document_ids` using the RAGFlow retrieve interface, based on a given question. Details of all available datasets, namely, `id` and `description`, are provided within the tool description for each individual dataset.
+- **retrieve**: Fetches relevant chunks from specified `dataset_ids` and optional `document_ids` using the RAGFlow retrieve interface, based on a given question. Details of all available datasets, namely, `id` and `description`, are provided within the tool description for each individual dataset.
 
 ## Launching the MCP Server
 
 Similar to launching the RAGFlow server, the MCP server can be started either from source code or via Docker.
+
+### Launch Modes
+
+The MCP server supports two launch modes:
+
+1. **Self-Host Mode**:
+
+   - In this mode, the MCP server is launched to access a specific tenant's datasets.
+   - This is the default mode.
+   - The `--api_key` argument is **required** to authenticate the server with the RAGFlow server.
+   - Example:
+     ```bash
+     uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --mode=self-host --api_key=ragflow-xxxxx
+     ```
+
+1. **Host Mode**:
+
+   - In this mode, the MCP server allows each user to access their own datasets.
+   - To ensure secure access, a valid API key must be included in the request headers to identify the user.
+   - The `--api_key` argument is **not required** during server launch but must be provided in the headers on each client request for user authentication.
+   - Example:
+     ```bash
+     uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --mode=host
+     ```
 
 ### Launching from Source Code
 
 All you need to do is stand on the right place and strike out command, assuming you are on the project working directory.
 
 ```bash
-uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380
+uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --api_key=ragflow-xxxxx
 ```
 
 For testing purposes, there is an [MCP client example](#example_mcp_client) provided, free to take!
 
 #### Required Arguments
 
-• **`host`**: Specifies the server's host address.
-• **`port`**: Defines the server's listening port.
-• **`base_url`**: The address of the RAGFlow server that is already running and ready to handle tasks.
+- **`host`**: Specifies the server's host address.
+- **`port`**: Defines the server's listening port.
+- **`base_url`**: The address of the RAGFlow server that is already running and ready to handle tasks.
+- **`mode`**: Launch mode, only accept `self-host` or `host`.
+- **`api_key`**: Required when `mode` is `self-host` to authenticate the MCP server with the RAGFlow server.
 
 Here are three augments required, the first two,`host` and `port`, are self-explained. The`base_url` is the address of the ready-to-serve RAGFlow server to actually perform the task.
 
@@ -54,6 +79,8 @@ services:
       - --mcp-port=9382
       - --mcp-base-url=http://127.0.0.1:9380
       - --mcp-script-path=/ragflow/mcp/server/server.py
+      - --mcp-mode=self-host # `self-host` or `host`
+      - --mcp--host-api-key="ragflow-xxxxxxx" # only need to privide when mode is `self-host`
 ```
 
 Then launch it normally `docker compose -f docker-compose.yml`.
@@ -69,6 +96,7 @@ ragflow-server  | | |\/| | |   | |_) |    \___ \|  _| | |_) \ \ / /|  _| | |_) |
 ragflow-server  | | |  | | |___|  __/      ___) | |___|  _ < \ V / | |___|  _ <
 ragflow-server  | |_|  |_|\____|_|        |____/|_____|_| \_\ \_/  |_____|_| \_\
 ragflow-server  |     
+ragflow-server  | MCP launch mode: self-host
 ragflow-server  | MCP host: 0.0.0.0
 ragflow-server  | MCP port: 9382
 ragflow-server  | MCP base_url: http://127.0.0.1:9380
@@ -130,13 +158,17 @@ Typically, there are various ways to utilize an MCP server. You can integrate it
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
+
 from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
 
 
 async def main():
     try:
-        async with sse_client("http://localhost:9382/sse", headers={"api_key": "ragflow-IyMGI1ZDhjMTA2ZTExZjBiYTMyMGQ4Zm"}) as streams:
+        # To access RAGFlow server in `host` mode, you need to attach `api_key` for each request to indicate identification.
+        # async with sse_client("http://localhost:9382/sse", headers={"api_key": "ragflow-IyMGI1ZDhjMTA2ZTExZjBiYTMyMGQ4Zm"}) as streams:
+        async with sse_client("http://localhost:9382/sse") as streams:
             async with ClientSession(
                 streams[0],
                 streams[1],
@@ -144,7 +176,7 @@ async def main():
                 await session.initialize()
                 tools = await session.list_tools()
                 print(f"{tools.tools=}")
-                response = await session.call_tool(name="ragflow_retrival", arguments={"dataset_ids": ["ce3bb17cf27a11efa69751e139332ced"], "document_ids": [], "question": "How to install neovim?"})
+                response = await session.call_tool(name="ragflow_retrieval", arguments={"dataset_ids": ["ce3bb17cf27a11efa69751e139332ced"], "document_ids": [], "question": "How to install neovim?"})
                 print(f"Tool response: {response.model_dump()}")
 
     except Exception as e:
