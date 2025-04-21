@@ -54,8 +54,6 @@ class RAGFlowS3:
             # used as the file prefix. This is especially useful when you're using the default bucket
             if self.prefix_path:
                 fnm = f"{self.prefix_path}/{bucket}/{fnm}"
-            else:
-                fnm = f"{bucket}/{fnm}"
             return method(self, bucket, fnm, *args, **kwargs)
         return wrapper
 
