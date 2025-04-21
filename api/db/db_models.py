@@ -802,7 +802,8 @@ class UserCanvasPermission(DataBaseModel):
 
     class Meta:
         db_table = "user_canvas_permission"
-        
+    
+
 def migrate_db():
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
     try:

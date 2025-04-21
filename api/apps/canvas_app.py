@@ -20,12 +20,13 @@ from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
+from api.db.services.common_service import CommonService
 from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
-from api.db.db_models import APIToken
+from api.db.db_models import APIToken,Conversation,UserCanvasPermission
 import logging
 import time
 
@@ -170,6 +171,7 @@ def run():
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                            ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+            UserCanvasService.update_by_id(req["id"], cvs.to_dict())
 
         resp = Response(sse(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -188,6 +190,7 @@ def run():
         cvs.dsl = json.loads(str(canvas))
         UserCanvasService.update_by_id(req["id"], cvs.to_dict())
         return get_json_result(data={"answer": final_ans["content"], "reference": final_ans.get("reference", [])})
+    UserCanvasService.update_by_id(req["id"], cvs.to_dict())
 
 
 @manager.route('/reset', methods=['POST'])  # noqa: F821
@@ -370,4 +373,50 @@ def update_permissions():
 
     # 执行权限批量修改
     updated_count = UserCanvasService.update_permissions(canvas_ids, user_ids, permission)
-    return get_json_result(data={"updated_count": updated_count})
+@manager.route('/get_conversation', methods=['POST'])  # noqa: F821
+@validate_request("id")
+@login_required
+def get_conversation():
+    req = request.json
+    conversation_id = req["id"]
+
+    # 查询对话记录
+    success, conversation = ConversationService.get_by_id(conversation_id)
+    if not success or conversation is None:
+        return get_json_result(data=False, message='Conversation not found.', code=RetCode.NOT_FOUND)
+
+    conversation_data = conversation.to_dict()
+    return get_json_result(data=conversation_data)
+
+@manager.route('/create_conversation', methods=['POST'])  # noqa: F821
+@validate_request("content")
+@login_required
+def create_conversation():
+    req = request.json
+    content = req["content"]
+
+    # 创建对话记录
+    conversation = CommonService.save(content)
+    return get_json_result(data=conversation.to_dict())
+
+
+@manager.route('/update_conversation', methods=['POST'])  # noqa: F821
+@validate_request("id", "content")
+@login_required
+def update_conversation():
+    class ConversationService(CommonService):
+        model = Conversation
+    req = request.json
+
+    # 更新对话记录
+    updated_count = ConversationService.filter_update({"id": req["id"]}, {"content": req["content"]})
+    if updated_count == 0:
+        return get_json_result(data=False, message='Conversation not found.', code=RetCode.NOT_FOUND)
+
+    # 返回更新的对话记录
+    success, conversation = ConversationService.get_by_id(req["id"])
+    if not success or conversation is None:
+        return get_json_result(data=False, message='Conversation not found.', code=RetCode.NOT_FOUND)
+
+    conversation_data = conversation.to_dict()
+    return get_json_result(data=conversation_data)
