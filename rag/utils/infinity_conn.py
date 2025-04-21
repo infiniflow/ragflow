@@ -136,7 +136,7 @@ class InfinityConnection(DocStoreConnection):
         logger.info(f"Use Infinity {infinity_uri} as the doc engine.")
         for _ in range(24):
             try:
-                connPool = ConnectionPool(infinity_uri)
+                connPool = ConnectionPool(infinity_uri, max_size=32)
                 inf_conn = connPool.get_conn()
                 res = inf_conn.show_current_node()
                 if res.error_code == ErrorCode.OK and res.server_status in ["started", "alive"]:
@@ -590,6 +590,7 @@ class InfinityConnection(DocStoreConnection):
         if removeValue:
             col_to_remove = list(removeValue.keys())
             row_to_opt = table_instance.output(col_to_remove + ['id']).filter(filter).to_df()
+            logger.debug(f"INFINITY search table {str(table_name)}, filter {filter}, result: {str(row_to_opt[0])}")
             row_to_opt = self.getFields(row_to_opt, col_to_remove)
             for id, old_v in row_to_opt.items():
                 for k, remove_v in removeValue.items():
