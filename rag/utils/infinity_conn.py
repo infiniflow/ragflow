@@ -573,6 +573,7 @@ class InfinityConnection(DocStoreConnection):
                 newValue[k] = "_".join(f"{num:08x}" for num in v)
             elif k == "remove":
                 if isinstance(v, str):
+                    assert v in clmns, f"'{v}' should be in '{clmns}'."
                     ty, de = clmns[v]
                     if ty.lower().find("cha"):
                         if not de:
@@ -596,7 +597,7 @@ class InfinityConnection(DocStoreConnection):
                         new_v = old_v[k].copy()
                         new_v.remove(remove_v)
                         kv_key = json.dumps([k, new_v])
-                        if not kv_key in remove_opt:
+                        if kv_key not in remove_opt:
                             remove_opt[kv_key] = [id]
                         else:
                             remove_opt[kv_key].append(id)
