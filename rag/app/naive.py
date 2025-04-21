@@ -514,6 +514,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     st = timer()
     if section_images:
+        # if all images are None, set section_images to None
+        if all(image is None for image in section_images):
+            section_images = None
+
+    if section_images:
         chunks, images = naive_merge_with_images(sections, section_images,
                                         int(parser_config.get(
                                             "chunk_token_num", 128)), parser_config.get(
