@@ -181,7 +181,6 @@ class LayoutRecognizer4YOLOv10(LayoutRecognizer):
     ]
 
     def __init__(self, domain):
-        domain = "layout"
         super().__init__(domain)
         self.auto = False
         self.scaleFill = False
