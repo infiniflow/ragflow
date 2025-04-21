@@ -290,10 +290,13 @@ class Markdown(MarkdownParser):
     def get_picture_urls(self, sections):
         if not sections:
             return []
-        if isinstance(sections[0], type("")):
+        if isinstance(sections, type("")):
+            text = sections
+        elif isinstance(sections[0], type("")):
             text = sections[0]
         else:
             return []
+        
         from bs4 import BeautifulSoup
         md = markdown.Markdown()
         html_content = md.convert(text)
