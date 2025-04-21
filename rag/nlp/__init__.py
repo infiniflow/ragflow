@@ -537,10 +537,14 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
         add_chunk(sec, pos)
 
     return cks
+    
 
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？"):
     if not texts or len(texts) != len(images):
         return [], []
+    # Enuser texts is str not tuple, if it is tuple, convert to str (get the first item)
+    if isinstance(texts[0], tuple):
+        texts = [t[0] for t in texts]
     cks = [""]
     result_images = [None]
     tk_nums = [0]
