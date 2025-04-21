@@ -21,7 +21,9 @@ from mcp.client.sse import sse_client
 
 async def main():
     try:
-        async with sse_client("http://localhost:9382/sse", headers={"api_key": "ragflow-IyMGI1ZDhjMTA2ZTExZjBiYTMyMGQ4Zm"}) as streams:
+        # To access RAGFlow server in `host` mode, you need to attach `api_key` for each request to indicate identification.
+        # async with sse_client("http://localhost:9382/sse", headers={"api_key": "ragflow-IyMGI1ZDhjMTA2ZTExZjBiYTMyMGQ4Zm"}) as streams:
+        async with sse_client("http://localhost:9382/sse") as streams:
             async with ClientSession(
                 streams[0],
                 streams[1],
@@ -29,7 +31,7 @@ async def main():
                 await session.initialize()
                 tools = await session.list_tools()
                 print(f"{tools.tools=}")
-                response = await session.call_tool(name="ragflow_retrival", arguments={"dataset_ids": ["ce3bb17cf27a11efa69751e139332ced"], "document_ids": [], "question": "How to install neovim?"})
+                response = await session.call_tool(name="ragflow_retrieval", arguments={"dataset_ids": ["ce3bb17cf27a11efa69751e139332ced"], "document_ids": [], "question": "How to install neovim?"})
                 print(f"Tool response: {response.model_dump()}")
 
     except Exception as e:
