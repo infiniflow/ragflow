@@ -126,6 +126,7 @@ dependencies = [
     "trio>=0.29.0",
     "langfuse>=2.60.0",
     "debugpy>=1.8.13",
+    "mcp>=1.6.0",
 ]
 
 [project.optional-dependencies]
