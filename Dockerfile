@@ -198,6 +198,7 @@ COPY agent agent
 COPY graphrag graphrag
 COPY agentic_reasoning agentic_reasoning
 COPY pyproject.toml uv.lock ./
+COPY mcp mcp
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./
