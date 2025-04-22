@@ -18,7 +18,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { useFetchNextKnowledgeListByPage } from '@/hooks/knowledge-hooks';
+import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { useSelectOwners } from './use-select-owners';
 
 const FormSchema = z.object({
