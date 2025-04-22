@@ -463,8 +463,6 @@ export const initialCategorizeValues = {
 };
 export const initialMCPSSEClientValues = {
   ...initialLlmBaseValues,
-  mcpServers: [],
-  ...initialQueryBaseValues,
 };
 
 export const initialMessageValues = {
@@ -683,15 +681,7 @@ export const RestrictedUpstreamMap = {
     Operator.Relevant,
   ],
 
-  [Operator.MCPSSEClient]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.Generate,
-    Operator.Retrieval,
-    Operator.RewriteQuestion,
-    Operator.Categorize,
-    Operator.Relevant,
-  ],
+  [Operator.MCPSSEClient]: [Operator.Begin],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Generate]: [Operator.Begin, Operator.Relevant],
   [Operator.Message]: [
