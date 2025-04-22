@@ -2,6 +2,7 @@ import { ResponsePostType } from '@/interfaces/database/base';
 import {
   IKnowledge,
   IKnowledgeGraph,
+  IKnowledgeResult,
   IRenameTag,
   ITestingResult,
 } from '@/interfaces/database/knowledge';
@@ -9,6 +10,7 @@ import i18n from '@/locales/config';
 import kbService, {
   deleteKnowledgeGraph,
   getKnowledgeGraph,
+  listDataset,
   listTag,
   removeTag,
   renameTag,
@@ -23,9 +25,12 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useSearchParams } from 'umi';
-import { useHandleSearchChange } from './logic-hooks';
+import {
+  useGetPaginationWithRouter,
+  useHandleSearchChange,
+} from './logic-hooks';
 import { useSetPaginationParams } from './route-hook';
 
 export const useKnowledgeBaseId = (): string => {
@@ -64,7 +69,7 @@ export const useFetchKnowledgeList = (
     initialData: [],
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
-      const { data } = await kbService.getList();
+      const { data } = await listDataset();
       const list = data?.data?.kbs ?? [];
       return shouldFilterListWithoutDocument
         ? list.filter((x: IKnowledge) => x.chunk_num > 0)
@@ -91,6 +96,7 @@ export const useInfiniteFetchKnowledgeList = () => {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const PageSize = 30;
+
   const {
     data,
     error,
@@ -102,7 +108,7 @@ export const useInfiniteFetchKnowledgeList = () => {
   } = useInfiniteQuery({
     queryKey: ['infiniteFetchKnowledgeList', debouncedSearchString],
     queryFn: async ({ pageParam }) => {
-      const { data } = await kbService.getList({
+      const { data } = await listDataset({
         page: pageParam,
         page_size: PageSize,
         keywords: debouncedSearchString,
@@ -129,6 +135,67 @@ export const useInfiniteFetchKnowledgeList = () => {
     status,
     handleInputChange,
     searchString,
+  };
+};
+
+export const useFetchNextKnowledgeListByPage = () => {
+  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { pagination, setPagination } = useGetPaginationWithRouter();
+  const [ownerIds, setOwnerIds] = useState<string[]>([]);
+  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+
+  const { data, isFetching: loading } = useQuery<IKnowledgeResult>({
+    queryKey: [
+      'fetchKnowledgeListByPage',
+      {
+        debouncedSearchString,
+        ...pagination,
+        ownerIds,
+      },
+    ],
+    initialData: {
+      kbs: [],
+      total: 0,
+    },
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await listDataset(
+        {
+          keywords: debouncedSearchString,
+          page_size: pagination.pageSize,
+          page: pagination.current,
+        },
+        {
+          owner_ids: ownerIds,
+        },
+      );
+
+      return data?.data;
+    },
+  });
+
+  const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
+    (e) => {
+      // setPagination({ page: 1 }); // TODO: 这里导致重复请求
+      handleInputChange(e);
+    },
+    [handleInputChange],
+  );
+
+  const handleOwnerIdsChange = useCallback((ids: string[]) => {
+    // setPagination({ page: 1 }); // TODO: 这里导致重复请求
+    setOwnerIds(ids);
+  }, []);
+
+  return {
+    ...data,
+    searchString,
+    handleInputChange: onInputChange,
+    pagination: { ...pagination, total: data?.total },
+    setPagination,
+    loading,
+    setOwnerIds: handleOwnerIdsChange,
+    ownerIds,
   };
 };
 
@@ -198,7 +265,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         message.success(i18n.t(`message.updated`));
         if (shouldFetchList) {
           queryClient.invalidateQueries({
-            queryKey: ['infiniteFetchKnowledgeList'],
+            queryKey: ['fetchKnowledgeListByPage'],
           });
         } else {
           queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeDetail'] });

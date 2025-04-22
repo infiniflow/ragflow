@@ -3,14 +3,16 @@ import { RenameDialog } from '@/components/rename-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { useInfiniteFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useFetchNextKnowledgeListByPage } from '@/hooks/knowledge-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { IKnowledge } from '@/interfaces/database/knowledge';
 import { formatDate } from '@/utils/date';
+import { pick } from 'lodash';
 import { ChevronRight, Ellipsis, Plus } from 'lucide-react';
-import { useMemo } from 'react';
+import { PropsWithChildren, useCallback } from 'react';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
 import { DatasetDropdown } from './dataset-dropdown';
+import { DatasetsFilterPopover } from './datasets-filter-popover';
+import { DatasetsPagination } from './datasets-pagination';
 import { useSaveKnowledge } from './hooks';
 import { useRenameDataset } from './use-rename-dataset';
 
@@ -25,23 +27,15 @@ export default function Datasets() {
   const { navigateToDataset } = useNavigatePage();
 
   const {
-    fetchNextPage,
-    data,
-    hasNextPage,
-    searchString,
+    kbs,
+    total,
+    pagination,
+    setPagination,
     handleInputChange,
-    loading,
-  } = useInfiniteFetchKnowledgeList();
-
-  const nextList: IKnowledge[] = useMemo(() => {
-    const list =
-      data?.pages?.flatMap((x) => (Array.isArray(x.kbs) ? x.kbs : [])) ?? [];
-    return list;
-  }, [data?.pages]);
-
-  const total = useMemo(() => {
-    return data?.pages.at(-1).total ?? 0;
-  }, [data?.pages]);
+    searchString,
+    setOwnerIds,
+    ownerIds,
+  } = useFetchNextKnowledgeListByPage();
 
   const {
     datasetRenameLoading,
@@ -52,14 +46,32 @@ export default function Datasets() {
     showDatasetRenameModal,
   } = useRenameDataset();
 
+  const handlePageChange = useCallback(
+    (page: number, pageSize?: number) => {
+      setPagination({ page, pageSize });
+    },
+    [setPagination],
+  );
+
   return (
     <section className="p-8 text-foreground">
-      <ListFilterBar title="Datasets" showDialog={showModal}>
+      <ListFilterBar
+        title="Datasets"
+        showDialog={showModal}
+        count={ownerIds.length}
+        FilterPopover={({ children }: PropsWithChildren) => (
+          <DatasetsFilterPopover setOwnerIds={setOwnerIds} ownerIds={ownerIds}>
+            {children}
+          </DatasetsFilterPopover>
+        )}
+        searchString={searchString}
+        onSearchChange={handleInputChange}
+      >
         <Plus className="mr-2 h-4 w-4" />
         Create dataset
       </ListFilterBar>
       <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
-        {nextList.map((dataset) => (
+        {kbs.map((dataset) => (
           <Card
             key={dataset.id}
             className="bg-colors-background-inverse-weak flex-1"
@@ -98,6 +110,13 @@ export default function Datasets() {
             </CardContent>
           </Card>
         ))}
+      </div>
+      <div className="mt-8">
+        <DatasetsPagination
+          {...pick(pagination, 'current', 'pageSize')}
+          total={total}
+          onChange={handlePageChange}
+        ></DatasetsPagination>
       </div>
       {visible && (
         <DatasetCreatingDialog
