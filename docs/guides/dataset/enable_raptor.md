@@ -61,7 +61,7 @@ The maximum number of tokens per generated summary chunk. Defaults to 256, with 
 
 ### Threshold
 
-RAPTOR cluster chunks by their semantic similarity. The **Threshold** parameter sets the minimum similarity required for chunks to be grouped together.
+In RAPTOR, chunks are clustered by their semantic similarity. The **Threshold** parameter sets the minimum similarity required for chunks to be grouped together.
 
 It defaults to 0.1, with a maximum limit of 1. A higher **Threshold** means fewer chunks in each cluster, while a lower one means more.
 
