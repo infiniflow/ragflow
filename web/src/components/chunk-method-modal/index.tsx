@@ -21,8 +21,10 @@ import { useFetchParserListOnMount, useShowAutoKeywords } from './hooks';
 
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchKnowledgeBaseConfiguration } from '@/hooks/knowledge-hooks';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import { get } from 'lodash';
 import { AutoKeywordsItem, AutoQuestionsItem } from '../auto-keywords-item';
 import { DatasetConfigurationContainer } from '../dataset-configuration-container';
 import Delimiter from '../delimiter';
@@ -78,6 +80,11 @@ const ChunkMethodModal: React.FC<IProps> = ({
     form,
   );
   const { t } = useTranslate('knowledgeDetails');
+  const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
+
+  const useGraphRag = useMemo(() => {
+    return knowledgeDetails.parser_config?.graphrag?.use_graphrag;
+  }, [knowledgeDetails.parser_config?.graphrag?.use_graphrag]);
 
   const handleOk = async () => {
     const values = await form.validateFields();
@@ -124,10 +131,25 @@ const ChunkMethodModal: React.FC<IProps> = ({
         parserConfig?.pages?.map((x) => ({ from: x[0], to: x[1] })) ?? [];
       form.setFieldsValue({
         pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
-        parser_config: omit(parserConfig, 'pages'),
+        parser_config: {
+          ...omit(parserConfig, 'pages'),
+          graphrag: {
+            use_graphrag: get(
+              parserConfig,
+              'graphrag.use_graphrag',
+              useGraphRag,
+            ),
+          },
+        },
       });
     }
-  }, [form, parserConfig, visible]);
+  }, [
+    form,
+    knowledgeDetails.parser_config,
+    parserConfig,
+    useGraphRag,
+    visible,
+  ]);
 
   return (
     <Modal
@@ -317,7 +339,9 @@ const ChunkMethodModal: React.FC<IProps> = ({
             <ParseConfiguration></ParseConfiguration>
           </DatasetConfigurationContainer>
         )}
-        {showGraphRagItems(selectedTag) && <UseGraphRagItem></UseGraphRagItem>}
+        {showGraphRagItems(selectedTag) && useGraphRag && (
+          <UseGraphRagItem></UseGraphRagItem>
+        )}
         {showEntityTypes && <EntityTypesItem></EntityTypesItem>}
       </Form>
     </Modal>
