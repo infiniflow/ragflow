@@ -15,6 +15,8 @@ services:
     #   - --mcp-port=9382
     #   - --mcp-base-url=http://127.0.0.1:9380
     #   - --mcp-script-path=/ragflow/mcp/server/server.py
+    #   - --mcp-mode=self-host
+    #   - --mcp--host-api-key="ragflow-xxxxxxx"
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380

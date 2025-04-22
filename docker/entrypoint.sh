@@ -35,6 +35,8 @@ MCP_HOST="127.0.0.1"
 MCP_PORT=9382
 MCP_BASE_URL="http://127.0.0.1:9380"
 MCP_SCRIPT_PATH="/ragflow/mcp/server/server.py"
+MCP_MODE="self-host"
+MCP_HOST_API_KEY=""
 
 # -----------------------------------------------------------------------------
 # Host ID logic:
@@ -75,6 +77,14 @@ for arg in "$@"; do
       ;;
     --mcp-base-url=*)
       MCP_BASE_URL="${arg#*=}"
+      shift
+      ;;
+    --mcp-mode=*)
+      MCP_MODE="${arg#*=}"
+      shift
+      ;;
+    --mcp-host-api-key=*)
+      MCP_HOST_API_KEY="${arg#*=}"
       shift
       ;;
     --mcp-script-path=*)
@@ -138,7 +148,9 @@ function start_mcp_server() {
     "$PY" "${MCP_SCRIPT_PATH}" \
         --host="${MCP_HOST}" \
         --port="${MCP_PORT}" \
-        --base_url="${MCP_BASE_URL}" &
+        --base_url="${MCP_BASE_URL}" \
+        --mode="${MCP_MODE}" \
+        --api_key="${MCP_HOST_API_KEY}" \ &
 }
 
 # -----------------------------------------------------------------------------
