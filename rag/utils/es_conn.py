@@ -41,9 +41,9 @@ logger = logging.getLogger('ragflow.es_conn')
 class ESConnection(DocStoreConnection):
     def __init__(self):
         self.info = {}
-        logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
+        ES_HOSTS = [f"{settings.ES['protocol']}://{host}:{settings.ES['port']}" for host in settings.ES["hosts"].split(",")]
+        logger.info(f"Use Elasticsearch {ES_HOSTS} as the doc engine.")
         for _ in range(ATTEMPT_TIME):
-            ES_HOSTS = [f"{settings.ES['protocol']}://{host}:{settings.ES['port']}" for host in settings.ES["hosts"].split(",")]
             try:
                 self.es = Elasticsearch(
                     ES_HOSTS,
