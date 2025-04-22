@@ -1,6 +1,6 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useCreateKnowledge } from '@/hooks/knowledge-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useCreateKnowledge } from '@/hooks/use-knowledge-request';
 import { useCallback, useState } from 'react';
 
 export const useSearchKnowledge = () => {
