@@ -30,10 +30,11 @@ def create_dataset(auth, dataset_name):
     return res.json()
 
 
-def list_dataset(auth, page_number):
+def list_dataset(auth, page_number, page_size=30):
     authorization = {"Authorization": auth}
-    url = f"{HOST_ADDRESS}/v1/kb/list?page={page_number}"
-    res = requests.get(url=url, headers=authorization)
+    url = f"{HOST_ADDRESS}/v1/kb/list?page={page_number}&page_size={page_size}"
+    json = {}
+    res = requests.post(url=url, headers=authorization, json=json)
     return res.json()
 
 
