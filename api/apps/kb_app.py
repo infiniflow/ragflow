@@ -157,24 +157,37 @@ def detail():
         return server_error_response(e)
 
 
-@manager.route('/list', methods=['GET'])  # noqa: F821
+@manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
 def list_kbs():
     keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 150))
+    page_number = int(request.args.get("page", 0))
+    items_per_page = int(request.args.get("page_size", 0))
     parser_id = request.args.get("parser_id")
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", True)
+
+    req = request.get_json()
+    owner_ids = req.get("owner_ids", [])
     try:
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        kbs, total = KnowledgebaseService.get_by_tenant_ids(
-            [m["tenant_id"] for m in tenants], current_user.id, page_number,
-            items_per_page, orderby, desc, keywords, parser_id)
+        if not owner_ids:
+            tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+            tenants = [m["tenant_id"] for m in tenants]
+            kbs, total = KnowledgebaseService.get_by_tenant_ids(
+                tenants, current_user.id, page_number,
+                items_per_page, orderby, desc, keywords, parser_id)
+        else:
+            tenants = owner_ids
+            kbs, total = KnowledgebaseService.get_by_tenant_ids(
+                tenants, current_user.id, 0,
+                0, orderby, desc, keywords, parser_id)
+            kbs = [kb for kb in kbs if kb["tenant_id"] in tenants]
+            if page_number and items_per_page:
+                kbs = kbs[(page_number-1)*items_per_page:page_number*items_per_page]
+            total = len(kbs)
         return get_json_result(data={"kbs": kbs, "total": total})
     except Exception as e:
         return server_error_response(e)
-
 
 @manager.route('/rm', methods=['post'])  # noqa: F821
 @login_required
