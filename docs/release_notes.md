@@ -14,7 +14,7 @@ Released on April 22, 2025.
 ### New features
 
 - MCP server: enables access to RAGFlow's knowledge bases via MCP.
-- DeepDoc supports nested use of the VLM model during document layout recognition, enabling in-depth analysis of images in PDFs.
+- DeepDoc supports adopting VLM model as a processing pipeline during document layout recognition, enabling in-depth analysis of images in PDFs.
 - Agent version control: all updates are continuously logged and can be rolled back to a previous version via export.
 - Team collaboration: Agents can be shared with team members.
 - OpenAI-compatible APIs: Agents can be called via OpenAI-compatible APIs.
