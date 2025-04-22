@@ -62,17 +62,14 @@ class MCPSSEClient(ComponentBase, ABC):
         params['server_list'] = mcp_servers if mcp_servers else []
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, llm_id)
         if not chat_mdl:
-            return MCPSSEClient.be_output("can not find this chat model")
-        params['model_name'] =chat_mdl.mdl.model_name
-        params['base_url'] = chat_mdl.mdl.client.base_url.scheme+"//"+chat_mdl.mdl.client.base_url.host+chat_mdl.mdl.client.base_url.path
-        params['api_key'] = chat_mdl.mdl.client.api_key
-        params['max_tokens'] = chat_mdl.max_length
-
+            return MCPSSEClient.be_output("Can not find this chat model")
+        if not chat_mdl.is_tools:
+            return MCPSSEClient.be_output("The model must be support tools")
         dialogue = self._parse_dialogue(ans)
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
         loop = asyncio.get_event_loop()
-        task = asyncio.ensure_future(real_run(dialogue,params))
+        task = asyncio.ensure_future(real_run(dialogue,params,chat_mdl))
         loop.run_until_complete(asyncio.wait([task]))
         return MCPSSEClient.be_output(task.result())
 
@@ -96,9 +93,8 @@ class MCPSSEClient(ComponentBase, ABC):
         return dialogue
 
 
-async def real_run( dialogue, params:dict):
-    client = MCPClient(model_name=params['model_name'], base_url=params['base_url'], api_key=params['api_key'],
-                       server_list=params['server_list'])
+async def real_run( dialogue, params:dict,chat_mdl:LLMBundle):
+    client = MCPClient(chat_mdl,server_list=params['server_list'])
     content = ""
     try:
         await client.initialize_sessions()
@@ -111,14 +107,12 @@ async def real_run( dialogue, params:dict):
         return content
 
 class MCPClient:
-    def __init__(self, model_name: str, base_url: str, api_key: str, server_list: List[str]):
+    def __init__(self, chat_mdl:LLMBundle, server_list: List[str]):
 
-        self.model_name = model_name
         self.server_urls = server_list
         self.sessions = {}
         self.tool_mapping = {}
-
-        self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        self.client = chat_mdl
 
     async def initialize_sessions(self):
 
@@ -160,21 +154,13 @@ class MCPClient:
                         "parameters": tool.inputSchema,
                     },
                 })
-
-        response = await self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            tools=available_tools,
-            temperature=params['temperature'],
-            top_p=params['top_p'],
-            frequency_penalty=params['frequency_penalty'],
-            presence_penalty=params['presence_penalty'],
-            max_tokens=params['max_tokens'],
-        )
+        del params['server_list']
+        params['tools'] = available_tools
+        client = self.client.mdl
+        response = client.client.chat.completions.create(model=client.model_name, messages=messages, **params)
 
         final_answer = None
         message = response.choices[0].message
-
         if  message.tool_calls:
             for tool_call in message.tool_calls:
                 prefixed_name = tool_call.function.name
@@ -199,16 +185,7 @@ class MCPClient:
                 else:
                     logging.info(f"Tool {prefixed_name} not found")
 
-            response = await self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                tools=available_tools,
-                temperature=params['temperature'],
-                top_p=params['top_p'],
-                frequency_penalty=params['frequency_penalty'],
-                presence_penalty=params['presence_penalty'],
-                max_tokens=params['max_tokens'],
-            )
+            response = client.client.chat.completions.create(model=client.model_name, messages=messages, **params)
             message = response.choices[0].message
             final_answer = message.content
         else:
