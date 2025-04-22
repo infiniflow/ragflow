@@ -6,7 +6,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useDeleteKnowledge } from '@/hooks/knowledge-hooks';
+import { useDeleteKnowledge } from '@/hooks/use-knowledge-request';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { PenLine, Trash2 } from 'lucide-react';
 import { PropsWithChildren, useCallback } from 'react';

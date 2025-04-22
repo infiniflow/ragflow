@@ -2,7 +2,6 @@ import { ResponsePostType } from '@/interfaces/database/base';
 import {
   IKnowledge,
   IKnowledgeGraph,
-  IKnowledgeResult,
   IRenameTag,
   ITestingResult,
 } from '@/interfaces/database/knowledge';
@@ -25,12 +24,9 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'umi';
-import {
-  useGetPaginationWithRouter,
-  useHandleSearchChange,
-} from './logic-hooks';
+import { useHandleSearchChange } from './logic-hooks';
 import { useSetPaginationParams } from './route-hook';
 
 export const useKnowledgeBaseId = (): string => {
@@ -138,67 +134,6 @@ export const useInfiniteFetchKnowledgeList = () => {
   };
 };
 
-export const useFetchNextKnowledgeListByPage = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
-  const { pagination, setPagination } = useGetPaginationWithRouter();
-  const [ownerIds, setOwnerIds] = useState<string[]>([]);
-  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-
-  const { data, isFetching: loading } = useQuery<IKnowledgeResult>({
-    queryKey: [
-      'fetchKnowledgeListByPage',
-      {
-        debouncedSearchString,
-        ...pagination,
-        ownerIds,
-      },
-    ],
-    initialData: {
-      kbs: [],
-      total: 0,
-    },
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await listDataset(
-        {
-          keywords: debouncedSearchString,
-          page_size: pagination.pageSize,
-          page: pagination.current,
-        },
-        {
-          owner_ids: ownerIds,
-        },
-      );
-
-      return data?.data;
-    },
-  });
-
-  const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
-    (e) => {
-      // setPagination({ page: 1 }); // TODO: 这里导致重复请求
-      handleInputChange(e);
-    },
-    [handleInputChange],
-  );
-
-  const handleOwnerIdsChange = useCallback((ids: string[]) => {
-    // setPagination({ page: 1 }); // TODO: 这里导致重复请求
-    setOwnerIds(ids);
-  }, []);
-
-  return {
-    ...data,
-    searchString,
-    handleInputChange: onInputChange,
-    pagination: { ...pagination, total: data?.total },
-    setPagination,
-    loading,
-    setOwnerIds: handleOwnerIdsChange,
-    ownerIds,
-  };
-};
-
 export const useCreateKnowledge = () => {
   const queryClient = useQueryClient();
   const {
@@ -206,7 +141,7 @@ export const useCreateKnowledge = () => {
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['createKnowledge'],
+    mutationKey: ['infiniteFetchKnowledgeList'],
     mutationFn: async (params: { id?: string; name: string }) => {
       const { data = {} } = await kbService.createKb(params);
       if (data.code === 0) {
