@@ -8,3 +8,13 @@ export interface ITestRetrievalRequestBody {
   highlight?: boolean;
   kb_id?: string[];
 }
+
+export interface IFetchKnowledgeListRequestBody {
+  owner_ids?: string[];
+}
+
+export interface IFetchKnowledgeListRequestParams {
+  keywords?: string;
+  page?: number;
+  page_size?: number;
+}
