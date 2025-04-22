@@ -48,6 +48,7 @@ export interface ParserConfig {
   raptor?: Raptor;
   tag_kb_ids?: string[];
   topn_tags?: number;
+  graphrag?: { use_graphrag?: boolean };
 }
 
 export interface IKnowledgeFileParserConfig {
