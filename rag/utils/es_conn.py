@@ -43,9 +43,10 @@ class ESConnection(DocStoreConnection):
         self.info = {}
         logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
         for _ in range(ATTEMPT_TIME):
+            ES_HOSTS = [f"{settings.ES['protocol']}://{host}:{settings.ES['port']}" for host in settings.ES["hosts"].split(",")]
             try:
                 self.es = Elasticsearch(
-                    settings.ES["hosts"].split(","),
+                    ES_HOSTS,
                     basic_auth=(settings.ES["username"], settings.ES[
                         "password"]) if "username" in settings.ES and "password" in settings.ES else None,
                     verify_certs=False,
