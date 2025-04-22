@@ -148,6 +148,7 @@ class KGSearch(Dealer):
                comm_topn: int = 1,
                ent_sim_threshold: float = 0.3,
                rel_sim_threshold: float = 0.3,
+                  **kwargs
                ):
         qst = question
         filters = self.get_filters({"kb_ids": kb_ids})
