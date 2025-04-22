@@ -3,7 +3,6 @@ ______________________________________________________________________
 sidebar_position: 4
 slug: /mcp_server
 ---
-## sidebar_position: 4 slug: /MCP server
 
 # Overview of RAGFlow Model Context Protocol (MCP) Server
 
