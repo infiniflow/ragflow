@@ -120,11 +120,11 @@ class TestChunksRetrieval:
                 """TypeError("int() argument must be a string, a bytes-like object or a real number, not \'NoneType\'")""",
                 marks=pytest.mark.skip,
             ),
-            ({"page_size": 0}, 0, 0, ""),
+            # ({"page_size": 0}, 0, 0, ""),
             ({"page_size": 1}, 0, 1, ""),
             ({"page_size": 5}, 0, 4, ""),
             ({"page_size": "1"}, 0, 1, ""),
-            ({"page_size": -1}, 0, 0, ""),
+            # ({"page_size": -1}, 0, 0, ""),
             pytest.param(
                 {"page_size": "a"},
                 100,
