@@ -1,5 +1,5 @@
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
+import { RenameDialog } from '@/components/rename-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -7,10 +7,12 @@ import { useInfiniteFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { formatDate } from '@/utils/date';
-import { ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, Ellipsis, Plus } from 'lucide-react';
 import { useMemo } from 'react';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
+import { DatasetDropdown } from './dataset-dropdown';
 import { useSaveKnowledge } from './hooks';
+import { useRenameDataset } from './use-rename-dataset';
 
 export default function Datasets() {
   const {
@@ -41,6 +43,15 @@ export default function Datasets() {
     return data?.pages.at(-1).total ?? 0;
   }, [data?.pages]);
 
+  const {
+    datasetRenameLoading,
+    initialDatasetName,
+    onDatasetRenameOk,
+    datasetRenameVisible,
+    hideDatasetRenameModal,
+    showDatasetRenameModal,
+  } = useRenameDataset();
+
   return (
     <section className="p-8 text-foreground">
       <ListFilterBar title="Datasets" showDialog={showModal}>
@@ -59,11 +70,14 @@ export default function Datasets() {
                   <AvatarImage src={dataset.avatar} />
                   <AvatarFallback className="rounded-lg">CN</AvatarFallback>
                 </Avatar>
-                <ConfirmDeleteDialog>
+                <DatasetDropdown
+                  showDatasetRenameModal={showDatasetRenameModal}
+                  dataset={dataset}
+                >
                   <Button variant="ghost" size="icon">
-                    <Trash2 />
+                    <Ellipsis />
                   </Button>
-                </ConfirmDeleteDialog>
+                </DatasetDropdown>
               </div>
               <div className="flex justify-between items-end">
                 <div>
@@ -91,6 +105,14 @@ export default function Datasets() {
           onOk={onCreateOk}
           loading={creatingLoading}
         ></DatasetCreatingDialog>
+      )}
+      {datasetRenameVisible && (
+        <RenameDialog
+          hideModal={hideDatasetRenameModal}
+          onOk={onDatasetRenameOk}
+          initialName={initialDatasetName}
+          loading={datasetRenameLoading}
+        ></RenameDialog>
       )}
     </section>
   );

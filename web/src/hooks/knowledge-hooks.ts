@@ -180,7 +180,7 @@ export const useDeleteKnowledge = () => {
 
 //#region knowledge configuration
 
-export const useUpdateKnowledge = () => {
+export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const queryClient = useQueryClient();
   const {
@@ -191,12 +191,18 @@ export const useUpdateKnowledge = () => {
     mutationKey: ['saveKnowledge'],
     mutationFn: async (params: Record<string, any>) => {
       const { data = {} } = await kbService.updateKb({
-        kb_id: knowledgeBaseId,
+        kb_id: params?.kb_id ? params?.kb_id : knowledgeBaseId,
         ...params,
       });
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
-        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeDetail'] });
+        if (shouldFetchList) {
+          queryClient.invalidateQueries({
+            queryKey: ['infiniteFetchKnowledgeList'],
+          });
+        } else {
+          queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeDetail'] });
+        }
       }
       return data;
     },
