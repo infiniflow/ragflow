@@ -132,7 +132,7 @@ export default function BasicSettingForm() {
                   defaultValue={selectedFrameworks}
                   placeholder="Select frameworks"
                   variant="inverted"
-                  maxCount={100}
+                  maxCount={0}
                   {...field}
                 />
               </FormControl>
