@@ -21,14 +21,10 @@ from agent.component.base import ComponentBase, ComponentParamBase
 from typing import List
 import json
 import logging
-
 from api.db import LLMType
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-
-from api.db.services.llm_service import TenantLLMService, LLMBundle
-
-
+from api.db.services.llm_service import LLMBundle
 class MCPSSEClientParam(ComponentParamBase):
     """
     Define the Baidu component parameters.
