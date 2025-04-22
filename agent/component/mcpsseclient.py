@@ -16,7 +16,6 @@
 import asyncio
 import uuid
 from abc import ABC
-from openai import AsyncOpenAI
 from agent.component.base import ComponentBase, ComponentParamBase
 from typing import List
 import json
