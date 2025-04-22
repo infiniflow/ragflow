@@ -18,7 +18,7 @@ es:
   username: 'elastic'
   password: 'infini_rag_flow'
 os:
-  hosts: 'http://opensearch01:1201'
+  hosts: 'http://localhost:1201'
   username: 'admin'
   password: 'infini_rag_flow_OS_01'
 infinity:
