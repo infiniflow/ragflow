@@ -21,10 +21,12 @@ from agent.component.base import ComponentBase, ComponentParamBase
 from typing import List
 import json
 import logging
+
+from api.db import LLMType
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.llm_service import TenantLLMService, LLMBundle
 
 
 class MCPSSEClientParam(ComponentParamBase):
@@ -62,14 +64,13 @@ class MCPSSEClient(ComponentBase, ABC):
         params['temperature'] = self._param.temperature if self._param.temperature else 0.5
         params['top_p'] = self._param.top_p if self._param.top_p else 3
         params['server_list'] = mcp_servers if mcp_servers else []
-        split = llm_id.split("@")
-        query = TenantLLMService.query(tenant_id=self._canvas.get_tenant_id(), llm_name=split[0], llm_factory=split[1])
-        if not query:
+        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, llm_id)
+        if not chat_mdl:
             return MCPSSEClient.be_output("model error")
-        params['model_name'] =query[0].llm_name
-        params['base_url'] = query[0].api_base
-        params['api_key'] = query[0].api_key
-        params['max_tokens'] = query[0].max_tokens
+        params['model_name'] =chat_mdl.mdl.model_name
+        params['base_url'] = chat_mdl.mdl.client.base_url.scheme+"//"+chat_mdl.mdl.client.base_url.host+chat_mdl.mdl.client.base_url.path
+        params['api_key'] = chat_mdl.mdl.client.api_key
+        params['max_tokens'] = chat_mdl.max_length
 
         dialogue = self._parse_dialogue(ans)
         new_loop = asyncio.new_event_loop()
