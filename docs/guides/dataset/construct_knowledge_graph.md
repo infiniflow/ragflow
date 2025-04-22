@@ -23,6 +23,10 @@ Constructing a knowledge graph requires significant memory, computational resour
 
 Knowledge graphs are especially useful for multi-hop question-answering involving *nested* logic. They outperform traditional extraction approaches when you are performing question answering on books or works with complex entities and relationships.
 
+:::tip NOTE
+RAPTOR (Recursive Abstractive Processing for Tree Organized Retrieval) can also be used for multi-hop question-answering tasks. See [Enable RAPTOR](./enable_raptor.md) for details. You may use either approach or both, but ensure you understand the memory, computational, and token costs involved.
+:::
+
 ## Prerequisites
 
 The system's default chat model is used to generate knowledge graph. Before proceeding, ensure that you have a chat model properly configured:
