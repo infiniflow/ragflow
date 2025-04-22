@@ -150,6 +150,7 @@ class KnowledgebaseService(CommonService):
             cls.model.name,
             cls.model.language,
             cls.model.description,
+            cls.model.tenant_id,
             cls.model.permission,
             cls.model.doc_num,
             cls.model.token_num,
