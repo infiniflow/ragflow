@@ -62,7 +62,7 @@ class MCPSSEClient(ComponentBase, ABC):
         params['server_list'] = mcp_servers if mcp_servers else []
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, llm_id)
         if not chat_mdl:
-            return MCPSSEClient.be_output("model error")
+            return MCPSSEClient.be_output("can not find this chat model")
         params['model_name'] =chat_mdl.mdl.model_name
         params['base_url'] = chat_mdl.mdl.client.base_url.scheme+"//"+chat_mdl.mdl.client.base_url.host+chat_mdl.mdl.client.base_url.path
         params['api_key'] = chat_mdl.mdl.client.api_key
