@@ -1,5 +1,5 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useUpdateKnowledge } from '@/hooks/knowledge-hooks';
+import { useUpdateKnowledge } from '@/hooks/use-knowledge-request';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { omit } from 'lodash';
 import { useCallback, useState } from 'react';
