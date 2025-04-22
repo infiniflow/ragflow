@@ -6,11 +6,9 @@ import {
   useFetchParentFolderList,
   useMoveFile,
   useRenameFile,
-  useUploadFile,
 } from '@/hooks/file-manager-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { TableRowSelection } from 'antd/es/table/interface';
-import { UploadFile } from 'antd/lib';
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'umi';
 
@@ -155,37 +153,6 @@ export const useHandleDeleteFile = (
   };
 
   return { handleRemoveFile };
-};
-
-export const useHandleUploadFile = () => {
-  const {
-    visible: fileUploadVisible,
-    hideModal: hideFileUploadModal,
-    showModal: showFileUploadModal,
-  } = useSetModalState();
-  const { uploadFile, loading } = useUploadFile();
-  const id = useGetFolderId();
-
-  const onFileUploadOk = useCallback(
-    async (fileList: UploadFile[]): Promise<number | undefined> => {
-      if (fileList.length > 0) {
-        const ret: number = await uploadFile({ fileList, parentId: id });
-        if (ret === 0) {
-          hideFileUploadModal();
-        }
-        return ret;
-      }
-    },
-    [uploadFile, hideFileUploadModal, id],
-  );
-
-  return {
-    fileUploadLoading: loading,
-    onFileUploadOk,
-    fileUploadVisible,
-    hideFileUploadModal,
-    showFileUploadModal,
-  };
 };
 
 export const useHandleConnectToKnowledge = () => {
