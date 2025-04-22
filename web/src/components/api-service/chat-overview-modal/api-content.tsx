@@ -1,4 +1,5 @@
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
+import { LangfuseCard } from '@/pages/user-setting/setting-model/langfuse';
 import apiDoc from '@parent/docs/references/http_api_reference.md';
 import MarkdownPreview from '@uiw/react-markdown-preview';
 import { Button, Card, Flex, Space } from 'antd';
@@ -28,7 +29,7 @@ const ApiContent = ({
   const { handlePreview } = usePreviewChat(idKey);
 
   return (
-    <div>
+    <div className="pb-2">
       <Flex vertical gap={'middle'}>
         <BackendServiceApi show={showApiKeyModal}></BackendServiceApi>
         {!hideChatPreviewCard && (
@@ -62,6 +63,7 @@ const ApiContent = ({
           hideModal={hideEmbedModal}
         ></EmbedModal>
       )} */}
+      <LangfuseCard></LangfuseCard>
     </div>
   );
 };

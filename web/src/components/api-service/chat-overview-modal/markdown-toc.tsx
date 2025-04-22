@@ -58,6 +58,7 @@ const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
         position: 'fixed',
         right: 20,
         top: 100,
+        bottom: 150,
         width: 200,
         background: '#fff',
         padding: '10px',

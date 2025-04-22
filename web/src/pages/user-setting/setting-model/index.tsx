@@ -50,7 +50,6 @@ import {
 } from './hooks';
 import HunyuanModal from './hunyuan-modal';
 import styles from './index.less';
-import { LangfuseCard } from './langfuse';
 import OllamaModal from './ollama-modal';
 import SparkModal from './spark-modal';
 import SystemModelSettingModal from './system-model-setting-modal';
@@ -368,7 +367,6 @@ const UserSettingModel = () => {
 
   return (
     <section id="xx" className="w-full space-y-6">
-      <LangfuseCard></LangfuseCard>
       <Spin spinning={loading}>
         <section className={styles.modelContainer}>
           <SettingTitle
