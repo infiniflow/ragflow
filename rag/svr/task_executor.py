@@ -299,6 +299,8 @@ async def build_chunks(task, progress_callback):
             raise
 
         d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
+        if (img:=d["image"]) and hasattr(img, "close") and callable(getattr(img, "close")):
+            img.close()
         del d["image"]
         docs.append(d)
     logging.info("MINIO PUT({}):{}".format(task["name"], el))
