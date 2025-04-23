@@ -5,6 +5,7 @@ import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { PropsWithChildren, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DatasetCard } from './dataset-card';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
 import { DatasetsFilterPopover } from './datasets-filter-popover';
@@ -13,6 +14,7 @@ import { useSaveKnowledge } from './hooks';
 import { useRenameDataset } from './use-rename-dataset';
 
 export default function Datasets() {
+  const { t } = useTranslation();
   const {
     visible,
     hideModal,
@@ -63,8 +65,8 @@ export default function Datasets() {
       >
         <Button variant={'tertiary'} size={'sm'} onClick={showModal}>
           <Plus className="mr-2 h-4 w-4" />
+          {t('knowledgeList.createKnowledgeBase')}
         </Button>
-        Create dataset
       </ListFilterBar>
       <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
         {kbs.map((dataset) => {
