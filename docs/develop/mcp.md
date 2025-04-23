@@ -116,7 +116,7 @@ ragflow-server  |      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
 ragflow-server  |     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
 ragflow-server  | 
 ragflow-server  |     
-ragflow-server  | 2025-04-18 15:41:29,088 INFO     27 RAGFlow version: v0.17.2-285-gb2c299fa full
+ragflow-server  | 2025-04-18 15:41:29,088 INFO     27 RAGFlow version: v0.18.0-285-gb2c299fa full
 ragflow-server  | 2025-04-18 15:41:29,088 INFO     27 project base: /ragflow
 ragflow-server  | 2025-04-18 15:41:29,088 INFO     27 Current configs, from /ragflow/conf/service_conf.yaml:
 ragflow-server  |  ragflow: {'host': '0.0.0.0', 'http_port': 9380}
@@ -130,7 +130,7 @@ ragflow-server  |   / / / __ `/ ___/ //_/  / __/ | |/_/ _ \/ ___/ / / / __/ __ \
 ragflow-server  |  / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /    
 ragflow-server  | /_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/                               
 ragflow-server  |     
-ragflow-server  | 2025-04-18 15:41:34,501 INFO     32 TaskExecutor: RAGFlow version: v0.17.2-285-gb2c299fa full
+ragflow-server  | 2025-04-18 15:41:34,501 INFO     32 TaskExecutor: RAGFlow version: v0.18.0-285-gb2c299fa full
 ragflow-server  | 2025-04-18 15:41:34,501 INFO     32 Use Elasticsearch http://es01:9200 as the doc engine.
 ...
 ```
