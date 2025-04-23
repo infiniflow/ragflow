@@ -50,6 +50,7 @@ type ResultCode =
 const errorHandler = (error: {
   response: Response;
   message: string;
+  data?: object;
 }): Response | any => {
   const { response } = error;
   if (error.message === FAILED_TO_FETCH) {
@@ -63,6 +64,7 @@ const errorHandler = (error: {
       description: error.message,
       duration: 3,
     });
+    error.data = { code: 1999, message: error.message };
   }
   return error ?? { data: { code: 1999 } };
 };
