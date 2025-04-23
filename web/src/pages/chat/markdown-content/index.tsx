@@ -10,7 +10,6 @@ import Markdown from 'react-markdown';
 import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
-import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { visitParents } from 'unist-util-visit-parents';
@@ -190,7 +189,7 @@ const MarkdownContent = ({
 
   return (
     <Markdown
-      rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
+      rehypePlugins={[rehypeWrapReference, rehypeKatex]}
       remarkPlugins={[remarkGfm, remarkMath]}
       className={styles.markdownContentWrapper}
       components={
