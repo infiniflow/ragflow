@@ -9,7 +9,7 @@ Key features, improvements and bug fixes in the latest releases.
 
 ## v0.18.0
 
-Released on April 22, 2025.
+Released on April 23, 2025.
 
 ### New features
 
@@ -24,6 +24,14 @@ Released on April 22, 2025.
 
 - Enhanced answer referencing: Citation accuracy in generated responses is improved.
 - Enhanced question-answering experience: users can now manually stop streaming output during a conversation.
+
+### Documentation
+
+#### Added documents
+
+- [Set page rank](./guides/dataset/set_page_rank.md)
+- [Enable RAPTOR](./guides/dataset/enable_raptor.md)
+- [RAGFlow MCP server overview](./develop/mcp.md)
 
 ## v0.17.2
 
