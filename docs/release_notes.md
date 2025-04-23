@@ -7,6 +7,24 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.18.0
+
+Released on April 22, 2025.
+
+### New features
+
+- MCP server: enables access to RAGFlow's knowledge bases via MCP.
+- DeepDoc supports adopting VLM model as a processing pipeline during document layout recognition, enabling in-depth analysis of images in PDFs.
+- Agent version control: all updates are continuously logged and can be rolled back to a previous version via export.
+- Team collaboration: Agents can be shared with team members.
+- OpenAI-compatible APIs: Agents can be called via OpenAI-compatible APIs.
+- User registration control: administrators can enable or disable user registration through an environment variable.
+
+### Improvements
+
+- Enhanced answer referencing: Citation accuracy in generated responses is improved.
+- Enhanced question-answering experience: users can now manually stop streaming output during a conversation.
+
 ## v0.17.2
 
 Released on March 13, 2025.
