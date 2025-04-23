@@ -357,22 +357,21 @@ def setting():
     return get_json_result(data=num)
 
 @manager.route('/update_permissions', methods=['POST'])  # noqa: F821
-@validate_request("canvas_ids", "user_ids", "permission")
+@validate_request("canvas_ids", "user_ids")
 @login_required
 def update_permissions():
     req = request.json
     canvas_ids = req["canvas_ids"]
     user_ids = req["user_ids"]
-    permission = req["permission"]
 
-    # 检测当前用户是否是被修改的canvas的owner
     for canvas_id in canvas_ids:
         e, canvas = UserCanvasService.get_by_id(canvas_id)
         if not e or canvas.user_id != current_user.id:
             return get_json_result(data=False, message='Only owner of canvas authorized for this operation.', code=RetCode.OPERATING_ERROR)
 
-    # 执行权限批量修改
-    updated_count = UserCanvasService.update_permissions(canvas_ids, user_ids, permission)
+    updated_count = UserCanvasService.update_permissions(canvas_ids, user_ids   )
+
+'''
 @manager.route('/get_conversation', methods=['POST'])  # noqa: F821
 @validate_request("id")
 @login_required
@@ -420,3 +419,4 @@ def update_conversation():
 
     conversation_data = conversation.to_dict()
     return get_json_result(data=conversation_data)
+'''
