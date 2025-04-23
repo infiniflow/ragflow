@@ -1,12 +1,11 @@
-______________________________________________________________________
 ---
 sidebar_position: 4
 slug: /mcp_server
 ---
 
-# Overview of RAGFlow Model Context Protocol (MCP) Server
+# RAGFlow MCP server overview
 
-The RAGFlow MCP server operates as an independent component that complements the RAGFlow server. However, it requires a RAGFlow server to work functionally well, meaning, the MCP client and server communicate with each other in MCP HTTP+SSE mode (once the connection is established, server pushes messages to client only), and responses are expected from RAGFlow server.
+The RAGFlow Model Context Protocol (MCP) server operates as an independent component that complements the RAGFlow server. However, it requires a RAGFlow server to work functionally well, meaning, the MCP client and server communicate with each other in MCP HTTP+SSE mode (once the connection is established, server pushes messages to client only), and responses are expected from RAGFlow server.
 
 The MCP server currently offers a specific tool to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
 
@@ -117,7 +116,7 @@ ragflow-server  |      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
 ragflow-server  |     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
 ragflow-server  | 
 ragflow-server  |     
-ragflow-server  | 2025-04-18 15:41:29,088 INFO     27 RAGFlow version: v0.17.2-285-gb2c299fa full
+ragflow-server  | 2025-04-18 15:41:29,088 INFO     27 RAGFlow version: v0.18.0-285-gb2c299fa full
 ragflow-server  | 2025-04-18 15:41:29,088 INFO     27 project base: /ragflow
 ragflow-server  | 2025-04-18 15:41:29,088 INFO     27 Current configs, from /ragflow/conf/service_conf.yaml:
 ragflow-server  |  ragflow: {'host': '0.0.0.0', 'http_port': 9380}
@@ -131,7 +130,7 @@ ragflow-server  |   / / / __ `/ ___/ //_/  / __/ | |/_/ _ \/ ___/ / / / __/ __ \
 ragflow-server  |  / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /    
 ragflow-server  | /_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/                               
 ragflow-server  |     
-ragflow-server  | 2025-04-18 15:41:34,501 INFO     32 TaskExecutor: RAGFlow version: v0.17.2-285-gb2c299fa full
+ragflow-server  | 2025-04-18 15:41:34,501 INFO     32 TaskExecutor: RAGFlow version: v0.18.0-285-gb2c299fa full
 ragflow-server  | 2025-04-18 15:41:34,501 INFO     32 Use Elasticsearch http://es01:9200 as the doc engine.
 ...
 ```
