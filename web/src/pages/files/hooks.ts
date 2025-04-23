@@ -1,7 +1,6 @@
-import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useConnectToKnowledge,
-  useDeleteFile,
   useRenameFile,
 } from '@/hooks/file-manager-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
@@ -76,29 +75,6 @@ export const useRenameCurrentFile = () => {
 export type UseRenameCurrentFileReturnType = ReturnType<
   typeof useRenameCurrentFile
 >;
-
-export const useHandleDeleteFile = (
-  fileIds: string[],
-  setSelectedRowKeys: (keys: string[]) => void,
-) => {
-  const { deleteFile: removeDocument } = useDeleteFile();
-  const showDeleteConfirm = useShowDeleteConfirm();
-  const parentId = useGetFolderId();
-
-  const handleRemoveFile = () => {
-    showDeleteConfirm({
-      onOk: async () => {
-        const code = await removeDocument({ fileIds, parentId });
-        if (code === 0) {
-          setSelectedRowKeys([]);
-        }
-        return;
-      },
-    });
-  };
-
-  return { handleRemoveFile };
-};
 
 export const useHandleConnectToKnowledge = () => {
   const {
