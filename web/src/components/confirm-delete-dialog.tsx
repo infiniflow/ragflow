@@ -28,7 +28,10 @@ export function ConfirmDeleteDialog({
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent
+        onSelect={(e) => e.preventDefault()}
+        onClick={(e) => e.stopPropagation()}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>
             {title ?? t('common.deleteModalTitle')}

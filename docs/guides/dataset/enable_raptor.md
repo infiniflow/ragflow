@@ -43,7 +43,7 @@ The system's default chat model is used to summarize clustered content. Before p
 
 ## Configurations
 
-On the **Configuration** page of your knowledge base, the **Use RAPTOR to enhance retrieval** toggle is disabled by default.
+The RAPTOR feature is disabled by default. To enable it, manually switch on the **Use RAPTOR to enhance retrieval** toggle on your knowledge base's **Configuration** page.
 
 ### Prompt
 
@@ -71,4 +71,4 @@ The maximum number of clusters to create. Defaults to 108, with a maximum limit 
 
 ### Random seed
 
-A random seed. Click **+** button to change the seed value.
+A random seed. Click the **+** button to change the seed value.
