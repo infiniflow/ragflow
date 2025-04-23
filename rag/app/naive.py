@@ -304,6 +304,16 @@ class Markdown(MarkdownParser):
         html_images = [img.get('src') for img in soup.find_all('img') if img.get('src')]
         return html_images
     
+    def ehance_image_url(self, image_url):
+        ehance_domains = ["https://img.shields.io/badge"]
+        for domain in ehance_domains:
+            #append '.png' to the image_url
+            if image_url.startswith(domain):
+                image_url = image_url + ".png"
+                break
+        return image_url
+
+    
     def get_pictures(self, text):
         """Download and open all images from markdown text."""
         import requests
@@ -312,8 +322,9 @@ class Markdown(MarkdownParser):
         # Find all image URLs in text
         for url in image_urls:
             try:
+                url = self.ehance_image_url(url)
                 response = requests.get(url, stream=True)
-                if response.status_code == 200:
+                if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
                     img = Image.open(BytesIO(response.content)).convert('RGB')
                     images.append(img)
             except Exception as e:
