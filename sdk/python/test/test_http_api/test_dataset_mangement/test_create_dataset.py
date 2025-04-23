@@ -122,7 +122,6 @@ class TestDatasetCreation:
             ("presentation", "presentation", 0),
             ("picture", "picture", 0),
             ("one", "one", 0),
-            ("picknowledge_graphture", "knowledge_graph", 0),
             ("email", "email", 0),
             ("tag", "tag", 0),
             ("empty_chunk_method", "", 0),

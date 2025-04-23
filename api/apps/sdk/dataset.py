@@ -69,7 +69,7 @@ def create(tenant_id):
             chunk_method:
               type: string
               enum: ["naive", "manual", "qa", "table", "paper", "book", "laws",
-                     "presentation", "picture", "one", "knowledge_graph", "email", "tag"
+                     "presentation", "picture", "one", "email", "tag"
                      ]
               description: Chunking method.
             parser_config:
@@ -105,7 +105,6 @@ def create(tenant_id):
         "presentation",
         "picture",
         "one",
-        "knowledge_graph",
         "email",
         "tag"
     ]
@@ -315,7 +314,7 @@ def update(tenant_id, dataset_id):
             chunk_method:
               type: string
               enum: ["naive", "manual", "qa", "table", "paper", "book", "laws",
-                     "presentation", "picture", "one", "knowledge_graph", "email", "tag"
+                     "presentation", "picture", "one", "email", "tag"
                      ]
               description: Updated chunking method.
             parser_config:
@@ -353,7 +352,6 @@ def update(tenant_id, dataset_id):
         "presentation",
         "picture",
         "one",
-        "knowledge_graph",
         "email",
         "tag"
     ]

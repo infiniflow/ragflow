@@ -114,14 +114,13 @@ class TestDatasetUpdate:
             ("presentation", 0, ""),
             ("picture", 0, ""),
             ("one", 0, ""),
-            ("knowledge_graph", 0, ""),
             ("email", 0, ""),
             ("tag", 0, ""),
             ("", 0, ""),
             (
                 "other_chunk_method",
                 102,
-                "'other_chunk_method' is not in ['naive', 'manual', 'qa', 'table', 'paper', 'book', 'laws', 'presentation', 'picture', 'one', 'knowledge_graph', 'email', 'tag']",
+                "'other_chunk_method' is not in ['naive', 'manual', 'qa', 'table', 'paper', 'book', 'laws', 'presentation', 'picture', 'one', 'email', 'tag']",
             ),
         ],
     )
