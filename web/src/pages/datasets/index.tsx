@@ -1,5 +1,6 @@
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
+import { Button } from '@/components/ui/button';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
@@ -51,7 +52,6 @@ export default function Datasets() {
     <section className="p-8 text-foreground">
       <ListFilterBar
         title="Datasets"
-        showDialog={showModal}
         count={ownerIds.length}
         FilterPopover={({ children }: PropsWithChildren) => (
           <DatasetsFilterPopover setOwnerIds={setOwnerIds} ownerIds={ownerIds}>
@@ -61,7 +61,9 @@ export default function Datasets() {
         searchString={searchString}
         onSearchChange={handleInputChange}
       >
-        <Plus className="mr-2 h-4 w-4" />
+        <Button variant={'tertiary'} size={'sm'} onClick={showModal}>
+          <Plus className="mr-2 h-4 w-4" />
+        </Button>
         Create dataset
       </ListFilterBar>
       <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">

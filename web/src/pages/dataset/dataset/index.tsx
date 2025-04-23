@@ -1,5 +1,6 @@
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
+import { Button } from '@/components/ui/button';
 import { Upload } from 'lucide-react';
 import { DatasetTable } from './dataset-table';
 import { useHandleUploadDocument } from './use-upload-document';
@@ -14,9 +15,15 @@ export default function Dataset() {
   } = useHandleUploadDocument();
   return (
     <section className="p-8">
-      <ListFilterBar title="Files" showDialog={showDocumentUploadModal}>
-        <Upload />
-        Upload file
+      <ListFilterBar title="Files">
+        <Button
+          variant={'tertiary'}
+          size={'sm'}
+          onClick={showDocumentUploadModal}
+        >
+          <Upload />
+          Upload file
+        </Button>
       </ListFilterBar>
       <DatasetTable></DatasetTable>
 

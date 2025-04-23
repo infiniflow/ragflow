@@ -42,12 +42,11 @@ import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionCell } from './action-cell';
-import {
-  useHandleConnectToKnowledge,
-  useNavigateToOtherFolder,
-  useRenameCurrentFile,
-} from './hooks';
+import { useHandleConnectToKnowledge, useRenameCurrentFile } from './hooks';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
+import { MoveDialog } from './move-dialog';
+import { useHandleMoveFile } from './use-move-file';
+import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 
 export function FilesTable() {
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -77,6 +76,14 @@ export function FilesTable() {
     initialFileName,
     fileRenameLoading,
   } = useRenameCurrentFile();
+
+  const {
+    showMoveFileModal,
+    moveFileVisible,
+    onMoveFileOk,
+    hideMoveFileModal,
+    moveFileLoading,
+  } = useHandleMoveFile();
 
   const { pagination, data, loading, setPagination } = useFetchFileList();
 
@@ -222,6 +229,7 @@ export function FilesTable() {
             row={row}
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
+            showMoveFileModal={showMoveFileModal}
           ></ActionCell>
         );
       },
@@ -362,6 +370,13 @@ export function FilesTable() {
           initialName={initialFileName}
           loading={fileRenameLoading}
         ></RenameDialog>
+      )}
+      {moveFileVisible && (
+        <MoveDialog
+          hideModal={hideMoveFileModal}
+          onOk={onMoveFileOk}
+          loading={moveFileLoading}
+        ></MoveDialog>
       )}
     </div>
   );
