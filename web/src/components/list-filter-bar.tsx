@@ -14,6 +14,7 @@ interface IProps {
   searchString?: string;
   onSearchChange?: ChangeEventHandler<HTMLInputElement>;
   count?: number;
+  showFilter?: boolean;
 }
 
 const FilterButton = React.forwardRef<
@@ -35,18 +36,20 @@ export default function ListFilterBar({
   searchString,
   onSearchChange,
   count,
+  showFilter = true,
 }: PropsWithChildren<IProps>) {
   return (
     <div className="flex justify-between mb-6">
       <span className="text-3xl font-bold ">{title}</span>
       <div className="flex gap-4 items-center">
-        {FilterPopover ? (
-          <FilterPopover>
-            <FilterButton count={count}></FilterButton>
-          </FilterPopover>
-        ) : (
-          <FilterButton></FilterButton>
-        )}
+        {showFilter &&
+          (FilterPopover ? (
+            <FilterPopover>
+              <FilterButton count={count}></FilterButton>
+            </FilterPopover>
+          ) : (
+            <FilterButton></FilterButton>
+          ))}
 
         <SearchInput
           value={searchString}

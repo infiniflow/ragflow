@@ -5,12 +5,9 @@ import {
   useRunNextDocument,
   useSaveNextDocumentName,
   useSetNextDocumentParser,
-  useUploadNextDocument,
 } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
-import { getUnSupportedFilesCount } from '@/utils/document-util';
-import { UploadFile } from 'antd';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
 
@@ -132,46 +129,6 @@ export const useGetRowSelection = () => {
   };
 
   return rowSelection;
-};
-
-export const useHandleUploadDocument = () => {
-  const {
-    visible: documentUploadVisible,
-    hideModal: hideDocumentUploadModal,
-    showModal: showDocumentUploadModal,
-  } = useSetModalState();
-  const { uploadDocument, loading } = useUploadNextDocument();
-
-  const onDocumentUploadOk = useCallback(
-    async (fileList: UploadFile[]): Promise<number | undefined> => {
-      if (fileList.length > 0) {
-        const ret: any = await uploadDocument(fileList);
-        if (typeof ret?.message !== 'string') {
-          return;
-        }
-        const count = getUnSupportedFilesCount(ret?.message);
-        /// 500 error code indicates that some file types are not supported
-        let code = ret?.code;
-        if (
-          ret?.code === 0 ||
-          (ret?.code === 500 && count !== fileList.length) // Some files were not uploaded successfully, but some were uploaded successfully.
-        ) {
-          code = 0;
-          hideDocumentUploadModal();
-        }
-        return code;
-      }
-    },
-    [uploadDocument, hideDocumentUploadModal],
-  );
-
-  return {
-    documentUploadLoading: loading,
-    onDocumentUploadOk,
-    documentUploadVisible,
-    hideDocumentUploadModal,
-    showDocumentUploadModal,
-  };
 };
 
 export const useHandleWebCrawl = () => {

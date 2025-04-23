@@ -9,7 +9,7 @@ import {
 import { useDeleteKnowledge } from '@/hooks/use-knowledge-request';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { PenLine, Trash2 } from 'lucide-react';
-import { PropsWithChildren, useCallback } from 'react';
+import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRenameDataset } from './use-rename-dataset';
 
@@ -24,11 +24,16 @@ export function DatasetDropdown({
   const { t } = useTranslation();
   const { deleteKnowledge } = useDeleteKnowledge();
 
-  const handleShowDatasetRenameModal = useCallback(() => {
-    showDatasetRenameModal(dataset);
-  }, [dataset, showDatasetRenameModal]);
+  const handleShowDatasetRenameModal: MouseEventHandler<HTMLDivElement> =
+    useCallback(
+      (e) => {
+        e.stopPropagation();
+        showDatasetRenameModal(dataset);
+      },
+      [dataset, showDatasetRenameModal],
+    );
 
-  const handleDelete = useCallback(() => {
+  const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
     deleteKnowledge(dataset.id);
   }, [dataset.id, deleteKnowledge]);
 
@@ -43,7 +48,12 @@ export function DatasetDropdown({
         <ConfirmDeleteDialog onOk={handleDelete}>
           <DropdownMenuItem
             className="text-text-delete-red"
-            onSelect={(e) => e.preventDefault()}
+            onSelect={(e) => {
+              e.preventDefault();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
           >
             {t('common.delete')} <Trash2 />
           </DropdownMenuItem>

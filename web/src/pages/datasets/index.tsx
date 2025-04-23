@@ -1,21 +1,14 @@
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
-import { formatDate } from '@/utils/date';
 import { pick } from 'lodash';
-import { ChevronRight, Ellipsis, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { PropsWithChildren, useCallback } from 'react';
+import { DatasetCard } from './dataset-card';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
-import { DatasetDropdown } from './dataset-dropdown';
 import { DatasetsFilterPopover } from './datasets-filter-popover';
 import { DatasetsPagination } from './datasets-pagination';
 import { useSaveKnowledge } from './hooks';
-import { useDisplayOwnerName } from './use-display-owner';
 import { useRenameDataset } from './use-rename-dataset';
 
 export default function Datasets() {
@@ -26,7 +19,6 @@ export default function Datasets() {
     onCreateOk,
     loading: creatingLoading,
   } = useSaveKnowledge();
-  const { navigateToDataset } = useNavigatePage();
 
   const {
     kbs,
@@ -47,8 +39,6 @@ export default function Datasets() {
     hideDatasetRenameModal,
     showDatasetRenameModal,
   } = useRenameDataset();
-
-  const displayOwnerName = useDisplayOwnerName();
 
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
@@ -76,52 +66,12 @@ export default function Datasets() {
       </ListFilterBar>
       <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
         {kbs.map((dataset) => {
-          const owner = displayOwnerName(dataset.tenant_id, dataset.nickname);
           return (
-            <Card
+            <DatasetCard
+              dataset={dataset}
               key={dataset.id}
-              className="bg-colors-background-inverse-weak flex-1"
-            >
-              <CardContent className="p-4">
-                <section className="flex justify-between mb-4">
-                  <div className="flex  gap-2">
-                    <Avatar className="w-[70px] h-[70px] rounded-lg">
-                      <AvatarImage src={dataset.avatar} />
-                      <AvatarFallback className="rounded-lg">CN</AvatarFallback>
-                    </Avatar>
-                    {owner && <Badge className="h-5">{owner}</Badge>}
-                  </div>
-                  <DatasetDropdown
-                    showDatasetRenameModal={showDatasetRenameModal}
-                    dataset={dataset}
-                  >
-                    <Button variant="ghost" size="icon">
-                      <Ellipsis />
-                    </Button>
-                  </DatasetDropdown>
-                </section>
-                <div className="flex justify-between items-end">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">
-                      {dataset.name}
-                    </h3>
-                    <p className="text-sm opacity-80">
-                      {dataset.doc_num} files
-                    </p>
-                    <p className="text-sm opacity-80">
-                      Created {formatDate(dataset.update_time)}
-                    </p>
-                  </div>
-                  <Button
-                    variant="icon"
-                    size="icon"
-                    onClick={navigateToDataset(dataset.id)}
-                  >
-                    <ChevronRight className="h-6 w-6" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+              showDatasetRenameModal={showDatasetRenameModal}
+            ></DatasetCard>
           );
         })}
       </div>
