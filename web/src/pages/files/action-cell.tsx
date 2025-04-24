@@ -17,15 +17,18 @@ import {
   UseHandleConnectToKnowledgeReturnType,
   UseRenameCurrentFileReturnType,
 } from './hooks';
+import { UseMoveDocumentShowType } from './use-move-file';
 
 type IProps = Pick<CellContext<IFile, unknown>, 'row'> &
   Pick<UseHandleConnectToKnowledgeReturnType, 'showConnectToKnowledgeModal'> &
-  Pick<UseRenameCurrentFileReturnType, 'showFileRenameModal'>;
+  Pick<UseRenameCurrentFileReturnType, 'showFileRenameModal'> &
+  UseMoveDocumentShowType;
 
 export function ActionCell({
   row,
   showConnectToKnowledgeModal,
   showFileRenameModal,
+  showMoveFileModal,
 }: IProps) {
   const { t } = useTranslation();
   const record = row.original;
@@ -46,6 +49,10 @@ export function ActionCell({
   const handleShowFileRenameModal = useCallback(() => {
     showFileRenameModal(record);
   }, [record, showFileRenameModal]);
+
+  const handleShowMoveFileModal = useCallback(() => {
+    showMoveFileModal([record.id]);
+  }, [record, showMoveFileModal]);
 
   return (
     <section className="flex gap-4 items-center">
@@ -68,9 +75,7 @@ export function ActionCell({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            onClick={() => navigator.clipboard.writeText(record.id)}
-          >
+          <DropdownMenuItem onClick={handleShowMoveFileModal}>
             {t('common.move')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />

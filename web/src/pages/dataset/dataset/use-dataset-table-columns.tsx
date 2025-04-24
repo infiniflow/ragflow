@@ -1,14 +1,6 @@
 import SvgIcon from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
@@ -16,24 +8,31 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useSetDocumentStatus } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { getExtension } from '@/utils/document-util';
 import { ColumnDef } from '@tanstack/table-core';
-import { ArrowUpDown, MoreHorizontal, Pencil, Wrench } from 'lucide-react';
+import { ArrowUpDown } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { DatasetActionCell } from './dataset-action-cell';
 import { useChangeDocumentParser } from './hooks';
+import { ParsingStatusCell } from './parsing-status-cell';
+import { UseRenameDocumentShowType } from './use-rename-document';
 
 type UseDatasetTableColumnsType = Pick<
   ReturnType<typeof useChangeDocumentParser>,
   'showChangeParserModal'
-> & { setCurrentRecord: (record: IDocumentInfo) => void };
+> & {
+  setCurrentRecord: (record: IDocumentInfo) => void;
+} & UseRenameDocumentShowType;
 
 export function useDatasetTableColumns({
   showChangeParserModal,
   setCurrentRecord,
+  showRenameModal,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
@@ -57,6 +56,7 @@ export function useDatasetTableColumns({
   // }, [setRecord, showSetMetaModal]);
 
   const { navigateToChunkParsedResult } = useNavigatePage();
+  const { setDocumentStatus } = useSetDocumentStatus();
 
   const columns: ColumnDef<IDocumentInfo>[] = [
     {
@@ -94,7 +94,7 @@ export function useDatasetTableColumns({
           </Button>
         );
       },
-      meta: { cellClassName: 'max-w-[20vw]' },
+      // meta: { cellClassName: 'max-w-[20vw]' },
       cell: ({ row }) => {
         const name: string = row.getValue('name');
 
@@ -142,20 +142,34 @@ export function useDatasetTableColumns({
       ),
     },
     {
-      accessorKey: 'parser_id',
-      header: t('chunkMethod'),
+      accessorKey: 'status',
+      header: t('enabled'),
+      cell: ({ row }) => {
+        const id = row.original.id;
+        return (
+          <Switch
+            checked={row.getValue('status') === '1'}
+            onCheckedChange={(e) => {
+              setDocumentStatus({ status: e, documentId: id });
+            }}
+          />
+        );
+      },
+    },
+    {
+      accessorKey: 'chunk_num',
+      header: t('chunkNumber'),
       cell: ({ row }) => (
-        <div className="capitalize">{row.getValue('parser_id')}</div>
+        <div className="capitalize">{row.getValue('chunk_num')}</div>
       ),
     },
     {
       accessorKey: 'run',
       header: t('parsingStatus'),
-      cell: ({ row }) => (
-        <Button variant="destructive" size={'sm'}>
-          {row.getValue('run')}
-        </Button>
-      ),
+      // meta: { cellClassName: 'min-w-[20vw]' },
+      cell: ({ row }) => {
+        return <ParsingStatusCell record={row.original}></ParsingStatusCell>;
+      },
     },
     {
       id: 'actions',
@@ -165,37 +179,10 @@ export function useDatasetTableColumns({
         const record = row.original;
 
         return (
-          <section className="flex gap-4 items-center">
-            <Switch id="airplane-mode" />
-            <Button
-              variant="icon"
-              size={'icon'}
-              onClick={onShowChangeParserModal(record)}
-            >
-              <Wrench />
-            </Button>
-            <Button variant="icon" size={'icon'}>
-              <Pencil />
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="icon" size={'icon'}>
-                  <MoreHorizontal />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                <DropdownMenuItem
-                  onClick={() => navigator.clipboard.writeText(record.id)}
-                >
-                  Copy payment ID
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>View customer</DropdownMenuItem>
-                <DropdownMenuItem>View payment details</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </section>
+          <DatasetActionCell
+            record={record}
+            showRenameModal={showRenameModal}
+          ></DatasetActionCell>
         );
       },
     },

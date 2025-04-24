@@ -2,15 +2,10 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useCreateNextDocument,
   useNextWebCrawl,
-  useRunNextDocument,
-  useSaveNextDocumentName,
   useSetNextDocumentParser,
-  useUploadNextDocument,
 } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
-import { getUnSupportedFilesCount } from '@/utils/document-util';
-import { UploadFile } from 'antd';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
 
@@ -25,34 +20,6 @@ export const useNavigateToOtherPage = () => {
   const toChunk = useCallback((id: string) => {}, []);
 
   return { linkToUploadPage, toChunk };
-};
-
-export const useRenameDocument = (documentId: string) => {
-  const { saveName, loading } = useSaveNextDocumentName();
-
-  const {
-    visible: renameVisible,
-    hideModal: hideRenameModal,
-    showModal: showRenameModal,
-  } = useSetModalState();
-
-  const onRenameOk = useCallback(
-    async (name: string) => {
-      const ret = await saveName({ documentId, name });
-      if (ret === 0) {
-        hideRenameModal();
-      }
-    },
-    [hideRenameModal, saveName, documentId],
-  );
-
-  return {
-    renameLoading: loading,
-    onRenameOk,
-    renameVisible,
-    hideRenameModal,
-    showRenameModal,
-  };
 };
 
 export const useCreateEmptyDocument = () => {
@@ -134,46 +101,6 @@ export const useGetRowSelection = () => {
   return rowSelection;
 };
 
-export const useHandleUploadDocument = () => {
-  const {
-    visible: documentUploadVisible,
-    hideModal: hideDocumentUploadModal,
-    showModal: showDocumentUploadModal,
-  } = useSetModalState();
-  const { uploadDocument, loading } = useUploadNextDocument();
-
-  const onDocumentUploadOk = useCallback(
-    async (fileList: UploadFile[]): Promise<number | undefined> => {
-      if (fileList.length > 0) {
-        const ret: any = await uploadDocument(fileList);
-        if (typeof ret?.message !== 'string') {
-          return;
-        }
-        const count = getUnSupportedFilesCount(ret?.message);
-        /// 500 error code indicates that some file types are not supported
-        let code = ret?.code;
-        if (
-          ret?.code === 0 ||
-          (ret?.code === 500 && count !== fileList.length) // Some files were not uploaded successfully, but some were uploaded successfully.
-        ) {
-          code = 0;
-          hideDocumentUploadModal();
-        }
-        return code;
-      }
-    },
-    [uploadDocument, hideDocumentUploadModal],
-  );
-
-  return {
-    documentUploadLoading: loading,
-    onDocumentUploadOk,
-    documentUploadVisible,
-    hideDocumentUploadModal,
-    showDocumentUploadModal,
-  };
-};
-
 export const useHandleWebCrawl = () => {
   const {
     visible: webCrawlUploadVisible,
@@ -200,37 +127,5 @@ export const useHandleWebCrawl = () => {
     webCrawlUploadVisible,
     hideWebCrawlUploadModal,
     showWebCrawlUploadModal,
-  };
-};
-
-export const useHandleRunDocumentByIds = (id: string) => {
-  const { runDocumentByIds, loading } = useRunNextDocument();
-  const [currentId, setCurrentId] = useState<string>('');
-  const isLoading = loading && currentId !== '' && currentId === id;
-
-  const handleRunDocumentByIds = async (
-    documentId: string,
-    isRunning: boolean,
-    shouldDelete: boolean = false,
-  ) => {
-    if (isLoading) {
-      return;
-    }
-    setCurrentId(documentId);
-    try {
-      await runDocumentByIds({
-        documentIds: [documentId],
-        run: isRunning ? 2 : 1,
-        shouldDelete,
-      });
-      setCurrentId('');
-    } catch (error) {
-      setCurrentId('');
-    }
-  };
-
-  return {
-    handleRunDocumentByIds,
-    loading: isLoading,
   };
 };

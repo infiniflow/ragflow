@@ -1,15 +1,22 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { CardSkeleton } from '@/components/ui/skeleton';
-import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { formatDate } from '@/utils/date';
-import { ChevronRight, Trash2 } from 'lucide-react';
+import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
+import { DatasetCard } from '../datasets/dataset-card';
+import { useRenameDataset } from '../datasets/use-rename-dataset';
 
 export function Datasets() {
-  const { navigateToDatasetList, navigateToDataset } = useNavigatePage();
-  const { list, loading } = useFetchKnowledgeList();
+  const { navigateToDatasetList } = useNavigatePage();
+  const { kbs, loading } = useFetchNextKnowledgeListByPage();
+  const {
+    datasetRenameLoading,
+    initialDatasetName,
+    onDatasetRenameOk,
+    datasetRenameVisible,
+    hideDatasetRenameModal,
+    showDatasetRenameModal,
+  } = useRenameDataset();
 
   return (
     <section>
@@ -21,50 +28,12 @@ export function Datasets() {
           </div>
         ) : (
           <div className="flex gap-4 flex-1">
-            {list.slice(0, 3).map((dataset) => (
-              <Card
+            {kbs.slice(0, 4).map((dataset) => (
+              <DatasetCard
                 key={dataset.id}
-                className="bg-colors-background-inverse-weak flex-1 border-colors-outline-neutral-standard max-w-96"
-              >
-                <CardContent className="p-4">
-                  <div className="flex justify-between mb-4">
-                    {dataset.avatar ? (
-                      <div
-                        className="w-[70px] h-[70px] rounded-xl bg-cover"
-                        style={{ backgroundImage: `url(${dataset.avatar})` }}
-                      />
-                    ) : (
-                      <Avatar>
-                        <AvatarImage src="https://github.com/shadcn.png" />
-                        <AvatarFallback>CN</AvatarFallback>
-                      </Avatar>
-                    )}
-                    <Button variant="ghost" size="icon">
-                      <Trash2 />
-                    </Button>
-                  </div>
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <h3 className="text-lg font-semibold mb-2">
-                        {dataset.name}
-                      </h3>
-                      <div className="text-sm opacity-80">
-                        {dataset.doc_num} files
-                      </div>
-                      <p className="text-sm opacity-80">
-                        Created {formatDate(dataset.update_time)}
-                      </p>
-                    </div>
-                    <Button
-                      variant="icon"
-                      size="icon"
-                      onClick={navigateToDataset(dataset.id)}
-                    >
-                      <ChevronRight className="h-6 w-6" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                dataset={dataset}
+                showDatasetRenameModal={showDatasetRenameModal}
+              ></DatasetCard>
             ))}
           </div>
         )}
@@ -76,6 +45,14 @@ export function Datasets() {
           See all
         </Button>
       </div>
+      {datasetRenameVisible && (
+        <RenameDialog
+          hideModal={hideDatasetRenameModal}
+          onOk={onDatasetRenameOk}
+          initialName={initialDatasetName}
+          loading={datasetRenameLoading}
+        ></RenameDialog>
+      )}
     </section>
   );
 }
