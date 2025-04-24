@@ -2,7 +2,6 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useCreateNextDocument,
   useNextWebCrawl,
-  useSaveNextDocumentName,
   useSetNextDocumentParser,
 } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
@@ -21,34 +20,6 @@ export const useNavigateToOtherPage = () => {
   const toChunk = useCallback((id: string) => {}, []);
 
   return { linkToUploadPage, toChunk };
-};
-
-export const useRenameDocument = (documentId: string) => {
-  const { saveName, loading } = useSaveNextDocumentName();
-
-  const {
-    visible: renameVisible,
-    hideModal: hideRenameModal,
-    showModal: showRenameModal,
-  } = useSetModalState();
-
-  const onRenameOk = useCallback(
-    async (name: string) => {
-      const ret = await saveName({ documentId, name });
-      if (ret === 0) {
-        hideRenameModal();
-      }
-    },
-    [hideRenameModal, saveName, documentId],
-  );
-
-  return {
-    renameLoading: loading,
-    onRenameOk,
-    renameVisible,
-    hideRenameModal,
-    showRenameModal,
-  };
 };
 
 export const useCreateEmptyDocument = () => {
