@@ -400,7 +400,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         answer = ""
         for ans in chat_mdl.chat_streamly(prompt + prompt4citation, msg[1:], gen_conf):
             if thought:
-                ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
+                ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             answer = ans
             delta_ans = ans[len(last_ans) :]
             if num_tokens_from_string(delta_ans) < 16:
@@ -436,7 +436,7 @@ Please write the SQL, only SQL, without any other explanations or text.
     def get_table():
         nonlocal sys_prompt, user_prompt, question, tried_times
         sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
-        sql = re.sub(r"<think>.*</think>", "", sql, flags=re.DOTALL)
+        sql = re.sub(r"^.*</think>", "", sql, flags=re.DOTALL)
         logging.debug(f"{question} ==> {user_prompt} get SQL: {sql}")
         sql = re.sub(r"[\r\n]+", " ", sql.lower())
         sql = re.sub(r".*select ", "select ", sql.lower())
