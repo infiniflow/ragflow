@@ -132,6 +132,12 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `MACOS`  
   Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
 
+### User registration
+
+- `REGISTER_ENABLED`
+  - `1`: (Default) Enable user registration.
+  - `0`: Disable user registration.
+
 ## Service configuration
 
 [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
