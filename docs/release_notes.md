@@ -20,7 +20,7 @@ Released on April 23, 2025.
 - Team collaboration: Agents can be shared with team members.
 - Agent version control: all updates are continuously logged and can be rolled back to a previous version via export.
 
-![Export Agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/export_agent_as_json.jpg)
+![export_agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/export_agent_as_json.jpg)
 
 ### Improvements
 
@@ -33,6 +33,7 @@ Released on April 23, 2025.
 
 - [Set page rank](./guides/dataset/set_page_rank.md)
 - [Enable RAPTOR](./guides/dataset/enable_raptor.md)
+- [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
 - [RAGFlow MCP server overview](./develop/mcp.md)
 
 ## v0.17.2
