@@ -81,7 +81,7 @@ services:
       - --mcp-base-url=http://127.0.0.1:9380
       - --mcp-script-path=/ragflow/mcp/server/server.py
       - --mcp-mode=self-host # `self-host` or `host`
-      - --mcp--host-api-key="ragflow-xxxxxxx" # only need to privide when mode is `self-host`
+      - --mcp-host-api-key="ragflow-xxxxxxx" # only need to privide when mode is `self-host`
 ```
 
 Then launch it normally `docker compose -f docker-compose.yml`.
