@@ -296,7 +296,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 1. Install uv, or skip this step if it is already installed:
 
    ```bash
-   pipx install uv
+   pipx install uv pre-commit
    ```
 
 2. Clone the source code and install Python dependencies:
@@ -305,6 +305,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   pre-commit install
    ```
 
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
