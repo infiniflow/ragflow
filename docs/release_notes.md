@@ -18,7 +18,7 @@ Released on April 23, 2025.
 - Agent version control: all updates are continuously logged and can be rolled back to a previous version via export.
 - Team collaboration: Agents can be shared with team members.
 - OpenAI-compatible APIs: Agents can be called via OpenAI-compatible APIs.
-- User registration control: administrators can enable or disable user registration through an environment variable.
+- User registration control: administrators can enable or disable user registration through an environment variable. See `REGISTER_ENABLED` in **/docker/.env**.
 
 ### Improvements
 
@@ -31,6 +31,7 @@ Released on April 23, 2025.
 
 - [Set page rank](./guides/dataset/set_page_rank.md)
 - [Enable RAPTOR](./guides/dataset/enable_raptor.md)
+- [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
 - [RAGFlow MCP server overview](./develop/mcp.md)
 
 ## v0.17.2
