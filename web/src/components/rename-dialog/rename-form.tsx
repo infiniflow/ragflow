@@ -22,7 +22,7 @@ export function RenameForm({
   initialName,
   hideModal,
   onOk,
-}: IModalProps<any> & { initialName: string }) {
+}: IModalProps<any> & { initialName?: string }) {
   const { t } = useTranslation();
   const FormSchema = z.object({
     name: z
@@ -46,7 +46,9 @@ export function RenameForm({
   }
 
   useEffect(() => {
-    form.setValue('name', initialName);
+    if (initialName) {
+      form.setValue('name', initialName);
+    }
   }, [form, initialName]);
 
   return (

@@ -18,6 +18,8 @@ export const enum DocumentApiAction {
   FetchDocumentList = 'fetchDocumentList',
   UpdateDocumentStatus = 'updateDocumentStatus',
   RunDocumentByIds = 'runDocumentByIds',
+  RemoveDocument = 'removeDocument',
+  SaveDocumentName = 'saveDocumentName',
 }
 
 export const useUploadNextDocument = () => {
@@ -188,4 +190,60 @@ export const useRunDocument = () => {
   });
 
   return { runDocumentByIds: mutateAsync, loading, data };
+};
+
+export const useRemoveDocument = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.RemoveDocument],
+    mutationFn: async (documentIds: string | string[]) => {
+      const { data } = await kbService.document_rm({ doc_id: documentIds });
+      if (data.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentList],
+        });
+      }
+      return data.code;
+    },
+  });
+
+  return { data, loading, removeDocument: mutateAsync };
+};
+
+export const useSaveDocumentName = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.SaveDocumentName],
+    mutationFn: async ({
+      name,
+      documentId,
+    }: {
+      name: string;
+      documentId: string;
+    }) => {
+      const { data } = await kbService.document_rename({
+        doc_id: documentId,
+        name: name,
+      });
+      if (data.code === 0) {
+        message.success(i18n.t('message.renamed'));
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentList],
+        });
+      }
+      return data.code;
+    },
+  });
+
+  return { loading, saveName: mutateAsync, data };
 };

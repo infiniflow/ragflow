@@ -1,14 +1,6 @@
 import SvgIcon from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
@@ -22,20 +14,25 @@ import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { getExtension } from '@/utils/document-util';
 import { ColumnDef } from '@tanstack/table-core';
-import { ArrowUpDown, MoreHorizontal, Pencil, Wrench } from 'lucide-react';
+import { ArrowUpDown } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { DatasetActionCell } from './dataset-action-cell';
 import { useChangeDocumentParser } from './hooks';
 import { ParsingStatusCell } from './parsing-status-cell';
+import { UseRenameDocumentShowType } from './use-rename-document';
 
 type UseDatasetTableColumnsType = Pick<
   ReturnType<typeof useChangeDocumentParser>,
   'showChangeParserModal'
-> & { setCurrentRecord: (record: IDocumentInfo) => void };
+> & {
+  setCurrentRecord: (record: IDocumentInfo) => void;
+} & UseRenameDocumentShowType;
 
 export function useDatasetTableColumns({
   showChangeParserModal,
   setCurrentRecord,
+  showRenameModal,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
@@ -182,36 +179,10 @@ export function useDatasetTableColumns({
         const record = row.original;
 
         return (
-          <section className="flex gap-4 items-center">
-            <Button
-              variant="icon"
-              size={'icon'}
-              onClick={onShowChangeParserModal(record)}
-            >
-              <Wrench />
-            </Button>
-            <Button variant="icon" size={'icon'}>
-              <Pencil />
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="icon" size={'icon'}>
-                  <MoreHorizontal />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                <DropdownMenuItem
-                  onClick={() => navigator.clipboard.writeText(record.id)}
-                >
-                  Copy payment ID
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>View customer</DropdownMenuItem>
-                <DropdownMenuItem>View payment details</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </section>
+          <DatasetActionCell
+            record={record}
+            showRenameModal={showRenameModal}
+          ></DatasetActionCell>
         );
       },
     },
