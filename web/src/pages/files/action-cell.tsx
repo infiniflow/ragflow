@@ -17,12 +17,12 @@ import {
   UseHandleConnectToKnowledgeReturnType,
   UseRenameCurrentFileReturnType,
 } from './hooks';
-import { UseMoveDocumentReturnType } from './use-move-file';
+import { UseMoveDocumentShowType } from './use-move-file';
 
 type IProps = Pick<CellContext<IFile, unknown>, 'row'> &
   Pick<UseHandleConnectToKnowledgeReturnType, 'showConnectToKnowledgeModal'> &
   Pick<UseRenameCurrentFileReturnType, 'showFileRenameModal'> &
-  Pick<UseMoveDocumentReturnType, 'showMoveFileModal'>;
+  UseMoveDocumentShowType;
 
 export function ActionCell({
   row,
