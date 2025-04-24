@@ -14,6 +14,7 @@ import {
 import * as React from 'react';
 
 import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
+import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -23,13 +24,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useFetchNextDocumentList } from '@/hooks/document-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
+import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
 import { useChangeDocumentParser } from './hooks';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
+import { useRenameDocument } from './use-rename-document';
 
 export function DatasetTable() {
   const {
@@ -38,7 +40,7 @@ export function DatasetTable() {
     pagination,
     // handleInputChange,
     setPagination,
-  } = useFetchNextDocumentList();
+  } = useFetchDocumentList();
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
@@ -57,9 +59,19 @@ export function DatasetTable() {
     showChangeParserModal,
   } = useChangeDocumentParser(currentRecord.id);
 
+  const {
+    renameLoading,
+    onRenameOk,
+    renameVisible,
+    hideRenameModal,
+    showRenameModal,
+    initialName,
+  } = useRenameDocument();
+
   const columns = useDatasetTableColumns({
     showChangeParserModal,
     setCurrentRecord: setRecord,
+    showRenameModal,
   });
 
   const currentPagination = useMemo(() => {
@@ -195,6 +207,16 @@ export function DatasetTable() {
           hideModal={hideChangeParserModal}
           loading={changeParserLoading}
         ></ChunkMethodDialog>
+      )}
+
+      {renameVisible && (
+        <RenameDialog
+          visible={renameVisible}
+          onOk={onRenameOk}
+          loading={renameLoading}
+          hideModal={hideRenameModal}
+          initialName={initialName}
+        ></RenameDialog>
       )}
     </div>
   );

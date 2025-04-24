@@ -2,8 +2,6 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useCreateNextDocument,
   useNextWebCrawl,
-  useRunNextDocument,
-  useSaveNextDocumentName,
   useSetNextDocumentParser,
 } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
@@ -22,34 +20,6 @@ export const useNavigateToOtherPage = () => {
   const toChunk = useCallback((id: string) => {}, []);
 
   return { linkToUploadPage, toChunk };
-};
-
-export const useRenameDocument = (documentId: string) => {
-  const { saveName, loading } = useSaveNextDocumentName();
-
-  const {
-    visible: renameVisible,
-    hideModal: hideRenameModal,
-    showModal: showRenameModal,
-  } = useSetModalState();
-
-  const onRenameOk = useCallback(
-    async (name: string) => {
-      const ret = await saveName({ documentId, name });
-      if (ret === 0) {
-        hideRenameModal();
-      }
-    },
-    [hideRenameModal, saveName, documentId],
-  );
-
-  return {
-    renameLoading: loading,
-    onRenameOk,
-    renameVisible,
-    hideRenameModal,
-    showRenameModal,
-  };
 };
 
 export const useCreateEmptyDocument = () => {
@@ -157,37 +127,5 @@ export const useHandleWebCrawl = () => {
     webCrawlUploadVisible,
     hideWebCrawlUploadModal,
     showWebCrawlUploadModal,
-  };
-};
-
-export const useHandleRunDocumentByIds = (id: string) => {
-  const { runDocumentByIds, loading } = useRunNextDocument();
-  const [currentId, setCurrentId] = useState<string>('');
-  const isLoading = loading && currentId !== '' && currentId === id;
-
-  const handleRunDocumentByIds = async (
-    documentId: string,
-    isRunning: boolean,
-    shouldDelete: boolean = false,
-  ) => {
-    if (isLoading) {
-      return;
-    }
-    setCurrentId(documentId);
-    try {
-      await runDocumentByIds({
-        documentIds: [documentId],
-        run: isRunning ? 2 : 1,
-        shouldDelete,
-      });
-      setCurrentId('');
-    } catch (error) {
-      setCurrentId('');
-    }
-  };
-
-  return {
-    handleRunDocumentByIds,
-    loading: isLoading,
   };
 };

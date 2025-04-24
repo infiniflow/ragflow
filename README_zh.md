@@ -270,7 +270,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
 1. 安装 uv。如已经安装，可跳过本步骤：
 
    ```bash
-   pipx install uv
+   pipx install uv pre-commit
    export UV_INDEX=https://mirrors.aliyun.com/pypi/simple
    ```
 
@@ -280,6 +280,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   pre-commit install
    ```
 
 3. 通过 Docker Compose 启动依赖的服务（MinIO, Elasticsearch, Redis, and MySQL）：
