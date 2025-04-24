@@ -2,7 +2,6 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useCreateNextDocument,
   useNextWebCrawl,
-  useRunNextDocument,
   useSaveNextDocumentName,
   useSetNextDocumentParser,
 } from '@/hooks/document-hooks';
@@ -157,37 +156,5 @@ export const useHandleWebCrawl = () => {
     webCrawlUploadVisible,
     hideWebCrawlUploadModal,
     showWebCrawlUploadModal,
-  };
-};
-
-export const useHandleRunDocumentByIds = (id: string) => {
-  const { runDocumentByIds, loading } = useRunNextDocument();
-  const [currentId, setCurrentId] = useState<string>('');
-  const isLoading = loading && currentId !== '' && currentId === id;
-
-  const handleRunDocumentByIds = async (
-    documentId: string,
-    isRunning: boolean,
-    shouldDelete: boolean = false,
-  ) => {
-    if (isLoading) {
-      return;
-    }
-    setCurrentId(documentId);
-    try {
-      await runDocumentByIds({
-        documentIds: [documentId],
-        run: isRunning ? 2 : 1,
-        shouldDelete,
-      });
-      setCurrentId('');
-    } catch (error) {
-      setCurrentId('');
-    }
-  };
-
-  return {
-    handleRunDocumentByIds,
-    loading: isLoading,
   };
 };

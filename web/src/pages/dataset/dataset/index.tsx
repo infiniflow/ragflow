@@ -19,7 +19,7 @@ export default function Dataset() {
 
   return (
     <section className="p-8">
-      <ListFilterBar title="Files">
+      <ListFilterBar title="Dataset">
         <Button
           variant={'tertiary'}
           size={'sm'}
