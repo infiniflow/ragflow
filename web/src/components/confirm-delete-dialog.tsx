@@ -23,6 +23,7 @@ export function ConfirmDeleteDialog({
   children,
   title,
   onOk,
+  onCancel,
   hidden = false,
 }: IProps & PropsWithChildren) {
   const { t } = useTranslation();
@@ -48,7 +49,9 @@ export function ConfirmDeleteDialog({
           </AlertDialogDescription> */}
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+          <AlertDialogCancel onClick={onCancel}>
+            {t('common.cancel')}
+          </AlertDialogCancel>
           <AlertDialogAction
             className="bg-colors-background-functional-solid-danger text--colors-text-neutral-strong"
             onClick={onOk}
