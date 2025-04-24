@@ -17,6 +17,10 @@ es:
   hosts: 'http://localhost:1200'
   username: 'elastic'
   password: 'infini_rag_flow'
+os:
+  hosts: 'http://localhost:1201'
+  username: 'admin'
+  password: 'infini_rag_flow_OS_01'
 infinity:
   uri: 'localhost:23817'
   db_name: 'default_db'
