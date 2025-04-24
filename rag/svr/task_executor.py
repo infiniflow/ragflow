@@ -674,6 +674,8 @@ async def report_status():
                         REDIS_CONN.delete(consumer_name)
         except Exception:
             logging.exception("report_status got exception")
+        finally:
+            redis_lock.release()
         await trio.sleep(30)
 
 
@@ -702,6 +704,8 @@ def recover_pending_tasks():
             stop_event.wait(60)
         except Exception:
             logging.warning("recover_pending_tasks got exception")
+        finally:
+            redis_lock.release()
 
 
 async def main():
