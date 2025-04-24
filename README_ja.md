@@ -258,7 +258,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 1. uv をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
 
    ```bash
-   pipx install uv
+   pipx install uv pre-commit
    ```
 
 2. ソースコードをクローンし、Python の依存関係をインストールする:
@@ -267,6 +267,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   pre-commit install
    ```
 
 3. Docker Compose を使用して依存サービス（MinIO、Elasticsearch、Redis、MySQL）を起動する:
