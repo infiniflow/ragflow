@@ -222,11 +222,12 @@ export const RAGFlowSelect = forwardRef<
     allowClear,
     placeholder,
     contentProps = {},
+    defaultValue,
   },
   ref,
 ) {
   const [key, setKey] = React.useState(+new Date());
-  const [value, setValue] = React.useState<string | undefined>(undefined);
+  const [value, setValue] = React.useState<string | undefined>(defaultValue);
 
   const FormControlWidget = FormControlComponent
     ? FormControlComponent
