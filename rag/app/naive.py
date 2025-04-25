@@ -323,7 +323,7 @@ class Markdown(MarkdownParser):
         for url in image_urls:
             try:
                 url = self.ehance_image_url(url)
-                response = requests.get(url, stream=True)
+                response = requests.get(url, stream=True, timeout=30)
                 if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
                     img = Image.open(BytesIO(response.content)).convert('RGB')
                     images.append(img)
