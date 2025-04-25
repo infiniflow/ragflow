@@ -101,7 +101,7 @@ request.interceptors.response.use(async (response: Response, options) => {
     message.error(RetcodeMessage[response?.status as ResultCode]);
     return {
       ...response,
-      data: { data: { code: 1999 } }
+      data: { code: 1999 }
     };
   }
 
