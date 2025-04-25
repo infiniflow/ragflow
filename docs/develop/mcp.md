@@ -59,13 +59,13 @@ For testing purposes, there is an [MCP client example](#example_mcp_client) prov
 
 Here are three augments required, the first two,`host` and `port`, are self-explained. The`base_url` is the address of the ready-to-serve RAGFlow server to actually perform the task.
 
-### Launching from Docker
+### Launching from Docker(new install)
 
 Building a standalone MCP server image is straightforward and easy, so we just proposed a way to launch it with RAGFlow server here.
 
 #### Alongside RAGFlow
 
-As MCP server is an extra and optional component of RAGFlow server, we consume that not everybody going to use it. Thus, it is disable by default.
+1.As MCP server is an extra and optional component of RAGFlow server, we consume that not everybody going to use it. Thus, it is disable by default.
 To enable it, simply find `docker/docker-compose.yml` to uncomment `services.ragflow.command` section.
 
 ```yaml
@@ -81,11 +81,40 @@ services:
       - --mcp-base-url=http://127.0.0.1:9380
       - --mcp-script-path=/ragflow/mcp/server/server.py
       - --mcp-mode=self-host # `self-host` or `host`
-      - --mcp-host-api-key="ragflow-xxxxxxx" # only need to privide when mode is `self-host`
-```
+      - --mcp-host-api-key=ragflow-xxxxxxx # only need to privide when mode is `self-host`& !!! do not add "" or it says:"api-key is wrong"!!!
 
-Then launch it normally `docker compose -f docker-compose.yml`.
+2.docker compose -f docker-compose.yml up -d
 
+### Launching from Docker(upgrade from old version)
+
+Building a standalone MCP server image is straightforward and easy, so we just proposed a way to launch it with RAGFlow server here.
+
+#### Alongside RAGFlow
+
+1.As MCP server is an extra and optional component of RAGFlow server, we consume that not everybody going to use it. Thus, it is disable by default.
+To enable it, simply find `docker/docker-compose.yml` to uncomment `services.ragflow.command` section.
+
+```yaml
+services:
+  ragflow:
+    ...
+    image: ${RAGFLOW_IMAGE}
+    # example to setup MCP server
+    command:
+      - --enable-mcpserver
+      - --mcp-host=0.0.0.0
+      - --mcp-port=9382
+      - --mcp-base-url=http://127.0.0.1:9380
+      - --mcp-script-path=/ragflow/mcp/server/server.py
+      - --mcp-mode=self-host # `self-host` or `host`
+      - --mcp-host-api-key=ragflow-xxxxxxx # only need to privide when mode is `self-host`& !!! do not add "" or it says:"api-key is wrong"!!!
+2.cp mcp directory to local
+3.cp docker/docker-compose.yml to local
+4.cp docker/entrypoint.sh to local
+5.docker compose -f docker-compose.yml up -d
+
+### check mcp server status
+docker logs ragflow-server(if see mcp server ,it means all ok!)
 ```bash
 ragflow-server  | Starting MCP Server on 0.0.0.0:9382 with base URL http://127.0.0.1:9380...
 ragflow-server  | Starting 1 task executor(s) on host 'dd0b5e07e76f'...
