@@ -145,7 +145,7 @@ function task_exe() {
 
 function start_mcp_server() {
     echo "Starting MCP Server on ${MCP_HOST}:${MCP_PORT} with base URL ${MCP_BASE_URL}..."
-    "$PY" "${MCP_SCRIPT_PATH}" \
+    "$PY" /ragflow/mcp/server/wrapper.py "${MCP_SCRIPT_PATH}" \
         --host="${MCP_HOST}" \
         --port="${MCP_PORT}" \
         --base_url="${MCP_BASE_URL}" \
