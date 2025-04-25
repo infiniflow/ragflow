@@ -50,6 +50,12 @@ const OllamaModal = ({
 
   const { t } = useTranslate('setting');
 
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
+  };
+
   const handleOk = async () => {
     const values = await form.validateFields();
     const modelType =
@@ -146,21 +152,27 @@ const OllamaModal = ({
           name="llm_name"
           rules={[{ required: true, message: t('modelNameMessage') }]}
         >
-          <Input placeholder={t('modelNameMessage')} />
+          <Input
+            placeholder={t('modelNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addLlmBaseUrl')}
           name="api_base"
           rules={[{ required: true, message: t('baseUrlNameMessage') }]}
         >
-          <Input placeholder={t('baseUrlNameMessage')} />
+          <Input
+            placeholder={t('baseUrlNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('apiKey')}
           name="api_key"
           rules={[{ required: false, message: t('apiKeyMessage') }]}
         >
-          <Input placeholder={t('apiKeyMessage')} />
+          <Input placeholder={t('apiKeyMessage')} onKeyDown={handleKeyDown} />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('maxTokens')}
@@ -184,6 +196,7 @@ const OllamaModal = ({
           <InputNumber
             placeholder={t('maxTokensTip')}
             style={{ width: '100%' }}
+            onKeyDown={handleKeyDown}
           />
         </Form.Item>
 
