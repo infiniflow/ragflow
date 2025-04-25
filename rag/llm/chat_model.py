@@ -565,7 +565,7 @@ class QWenChat(Base):
 
         dashscope.api_key = key
         self.model_name = model_name
-        if self.is_reasoning_model(self.model_name):
+        if self.is_reasoning_model(self.model_name) or self.model_name in ["qwen-vl-plus", "qwen-vl-plus-latest", "qwen-vl-max", "qwen-vl-max-latest"]:
             super().__init__(key, model_name, "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict) -> tuple[str, int]:
@@ -643,7 +643,7 @@ class QWenChat(Base):
     def chat(self, system, history, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        if self.is_reasoning_model(self.model_name):
+        if self.is_reasoning_model(self.model_name) or self.model_name in ["qwen-vl-plus", "qwen-vl-plus-latest", "qwen-vl-max", "qwen-vl-max-latest"]:
             return super().chat(system, history, gen_conf)
 
         stream_flag = str(os.environ.get("QWEN_CHAT_BY_STREAM", "true")).lower() == "true"
@@ -811,7 +811,7 @@ class QWenChat(Base):
     def chat_streamly(self, system, history, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        if self.is_reasoning_model(self.model_name):
+        if self.is_reasoning_model(self.model_name) or self.model_name in ["qwen-vl-plus", "qwen-vl-plus-latest", "qwen-vl-max", "qwen-vl-max-latest"]:
             return super().chat_streamly(system, history, gen_conf)
 
         return self._chat_streamly(system, history, gen_conf)
