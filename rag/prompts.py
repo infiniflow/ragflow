@@ -355,15 +355,22 @@ Output:
         raise Exception(kwd)
 
     try:
-        return json_repair.loads(kwd)
+        obj = json_repair.loads(kwd)
     except json_repair.JSONDecodeError:
         try:
             result = kwd.replace(prompt[:-1], "").replace("user", "").replace("model", "").strip()
             result = "{" + result.split("{")[1].split("}")[0] + "}"
-            return json_repair.loads(result)
+            obj = json_repair.loads(result)
         except Exception as e:
             logging.exception(f"JSON parsing error: {result} -> {e}")
             raise e
+    res = {}
+    for k, v in obj.items():
+        try:
+            res[str(k)] = int(v)
+        except Exception:
+            pass
+    return res
 
 
 def vision_llm_describe_prompt(page=None) -> str:
