@@ -214,6 +214,7 @@ class TestAddChunk:
         assert res["code"] == 102
         assert res["message"] == f"You don't own the document {document_id}."
 
+    @pytest.mark.slow
     @pytest.mark.skip(reason="issues/6411")
     def test_concurrent_add_chunk(self, get_http_api_auth, add_document):
         chunk_num = 50

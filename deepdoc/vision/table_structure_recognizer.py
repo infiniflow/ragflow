@@ -133,7 +133,7 @@ class TableStructureRecognizer(Recognizer):
         return "Ot"
 
     @staticmethod
-    def construct_table(boxes, is_english=False, html=False):
+    def construct_table(boxes, is_english=False, html=True, **kwargs):
         cap = ""
         i = 0
         while i < len(boxes):

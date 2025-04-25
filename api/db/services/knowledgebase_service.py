@@ -150,6 +150,7 @@ class KnowledgebaseService(CommonService):
             cls.model.name,
             cls.model.language,
             cls.model.description,
+            cls.model.tenant_id,
             cls.model.permission,
             cls.model.doc_num,
             cls.model.token_num,
@@ -184,7 +185,8 @@ class KnowledgebaseService(CommonService):
 
         count = kbs.count()
 
-        kbs = kbs.paginate(page_number, items_per_page)
+        if page_number and items_per_page:
+            kbs = kbs.paginate(page_number, items_per_page)
 
         return list(kbs.dicts()), count
 
@@ -394,3 +396,30 @@ class KnowledgebaseService(CommonService):
         data["doc_num"] = cls.model.doc_num + 1
         num = cls.model.update(data).where(cls.model.id == kb_id).execute()
         return num
+
+    @classmethod
+    @DB.connection_context()
+    def update_document_number_in_init(cls, kb_id, doc_num):
+        """
+        Only use this function when init system
+        """
+        ok, kb = cls.get_by_id(kb_id)
+        if not ok:
+            return
+        kb.doc_num = doc_num
+
+        dirty_fields = kb.dirty_fields
+        if cls.model._meta.combined.get("update_time") in dirty_fields:
+            dirty_fields.remove(cls.model._meta.combined["update_time"])
+
+        if cls.model._meta.combined.get("update_date") in dirty_fields:
+            dirty_fields.remove(cls.model._meta.combined["update_date"])
+
+        try:
+            kb.save(only=dirty_fields)
+        except ValueError as e:
+            if str(e) == "no data to save!":
+                pass # that's OK
+            else:
+                raise e
+

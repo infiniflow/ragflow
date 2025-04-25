@@ -195,6 +195,7 @@ const KnowledgeFile = () => {
         showDocumentUploadModal={showDocumentUploadModal}
         searchString={searchString}
         handleInputChange={handleInputChange}
+        documents={documents}
       ></DocumentToolbar>
       <Table
         rowKey="id"

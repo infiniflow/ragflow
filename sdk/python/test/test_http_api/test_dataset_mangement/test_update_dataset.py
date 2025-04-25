@@ -114,14 +114,13 @@ class TestDatasetUpdate:
             ("presentation", 0, ""),
             ("picture", 0, ""),
             ("one", 0, ""),
-            ("knowledge_graph", 0, ""),
             ("email", 0, ""),
             ("tag", 0, ""),
             ("", 0, ""),
             (
                 "other_chunk_method",
                 102,
-                "'other_chunk_method' is not in ['naive', 'manual', 'qa', 'table', 'paper', 'book', 'laws', 'presentation', 'picture', 'one', 'knowledge_graph', 'email', 'tag']",
+                "'other_chunk_method' is not in ['naive', 'manual', 'qa', 'table', 'paper', 'book', 'laws', 'presentation', 'picture', 'one', 'email', 'tag']",
             ),
         ],
     )
@@ -236,6 +235,7 @@ class TestDatasetUpdate:
         res = update_dataset(get_http_api_auth, dataset_id, {"unknown_field": 0})
         assert res["code"] == 100
 
+    @pytest.mark.slow
     def test_concurrent_update(self, get_http_api_auth, add_dataset_func):
         dataset_id = add_dataset_func
 

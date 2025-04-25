@@ -35,6 +35,44 @@ services:
       - ragflow
     restart: on-failure
 
+  opensearch01:
+    container_name: ragflow-opensearch-01
+    profiles:
+      - opensearch
+    image: hub.icert.top/opensearchproject/opensearch:2.19.1
+    volumes:
+      - osdata01:/usr/share/opensearch/data
+    ports:
+      - ${OS_PORT}:9201
+    env_file: .env
+    environment:
+      - node.name=opensearch01
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD}
+      - bootstrap.memory_lock=false
+      - discovery.type=single-node
+      - plugins.security.disabled=false
+      - plugins.security.ssl.http.enabled=false
+      - plugins.security.ssl.transport.enabled=true
+      - cluster.routing.allocation.disk.watermark.low=5gb
+      - cluster.routing.allocation.disk.watermark.high=3gb
+      - cluster.routing.allocation.disk.watermark.flood_stage=2gb
+      - TZ=${TIMEZONE}
+      - http.port=9201
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:9201"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - ragflow
+    restart: on-failure
+
   infinity:
     container_name: ragflow-infinity
     profiles:
@@ -132,6 +170,8 @@ services:
 
 volumes:
   esdata01:
+    driver: local
+  osdata01:
     driver: local
   infinity_data:
     driver: local

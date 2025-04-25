@@ -30,10 +30,10 @@ from rag.settings import MINIO
 
 class UserService(CommonService):
     """Service class for managing user-related database operations.
-    
+
     This class extends CommonService to provide specialized functionality for user management,
     including authentication, user creation, updates, and deletions.
-    
+
     Attributes:
         model: The User model class for database operations.
     """
@@ -43,10 +43,10 @@ class UserService(CommonService):
     @DB.connection_context()
     def filter_by_id(cls, user_id):
         """Retrieve a user by their ID.
-        
+
         Args:
             user_id: The unique identifier of the user.
-            
+
         Returns:
             User object if found, None otherwise.
         """
@@ -60,11 +60,11 @@ class UserService(CommonService):
     @DB.connection_context()
     def query_user(cls, email, password):
         """Authenticate a user with email and password.
-        
+
         Args:
             email: User's email address.
             password: User's password in plain text.
-            
+
         Returns:
             User object if authentication successful, None otherwise.
         """
@@ -111,10 +111,10 @@ class UserService(CommonService):
 
 class TenantService(CommonService):
     """Service class for managing tenant-related database operations.
-    
+
     This class extends CommonService to provide functionality for tenant management,
     including tenant information retrieval and credit management.
-    
+
     Attributes:
         model: The Tenant model class for database operations.
     """
@@ -170,14 +170,23 @@ class TenantService(CommonService):
 
 class UserTenantService(CommonService):
     """Service class for managing user-tenant relationship operations.
-    
+
     This class extends CommonService to handle the many-to-many relationship
     between users and tenants, managing user roles and tenant memberships.
-    
+
     Attributes:
         model: The UserTenant model class for database operations.
     """
     model = UserTenant
+
+    @classmethod
+    @DB.connection_context()
+    def filter_by_id(cls, user_tenant_id):
+        try:
+            user_tenant = cls.model.select().where((cls.model.id == user_tenant_id) & (cls.model.status == StatusEnum.VALID.value)).get()
+            return user_tenant
+        except peewee.DoesNotExist:
+            return None
 
     @classmethod
     @DB.connection_context()
@@ -191,6 +200,7 @@ class UserTenantService(CommonService):
     @DB.connection_context()
     def get_by_tenant_id(cls, tenant_id):
         fields = [
+            cls.model.id,
             cls.model.user_id,
             cls.model.status,
             cls.model.role,
@@ -222,3 +232,21 @@ class UserTenantService(CommonService):
         return list(cls.model.select(*fields)
                     .join(User, on=((cls.model.tenant_id == User.id) & (UserTenant.user_id == user_id) & (UserTenant.status == StatusEnum.VALID.value)))
                     .where(cls.model.status == StatusEnum.VALID.value).dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def get_num_members(cls, user_id: str):
+        cnt_members = cls.model.select(peewee.fn.COUNT(cls.model.id)).where(cls.model.tenant_id == user_id).scalar()
+        return cnt_members
+
+    @classmethod
+    @DB.connection_context()
+    def filter_by_tenant_and_user_id(cls, tenant_id, user_id):
+        try:
+            user_tenant = cls.model.select().where(
+                (cls.model.tenant_id == tenant_id) & (cls.model.status == StatusEnum.VALID.value) &
+                (cls.model.user_id == user_id)
+            ).first()
+            return user_tenant
+        except peewee.DoesNotExist:
+            return None

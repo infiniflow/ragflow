@@ -44,7 +44,10 @@ class Docx(DocxParser):
         if not img:
             return None
         img = img[0]
-        embed = img.xpath('.//a:blip/@r:embed')[0]
+        embed = img.xpath('.//a:blip/@r:embed')
+        if not embed:
+            return None
+        embed = embed[0]
         related_part = document.part.related_parts[embed]
         try:
             image_blob = related_part.image.blob

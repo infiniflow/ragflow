@@ -57,14 +57,14 @@ async def run_graphrag(
 
     subgraph = await generate_subgraph(
         LightKGExt
-        if row["parser_config"]["graphrag"]["method"] != "general"
+        if row["kb_parser_config"]["graphrag"]["method"] != "general"
         else GeneralKGExt,
         tenant_id,
         kb_id,
         doc_id,
         chunks,
         language,
-        row["parser_config"]["graphrag"]["entity_types"],
+        row["kb_parser_config"]["graphrag"]["entity_types"],
         chat_model,
         embedding_model,
         callback,
@@ -277,7 +277,7 @@ async def extract_community(
     for stru, rep in zip(community_structure, community_reports):
         obj = {
             "report": rep,
-            "evidences": "\n".join([f["explanation"] for f in stru["findings"]]),
+            "evidences": "\n".join([f.get("explanation", "") for f in stru["findings"]]),
         }
         chunk = {
             "id": get_uuid(),

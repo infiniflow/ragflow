@@ -27,7 +27,7 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
         name={['prompt']}
         label={t('systemPrompt')}
         initialValue={t('promptText')}
-        tooltip={t('promptTip', { keyPrefix: 'knowledgeConfiguration' })}
+        tooltip={t('promptTip')}
         rules={[
           {
             required: true,

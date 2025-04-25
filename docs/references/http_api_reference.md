@@ -172,6 +172,150 @@ Failure:
   "message": "The last content of this conversation is not from user."
 }
 ```
+---
+### Create agent completion
+
+**POST** `/api/v1/agents_openai/{agent_id}/chat/completions`
+
+Creates a model response for a given chat conversation.
+
+This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/agents_openai/{agent_id}/chat/completions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"model"`: `string`
+  - `"messages"`: `object list`
+  - `"stream"`: `boolean`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents_openai/{agent_id}/chat/completions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+        "model": "model",
+        "messages": [{"role": "user", "content": "Say this is a test!"}],
+        "stream": true
+      }'
+```
+
+##### Request Parameters
+
+- `model` (*Body parameter*) `string`, *Required*
+  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+
+- `messages` (*Body parameter*) `list[object]`, *Required*
+  A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
+
+- `stream` (*Body parameter*) `boolean`
+  Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+#### Response
+
+Stream:
+
+```json
+{
+    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "choices": [
+        {
+            "delta": {
+                "content": "This is a test. If you have any specific questions or need information, feel",
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            },
+            "finish_reason": null,
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "created": 1740543996,
+    "model": "model",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "",
+    "usage": null
+}
+// omit duplicated information
+{"choices":[{"delta":{"content":" free to ask, and I will do my best to provide an answer based on","role":"assistant"}}]}
+{"choices":[{"delta":{"content":" the knowledge I have. If your question is unrelated to the provided knowledge base,","role":"assistant"}}]}
+{"choices":[{"delta":{"content":" I will let you know.","role":"assistant"}}]}
+// the last chunk
+{
+    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "choices": [
+        {
+            "delta": {
+                "content": null,
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            },
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "created": 1740543996,
+    "model": "model",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "",
+    "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 225,
+        "total_tokens": 243
+    }
+}
+```
+
+Non-stream:
+
+```json
+{
+    "choices":[
+        {
+            "finish_reason":"stop",
+            "index":0,
+            "logprobs":null,
+            "message":{
+                "content":"This is a test. If you have any specific questions or need information, feel free to ask, and I will do my best to provide an answer based on the knowledge I have. If your question is unrelated to the provided knowledge base, I will let you know.",
+                "role":"assistant"
+            }
+        }
+    ],
+    "created":1740543499,
+    "id":"chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "model":"model",
+    "object":"chat.completion",
+    "usage":{
+        "completion_tokens":246,
+        "completion_tokens_details":{
+            "accepted_prediction_tokens":246,
+            "reasoning_tokens":18,
+            "rejected_prediction_tokens":0
+        },
+        "prompt_tokens":18,
+        "total_tokens":264
+    }
+}
+```
+
+Failure:
+
+```json
+{
+  "code": 102,
+  "message": "The last content of this conversation is not from user."
+}
+```
 
 ## DATASET MANAGEMENT
 
@@ -249,7 +393,6 @@ curl --request POST \
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph  
     Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 
@@ -259,16 +402,12 @@ curl --request POST \
     - `"chunk_token_count"`: Defaults to `128`.
     - `"layout_recognize"`: Defaults to `true`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
+    - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
-  - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:  
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-    - `"entity_types"`: Defaults to `["organization","person","location","event","time"]`
 
 #### Response
 
@@ -292,11 +431,11 @@ Success:
         "name": "test_1",
         "parser_config": {
             "chunk_token_num": 128,
-            "delimiter": "\\n!?;。；！？",
+            "delimiter": "\\n",
             "html4excel": false,
             "layout_recognize": true,
             "raptor": {
-                "user_raptor": false
+                "use_raptor": false
             }
         },
         "permission": "me",
@@ -429,8 +568,6 @@ curl --request PUT \
   - `"picture"`: Picture
   - `"one"`:One
   - `"email"`: Email
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
 
 #### Response
 
@@ -511,10 +648,10 @@ Success:
             "id": "6e211ee0723611efa10a0242ac120007",
             "language": "English",
             "name": "mysql",
-            "chunk_method": "knowledge_graph",
+            "chunk_method": "naive",
             "parser_config": {
                 "chunk_token_num": 8192,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "entity_types": [
                     "organization",
                     "person",
@@ -602,11 +739,11 @@ Success:
             "name": "1.txt",
             "parser_config": {
                 "chunk_token_num": 128,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "run": "UNSTART",
@@ -691,16 +828,12 @@ curl --request PUT \
     - `"chunk_token_count"`: Defaults to `128`.
     - `"layout_recognize"`: Defaults to `true`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
+    - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
-  - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-    - `"entity_types"`: Defaults to `["organization","person","location","event","time"]`
 
 #### Response
 
@@ -834,7 +967,7 @@ Success:
                 "name": "Test_2.txt",
                 "parser_config": {
                     "chunk_token_count": 128,
-                    "delimiter": "\n!?。；！？",
+                    "delimiter": "\n",
                     "layout_recognize": true,
                     "task_page_size": 12
                 },
@@ -1191,11 +1324,11 @@ Success:
             "name": "1.txt",
             "parser_config": {
                 "chunk_token_num": 128,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
@@ -2535,9 +2668,13 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"sync_dsl"`: `boolean` (optional)
   - other parameters: `string`
 
+:::info IMPORTANT
+You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) agent component.
+:::
+
 ##### Request example
 
-If the **Begin** component does not take parameters, the following code will create a session.
+- If the **Begin** component does not take parameters, the following code will create a session.
 
 ```bash
 curl --request POST \
@@ -2549,7 +2686,7 @@ curl --request POST \
      }'
 ```
 
-If the **Begin** component takes parameters, the following code will create a session.
+- If the **Begin** component takes parameters, the following code will create a session.  
 
 ```bash
 curl --request POST \
@@ -3021,7 +3158,7 @@ The chat model dynamically determines the number of questions to generate based 
 ##### Request example
 
 ```bash
-curl --request DELETE \
+curl --request POST \
      --url http://{address}/api/v1/conversation/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \

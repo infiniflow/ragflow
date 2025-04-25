@@ -148,7 +148,7 @@ def init_llm_factory():
                 pass
             break
     for kb_id in KnowledgebaseService.get_all_ids():
-        KnowledgebaseService.update_by_id(kb_id, {"doc_num": DocumentService.get_kb_doc_count(kb_id)})
+        KnowledgebaseService.update_document_number_in_init(kb_id=kb_id, doc_num=DocumentService.get_kb_doc_count(kb_id))
 
 
 

@@ -212,6 +212,12 @@ class CommonService:
         #     data: Updated field values
         # Returns:
         #     Number of records updated
+        try:
+            if not DB.is_connection_usable():
+                DB.connect()
+        except Exception:
+            DB.close()
+            DB.connect()
         data["update_time"] = current_timestamp()
         data["update_date"] = datetime_format(datetime.now())
         num = cls.model.update(data).where(cls.model.id == pid).execute()
@@ -225,9 +231,12 @@ class CommonService:
         #     pid: Record ID
         # Returns:
         #     Tuple of (success, record)
-        obj = cls.model.get_or_none(cls.model.id == pid)
-        if obj:
-            return True, obj
+        try:
+            obj = cls.model.get_or_none(cls.model.id == pid)
+            if obj:
+                return True, obj
+        except Exception:
+            pass
         return False, None
 
     @classmethod

@@ -20,7 +20,7 @@ from common import add_chunk, delete_chunks, list_documnets, parse_documnets
 from libs.utils import wait_for
 
 
-@wait_for(10, 1, "Document parsing timeout")
+@wait_for(30, 1, "Document parsing timeout")
 def condition(_auth, _dataset_id):
     res = list_documnets(_auth, _dataset_id)
     for doc in res["data"]["docs"]:

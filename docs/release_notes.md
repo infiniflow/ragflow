@@ -7,6 +7,35 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.18.0
+
+Released on April 23, 2025.
+
+### New features
+
+- MCP server: enables access to RAGFlow's knowledge bases via MCP.
+- DeepDoc supports adopting VLM model as a processing pipeline during document layout recognition, enabling in-depth analysis of images in PDFs.
+- OpenAI-compatible APIs: Agents can be called via OpenAI-compatible APIs.
+- User registration control: administrators can enable or disable user registration through an environment variable.
+- Team collaboration: Agents can be shared with team members.
+- Agent version control: all updates are continuously logged and can be rolled back to a previous version via export.
+
+![export_agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/export_agent_as_json.jpg)
+
+### Improvements
+
+- Enhanced answer referencing: Citation accuracy in generated responses is improved.
+- Enhanced question-answering experience: users can now manually stop streaming output during a conversation.
+
+### Documentation
+
+#### Added documents
+
+- [Set page rank](./guides/dataset/set_page_rank.md)
+- [Enable RAPTOR](./guides/dataset/enable_raptor.md)
+- [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
+- [RAGFlow MCP server overview](./develop/mcp.md)
+
 ## v0.17.2
 
 Released on March 13, 2025.
@@ -74,8 +103,8 @@ Released on March 3, 2025.
 
 ### New features
 
-- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt Engine** tab of your chat assistant dialogue.
-- AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant Setting** tab of your chat assistant dialogue.
+- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
+- AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue.
 - AI chat: Supports starting a chat without specifying knowledge bases.
 - AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
 - Dataset: Adds a **PDF parser**, aka **Document parser**, dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options.

@@ -961,7 +961,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
                 "questions": sres.field[id].get("question_kwd", []),
                 "dataset_id": sres.field[id].get("kb_id", sres.field[id].get("dataset_id")),
                 "image_id": sres.field[id].get("img_id", ""),
-                "available": bool(sres.field[id].get("available_int", 1)),
+                "available": bool(int(sres.field[id].get("available_int", "1"))),
                 "positions": sres.field[id].get("position_int",[]),
             }
             res["chunks"].append(d)
@@ -1262,7 +1262,7 @@ def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     if "questions" in req:
         if not isinstance(req["questions"], list):
             return get_error_data_result("`questions` should be a list")
-        d["question_kwd"] = req.get("questions")
+        d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
     if "available" in req:
         d["available_int"] = int(req["available"])

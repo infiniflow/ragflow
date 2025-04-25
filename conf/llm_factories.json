@@ -103,7 +103,7 @@
                     "tags": "LLM,CHAT,64K",
                     "max_tokens": 65792,
                     "model_type": "chat",
-                    "is_tools": false        
+                    "is_tools": false
                 },
                 {
                     "llm_name": "deepseek-v3",
@@ -198,8 +198,15 @@
                 },
                 {
                     "llm_name": "qwen-plus",
-                    "tags": "LLM,CHAT,32K",
-                    "max_tokens": 32768,
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-plus-latest",
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
                     "model_type": "chat",
                     "is_tools": true
                 },
