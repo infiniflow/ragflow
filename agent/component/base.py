@@ -17,7 +17,6 @@ from abc import ABC
 import builtins
 import json
 import os
-import logging
 from functools import partial
 from typing import Tuple, Union
 
@@ -310,7 +309,18 @@ class ComponentParamBase(ABC):
             raise ValueError(
                 descr + " {} not supported, should be one of {}".format(param, types)
             )
-
+    @staticmethod
+    def check_json(param, descr=""):
+        if type(param).__name__ != "str":
+            raise ValueError(
+                descr + " {} not supported, should be string type".format(param)
+            )
+        try:
+            json.loads(param)
+        except json.JSONDecodeError:
+            raise ValueError(
+                descr + " {} not supported, should be json string".format(param)
+            )
     @staticmethod
     def check_and_change_lower(param, valid_list, descr=""):
         if type(param).__name__ != "str":
@@ -359,17 +369,11 @@ class ComponentParamBase(ABC):
         return value not in wrong_value_list
 
     def _warn_deprecated_param(self, param_name, descr):
-        if self._deprecated_params_set.get(param_name):
-            logging.warning(
-                f"{descr} {param_name} is deprecated and ignored in this version."
-            )
+        self._deprecated_params_set.get(param_name)
+          
 
     def _warn_to_deprecate_param(self, param_name, descr, new_param):
         if self._deprecated_params_set.get(param_name):
-            logging.warning(
-                f"{descr} {param_name} will be deprecated in future release; "
-                f"please use {new_param} instead."
-            )
             return True
         return False
 
@@ -412,12 +416,11 @@ class ComponentBase(ABC):
         cpnts = set([para["component_id"].split("@")[0] for para in self._param.query \
                      if para.get("component_id") \
                      and para["component_id"].lower().find("answer") < 0 \
-                     and para["component_id"].lower().find("begin") < 0])
+                     and para["component_id"].lower().find("begin") < 0 \
+                    ])
         return list(cpnts)
 
     def run(self, history, **kwargs):
-        logging.debug("{}, history: {}, kwargs: {}".format(self, json.dumps(history, ensure_ascii=False),
-                                                              json.dumps(kwargs, ensure_ascii=False)))
         self._param.debug_inputs = []
         try:
             res = self._run(history, **kwargs)
@@ -478,8 +481,9 @@ class ComponentBase(ABC):
             outs = []
             for q in self._param.query:
                 if q.get("component_id"):
-                    if q["component_id"].split("@")[0].lower().find("begin") >= 0:
-                        cpn_id, key = q["component_id"].split("@")
+                    component_id = q["component_id"]
+                    if "@" in component_id and component_id.split("@")[0].lower().find("begin") >= 0:
+                        cpn_id, key = component_id.split("@", 1)
                         for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
                             if p["key"] == key:
                                 outs.append(pd.DataFrame([{"content": p.get("value", "")}]))
@@ -489,8 +493,7 @@ class ComponentBase(ABC):
                         else:
                             assert False, f"Can't find parameter '{key}' for {cpn_id}"
                         continue
-
-                    if q["component_id"].lower().find("answer") == 0:
+                    if component_id.lower().find("answer") == 0:
                         txt = []
                         for r, c in self._canvas.history[::-1][:self._param.message_history_window_size][::-1]:
                             txt.append(f"{r.upper()}:{c}")
@@ -498,7 +501,6 @@ class ComponentBase(ABC):
                         self._param.inputs.append({"content": txt, "component_id": q["component_id"]})
                         outs.append(pd.DataFrame([{"content": txt}]))
                         continue
-
                     outs.append(self._canvas.get_component(q["component_id"])["obj"].output(allow_partial=False)[1])
                     self._param.inputs.append({"component_id": q["component_id"],
                                                "content": "\n".join(
@@ -563,7 +565,6 @@ class ComponentBase(ABC):
                     cpn_id, key = cpn_id.split("@")
                     eles.extend(self._canvas.get_component(cpn_id)["obj"]._param.query)
                     continue
-
                 eles.append({"name": self._canvas.get_component_name(cpn_id), "key": cpn_id})
             else:
                 eles.append({"key": q["value"], "name": q["value"], "value": q["value"]})
