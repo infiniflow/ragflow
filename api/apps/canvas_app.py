@@ -110,57 +110,85 @@ def getsse(canvas_id):
 
 
 @manager.route('/completion', methods=['POST'])  # noqa: F821
-@validate_request("id")
+@validate_request("id")  # 验证请求必须包含id参数
 @login_required
 def run():
+    """处理Canvas执行请求
+    功能：
+    - 支持流式(SSE)和非流式两种响应模式
+    - 维护对话历史记录
+    - 保存Canvas执行状态
+    - 错误处理和持久化
+    """
     req = request.json
-    stream = req.get("stream", True)
+    stream = req.get("stream", True)  # 默认使用流式传输
+
+    # 验证Canvas存在性
     e, cvs = UserCanvasService.get_by_id(req["id"])
     if not e:
         return get_data_error_result(message="canvas not found.")
+
+    # 权限校验：当前用户必须是Canvas所有者
     if not UserCanvasService.query(user_id=current_user.id, id=req["id"]):
         return get_json_result(
-            data=False, message='Only owner of canvas authorized for this operation.',
+            data=False,
+            message='Only owner of canvas authorized for this operation.',
             code=RetCode.OPERATING_ERROR)
 
+    # 序列化Canvas DSL配置
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
-    final_ans = {"reference": [], "content": ""}
-    message_id = req.get("message_id", get_uuid())
+    final_ans = {"reference": [], "content": ""}  # 最终响应容器
+    message_id = req.get("message_id", get_uuid())  # 生成消息唯一ID
+
     try:
+        # 初始化Canvas执行引擎
         canvas = Canvas(cvs.dsl, current_user.id)
+        # 添加用户输入到对话历史
         if "message" in req:
             canvas.messages.append({"role": "user", "content": req["message"], "id": message_id})
             canvas.add_user_input(req["message"])
     except Exception as e:
         return server_error_response(e)
 
+    # 流式响应处理
     if stream:
         def sse():
+            """Server-Sent Events生成器"""
             nonlocal answer, cvs
             try:
+                # 流式执行Canvas工作流
                 for ans in canvas.run(stream=True):
-                    if ans.get("running_status"):
+                    if ans.get("running_status"):  # 中间状态通知
                         yield "data:" + json.dumps({"code": 0, "message": "",
                                                     "data": {"answer": ans["content"],
                                                              "running_status": True}},
                                                    ensure_ascii=False) + "\n\n"
                         continue
+
+                    # 收集最终响应内容
                     for k in ans.keys():
                         final_ans[k] = ans[k]
+
+                    # 生成增量响应
                     ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
                     yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
 
+                # 成功完成后的处理
                 canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
                 canvas.history.append(("assistant", final_ans["content"]))
-                if not canvas.path[-1]:
+                if not canvas.path[-1]:  # 清理空路径
                     canvas.path.pop(-1)
-                if final_ans.get("reference"):
+                if final_ans.get("reference"):  # 保存参考文档
                     canvas.reference.append(final_ans["reference"])
+
+                # 持久化更新Canvas状态
                 cvs.dsl = json.loads(str(canvas))
                 UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+
             except Exception as e:
+                # 异常时的状态保存和错误响应
                 cvs.dsl = json.loads(str(canvas))
                 if not canvas.path[-1]:
                     canvas.path.pop(-1)
@@ -169,8 +197,10 @@ def run():
                 yield "data:" + json.dumps({"code": 500, "message": str(e),
                                             "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                            ensure_ascii=False) + "\n\n"
+            # 结束标记
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
+        # 构建SSE响应对象
         resp = Response(sse(), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
@@ -178,13 +208,17 @@ def run():
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
+    # 非流式响应处理
     for answer in canvas.run(stream=False):
-        if answer.get("running_status"):
+        if answer.get("running_status"):  # 过滤中间状态
             continue
+        # 构建最终响应
         final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
+        # 更新会话记录
         canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
         if final_ans.get("reference"):
             canvas.reference.append(final_ans["reference"])
+        # 持久化更新
         cvs.dsl = json.loads(str(canvas))
         UserCanvasService.update_by_id(req["id"], cvs.to_dict())
         return get_json_result(data={"answer": final_ans["content"], "reference": final_ans.get("reference", [])})

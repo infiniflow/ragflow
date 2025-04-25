@@ -122,30 +122,57 @@ class UserCanvasService(CommonService):
    
 
 def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
+    """处理智能体对话补全的核心函数
+    Args:
+        tenant_id: 租户/用户ID
+        agent_id: 智能体唯一标识
+        question: 用户输入的问题
+        session_id: 会话ID（存在时为续接会话）
+        stream: 是否使用流式传输
+        **kwargs: 其他请求参数
+
+    流程:
+        1. 验证Agent有效性及权限
+        2. 处理会话创建/续接逻辑
+        3. 执行智能体工作流
+        4. 返回流式/非流式响应
+    """
+    # 验证Agent有效性及用户权限
     e, cvs = UserCanvasService.get_by_id(agent_id)
     assert e, "Agent not found."
     assert cvs.user_id == tenant_id, "You do not own the agent."
-    if not isinstance(cvs.dsl,str):
+
+    # 序列化DSL配置（Domain Specific Language）
+    if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+
+    # 初始化智能体工作流引擎
     canvas = Canvas(cvs.dsl, tenant_id)
     canvas.reset()
     message_id = str(uuid4())
+
+    # 新会话处理逻辑
     if not session_id:
+        # 处理预设参数验证
         query = canvas.get_preset_param()
         if query:
             for ele in query:
+                # 必填参数检查
                 if not ele["optional"]:
                     if not kwargs.get(ele["key"]):
                         assert False, f"`{ele['key']}` is required"
                     ele["value"] = kwargs[ele["key"]]
+                # 可选参数处理
                 if ele["optional"]:
                     if kwargs.get(ele["key"]):
                         ele["value"] = kwargs[ele['key']]
                     else:
                         if "value" in ele:
                             ele.pop("value")
+
+        # 创建新会话记录
         cvs.dsl = json.loads(str(canvas))
-        session_id=get_uuid()
+        session_id = get_uuid()
         conv = {
             "id": session_id,
             "dialog_id": cvs.id,
@@ -156,12 +183,19 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
         }
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
+
+    # 已有会话处理逻辑
     else:
+        # 加载现有会话数据
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
+
+        # 初始化工作流并添加用户消息
         canvas = Canvas(json.dumps(conv.dsl), tenant_id)
         canvas.messages.append({"role": "user", "content": question, "id": message_id})
         canvas.add_user_input(question)
+
+        # 更新会话记录
         if not conv.message:
             conv.message = []
         conv.message.append({
@@ -173,53 +207,77 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
             conv.reference = []
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
+    # 初始化响应容器
     final_ans = {"reference": [], "content": ""}
+
+    # 流式响应处理
     if stream:
         try:
             for ans in canvas.run(stream=stream):
+                # 处理中间状态响应
                 if ans.get("running_status"):
                     yield "data:" + json.dumps({"code": 0, "message": "",
                                                 "data": {"answer": ans["content"],
                                                          "running_status": True}},
                                                ensure_ascii=False) + "\n\n"
                     continue
+
+                # 缓存最终响应内容
                 for k in ans.keys():
                     final_ans[k] = ans[k]
-                ans = {"answer": ans["content"], "reference": ans.get("reference", []), "param": canvas.get_preset_param()}
+
+                # 构造结构化响应
+                ans = {"answer": ans["content"], "reference": ans.get("reference", []),
+                       "param": canvas.get_preset_param()}
                 ans = structure_answer(conv, ans, message_id, session_id)
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
                                            ensure_ascii=False) + "\n\n"
 
-            canvas.messages.append({"role": "assistant", "content": final_ans["content"], "created_at": time.time(), "id": message_id})
+            # 会话最终处理
+            canvas.messages.append(
+                {"role": "assistant", "content": final_ans["content"], "created_at": time.time(), "id": message_id})
             canvas.history.append(("assistant", final_ans["content"]))
             if final_ans.get("reference"):
                 canvas.reference.append(final_ans["reference"])
+
+            # 持久化会话状态
             conv.dsl = json.loads(str(canvas))
             API4ConversationService.append_message(conv.id, conv.to_dict())
         except Exception as e:
+            # 异常处理及状态回写
             traceback.print_exc()
             conv.dsl = json.loads(str(canvas))
             API4ConversationService.append_message(conv.id, conv.to_dict())
             yield "data:" + json.dumps({"code": 500, "message": str(e),
                                         "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
                                        ensure_ascii=False) + "\n\n"
+        # 结束标记
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 
+    # 非流式响应处理
     else:
         for answer in canvas.run(stream=False):
             if answer.get("running_status"):
                 continue
+            # 拼接最终响应内容
             final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
+
+            # 更新会话记录
             canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
             if final_ans.get("reference"):
                 canvas.reference.append(final_ans["reference"])
+            # 持久化更新
             conv.dsl = json.loads(str(canvas))
 
-            result = {"answer": final_ans["content"], "reference": final_ans.get("reference", []) , "param": canvas.get_preset_param()}
+            # 构造返回结果
+            result = {"answer": final_ans["content"], "reference": final_ans.get("reference", []),
+                      "param": canvas.get_preset_param()}
             result = structure_answer(conv, result, message_id, session_id)
             API4ConversationService.append_message(conv.id, conv.to_dict())
             yield result
             break
+
+
 def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
     """Main function for OpenAI-compatible completions, structured similarly to the completion function."""
     tiktokenenc = tiktoken.get_encoding("cl100k_base")

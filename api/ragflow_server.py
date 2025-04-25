@@ -17,14 +17,17 @@
 # from beartype import BeartypeConf
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
+import sys
+import os
 
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+sys.path.append("D:\Work Space\PycharmProjects\my_ragflow")
 from api.utils.log_utils import initRootLogger
 initRootLogger("ragflow_server")
 
 import logging
-import os
 import signal
-import sys
+
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor

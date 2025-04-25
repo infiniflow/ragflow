@@ -398,37 +398,56 @@ def agents_completion_openai_compatibility (tenant_id, agent_id):
 @manager.route("/agents/<agent_id>/completions", methods=["POST"])  # noqa: F821
 @token_required
 def agent_completions(tenant_id, agent_id):
+    """智能体交互处理接口
+    Args:
+        tenant_id: 租户ID（来自token验证）
+        agent_id: 要操作的智能体ID
+    """
     req = request.json
+
+    # 验证用户是否拥有该智能体
     cvs = UserCanvasService.query(user_id=tenant_id, id=agent_id)
     if not cvs:
         return get_error_data_result(f"You don't own the agent {agent_id}")
+
+    # 会话存在时的DSL同步逻辑
     if req.get("session_id"):
+        # 获取并格式化智能体的DSL配置
         dsl = cvs[0].dsl
         if not isinstance(dsl, str):
             dsl = json.dumps(dsl)
 
+        # 验证会话归属
         conv = API4ConversationService.query(id=req["session_id"], dialog_id=agent_id)
         if not conv:
             return get_error_data_result(f"You don't own the session {req['session_id']}")
-        # If an update to UserCanvas is detected, update the API4Conversation.dsl
+
+        # DSL同步机制：当检测到智能体更新时同步到会话
         sync_dsl = req.get("sync_dsl", False)
         if sync_dsl is True and cvs[0].update_time > conv[0].update_time:
             current_dsl = conv[0].dsl
             new_dsl = json.loads(dsl)
+            # 保留会话状态字段（历史记录、消息路径等）
             state_fields = ["history", "messages", "path", "reference"]
             states = {field: current_dsl.get(field, []) for field in state_fields}
+            # 合并新旧DSL配置
             current_dsl.update(new_dsl)
             current_dsl.update(states)
             API4ConversationService.update_by_id(req["session_id"], {"dsl": current_dsl})
     else:
-        req["question"] = ""
+        req["question"] = ""  # 初始化空问题
+
+    # 流式响应处理
     if req.get("stream", True):
         resp = Response(agent_completion(tenant_id, agent_id, **req), mimetype="text/event-stream")
+        # 设置流式传输头
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
+
+    # 非流式响应处理
     try:
         for answer in agent_completion(tenant_id, agent_id, **req):
             return get_result(data=answer)

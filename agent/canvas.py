@@ -168,6 +168,17 @@ class Canvas:
         return ""
 
     def run(self, **kwargs):
+        """执行工作流的核心方法
+        Args:
+            **kwargs: 包含stream等控制参数
+
+        流程:
+            1. 处理预存的answer组件
+            2. 初始化工作流路径
+            3. 遍历执行组件链
+            4. 处理循环检测和异常情况
+        """
+        # 存在待处理answer组件时优先执行
         if self.answer:
             cpn_id = self.answer[0]
             self.answer.pop(0)
@@ -176,6 +187,7 @@ class Canvas:
             except Exception as e:
                 ans = ComponentBase.be_output(str(e))
             self.path[-1].append(cpn_id)
+            # 流式模式返回生成器，否则直接返回结果
             if kwargs.get("stream"):
                 for an in ans():
                     yield an
@@ -183,34 +195,46 @@ class Canvas:
                 yield ans
             return
 
+        # 初始化工作流路径（首次运行）
         if not self.path:
             self.components["begin"]["obj"].run(self.history, **kwargs)
             self.path.append(["begin"])
 
-        self.path.append([])
+        self.path.append([])  # 创建新的路径层
 
-        ran = -1
-        waiting = []
-        without_dependent_checking = []
+        # 初始化运行控制变量
+        ran = -1  # 当前执行组件索引
+        waiting = []  # 等待依赖满足的组件
+        without_dependent_checking = []  # 已跳过依赖检查的组件
 
         def prepare2run(cpns):
+            """准备运行下游组件
+            Args:
+                cpns: 待运行组件ID列表
+            """
             nonlocal ran, ans
             for c in cpns:
+                # 跳过已执行组件
                 if self.path[-1] and c == self.path[-1][-1]:
                     continue
                 cpn = self.components[c]["obj"]
+
+                # 遇到Answer组件时暂存
                 if cpn.component_name == "Answer":
                     self.answer.append(c)
                 else:
                     logging.debug(f"Canvas.prepare2run: {c}")
+                    # 依赖组件检查
                     if c not in without_dependent_checking:
                         cpids = cpn.get_dependent_components()
                         if any([cc not in self.path[-1] for cc in cpids]):
                             if c not in waiting:
                                 waiting.append(c)
                             continue
+                    # 生成运行状态提示
                     yield "*'{}'* is running...🕞".format(self.get_component_name(c))
 
+                    # 处理迭代组件特殊逻辑
                     if cpn.component_name.lower() == "iteration":
                         st_cpn = cpn.get_start()
                         assert st_cpn, "Start component not found for Iteration."
@@ -219,39 +243,49 @@ class Canvas:
                             c = cpn._id
 
                     try:
+                        # 执行组件核心逻辑
                         ans = cpn.run(self.history, **kwargs)
                     except Exception as e:
                         logging.exception(f"Canvas.run got exception: {e}")
                         self.path[-1].append(c)
                         ran += 1
                         raise e
+                    # 记录已执行组件
                     self.path[-1].append(c)
 
-            ran += 1
+            ran += 1  # 更新执行进度
 
+        # 处理父组件输出合并（当存在嵌套组件时）
         downstream = self.components[self.path[-2][-1]]["downstream"]
         if not downstream and self.components[self.path[-2][-1]].get("parent_id"):
             cid = self.path[-2][-1]
             pid = self.components[cid]["parent_id"]
+            # 合并子组件输出到父组件
             o, _ = self.components[cid]["obj"].output(allow_partial=False)
             oo, _ = self.components[pid]["obj"].output(allow_partial=False)
             self.components[pid]["obj"].set_output(pd.concat([oo, o], ignore_index=True).dropna())
             downstream = [pid]
 
+        # 初始执行下游组件
         for m in prepare2run(downstream):
             yield {"content": m, "running_status": True}
 
+        # 主执行循环
         while 0 <= ran < len(self.path[-1]):
             logging.debug(f"Canvas.run: {ran} {self.path}")
             cpn_id = self.path[-1][ran]
             cpn = self.get_component(cpn_id)
+
+            # 终止条件：无下游组件且无等待组件
             if not any([cpn["downstream"], cpn.get("parent_id"), waiting]):
                 break
 
+            # 循环依赖检测
             loop = self._find_loop()
             if loop:
                 raise OverflowError(f"Too much loops: {loop}")
 
+            # 处理条件分支组件（Switch/Categorize/Relevant）
             downstream = []
             if cpn["obj"].component_name.lower() in ["switch", "categorize", "relevant"]:
                 switch_out = cpn["obj"].output()[1].iloc[0, 0]
@@ -261,6 +295,7 @@ class Canvas:
             else:
                 downstream = cpn["downstream"]
 
+            # 处理嵌套组件输出合并
             if not downstream and cpn.get("parent_id"):
                 pid = cpn["parent_id"]
                 _, o = cpn["obj"].output(allow_partial=False)
@@ -268,9 +303,11 @@ class Canvas:
                 self.components[pid]["obj"].set_output(pd.concat([oo.dropna(axis=1), o.dropna(axis=1)], ignore_index=True).dropna())
                 downstream = [pid]
 
+            # 执行下游组件链
             for m in prepare2run(downstream):
                 yield {"content": m, "running_status": True}
 
+            # 处理等待队列中的组件
             if ran >= len(self.path[-1]) and waiting:
                 without_dependent_checking = waiting
                 waiting = []
@@ -279,6 +316,7 @@ class Canvas:
                 without_dependent_checking = []
                 ran -= 1
 
+        # 最终answer组件处理
         if self.answer:
             cpn_id = self.answer[0]
             self.answer.pop(0)
