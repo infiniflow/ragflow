@@ -1,4 +1,5 @@
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import kbService from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -20,6 +21,7 @@ export const enum DocumentApiAction {
   RunDocumentByIds = 'runDocumentByIds',
   RemoveDocument = 'removeDocument',
   SaveDocumentName = 'saveDocumentName',
+  SetDocumentParser = 'setDocumentParser',
 }
 
 export const useUploadNextDocument = () => {
@@ -246,4 +248,41 @@ export const useSaveDocumentName = () => {
   });
 
   return { loading, saveName: mutateAsync, data };
+};
+
+export const useSetDocumentParser = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.SetDocumentParser],
+    mutationFn: async ({
+      parserId,
+      documentId,
+      parserConfig,
+    }: {
+      parserId: string;
+      documentId: string;
+      parserConfig: IChangeParserConfigRequestBody;
+    }) => {
+      const { data } = await kbService.document_change_parser({
+        parser_id: parserId,
+        doc_id: documentId,
+        parser_config: parserConfig,
+      });
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentList],
+        });
+
+        message.success(i18n.t('message.modified'));
+      }
+      return data.code;
+    },
+  });
+
+  return { setDocumentParser: mutateAsync, data, loading };
 };
