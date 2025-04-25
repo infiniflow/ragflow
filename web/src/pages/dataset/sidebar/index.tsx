@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
+import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { Banknote, LayoutGrid, User } from 'lucide-react';
@@ -27,6 +28,7 @@ const dataset = {
 export function SideBar() {
   const pathName = useSecondPathName();
   const { handleMenuClick } = useHandleMenuClick();
+  const { data } = useFetchKnowledgeBaseConfiguration();
 
   return (
     <aside className="w-[303px] relative border-r ">
@@ -36,7 +38,7 @@ export function SideBar() {
           style={{ backgroundImage: `url(${dataset.image})` }}
         />
 
-        <h3 className="text-lg font-semibold mb-2">{dataset.title}</h3>
+        <h3 className="text-lg font-semibold mb-2">{data.name}</h3>
         <div className="text-sm opacity-80">
           {dataset.files} | {dataset.size}
         </div>
