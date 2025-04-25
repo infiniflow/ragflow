@@ -29,7 +29,7 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
-import { useChangeDocumentParser } from './hooks';
+import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
 import { useRenameDocument } from './use-rename-document';
 
@@ -57,7 +57,8 @@ export function DatasetTable() {
     changeParserVisible,
     hideChangeParserModal,
     showChangeParserModal,
-  } = useChangeDocumentParser(currentRecord.id);
+    changeParserRecord,
+  } = useChangeDocumentParser();
 
   const {
     renameLoading,
@@ -198,10 +199,10 @@ export function DatasetTable() {
       </div>
       {changeParserVisible && (
         <ChunkMethodDialog
-          documentId={currentRecord.id}
-          parserId={currentRecord.parser_id}
-          parserConfig={currentRecord.parser_config}
-          documentExtension={getExtension(currentRecord.name)}
+          documentId={changeParserRecord.id}
+          parserId={changeParserRecord.parser_id}
+          parserConfig={changeParserRecord.parser_config}
+          documentExtension={getExtension(changeParserRecord.name)}
           onOk={onChangeParserOk}
           visible={changeParserVisible}
           hideModal={hideChangeParserModal}

@@ -15,17 +15,13 @@ import { formatDate } from '@/utils/date';
 import { getExtension } from '@/utils/document-util';
 import { ColumnDef } from '@tanstack/table-core';
 import { ArrowUpDown } from 'lucide-react';
-import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DatasetActionCell } from './dataset-action-cell';
-import { useChangeDocumentParser } from './hooks';
 import { ParsingStatusCell } from './parsing-status-cell';
+import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { UseRenameDocumentShowType } from './use-rename-document';
 
-type UseDatasetTableColumnsType = Pick<
-  ReturnType<typeof useChangeDocumentParser>,
-  'showChangeParserModal'
-> & {
+type UseDatasetTableColumnsType = UseChangeDocumentParserShowType & {
   setCurrentRecord: (record: IDocumentInfo) => void;
 } & UseRenameDocumentShowType;
 
@@ -42,13 +38,6 @@ export function useDatasetTableColumns({
   //   setCurrentRecord(record);
   //   showRenameModal();
   // };
-  const onShowChangeParserModal = useCallback(
-    (record: IDocumentInfo) => () => {
-      setCurrentRecord(record);
-      showChangeParserModal();
-    },
-    [setCurrentRecord, showChangeParserModal],
-  );
 
   // const onShowSetMetaModal = useCallback(() => {
   //   setRecord();
@@ -168,7 +157,12 @@ export function useDatasetTableColumns({
       header: t('parsingStatus'),
       // meta: { cellClassName: 'min-w-[20vw]' },
       cell: ({ row }) => {
-        return <ParsingStatusCell record={row.original}></ParsingStatusCell>;
+        return (
+          <ParsingStatusCell
+            record={row.original}
+            showChangeParserModal={showChangeParserModal}
+          ></ParsingStatusCell>
+        );
       },
     },
     {

@@ -1,4 +1,5 @@
 import {
+  IKnowledge,
   IKnowledgeResult,
   INextTestingResult,
 } from '@/interfaces/database/knowledge';
@@ -22,6 +23,7 @@ export const enum KnowledgeApiAction {
   CreateKnowledge = 'createKnowledge',
   DeleteKnowledge = 'deleteKnowledge',
   SaveKnowledge = 'saveKnowledge',
+  FetchKnowledgeDetail = 'fetchKnowledgeDetail',
 }
 
 export const useKnowledgeBaseId = () => {
@@ -203,4 +205,22 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
   });
 
   return { data, loading, saveKnowledgeConfiguration: mutateAsync };
+};
+
+export const useFetchKnowledgeBaseConfiguration = () => {
+  const { id } = useParams();
+
+  const { data, isFetching: loading } = useQuery<IKnowledge>({
+    queryKey: [KnowledgeApiAction.FetchKnowledgeDetail],
+    initialData: {} as IKnowledge,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await kbService.get_kb_detail({
+        kb_id: id,
+      });
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading };
 };

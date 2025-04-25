@@ -1,11 +1,6 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import {
-  useCreateNextDocument,
-  useNextWebCrawl,
-  useSetNextDocumentParser,
-} from '@/hooks/document-hooks';
+import { useCreateNextDocument, useNextWebCrawl } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
 
@@ -47,44 +42,6 @@ export const useCreateEmptyDocument = () => {
     createVisible,
     hideCreateModal,
     showCreateModal,
-  };
-};
-
-export const useChangeDocumentParser = (documentId: string) => {
-  const { setDocumentParser, loading } = useSetNextDocumentParser();
-
-  const {
-    visible: changeParserVisible,
-    hideModal: hideChangeParserModal,
-    showModal: showChangeParserModal,
-  } = useSetModalState();
-
-  const onChangeParserOk = useCallback(
-    async ({
-      parserId,
-      parserConfig,
-    }: {
-      parserId: string;
-      parserConfig: IChangeParserConfigRequestBody;
-    }) => {
-      const ret = await setDocumentParser({
-        parserId,
-        documentId,
-        parserConfig,
-      });
-      if (ret === 0) {
-        hideChangeParserModal();
-      }
-    },
-    [hideChangeParserModal, setDocumentParser, documentId],
-  );
-
-  return {
-    changeParserLoading: loading,
-    onChangeParserOk,
-    changeParserVisible,
-    hideChangeParserModal,
-    showChangeParserModal,
   };
 };
 
