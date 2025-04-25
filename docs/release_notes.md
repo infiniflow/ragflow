@@ -15,10 +15,12 @@ Released on April 23, 2025.
 
 - MCP server: enables access to RAGFlow's knowledge bases via MCP.
 - DeepDoc supports adopting VLM model as a processing pipeline during document layout recognition, enabling in-depth analysis of images in PDFs.
-- Agent version control: all updates are continuously logged and can be rolled back to a previous version via export.
-- Team collaboration: Agents can be shared with team members.
 - OpenAI-compatible APIs: Agents can be called via OpenAI-compatible APIs.
-- User registration control: administrators can enable or disable user registration through an environment variable. See `REGISTER_ENABLED` in **/docker/.env**.
+- User registration control: administrators can enable or disable user registration through an environment variable.
+- Team collaboration: Agents can be shared with team members.
+- Agent version control: all updates are continuously logged and can be rolled back to a previous version via export.
+
+![export_agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/export_agent_as_json.jpg)
 
 ### Improvements
 
