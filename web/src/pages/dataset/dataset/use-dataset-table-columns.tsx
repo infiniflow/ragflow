@@ -83,7 +83,7 @@ export function useDatasetTableColumns({
           </Button>
         );
       },
-      // meta: { cellClassName: 'max-w-[20vw]' },
+      meta: { cellClassName: 'max-w-[20vw]' },
       cell: ({ row }) => {
         const name: string = row.getValue('name');
 

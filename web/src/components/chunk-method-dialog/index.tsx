@@ -15,15 +15,17 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { DocumentParserType } from '@/constants/knowledge';
-import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { IModalProps } from '@/interfaces/common';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { zodResolver } from '@hookform/resolvers/zod';
+import get from 'lodash/get';
+import omit from 'lodash/omit';
 import {} from 'module';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
   AutoKeywordsFormField,
@@ -33,10 +35,7 @@ import { DatasetConfigurationContainer } from '../dataset-configuration-containe
 import { DelimiterFormField } from '../delimiter-form-field';
 import { EntityTypesFormField } from '../entity-types-form-field';
 import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
-import {
-  DocumentType,
-  LayoutRecognizeFormField,
-} from '../layout-recognize-form-field';
+import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
 import {
   UseGraphRagFormField,
@@ -47,7 +46,12 @@ import RaptorFormFields, {
 } from '../parse-configuration/raptor-form-fields';
 import { Input } from '../ui/input';
 import { RAGFlowSelect } from '../ui/select';
+import { DynamicPageRange } from './dynamic-page-range';
 import { useFetchParserListOnMount, useShowAutoKeywords } from './hooks';
+import {
+  useDefaultParserValues,
+  useFillDefaultValueOnMount,
+} from './use-default-parser-values';
 
 const FormId = 'ChunkMethodDialogForm';
 
@@ -78,8 +82,10 @@ export function ChunkMethodDialog({
   parserId,
   documentId,
   documentExtension,
+  visible,
+  parserConfig,
 }: IProps) {
-  const { t } = useTranslate('knowledgeDetails');
+  const { t } = useTranslation();
 
   const { parserList } = useFetchParserListOnMount(
     documentId,
@@ -94,6 +100,10 @@ export function ChunkMethodDialog({
     return knowledgeDetails.parser_config?.graphrag?.use_graphrag;
   }, [knowledgeDetails.parser_config?.graphrag?.use_graphrag]);
 
+  const defaultParserValues = useDefaultParserValues();
+
+  const fillDefaultParserValue = useFillDefaultValueOnMount();
+
   const FormSchema = z.object({
     parser_id: z
       .string()
@@ -104,16 +114,34 @@ export function ChunkMethodDialog({
     parser_config: z.object({
       task_page_size: z.coerce.number(),
       layout_recognize: z.string(),
+      chunk_token_num: z.coerce.number(),
+      delimiter: z.string(),
+      auto_keywords: z.coerce.number(),
+      auto_questions: z.coerce.number(),
+      html4excel: z.boolean(),
+      raptor: z.object({
+        use_raptor: z.boolean().optional(),
+        prompt: z.string(),
+        max_token: z.coerce.number(),
+        threshold: z.coerce.number(),
+        max_cluster: z.coerce.number(),
+        random_seed: z.coerce.number(),
+      }),
+      graphrag: z.object({
+        use_graphrag: z.boolean(),
+      }),
+      entity_types: z.array(z.string()),
+      pages: z.array(
+        z.object({ from: z.coerce.number(), to: z.coerce.number() }),
+      ),
     }),
   });
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       parser_id: parserId,
-      parser_config: {
-        task_page_size: 12,
-        layout_recognize: DocumentType.DeepDOC,
-      },
+
+      parser_config: defaultParserValues,
     },
   });
 
@@ -155,22 +183,59 @@ export function ChunkMethodDialog({
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
     console.log('🚀 ~ onSubmit ~ data:', data);
-    // const ret = await onOk?.();
-    // if (ret) {
-    //   hideModal?.();
-    // }
+    const nextData = {
+      ...data,
+      parser_config: {
+        ...data.parser_config,
+        pages: data.parser_config?.pages?.map((x: any) => [x.from, x.to]) ?? [],
+      },
+    };
+    console.log('🚀 ~ onSubmit ~ nextData:', nextData);
+    const ret = await onOk?.(nextData);
+    if (ret) {
+      hideModal?.();
+    }
   }
+
+  useEffect(() => {
+    if (visible) {
+      const pages =
+        parserConfig?.pages?.map((x) => ({ from: x[0], to: x[1] })) ?? [];
+      form.reset({
+        parser_id: parserId,
+        parser_config: fillDefaultParserValue({
+          pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
+          ...omit(parserConfig, 'pages'),
+          graphrag: {
+            use_graphrag: get(
+              parserConfig,
+              'graphrag.use_graphrag',
+              useGraphRag,
+            ),
+          },
+        }),
+      });
+    }
+  }, [
+    fillDefaultParserValue,
+    form,
+    knowledgeDetails.parser_config,
+    parserConfig,
+    parserId,
+    useGraphRag,
+    visible,
+  ]);
 
   return (
     <Dialog open onOpenChange={hideModal}>
       <DialogContent className="max-w-[50vw]">
         <DialogHeader>
-          <DialogTitle>{t('chunkMethod')}</DialogTitle>
+          <DialogTitle>{t('knowledgeDetails.chunkMethod')}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-6"
+            className="space-y-6 max-h-[70vh] overflow-auto"
             id={FormId}
           >
             <FormField
@@ -178,7 +243,7 @@ export function ChunkMethodDialog({
               name="parser_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('name')}</FormLabel>
+                  <FormLabel>{t('knowledgeDetails.chunkMethod')}</FormLabel>
                   <FormControl>
                     <RAGFlowSelect
                       {...field}
@@ -189,14 +254,15 @@ export function ChunkMethodDialog({
                 </FormItem>
               )}
             />
+            {showPages && <DynamicPageRange></DynamicPageRange>}
             {showPages && layoutRecognize && (
               <FormField
                 control={form.control}
                 name="parser_config.task_page_size"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel tooltip={t('taskPageSizeTip')}>
-                      {t('taskPageSize')}
+                    <FormLabel tooltip={t('knowledgeDetails.taskPageSizeTip')}>
+                      {t('knowledgeDetails.taskPageSize')}
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -251,7 +317,7 @@ export function ChunkMethodDialog({
         </Form>
         <DialogFooter>
           <Button type="submit" form={FormId}>
-            Save changes
+            {t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

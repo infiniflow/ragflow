@@ -48,7 +48,7 @@ export function DelimiterFormField() {
           <FormLabel tooltip={t('knowledgeDetails.delimiterTip')}>
             {t('knowledgeDetails.delimiter')}
           </FormLabel>
-          <FormControl defaultValue={`\n`}>
+          <FormControl>
             <DelimiterInput {...field}></DelimiterInput>
           </FormControl>
           <FormMessage />
