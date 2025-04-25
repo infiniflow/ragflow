@@ -59,7 +59,11 @@ For testing purposes, there is an [MCP client example](#example_mcp_client) prov
 
 Here are three augments required, the first two,`host` and `port`, are self-explained. The`base_url` is the address of the ready-to-serve RAGFlow server to actually perform the task.
 
-### Launching from Docker
+### only do this from old version code upgrade to version 0.18.0 (option) 
+1.download mcp directory to your local 
+2.download entrypoint.sh&docker-compose.yml to your local
+
+### Launching from Docker with both upgrade or new install 
 
 Building a standalone MCP server image is straightforward and easy, so we just proposed a way to launch it with RAGFlow server here.
 
