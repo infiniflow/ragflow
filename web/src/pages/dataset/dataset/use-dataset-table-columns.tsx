@@ -20,15 +20,18 @@ import { DatasetActionCell } from './dataset-action-cell';
 import { ParsingStatusCell } from './parsing-status-cell';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { UseRenameDocumentShowType } from './use-rename-document';
+import { UseSaveMetaShowType } from './use-save-meta';
 
 type UseDatasetTableColumnsType = UseChangeDocumentParserShowType & {
   setCurrentRecord: (record: IDocumentInfo) => void;
-} & UseRenameDocumentShowType;
+} & UseRenameDocumentShowType &
+  UseSaveMetaShowType;
 
 export function useDatasetTableColumns({
   showChangeParserModal,
   setCurrentRecord,
   showRenameModal,
+  showSetMetaModal,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
@@ -161,6 +164,7 @@ export function useDatasetTableColumns({
           <ParsingStatusCell
             record={row.original}
             showChangeParserModal={showChangeParserModal}
+            showSetMetaModal={showSetMetaModal}
           ></ParsingStatusCell>
         );
       },

@@ -16,6 +16,7 @@ import { RunningStatus } from './constant';
 import { ParsingCard } from './parsing-card';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
+import { UseSaveMetaShowType } from './use-save-meta';
 import { isParserRunning } from './utils';
 
 const IconMap = {
@@ -29,7 +30,9 @@ const IconMap = {
 export function ParsingStatusCell({
   record,
   showChangeParserModal,
-}: { record: IDocumentInfo } & UseChangeDocumentParserShowType) {
+  showSetMetaModal,
+}: { record: IDocumentInfo } & UseChangeDocumentParserShowType &
+  UseSaveMetaShowType) {
   const { t } = useTranslation();
   const { run, parser_id, progress, chunk_num, id } = record;
   const operationIcon = IconMap[run];
@@ -48,6 +51,10 @@ export function ParsingStatusCell({
     showChangeParserModal(record);
   }, [record, showChangeParserModal]);
 
+  const handleShowSetMetaModal = useCallback(() => {
+    showSetMetaModal(record);
+  }, [record, showSetMetaModal]);
+
   return (
     <section className="flex gap-2 items-center ">
       <div>
@@ -61,7 +68,7 @@ export function ParsingStatusCell({
             <DropdownMenuItem onClick={handleShowChangeParserModal}>
               {t('knowledgeDetails.chunkMethod')}
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={handleShowSetMetaModal}>
               {t('knowledgeDetails.setMetaData')}
             </DropdownMenuItem>
           </DropdownMenuContent>

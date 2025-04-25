@@ -1,5 +1,8 @@
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import {
+  IChangeParserConfigRequestBody,
+  IDocumentMetaRequestBody,
+} from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import kbService from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -22,6 +25,7 @@ export const enum DocumentApiAction {
   RemoveDocument = 'removeDocument',
   SaveDocumentName = 'saveDocumentName',
   SetDocumentParser = 'setDocumentParser',
+  SetDocumentMeta = 'setDocumentMeta',
 }
 
 export const useUploadNextDocument = () => {
@@ -285,4 +289,37 @@ export const useSetDocumentParser = () => {
   });
 
   return { setDocumentParser: mutateAsync, data, loading };
+};
+
+export const useSetDocumentMeta = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.SetDocumentMeta],
+    mutationFn: async (params: IDocumentMetaRequestBody) => {
+      try {
+        const { data } = await kbService.setMeta({
+          meta: params.meta,
+          doc_id: params.documentId,
+        });
+
+        if (data?.code === 0) {
+          queryClient.invalidateQueries({
+            queryKey: [DocumentApiAction.FetchDocumentList],
+          });
+
+          message.success(i18n.t('message.modified'));
+        }
+        return data?.code;
+      } catch (error) {
+        message.error('error');
+      }
+    },
+  });
+
+  return { setDocumentMeta: mutateAsync, data, loading };
 };

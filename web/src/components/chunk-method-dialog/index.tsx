@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -45,6 +44,7 @@ import RaptorFormFields, {
   showRaptorParseConfiguration,
 } from '../parse-configuration/raptor-form-fields';
 import { Input } from '../ui/input';
+import { LoadingButton } from '../ui/loading-button';
 import { RAGFlowSelect } from '../ui/select';
 import { DynamicPageRange } from './dynamic-page-range';
 import { useFetchParserListOnMount, useShowAutoKeywords } from './hooks';
@@ -84,6 +84,7 @@ export function ChunkMethodDialog({
   documentExtension,
   visible,
   parserConfig,
+  loading,
 }: IProps) {
   const { t } = useTranslation();
 
@@ -108,34 +109,37 @@ export function ChunkMethodDialog({
     parser_id: z
       .string()
       .min(1, {
-        message: 'namePlaceholder',
+        message: t('common.pleaseSelect'),
       })
       .trim(),
     parser_config: z.object({
-      task_page_size: z.coerce.number(),
-      layout_recognize: z.string(),
-      chunk_token_num: z.coerce.number(),
-      delimiter: z.string(),
-      auto_keywords: z.coerce.number(),
-      auto_questions: z.coerce.number(),
-      html4excel: z.boolean(),
-      raptor: z.object({
-        use_raptor: z.boolean().optional(),
-        prompt: z.string(),
-        max_token: z.coerce.number(),
-        threshold: z.coerce.number(),
-        max_cluster: z.coerce.number(),
-        random_seed: z.coerce.number(),
-      }),
+      task_page_size: z.coerce.number().optional(),
+      layout_recognize: z.string().optional(),
+      chunk_token_num: z.coerce.number().optional(),
+      delimiter: z.string().optional(),
+      auto_keywords: z.coerce.number().optional(),
+      auto_questions: z.coerce.number().optional(),
+      html4excel: z.boolean().optional(),
+      raptor: z
+        .object({
+          use_raptor: z.boolean().optional(),
+          prompt: z.string().optional().optional(),
+          max_token: z.coerce.number().optional(),
+          threshold: z.coerce.number().optional(),
+          max_cluster: z.coerce.number().optional(),
+          random_seed: z.coerce.number().optional(),
+        })
+        .optional(),
       graphrag: z.object({
-        use_graphrag: z.boolean(),
+        use_graphrag: z.boolean().optional(),
       }),
-      entity_types: z.array(z.string()),
-      pages: z.array(
-        z.object({ from: z.coerce.number(), to: z.coerce.number() }),
-      ),
+      entity_types: z.array(z.string()).optional(),
+      pages: z
+        .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
+        .optional(),
     }),
   });
+
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
@@ -316,9 +320,9 @@ export function ChunkMethodDialog({
           </form>
         </Form>
         <DialogFooter>
-          <Button type="submit" form={FormId}>
+          <LoadingButton type="submit" form={FormId} loading={loading}>
             {t('common.save')}
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>
