@@ -212,6 +212,12 @@ class CommonService:
         #     data: Updated field values
         # Returns:
         #     Number of records updated
+        try:
+            if not DB.is_connection_usable():
+                DB.connect()
+        except Exception:
+            DB.close()
+            DB.connect()
         data["update_time"] = current_timestamp()
         data["update_date"] = datetime_format(datetime.now())
         num = cls.model.update(data).where(cls.model.id == pid).execute()
