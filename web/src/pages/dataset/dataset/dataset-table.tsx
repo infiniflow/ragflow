@@ -29,9 +29,11 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
+import { SetMetaDialog } from './set-meta-dialog';
 import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
 import { useRenameDocument } from './use-rename-document';
+import { useSaveMeta } from './use-save-meta';
 
 export function DatasetTable() {
   const {
@@ -69,10 +71,20 @@ export function DatasetTable() {
     initialName,
   } = useRenameDocument();
 
+  const {
+    showSetMetaModal,
+    hideSetMetaModal,
+    setMetaVisible,
+    setMetaLoading,
+    onSetMetaModalOk,
+    metaRecord,
+  } = useSaveMeta();
+
   const columns = useDatasetTableColumns({
     showChangeParserModal,
     setCurrentRecord: setRecord,
     showRenameModal,
+    showSetMetaModal,
   });
 
   const currentPagination = useMemo(() => {
@@ -218,6 +230,15 @@ export function DatasetTable() {
           hideModal={hideRenameModal}
           initialName={initialName}
         ></RenameDialog>
+      )}
+
+      {setMetaVisible && (
+        <SetMetaDialog
+          hideModal={hideSetMetaModal}
+          loading={setMetaLoading}
+          onOk={onSetMetaModalOk}
+          initialMetaData={metaRecord.meta_fields}
+        ></SetMetaDialog>
       )}
     </div>
   );
