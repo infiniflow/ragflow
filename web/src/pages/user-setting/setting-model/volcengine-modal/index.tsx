@@ -43,6 +43,12 @@ const VolcEngineModal = ({
     onOk?.(data);
   };
 
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
+  };
+
   return (
     <Modal
       title={t('addLlmTitle', { name: llmFactory })}
@@ -65,13 +71,7 @@ const VolcEngineModal = ({
         );
       }}
     >
-      <Form
-        name="basic"
-        style={{ maxWidth: 600 }}
-        autoComplete="off"
-        layout={'vertical'}
-        form={form}
-      >
+      <Form>
         <Form.Item<FieldType>
           label={t('modelType')}
           name="model_type"
@@ -88,21 +88,30 @@ const VolcEngineModal = ({
           name="llm_name"
           rules={[{ required: true, message: t('volcModelNameMessage') }]}
         >
-          <Input placeholder={t('volcModelNameMessage')} />
+          <Input
+            placeholder={t('volcModelNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addEndpointID')}
           name="endpoint_id"
           rules={[{ required: true, message: t('endpointIDMessage') }]}
         >
-          <Input placeholder={t('endpointIDMessage')} />
+          <Input
+            placeholder={t('endpointIDMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addArkApiKey')}
           name="ark_api_key"
           rules={[{ required: true, message: t('ArkApiKeyMessage') }]}
         >
-          <Input placeholder={t('ArkApiKeyMessage')} />
+          <Input
+            placeholder={t('ArkApiKeyMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('maxTokens')}
