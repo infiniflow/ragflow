@@ -23,7 +23,7 @@ import { z } from 'zod';
 
 const FormId = 'dataset-creating-form';
 
-export function InputForm() {
+export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
 
   const FormSchema = z.object({
@@ -43,7 +43,7 @@ export function InputForm() {
   });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log('🚀 ~ onSubmit ~ data:', data);
+    onOk?.(data.name);
   }
 
   return (
@@ -74,7 +74,7 @@ export function InputForm() {
   );
 }
 
-export function DatasetCreatingDialog({ hideModal }: IModalProps<any>) {
+export function DatasetCreatingDialog({ hideModal, onOk }: IModalProps<any>) {
   const { t } = useTranslation();
 
   return (
@@ -83,7 +83,7 @@ export function DatasetCreatingDialog({ hideModal }: IModalProps<any>) {
         <DialogHeader>
           <DialogTitle>{t('knowledgeList.createKnowledgeBase')}</DialogTitle>
         </DialogHeader>
-        <InputForm></InputForm>
+        <InputForm onOk={onOk}></InputForm>
         <DialogFooter>
           <Button type="submit" variant={'tertiary'} size={'sm'} form={FormId}>
             {t('common.save')}

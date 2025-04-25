@@ -196,7 +196,7 @@ Requirements:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
@@ -223,7 +223,7 @@ Requirements:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
@@ -303,7 +303,7 @@ Output: What's the weather in Rochester on {tomorrow}?
 ###############
     """
     ans = chat_mdl.chat(prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.2})
-    ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
+    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
 
@@ -350,20 +350,27 @@ Output:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.5})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         raise Exception(kwd)
 
     try:
-        return json_repair.loads(kwd)
+        obj = json_repair.loads(kwd)
     except json_repair.JSONDecodeError:
         try:
             result = kwd.replace(prompt[:-1], "").replace("user", "").replace("model", "").strip()
             result = "{" + result.split("{")[1].split("}")[0] + "}"
-            return json_repair.loads(result)
+            obj = json_repair.loads(result)
         except Exception as e:
             logging.exception(f"JSON parsing error: {result} -> {e}")
             raise e
+    res = {}
+    for k, v in obj.items():
+        try:
+            res[str(k)] = int(v)
+        except Exception:
+            pass
+    return res
 
 
 def vision_llm_describe_prompt(page=None) -> str:

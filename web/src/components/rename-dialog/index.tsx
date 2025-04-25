@@ -16,7 +16,7 @@ export function RenameDialog({
   initialName,
   onOk,
   loading,
-}: IModalProps<any> & { initialName: string }) {
+}: IModalProps<any> & { initialName?: string }) {
   const { t } = useTranslation();
 
   return (

@@ -3,6 +3,8 @@
 import {
   ColumnDef,
   ColumnFiltersState,
+  OnChangeFn,
+  RowSelectionState,
   SortingState,
   VisibilityState,
   flexRender,
@@ -33,7 +35,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useFetchFileList } from '@/hooks/file-manager-hooks';
+import { useFetchFileList } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/utils/common-util';
@@ -42,21 +44,35 @@ import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionCell } from './action-cell';
-import {
-  useHandleConnectToKnowledge,
-  useNavigateToOtherFolder,
-  useRenameCurrentFile,
-} from './hooks';
+import { useHandleConnectToKnowledge, useRenameCurrentFile } from './hooks';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
+import { UseMoveDocumentShowType } from './use-move-file';
+import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 
-export function FilesTable() {
+type FilesTableProps = Pick<
+  ReturnType<typeof useFetchFileList>,
+  'files' | 'loading' | 'pagination' | 'setPagination' | 'total'
+> & {
+  rowSelection: RowSelectionState;
+  setRowSelection: OnChangeFn<RowSelectionState>;
+} & UseMoveDocumentShowType;
+
+export function FilesTable({
+  files,
+  total,
+  pagination,
+  setPagination,
+  loading,
+  rowSelection,
+  setRowSelection,
+  showMoveFileModal,
+}: FilesTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
   );
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
-  const [rowSelection, setRowSelection] = React.useState({});
   const { t } = useTranslation('translation', {
     keyPrefix: 'fileManager',
   });
@@ -77,8 +93,6 @@ export function FilesTable() {
     initialFileName,
     fileRenameLoading,
   } = useRenameCurrentFile();
-
-  const { pagination, data, loading, setPagination } = useFetchFileList();
 
   const columns: ColumnDef<IFile>[] = [
     {
@@ -222,6 +236,7 @@ export function FilesTable() {
             row={row}
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
+            showMoveFileModal={showMoveFileModal}
           ></ActionCell>
         );
       },
@@ -236,7 +251,7 @@ export function FilesTable() {
   }, [pagination]);
 
   const table = useReactTable({
-    data: data?.files || [],
+    data: files || [],
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -269,7 +284,7 @@ export function FilesTable() {
       rowSelection,
       pagination: currentPagination,
     },
-    rowCount: data?.total ?? 0,
+    rowCount: total ?? 0,
     debugTable: true,
   });
 
@@ -325,8 +340,8 @@ export function FilesTable() {
       </div>
       <div className="flex items-center justify-end space-x-2 py-4">
         <div className="flex-1 text-sm text-muted-foreground">
-          {table.getFilteredSelectedRowModel().rows.length} of {data?.total}{' '}
-          row(s) selected.
+          {table.getFilteredSelectedRowModel().rows.length} of {total} row(s)
+          selected.
         </div>
         <div className="space-x-2">
           <Button

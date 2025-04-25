@@ -1,8 +1,11 @@
+import { BulkOperateBar } from '@/components/bulk-operate-bar';
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
+import { Button } from '@/components/ui/button';
 import { Upload } from 'lucide-react';
 import { DatasetTable } from './dataset-table';
-import { useHandleUploadDocument } from './hooks';
+import { useBulkOperateDataset } from './use-bulk-operate-dataset';
+import { useHandleUploadDocument } from './use-upload-document';
 
 export default function Dataset() {
   const {
@@ -12,14 +15,22 @@ export default function Dataset() {
     onDocumentUploadOk,
     documentUploadLoading,
   } = useHandleUploadDocument();
+  const { list } = useBulkOperateDataset();
+
   return (
     <section className="p-8">
-      <ListFilterBar title="Files" showDialog={showDocumentUploadModal}>
-        <Upload />
-        Upload file
+      <ListFilterBar title="Dataset">
+        <Button
+          variant={'tertiary'}
+          size={'sm'}
+          onClick={showDocumentUploadModal}
+        >
+          <Upload />
+          Upload file
+        </Button>
       </ListFilterBar>
+      <BulkOperateBar list={list}></BulkOperateBar>
       <DatasetTable></DatasetTable>
-
       {documentUploadVisible && (
         <FileUploadDialog
           hideModal={hideDocumentUploadModal}

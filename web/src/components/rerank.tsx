@@ -106,7 +106,7 @@ function RerankFormField() {
       name={RerankId}
       render={({ field }) => (
         <FormItem>
-          <FormLabel>{t('rerankModel')}</FormLabel>
+          <FormLabel tooltip={t('rerankTip')}>{t('rerankModel')}</FormLabel>
           <FormControl>
             <Select onValueChange={field.onChange} {...field}>
               <SelectTrigger
@@ -156,7 +156,7 @@ export function RerankFormFields() {
           name={'top_k'}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>{t('topK')}</FormLabel>
+              <FormLabel tooltip={t('topKTip')}>{t('topK')}</FormLabel>
               <FormControl>
                 <SingleFormSlider
                   {...field}

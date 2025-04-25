@@ -15,6 +15,7 @@
 #
 import logging
 import re
+import math
 from collections import OrderedDict
 from dataclasses import dataclass
 
@@ -353,10 +354,12 @@ class Dealer:
             return ranks
 
         RERANK_LIMIT = 64
-        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": page, "size": RERANK_LIMIT,
+        RERANK_LIMIT = int(RERANK_LIMIT//page_size + ((RERANK_LIMIT%page_size)/(page_size*1.) + 0.5)) * page_size if page_size>1 else 1
+        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": math.ceil(page_size*page/RERANK_LIMIT), "size": RERANK_LIMIT,
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
                "available_int": 1}
+
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
@@ -373,6 +376,7 @@ class Dealer:
             sim, tsim, vsim = self.rerank(
                 sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
                 rank_feature=rank_feature)
+        # Already paginated in search function
         idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
 
 

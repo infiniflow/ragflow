@@ -1,6 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Slider } from 'antd';
 import { useFormContext } from 'react-hook-form';
+import { z } from 'zod';
 import { SingleFormSlider } from '../ui/dual-range-slider';
 import {
   FormControl,
@@ -54,6 +55,19 @@ interface SimilaritySliderFormFieldProps {
   vectorSimilarityWeightName?: string;
   isTooltipShown?: boolean;
 }
+
+export const initialSimilarityThresholdValue = {
+  similarity_threshold: 0.2,
+};
+export const initialKeywordsSimilarityWeightValue = {
+  keywords_similarity_weight: 0.7,
+};
+
+export const similarityThresholdSchema = { similarity_threshold: z.number() };
+
+export const keywordsSimilarityWeightSchema = {
+  keywords_similarity_weight: z.number(),
+};
 
 export function SimilaritySliderFormField({
   vectorSimilarityWeightName = 'vector_similarity_weight',
