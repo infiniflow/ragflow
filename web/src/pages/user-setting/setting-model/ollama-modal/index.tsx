@@ -102,12 +102,6 @@ const OllamaModal = ({
   const getOptions = (factory: string) => {
     return optionsMap[factory as keyof typeof optionsMap] || optionsMap.Default;
   };
-  const handleKeyDown = async (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      await handleOk();
-    }
-  };
-
   return (
     <Modal
       title={t('addLlmTitle', { name: llmFactory })}
@@ -126,7 +120,13 @@ const OllamaModal = ({
         );
       }}
     >
-      <Form>
+      <Form
+        name="basic"
+        style={{ maxWidth: 600 }}
+        autoComplete="off"
+        layout={'vertical'}
+        form={form}
+      >
         <Form.Item<FieldType>
           label={t('modelType')}
           name="model_type"
@@ -142,24 +142,18 @@ const OllamaModal = ({
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
-          label={t('modelName')}
+          label={t(llmFactory === 'Xinference' ? 'modelUid' : 'modelName')}
           name="llm_name"
           rules={[{ required: true, message: t('modelNameMessage') }]}
         >
-          <Input
-            placeholder={t('modelNameMessage')}
-            onKeyDown={handleKeyDown}
-          />
+          <Input placeholder={t('modelNameMessage')} />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addLlmBaseUrl')}
           name="api_base"
           rules={[{ required: true, message: t('baseUrlNameMessage') }]}
         >
-          <Input
-            placeholder={t('baseUrlNameMessage')}
-            onKeyDown={handleKeyDown}
-          />
+          <Input placeholder={t('baseUrlNameMessage')} />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('apiKey')}
