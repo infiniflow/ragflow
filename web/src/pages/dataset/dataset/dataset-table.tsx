@@ -14,6 +14,7 @@ import {
 import * as React from 'react';
 
 import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
+import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -23,13 +24,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useFetchNextDocumentList } from '@/hooks/document-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
+import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
-import { useChangeDocumentParser } from './hooks';
+import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
+import { useRenameDocument } from './use-rename-document';
 
 export function DatasetTable() {
   const {
@@ -38,7 +40,7 @@ export function DatasetTable() {
     pagination,
     // handleInputChange,
     setPagination,
-  } = useFetchNextDocumentList();
+  } = useFetchDocumentList();
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
@@ -55,11 +57,22 @@ export function DatasetTable() {
     changeParserVisible,
     hideChangeParserModal,
     showChangeParserModal,
-  } = useChangeDocumentParser(currentRecord.id);
+    changeParserRecord,
+  } = useChangeDocumentParser();
+
+  const {
+    renameLoading,
+    onRenameOk,
+    renameVisible,
+    hideRenameModal,
+    showRenameModal,
+    initialName,
+  } = useRenameDocument();
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
     setCurrentRecord: setRecord,
+    showRenameModal,
   });
 
   const currentPagination = useMemo(() => {
@@ -186,15 +199,25 @@ export function DatasetTable() {
       </div>
       {changeParserVisible && (
         <ChunkMethodDialog
-          documentId={currentRecord.id}
-          parserId={currentRecord.parser_id}
-          parserConfig={currentRecord.parser_config}
-          documentExtension={getExtension(currentRecord.name)}
+          documentId={changeParserRecord.id}
+          parserId={changeParserRecord.parser_id}
+          parserConfig={changeParserRecord.parser_config}
+          documentExtension={getExtension(changeParserRecord.name)}
           onOk={onChangeParserOk}
           visible={changeParserVisible}
           hideModal={hideChangeParserModal}
           loading={changeParserLoading}
         ></ChunkMethodDialog>
+      )}
+
+      {renameVisible && (
+        <RenameDialog
+          visible={renameVisible}
+          onOk={onRenameOk}
+          loading={renameLoading}
+          hideModal={hideRenameModal}
+          initialName={initialName}
+        ></RenameDialog>
       )}
     </div>
   );

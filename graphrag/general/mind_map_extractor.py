@@ -93,13 +93,13 @@ class MindMapExtractor(Extractor):
             for i in range(len(sections)):
                 section_cnt = num_tokens_from_string(sections[i])
                 if cnt + section_cnt >= token_count and texts:
-                    nursery.start_soon(lambda: self._process_document("".join(texts), prompt_variables, res))
+                    nursery.start_soon(self._process_document, "".join(texts), prompt_variables, res)
                     texts = []
                     cnt = 0
                 texts.append(sections[i])
                 cnt += section_cnt
             if texts:
-                nursery.start_soon(lambda: self._process_document("".join(texts), prompt_variables, res))
+                nursery.start_soon(self._process_document, "".join(texts), prompt_variables, res)
         if not res:
             return MindMapResult(output={"id": "root", "children": []})
         merge_json = reduce(self._merge, res)

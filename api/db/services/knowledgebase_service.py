@@ -150,6 +150,7 @@ class KnowledgebaseService(CommonService):
             cls.model.name,
             cls.model.language,
             cls.model.description,
+            cls.model.tenant_id,
             cls.model.permission,
             cls.model.doc_num,
             cls.model.token_num,
@@ -184,7 +185,8 @@ class KnowledgebaseService(CommonService):
 
         count = kbs.count()
 
-        kbs = kbs.paginate(page_number, items_per_page)
+        if page_number and items_per_page:
+            kbs = kbs.paginate(page_number, items_per_page)
 
         return list(kbs.dicts()), count
 

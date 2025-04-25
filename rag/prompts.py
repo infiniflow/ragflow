@@ -196,7 +196,7 @@ Requirements:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
@@ -223,7 +223,7 @@ Requirements:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
@@ -303,7 +303,7 @@ Output: What's the weather in Rochester on {tomorrow}?
 ###############
     """
     ans = chat_mdl.chat(prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.2})
-    ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
+    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
 
@@ -350,7 +350,7 @@ Output:
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.5})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         raise Exception(kwd)
 
