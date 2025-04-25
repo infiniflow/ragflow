@@ -83,8 +83,13 @@ services:
       - --mcp-mode=self-host # `self-host` or `host`
       - --mcp-host-api-key="ragflow-xxxxxxx" # only need to privide when mode is `self-host`
 ```
-
-Then launch it normally `docker compose -f docker-compose.yml`.
+cd ragflow-main/docker/
+chmod +x entrypoint.sh
+cd ragflow-main/mcp/server/
+chmod +x wrapper.py
+cd ragflow-main/docker/
+docker compose -f docker-compose.yml up -d
+docker logs ragflow-server
 
 ```bash
 ragflow-server  | Starting MCP Server on 0.0.0.0:9382 with base URL http://127.0.0.1:9380...
