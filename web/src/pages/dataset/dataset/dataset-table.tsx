@@ -24,9 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { IDocumentInfo } from '@/interfaces/database/document';
 import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
 import { SetMetaDialog } from './set-meta-dialog';
@@ -52,8 +50,6 @@ export function DatasetTable({
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
-
-  const { currentRecord, setRecord } = useSetSelectedRecord<IDocumentInfo>();
 
   const {
     changeParserLoading,
@@ -84,7 +80,6 @@ export function DatasetTable({
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
-    setCurrentRecord: setRecord,
     showRenameModal,
     showSetMetaModal,
   });

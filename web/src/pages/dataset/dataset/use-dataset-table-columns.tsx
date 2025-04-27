@@ -22,14 +22,12 @@ import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { UseRenameDocumentShowType } from './use-rename-document';
 import { UseSaveMetaShowType } from './use-save-meta';
 
-type UseDatasetTableColumnsType = UseChangeDocumentParserShowType & {
-  setCurrentRecord: (record: IDocumentInfo) => void;
-} & UseRenameDocumentShowType &
+type UseDatasetTableColumnsType = UseChangeDocumentParserShowType &
+  UseRenameDocumentShowType &
   UseSaveMetaShowType;
 
 export function useDatasetTableColumns({
   showChangeParserModal,
-  setCurrentRecord,
   showRenameModal,
   showSetMetaModal,
 }: UseDatasetTableColumnsType) {

@@ -31,7 +31,7 @@ export function SideBar() {
   const { data } = useFetchKnowledgeBaseConfiguration();
 
   return (
-    <aside className="w-[303px] relative border-r ">
+    <aside className="w-60 relative border-r ">
       <div className="p-6 space-y-2 border-b">
         <div
           className="w-[70px] h-[70px] rounded-xl bg-cover"
@@ -56,9 +56,6 @@ export function SideBar() {
             >
               <item.icon className="w-6 h-6" />
               <span>{item.label}</span>
-              {active && (
-                <div className="absolute right-0 w-[5px] h-[66px] bg-primary rounded-l-xl shadow-[0_0_5.94px_#7561ff,0_0_11.88px_#7561ff,0_0_41.58px_#7561ff,0_0_83.16px_#7561ff,0_0_142.56px_#7561ff,0_0_249.48px_#7561ff]" />
-              )}
             </Button>
           );
         })}

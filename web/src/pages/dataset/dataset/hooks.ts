@@ -1,5 +1,5 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useCreateNextDocument, useNextWebCrawl } from '@/hooks/document-hooks';
+import { useNextWebCrawl } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
@@ -15,34 +15,6 @@ export const useNavigateToOtherPage = () => {
   const toChunk = useCallback((id: string) => {}, []);
 
   return { linkToUploadPage, toChunk };
-};
-
-export const useCreateEmptyDocument = () => {
-  const { createDocument, loading } = useCreateNextDocument();
-
-  const {
-    visible: createVisible,
-    hideModal: hideCreateModal,
-    showModal: showCreateModal,
-  } = useSetModalState();
-
-  const onCreateOk = useCallback(
-    async (name: string) => {
-      const ret = await createDocument(name);
-      if (ret === 0) {
-        hideCreateModal();
-      }
-    },
-    [hideCreateModal, createDocument],
-  );
-
-  return {
-    createLoading: loading,
-    onCreateOk,
-    createVisible,
-    hideCreateModal,
-    showCreateModal,
-  };
 };
 
 export const useGetRowSelection = () => {
