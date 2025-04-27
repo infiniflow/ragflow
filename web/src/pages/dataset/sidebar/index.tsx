@@ -1,8 +1,10 @@
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
+import { formatDate } from '@/utils/date';
 import { Banknote, LayoutGrid, User } from 'lucide-react';
 import { useHandleMenuClick } from './hooks';
 
@@ -16,15 +18,6 @@ const items = [
   { icon: Banknote, label: 'Settings', key: Routes.DatasetSetting },
 ];
 
-const dataset = {
-  id: 1,
-  title: 'Legal knowledge base',
-  files: '1,242 files',
-  size: '152 MB',
-  created: '12.02.2024',
-  image: 'https://github.com/shadcn.png',
-};
-
 export function SideBar() {
   const pathName = useSecondPathName();
   const { handleMenuClick } = useHandleMenuClick();
@@ -33,16 +26,18 @@ export function SideBar() {
   return (
     <aside className="w-60 relative border-r ">
       <div className="p-6 space-y-2 border-b">
-        <div
-          className="w-[70px] h-[70px] rounded-xl bg-cover"
-          style={{ backgroundImage: `url(${dataset.image})` }}
-        />
+        <Avatar className="size-20 rounded-lg">
+          <AvatarImage src={data.avatar} />
+          <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+        </Avatar>
 
         <h3 className="text-lg font-semibold mb-2">{data.name}</h3>
         <div className="text-sm opacity-80">
-          {dataset.files} | {dataset.size}
+          {data.doc_num} files | {data.chunk_num} chunks
         </div>
-        <div className="text-sm opacity-80">Created {dataset.created}</div>
+        <div className="text-sm opacity-80">
+          Created {formatDate(data.create_time)}
+        </div>
       </div>
       <div className="mt-4">
         {items.map((item, itemIdx) => {
