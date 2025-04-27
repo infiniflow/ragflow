@@ -7,14 +7,24 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+:::info
+Each RAGFlow release is available in two editions:
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.18.0-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.18.0`
+:::
+
 ## v0.18.0
 
 Released on April 23, 2025.
 
+### Compatibility changes
+
+From this release onwards, built-in rerank models have been removed because they have minimal impact on retrieval rates but significantly increase retrieval time.
+
 ### New features
 
 - MCP server: enables access to RAGFlow's knowledge bases via MCP.
-- DeepDoc supports adopting VLM model as a processing pipeline during document layout recognition, enabling in-depth analysis of images in PDFs.
+- DeepDoc supports adopting VLM model as a processing pipeline during document layout recognition, enabling in-depth analysis of images in PDF and DOCX files.
 - OpenAI-compatible APIs: Agents can be called via OpenAI-compatible APIs.
 - User registration control: administrators can enable or disable user registration through an environment variable.
 - Team collaboration: Agents can be shared with team members.
@@ -54,7 +64,7 @@ From this release onwards, if you still see RAGFlow's responses being cut short 
 - Accelerates knowledge graph extraction.
 - Enables Tavily-based web search in the **Retrieval** agent component.
 - Adds Tongyi-Qianwen QwQ models (OpenAI-compatible).
-- Supports CSV files in the **General** chunk method.
+- Supports CSV files in the **General** chunking method.
 
 ### Fixed issues
 
@@ -317,7 +327,7 @@ Released on October 31, 2024.
 
 - Adds the team management functionality for all users.
 - Updates the Agent UI to improve usability.
-- Adds support for Markdown chunking in the **General** chunk method.
+- Adds support for Markdown chunking in the **General** chunking method.
 - Introduces an **invoke** tool within the Agent UI.
 - Integrates support for Dify's knowledge base API.
 - Adds support for GLM4-9B and Yi-Lightning models.
@@ -349,7 +359,7 @@ Released on September 30, 2024.
 - Improves the results of multi-round dialogues.
 - Enables users to remove added LLM vendors.
 - Adds support for **OpenTTS** and **SparkTTS** models.
-- Implements an **Excel to HTML** toggle in the **General** chunk method, allowing users to parse a spreadsheet into either HTML tables or key-value pairs by row.
+- Implements an **Excel to HTML** toggle in the **General** chunking method, allowing users to parse a spreadsheet into either HTML tables or key-value pairs by row.
 - Adds agent tools **YahooFinance** and **Jin10**.
 - Adds an investment advisor agent template.
 
@@ -410,7 +420,7 @@ Released on August 6, 2024.
 
 ### New features
 
-- Supports GraphRAG as a chunk method.
+- Supports GraphRAG as a chunking method.
 - Introduces Agent component **Keyword** and search tools, including **Baidu**, **DuckDuckGo**, **PubMed**, **Wikipedia**, **Bing**, and **Google**.
 - Supports speech-to-text recognition for audio files.
 - Supports model vendors **Gemini** and **Groq**.
@@ -425,8 +435,8 @@ Released on July 8, 2024.
 
 - Supports Agentic RAG, enabling graph-based workflow construction for RAG and agents.
 - Supports model vendors **Mistral**, **MiniMax**, **Bedrock**, and **Azure OpenAI**.
-- Supports DOCX files in the MANUAL chunk method.
-- Supports DOCX, MD, and PDF files in the Q&A chunk method.
+- Supports DOCX files in the MANUAL chunking method.
+- Supports DOCX, MD, and PDF files in the Q&A chunking method.
 
 ## v0.7.0
 
@@ -438,7 +448,7 @@ Released on May 31, 2024.
 - Integrates reranker and embedding models: [BCE](https://github.com/netease-youdao/BCEmbedding), [BGE](https://github.com/FlagOpen/FlagEmbedding), and [Jina](https://jina.ai/embeddings/).
 - Supports LLMs Baichuan and VolcanoArk.
 - Implements [RAPTOR](https://arxiv.org/html/2401.18059v1) for improved text retrieval.
-- Supports HTML files in the GENERAL chunk method.
+- Supports HTML files in the GENERAL chunking method.
 - Provides HTTP and Python APIs for deleting documents by ID.
 - Supports ARM64 platforms.
 
@@ -467,7 +477,7 @@ Released on May 21, 2024.
 - Supports streaming output.
 - Provides HTTP and Python APIs for retrieving document chunks.
 - Supports monitoring of system components, including Elasticsearch, MySQL, Redis, and MinIO.
-- Supports disabling **Layout Recognition** in the GENERAL chunk method to reduce file chunking time.
+- Supports disabling **Layout Recognition** in the GENERAL chunking method to reduce file chunking time.
 
 ### Related APIs
 
