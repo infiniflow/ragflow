@@ -63,10 +63,15 @@ Here are three augments required, the first two,`host` and `port`, are self-expl
 
 Building a standalone MCP server image is straightforward and easy, so we just proposed a way to launch it with RAGFlow server here.
 
+<<<<<<< HEAD
 #### 1. Enable MCP server
+=======
+#### Alongside RAGFlow {#alongside_ragflow}
+>>>>>>> 8ce5e69b2fb1bd4b25d244031398ec195b28ac5a
 
 MCP server is disable by default, as it is designed as an optional, complementary component of the RAGFlow server. To enable MCP server, 
 
+<<<<<<< HEAD
 1. Navigate to `docker/docker-compose.yml`.
 2. Uncomment the `services.ragflow.command` section as shown below:
 
@@ -85,6 +90,41 @@ MCP server is disable by default, as it is designed as an optional, complementar
         - --mcp-mode=self-host # either `self-host` or `host`
         - --mcp-host-api-key="ragflow-xxxxxxx" # required only when `mode` is set to `self-host`
   ```
+=======
+```yaml
+services:
+  ragflow:
+    ...
+    image: ${RAGFLOW_IMAGE}
+    # example to setup MCP server
+    command:
+      - --enable-mcpserver
+      - --mcp-host=0.0.0.0
+      - --mcp-port=9382
+      - --mcp-base-url=http://127.0.0.1:9380
+      - --mcp-script-path=/ragflow/mcp/server/server.py
+      - --mcp-mode=self-host # `self-host` or `host`
+      - --mcp-host-api-key=ragflow-xxxxxxx # only need to privide when mode is `self-host` and use bare string without quotation marks here.
+```
+
+To troubleshoot, launch the service in the foreground using `docker compose -f docker-compose.yml`.
+
+### For those upgrading from versions before v0.18.0
+
+1. Get all MCP related files ready.
+   1. copy `mcp/` directory to local.
+   1. copy `docker/docker-compose.yml` to local.
+   1. copy `docker/entrypoint.sh` to local.
+   1. resolve necessary dependencies via `uv`.
+      - simply run `uv add mcp` if it works for you. Or:
+      - copy `pyproject.toml` and run `uv sync --python 3.10 --all-extras`.
+1. Change `docker-compose.yml` to enable MCP as it is disable by default, [see last section](#alongside_ragflow).
+1. Launch the service with `docker compose -f docker-compose.yml up -d`
+
+### Check the MCP server status
+
+Checking logs of RAGFlow server with `docker logs ragflow-server`. If you see the MCP server ASCII art there, it means all is OK!
+>>>>>>> 8ce5e69b2fb1bd4b25d244031398ec195b28ac5a
 
 3. Run `docker compose -f docker-compose.yml` to launch the RAGFlow server together with the MCP server.
 

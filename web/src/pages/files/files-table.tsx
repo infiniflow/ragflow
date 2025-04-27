@@ -3,8 +3,6 @@
 import {
   ColumnDef,
   ColumnFiltersState,
-  OnChangeFn,
-  RowSelectionState,
   SortingState,
   VisibilityState,
   flexRender,
@@ -19,7 +17,6 @@ import * as React from 'react';
 import { RenameDialog } from '@/components/rename-dialog';
 import SvgIcon from '@/components/svg-icon';
 import { TableEmpty, TableSkeleton } from '@/components/table-skeleton';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -35,6 +32,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
 import { cn } from '@/lib/utils';
@@ -45,17 +43,18 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionCell } from './action-cell';
 import { useHandleConnectToKnowledge, useRenameCurrentFile } from './hooks';
+import { KnowledgeCell } from './knowledge-cell';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
+import { isFolderType } from './util';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
   'files' | 'loading' | 'pagination' | 'setPagination' | 'total'
-> & {
-  rowSelection: RowSelectionState;
-  setRowSelection: OnChangeFn<RowSelectionState>;
-} & UseMoveDocumentShowType;
+> &
+  Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> &
+  UseMoveDocumentShowType;
 
 export function FilesTable({
   files,
@@ -135,7 +134,7 @@ export function FilesTable({
         const name: string = row.getValue('name');
         const type = row.original.type;
         const id = row.original.id;
-        const isFolder = type === 'folder';
+        const isFolder = isFolderType(type);
 
         const handleNameClick = () => {
           if (isFolder) {
@@ -206,24 +205,8 @@ export function FilesTable({
       accessorKey: 'kbs_info',
       header: t('knowledgeBase'),
       cell: ({ row }) => {
-        const value = row.getValue('kbs_info');
-        return Array.isArray(value) ? (
-          <section className="flex gap-2 items-center">
-            {value?.slice(0, 2).map((x) => (
-              <Badge key={x.kb_id} className="" variant={'tertiary'}>
-                {x.kb_name}
-              </Badge>
-            ))}
-
-            {value.length > 2 && (
-              <Button variant={'icon'} size={'auto'}>
-                +{value.length - 2}
-              </Button>
-            )}
-          </section>
-        ) : (
-          ''
-        );
+        const value: IFile['kbs_info'] = row.getValue('kbs_info');
+        return <KnowledgeCell value={value}></KnowledgeCell>;
       },
     },
     {

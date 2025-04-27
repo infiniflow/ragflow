@@ -322,9 +322,9 @@ def get_error_data_result(
     return jsonify(response)
 
 
-def generate_confirmation_token(tenent_id):
-    serializer = URLSafeTimedSerializer(tenent_id)
-    return "ragflow-" + serializer.dumps(get_uuid(), salt=tenent_id)[2:34]
+def generate_confirmation_token(tenant_id):
+    serializer = URLSafeTimedSerializer(tenant_id)
+    return "ragflow-" + serializer.dumps(get_uuid(), salt=tenant_id)[2:34]
 
 
 def valid(permission, valid_permission, chunk_method, valid_chunk_method):
