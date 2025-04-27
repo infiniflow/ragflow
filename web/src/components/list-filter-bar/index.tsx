@@ -1,19 +1,18 @@
 import { ChevronDown } from 'lucide-react';
 import React, {
   ChangeEventHandler,
-  FunctionComponent,
   PropsWithChildren,
   ReactNode,
+  useMemo,
 } from 'react';
-import { Button, ButtonProps } from './ui/button';
-import { SearchInput } from './ui/input';
+import { Button, ButtonProps } from '../ui/button';
+import { SearchInput } from '../ui/input';
+import { CheckboxFormMultipleProps, FilterPopover } from './filter-popover';
 
 interface IProps {
   title?: string;
-  FilterPopover?: FunctionComponent<any>;
   searchString?: string;
   onSearchChange?: ChangeEventHandler<HTMLInputElement>;
-  count?: number;
   showFilter?: boolean;
   leftPanel?: ReactNode;
 }
@@ -32,25 +31,31 @@ const FilterButton = React.forwardRef<
 export default function ListFilterBar({
   title,
   children,
-  FilterPopover,
   searchString,
   onSearchChange,
-  count,
   showFilter = true,
   leftPanel,
-}: PropsWithChildren<IProps>) {
+  value,
+  onChange,
+  filters,
+}: PropsWithChildren<IProps & CheckboxFormMultipleProps>) {
+  const filterCount = useMemo(() => {
+    return typeof value === 'object' && value !== null
+      ? Object.values(value).reduce((pre, cur) => {
+          return pre + cur.length;
+        }, 0)
+      : 0;
+  }, [value]);
+
   return (
     <div className="flex justify-between mb-6 items-center">
       <span className="text-3xl font-bold ">{leftPanel || title}</span>
       <div className="flex gap-4 items-center">
-        {showFilter &&
-          (FilterPopover ? (
-            <FilterPopover>
-              <FilterButton count={count}></FilterButton>
-            </FilterPopover>
-          ) : (
-            <FilterButton></FilterButton>
-          ))}
+        {showFilter && (
+          <FilterPopover value={value} onChange={onChange} filters={filters}>
+            <FilterButton count={filterCount}></FilterButton>
+          </FilterPopover>
+        )}
 
         <SearchInput
           value={searchString}
