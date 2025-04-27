@@ -3,8 +3,6 @@
 import {
   ColumnDef,
   ColumnFiltersState,
-  OnChangeFn,
-  RowSelectionState,
   SortingState,
   VisibilityState,
   flexRender,
@@ -35,6 +33,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
 import { cn } from '@/lib/utils';
@@ -52,10 +51,9 @@ import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
   'files' | 'loading' | 'pagination' | 'setPagination' | 'total'
-> & {
-  rowSelection: RowSelectionState;
-  setRowSelection: OnChangeFn<RowSelectionState>;
-} & UseMoveDocumentShowType;
+> &
+  Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> &
+  UseMoveDocumentShowType;
 
 export function FilesTable({
   files,
