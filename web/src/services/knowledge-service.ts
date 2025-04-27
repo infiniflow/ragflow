@@ -1,5 +1,6 @@
 import { IRenameTag } from '@/interfaces/database/knowledge';
 import {
+  IFetchDocumentListRequestBody,
   IFetchKnowledgeListRequestBody,
   IFetchKnowledgeListRequestParams,
 } from '@/interfaces/request/knowledge';
@@ -181,5 +182,10 @@ export const listDataset = (
   params?: IFetchKnowledgeListRequestParams,
   body?: IFetchKnowledgeListRequestBody,
 ) => request.post(api.kb_list, { data: body || {}, params });
+
+export const listDocument = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchDocumentListRequestBody,
+) => request.post(api.get_document_list, { data: body || {}, params });
 
 export default kbService;
