@@ -97,7 +97,7 @@ class KnowledgebaseService(CommonService):
         kb = kbs[0]
 
         # Get all documents in the knowledge base
-        docs, _ = DocumentService.get_by_kb_id(kb_id, 1, 1000, "create_time", True, "")
+        docs, _ = DocumentService.get_by_kb_id(kb_id, 1, 1000, "create_time", True, "", [], [])
 
         # Check parsing status of each document
         for doc in docs:
