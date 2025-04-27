@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
@@ -36,12 +37,15 @@ import { useSaveMeta } from './use-save-meta';
 export type DatasetTableProps = Pick<
   ReturnType<typeof useFetchDocumentList>,
   'documents' | 'setPagination' | 'pagination'
->;
+> &
+  Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'>;
 
 export function DatasetTable({
   documents,
   pagination,
   setPagination,
+  rowSelection,
+  setRowSelection,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -49,7 +53,6 @@ export function DatasetTable({
   );
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
-  const [rowSelection, setRowSelection] = React.useState({});
 
   const {
     changeParserLoading,

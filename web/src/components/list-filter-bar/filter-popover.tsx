@@ -4,7 +4,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { PropsWithChildren, useCallback, useEffect } from 'react';
+import { PropsWithChildren, useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { ZodArray, ZodString, z } from 'zod';
 
@@ -24,12 +24,14 @@ export type CheckboxFormMultipleProps = {
   filters?: FilterCollection[];
   value?: FilterValue;
   onChange?: FilterChange;
+  setOpen(open: boolean): void;
 };
 
 function CheckboxFormMultiple({
   filters = [],
   value,
   onChange,
+  setOpen,
 }: CheckboxFormMultipleProps) {
   const fieldsDict = filters?.reduce<Record<string, Array<any>>>((pre, cur) => {
     pre[cur.field] = [];
@@ -53,14 +55,14 @@ function CheckboxFormMultiple({
   });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log('🚀 ~ onSubmit ~ data:', data);
-    // setOwnerIds(data.items);
     onChange?.(data);
+    setOpen(false);
   }
 
   const onReset = useCallback(() => {
     onChange?.(fieldsDict);
-  }, [fieldsDict, onChange]);
+    setOpen(false);
+  }, [fieldsDict, onChange, setOpen]);
 
   useEffect(() => {
     form.reset(value);
@@ -148,14 +150,17 @@ export function FilterPopover({
   onChange,
   filters,
 }: PropsWithChildren & CheckboxFormMultipleProps) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent>
         <CheckboxFormMultiple
           onChange={onChange}
           value={value}
           filters={filters}
+          setOpen={setOpen}
         ></CheckboxFormMultiple>
       </PopoverContent>
     </Popover>
