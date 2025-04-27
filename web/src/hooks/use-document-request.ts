@@ -16,7 +16,10 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { useGetKnowledgeSearchParams } from './route-hook';
+import {
+  useGetKnowledgeSearchParams,
+  useSetPaginationParams,
+} from './route-hook';
 
 export const enum DocumentApiAction {
   UploadDocument = 'uploadDocument',
@@ -28,6 +31,7 @@ export const enum DocumentApiAction {
   SetDocumentParser = 'setDocumentParser',
   SetDocumentMeta = 'setDocumentMeta',
   FetchAllDocumentList = 'fetchAllDocumentList',
+  CreateDocument = 'createDocument',
 }
 
 export const useUploadNextDocument = () => {
@@ -362,4 +366,38 @@ export const useSetDocumentMeta = () => {
   });
 
   return { setDocumentMeta: mutateAsync, data, loading };
+};
+
+export const useCreateDocument = () => {
+  const { id } = useParams();
+  const { setPaginationParams, page } = useSetPaginationParams();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.CreateDocument],
+    mutationFn: async (name: string) => {
+      const { data } = await kbService.document_create({
+        name,
+        kb_id: id,
+      });
+      if (data.code === 0) {
+        if (page === 1) {
+          queryClient.invalidateQueries({
+            queryKey: [DocumentApiAction.FetchDocumentList],
+          });
+        } else {
+          setPaginationParams(); // fetch document list
+        }
+
+        message.success(i18n.t('message.created'));
+      }
+      return data.code;
+    },
+  });
+
+  return { createDocument: mutateAsync, loading, data };
 };
