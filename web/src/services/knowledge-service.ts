@@ -54,7 +54,7 @@ const methods = {
   },
   getList: {
     url: kb_list,
-    method: 'get',
+    method: 'post',
   },
   // document manager
   get_document_list: {
