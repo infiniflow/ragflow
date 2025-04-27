@@ -226,7 +226,10 @@ class KnowledgebaseService(CommonService):
             cls.model.chunk_num,
             cls.model.parser_id,
             cls.model.parser_config,
-            cls.model.pagerank]
+            cls.model.pagerank,
+            cls.model.create_time,
+            cls.model.update_time
+            ]
         kbs = cls.model.select(*fields).join(Tenant, on=(
             (Tenant.id == cls.model.tenant_id) & (Tenant.status == StatusEnum.VALID.value))).where(
             (cls.model.id == kb_id),
