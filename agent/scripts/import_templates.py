@@ -2,9 +2,8 @@ import os
 import sys
 import json
 import logging
+import argparse
 from typing import Dict, List, Any
-import tkinter as tk
-from tkinter import filedialog
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,21 +18,6 @@ TEMPLATES_DIR = os.path.join(BASE_DIR, "agent", "templates")
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-def select_template_files() -> List[str]:
-    """通过文件对话框选择JSON文件"""
-    root = tk.Tk()
-    root.withdraw()  # 隐藏主窗口
-    
-    template_files = filedialog.askopenfilenames(
-        initialdir=TEMPLATES_DIR,
-        title="选择要导入的模板文件",
-        filetypes=(("JSON文件", "*.json"), ("所有文件", "*.*"))
-    )
-    
-    selected_files = list(template_files)
-    logger.info(f"已选择 {len(selected_files)} 个模板文件")
-    return selected_files
 
 def read_json_file(file_path: str) -> Dict[str, Any]:
     """读取JSON文件并返回解析后的内容"""
@@ -93,15 +77,35 @@ def import_templates_using_update_module(template_files: List[str]) -> None:
 
 def main():
     """主函数"""
-    # 通过文件对话框选择模板文件
-    template_files = select_template_files()
+    # 创建参数解析器
+    parser = argparse.ArgumentParser(description='导入模板JSON文件到系统')
+    parser.add_argument('template_files', nargs='+', help='要导入的JSON模板文件路径')
+    
+    # 解析命令行参数
+    args = parser.parse_args()
+    template_files = args.template_files
     
     if not template_files:
-        logger.warning("没有选择任何模板文件")
+        logger.warning("没有指定任何模板文件")
+        return
+    
+    # 检查文件是否存在
+    valid_files = []
+    for file_path in template_files:
+        if not os.path.exists(file_path):
+            logger.warning(f"文件不存在: {file_path}")
+            continue
+        if not file_path.lower().endswith('.json'):
+            logger.warning(f"文件不是JSON格式: {file_path}")
+            continue
+        valid_files.append(file_path)
+    
+    if not valid_files:
+        logger.warning("没有找到有效的JSON模板文件")
         return
     
     # 使用update_template模块导入模板
-    import_templates_using_update_module(template_files)
+    import_templates_using_update_module(valid_files)
 
 if __name__ == "__main__":
     main()

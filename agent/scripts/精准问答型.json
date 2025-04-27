@@ -1,0 +1,265 @@
+{
+  "id": 10,
+  "title": "精准问答型",
+  "description": "一个精准问答型的助手，可以根据关键文档名称查找相应的文档并提供回答。",
+  "canvas_type": "chatbot",
+  "dsl": {
+    "answer": [],
+    "components": {
+      "Answer:WetKidsJuggle": {
+        "downstream": [
+          "Retrieval:CommonTreesSip"
+        ],
+        "obj": {
+          "component_name": "Answer",
+          "inputs": [],
+          "output": null,
+          "params": {}
+        },
+        "upstream": [
+          "begin",
+          "Generate:ReadyZoosHide"
+        ]
+      },
+      "Generate:ReadyZoosHide": {
+        "downstream": [
+          "Answer:WetKidsJuggle"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": false,
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "qwen-max@Tongyi-Qianwen",
+            "maxTokensEnabled": false,
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "parameter": "Precise",
+            "parameters": [],
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompt": "## 角色设定  \n所有回答必须基于 {Retrieval:CommonTreesSip}的内容，不得扩展。\n\n知识库检索输入：  \n {Retrieval:CommonTreesSip}\n\n## 任务要求\n\n你只需要做以下两个事情：\n        -如果 {Retrieval:CommonTreesSip}为空回复时，回复\"未找到相关文件\"；\n        -如果 {Retrieval:CommonTreesSip}有内容，回复\"相关文件已附在对话后，请查阅\"，标注引用文件；\n\n### **输入示例**\n```\n {Retrieval:CommonTreesSip}\n```\n## 输出示例\n\n依据\"财务管理规整制度（2024版）\"，差旅费用的报销需要总经理签字授权。\n\n",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Retrieval:CommonTreesSip"
+        ]
+      },
+      "Retrieval:CommonTreesSip": {
+        "downstream": [
+          "Generate:ReadyZoosHide"
+        ],
+        "obj": {
+          "component_name": "Retrieval",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "kb_ids": [],
+            "keywords_similarity_weight": 0.28,
+            "query": [
+              {
+                "component_id": "Answer:WetKidsJuggle",
+                "type": "reference"
+              }
+            ],
+            "similarity_threshold": 0.33,
+            "top_n": 1,
+            "use_kg": false
+          }
+        },
+        "upstream": [
+          "Answer:WetKidsJuggle"
+        ]
+      },
+      "begin": {
+        "downstream": [
+          "Answer:WetKidsJuggle"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "prologue": "你好，我是您的精准检索助手，请您输入关键文档名称，我会帮您找到相应的文档。",
+            "query": []
+          }
+        },
+        "upstream": []
+      }
+    },
+    "embed_id": "",
+    "graph": {
+      "edges": [
+        {
+          "id": "xy-edge__begin-Answer:WetKidsJugglec",
+          "markerEnd": "logo",
+          "source": "begin",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:WetKidsJuggle",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Answer:WetKidsJuggleb-Retrieval:CommonTreesSipc",
+          "markerEnd": "logo",
+          "source": "Answer:WetKidsJuggle",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:CommonTreesSip",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Retrieval:CommonTreesSipb-Generate:ReadyZoosHideb",
+          "markerEnd": "logo",
+          "source": "Retrieval:CommonTreesSip",
+          "sourceHandle": "b",
+          "style": {
+            "strokeWidth": 2,
+            "stroke": "rgb(202 197 245)"
+          },
+          "target": "Generate:ReadyZoosHide",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:ReadyZoosHidec-Answer:WetKidsJugglec",
+          "markerEnd": "logo",
+          "source": "Generate:ReadyZoosHide",
+          "sourceHandle": "c",
+          "style": {
+            "strokeWidth": 2,
+            "stroke": "rgb(202 197 245)"
+          },
+          "target": "Answer:WetKidsJuggle",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        }
+      ],
+      "nodes": [
+        {
+          "data": {
+            "name": "Opener"
+          },
+          "dragging": false,
+          "height": 44,
+          "id": "begin",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -513.910145693701,
+            "y": -16.75438061618018
+          },
+          "positionAbsolute": {
+            "x": -513.910145693701,
+            "y": -16.75438061618018
+          },
+          "selected": false,
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "beginNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "name": "Interface"
+          },
+          "dragging": false,
+          "height": 44,
+          "id": "Answer:WetKidsJuggle",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -266.77547355234844,
+            "y": -115.30622213031475
+          },
+          "positionAbsolute": {
+            "x": -266.77547355234844,
+            "y": -115.30622213031475
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "name": "知识检索"
+          },
+          "dragging": false,
+          "height": 64,
+          "id": "Retrieval:CommonTreesSip",
+          "measured": {
+            "height": 64,
+            "width": 200
+          },
+          "position": {
+            "x": 47.84959434879546,
+            "y": -117.26615639509366
+          },
+          "positionAbsolute": {
+            "x": 47.84959434879546,
+            "y": -117.26615639509366
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "retrievalNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "name": "生成回答"
+          },
+          "dragging": false,
+          "height": 104,
+          "id": "Generate:ReadyZoosHide",
+          "measured": {
+            "height": 104,
+            "width": 200
+          },
+          "position": {
+            "x": -75.59927486610223,
+            "y": -326.5192419166114
+          },
+          "positionAbsolute": {
+            "x": -75.59927486610223,
+            "y": -326.5192419166114
+          },
+          "selected": true,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode",
+          "width": 200
+        }
+      ]
+    },
+    "history": [],
+    "messages": [],
+    "path": [],
+    "reference": []
+  },
+  "avatar": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCIgdmlld0JveD0iMCAwIDUwIDUwIiBmaWxsPSJub25lIj4KICA8cmVjdCB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIGZpbGw9IiM4QTJCRTIiIHJ4PSI4Ii8+CiAgPGNpcmNsZSBjeD0iMjUuMCIgY3k9IjI1LjAiIHI9IjE2LjY2NjY2NjY2NjY2NjY2OCIgZmlsbD0id2hpdGUiLz4KPC9zdmc+"
+}
