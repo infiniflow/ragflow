@@ -5,6 +5,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
+import { DocumentType } from '@/constants/knowledge';
 import { useRemoveDocument } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { formatFileSize } from '@/utils/common-util';
@@ -27,8 +28,9 @@ export function DatasetActionCell({
   record,
   showRenameModal,
 }: { record: IDocumentInfo } & UseRenameDocumentShowType) {
-  const { id, run } = record;
+  const { id, run, type } = record;
   const isRunning = isParserRunning(run);
+  const isVirtualDocument = type === DocumentType.Virtual;
 
   const { removeDocument } = useRemoveDocument();
 
@@ -83,14 +85,16 @@ export function DatasetActionCell({
       >
         <Pencil />
       </Button>
-      <Button
-        variant={'ghost'}
-        size={'icon'}
-        onClick={onDownloadDocument}
-        disabled={isRunning}
-      >
-        <ArrowDownToLine />
-      </Button>
+      {isVirtualDocument || (
+        <Button
+          variant={'ghost'}
+          size={'icon'}
+          onClick={onDownloadDocument}
+          disabled={isRunning}
+        >
+          <ArrowDownToLine />
+        </Button>
+      )}
       <ConfirmDeleteDialog onOk={handleRemove}>
         <Button variant={'ghost'} size={'icon'} disabled={isRunning}>
           <Trash2 className="text-text-delete-red" />
