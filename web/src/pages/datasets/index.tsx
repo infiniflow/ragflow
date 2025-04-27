@@ -4,14 +4,14 @@ import { Button } from '@/components/ui/button';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
-import { PropsWithChildren, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DatasetCard } from './dataset-card';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
-import { DatasetsFilterPopover } from './datasets-filter-popover';
 import { DatasetsPagination } from './datasets-pagination';
 import { useSaveKnowledge } from './hooks';
 import { useRenameDataset } from './use-rename-dataset';
+import { useSelectOwners } from './use-select-owners';
 
 export default function Datasets() {
   const { t } = useTranslation();
@@ -30,9 +30,11 @@ export default function Datasets() {
     setPagination,
     handleInputChange,
     searchString,
-    setOwnerIds,
-    ownerIds,
+    filterValue,
+    handleFilterSubmit,
   } = useFetchNextKnowledgeListByPage();
+
+  const owners = useSelectOwners();
 
   const {
     datasetRenameLoading,
@@ -54,14 +56,11 @@ export default function Datasets() {
     <section className="p-8 text-foreground">
       <ListFilterBar
         title="Datasets"
-        count={ownerIds.length}
-        FilterPopover={({ children }: PropsWithChildren) => (
-          <DatasetsFilterPopover setOwnerIds={setOwnerIds} ownerIds={ownerIds}>
-            {children}
-          </DatasetsFilterPopover>
-        )}
         searchString={searchString}
         onSearchChange={handleInputChange}
+        value={filterValue}
+        filters={owners}
+        onChange={handleFilterSubmit}
       >
         <Button variant={'tertiary'} size={'sm'} onClick={showModal}>
           <Plus className="mr-2 h-4 w-4" />
