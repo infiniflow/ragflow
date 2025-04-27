@@ -8,7 +8,7 @@ services:
       mysql:
         condition: service_healthy
     image: ${RAGFLOW_IMAGE}
-    # example to setup MCP server
+    # Example configuration to set up an MCP server:
     # command:
     #   - --enable-mcpserver
     #   - --mcp-host=0.0.0.0
@@ -42,7 +42,7 @@ services:
       - ragflow
     restart: on-failure
     # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
-    # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
+    # If you use Docker Desktop, the --add-host flag is optional. This flag ensures that the host's internal IP is exposed to the Prometheus container.
     extra_hosts:
       - "host.docker.internal:host-gateway"
   # executor:
