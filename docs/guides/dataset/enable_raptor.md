@@ -67,8 +67,8 @@ It defaults to 0.1, with a maximum limit of 1. A higher **Threshold** means fewe
 
 ### Max cluster
 
-The maximum number of clusters to create. Defaults to 108, with a maximum limit of 1024.
+The maximum number of clusters to create. Defaults to 64, with a maximum limit of 1024.
 
 ### Random seed
 
-A random seed. Click the **+** button to change the seed value.
+A random seed. Click **+** to change the seed value.

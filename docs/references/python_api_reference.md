@@ -519,7 +519,7 @@ A `Document` object contains the following attributes:
 - `name`: The document name. Defaults to `""`.
 - `thumbnail`: The thumbnail image of the document. Defaults to `None`.
 - `dataset_id`: The dataset ID associated with the document. Defaults to `None`.
-- `chunk_method` The chunk method name. Defaults to `"naive"`.
+- `chunk_method` The chunking method name. Defaults to `"naive"`.
 - `source_type`: The source type of the document. Defaults to `"local"`.
 - `type`: Type or category of the document. Defaults to `""`. Reserved for future use.
 - `created_by`: `str` The creator of the document. Defaults to `""`.

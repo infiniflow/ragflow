@@ -42,7 +42,7 @@ As a rule of thumb, consider including the following entries in your tag table:
 ### Create a tag set
 
 1. Click **+ Create knowledge base** to create a knowledge base.
-2. Navigate to the **Configuration** page of the created knowledge base and choose **Tag** as the default chunk method.
+2. Navigate to the **Configuration** page of the created knowledge base and choose **Tag** as the default chunking method.
 3. Navigate to the **Dataset** page and upload and parse your table file in XLSX, CSV, or TXT formats.  
    _A tag cloud appears under the **Tag view** section, indicating the tag set is created:_  
    ![Image](https://github.com/user-attachments/assets/abefbcbf-c130-4abe-95e1-267b0d2a0505)

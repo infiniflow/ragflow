@@ -229,7 +229,9 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
     * Running on all addresses (0.0.0.0)
    ```
 
-   > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.  
+:::danger IMPORTANT
+If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.
+:::  
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
@@ -285,7 +287,7 @@ To create your first knowledge base:
 
    ![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
 
-3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunk method (template) for your knowledge base. 
+3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunking method (template) for your knowledge base. 
 
 :::danger IMPORTANT 
 Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space). 
