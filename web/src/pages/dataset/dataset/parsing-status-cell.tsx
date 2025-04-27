@@ -1,13 +1,22 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { CircleX, Play, RefreshCw } from 'lucide-react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RunningStatus } from './constant';
 import { ParsingCard } from './parsing-card';
+import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
+import { UseSaveMetaShowType } from './use-save-meta';
 import { isParserRunning } from './utils';
 
 const IconMap = {
@@ -18,7 +27,12 @@ const IconMap = {
   [RunningStatus.FAIL]: <RefreshCw />,
 };
 
-export function ParsingStatusCell({ record }: { record: IDocumentInfo }) {
+export function ParsingStatusCell({
+  record,
+  showChangeParserModal,
+  showSetMetaModal,
+}: { record: IDocumentInfo } & UseChangeDocumentParserShowType &
+  UseSaveMetaShowType) {
   const { t } = useTranslation();
   const { run, parser_id, progress, chunk_num, id } = record;
   const operationIcon = IconMap[run];
@@ -33,12 +47,33 @@ export function ParsingStatusCell({ record }: { record: IDocumentInfo }) {
       handleRunDocumentByIds(record.id, isRunning, shouldDelete);
     };
 
+  const handleShowChangeParserModal = useCallback(() => {
+    showChangeParserModal(record);
+  }, [record, showChangeParserModal]);
+
+  const handleShowSetMetaModal = useCallback(() => {
+    showSetMetaModal(record);
+  }, [record, showSetMetaModal]);
+
   return (
     <section className="flex gap-2 items-center ">
       <div>
-        <Button variant={'ghost'} size={'sm'}>
-          {parser_id}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger>
+            <Button variant={'ghost'} size={'sm'}>
+              {parser_id}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onClick={handleShowChangeParserModal}>
+              {t('knowledgeDetails.chunkMethod')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleShowSetMetaModal}>
+              {t('knowledgeDetails.setMetaData')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         <Separator orientation="vertical" />
       </div>
       <ConfirmDeleteDialog

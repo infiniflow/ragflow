@@ -342,14 +342,14 @@ export default {
         {cluster_content}
   Das oben Genannte ist der Inhalt, den Sie zusammenfassen müssen.`,
       maxToken: 'Maximale Token',
-      maxTokenTip: 'Maximale Token-Anzahl für die Zusammenfassung.',
+      maxTokenTip: 'Die maximale Anzahl an Token pro generiertem Zusammenfassungs-Chunk.',
       maxTokenMessage: 'Maximale Token sind erforderlich',
       threshold: 'Schwellenwert',
       thresholdTip:
-        'Je größer der Schwellenwert, desto weniger Cluster werden erzeugt.',
+        'In RAPTOR werden Chunks anhand ihrer semantischen Ähnlichkeit gruppiert. Der Schwellenwert-Parameter legt die minimale Ähnlichkeit fest, die erforderlich ist, damit Chunks zusammengefasst werden. Ein höherer Schwellenwert bedeutet weniger Chunks pro Cluster, während ein niedrigerer Wert mehr Chunks pro Cluster zulässt.',
       thresholdMessage: 'Schwellenwert ist erforderlich',
       maxCluster: 'Maximale Cluster',
-      maxClusterTip: 'Maximale Cluster-Anzahl.',
+      maxClusterTip: 'Die maximale Anzahl der zu erstellenden Cluster.',
       maxClusterMessage: 'Maximale Cluster sind erforderlich',
       randomSeed: 'Zufallszahl',
       randomSeedMessage: 'Zufallszahl ist erforderlich',

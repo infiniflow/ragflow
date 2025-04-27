@@ -103,7 +103,7 @@ export interface IChunk {
   content_with_weight: string;
   doc_id: string;
   doc_name: string;
-  img_id: string;
+  image_id: string;
   important_kwd?: string[];
   question_kwd?: string[]; // keywords
   tag_kwd?: string[];

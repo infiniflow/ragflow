@@ -930,12 +930,6 @@
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "gemma-7b-it",
-                    "tags": "LLM,CHAT,15k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
                     "llm_name": "gemma2-9b-it",
                     "tags": "LLM,CHAT,15k",
                     "max_tokens": 8192,

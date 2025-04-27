@@ -1,11 +1,6 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import {
-  useCreateNextDocument,
-  useNextWebCrawl,
-  useSetNextDocumentParser,
-} from '@/hooks/document-hooks';
+import { useNextWebCrawl } from '@/hooks/document-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
 
@@ -20,72 +15,6 @@ export const useNavigateToOtherPage = () => {
   const toChunk = useCallback((id: string) => {}, []);
 
   return { linkToUploadPage, toChunk };
-};
-
-export const useCreateEmptyDocument = () => {
-  const { createDocument, loading } = useCreateNextDocument();
-
-  const {
-    visible: createVisible,
-    hideModal: hideCreateModal,
-    showModal: showCreateModal,
-  } = useSetModalState();
-
-  const onCreateOk = useCallback(
-    async (name: string) => {
-      const ret = await createDocument(name);
-      if (ret === 0) {
-        hideCreateModal();
-      }
-    },
-    [hideCreateModal, createDocument],
-  );
-
-  return {
-    createLoading: loading,
-    onCreateOk,
-    createVisible,
-    hideCreateModal,
-    showCreateModal,
-  };
-};
-
-export const useChangeDocumentParser = (documentId: string) => {
-  const { setDocumentParser, loading } = useSetNextDocumentParser();
-
-  const {
-    visible: changeParserVisible,
-    hideModal: hideChangeParserModal,
-    showModal: showChangeParserModal,
-  } = useSetModalState();
-
-  const onChangeParserOk = useCallback(
-    async ({
-      parserId,
-      parserConfig,
-    }: {
-      parserId: string;
-      parserConfig: IChangeParserConfigRequestBody;
-    }) => {
-      const ret = await setDocumentParser({
-        parserId,
-        documentId,
-        parserConfig,
-      });
-      if (ret === 0) {
-        hideChangeParserModal();
-      }
-    },
-    [hideChangeParserModal, setDocumentParser, documentId],
-  );
-
-  return {
-    changeParserLoading: loading,
-    onChangeParserOk,
-    changeParserVisible,
-    hideChangeParserModal,
-    showChangeParserModal,
-  };
 };
 
 export const useGetRowSelection = () => {
