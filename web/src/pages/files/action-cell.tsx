@@ -73,7 +73,7 @@ export function ActionCell({
       </Button>
       <ConfirmDeleteDialog>
         <Button variant="ghost" size={'icon'}>
-          <Trash2 />
+          <Trash2 className="text-text-delete-red" />
         </Button>
       </ConfirmDeleteDialog>
       {isSupportedPreviewDocumentType(extension) && (

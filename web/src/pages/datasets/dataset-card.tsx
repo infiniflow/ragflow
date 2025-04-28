@@ -48,7 +48,7 @@ export function DatasetCard({
           </DatasetDropdown>
         </section>
         <div className="flex justify-between items-end">
-          <div>
+          <div className="w-full">
             <h3 className="text-lg font-semibold mb-2 line-clamp-1">
               {dataset.name}
             </h3>

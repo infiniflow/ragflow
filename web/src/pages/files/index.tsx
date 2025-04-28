@@ -51,15 +51,19 @@ export default function Files() {
   } = useFetchFileList();
 
   const {
+    rowSelection,
+    setRowSelection,
+    rowSelectionIsEmpty,
+    clearRowSelection,
+  } = useRowSelection();
+
+  const {
     showMoveFileModal,
     moveFileVisible,
     onMoveFileOk,
     hideMoveFileModal,
     moveFileLoading,
-  } = useHandleMoveFile();
-
-  const { rowSelection, setRowSelection, rowSelectionIsEmpty } =
-    useRowSelection();
+  } = useHandleMoveFile({ clearRowSelection });
 
   const { list } = useBulkOperateFile({
     files,
