@@ -337,7 +337,8 @@ The above is the content you need to summarize.`,
       maxTokenTip: 'The maximum number of tokens per generated summary chunk.',
       maxTokenMessage: 'Max token is required',
       threshold: 'Threshold',
-      thresholdTip: 'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
+      thresholdTip:
+        'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
       thresholdMessage: 'Threshold is required',
       maxCluster: 'Max cluster',
       maxClusterTip: 'The maximum number of clusters to create.',
@@ -1252,6 +1253,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
+      infor: 'Information run',
     },
   },
 };

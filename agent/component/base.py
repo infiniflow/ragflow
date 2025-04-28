@@ -34,6 +34,7 @@ _IS_RAW_CONF = "_is_raw_conf"
 class ComponentParamBase(ABC):
     def __init__(self):
         self.output_var_name = "output"
+        self.infor_var_name = "infor"
         self.message_history_window_size = 22
         self.query = []
         self.inputs = []
@@ -461,6 +462,9 @@ class ComponentBase(ABC):
 
     def set_output(self, v):
         setattr(self._param, self._param.output_var_name, v)
+
+    def set_infor(self, v):
+        setattr(self._param, self._param.infor_var_name, v)
 
     def get_input(self):
         if self._param.debug_inputs:
