@@ -393,7 +393,6 @@ curl --request POST \
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 
 - `"parser_config"`: (*Body parameter*), `object`  
