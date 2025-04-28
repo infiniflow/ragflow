@@ -5,7 +5,7 @@ slug: /mcp_server
 
 # RAGFlow MCP server overview
 
-The RAGFlow Model Context Protocol (MCP) server operates as an independent component that complements the RAGFlow server. However, it requires a RAGFlow server to work functionally well, meaning, the MCP client and server communicate with each other in MCP HTTP+SSE mode (once the connection is established, the MCP server pushes messages to the client *unidirectionally*), and responses are expected from the RAGFlow server.
+A RAGFlow Model Context Protocol (MCP) server is designed to operate as an independent, complementary component to the RAGFlow server. It requires a RAGFlow server to function well so that the MCP client and the MCP server can communicate with each other in MCP HTTP+SSE mode: once the connection is established, the MCP server pushes messages to the client *unidirectionally*, and responses are expected from the RAGFlow server.
 
 The MCP server currently offers a specialized tool to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
 
