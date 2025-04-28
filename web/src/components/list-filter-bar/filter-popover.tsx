@@ -149,7 +149,7 @@ export function FilterPopover({
   value,
   onChange,
   filters,
-}: PropsWithChildren & CheckboxFormMultipleProps) {
+}: PropsWithChildren & Omit<CheckboxFormMultipleProps, 'setOpen'>) {
   const [open, setOpen] = useState(false);
 
   return (

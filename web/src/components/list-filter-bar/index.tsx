@@ -38,7 +38,7 @@ export default function ListFilterBar({
   value,
   onChange,
   filters,
-}: PropsWithChildren<IProps & CheckboxFormMultipleProps>) {
+}: PropsWithChildren<IProps & Omit<CheckboxFormMultipleProps, 'setOpen'>>) {
   const filterCount = useMemo(() => {
     return typeof value === 'object' && value !== null
       ? Object.values(value).reduce((pre, cur) => {
