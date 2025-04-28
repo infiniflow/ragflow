@@ -69,7 +69,7 @@ export function Applications() {
           className="bg-colors-background-inverse-standard text-colors-text-neutral-standard"
         ></Segmented>
       </div>
-      <div className="grid grid-cols-4 gap-6">
+      <div className="flex flex-wrap gap-4">
         {val === Routes.Agents ||
           [...Array(12)].map((_, i) => {
             const app = applications[i % 4];

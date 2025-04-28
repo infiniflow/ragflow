@@ -16,7 +16,7 @@ import * as React from 'react';
 import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { TableSkeleton } from '@/components/table-skeleton';
-import { Button } from '@/components/ui/button';
+import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
   Table,
   TableBody,
@@ -28,6 +28,7 @@ import {
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { getExtension } from '@/utils/document-util';
+import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { SetMetaDialog } from './set-meta-dialog';
 import { useChangeDocumentParser } from './use-change-document-parser';
@@ -107,20 +108,6 @@ export function DatasetTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    onPaginationChange: (updaterOrValue: any) => {
-      if (typeof updaterOrValue === 'function') {
-        const nextPagination = updaterOrValue(currentPagination);
-        setPagination({
-          page: nextPagination.pageIndex + 1,
-          pageSize: nextPagination.pageSize,
-        });
-      } else {
-        setPagination({
-          page: updaterOrValue.pageIndex,
-          pageSize: updaterOrValue.pageSize,
-        });
-      }
-    },
     manualPagination: true, //we're doing manual "server-side" pagination
     state: {
       sorting,
@@ -195,22 +182,13 @@ export function DatasetTable({
           {pagination?.total} row(s) selected.
         </div>
         <div className="space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
+          <RAGFlowPagination
+            {...pick(pagination, 'current', 'pageSize')}
+            total={pagination.total}
+            onChange={(page, pageSize) => {
+              setPagination({ page, pageSize });
+            }}
+          ></RAGFlowPagination>
         </div>
       </div>
       {changeParserVisible && (

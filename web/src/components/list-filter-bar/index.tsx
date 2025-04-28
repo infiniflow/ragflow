@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import { ChevronDown } from 'lucide-react';
 import React, {
   ChangeEventHandler,
@@ -38,7 +39,10 @@ export default function ListFilterBar({
   value,
   onChange,
   filters,
-}: PropsWithChildren<IProps & Omit<CheckboxFormMultipleProps, 'setOpen'>>) {
+  className,
+}: PropsWithChildren<IProps & Omit<CheckboxFormMultipleProps, 'setOpen'>> & {
+  className?: string;
+}) {
   const filterCount = useMemo(() => {
     return typeof value === 'object' && value !== null
       ? Object.values(value).reduce((pre, cur) => {
@@ -48,7 +52,7 @@ export default function ListFilterBar({
   }, [value]);
 
   return (
-    <div className="flex justify-between mb-6 items-center">
+    <div className={cn('flex justify-between mb-6 items-center', className)}>
       <span className="text-3xl font-bold ">{leftPanel || title}</span>
       <div className="flex gap-4 items-center">
         {showFilter && (
