@@ -89,7 +89,7 @@ class DepartmentService(CommonService):
         return result
 
 
-class DepartmentUserService(BaseModelService):
+class DepartmentUserService(CommonService):
     """Service for department user operations"""
 
     model = DepartmentUser

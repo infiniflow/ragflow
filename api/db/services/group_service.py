@@ -18,10 +18,10 @@ from peewee import fn
 
 from api.db.db_models import Group, GroupUser, User
 from api.utils import get_uuid
-from api.db.services.base_service import BaseModelService
+from api.db.services.common_service import CommonService
 
 
-class GroupService(BaseModelService):
+class GroupService(CommonService):
     """Service for group operations"""
 
     model = Group
@@ -88,7 +88,7 @@ class GroupService(BaseModelService):
         return result
 
 
-class GroupUserService(BaseModelService):
+class GroupUserService(CommonService):
     """Service for group user operations"""
 
     model = GroupUser
