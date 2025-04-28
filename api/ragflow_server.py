@@ -21,7 +21,7 @@ import sys
 import os
 
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-sys.path.append("D:\Work Space\PycharmProjects\my_ragflow")
+sys.path.append("E:\Work Space\my_ragflow")
 from api.utils.log_utils import initRootLogger
 initRootLogger("ragflow_server")
 
