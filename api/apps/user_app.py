@@ -42,6 +42,7 @@ from api import settings
 from api.db.services.user_service import UserService, TenantService, UserTenantService
 from api.db.services.file_service import FileService
 from api.utils.api_utils import get_json_result, construct_response
+from api.apps.auth import get_auth_client
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
@@ -113,6 +114,96 @@ def login():
             code=settings.RetCode.AUTHENTICATION_ERROR,
             message="Email and password do not match!",
         )
+
+
+@manager.route("/login/<channel>") # noqa: F821
+def oauth_login(channel):
+    channel_config = settings.OAUTH_CONFIG.get(channel)
+    if not channel_config:
+        raise ValueError(f"Invalid channel name: {channel}")
+    auth_cli = get_auth_client(channel_config)
+
+    auth_url = auth_cli.get_authorization_url()
+    return redirect(auth_url)
+
+
+@manager.route("/oauth/callback/<channel>", methods=["GET"]) # noqa: F821
+def oauth_callback(channel):
+    """
+    Handle the OAuth/OIDC callback for various channels dynamically.
+    """
+    try:
+        channel_config = settings.OAUTH_CONFIG.get(channel)
+        if not channel_config:
+            raise ValueError(f"Invalid channel name: {channel}")
+        auth_cli = get_auth_client(channel_config)
+
+        # Obtain the authorization code
+        code = request.args.get("code")
+        if not code:
+            return redirect("/?error=missing_code")
+
+        # Exchange authorization code for access token
+        token_info = auth_cli.exchange_code_for_token(code)
+        access_token = token_info.get("access_token")
+        if not access_token:
+            return redirect("/?error=token_failed")
+
+        id_token = token_info.get("id_token")
+
+        # Fetch user info
+        user_info = auth_cli.fetch_user_info(access_token, id_token=id_token)
+        if not user_info.email:
+            return redirect("/?error=email_missing")
+
+        # Login or register
+        users = UserService.query(email=user_info.email)
+        user_id = get_uuid()
+        
+        if not users:
+            try:
+                try:
+                    avatar = download_img(user_info.avatar_url)
+                except Exception as e:
+                    logging.exception(e)
+                    avatar = ""
+
+                users = user_register(
+                    user_id,
+                    {
+                        "access_token": access_token,
+                        "email": user_info.email,
+                        "avatar": avatar,
+                        "nickname": user_info.nickname,
+                        "login_channel": channel,
+                        "last_login_time": get_format_time(),
+                        "is_superuser": False,
+                    },
+                )
+
+                if not users:
+                    raise Exception(f"Failed to register {user_info.email}")
+                if len(users) > 1:
+                    raise Exception(f"Same email: {user_info.email} exists!")
+
+                # Try to log in
+                user = users[0]
+                login_user(user)
+                return redirect(f"/?auth_success=true&user_id={user.get_id()}")
+
+            except Exception as e:
+                rollback_user_registration(user_id)
+                logging.exception(e)
+                return redirect(f"/?error={str(e)}")
+
+        # User exists, try to log in
+        user = users[0]
+        user.access_token = get_uuid()
+        login_user(user)
+        user.save()
+        return redirect(f"/?auth_success=true&user_id={user.get_id()}")
+    except Exception as e:
+        return redirect(f"/?error={str(e)}")
 
 
 @manager.route("/github_callback", methods=["GET"])  # noqa: F821
