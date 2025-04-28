@@ -168,6 +168,20 @@ The OAuth configuration for signing up or signing in to RAGFlow using a third-pa
 
 - `github`: The GitHub authentication settings for your application. Visit the [GitHub Developer Settings](https://github.com/settings/developers) page to obtain your client_id and secret_key.
 
+#### OAuth/OIDC
+
+RAGFlow supports OAuth/OIDC authentication through the following routes:
+
+- `/login/<channel>`: Initiates the OAuth flow for the specified channel
+- `/oauth/callback/<channel>`: Handles the OAuth callback after successful authentication
+
+The callback URL should be configured in your OAuth provider as:
+```
+https://your-app.com/oauth/callback/<channel>
+```
+
+For detailed instructions on configuring **service_conf.yaml.template**, please refer to [Usage](../api/apps/auth/README.md#usage).
+
 ### `user_default_llm`  
 
 The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.  
