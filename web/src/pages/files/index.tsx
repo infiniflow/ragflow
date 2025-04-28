@@ -126,7 +126,6 @@ export default function Files() {
           onOk={onFolderCreateOk}
         ></CreateFolderDialog>
       )}
-
       {moveFileVisible && (
         <MoveDialog
           hideModal={hideMoveFileModal}
