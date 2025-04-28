@@ -15,6 +15,7 @@ import * as React from 'react';
 
 import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
+import { TableSkeleton } from '@/components/table-skeleton';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -36,7 +37,7 @@ import { useSaveMeta } from './use-save-meta';
 
 export type DatasetTableProps = Pick<
   ReturnType<typeof useFetchDocumentList>,
-  'documents' | 'setPagination' | 'pagination'
+  'documents' | 'setPagination' | 'pagination' | 'loading'
 > &
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'>;
 
@@ -46,6 +47,7 @@ export function DatasetTable({
   setPagination,
   rowSelection,
   setRowSelection,
+  loading,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -152,8 +154,10 @@ export function DatasetTable({
               </TableRow>
             ))}
           </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
+          <TableBody className="relative">
+            {loading ? (
+              <TableSkeleton columnsLength={columns.length}></TableSkeleton>
+            ) : table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
