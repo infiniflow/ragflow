@@ -2,103 +2,40 @@
 
 .loginPage {
   display: flex;
+  justify-content: center;
+  align-items: center;
   background-color: rgba(255, 255, 255, 0.1);
+  height: 100vh;
 
-  .loginLeft {
-    // width: 610px;
-    width: 40%;
-    background-color: rgba(255, 255, 255, 0.1);
-    height: 100vh;
-    display: flex;
-    align-items: center;
-  }
-
-  .leftContainer {
-    width: 60%;
-    padding: 5px, 0px, 5px, 0px;
-    margin: 0 auto;
-  }
-
-  .loginRight {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    position: relative;
-    &::before {
-      content: ' ';
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background-color: rgba(24, 73, 169, 0.6);
-      background-image: url('@/assets/svg/login-background.svg');
-      background-size: cover;
-      background-blend-mode: multiply;
-      filter: blur(3px);
-      background-position: center;
-      z-index: -1;
-    }
-    .white {
-    }
-    .pink {
-      color: #e9d7fe;
-    }
-    .rightPanel {
-      max-width: 670px;
-      .loginTitle {
-        font-size: 68px;
-        font-style: normal;
-        font-weight: 600;
-        line-height: 90px;
-        letter-spacing: -1.44px;
-      }
-      .loginDescription {
-        font-size: 20px;
-        font-style: normal;
-        font-weight: 500;
-        line-height: 30px;
-      }
-      .loginRateNumber {
-        font-size: 16px;
-        font-style: normal;
-        font-weight: 600;
-        line-height: 24px;
-      }
-      .loginRateReviews {
-        font-size: 16px;
-        font-style: normal;
-        font-weight: 500;
-        line-height: 24px;
-      }
-    }
+  .loginContainer {
+    width: 450px;
+    padding: 40px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   }
 
   .loginTitle {
-    //styleName: Heading/1;
     font-size: 38px;
     font-weight: 600;
     line-height: 46px;
     letter-spacing: 0em;
-    height: 80px;
-    margin-bottom: 69px;
+    margin-bottom: 40px;
+    text-align: center;
 
-    // text-align: center;
     span {
       font-size: 16px;
       line-height: 24px;
+      display: block;
+      margin-top: 8px;
+      color: #666;
     }
   }
 
-  @media screen and (max-width: 957px) {
-    .loginLeft {
-      width: 100%;
-      height: 100%;
-    }
-
-    .modal {
-      width: 80%;
+  @media screen and (max-width: 500px) {
+    .loginContainer {
+      width: 90%;
+      padding: 20px;
     }
   }
 }
