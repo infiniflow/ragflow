@@ -308,7 +308,7 @@ async def build_chunks(task, progress_callback):
             nursery.start_soon(upload_to_minio, doc, ck)
 
     el = timer() - st
-    logging.info("MINIO PUT({}) cost {.3f} s".format(task["name"], el))
+    logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
 
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
