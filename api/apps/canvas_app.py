@@ -369,7 +369,17 @@ def update_permissions():
         if not e or canvas.user_id != current_user.id:
             return get_json_result(data=False, message='Only owner of canvas authorized for this operation.', code=RetCode.OPERATING_ERROR)
 
-    updated_count = UserCanvasService.update_permissions(canvas_ids, user_ids   )
+    updated_count = UserCanvasService.update_permissions(canvas_ids, user_ids)
+    return get_json_result(data=updated_count)
+
+@manager.route('/get_by_catalog', methods=['POST'])  # noqa: F821
+@validate_request("catalog")
+@login_required
+def get_by_catalog():
+    req = request.json
+    catalog = req["catalog"]
+    list=UserCanvasService.get_or_none(catalog=catalog)
+    return get_json_result(data=list)
 
 '''
 @manager.route('/get_conversation', methods=['POST'])  # noqa: F821
