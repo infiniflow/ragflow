@@ -99,7 +99,7 @@ def update():
         if req.get("parser_id", "") == "tag" and os.environ.get('DOC_ENGINE', "elasticsearch") == "infinity":
             return get_json_result(
                 data=False,
-                message='The chunk method Tag has not been supported by Infinity yet.',
+                message='The chunking method Tag has not been supported by Infinity yet.',
                 code=settings.RetCode.OPERATING_ERROR
             )
 

@@ -24,9 +24,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useSetSelectedRecord } from '@/hooks/logic-hooks';
+import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { IDocumentInfo } from '@/interfaces/database/document';
 import { getExtension } from '@/utils/document-util';
 import { useMemo } from 'react';
 import { SetMetaDialog } from './set-meta-dialog';
@@ -35,23 +34,25 @@ import { useDatasetTableColumns } from './use-dataset-table-columns';
 import { useRenameDocument } from './use-rename-document';
 import { useSaveMeta } from './use-save-meta';
 
-export function DatasetTable() {
-  const {
-    // searchString,
-    documents,
-    pagination,
-    // handleInputChange,
-    setPagination,
-  } = useFetchDocumentList();
+export type DatasetTableProps = Pick<
+  ReturnType<typeof useFetchDocumentList>,
+  'documents' | 'setPagination' | 'pagination'
+> &
+  Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'>;
+
+export function DatasetTable({
+  documents,
+  pagination,
+  setPagination,
+  rowSelection,
+  setRowSelection,
+}: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
   );
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
-  const [rowSelection, setRowSelection] = React.useState({});
-
-  const { currentRecord, setRecord } = useSetSelectedRecord<IDocumentInfo>();
 
   const {
     changeParserLoading,
@@ -82,7 +83,6 @@ export function DatasetTable() {
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
-    setCurrentRecord: setRecord,
     showRenameModal,
     showSetMetaModal,
   });
