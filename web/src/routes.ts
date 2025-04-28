@@ -7,13 +7,14 @@ export enum Routes {
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
+  Agentchat = '/agent-chat',
   Searches = '/next-searches',
   Search = '/next-search',
   Chats = '/next-chats',
   Chat = '/next-chat',
   Files = '/files',
   ProfileSetting = '/profile-setting',
-  // DatasetTesting = '/testing', // 注释掉这一行
+  DatasetTesting = '/testing',
   DatasetSetting = '/setting',
   Chunk = '/chunk',
   ChunkResult = `${Chunk}${Chunk}`,
@@ -72,10 +73,10 @@ const routes = [
             path: '/knowledge/configuration',
             component: '@/pages/add-knowledge/components/knowledge-setting',
           },
-          //{
-          //  path: '/knowledge/testing',
-          //  component: '@/pages/add-knowledge/components/knowledge-testing',
-          //},
+          {
+            path: '/knowledge/testing',
+            component: '@/pages/add-knowledge/components/knowledge-testing',
+          },
           {
             path: '/knowledge/knowledgeGraph',
             component: '@/pages/add-knowledge/components/knowledge-graph',
@@ -85,6 +86,10 @@ const routes = [
       {
         path: '/chat',
         component: '@/pages/chat',
+      },
+      {
+        path: '/agent-chat',
+        component: '@/pages/agent-chat',
       },
       {
         path: '/user-setting',
@@ -254,11 +259,10 @@ const routes = [
         path: `${Routes.DatasetBase}${Routes.DatasetSetting}/:id`,
         component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
       },
-      // 注释掉下面这个路由配置
-      // {
-      //   path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
-      //   component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
-      // },
+      {
+        path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
+        component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
+      },
     ],
   },
   {

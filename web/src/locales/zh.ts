@@ -7,9 +7,17 @@ export default {
       cancel: '否',
       total: '总共',
       rename: '重命名',
+      knowledgeBase: '知识库',
+      selectKnowledgeBasePlaceholder: '请选择知识库',
+      selectModel: '请选择模型',
       name: '名称',
       save: '保存',
       namePlaceholder: '请输入名称',
+      description: '描述',
+      descriptionPlaceholder: '请输入描述',
+      permission: '权限',
+      private: '只有我',
+      team: '团队',
       next: '下一步',
       create: '创建',
       edit: '编辑',
@@ -28,7 +36,7 @@ export default {
       close: '关闭',
       preview: '预览',
       move: '移动',
-      warn: '提醒',
+      warn: '警告',
       action: '操作',
       s: '秒',
       pleaseSelect: '请选择',
@@ -37,8 +45,7 @@ export default {
       embedIntoSite: '嵌入网站',
       previousPage: '上一页',
       nextPage: '下一页',
-      add: '添加',
-      knowledgeBases: '知识库',
+      add: '新增',
     },
     login: {
       login: '登录',
@@ -72,6 +79,32 @@ export default {
       fileManager: '文件管理',
       flow: 'Agent',
       search: '搜索',
+      agentChat: 'Agent对话',
+    },
+    agent: {
+      createAgent: '新建助理',
+      assistantSetting: '助理设置',
+      promptEngine: '提示引擎',
+      modelSetting: '模型设置',
+      chat: '聊天',
+      newChat: '新建聊天',
+      conversations: '对话列表',
+      newConversation: '新建对话',
+      searchAgent: '搜索助理',
+      noDescription: '暂无描述',
+      selectAgentFirst: '请先选择助理',
+      selectOrCreateConversation: '请选择或创建一个对话',
+      noMessages: '暂无消息',
+      createConversationFailed: '创建对话失败',
+      confirmDelete: '确认删除',
+      confirmDeleteContent: '确定要删除这个助理吗？删除后将无法恢复',
+      noAgents: '暂无助理，请点击上方按钮创建',
+      description: '描述',
+      descriptionPlaceholder: '请输入Agent描述',
+      createFromTemplate: '从模板创建',
+      templateSelection: '请选择模板',
+      emptyTemplate: '空白模板',
+      fromScratch: '从无到有',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -236,7 +269,7 @@ export default {
       book: `<p><b>支持格式：</b>DOCX、PDF、TXT</p>
       <p><b>适用场景：</b></p><p>
       适用于多章节设备手册，建议为PDF文件设置<i>页码范围</i>（如第5-30页）以聚焦核心内容。</p>`,
-    
+
       laws: `<p><b>支持格式：</b>DOCX、PDF、TXT</p>
       <p><b>适用场景：</b></p><p>
       技术标准文件将按<i>条款层级</i>分割，保证每个条款的完整上下文。</p>`,
@@ -249,7 +282,7 @@ export default {
       <p><b>适用场景：</b></p>
       <li>此方法为通用处理方法。</li>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
-      <li>接下来，这些连续的片段被合并成Token数不超过“Token数”的块。</li></p>`,   
+      <li>接下来，这些连续的片段被合并成Token数不超过“Token数”的块。</li></p>`,
 
       paper: `<p><b>支持格式：</b>PDF</p>
       <p><b>适用场景：</b></p><p>
