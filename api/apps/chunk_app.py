@@ -306,16 +306,16 @@ def retrieval_test():
 
         labels = label_question(question, [kb])
         ranks = settings.retrievaler.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
-                               similarity_threshold, vector_similarity_weight, top,
-                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
-                               rank_feature=labels
-                               )
+                            similarity_threshold, vector_similarity_weight, top,
+                            doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
+                            rank_feature=labels
+                            )
         if use_kg:
             ck = settings.kg_retrievaler.retrieval(question,
-                                                   tenant_ids,
-                                                   kb_ids,
-                                                   embd_mdl,
-                                                   LLMBundle(kb.tenant_id, LLMType.CHAT))
+                                                tenant_ids,
+                                                kb_ids,
+                                                embd_mdl,
+                                                LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
@@ -327,7 +327,7 @@ def retrieval_test():
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message='No chunk found! Check the chunk status please!',
-                                   code=settings.RetCode.DATA_ERROR)
+                                code=settings.RetCode.DATA_ERROR)
         return server_error_response(e)
 
 

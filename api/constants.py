@@ -13,6 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+#    常量文件
+#    • API_VERSION就是上面介绍的api的版本
+#    • SERVICE_CONF是加载配置文件
+#    • REQUEST_WAIT_SEC和REQUEST_MAX_WAIT_SEC两个参数没啥用
+#    • DATASET_NAME_LIMIT 限制数据集的名称大小
+    
 NAME_LENGTH_LIMIT = 2 ** 10
 
 IMG_BASE64_PREFIX = 'data:image/png;base64,'

@@ -287,8 +287,14 @@ class TaskService(CommonService):
                 cls.model.update(progress=info["progress"]).where(
                     cls.model.id == id
                 ).execute()
-
-
+                
+"""
+    文档处理任务创建和排队。它根据文档的类型和配置生成任务，并优化任务的重复使用
+        根据文档类型（PDF、Excel等）生成任务。
+        优化任务的重复使用，避免重复处理。
+        将任务插入到数据库中。
+        将未完成的任务加入 Redis 队列，以便后续处理。
+"""
 def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     """Create and queue document processing tasks.
     
@@ -312,10 +318,10 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     def new_task():
         return {"id": get_uuid(), "doc_id": doc["id"], "progress": 0.0, "from_page": 0, "to_page": 100000000}
 
-    parse_task_array = []
+    parse_task_array = [] # 存储生成的任务
 
     if doc["type"] == FileType.PDF.value:
-        file_bin = STORAGE_IMPL.get(bucket, name)
+        file_bin = STORAGE_IMPL.get(bucket, name) # 获取文件的二进制数据
         do_layout = doc["parser_config"].get("layout_recognize", "DeepDOC")
         pages = PdfParser.total_page_number(doc["name"], file_bin)
         page_size = doc["parser_config"].get("task_page_size", 12)
@@ -346,7 +352,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         parse_task_array.append(new_task())
 
     chunking_config = DocumentService.get_chunking_config(doc["id"])
-    for task in parse_task_array:
+    for task in parse_task_array: # 计算任务摘要
         hasher = xxhash.xxh64()
         for field in sorted(chunking_config.keys()):
             if field == "parser_config":
@@ -360,7 +366,13 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         task["digest"] = task_digest
         task["progress"] = 0.0
         task["priority"] = priority
-
+        
+    # 优化任务，重复使用
+    # 从任务服务中获取之前完成的任务。
+    # 遍历当前任务列表，尝试重用之前完成的任务分块。
+    # 删除之前完成的任务记录。
+    # 如果有分块ID，从文档存储中删除这些分块。
+    # 更新文档的分块数量。
     prev_tasks = TaskService.get_tasks(doc["id"])
     ck_num = 0
     if prev_tasks:
@@ -376,9 +388,9 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
                                          chunking_config["kb_id"])
     DocumentService.update_by_id(doc["id"], {"chunk_num": ck_num})
 
-    bulk_insert_into_db(Task, parse_task_array, True)
-    DocumentService.begin2parse(doc["id"])
-
+    bulk_insert_into_db(Task, parse_task_array, True) # 插入任务到数据库
+    DocumentService.begin2parse(doc["id"]) # 调用文档服务，开始解析文档
+    # 将未完成的任务加入 Redis 队列
     unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
     for unfinished_task in unfinished_task_array:
         assert REDIS_CONN.queue_product(

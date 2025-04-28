@@ -33,6 +33,7 @@ from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 from api import settings, utils
 from api.db import ParserType, SerializedType
 
+# 封装了表模型
 
 def singleton(cls, *args, **kw):
     instances = {}

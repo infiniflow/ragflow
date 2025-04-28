@@ -92,6 +92,13 @@ login_manager.init_app(app)
 
 commands.register_commands(app)
 
+#通过扫描 api/apps/ 和 api/apps/sdk/ 包下的 *_app.py 和sdk包下文件，通过register_page()动态注册到_blueprint。
+#路由规则：
+#   • 普通路由：/{API_VERSION}/{page_name}
+#   • 这里的page_name是document_app.py 移除_app.py后缀后的名称
+#   • SDK 路由：/api/{API_VERSION}/
+# 比如ragflow中的上传文件接口http://localhost:8002/v1/document/upload ，拆解下，就是去document+_app.py 对应的文件，也就是document_app.py文件中找upload，这样我们从前端找接口就好找了。
+
 
 def search_pages_path(pages_dir):
     app_path_list = [

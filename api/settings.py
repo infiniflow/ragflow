@@ -80,7 +80,7 @@ def init_settings():
         REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
     except Exception:
         pass  
-    
+    # 画面上显示的模型列表是从llm_factories.josn 中获取的
     try:
         with open(os.path.join(get_project_base_directory(), "conf", "llm_factories.json"), "r") as f:
             FACTORY_LLM_INFOS = json.load(f)["factory_llm_infos"]

@@ -105,7 +105,7 @@ def query_dict2expression(
 
 
 def query_db(model: type[DataBaseModel], limit: int = 0, offset: int = 0,
-             query: dict = None, order_by: str | list | tuple | None = None):
+            query: dict = None, order_by: str | list | tuple | None = None):
     data = model.select()
     if query:
         data = data.where(query_dict2expression(model, query))

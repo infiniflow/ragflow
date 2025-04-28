@@ -391,6 +391,13 @@ class RagTokenizer:
         logging.debug("[TKS] {}".format(self.merge_(res)))
         return self.merge_(res)
 
+    """
+    功能是对输入文本进行细粒度的分词处理，具体逻辑包括：
+    检测中文字符比例，如果较低则按/分割单词。
+    对较长单词进行特殊处理，可能涉及深度优先搜索和排序。
+    根据单词的特性（如是否为纯数字、是否为小写英文等）决定如何拆分或保留单词。
+    最后对结果进行标准化处理并返回。
+    """
     def fine_grained_tokenize(self, tks):
         tks = tks.split()
         zh_num = len([1 for c in tks if c and is_chinese(c[0])])

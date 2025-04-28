@@ -99,7 +99,7 @@ def update():
         if req.get("parser_id", "") == "tag" and os.environ.get('DOC_ENGINE', "elasticsearch") == "infinity":
             return get_json_result(
                 data=False,
-                message='The chunking method Tag has not been supported by Infinity yet.',
+                message='The chunk method Tag has not been supported by Infinity yet.',
                 code=settings.RetCode.OPERATING_ERROR
             )
 
@@ -116,11 +116,11 @@ def update():
         if kb.pagerank != req.get("pagerank", 0):
             if req.get("pagerank", 0) > 0:
                 settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
-                                         search.index_name(kb.tenant_id), kb.id)
+                                        search.index_name(kb.tenant_id), kb.id)
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
                 settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
-                                         search.index_name(kb.tenant_id), kb.id)
+                                        search.index_name(kb.tenant_id), kb.id)
 
         e, kb = KnowledgebaseService.get_by_id(kb.id)
         if not e:
@@ -133,7 +133,9 @@ def update():
     except Exception as e:
         return server_error_response(e)
 
-
+"""
+    画面：点击知识库卡片配置
+"""
 @manager.route('/detail', methods=['GET'])  # noqa: F821
 @login_required
 def detail():
@@ -297,7 +299,10 @@ def rename_tags(kb_id):
                                      kb_id)
     return get_json_result(data=True)
 
-
+    """
+    画面：点击知识库卡片时查看明细
+    API: /knowledge/dataset?id={id}
+    """
 @manager.route('/<kb_id>/knowledge_graph', methods=['GET'])  # noqa: F821
 @login_required
 def knowledge_graph(kb_id):

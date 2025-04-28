@@ -300,7 +300,7 @@ def decrypt_database_password(password):
 
     return pwdecrypt_fun(private_key, password)
 
-
+# 若密码采密存储做解密。否则直接输出
 def decrypt_database_config(
         database=None, passwd_key="password", name="database"):
     if not database:

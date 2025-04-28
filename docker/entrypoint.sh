@@ -136,10 +136,30 @@ function task_exe() {
     local consumer_id="$1"
     local host_id="$2"
 
-    JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
+    ## modified by leicq for 检测操作系统，因为macos 与linux的动态库加载方式不同
+    os_name=$(uname -s)
+
+    if [ "$os_name" = "Darwin" ]; then
+        # macOS
+        JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.2.dylib"
+        export DYLD_INSERT_LIBRARIES="$JEMALLOC_PATH"
+    elif [ "$os_name" = "Linux" ]; then
+        # Linux
+        JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
+        export LD_PRELOAD="$JEMALLOC_PATH"
+    else
+        echo "Unsupported operating system: $os_name"
+        return 1
+    fi
+
     while true; do
-        LD_PRELOAD="$JEMALLOC_PATH" \
-        "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"
+        if [ "$os_name" = "Darwin" ]; then
+            # macOS 使用 DYLD_INSERT_LIBRARIES
+            DYLD_INSERT_LIBRARIES="$JEMALLOC_PATH" "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"
+        elif [ "$os_name" = "Linux" ]; then
+            # Linux 使用 LD_PRELOAD
+            LD_PRELOAD="$JEMALLOC_PATH" "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"
+        fi
     done
 }
 

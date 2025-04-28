@@ -125,6 +125,10 @@ if __name__ == '__main__':
     thread = ThreadPoolExecutor(max_workers=1)
     thread.submit(update_progress)
 
+    #基于Werkzeug:使用run_simple启动Flask应用(app对象来自api.apps模块)
+    #    支持多线程模式(threaded=True)
+    #    开发模式下支持热重载(use_reloader)和调试器(use_debugger)
+    #    信号处理: 捕获SIGINT和SIGTERM信号实现优雅关闭
     # start http server
     try:
         logging.info("RAGFlow HTTP server start...")

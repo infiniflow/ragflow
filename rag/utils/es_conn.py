@@ -61,7 +61,7 @@ class ESConnection(DocStoreConnection):
             msg = f"Elasticsearch {settings.ES['hosts']} is unhealthy in 120s."
             logger.error(msg)
             raise Exception(msg)
-        v = self.info.get("version", {"number": "8.11.3"})
+        v = self.info.get("version", {"number": "8.17.4"})
         v = v["number"].split(".")[0]
         if int(v) < 8:
             msg = f"Elasticsearch version must be greater than or equal to 8, current version: {v}"
@@ -94,7 +94,7 @@ class ESConnection(DocStoreConnection):
     def createIdx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
         if self.indexExist(indexName, knowledgebaseId):
             return True
-        try:
+        try: # 首次执行时根据配置文件conf/mapping.json创建索引,具体在此类的 __init__()方法中
             from elasticsearch.client import IndicesClient
             return IndicesClient(self.es).create(index=indexName,
                                                  settings=self.mapping["settings"],
@@ -128,7 +128,21 @@ class ESConnection(DocStoreConnection):
     """
     CRUD operations
     """
-
+    """
+    Search
+        结合了多种查询条件、排序、高亮显示、聚合等高级功能, 并且支持向量相似性查询
+            selectFields: 需要返回的字段列表。
+            highlightFields: 需要高亮显示的字段列表。
+            condition: 过滤条件, 用于筛选文档。
+            matchExprs: 匹配表达式列表, 用于定义如何匹配文档。
+            orderBy: 排序表达式, 用于定义排序规则。
+            offset: 分页偏移量。
+            limit: 分页大小。
+            indexNames: Elasticsearch索引名称, 可以是单个字符串或字符串列表。
+            knowledgebaseIds: 知识库ID列表, 用于过滤文档。
+            aggFields: 需要聚合的字段列表, 默认为空。
+            rank_feature: 排名特征字典, 用于调整搜索结果的排名, 可选
+    """
     def search(
             self, selectFields: list[str],
             highlightFields: list[str],
@@ -145,10 +159,10 @@ class ESConnection(DocStoreConnection):
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
         """
-        if isinstance(indexNames, str):
-            indexNames = indexNames.split(",")
+        if isinstance(indexNames, str): # 如果indexNames是字符串，则按逗号分割成列表
+            indexNames = indexNames.split(",") # 确保indexNames是一个非空列表
         assert isinstance(indexNames, list) and len(indexNames) > 0
-        assert "_id" not in condition
+        assert "_id" not in condition # 确保condition中不包含_id字段，因为_id通常用于文档的唯一标识，而不是作为过滤条件
 
         bqry = Q("bool", must=[])
         condition["kb_id"] = knowledgebaseIds
@@ -160,11 +174,11 @@ class ESConnection(DocStoreConnection):
                     bqry.filter.append(
                         Q("bool", must_not=Q("range", available_int={"lt": 1})))
                 continue
-            if not v:
+            if not v: # 空跳过空条件
                 continue
-            if isinstance(v, list):
+            if isinstance(v, list): # 列表，则添加一个terms查询
                 bqry.filter.append(Q("terms", **{k: v}))
-            elif isinstance(v, str) or isinstance(v, int):
+            elif isinstance(v, str) or isinstance(v, int): # 字符串或整数，则添加一个term查询
                 bqry.filter.append(Q("term", **{k: v}))
             else:
                 raise Exception(
@@ -180,7 +194,7 @@ class ESConnection(DocStoreConnection):
                 weights = m.fusion_params["weights"]
                 vector_similarity_weight = get_float(weights.split(",")[1])
         for m in matchExprs:
-            if isinstance(m, MatchTextExpr):
+            if isinstance(m, MatchTextExpr): # 文本匹配
                 minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
                     minimum_should_match = str(int(minimum_should_match * 100)) + "%"
@@ -190,7 +204,7 @@ class ESConnection(DocStoreConnection):
                                    boost=1))
                 bqry.boost = 1.0 - vector_similarity_weight
 
-            elif isinstance(m, MatchDenseExpr):
+            elif isinstance(m, MatchDenseExpr): # 向量匹配
                 assert (bqry is not None)
                 similarity = 0.0
                 if "similarity" in m.extra_options:
@@ -203,18 +217,18 @@ class ESConnection(DocStoreConnection):
                           similarity=similarity,
                           )
 
-        if bqry and rank_feature:
+        if bqry and rank_feature: # 排序特征
             for fld, sc in rank_feature.items():
                 if fld != PAGERANK_FLD:
                     fld = f"{TAG_FLD}.{fld}"
                 bqry.should.append(Q("rank_feature", field=fld, linear={}, boost=sc))
 
-        if bqry:
+        if bqry: # 布尔查询到搜索对象
             s = s.query(bqry)
-        for field in highlightFields:
+        for field in highlightFields: # 高亮字段
             s = s.highlight(field)
 
-        if orderBy:
+        if orderBy: # 排序
             orders = list()
             for field, order in orderBy.fields:
                 order = "asc" if order == 0 else "desc"
@@ -228,12 +242,12 @@ class ESConnection(DocStoreConnection):
                 orders.append({field: order_info})
             s = s.sort(*orders)
 
-        for fld in aggFields:
+        for fld in aggFields: # 聚合字段
             s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
 
-        if limit > 0:
+        if limit > 0: # 分页
             s = s[offset:offset + limit]
-        q = s.to_dict()
+        q = s.to_dict() # 将搜索对象转换为字典格式
         logger.debug(f"ESConnection.search {str(indexNames)} query: " + json.dumps(q))
 
         for i in range(ATTEMPT_TIME):
@@ -257,6 +271,12 @@ class ESConnection(DocStoreConnection):
         logger.error("ESConnection.search timeout for 3 times!")
         raise Exception("ESConnection.search timeout.")
 
+    """
+        从Elasticsearch中检索指定的文档，并处理以下情况：
+        成功获取文档：返回文档内容，并添加文档ID。
+        文档不存在：返回 None。
+        超时或网络问题：重试多次，直到成功或达到最大重试次数。
+    """ 
     def get(self, chunkId: str, indexName: str, knowledgebaseIds: list[str]) -> dict | None:
         for i in range(ATTEMPT_TIME):
             try:
@@ -276,21 +296,28 @@ class ESConnection(DocStoreConnection):
                 raise e
         logger.error("ESConnection.get timeout for 3 times!")
         raise Exception("ESConnection.get timeout.")
-
+    
+    """
+    将多个文档批量插入到 Elasticsearch 索引中。它利用了 Elasticsearch 的 Bulk API 来高效地执行多个索引操作
+    参数说明：
+        documents：一个包含多个文档的列表，每个文档是一个字典。
+        indexName：Elasticsearch 的索引名称，文档将被插入到该索引中。
+        knowledgebaseId：可选参数，知识库ID，用于在文档中添加一个 kb_id 字段
+    """
     def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
         # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         operations = []
         for d in documents:
-            assert "_id" not in d
-            assert "id" in d
+            assert "_id" not in d # 确保文档中没有 _id 字段（因为 _id 是 Elasticsearch 的保留字段）
+            assert "id" in d  # 确保文档中有 id 字段（用于唯一标识文档）
             d_copy = copy.deepcopy(d)
-            d_copy["kb_id"] = knowledgebaseId
-            meta_id = d_copy.pop("id", "")
+            d_copy["kb_id"] = knowledgebaseId # knowledgebaseId 添加到文档中，作为 kb_id 字段
+            meta_id = d_copy.pop("id", "") # 文档中移除 id 字段，并将其值存储到 meta_id 中
             operations.append(
                 {"index": {"_index": indexName, "_id": meta_id}})
             operations.append(d_copy)
 
-        res = []
+        res = [] # 初始化一个空列表 res，用于存储失败的文档ID及其错误信息
         for _ in range(ATTEMPT_TIME):
             try:
                 res = []
@@ -299,7 +326,7 @@ class ESConnection(DocStoreConnection):
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 
-                for item in r["items"]:
+                for item in r["items"]: # 遍历响应中的 items 列表，检查每个操作的结果
                     for action in ["create", "delete", "index", "update"]:
                         if action in item and "error" in item[action]:
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
@@ -313,17 +340,26 @@ class ESConnection(DocStoreConnection):
                     time.sleep(3)
                     continue
         return res
-
+    
+    """
+        根据给定的条件和新值, 更新Elasticsearch中的文档。它支持两种更新方式:
+        更新单个指定文档:通过文档ID进行更新, 支持移除特定字段或更新字段值。
+        更新多个未指定文档:通过条件过滤文档, 支持添加、移除字段值或更新字段值
+        condition: 字典,表示更新条件。
+        newValue: 字典,表示要更新的新值。
+        indexName: Elasticsearch的索引名称。
+        knowledgebaseId: 知识库ID,用于过滤文档
+    """
     def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str) -> bool:
         doc = copy.deepcopy(newValue)
-        doc.pop("id", None)
+        doc.pop("id", None) # 从doc中移除id键（如果存在）, 因为id通常用于标识文档, 而不是更新内容
         condition["kb_id"] = knowledgebaseId
         if "id" in condition and isinstance(condition["id"], str):
             # update specific single document
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
-                for k in doc.keys():
-                    if "feas" != k.split("_")[-1]:
+                for k in doc.keys(): # 遍历doc中的所有键
+                    if "feas" != k.split("_")[-1]: # 筛选出字段名以_feas结尾的字段, 只有这些字段需要被移除
                         continue
                     try:
                         self.es.update(index=indexName, id=chunkId, script=f"ctx._source.remove(\"{k}\");")
@@ -345,12 +381,12 @@ class ESConnection(DocStoreConnection):
         for k, v in condition.items():
             if not isinstance(k, str) or not v:
                 continue
-            if k == "exists":
+            if k == "exists": # 则添加一个exists查询, 检查字段是否存在
                 bqry.filter.append(Q("exists", field=v))
                 continue
             if isinstance(v, list):
                 bqry.filter.append(Q("terms", **{k: v}))
-            elif isinstance(v, str) or isinstance(v, int):
+            elif isinstance(v, str) or isinstance(v, int): # 如果值是字符串或整数, 则添加一个term查询, 匹配字段的单个值
                 bqry.filter.append(Q("term", **{k: v}))
             else:
                 raise Exception(
@@ -405,13 +441,16 @@ class ESConnection(DocStoreConnection):
                 break
         return False
 
+    """
+        从 Elasticsearch 索引中删除满足特定条件的文档。它利用了 Elasticsearch 的 delete_by_query API 来实现这一功能
+    """
     def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:
         qry = None
-        assert "_id" not in condition
+        assert "_id" not in condition # 确保条件字典中没有 _id 字段
         condition["kb_id"] = knowledgebaseId
         if "id" in condition:
             chunk_ids = condition["id"]
-            if not isinstance(chunk_ids, list):
+            if not isinstance(chunk_ids, list): # 单值转换为列表
                 chunk_ids = [chunk_ids]
             if not chunk_ids:  # when chunk_ids is empty, delete all
                 qry = Q("match_all")

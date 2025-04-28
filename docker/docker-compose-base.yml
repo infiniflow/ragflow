@@ -11,7 +11,7 @@ services:
     env_file: .env
     environment:
       - node.name=es01
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+##      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}  ## modified by leicq for kibana access elasticsearch
       - bootstrap.memory_lock=false
       - discovery.type=single-node
       - xpack.security.enabled=true
@@ -34,6 +34,21 @@ services:
     networks:
       - ragflow
     restart: on-failure
+
+## added by leicq for kiaban to access elasticsearch on development
+  kibana:
+    image: kibana:8.17.4
+    container_name: ragflow-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://es01:9200
+#      - ELASTICSEARCH_USERNAME=elastic
+#      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+    ports:
+      - ${KIBANA_PORT}:5601
+    networks:
+      - ragflow 
+    depends_on:
+      - es01
 
   opensearch01:
     container_name: ragflow-opensearch-01

@@ -20,6 +20,8 @@ import peewee
 from api.db.db_models import DB
 from api.utils import datetime_format, current_timestamp, get_uuid
 
+# 通过Peewee ORM封装了常用数据库的CURD。配合db.models.py定义了各种数据库操作的封装。
+# 其他的service继承CommonService后，就具备了所有的基础功能
 
 class CommonService:
     """Base service class that provides common database operations.

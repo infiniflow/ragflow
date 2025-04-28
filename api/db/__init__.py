@@ -49,7 +49,6 @@ class FileType(StrEnum):
     FOLDER = 'folder'
     OTHER = "other"
 
-VALID_FILE_TYPES = {FileType.PDF, FileType.DOC, FileType.VISUAL, FileType.AURAL, FileType.VIRTUAL, FileType.FOLDER, FileType.OTHER}
 
 class LLMType(StrEnum):
     CHAT = 'chat'
@@ -74,7 +73,6 @@ class TaskStatus(StrEnum):
     DONE = "3"
     FAIL = "4"
 
-VALID_TASK_STATUS     = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL}
 
 class ParserType(StrEnum):
     PRESENTATION = "presentation"
