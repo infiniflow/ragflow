@@ -764,12 +764,8 @@ class UserCanvas(DataBaseModel):
 
     permission = CharField(maxlength=16, null=False, help_text="me|team", default="me", index=True)
     description = TextField(null=True, help_text="Canvas description")
-<<<<<<< HEAD
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
     catalog = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
-=======
-    canvas_type = CharField(maxlength=32, null=True, help_text="Canvas type", index=True)
->>>>>>> origin/fyb
     dsl = JSONField(null=True, default={})
 
     class Meta:
