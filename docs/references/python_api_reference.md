@@ -558,8 +558,6 @@ A `Document` object contains the following attributes:
     `None`
   - `chunk_method`=`"one"`:  
     `None`
-  - `chunk_method`=`"knowledge-graph"`:  
-    `{"chunk_token_num":128,"delimiter": "\\n","entity_types":["organization","person","location","event","time"]}`
   - `chunk_method`=`"email"`:  
     `None`
 
