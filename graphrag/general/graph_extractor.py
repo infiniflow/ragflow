@@ -130,8 +130,9 @@ class GraphExtractor(Extractor):
             async with chat_limiter:
                 continuation = await trio.to_thread.run_sync(lambda: self._chat("", history, {"temperature": 0.8}))
             token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + response)
-            if continuation != "YES":
+            if continuation != "Y":
                 break
+            history.append({"role": "assistant", "content": "Y"})
 
         records = split_string_by_multi_markers(
             results,
