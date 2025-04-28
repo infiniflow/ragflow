@@ -1,0 +1,226 @@
+.agentChatWrapper {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.agentAppWrapper {
+  width: 280px;
+  height: 100%;
+  padding: 16px;
+  border-right: 1px solid #f0f0f0;
+  overflow-y: auto;
+}
+
+.agentAppContent {
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: calc(100% - 80px);
+}
+
+.agentAppCard {
+  margin-bottom: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s;
+  width: 248px;
+}
+
+.agentAppCardSelected {
+  background-color: #f0f7ff;
+  border-color: #1890ff;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+}
+
+.agentAppCardSelectedDark {
+  background-color: #141414;
+  border-color: #1890ff;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+}
+
+.agentCardIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+.agentCardTitle {
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentCardDescription {
+  font-size: 12px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentActionIcon {
+  color: #8c8c8c;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s;
+  margin: 0 5px;
+  display: inline-block;
+
+  &:hover {
+    color: #1890ff;
+  }
+}
+
+.agentConversationWrapper {
+  width: 280px;
+  height: 100%;
+  padding: 16px;
+  border-right: 1px solid #f0f0f0;
+  overflow-y: auto;
+}
+
+.agentConversationTitle {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.addConversationBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #1890ff;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+
+  &:hover {
+    background-color: #40a9ff;
+    transform: scale(1.05);
+  }
+}
+
+.agentConversationContent {
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: calc(100% - 120px);
+}
+
+.agentConversationCard {
+  margin-bottom: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.agentConversationCard:hover {
+  background-color: #f5f5f5;
+}
+
+.agentConversationCardSelected {
+  background-color: #f0f7ff;
+  border-color: #1890ff;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+}
+
+.agentConversationIcon {
+  color: #8c8c8c;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.agentConversationIcon:hover {
+  color: #1890ff;
+}
+
+.agentSpin {
+  height: 100%;
+}
+
+.modalPlaceholder {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+/* 模板选择弹窗样式 */
+.templatesBox {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.agentTemplateModal {
+  top: 0;
+  margin: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100vh;
+  max-height: 100vh;
+  padding: 0;
+
+  :global(.ant-modal-content) {
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .agentDescription {
+    padding-top: 18px;
+    height: 110px;
+  }
+
+  .createModalContent {
+    height: 90vh;
+    padding: 0 40px;
+  }
+
+  .agentTitleWrapper {
+    width: 80%;
+  }
+
+  .flowTemplateCard {
+    position: relative;
+    cursor: pointer;
+    height: 220px;
+  }
+
+  .selectedFlowTemplateCard {
+    background-color: #f0f7ff;
+  }
+
+  .templateAvatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+  }
+
+  .useButton {
+    position: absolute;
+    width: 84%;
+    left: 0;
+    right: 0;
+    bottom: 10px;
+    margin: auto;
+  }
+}
+
+.agentTemplateModalWrapper {
+  margin: 0;
+}

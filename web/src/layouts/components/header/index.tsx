@@ -4,7 +4,6 @@ import { ReactComponent as KnowledgeBaseIcon } from '@/assets/svg/knowledge-base
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchAppConf } from '@/hooks/logic-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
-import { MessageOutlined, SearchOutlined } from '@ant-design/icons';
 import { Flex, Layout, Radio, Space, theme } from 'antd';
 import { MouseEventHandler, useCallback, useMemo } from 'react';
 import { useLocation } from 'umi';
@@ -27,9 +26,10 @@ const RagHeader = () => {
   const tagsData = useMemo(
     () => [
       { path: '/knowledge', name: t('knowledgeBase'), icon: KnowledgeBaseIcon },
-      { path: '/chat', name: t('chat'), icon: MessageOutlined },
-      { path: '/search', name: t('search'), icon: SearchOutlined },
-      { path: '/flow', name: t('flow'), icon: GraphIcon },
+      { path: '/agent-chat', name: t('agentChat'), icon: GraphIcon },
+      //{ path: '/chat', name: t('chat'), icon: MessageOutlined },
+      //{ path: '/search', name: t('search'), icon: SearchOutlined },
+      //{ path: '/flow', name: t('flow'), icon: GraphIcon },
       { path: '/file', name: t('fileManager'), icon: FileIcon },
     ],
     [t],
@@ -71,7 +71,11 @@ const RagHeader = () => {
           onClick={handleLogoClick}
           className={styles.logoWrapper}
         >
-          <img src="/BR.png" alt="" className={`${styles.appIcon} w-[180px] h-[40px]`} />
+          <img
+            src="/BR.png"
+            alt=""
+            className={`${styles.appIcon} w-[180px] h-[40px]`}
+          />
         </Space>
       </a>
       <Space size={[0, 8]} wrap>
