@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +29,7 @@ export default function Dataset() {
     onDocumentUploadOk,
     documentUploadLoading,
   } = useHandleUploadDocument();
-  const { list } = useBulkOperateDataset();
+
   const {
     searchString,
     documents,
@@ -47,6 +48,15 @@ export default function Dataset() {
     hideCreateModal,
     showCreateModal,
   } = useCreateEmptyDocument();
+
+  const { rowSelection, rowSelectionIsEmpty, setRowSelection } =
+    useRowSelection();
+
+  const { list } = useBulkOperateDataset({
+    documents,
+    rowSelection,
+    setRowSelection,
+  });
 
   return (
     <section className="p-8">
@@ -76,11 +86,13 @@ export default function Dataset() {
           </DropdownMenuContent>
         </DropdownMenu>
       </ListFilterBar>
-      <BulkOperateBar list={list}></BulkOperateBar>
+      {rowSelectionIsEmpty || <BulkOperateBar list={list}></BulkOperateBar>}
       <DatasetTable
         documents={documents}
         pagination={pagination}
         setPagination={setPagination}
+        rowSelection={rowSelection}
+        setRowSelection={setRowSelection}
       ></DatasetTable>
       {documentUploadVisible && (
         <FileUploadDialog
