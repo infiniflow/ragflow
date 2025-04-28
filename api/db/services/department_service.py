@@ -18,10 +18,10 @@ from peewee import fn
 
 from api.db.db_models import Department, DepartmentUser, User
 from api.utils import get_uuid
-from api.db.services.base_service import BaseModelService
+from api.db.services.common_service import CommonService
 
 
-class DepartmentService(BaseModelService):
+class DepartmentService(CommonService):
     """Service for department operations"""
 
     model = Department
