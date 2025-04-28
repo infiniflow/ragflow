@@ -15,6 +15,7 @@
 #
 
 import io
+import re
 
 import numpy as np
 from PIL import Image
@@ -24,6 +25,8 @@ from api.db.services.llm_service import LLMBundle
 from deepdoc.vision import OCR
 from rag.nlp import tokenize
 from rag.utils import clean_markdown_block
+from rag.nlp import rag_tokenizer
+
 
 ocr = OCR()
 
@@ -32,6 +35,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
     img = Image.open(io.BytesIO(binary)).convert('RGB')
     doc = {
         "docnm_kwd": filename,
+        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename)),
         "image": img
     }
     bxs = ocr(np.array(img))
