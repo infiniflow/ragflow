@@ -54,7 +54,7 @@ const methods = {
   },
   getList: {
     url: kb_list,
-    method: 'post',
+    method: 'get', // 修改为 get 方法，以匹配后端接口
   },
   // document manager
   get_document_list: {
