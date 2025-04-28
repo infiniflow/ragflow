@@ -403,9 +403,9 @@ curl --request POST \
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 
 #### Response
@@ -829,9 +829,9 @@ curl --request PUT \
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 
 #### Response
