@@ -765,7 +765,8 @@ class UserCanvas(DataBaseModel):
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
-    catalog = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
+    catalog = CharField(max_length=16, null=False, help_text="catalog", index=True)
+    is_virtual = BooleanField(null=False, help_text="catalog", default=False, index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
