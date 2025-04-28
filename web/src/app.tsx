@@ -2,11 +2,11 @@ import i18n from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
 import pt_BR from 'antd/lib/locale/pt_BR';
+import deDE from 'antd/locale/de_DE';
 import enUS from 'antd/locale/en_US';
 import vi_VN from 'antd/locale/vi_VN';
 import zhCN from 'antd/locale/zh_CN';
 import zh_HK from 'antd/locale/zh_HK';
-import deDE from 'antd/locale/de_DE';
 import dayjs from 'dayjs';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
@@ -14,7 +14,7 @@ import localeData from 'dayjs/plugin/localeData';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
-import React, { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { ThemeProvider, useTheme } from './components/theme-provider';
 import { TooltipProvider } from './components/ui/tooltip';
 import storage from './utils/authorization-util';
@@ -73,9 +73,14 @@ function Root({ children }: React.PropsWithChildren) {
 
 const RootProvider = ({ children }: React.PropsWithChildren) => {
   useEffect(() => {
-    // Because the language is saved in the backend, a token is required to obtain the api. However, the login page cannot obtain the language through the getUserInfo api, so the language needs to be saved in localstorage.
+    // 因为语言保存在后端，需要令牌才能获取API。但登录页无法通过getUserInfo API获取语言，所以语言需要保存在本地存储中。
+    // 强制设置默认语言为中文
     const lng = storage.getLanguage();
-    if (lng) {
+    // 确保语言设置为中文，如果没有设置或设置为其他语言，则重置为中文
+    if (!lng || lng !== 'zh') {
+      storage.setLanguage('zh');
+      i18n.changeLanguage('zh');
+    } else {
       i18n.changeLanguage(lng);
     }
   }, []);

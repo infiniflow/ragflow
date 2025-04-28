@@ -60,6 +60,7 @@ export default {
       description:
         '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强您的业务',
       review: '来自 500 多条评论',
+      signInWithGithub: '使用 Github 登录',
     },
     header: {
       knowledgeBase: '知识库',
@@ -236,7 +237,7 @@ export default {
       book: `<p><b>支持格式：</b>DOCX、PDF、TXT</p>
       <p><b>适用场景：</b></p><p>
       适用于多章节设备手册，建议为PDF文件设置<i>页码范围</i>（如第5-30页）以聚焦核心内容。</p>`,
-    
+
       laws: `<p><b>支持格式：</b>DOCX、PDF、TXT</p>
       <p><b>适用场景：</b></p><p>
       技术标准文件将按<i>条款层级</i>分割，保证每个条款的完整上下文。</p>`,
@@ -249,7 +250,7 @@ export default {
       <p><b>适用场景：</b></p>
       <li>此方法为通用处理方法。</li>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
-      <li>接下来，这些连续的片段被合并成Token数不超过“Token数”的块。</li></p>`,   
+      <li>接下来，这些连续的片段被合并成Token数不超过“Token数”的块。</li></p>`,
 
       paper: `<p><b>支持格式：</b>PDF</p>
       <p><b>适用场景：</b></p><p>

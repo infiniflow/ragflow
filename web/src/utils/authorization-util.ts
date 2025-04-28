@@ -42,9 +42,15 @@ const storage = {
     localStorage.setItem('lng', lng);
   },
   getLanguage: (): string => {
-    return localStorage.getItem('lng') as string;
+    // 默认返回中文作为语言选择
+    return localStorage.getItem('lng') || 'zh';
   },
 };
+
+// 确保初始化时就有语言设置
+if (!localStorage.getItem('lng')) {
+  localStorage.setItem('lng', 'zh');
+}
 
 export const getAuthorization = () => {
   const auth = getSearchValue('auth');

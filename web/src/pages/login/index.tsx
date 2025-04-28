@@ -5,7 +5,6 @@ import { Button, Checkbox, Form, Input } from 'antd';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon, useNavigate } from 'umi';
-import RightPanel from './right-panel';
 
 import { Domain } from '@/constants/common';
 import styles from './index.less';
@@ -72,124 +71,105 @@ const Login = () => {
 
   return (
     <div className={styles.loginPage}>
-      <div className={styles.loginLeft}>
-        <div className={styles.leftContainer}>
-          <div className={styles.loginTitle}>
-            <div>{title === 'login' ? t('login') : t('register')}</div>
-            <span>
-              {title === 'login'
-                ? t('loginDescription')
-                : t('registerDescription')}
-            </span>
-          </div>
+      <div className={styles.loginContainer}>
+        <div className={styles.loginTitle}>
+          <div>{title === 'login' ? t('login') : t('register')}</div>
+          <span>
+            {title === 'login'
+              ? t('loginDescription')
+              : t('registerDescription')}
+          </span>
+        </div>
 
-          <Form
-            form={form}
-            layout="vertical"
-            name="dynamic_rule"
-            style={{ maxWidth: 600 }}
+        <Form
+          form={form}
+          layout="vertical"
+          name="dynamic_rule"
+          style={{ maxWidth: 600 }}
+        >
+          <Form.Item
+            {...formItemLayout}
+            name="email"
+            label={t('emailLabel')}
+            rules={[{ required: true, message: t('emailPlaceholder') }]}
           >
+            <Input size="large" placeholder={t('emailPlaceholder')} />
+          </Form.Item>
+          {title === 'register' && (
             <Form.Item
               {...formItemLayout}
-              name="email"
-              label={t('emailLabel')}
-              rules={[{ required: true, message: t('emailPlaceholder') }]}
+              name="nickname"
+              label={t('nicknameLabel')}
+              rules={[{ required: true, message: t('nicknamePlaceholder') }]}
             >
-              <Input size="large" placeholder={t('emailPlaceholder')} />
+              <Input size="large" placeholder={t('nicknamePlaceholder')} />
             </Form.Item>
-            {title === 'register' && (
-              <Form.Item
-                {...formItemLayout}
-                name="nickname"
-                label={t('nicknameLabel')}
-                rules={[{ required: true, message: t('nicknamePlaceholder') }]}
-              >
-                <Input size="large" placeholder={t('nicknamePlaceholder')} />
-              </Form.Item>
-            )}
-            <Form.Item
-              {...formItemLayout}
-              name="password"
-              label={t('passwordLabel')}
-              rules={[{ required: true, message: t('passwordPlaceholder') }]}
-            >
-              <Input.Password
-                size="large"
-                placeholder={t('passwordPlaceholder')}
-                onPressEnter={onCheck}
-              />
-            </Form.Item>
-            {title === 'login' && (
-              <Form.Item name="remember" valuePropName="checked">
-                <Checkbox> {t('rememberMe')}</Checkbox>
-              </Form.Item>
-            )}
-            <div>
-              {title === 'login' && registerEnabled && (
-                <div>
-                  {t('signInTip')}
-                  <Button type="link" onClick={changeTitle}>
-                    {t('signUp')}
-                  </Button>
-                </div>
-              )}
-              {title === 'register' && (
-                <div>
-                  {t('signUpTip')}
-                  <Button type="link" onClick={changeTitle}>
-                    {t('login')}
-                  </Button>
-                </div>
-              )}
-            </div>
-            <Button
-              type="primary"
-              block
+          )}
+          <Form.Item
+            {...formItemLayout}
+            name="password"
+            label={t('passwordLabel')}
+            rules={[{ required: true, message: t('passwordPlaceholder') }]}
+          >
+            <Input.Password
               size="large"
-              onClick={onCheck}
-              loading={loading}
-            >
-              {title === 'login' ? t('login') : t('continue')}
-            </Button>
-            {title === 'login' && (
-              <>
-                {/* <Button
+              placeholder={t('passwordPlaceholder')}
+              onPressEnter={onCheck}
+            />
+          </Form.Item>
+          {title === 'login' && (
+            <Form.Item name="remember" valuePropName="checked">
+              <Checkbox> {t('rememberMe')}</Checkbox>
+            </Form.Item>
+          )}
+          <div>
+            {title === 'login' && registerEnabled && (
+              <div>
+                {t('signInTip')}
+                <Button type="link" onClick={changeTitle}>
+                  {t('signUp')}
+                </Button>
+              </div>
+            )}
+            {title === 'register' && (
+              <div>
+                {t('signUpTip')}
+                <Button type="link" onClick={changeTitle}>
+                  {t('login')}
+                </Button>
+              </div>
+            )}
+          </div>
+          <Button
+            type="primary"
+            block
+            size="large"
+            onClick={onCheck}
+            loading={loading}
+          >
+            {title === 'login' ? t('login') : t('continue')}
+          </Button>
+          {title === 'login' && (
+            <>
+              {location.host === Domain && (
+                <Button
                   block
                   size="large"
                   onClick={toGoogle}
                   style={{ marginTop: 15 }}
                 >
-                  <div>
+                  <div className="flex items-center">
                     <Icon
-                      icon="local:google"
+                      icon="local:github"
                       style={{ verticalAlign: 'middle', marginRight: 5 }}
                     />
-                    Sign in with Google
+                    {t('signInWithGithub')}
                   </div>
-                </Button> */}
-                {location.host === Domain && (
-                  <Button
-                    block
-                    size="large"
-                    onClick={toGoogle}
-                    style={{ marginTop: 15 }}
-                  >
-                    <div className="flex items-center">
-                      <Icon
-                        icon="local:github"
-                        style={{ verticalAlign: 'middle', marginRight: 5 }}
-                      />
-                      Sign in with Github
-                    </div>
-                  </Button>
-                )}
-              </>
-            )}
-          </Form>
-        </div>
-      </div>
-      <div className={styles.loginRight}>
-        <RightPanel></RightPanel>
+                </Button>
+              )}
+            </>
+          )}
+        </Form>
       </div>
     </div>
   );
