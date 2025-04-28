@@ -2,15 +2,18 @@ import {
   useFetchUserInfo,
   useListTenantUser,
 } from '@/hooks/user-setting-hooks';
-import { Button, Card, Flex, Space } from 'antd';
+import { Button, Card, Flex, Space, Tabs } from 'antd';
 import { useTranslation } from 'react-i18next';
 
-import { TeamOutlined, UserAddOutlined, UserOutlined } from '@ant-design/icons';
+import { TeamOutlined, UserAddOutlined, UserOutlined, PartitionOutlined, PlusOutlined } from '@ant-design/icons';
 import AddingUserModal from './add-user-modal';
 import { useAddUser } from './hooks';
 import styles from './index.less';
 import TenantTable from './tenant-table';
 import UserTable from './user-table';
+import DepartmentTable from './department-table';
+import GroupTable from './group-table';
+import { useState } from 'react';
 
 const iconStyle = { fontSize: 20, color: '#1677ff' };
 
@@ -24,6 +27,33 @@ const UserSettingTeam = () => {
     showAddingTenantModal,
     handleAddUserOk,
   } = useAddUser();
+  const [activeTab, setActiveTab] = useState('members');
+
+  const tabItems = [
+    {
+      key: 'members',
+      label: t('setting.teamMembers'),
+      children: (
+        <>
+          <UserTable />
+        </>
+      ),
+    },
+    {
+      key: 'departments',
+      label: '部门',
+      children: (
+        <>
+          <DepartmentTable />
+        </>
+      ),
+    },
+    {
+      key: 'groups',
+      label: '群组',
+      children: <GroupTable />,
+    },
+  ];
 
   return (
     <div className={styles.teamWrapper}>
@@ -38,15 +68,12 @@ const UserSettingTeam = () => {
           </Button>
         </Flex>
       </Card>
-      <Card
-        title={
-          <Space>
-            <UserOutlined style={iconStyle} /> {t('setting.teamMembers')}
-          </Space>
-        }
-        bordered={false}
-      >
-        <UserTable></UserTable>
+      <Card bordered={false}>
+        <Tabs 
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={tabItems}
+        />
       </Card>
       <Card
         title={

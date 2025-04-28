@@ -140,7 +140,7 @@ const SearchPage = () => {
                   <Card
                     title={
                       <Flex gap={10}>
-                        <img src="/logo.svg" alt="" width={20} />
+                        <img src="/BR.png" alt="" width={40} />
                         {t('chat.answerTitle')}
                       </Flex>
                     }

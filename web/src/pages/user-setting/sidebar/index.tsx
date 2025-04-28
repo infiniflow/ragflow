@@ -52,7 +52,12 @@ const SideBar = () => {
     } as MenuItem;
   }
 
-  const items: MenuItem[] = Object.values(UserSettingRouteKey).map((value) =>
+  // 过滤掉 "system" 和 "api" 页面
+  const filteredRouteKeys = Object.values(UserSettingRouteKey).filter(
+    (value) => value !== UserSettingRouteKey.System && value !== UserSettingRouteKey.Api
+  );
+
+  const items: MenuItem[] = filteredRouteKeys.map((value) =>
     getItem(value, value, UserSettingIconMap[value]),
   );
 

@@ -1,0 +1,20 @@
+{
+  "id": 3,
+  "title": "精准问答型",
+  "description": "一个精准问答型的助手，可以根据相关知识库的文档给出精准回答。",
+  "canvas_type": "chatbot",
+  "dsl": {
+    "answer": [],
+    "components": {},
+    "embed_id": "",
+    "graph": {
+      "edges": [],
+      "nodes": []
+    },
+    "history": [],
+    "messages": [],
+    "path": [],
+    "reference": []
+  },
+  "avatar": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCIgdmlld0JveD0iMCAwIDUwIDUwIiBmaWxsPSJub25lIj4KICA8cmVjdCB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIGZpbGw9IiMxRTkwRkYiIHJ4PSI4Ii8+CiAgPHBvbHlnb24gcG9pbnRzPSI0MS42NjY2NjY2NjY2NjY2NywyNS4wIDMzLjMzMzM0NjEwMDQxOTkyNCwzOS40MzM3NDkzNTg2NTIyMzYgMTYuNjY2NjkyMjAwODU5NCwzOS40MzM3NzE0NzE4ODM1NzQgOC4zMzMzMzMzMzMzOTIwMTIsMjUuMDAwMDQ0MjI2NDk2NTYzIDE2LjY2NjYxNTU5ODM1OTQzNSwxMC41NjYyNzI3NTQ2ODA3MzcgMzMuMzMzMjY5NDk3ODAyNjEsMTAuNTY2MjA2NDE0OTg2NzIyIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4="
+}

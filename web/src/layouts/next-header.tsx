@@ -75,9 +75,9 @@ export function Header() {
     <section className="py-6 px-10 flex justify-between items-center border-b">
       <div className="flex items-center gap-4">
         <img
-          src={'/logo.svg'}
+          src={'/BR.png'}
           alt="logo"
-          className="w-[100] h-[100] mr-[12]"
+          className="w-[180px] h-[40px] mr-[12]"
           onClick={handleLogoClick}
         />
         <Button

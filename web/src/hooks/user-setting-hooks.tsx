@@ -431,3 +431,351 @@ export const useFetchLangfuseConfig = () => {
 
   return { data, loading };
 };
+
+// Department Hooks
+export const useListDepartment = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const tenantId = tenantInfo.tenant_id;
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ['listDepartment', tenantId],
+    initialData: [],
+    gcTime: 0,
+    enabled: !!tenantId,
+    queryFn: async () => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.listDepartment(tenantId);
+      // return data?.data ?? [];
+      
+      // 模拟数据，后端实现后移除
+      return [
+        { id: '1', name: '研发部', description: '负责产品研发', member_count: 5, create_date: '2025-04-01T00:00:00Z' },
+        { id: '2', name: '市场部', description: '负责市场营销', member_count: 3, create_date: '2025-04-02T00:00:00Z' },
+        { id: '3', name: '运营部', description: '负责产品运营', member_count: 4, create_date: '2025-04-03T00:00:00Z' },
+      ];
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useAddDepartment = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['addDepartment'],
+    mutationFn: async (params: { name: string; description?: string; parentId?: string }) => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.addDepartment(tenantInfo.tenant_id, params);
+      // if (data.code === 0) {
+      //   queryClient.invalidateQueries({ queryKey: ['listDepartment'] });
+      // }
+      // return data?.code;
+      
+      // 模拟成功响应，后端实现后移除
+      message.success(t('message.created'));
+      queryClient.invalidateQueries({ queryKey: ['listDepartment'] });
+      return 0;
+    },
+  });
+
+  return { data, loading, addDepartment: mutateAsync };
+};
+
+export const useUpdateDepartment = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['updateDepartment'],
+    mutationFn: async (params: { id: string; name?: string; description?: string; parentId?: string }) => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.updateDepartment(params);
+      // if (data.code === 0) {
+      //   queryClient.invalidateQueries({ queryKey: ['listDepartment'] });
+      // }
+      // return data?.code;
+      
+      // 模拟成功响应，后端实现后移除
+      message.success(t('message.updated'));
+      queryClient.invalidateQueries({ queryKey: ['listDepartment'] });
+      return 0;
+    },
+  });
+
+  return { data, loading, updateDepartment: mutateAsync };
+};
+
+export const useDeleteDepartment = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteDepartment'],
+    mutationFn: async (departmentId: string) => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.deleteDepartment(departmentId);
+      // if (data.code === 0) {
+      //   message.success(t('message.deleted'));
+      //   queryClient.invalidateQueries({ queryKey: ['listDepartment'] });
+      // }
+      // return data?.code;
+      
+      // 模拟成功响应，后端实现后移除
+      message.success(t('message.deleted'));
+      queryClient.invalidateQueries({ queryKey: ['listDepartment'] });
+      return 0;
+    },
+  });
+
+  return { data, loading, deleteDepartment: mutateAsync };
+};
+
+export const useAddUserToDepartment = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['addUserToDepartment'],
+    mutationFn: async (params: { departmentId: string; userIds: string[] }) => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.addUserToDepartment(params);
+      // if (data.code === 0) {
+      //   message.success(t('message.operated'));
+      //   queryClient.invalidateQueries({ queryKey: ['listDepartment'] });
+      // }
+      // return data?.code;
+      
+      // 模拟成功响应，后端实现后移除
+      message.success(t('message.operated'));
+      queryClient.invalidateQueries({ queryKey: ['listDepartment'] });
+      return 0;
+    },
+  });
+
+  return { data, loading, addUserToDepartment: mutateAsync };
+};
+
+export const useRemoveUserFromDepartment = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['removeUserFromDepartment'],
+    mutationFn: async (params: { departmentId: string; userId: string }) => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.removeUserFromDepartment(params);
+      // if (data.code === 0) {
+      //   message.success(t('message.operated'));
+      //   queryClient.invalidateQueries({ queryKey: ['listDepartment'] });
+      // }
+      // return data?.code;
+      
+      // 模拟成功响应，后端实现后移除
+      message.success(t('message.operated'));
+      queryClient.invalidateQueries({ queryKey: ['listDepartment'] });
+      return 0;
+    },
+  });
+
+  return { data, loading, removeUserFromDepartment: mutateAsync };
+};
+
+// Group Hooks
+export const useListGroup = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const tenantId = tenantInfo.tenant_id;
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ['listGroup', tenantId],
+    initialData: [],
+    gcTime: 0,
+    enabled: !!tenantId,
+    queryFn: async () => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.listGroup(tenantId);
+      // return data?.data ?? [];
+      
+      // 模拟数据，后端实现后移除
+      return [
+        { id: '1', name: 'AI研发小组', description: '负责AI算法研发', member_count: 3, create_date: '2025-04-01T00:00:00Z' },
+        { id: '2', name: '前端开发小组', description: '负责前端开发', member_count: 4, create_date: '2025-04-02T00:00:00Z' },
+        { id: '3', name: '后端开发小组', description: '负责后端开发', member_count: 5, create_date: '2025-04-03T00:00:00Z' },
+      ];
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useAddGroup = () => {
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['addGroup'],
+    mutationFn: async (params: { name: string; description?: string }) => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.addGroup(tenantInfo.tenant_id, params);
+      // if (data.code === 0) {
+      //   queryClient.invalidateQueries({ queryKey: ['listGroup'] });
+      // }
+      // return data?.code;
+      
+      // 模拟成功响应，后端实现后移除
+      message.success(t('message.created'));
+      queryClient.invalidateQueries({ queryKey: ['listGroup'] });
+      return 0;
+    },
+  });
+
+  return { data, loading, addGroup: mutateAsync };
+};
+
+export const useUpdateGroup = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['updateGroup'],
+    mutationFn: async (params: { id: string; name?: string; description?: string }) => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.updateGroup(params);
+      // if (data.code === 0) {
+      //   queryClient.invalidateQueries({ queryKey: ['listGroup'] });
+      // }
+      // return data?.code;
+      
+      // 模拟成功响应，后端实现后移除
+      message.success(t('message.updated'));
+      queryClient.invalidateQueries({ queryKey: ['listGroup'] });
+      return 0;
+    },
+  });
+
+  return { data, loading, updateGroup: mutateAsync };
+};
+
+export const useDeleteGroup = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteGroup'],
+    mutationFn: async (groupId: string) => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.deleteGroup(groupId);
+      // if (data.code === 0) {
+      //   message.success(t('message.deleted'));
+      //   queryClient.invalidateQueries({ queryKey: ['listGroup'] });
+      // }
+      // return data?.code;
+      
+      // 模拟成功响应，后端实现后移除
+      message.success(t('message.deleted'));
+      queryClient.invalidateQueries({ queryKey: ['listGroup'] });
+      return 0;
+    },
+  });
+
+  return { data, loading, deleteGroup: mutateAsync };
+};
+
+export const useAddUserToGroup = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['addUserToGroup'],
+    mutationFn: async (params: { groupId: string; userIds: string[] }) => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.addUserToGroup(params);
+      // if (data.code === 0) {
+      //   message.success(t('message.operated'));
+      //   queryClient.invalidateQueries({ queryKey: ['listGroup'] });
+      // }
+      // return data?.code;
+      
+      // 模拟成功响应，后端实现后移除
+      message.success(t('message.operated'));
+      queryClient.invalidateQueries({ queryKey: ['listGroup'] });
+      return 0;
+    },
+  });
+
+  return { data, loading, addUserToGroup: mutateAsync };
+};
+
+export const useRemoveUserFromGroup = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['removeUserFromGroup'],
+    mutationFn: async (params: { groupId: string; userId: string }) => {
+      // 后端实现后替换为实际API调用
+      // const { data } = await userService.removeUserFromGroup(params);
+      // if (data.code === 0) {
+      //   message.success(t('message.operated'));
+      //   queryClient.invalidateQueries({ queryKey: ['listGroup'] });
+      // }
+      // return data?.code;
+      
+      // 模拟成功响应，后端实现后移除
+      message.success(t('message.operated'));
+      queryClient.invalidateQueries({ queryKey: ['listGroup'] });
+      return 0;
+    },
+  });
+
+  return { data, loading, removeUserFromGroup: mutateAsync };
+};

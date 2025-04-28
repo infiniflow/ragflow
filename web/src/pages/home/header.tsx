@@ -67,9 +67,9 @@ export function HomeHeader() {
     <section className="py-[12px] flex justify-between items-center">
       <div className="flex items-center gap-4">
         <img
-          src={'/logo.svg'}
+          src={'/BR.png'}
           alt="logo"
-          className="w-[100] h-[100] mr-[12]"
+          className="w-[180px] h-[40px] mr-[12]"
           onClick={handleLogoClick}
         />
         <Button variant="secondary">

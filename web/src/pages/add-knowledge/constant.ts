@@ -2,7 +2,7 @@ import { KnowledgeRouteKey } from '@/constants/knowledge';
 
 export const routeMap = {
   [KnowledgeRouteKey.Dataset]: 'Dataset',
-  [KnowledgeRouteKey.Testing]: 'Retrieval testing',
+  // [KnowledgeRouteKey.Testing]: 'Retrieval testing',  // 注释掉这一行
   [KnowledgeRouteKey.Configuration]: 'Configuration',
 };
 

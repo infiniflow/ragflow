@@ -13,7 +13,7 @@ export enum Routes {
   Chat = '/next-chat',
   Files = '/files',
   ProfileSetting = '/profile-setting',
-  DatasetTesting = '/testing',
+  // DatasetTesting = '/testing', // 注释掉这一行
   DatasetSetting = '/setting',
   Chunk = '/chunk',
   ChunkResult = `${Chunk}${Chunk}`,
@@ -72,10 +72,10 @@ const routes = [
             path: '/knowledge/configuration',
             component: '@/pages/add-knowledge/components/knowledge-setting',
           },
-          {
-            path: '/knowledge/testing',
-            component: '@/pages/add-knowledge/components/knowledge-testing',
-          },
+          //{
+          //  path: '/knowledge/testing',
+          //  component: '@/pages/add-knowledge/components/knowledge-testing',
+          //},
           {
             path: '/knowledge/knowledgeGraph',
             component: '@/pages/add-knowledge/components/knowledge-graph',
@@ -254,10 +254,11 @@ const routes = [
         path: `${Routes.DatasetBase}${Routes.DatasetSetting}/:id`,
         component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
       },
-      {
-        path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
-        component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
-      },
+      // 注释掉下面这个路由配置
+      // {
+      //   path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
+      //   component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
+      // },
     ],
   },
   {

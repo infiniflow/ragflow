@@ -1,0 +1,241 @@
+{
+  "id": 1,
+  "title": "通用型",
+  "description": "一个通用型的助手，可以根据相关知识库文档提供回答。",
+  "canvas_type": "chatbot",
+  "dsl": {
+    "answer": [],
+    "components": {},
+    "embed_id": "",
+    "graph": {
+      "edges": [
+        {
+          "id": "xy-edge__begin-Answer:LateCamerasSearchc",
+          "markerEnd": "logo",
+          "source": "begin",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:LateCamerasSearch",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:NewHorsesBuyc-Answer:LateCamerasSearchc",
+          "markerEnd": "logo",
+          "source": "Generate:NewHorsesBuy",
+          "sourceHandle": "c",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:LateCamerasSearch",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Retrieval:RudeClocksMakeb-Generate:NewHorsesBuyb",
+          "markerEnd": "logo",
+          "source": "Retrieval:RudeClocksMake",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:NewHorsesBuy",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Answer:LateCamerasSearchb-RewriteQuestion:SmartSingersAttendc",
+          "markerEnd": "logo",
+          "source": "Answer:LateCamerasSearch",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "RewriteQuestion:SmartSingersAttend",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__RewriteQuestion:SmartSingersAttendb-Retrieval:RudeClocksMakec",
+          "markerEnd": "logo",
+          "source": "RewriteQuestion:SmartSingersAttend",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:RudeClocksMake",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        }
+      ],
+      "nodes": [
+        {
+          "data": {
+            "form": {
+              "prologue": "你好！ 有什么可以帮您？"
+            },
+            "label": "Begin",
+            "name": "begin"
+          },
+          "dragging": false,
+          "id": "begin",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -642.2041799252354,
+            "y": 418.66469343241516
+          },
+          "selected": false,
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "beginNode"
+        },
+        {
+          "data": {
+            "form": {},
+            "label": "Answer",
+            "name": "对话_0"
+          },
+          "dragging": false,
+          "id": "Answer:LateCamerasSearch",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": -319.226967990176,
+            "y": 435.9645382163219
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "logicNode"
+        },
+        {
+          "data": {
+            "form": {
+              "cite": true,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "qwen-max@Tongyi-Qianwen",
+              "maxTokensEnabled": false,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "Task: Please answer the question based on content of knowledge base. \n\nRequirements & restrictions:\n  -  DO NOT make things up when all knowledge base content is irrelevant to the question. \n  - Answers need to consider chat history.\n \n\n      Knowledge base content is as following:\n       {Retrieval:RudeClocksMake}\n      The above is the content of knowledge base.",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "Generate",
+            "name": "生成回答_1"
+          },
+          "dragging": false,
+          "id": "Generate:NewHorsesBuy",
+          "measured": {
+            "height": 102,
+            "width": 200
+          },
+          "position": {
+            "x": -24.997879231796816,
+            "y": 109.0903220902255
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
+        },
+        {
+          "data": {
+            "form": {
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "language": "",
+              "llm_id": "qwen-max@Tongyi-Qianwen",
+              "maxTokensEnabled": false,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameter": "Precise",
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "RewriteQuestion",
+            "name": "问题优化"
+          },
+          "dragging": false,
+          "id": "RewriteQuestion:SmartSingersAttend",
+          "measured": {
+            "height": 102,
+            "width": 200
+          },
+          "position": {
+            "x": -23.00515535852884,
+            "y": 415.3460620744836
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "rewriteNode"
+        },
+        {
+          "data": {
+            "form": {
+              "kb_ids": [],
+              "keywords_similarity_weight": 0.3,
+              "query": [
+                {
+                  "component_id": "Answer:LateCamerasSearch",
+                  "type": "reference"
+                }
+              ],
+              "similarity_threshold": 0.14,
+              "top_n": 3,
+              "use_kg": false
+            },
+            "label": "Retrieval",
+            "name": "知识检索_0"
+          },
+          "dragging": false,
+          "id": "Retrieval:RudeClocksMake",
+          "measured": {
+            "height": 65,
+            "width": 200
+          },
+          "position": {
+            "x": 316.24121906617927,
+            "y": 410.8098771562748
+          },
+          "selected": true,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "retrievalNode"
+        }
+      ]
+    },
+    "history": [],
+    "messages": [],
+    "path": [],
+    "reference": []
+  },
+  "avatar": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCIgdmlld0JveD0iMCAwIDUwIDUwIiBmaWxsPSJub25lIj4KICA8cmVjdCB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIGZpbGw9IiMyQjc0RkYiIHJ4PSI4Ii8+CiAgPHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xOC4zMzM5IDI1LjM4NTdDMjAuMzY0NiAyMi41MzgxIDIzLjYwNTYgMjAuNiAyNy43MjkgMjAuMkMyOC4yODUzIDIwLjE0MjkgMjguNDg1OSAyMC43NDI5IDI4LjA1NzUgMjEuMTQyOUMyNS4xNDM5IDIzLjg1NzEgMjEuNjQ1MiAyNC44ODU3IDIwLjMwNzUgMjcuNDI4NkMyMC4xNjM5IDI3LjY4NTcgMjAuMDc3NSAyNy45NzE0IDIwLjAxMzkgMjguMjY4NkMyMC4wNTIxIDI4LjI1NzEgMjAuMDkwMyAyOC4yNDU3IDIwLjEyODUgMjguMjIyOUMyMC45MDMgMjcuODExNCAyMS43NDMyIDI3LjY1NzEgMjIuNjI5MiAyNy43NzE0QzIzLjUzNjcgMjcuODg1NyAyNC4zNzY5IDI4LjM2ODYgMjUuMDQ3NiAyOS4wNTcxQzI1LjcxODIgMjkuNzM0MyAyNi4xOTIxIDMwLjU4ODYgMjYuMzAyOCAzMS40ODU3QzI2LjQxMzYgMzIuMzgyOSAyNi4yNTg0IDMzLjI5MTQgMjUuODQyOSAzNC4wNTcxQzI1LjQzOSAzNC44MTE0IDI0Ljc4MTIgMzUuNDM0MyAyMy45OTU3IDM1LjgzNDNDMjMuMjIxMSAzNi4yMzQzIDIyLjMxOTIgMzYuNCAyMS40MjMzIDM2LjI4NTdDMjAuNTI3NCAzNi4xNzE0IDE5LjY4NzIgMzUuNjg4NiAxOS4wMTY1IDM1QzE4LjM0NTkgMzQuMzIyOSAxNy44NzIgMzMuNDY4NiAxNy43NjEzIDMyLjU3MTRDMTcuNjUwNSAzMS42NzQzIDE3LjgwNTggMzAuNzY1NyAxOC4yMjEzIDMwQzE4LjYzNjggMjkuMjM0MyAxOS4yOTQ2IDI4LjYxMTQgMjAuMDgwMSAyOC4yMTE0QzIwLjA0MTkgMjguMjIyOSAyMC4wMDM3IDI4LjIzNDMgMTkuOTY1NSAyOC4yNDU3QzE4Ljg1MTIgMjguODU3MSAxOC4wNDQgMjkuOTQyOSAxNy42Mzk0IDMxLjE3MTRDMTcuMTk5NSAzMi40OTE0IDE3LjIzNzcgMzMuOTQyOSAxNy43NjEzIDM1LjIzNDNDMTguMjg0OCAzNi41MjU3IDE5LjI2MzMgMzcuNjExNCAxMC41NTQxIDM4LjE3MTRDMjEuODQ0OCAzOC43MiAyMy4yMjExIDM4LjcwODYgMjQuNDgyIDM4LjE3MTRDMjUuNzQyOSAzNy42MzQzIDI2LjgwNjUgMzYuNjQ1NyAyNy41MTY2IDM1LjQxMTRDMjguMTY1MiAzNC4yIDI4LjQzMTkgMzIuNzk0MyAyOC4yNzM4IDMxLjRDMjguMTE1NyAzMC4wMDU3IDI3LjU0NjYgMjguNjg1NyAyNi42MjQ5IDI3LjY1NzFDMjUuNjkxOCAyNi42MTcxIDI0LjQ1NTQgMjUuODk3MSAyMy4wNzg2IDI1LjYwQzIyLjM4ODUgMjUuNDQ1NyAyMS42ODY3IDI1LjM4NTcgMjAuOTg0OCwyNS40MzQzQzIzLjAyNzMgMjEuOTY1NyAyNy4wNDY1IDE3LjggMzMuNTEwOSAyMy44QzMzLjcwMTUgMjMuOTc3MSAzMy41NDYzIDI0LjI5NzEgMzMuMjY4IDI0LjE3NzFDMjkuODYwOCAyMi44NTcxIDI2Ljg0NDcgMjIuOTAyOSAyNC40MzM4IDI0LjEwODZDMjcuMTM0OCAyMi40OTcxIDMwLjMzMzMgMjEuOTg4NiAzMy40NDQzIDIyLjY0MjlDMzMuNzAxNSAyMi42ODU3IDMzLjgzMjggMjMuMDE3MSAzMy41OTMyIDIzLjJDMjkuNDA4MyAyNi41NzE0IDI1LjI5NyAyNy4yIDE4Ljc1MDEgMzMuNDExNEMxOC41OTM0IDMzLjU2NTcgMTguMzUzNiAzMy42MTE0IDE4LjE0MjMgMzMuNUMxNy45MzEgMzMuMzg4NiAxNy44MDExIDMzLjEzNzEgMTcuODM5MyAzMi44NjI5QzE3LjgzOTMgMjkuNjkxNCAxNy42Mjk2IDI3LjU4MjkgMTguMzMzOSAyNS4zODU3WiIvPgo8L3N2Zz4K"
+}

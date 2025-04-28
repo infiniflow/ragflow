@@ -142,4 +142,42 @@ export const listTenant = () => request.get(api.listTenant);
 export const agreeTenant = (tenantId: string) =>
   request.put(api.agreeTenant(tenantId));
 
+// 部门相关API
+export const listDepartment = (tenantId: string) =>
+  request.get(api.listDepartment(tenantId));
+
+export const addDepartment = (tenantId: string, params: { name: string; description?: string; parentId?: string }) =>
+  post(api.addDepartment(tenantId), params);
+
+export const updateDepartment = (params: { id: string; name?: string; description?: string; parentId?: string }) =>
+  request.put(api.updateDepartment(params.id), params);
+
+export const deleteDepartment = (departmentId: string) =>
+  request.delete(api.deleteDepartment(departmentId));
+
+export const addUserToDepartment = (params: { departmentId: string; userIds: string[] }) =>
+  post(api.addUserToDepartment(params.departmentId), { userIds: params.userIds });
+
+export const removeUserFromDepartment = (params: { departmentId: string; userId: string }) =>
+  request.delete(api.removeUserFromDepartment(params.departmentId, params.userId));
+
+// 群组相关API
+export const listGroup = (tenantId: string) =>
+  request.get(api.listGroup(tenantId));
+
+export const addGroup = (tenantId: string, params: { name: string; description?: string }) =>
+  post(api.addGroup(tenantId), params);
+
+export const updateGroup = (params: { id: string; name?: string; description?: string }) =>
+  request.put(api.updateGroup(params.id), params);
+
+export const deleteGroup = (groupId: string) =>
+  request.delete(api.deleteGroup(groupId));
+
+export const addUserToGroup = (params: { groupId: string; userIds: string[] }) =>
+  post(api.addUserToGroup(params.groupId), { userIds: params.userIds });
+
+export const removeUserFromGroup = (params: { groupId: string; userId: string }) =>
+  request.delete(api.removeUserFromGroup(params.groupId, params.userId));
+
 export default userService;
