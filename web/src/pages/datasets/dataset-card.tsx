@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { formatDate } from '@/utils/date';
-import { Ellipsis } from 'lucide-react';
+import { ChevronRight, Ellipsis } from 'lucide-react';
 import { DatasetDropdown } from './dataset-dropdown';
 import { useDisplayOwnerName } from './use-display-owner';
 import { useRenameDataset } from './use-rename-dataset';
@@ -62,6 +62,21 @@ export function DatasetCard({
             </p>
           </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function SeeAllCard() {
+  const { navigateToDatasetList } = useNavigatePage();
+
+  return (
+    <Card
+      className="bg-colors-background-inverse-weak w-40"
+      onClick={navigateToDatasetList}
+    >
+      <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5">
+        See All <ChevronRight className="size-4" />
       </CardContent>
     </Card>
   );

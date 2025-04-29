@@ -1,9 +1,8 @@
 import { RenameDialog } from '@/components/rename-dialog';
-import { Button } from '@/components/ui/button';
 import { CardSkeleton } from '@/components/ui/skeleton';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
-import { DatasetCard } from '../datasets/dataset-card';
+import { DatasetCard, SeeAllCard } from '../datasets/dataset-card';
 import { useRenameDataset } from '../datasets/use-rename-dataset';
 
 export function Datasets() {
@@ -37,13 +36,7 @@ export function Datasets() {
             ))}
           </div>
         )}
-        <Button
-          className="h-auto "
-          variant={'tertiary'}
-          onClick={navigateToDatasetList}
-        >
-          See all
-        </Button>
+        <SeeAllCard></SeeAllCard>
       </div>
       {datasetRenameVisible && (
         <RenameDialog

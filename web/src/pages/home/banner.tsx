@@ -37,3 +37,14 @@ export function Banner() {
     </section>
   );
 }
+
+export function NextBanner() {
+  return (
+    <section className="text-5xl pt-10 pb-14 font-bold">
+      <span className="text-text-title">Welcome to</span>
+      <span className="pl-3 text-transparent bg-clip-text  bg-gradient-to-b from-[#40EBE3] to-[#4A51FF]">
+        RAGFlow
+      </span>
+    </section>
+  );
+}
