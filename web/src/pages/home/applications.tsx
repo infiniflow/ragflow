@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Agents } from './agent-list';
 import { ApplicationCard } from './application-card';
+import { ChatList } from './chat-list';
 
 const applications = [
   {
@@ -70,12 +71,13 @@ export function Applications() {
         ></Segmented>
       </div>
       <div className="flex flex-wrap gap-4">
-        {val === Routes.Agents ||
+        {(val === 'all' || val === Routes.Searches) &&
           [...Array(12)].map((_, i) => {
             const app = applications[i % 4];
             return <ApplicationCard key={i} app={app}></ApplicationCard>;
           })}
         {val === Routes.Agents && <Agents></Agents>}
+        {val === Routes.Chats && <ChatList></ChatList>}
       </div>
     </section>
   );

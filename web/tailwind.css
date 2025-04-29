@@ -76,6 +76,8 @@
 
     --background-badge: rgba(22, 22, 24, 0.5);
     --text-badge: rgba(151, 154, 171, 1);
+
+    --text-title: rgba(22, 22, 24, 1);
   }
 
   .dark {
@@ -172,6 +174,8 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --text-title: rgba(255, 255, 255, 1);
   }
 }
 

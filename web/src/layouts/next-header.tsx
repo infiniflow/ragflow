@@ -72,7 +72,7 @@ export function Header() {
   }, [navigate]);
 
   return (
-    <section className="py-6 px-10 flex justify-between items-center border-b">
+    <section className="py-6 px-10 flex justify-between items-center ">
       <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}
