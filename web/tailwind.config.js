@@ -45,6 +45,9 @@ module.exports = {
         'background-badge': 'var(--background-badge)',
         'text-badge': 'var(--text-badge)',
         'text-title': 'var(--text-title)',
+        'text-sub-title': 'var(--text-sub-title)',
+        'text-title-invert': 'var(--text-title-invert)',
+        'background-header-bar': 'var(--background-header-bar)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',

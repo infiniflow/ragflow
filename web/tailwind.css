@@ -78,6 +78,10 @@
     --text-badge: rgba(151, 154, 171, 1);
 
     --text-title: rgba(22, 22, 24, 1);
+    --text-sub-title: rgba(151, 154, 171, 1);
+
+    --background-header-bar: rgba(11, 11, 12, 1);
+    --text-title-invert: rgba(255, 255, 255, 1);
   }
 
   .dark {
@@ -176,6 +180,10 @@
     --sidebar-ring: 217.2 91.2% 59.8%;
 
     --text-title: rgba(255, 255, 255, 1);
+    --text-sub-title: rgba(91, 93, 106, 1);
+    --background-header-bar: rgba(11, 11, 12, 1);
+
+    --text-title-invert: rgba(22, 22, 24, 1);
   }
 }
 
@@ -184,7 +192,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-colors-background-neutral-standard text-foreground;
+    @apply bg-text-title-invert text-foreground;
     font-feature-settings:
       'rlig' 1,
       'calt' 1;

@@ -29,7 +29,7 @@ export function DatasetCard({
       className="bg-colors-background-inverse-weak  w-40"
       onClick={navigateToDataset(dataset.id)}
     >
-      <CardContent className="p-2.5 pt-1">
+      <CardContent className="p-2.5 pt-1 group">
         <section className="flex justify-between mb-2">
           <div className="flex gap-2 items-center">
             <Avatar className="size-6 rounded-lg">
@@ -46,7 +46,11 @@ export function DatasetCard({
             showDatasetRenameModal={showDatasetRenameModal}
             dataset={dataset}
           >
-            <Button variant="ghost" size="icon">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="invisible group-hover:visible"
+            >
               <Ellipsis />
             </Button>
           </DatasetDropdown>
@@ -56,8 +60,10 @@ export function DatasetCard({
             <h3 className="text-lg font-semibold mb-2 line-clamp-1">
               {dataset.name}
             </h3>
-            <p className="text-xs opacity-80">{dataset.doc_num} files</p>
-            <p className="text-xs opacity-80">
+            <p className="text-xs text-text-sub-title">
+              {dataset.doc_num} files
+            </p>
+            <p className="text-xs text-text-sub-title">
               {formatDate(dataset.update_time)}
             </p>
           </div>

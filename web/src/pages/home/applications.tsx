@@ -67,7 +67,7 @@ export function Applications() {
           options={options}
           value={val}
           onChange={handleChange}
-          className="bg-colors-background-inverse-standard text-colors-text-neutral-standard"
+          className="bg-transparent"
         ></Segmented>
       </div>
       <div className="flex flex-wrap gap-4">
