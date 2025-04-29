@@ -122,34 +122,6 @@ export default {
   getSystemConfig: `${api_host}/system/config`,
   setLangfuseConfig: `${api_host}/langfuse/api_key`,
 
-  // 部门
-  listDepartment: (tenantId: string) => 
-    `${api_host}/tenant/${tenantId}/department/list`,
-  addDepartment: (tenantId: string) => 
-    `${api_host}/tenant/${tenantId}/department`,
-  updateDepartment: (departmentId: string) => 
-    `${api_host}/department/${departmentId}`,
-  deleteDepartment: (departmentId: string) => 
-    `${api_host}/department/${departmentId}`,
-  addUserToDepartment: (departmentId: string) => 
-    `${api_host}/department/${departmentId}/users`,
-  removeUserFromDepartment: (departmentId: string, userId: string) => 
-    `${api_host}/department/${departmentId}/user/${userId}`,
-    
-  // 群组
-  listGroup: (tenantId: string) => 
-    `${api_host}/tenant/${tenantId}/group/list`,
-  addGroup: (tenantId: string) => 
-    `${api_host}/tenant/${tenantId}/group`,
-  updateGroup: (groupId: string) => 
-    `${api_host}/group/${groupId}`,
-  deleteGroup: (groupId: string) => 
-    `${api_host}/group/${groupId}`,
-  addUserToGroup: (groupId: string) => 
-    `${api_host}/group/${groupId}/users`,
-  removeUserFromGroup: (groupId: string, userId: string) => 
-    `${api_host}/group/${groupId}/user/${userId}`,
-
   // flow
   listTemplates: `${api_host}/canvas/templates`,
   listCanvas: `${api_host}/canvas/list`,
@@ -158,7 +130,7 @@ export default {
   getCanvasSSE: `${api_host}/canvas/getsse`,
   removeCanvas: `${api_host}/canvas/rm`,
   setCanvas: `${api_host}/canvas/set`,
-  settingCanvas: `${api_host}/canvas/setting`,
+  settingCanvas: `${api_host}/canvas/update_permissions`,
   getListVersion: `${api_host}/canvas/getlistversion`,
   getVersion: `${api_host}/canvas/getversion`,
   resetCanvas: `${api_host}/canvas/reset`,
