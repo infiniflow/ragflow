@@ -5,7 +5,6 @@ import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useNavigateWithFromState } from '@/hooks/route-hook';
-import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import {
   ChevronDown,
@@ -16,7 +15,6 @@ import {
   Library,
   MessageSquareText,
   Search,
-  Star,
   Zap,
 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
@@ -26,10 +24,11 @@ export function Header() {
   const { t } = useTranslate('header');
   const { pathname } = useLocation();
   const navigate = useNavigateWithFromState();
-  const { navigateToHome, navigateToProfile } = useNavigatePage();
+  const { navigateToProfile } = useNavigatePage();
 
   const tagsData = useMemo(
     () => [
+      { path: Routes.Home, name: t('home'), icon: House },
       { path: Routes.Datasets, name: t('knowledgeBase'), icon: Library },
       { path: Routes.Chats, name: t('chat'), icon: MessageSquareText },
       { path: Routes.Searches, name: t('search'), icon: Search },
@@ -44,12 +43,12 @@ export function Header() {
       const HeaderIcon = tag.icon;
 
       return {
-        label: (
-          <div className="flex items-center gap-1">
-            <HeaderIcon className="size-5"></HeaderIcon>
+        label:
+          tag.path === Routes.Home ? (
+            <HeaderIcon className="size-6"></HeaderIcon>
+          ) : (
             <span>{tag.name}</span>
-          </div>
-        ),
+          ),
         value: tag.path,
       };
     });
@@ -60,8 +59,6 @@ export function Header() {
       tagsData.find((x) => pathname.startsWith(x.path))?.path || Routes.Home
     );
   }, [pathname, tagsData]);
-
-  const isHome = Routes.Home === currentPath;
 
   const handleChange = (path: SegmentedValue) => {
     navigate(path as Routes);
@@ -77,41 +74,19 @@ export function Header() {
         <img
           src={'/logo.svg'}
           alt="logo"
-          className="w-[100] h-[100] mr-[12]"
+          className="size-10 mr-[12]"
           onClick={handleLogoClick}
         />
-        <Button
-          variant="secondary"
-          className="bg-colors-background-inverse-standard"
-        >
-          <Github />
-          21.5k stars
-          <Star />
-        </Button>
+        <div className="flex items-center gap-1.5 text-text-sub-title">
+          <Github className="size-3.5" />
+          <span className=" text-base">21.5k stars</span>
+        </div>
       </div>
-      <div className="flex gap-2 items-center">
-        <Button
-          variant={'icon'}
-          size={'icon'}
-          onClick={navigateToHome}
-          className={cn({
-            'bg-colors-background-inverse-strong': isHome,
-          })}
-        >
-          <House
-            className={cn({
-              'text-colors-text-inverse-strong': isHome,
-            })}
-          />
-        </Button>
-        <div className="h-8 w-[1px] bg-colors-outline-neutral-strong"></div>
-        <Segmented
-          options={options}
-          value={currentPath}
-          onChange={handleChange}
-          className="bg-colors-background-inverse-standard text-backgroundInverseStandard-foreground"
-        ></Segmented>
-      </div>
+      <Segmented
+        options={options}
+        value={currentPath}
+        onChange={handleChange}
+      ></Segmented>
       <div className="flex items-center gap-4">
         <Container className="bg-colors-background-inverse-standard hidden xl:flex">
           V 0.13.0

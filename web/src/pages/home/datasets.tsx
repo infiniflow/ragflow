@@ -1,12 +1,10 @@
 import { RenameDialog } from '@/components/rename-dialog';
 import { CardSkeleton } from '@/components/ui/skeleton';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { DatasetCard, SeeAllCard } from '../datasets/dataset-card';
 import { useRenameDataset } from '../datasets/use-rename-dataset';
 
 export function Datasets() {
-  const { navigateToDatasetList } = useNavigatePage();
   const { kbs, loading } = useFetchNextKnowledgeListByPage();
   const {
     datasetRenameLoading,
