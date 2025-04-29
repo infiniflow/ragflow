@@ -1,8 +1,6 @@
 # Ragflow - Jurix
 
-
 ## Instalación y Ejecución
-
 
 3. Construir la imagen Docker:
 
@@ -18,14 +16,22 @@
 
 5. Iniciar todos los servicios:
 
+   CPU
+
    ```bash
    docker compose \
-     -f docker/docker-compose-base.yml \
      -f docker/docker-compose.yml \
      up -d
+   ```
+
+   NVIDIA
+
+   ```bash
+   docker compose \
+   -f docker/docker-compose-gpu.yml \
+   up -d
    ```
 
 6. Acceder a la aplicación:
    - Interfaz web: http://localhost
    - API: http://localhost:9380
-
