@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -19,8 +20,8 @@
     --card: 0 0% 100%;
     --card-foreground: 222.2 47.4% 11.2%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 346 100% 42%;
+    --primary-foreground: 0 0% 100%;
 
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -34,6 +35,8 @@
     --ring: 215 20.2% 65.1%;
 
     --radius: 0.5rem;
+    
+    --title: 'Playfair Display', serif;
 
     --background-inverse-standard: rgba(230, 227, 246, 0.15);
     --background-inverse-standard-foreground: rgb(92, 81, 81);
@@ -178,6 +181,12 @@
     font-feature-settings:
       'rlig' 1,
       'calt' 1;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--title);
   }
 
   /* https://tailwindcss.com/docs/preflight */

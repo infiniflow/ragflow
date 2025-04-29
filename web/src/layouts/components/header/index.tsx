@@ -71,8 +71,7 @@ const RagHeader = () => {
           onClick={handleLogoClick}
           className={styles.logoWrapper}
         >
-          <img src="/logo.svg" alt="" className={styles.appIcon} />
-          <span className={styles.appName}>{appConf.appName}</span>
+          <h2 className="text-4xl font-thin text-primary md:block">Jurix</h2>
         </Space>
       </a>
       <Space size={[0, 8]} wrap>
