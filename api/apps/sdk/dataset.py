@@ -153,7 +153,7 @@ def create(tenant_id):
         ]
         is_builtin_model = req["embd_id"] in builtin_embedding_models
         try:
-            # model name must be xxx@yyy
+            # model name must be model_name@model_factory
             llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(req["embd_id"])
             is_tenant_model = TenantLLMService.query(tenant_id=tenant_id, llm_name=llm_name, llm_factory=llm_factory, model_type="embedding")
             is_supported_model = LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding")

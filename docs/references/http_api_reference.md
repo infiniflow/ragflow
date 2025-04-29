@@ -375,9 +375,7 @@ curl --request POST \
 - `"embedding_model"`: (*Body parameter*), `string`  
   The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
   - Maximum 255 characters
-  - Must follow `xxx@yyy` format where:
-    - `xxx`: model name
-    - `yyy`: model factory
+  - Must follow `model_name@model_factory` format
 
 - `"permission"`: (*Body parameter*), `string`  
   Specifies who can access the dataset to create. Available options:  

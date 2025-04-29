@@ -32,7 +32,7 @@ def format_validation_error_message(e):
         if len(input_str) > 128:
             input_str = input_str[:125] + "..."
 
-        error_msg = f"Field: <{field}> | Message: <{msg}> | Value: <{input_str}>"
+        error_msg = f"Field: <{field}> - Message: <{msg}> - Value: <{input_str}>"
         error_messages.append(error_msg)
 
     return "\n".join(error_messages)
@@ -121,14 +121,18 @@ class CreateDatasetReq(Base):
     @field_validator("avatar")
     @classmethod
     def validate_avatar_base64(cls, v: str) -> str:
+        if v is None:
+            return v
+
         if "," in v:
             prefix, _ = v.split(",", 1)
             if not prefix.startswith("data:"):
                 raise ValueError("Invalid MIME prefix format. Must start with 'data:'")
 
             mime_type = prefix[5:].split(";")[0]
-            if mime_type not in ["image/jpeg", "image/png"]:
-                raise ValueError(f"Unsupported MIME type. Allowed: {['image/jpeg', 'image/png']}")
+            supported_mime_types = ["image/jpeg", "image/png"]
+            if mime_type not in supported_mime_types:
+                raise ValueError(f"Unsupported MIME type. Allowed: {supported_mime_types}")
 
             return v
         else:

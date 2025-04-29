@@ -107,6 +107,12 @@ class TestDatasetCreation:
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
 
+    def test_avatar_none(self, get_http_api_auth, tmp_path):
+        payload = {"name": "test_avatar_none", "avatar": None}
+        res = create_dataset(get_http_api_auth, payload)
+        assert res["code"] == 0, res
+        assert res["data"]["avatar"] is None, res
+
     def test_avatar_exceeds_limit_length(self, get_http_api_auth):
         res = create_dataset(get_http_api_auth, {"name": "exceeds_limit_length_avatar", "avatar": "a" * 65536})
         assert res["code"] == 101, res
@@ -131,6 +137,18 @@ class TestDatasetCreation:
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
+
+    def test_description_none(self, get_http_api_auth):
+        payload = {"name": "test_description_none", "description": None}
+        res = create_dataset(get_http_api_auth, payload)
+        assert res["code"] == 0, res
+        assert res["data"]["description"] is None, res
+
+    def test_description_exceeds_limit_length(self, get_http_api_auth):
+        payload = {"name": "exceeds_limit_length_description", "description": "a" * 65536}
+        res = create_dataset(get_http_api_auth, payload)
+        assert res["code"] == 101, res
+        assert "String should have at most 65535 characters" in res["message"], res
 
     @pytest.mark.parametrize(
         "name, embedding_model",
@@ -183,12 +201,6 @@ class TestDatasetCreation:
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 101, res
         assert "Embedding model must be xxx@yyy" in res["message"], res
-
-    def test_description_exceeds_limit_length(self, get_http_api_auth):
-        payload = {"name": "exceeds_limit_length_description", "description": "a" * 65536}
-        res = create_dataset(get_http_api_auth, payload)
-        assert res["code"] == 101, res
-        assert "String should have at most 65535 characters" in res["message"], res
 
     @pytest.mark.parametrize(
         "name, permission",
