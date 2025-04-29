@@ -700,12 +700,13 @@ def recover_pending_tasks():
                             f"time since delivered: {msg['time_since_delivered'] / 1000} s"
                         )
                         REDIS_CONN.requeue_msg(queue_name, SVR_CONSUMER_GROUP_NAME, msg['message_id'])
-
-            stop_event.wait(60)
         except Exception:
             logging.warning("recover_pending_tasks got exception")
         finally:
             redis_lock.release()
+            stop_event.wait(60)
+        
+
 
 
 async def main():
