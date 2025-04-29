@@ -35,7 +35,7 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 
   decorate(): ReactNode {
     let content: ReactNode = (
-      <span className="text-blue-600">{this.__label}</span>
+      <span className="text-primary">{this.__label}</span>
     );
     if (this.__value.startsWith(prefix)) {
       content = (

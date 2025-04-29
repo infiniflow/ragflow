@@ -104,7 +104,7 @@ export const TransferList = memo(function ({
         <div className="flex items-center justify-between">
           <Input
             placeholder="Search"
-            className="rounded-br-none rounded-bl-none rounded-tr-none focus-visible:ring-0 focus-visible:border-blue-500"
+            className="rounded-br-none rounded-bl-none rounded-tr-none focus-visible:ring-0 focus-visible:border-primary"
             value={leftSearch}
             onChange={(e) => setLeftSearch(e.target.value)}
           />
@@ -158,7 +158,7 @@ export const TransferList = memo(function ({
           </Button>
           <Input
             placeholder="Search"
-            className="rounded-bl-none rounded-br-none rounded-tl-none focus-visible:ring-0 focus-visible:border-blue-500"
+            className="rounded-bl-none rounded-br-none rounded-tl-none focus-visible:ring-0 focus-visible:border-primary"
             value={rightSearch}
             onChange={(e) => setRightSearch(e.target.value)}
           />

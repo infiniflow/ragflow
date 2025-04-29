@@ -76,7 +76,7 @@ function PromptContent() {
 
   return (
     <section
-      className={cn('border rounded-sm ', { 'border-blue-400': !isBlur })}
+      className={cn('border rounded-sm ', { 'border-primary': !isBlur })}
     >
       <div className="border-b px-2 py-2 justify-end flex">
         <Tooltip>

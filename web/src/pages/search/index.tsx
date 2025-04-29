@@ -102,7 +102,7 @@ const SearchPage = () => {
           </Button>
         ) : (
           <Button onClick={handleSearch}>
-            <SendHorizontal className="size-5 text-blue-500" />
+            <SendHorizontal className="size-5 text-primary" />
           </Button>
         )
       }

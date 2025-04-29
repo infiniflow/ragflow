@@ -14,8 +14,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 47.4% 11.2%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
+    --border: 220 13% 91%;
+    --input: 0 0% 20%;
 
     --card: 0 0% 100%;
     --card-foreground: 222.2 47.4% 11.2%;
@@ -23,14 +23,14 @@
     --primary: 346 100% 42%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 0 0% 20%;
+    --secondary-foreground: 0 0% 100%;
 
     --accent: 210 40% 96.1%;
     --accent-foreground: 222.2 47.4% 11.2%;
 
-    --destructive: 0 100% 50%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 0% 46%;
+    --destructive-foreground: 346 52% 37%;
 
     --ring: 215 20.2% 65.1%;
 
@@ -46,17 +46,17 @@
     --colors-background-neutral-standard: white;
     --colors-background-neutral-strong: rgba(226, 223, 246, 1);
     --colors-background-functional-solid-danger: rgba(222, 17, 53, 1);
-    --colors-background-core-strong: rgba(98, 72, 246, 1);
-    --colors-background-sentiment-solid-primary: rgba(127, 105, 255, 1);
-    --colors-background-core-standard: rgb(90, 75, 254);
+    --colors-background-core-strong: rgba(213, 0, 50, 1);
+    --colors-background-sentiment-solid-primary: rgba(213, 0, 50, 1);
+    --colors-background-core-standard: rgb(213, 0, 50);
 
-    --button-blue-text: rgb(22, 119, 255);
+    --button-blue-text: rgb(213, 0, 50);
 
-    --colors-outline-sentiment-primary: rgba(127, 105, 255, 1);
+    --colors-outline-sentiment-primary: rgba(213, 0, 50, 1);
     --colors-outline-neutral-strong: rgba(112, 107, 107, 0.15);
     --colors-outline-neutral-standard: rgba(53, 51, 65, 0.1);
 
-    --colors-text-core-standard: rgba(127, 105, 255, 1);
+    --colors-text-core-standard: rgba(213, 0, 50, 1);
     --colors-text-neutral-strong: rgba(17, 16, 23, 1);
     --colors-text-neutral-standard: rgba(152, 148, 176, 1);
     --colors-text-neutral-weak: rgba(170, 160, 197, 1);
@@ -68,7 +68,7 @@
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary: 346 100% 42%;
     --sidebar-primary-foreground: 0 0% 98%;
     --sidebar-accent: 240 4.8% 95.9%;
     --sidebar-accent-foreground: 240 5.9% 10%;
@@ -82,29 +82,29 @@
     --background: rgba(11, 10, 18, 1);
     --foreground: 213 31% 91%;
 
-    --muted: 223 47% 11%;
-    --muted-foreground: 215.4 16.3% 56.9%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 216 34% 17%;
+    --accent: 210 40% 96.1%;
     --accent-foreground: 210 40% 98%;
 
     --popover: 224 71% 4%;
     --popover-foreground: 215 20.2% 65.1%;
 
-    --border: 216 34% 17%;
-    --input: 216 34% 17%;
+    --border: 220 13% 91%;
+    --input: 0 0% 20%;
 
     --card: 224 71% 4%;
     --card-foreground: 213 31% 91%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 1.2%;
+    --primary: 346 100% 42%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 222.2 47.4% 11.2%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 0 0% 20%;
+    --secondary-foreground: 0 0% 100%;
 
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 0% 46%;
+    --destructive-foreground: 346 52% 37%;
 
     --ring: 216 34% 17%;
 
@@ -116,18 +116,18 @@
     --background-inverse-weak: rgba(184, 181, 203, 0.15);
     --background-inverse-weak-foreground: rgba(255, 255, 255, 1);
 
-    --background-core-standard: rgba(137, 126, 255, 1);
+    --background-core-standard: rgba(213, 0, 50, 1);
     --background-core-standard-foreground: rgba(255, 255, 255, 1);
 
     --background-inverse-strong: rgba(255, 255, 255, 0.15);
     --background-inverse-strong-foreground: rgba(255, 255, 255, 1);
 
-    --background-core-weak: rgb(101, 75, 248);
+    --background-core-weak: rgb(170, 0, 40);
     --background-core-weak-foreground: rgba(255, 255, 255, 1);
 
-    --colors-background-core-standard: rgba(137, 126, 255, 1);
-    --colors-background-core-strong: rgba(152, 147, 255, 1);
-    --colors-background-core-weak: rgba(101, 75, 248, 1);
+    --colors-background-core-standard: rgba(213, 0, 50, 1);
+    --colors-background-core-strong: rgba(213, 0, 50, 0.9);
+    --colors-background-core-weak: rgba(170, 0, 40, 1);
     --colors-background-functional-solid-danger: rgba(255, 57, 92, 1);
     --colors-background-functional-solid-notice: rgba(255, 208, 94, 1);
     --colors-background-functional-solid-positive: rgba(74, 225, 145, 1);
@@ -145,13 +145,13 @@
     --colors-background-neutral-standard: rgba(11, 10, 18, 1);
     --colors-background-neutral-strong: rgba(29, 26, 44, 1);
     --colors-background-neutral-weak: rgba(17, 16, 23, 1);
-    --colors-background-sentiment-solid-primary: rgba(146, 118, 255, 1);
+    --colors-background-sentiment-solid-primary: rgba(213, 0, 50, 1);
 
-    --colors-outline-sentiment-primary: rgba(146, 118, 255, 1);
+    --colors-outline-sentiment-primary: rgba(213, 0, 50, 1);
     --colors-outline-neutral-strong: rgba(255, 255, 255, 0.15);
     --colors-outline-neutral-standard: rgba(230, 227, 246, 0.1);
 
-    --colors-text-core-standard: rgba(137, 126, 255, 1);
+    --colors-text-core-standard: rgba(213, 0, 50, 1);
     --colors-text-neutral-strong: rgba(255, 255, 255, 1);
     --colors-text-neutral-standard: rgba(230, 227, 246, 1);
     --colors-text-neutral-weak: rgba(170, 160, 197, 1);
@@ -163,7 +163,7 @@
 
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary: 346 100% 42%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 240 3.7% 15.9%;
     --sidebar-accent-foreground: 240 4.8% 95.9%;

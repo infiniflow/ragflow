@@ -22,7 +22,7 @@ const ExcludedRunStateOperators = [Operator.Answer];
 export function RunStatus({ id, name, label }: IProps) {
   const { t } = useTranslate('flow');
   return (
-    <section className="flex  justify-end items-center pb-1 gap-2 text-blue-600">
+    <section className="flex justify-end items-center pb-1 gap-2 text-primary">
       {needsSingleStepDebugging(label) && (
         <RunTooltip>
           <Play className="size-3 cursor-pointer" data-play />
