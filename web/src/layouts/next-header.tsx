@@ -1,5 +1,5 @@
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useTheme } from '@/components/theme-provider';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -48,7 +48,7 @@ export function Header() {
   const { setTheme, theme } = useTheme();
 
   const {
-    data: { language = 'English' },
+    data: { language = 'English', avatar, nickname },
   } = useFetchUserInfo();
 
   const handleItemClick = (key: string) => () => {
@@ -158,10 +158,12 @@ export function Header() {
           {theme === 'light' ? <Sun /> : <Moon />}
         </Button>
         <div className="relative">
-          <Avatar className="size-8 cursor-pointer" onClick={navigateToProfile}>
-            <AvatarImage src="https://github.com/shadcn.png" />
-            <AvatarFallback>CN</AvatarFallback>
-          </Avatar>
+          <RAGFlowAvatar
+            name={nickname}
+            avatar={avatar}
+            className="size-8 cursor-pointer"
+            onClick={navigateToProfile}
+          ></RAGFlowAvatar>
           <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-text-title-invert bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
             Pro
           </Badge>

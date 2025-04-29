@@ -82,6 +82,7 @@
 
     --background-header-bar: rgba(11, 11, 12, 1);
     --text-title-invert: rgba(255, 255, 255, 1);
+    --background-card: rgba(22, 22, 24, 0.05);
   }
 
   .dark {
@@ -184,6 +185,8 @@
     --background-header-bar: rgba(11, 11, 12, 1);
 
     --text-title-invert: rgba(22, 22, 24, 1);
+
+    --background-card: rgba(255, 255, 255, 0.05);
   }
 }
 
