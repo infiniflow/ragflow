@@ -164,8 +164,7 @@ const KnowledgeFile = () => {
         text: t(`runningStatus${value}`),
         value: value,
       })),
-      onFilter: (value: string | number | boolean, record: IDocumentInfo) =>
-        record.run === value,
+      onFilter: (value, record: IDocumentInfo) => record.run === value,
       render: (text, record) => {
         return <ParsingStatusCell record={record}></ParsingStatusCell>;
       },
