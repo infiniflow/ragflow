@@ -99,8 +99,10 @@ CURRENT_TASKS = {}
 
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
+MAX_CONCURRENT_MINIO = int(os.environ.get('MAX_CONCURRENT_MINIO', '10'))
 task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
 chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
+minio_limiter = trio.CapacityLimiter(MAX_CONCURRENT_MINIO)
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
 stop_event = threading.Event()
 
@@ -528,8 +530,6 @@ async def do_handle_task(task):
         chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
     # Either using graphrag or Standard chunking methods
     elif task.get("task_type", "") == "graphrag":
-        global task_limiter
-        task_limiter = trio.CapacityLimiter(2)
         graphrag_conf = task_parser_config.get("graphrag", {})
         if not graphrag_conf.get("use_graphrag", False):
             return
@@ -629,12 +629,12 @@ async def handle_task():
     redis_msg.ack()
 
 
-async def report_status():
+def report_status():
     global CONSUMER_NAME, BOOT_AT, PENDING_TASKS, LAG_TASKS, DONE_TASKS, FAILED_TASKS
-    REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
     redis_lock = RedisDistributedLock("clean_task_executor", lock_value=CONSUMER_NAME, timeout=60)
-    while True:
+    while not stop_event.is_set():
         try:
+            REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
             now = datetime.now()
             group_info = REDIS_CONN.queue_info(get_svr_queue_name(0), SVR_CONSUMER_GROUP_NAME)
             if group_info is not None:
@@ -659,7 +659,7 @@ async def report_status():
             if expired > 0:
                 REDIS_CONN.zpopmin(CONSUMER_NAME, expired)
 
-            # clean task executor
+            # clean task executor and recover pending tasks
             if redis_lock.acquire():
                 task_executors = REDIS_CONN.smembers("TASKEXE")
                 for consumer_name in task_executors:
@@ -672,40 +672,30 @@ async def report_status():
                         logging.info(f"{consumer_name} expired, removed")
                         REDIS_CONN.srem("TASKEXE", consumer_name)
                         REDIS_CONN.delete(consumer_name)
+
+                recover_pending_tasks()
         except Exception:
             logging.exception("report_status got exception")
-        finally:
-            redis_lock.release()
-        await trio.sleep(30)
+        stop_event.wait(30)
 
 
 def recover_pending_tasks():
-    redis_lock = RedisDistributedLock("recover_pending_tasks", lock_value=CONSUMER_NAME, timeout=60)
     svr_queue_names = get_svr_queue_names()
-    while not stop_event.is_set():
-        try:
-            if redis_lock.acquire():
-                for queue_name in svr_queue_names:
-                    msgs = REDIS_CONN.get_pending_msg(queue=queue_name, group_name=SVR_CONSUMER_GROUP_NAME)
-                    msgs = [msg for msg in msgs if msg['consumer'] != CONSUMER_NAME]
-                    if len(msgs) == 0:
-                        continue
+    for queue_name in svr_queue_names:
+        msgs = REDIS_CONN.get_pending_msg(queue=queue_name, group_name=SVR_CONSUMER_GROUP_NAME)
+        msgs = [msg for msg in msgs if msg['consumer'] != CONSUMER_NAME]
+        if len(msgs) == 0:
+            continue
 
-                    task_executors = REDIS_CONN.smembers("TASKEXE")
-                    task_executor_set = {t for t in task_executors}
-                    msgs = [msg for msg in msgs if msg['consumer'] not in task_executor_set]
-                    for msg in msgs:
-                        logging.info(
-                            f"Recover pending task: {msg['message_id']}, consumer: {msg['consumer']}, "
-                            f"time since delivered: {msg['time_since_delivered'] / 1000} s"
-                        )
-                        REDIS_CONN.requeue_msg(queue_name, SVR_CONSUMER_GROUP_NAME, msg['message_id'])
-
-            stop_event.wait(60)
-        except Exception:
-            logging.warning("recover_pending_tasks got exception")
-        finally:
-            redis_lock.release()
+        task_executors = REDIS_CONN.smembers("TASKEXE")
+        task_executor_set = {t for t in task_executors}
+        msgs = [msg for msg in msgs if msg['consumer'] not in task_executor_set]
+        for msg in msgs:
+            logging.info(
+                f"Recover pending task: {msg['message_id']}, consumer: {msg['consumer']}, "
+                f"time since delivered: {msg['time_since_delivered'] / 1000} s"
+            )
+            REDIS_CONN.requeue_msg(queue_name, SVR_CONSUMER_GROUP_NAME, msg['message_id'])
 
 
 async def main():
@@ -729,10 +719,9 @@ async def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    threading.Thread(name="RecoverPendingTask", target=recover_pending_tasks).start()
+    threading.Thread(name="ReportStatusTask", target=report_status).start()
 
     async with trio.open_nursery() as nursery:
-        nursery.start_soon(report_status)
         while not stop_event.is_set():
             async with task_limiter:
                 nursery.start_soon(handle_task)
