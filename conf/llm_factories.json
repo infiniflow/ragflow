@@ -15,7 +15,7 @@
                 },
                 {
                     "llm_name": "o3",
-                    "tags": "LLM,CHAT,200K",
+                    "tags": "LLM,CHAT,200K,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": "chat",
                     "is_tools": true
