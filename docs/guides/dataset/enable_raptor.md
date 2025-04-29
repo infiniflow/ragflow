@@ -21,7 +21,7 @@ Enabling RAPTOR requires significant memory, computational resources, and tokens
 
 ## Basic principles
 
-After the original documents are divided into chunks, the chunks are clustered by semantic similarity rather than by their original order in the text. Clusters are then summarized into higher-level chunks by your system's default chat model. This process is applied recursively, forming a tree structure with various levels of summarization from the bottom up. As illustrated in the figure below, the initial chunks form the leaf nodes (shown in blue) and are progressively summarized into a root node (shown in orange).
+After the original documents are divided into chunks, the chunks are clustered by semantic similarity rather than by their original order in the text. Clusters are then summarized into higher-level chunks by your system's default chat model. This process is applied recursively, forming a tree structure with various levels of summarization from the bottom up. As illustrated in the figure below, the initial chunks form the leaf nodes (shown in blue) and are recursively summarized into a root node (shown in orange).
 
 ![raptor](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/clustering_and_summarizing.jpg)
 
@@ -67,8 +67,8 @@ It defaults to 0.1, with a maximum limit of 1. A higher **Threshold** means fewe
 
 ### Max cluster
 
-The maximum number of clusters to create. Defaults to 108, with a maximum limit of 1024.
+The maximum number of clusters to create. Defaults to 64, with a maximum limit of 1024.
 
 ### Random seed
 
-A random seed. Click the **+** button to change the seed value.
+A random seed. Click **+** to change the seed value.
