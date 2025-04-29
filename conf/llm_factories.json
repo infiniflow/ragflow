@@ -267,6 +267,13 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "qwen-turbo",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "qwen-turbo-2025-04-28",
                     "tags": "LLM,CHAT,1M",
                     "max_tokens": 1000000,
@@ -274,9 +281,9 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "qwen-turbo",
-                    "tags": "LLM,CHAT,8K",
-                    "max_tokens": 8191,
+                    "llm_name": "qwen-turbo-latest",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
                     "model_type": "chat",
                     "is_tools": true
                 },
