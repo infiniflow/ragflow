@@ -447,13 +447,13 @@ Success:
 {
     "code": 0,
     "data": {
-        "avatar": None,
+        "avatar": null,
         "chunk_count": 0,
         "chunk_method": "naive",
         "create_date": "Mon, 28 Apr 2025 18:40:41 GMT",
         "create_time": 1745836841611,
         "created_by": "3af81804241d11f0a6a79f24fc270c7f",
-        "description": None,
+        "description": null,
         "document_count": 0,
         "embedding_model": "BAAI/bge-large-zh-v1.5@BAAI",
         "id": "3b4de7d4241d11f0a6a79f24fc270c7f",
@@ -463,10 +463,10 @@ Success:
         "parser_config": {
             "chunk_token_num": 128, 
             "delimiter": "\\n!?;。；！？", 
-            "html4excel": False, 
+            "html4excel": false, 
             "layout_recognize": "DeepDOC", 
             "raptor": {
-                "use_raptor": False
+                "use_raptor": false
                 }
             },
         "permission": "me",

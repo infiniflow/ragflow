@@ -16,11 +16,11 @@
 from enum import auto
 from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, Field, StringConstraints, field_validator
+from pydantic import BaseModel, Field, StringConstraints, ValidationError, field_validator
 from strenum import StrEnum
 
 
-def format_validation_error_message(e):
+def format_validation_error_message(e: ValidationError):
     error_messages = []
 
     for error in e.errors():
@@ -154,7 +154,7 @@ class CreateDatasetReq(Base):
 
     @field_validator("parser_config", mode="after")
     @classmethod
-    def validate_parser_config_json_length(cls, v):
+    def validate_parser_config_json_length(cls, v: Optional[ParserConfig]) -> Optional[ParserConfig]:
         if v is not None:
             json_str = v.model_dump_json()
             if len(json_str) > 65535:

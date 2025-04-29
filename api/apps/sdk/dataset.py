@@ -127,7 +127,7 @@ def create(tenant_id):
         if KnowledgebaseService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value):
             return get_error_argument_result(message=f"Dataset name '{req['name']}' already exists")
     except OperationalError as e:
-        logging.exception(Exception(e))
+        logging.exception(e)
         return get_error_data_result(message="Database operation failed")
 
     req["parser_config"] = get_parser_config(req["parser_id"], req["parser_config"])
@@ -140,7 +140,7 @@ def create(tenant_id):
         if not ok:
             return get_error_data_result(message="Tenant not found")
     except OperationalError as e:
-        logging.exception(Exception(e))
+        logging.exception(e)
         return get_error_data_result(message="Database operation failed")
 
     if not req.get("embd_id"):
@@ -159,14 +159,14 @@ def create(tenant_id):
             if not (is_supported_model and (is_builtin_model or is_tenant_model)):
                 return get_error_argument_result(f"The embedding_model '{req['embd_id']}' is not supported")
         except OperationalError as e:
-            logging.exception(Exception(e))
+            logging.exception(e)
             return get_error_data_result(message="Database operation failed")
 
     try:
         if not KnowledgebaseService.save(**req):
             return get_error_data_result(message="Database operation failed")
     except OperationalError as e:
-        logging.exception(Exception(e))
+        logging.exception(e)
         return get_error_data_result(message="Database operation failed")
 
     try:
@@ -174,7 +174,7 @@ def create(tenant_id):
         if not ok:
             return get_error_data_result(message="Dataset created failed")
     except OperationalError as e:
-        logging.exception(Exception(e))
+        logging.exception(e)
         return get_error_data_result(message="Database operation failed")
 
     response_data = {}

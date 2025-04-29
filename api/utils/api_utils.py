@@ -323,7 +323,7 @@ def get_error_data_result(
 
 
 def get_error_argument_result(message="Invalid arguments"):
-    logging.exception(Exception(message))
+    logging.error(message)
     return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=message)
 
 
