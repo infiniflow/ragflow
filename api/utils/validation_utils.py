@@ -86,7 +86,7 @@ class RaptorConfig(Base):
 
 class GraphragConfig(Base):
     use_graphrag: bool = Field(default=False)
-    entity_types: List[str] = Field(default_factory=lambda: ["organization", "person", "geo", "event", "category"])  # 使用 factory 减少冗余
+    entity_types: List[str] = Field(default_factory=lambda: ["organization", "person", "geo", "event", "category"])
     method: GraphragMethodEnum = Field(default=GraphragMethodEnum.light)
     community: bool = Field(default=False)
     resolution: bool = Field(default=False)
