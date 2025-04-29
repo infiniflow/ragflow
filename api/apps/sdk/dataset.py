@@ -114,7 +114,6 @@ def create(tenant_id):
     try:
         req_v = CreateDatasetReq(**req_i)
     except ValidationError as e:
-        logging.exception(Exception(e))
         return get_error_argument_result(format_validation_error_message(e))
 
     # Field name transformations during model dump:
