@@ -133,100 +133,49 @@ releases! 🌟
 
 ### 📝 Prerequisites
 
-- CPU >= 4 cores
-- RAM >= 16 GB
-- Disk >= 50 GB
-- Docker >= 24.0.0 & Docker Compose >= v2.26.1
-  > If you have not installed Docker on your local machine (Windows, Mac, or Linux),
-  > see [Install Docker Engine](https://docs.docker.com/engine/install/).
+- Docker >= 20.10
+- Docker Compose
+- Git (for changing to the dev branch)
 
 ### 🚀 Start up the server
 
-1. Ensure `vm.max_map_count` >= 262144:
-
-   > To check the value of `vm.max_map_count`:
-   >
-   > ```bash
-   > $ sysctl vm.max_map_count
-   > ```
-   >
-   > Reset `vm.max_map_count` to a value at least 262144 if it is not.
-   >
-   > ```bash
-   > # In this case, we set it to 262144:
-   > $ sudo sysctl -w vm.max_map_count=262144
-   > ```
-   >
-   > This change will be reset after a system reboot. To ensure your change remains permanent, add or update the
-   > `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
-   >
-   > ```bash
-   > vm.max_map_count=262144
-   > ```
-
-2. Clone the repo:
+1. Change to the dev branch:
 
    ```bash
-   $ git clone https://github.com/infiniflow/ragflow.git
+   git checkout dev
    ```
 
-3. Start up the server using the pre-built Docker images:
-
-> [!CAUTION]
-> All Docker images are built for x86 platforms. We don't currently offer Docker images for ARM64.
-> If you are on an ARM64 platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a Docker image compatible with your system.
-
-   > The command below downloads the `v0.18.0-slim` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.18.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.18.0` for the full edition `v0.18.0`.
+2. Build the image with your changes:
 
    ```bash
-   $ cd ragflow/docker
-   # Use CPU for embedding and DeepDoc tasks:
-   $ docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate embedding and DeepDoc tasks:
-   # docker compose -f docker-compose-gpu.yml up -d
+   docker build -t ragflow-jurix .
    ```
 
-   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   |-------------------|-----------------|-----------------------|--------------------------|
-   | v0.18.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.18.0-slim      | &approx;2       | ❌                   | Stable release            |
-   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                   | _Unstable_ nightly build  |
-
-4. Check the server status after having the server up and running:
+3. Export the environment variable to use your image:
 
    ```bash
-   $ docker logs -f ragflow-server
+   export RAGFLOW_IMAGE=ragflow-jurix
    ```
 
-   _The following output confirms a successful launch of the system:_
+4. Start all services (base + your container):
 
    ```bash
-
-         ____   ___    ______ ______ __
-        / __ \ /   |  / ____// ____// /____  _      __
-       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
+   docker compose \
+     -f docker/docker-compose-base.yml \
+     -f docker/docker-compose.yml \
+     up -d
    ```
 
-   > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anormal`
-   > error because, at that moment, your RAGFlow may not be fully initialized.
+   With this:
 
-5. In your web browser, enter the IP address of your server and log in to RAGFlow.
-   > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default
-   > HTTP serving port `80` can be omitted when using the default configurations.
-6. In [service_conf.yaml.template](./docker/service_conf.yaml.template), select the desired LLM factory in `user_default_llm` and update
-   the `API_KEY` field with the corresponding API key.
+   - Base services (Elasticsearch, MySQL, MinIO, Redis, etc.) are started using `docker-compose-base.yml`.
+   - Your RAGFlow container (image `ragflow-jurix`) is started with nginx configuration for serving the frontend on `http://localhost` and the API on `http://localhost:9380`.
 
-   > See [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) for more information.
+5. Access:
+   - Frontend: http://localhost
+   - RAGFlow API: http://localhost:9380
 
-   _The show is on!_
-
-## 🔧 Configurations
+### 🔧 Configurations
 
 When it comes to system configurations, you will need to manage the following files:
 
@@ -257,8 +206,7 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
    $ docker compose -f docker/docker-compose.yml down -v
    ```
 
-> [!WARNING]
-> `-v` will delete the docker container volumes, and the existing data will be cleared.
+> [!WARNING] > `-v` will delete the docker container volumes, and the existing data will be cleared.
 
 2. Set `DOC_ENGINE` in **docker/.env** to `infinity`.
 
