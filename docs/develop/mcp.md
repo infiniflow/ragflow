@@ -86,7 +86,9 @@ MCP server is disable by default, as it is designed as an optional, complementar
         - --mcp-host-api-key="ragflow-xxxxxxx" # required only when `mode` is set to `self-host`
   ```
 
-3. Run `docker compose -f docker-compose.yml` to launch the RAGFlow server together with the MCP server.
+#### 2. Launch a RAGFlow server along with an MCP server
+
+Run `docker compose -f docker-compose.yml` to launch the RAGFlow server together with the MCP server.
 
   ```bash
   ragflow-server  | Starting MCP Server on 0.0.0.0:9382 with base URL http://127.0.0.1:9380...
