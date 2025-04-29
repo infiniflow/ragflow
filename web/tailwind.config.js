@@ -42,6 +42,9 @@ module.exports = {
         'colors-text-inverse-weak': 'var(--colors-text-inverse-weak)',
         'text-delete-red': 'var(--text-delete-red)',
 
+        'background-badge': 'var(--background-badge)',
+        'text-badge': 'var(--text-badge)',
+
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',

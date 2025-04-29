@@ -19,6 +19,7 @@ import SvgIcon from '@/components/svg-icon';
 import { TableEmpty, TableSkeleton } from '@/components/table-skeleton';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
   Table,
   TableBody,
@@ -39,6 +40,7 @@ import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { getExtension } from '@/utils/document-util';
+import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionCell } from './action-cell';
@@ -244,20 +246,7 @@ export function FilesTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    onPaginationChange: (updaterOrValue: any) => {
-      if (typeof updaterOrValue === 'function') {
-        const nextPagination = updaterOrValue(currentPagination);
-        setPagination({
-          page: nextPagination.pageIndex + 1,
-          pageSize: nextPagination.pageSize,
-        });
-      } else {
-        setPagination({
-          page: updaterOrValue.pageIndex,
-          pageSize: updaterOrValue.pageSize,
-        });
-      }
-    },
+
     manualPagination: true, //we're doing manual "server-side" pagination
 
     state: {
@@ -326,23 +315,15 @@ export function FilesTable({
           {table.getFilteredSelectedRowModel().rows.length} of {total} row(s)
           selected.
         </div>
+
         <div className="space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
+          <RAGFlowPagination
+            {...pick(pagination, 'current', 'pageSize')}
+            total={total}
+            onChange={(page, pageSize) => {
+              setPagination({ page, pageSize });
+            }}
+          ></RAGFlowPagination>
         </div>
       </div>
       {connectToKnowledgeVisible && (

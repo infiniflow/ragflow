@@ -35,16 +35,6 @@ export function useDatasetTableColumns({
     keyPrefix: 'knowledgeDetails',
   });
 
-  // const onShowRenameModal = (record: IDocumentInfo) => {
-  //   setCurrentRecord(record);
-  //   showRenameModal();
-  // };
-
-  // const onShowSetMetaModal = useCallback(() => {
-  //   setRecord();
-  //   showSetMetaModal();
-  // }, [setRecord, showSetMetaModal]);
-
   const { navigateToChunkParsedResult } = useNavigatePage();
   const { setDocumentStatus } = useSetDocumentStatus();
 

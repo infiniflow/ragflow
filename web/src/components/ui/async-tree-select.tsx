@@ -99,14 +99,15 @@ export function AsyncTreeSelect({
             <li
               key={x.id}
               onClick={handleNodeClick(x.id)}
-              className="cursor-pointer hover:bg-slate-50 "
+              className="cursor-pointer  "
             >
-              <div className={cn('flex justify-between items-center')}>
-                <span
-                  className={cn({ 'bg-cyan-50': value === x.id }, 'flex-1')}
-                >
-                  {x.title}
-                </span>
+              <div
+                className={cn(
+                  'flex justify-between items-center hover:bg-accent py-0.5 px-1 rounded-md ',
+                  { 'bg-cyan-50': value === x.id },
+                )}
+              >
+                <span className={cn('flex-1 ')}>{x.title}</span>
                 {x.isLeaf || (
                   <Button
                     variant={'ghost'}
@@ -146,10 +147,10 @@ export function AsyncTreeSelect({
           {selectedTitle || (
             <span className="text-slate-400">{t('common.pleaseSelect')}</span>
           )}
-          <ChevronDown className="size-5" />
+          <ChevronDown className="size-5 " />
         </div>
       </PopoverTrigger>
-      <PopoverContent className="p-1">
+      <PopoverContent className="p-1 min-w-[var(--radix-popover-trigger-width)]">
         <ul>{renderNodes()}</ul>
       </PopoverContent>
     </Popover>

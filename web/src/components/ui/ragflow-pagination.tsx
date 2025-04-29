@@ -7,70 +7,100 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-export type DatasetsPaginationType = {
+export type RAGFlowPaginationType = {
   showQuickJumper?: boolean;
-  onChange?(page: number, pageSize?: number): void;
+  onChange?(page: number, pageSize: number): void;
   total?: number;
   current?: number;
   pageSize?: number;
+  showSizeChanger?: boolean;
 };
 
-export function DatasetsPagination({
+export function RAGFlowPagination({
   current = 1,
   pageSize = 10,
   total = 0,
   onChange,
-}: DatasetsPaginationType) {
+  showSizeChanger = true,
+}: RAGFlowPaginationType) {
   const [currentPage, setCurrentPage] = useState(1);
+  const [currentPageSize, setCurrentPageSize] = useState('10');
+
+  const sizeChangerOptions: RAGFlowSelectOptionType[] = useMemo(() => {
+    return [10, 20, 50, 100].map((x) => ({
+      label: <span>{x} / page</span>,
+      value: x.toString(),
+    }));
+  }, []);
 
   const pages = useMemo(() => {
     const num = Math.ceil(total / pageSize);
-    console.log('🚀 ~ pages ~ num:', num);
     return new Array(num).fill(0).map((_, idx) => idx + 1);
   }, [pageSize, total]);
+
+  const changePage = useCallback(
+    (page: number) => {
+      onChange?.(page, Number(currentPageSize));
+    },
+    [currentPageSize, onChange],
+  );
 
   const handlePreviousPageChange = useCallback(() => {
     setCurrentPage((page) => {
       const previousPage = page - 1;
       if (previousPage > 0) {
+        changePage(previousPage);
         return previousPage;
       }
+      changePage(page);
       return page;
     });
-  }, []);
+  }, [changePage]);
 
   const handlePageChange = useCallback(
     (page: number) => () => {
+      changePage(page);
       setCurrentPage(page);
     },
-    [],
+    [changePage],
   );
 
   const handleNextPageChange = useCallback(() => {
     setCurrentPage((page) => {
       const nextPage = page + 1;
       if (nextPage <= pages.length) {
+        changePage(nextPage);
         return nextPage;
       }
+      changePage(page);
       return page;
     });
-  }, [pages.length]);
+  }, [changePage, pages.length]);
+
+  const handlePageSizeChange = useCallback(
+    (size: string) => {
+      onChange?.(currentPage, Number(size));
+      setCurrentPageSize(size);
+    },
+    [currentPage, onChange],
+  );
 
   useEffect(() => {
     setCurrentPage(current);
   }, [current]);
 
   useEffect(() => {
-    onChange?.(currentPage);
-  }, [currentPage, onChange]);
+    setCurrentPageSize(pageSize.toString());
+  }, [pageSize]);
 
   return (
-    <section className="flex  items-center justify-end">
+    <section className="flex items-center justify-end">
       <span className="mr-4">Total {total}</span>
-      <Pagination className="w-auto mx-0">
+      <Pagination className="w-auto mx-0 mr-4">
         <PaginationContent>
           <PaginationItem>
             <PaginationPrevious onClick={handlePreviousPageChange} />
@@ -78,7 +108,7 @@ export function DatasetsPagination({
           {pages.map((x) => (
             <PaginationItem
               key={x}
-              className={cn({ ['bg-red-500']: currentPage === x })}
+              className={cn({ ['bg-accent rounded-md']: currentPage === x })}
             >
               <PaginationLink onClick={handlePageChange(x)}>{x}</PaginationLink>
             </PaginationItem>
@@ -91,6 +121,13 @@ export function DatasetsPagination({
           </PaginationItem>
         </PaginationContent>
       </Pagination>
+      {showSizeChanger && (
+        <RAGFlowSelect
+          options={sizeChangerOptions}
+          value={currentPageSize}
+          onChange={handlePageSizeChange}
+        ></RAGFlowSelect>
+      )}
     </section>
   );
 }

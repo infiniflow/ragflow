@@ -28,7 +28,7 @@ export function useBulkOperateFile({
       label: t('common.move'),
       icon: <FolderInput />,
       onClick: () => {
-        showMoveFileModal(selectedIds);
+        showMoveFileModal(selectedIds, true);
       },
     },
     {

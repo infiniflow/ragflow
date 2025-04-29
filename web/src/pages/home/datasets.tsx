@@ -28,7 +28,7 @@ export function Datasets() {
           </div>
         ) : (
           <div className="flex gap-4 flex-1">
-            {kbs.slice(0, 4).map((dataset) => (
+            {kbs.slice(0, 6).map((dataset) => (
               <DatasetCard
                 key={dataset.id}
                 dataset={dataset}

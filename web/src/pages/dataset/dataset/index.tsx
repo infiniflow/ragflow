@@ -38,6 +38,7 @@ export default function Dataset() {
     setPagination,
     filterValue,
     handleFilterSubmit,
+    loading,
   } = useFetchDocumentList();
   const { filters } = useSelectDatasetFilters();
 
@@ -93,6 +94,7 @@ export default function Dataset() {
         setPagination={setPagination}
         rowSelection={rowSelection}
         setRowSelection={setRowSelection}
+        loading={loading}
       ></DatasetTable>
       {documentUploadVisible && (
         <FileUploadDialog

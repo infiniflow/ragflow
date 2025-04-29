@@ -26,17 +26,21 @@ export function DatasetCard({
   return (
     <Card
       key={dataset.id}
-      className="bg-colors-background-inverse-weak flex-1"
+      className="bg-colors-background-inverse-weak  w-40"
       onClick={navigateToDataset(dataset.id)}
     >
-      <CardContent className="p-4">
-        <section className="flex justify-between mb-4">
-          <div className="flex  gap-2">
-            <Avatar className="w-[70px] h-[70px] rounded-lg">
+      <CardContent className="p-2.5 pt-1">
+        <section className="flex justify-between mb-2">
+          <div className="flex gap-2 items-center">
+            <Avatar className="size-6 rounded-lg">
               <AvatarImage src={dataset.avatar} />
-              <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+              <AvatarFallback className="rounded-lg ">CN</AvatarFallback>
             </Avatar>
-            {owner && <Badge className="h-5">{owner}</Badge>}
+            {owner && (
+              <Badge className="h-5 rounded-sm px-1 bg-background-badge text-text-badge">
+                {owner}
+              </Badge>
+            )}
           </div>
           <DatasetDropdown
             showDatasetRenameModal={showDatasetRenameModal}
@@ -48,13 +52,13 @@ export function DatasetCard({
           </DatasetDropdown>
         </section>
         <div className="flex justify-between items-end">
-          <div>
+          <div className="w-full">
             <h3 className="text-lg font-semibold mb-2 line-clamp-1">
               {dataset.name}
             </h3>
-            <p className="text-sm opacity-80">{dataset.doc_num} files</p>
-            <p className="text-sm opacity-80">
-              Created {formatDate(dataset.update_time)}
+            <p className="text-xs opacity-80">{dataset.doc_num} files</p>
+            <p className="text-xs opacity-80">
+              {formatDate(dataset.update_time)}
             </p>
           </div>
         </div>
