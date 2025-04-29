@@ -1,28 +1,18 @@
+import { FilterCollection } from '@/components/list-filter-bar/interface';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { groupListByType } from '@/utils/dataset-util';
 import { useMemo } from 'react';
-
-export type OwnerFilterType = {
-  id: string;
-  label: string;
-  count: number;
-};
 
 export function useSelectOwners() {
   const { list } = useFetchKnowledgeList();
 
   const owners = useMemo(() => {
-    const ownerList: OwnerFilterType[] = [];
-    list.forEach((x) => {
-      const item = ownerList.find((y) => y.id === x.tenant_id);
-      if (!item) {
-        ownerList.push({ id: x.tenant_id, label: x.nickname, count: 1 });
-      } else {
-        item.count += 1;
-      }
-    });
-
-    return ownerList;
+    return groupListByType(list, 'tenant_id', 'nickname');
   }, [list]);
 
-  return owners;
+  const filters: FilterCollection[] = [
+    { field: 'owner', list: owners, label: 'Owner' },
+  ];
+
+  return filters;
 }

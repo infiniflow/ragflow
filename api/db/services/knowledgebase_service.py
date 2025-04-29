@@ -97,7 +97,7 @@ class KnowledgebaseService(CommonService):
         kb = kbs[0]
 
         # Get all documents in the knowledge base
-        docs, _ = DocumentService.get_by_kb_id(kb_id, 1, 1000, "create_time", True, "")
+        docs, _ = DocumentService.get_by_kb_id(kb_id, 1, 1000, "create_time", True, "", [], [])
 
         # Check parsing status of each document
         for doc in docs:
@@ -226,7 +226,10 @@ class KnowledgebaseService(CommonService):
             cls.model.chunk_num,
             cls.model.parser_id,
             cls.model.parser_config,
-            cls.model.pagerank]
+            cls.model.pagerank,
+            cls.model.create_time,
+            cls.model.update_time
+            ]
         kbs = cls.model.select(*fields).join(Tenant, on=(
             (Tenant.id == cls.model.tenant_id) & (Tenant.status == StatusEnum.VALID.value))).where(
             (cls.model.id == kb_id),

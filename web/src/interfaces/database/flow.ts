@@ -26,7 +26,7 @@ export interface IOperatorNode {
 }
 
 export declare interface IFlow {
-  avatar?: null | string;
+  avatar?: string;
   canvas_type: null;
   create_date: string;
   create_time: number;

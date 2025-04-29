@@ -298,14 +298,14 @@ export default {
           {cluster_content}
     Di atas adalah konten yang perlu Anda rangkum.`,
       maxToken: 'Token maksimum',
-      maxTokenTip: 'Jumlah token maksimum untuk peringkasan.',
+      maxTokenTip: 'Jumlah maksimum token per potongan ringkasan yang dihasilkan.',
       maxTokenMessage: 'Token maksimum diperlukan',
       threshold: 'Ambang batas',
       thresholdTip:
-        'Semakin besar ambang batas, semakin sedikit kluster yang akan ada.',
+        'Dalam RAPTOR, potongan-potongan dikelompokkan berdasarkan kemiripan semantiknya. Parameter Ambang menetapkan tingkat kemiripan minimum yang diperlukan agar potongan-potongan dapat dikelompokkan bersama. Ambang yang lebih tinggi berarti lebih sedikit potongan dalam setiap kelompok, sedangkan ambang yang lebih rendah berarti lebih banyak potongan dalam satu kelompok.',
       thresholdMessage: 'Ambang batas diperlukan',
       maxCluster: 'Kluster maksimum',
-      maxClusterTip: 'Jumlah kluster maksimum.',
+      maxClusterTip: 'Jumlah maksimum klaster yang akan dibuat.',
       maxClusterMessage: 'Kluster maksimum diperlukan',
       randomSeed: 'Benih acak',
       randomSeedMessage: 'Benih acak diperlukan',

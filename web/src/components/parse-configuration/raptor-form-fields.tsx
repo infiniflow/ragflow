@@ -76,7 +76,7 @@ const RaptorFormFields = () => {
         )}
       />
       {useRaptor && (
-        <>
+        <div className="space-y-3">
           <FormField
             control={form.control}
             name={'parser_config.raptor.prompt'}
@@ -137,7 +137,7 @@ const RaptorFormFields = () => {
               </FormItem>
             )}
           />
-        </>
+        </div>
       )}
     </>
   );

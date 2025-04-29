@@ -106,7 +106,7 @@ Text: {input_text}
 Output:"""
 
 CONTINUE_PROMPT = "MANY entities were missed in the last extraction.  Add them below using the same format:\n"
-LOOP_PROMPT = "It appears some entities may have still been missed.  Answer YES | NO if there are still entities that need to be added.\n"
+LOOP_PROMPT = "It appears some entities may have still been missed. Answer Y if there are still entities that need to be added, or N if there are none. Please answer with a single letter Y or N.\n"
 
 SUMMARIZE_DESCRIPTIONS_PROMPT = """
 You are a helpful assistant responsible for generating a comprehensive summary of the data provided below.

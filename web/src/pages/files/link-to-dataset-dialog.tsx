@@ -69,7 +69,7 @@ function LinkToDatasetForm({
           name="knowledgeIds"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Name</FormLabel>
+              <FormLabel>{t('common.name')}</FormLabel>
               <FormControl>
                 <MultiSelect
                   options={options}

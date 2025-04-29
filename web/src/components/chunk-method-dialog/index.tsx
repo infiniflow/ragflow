@@ -281,7 +281,10 @@ export function ChunkMethodDialog({
                 )}
               />
             )}
-            <DatasetConfigurationContainer show={showOne || showMaxTokenNumber}>
+            <DatasetConfigurationContainer
+              show={showOne || showMaxTokenNumber}
+              className="space-y-3"
+            >
               {showOne && <LayoutRecognizeFormField></LayoutRecognizeFormField>}
               {showMaxTokenNumber && (
                 <>
@@ -298,6 +301,7 @@ export function ChunkMethodDialog({
             </DatasetConfigurationContainer>
             <DatasetConfigurationContainer
               show={showAutoKeywords(selectedTag) || showExcelToHtml}
+              className="space-y-3"
             >
               {showAutoKeywords(selectedTag) && (
                 <>

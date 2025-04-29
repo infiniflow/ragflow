@@ -694,14 +694,18 @@ def recover_pending_tasks():
                     task_executor_set = {t for t in task_executors}
                     msgs = [msg for msg in msgs if msg["consumer"] not in task_executor_set]
                     for msg in msgs:
-                        logging.info(f"Recover pending task: {msg['message_id']}, consumer: {msg['consumer']}, time since delivered: {msg['time_since_delivered'] / 1000} s")
-                        REDIS_CONN.requeue_msg(queue_name, SVR_CONSUMER_GROUP_NAME, msg["message_id"])
-
-            stop_event.wait(60)
+                        logging.info(
+                            f"Recover pending task: {msg['message_id']}, consumer: {msg['consumer']}, "
+                            f"time since delivered: {msg['time_since_delivered'] / 1000} s"
+                        )
+                        REDIS_CONN.requeue_msg(queue_name, SVR_CONSUMER_GROUP_NAME, msg['message_id'])
         except Exception:
             logging.warning("recover_pending_tasks got exception")
         finally:
             redis_lock.release()
+            stop_event.wait(60)
+        
+
 
 
 async def limited_handle_task():

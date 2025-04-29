@@ -1,10 +1,11 @@
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
-import kbService from '@/services/knowledge-service';
+import kbService, { listDocument } from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
@@ -15,7 +16,10 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { useGetKnowledgeSearchParams } from './route-hook';
+import {
+  useGetKnowledgeSearchParams,
+  useSetPaginationParams,
+} from './route-hook';
 
 export const enum DocumentApiAction {
   UploadDocument = 'uploadDocument',
@@ -26,6 +30,8 @@ export const enum DocumentApiAction {
   SaveDocumentName = 'saveDocumentName',
   SetDocumentParser = 'setDocumentParser',
   SetDocumentMeta = 'setDocumentMeta',
+  FetchAllDocumentList = 'fetchAllDocumentList',
+  CreateDocument = 'createDocument',
 }
 
 export const useUploadNextDocument = () => {
@@ -74,6 +80,7 @@ export const useFetchDocumentList = () => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { id } = useParams();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
 
   const { data, isFetching: loading } = useQuery<{
     docs: IDocumentInfo[];
@@ -83,17 +90,24 @@ export const useFetchDocumentList = () => {
       DocumentApiAction.FetchDocumentList,
       debouncedSearchString,
       pagination,
+      filterValue,
     ],
     initialData: { docs: [], total: 0 },
     refetchInterval: 15000,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
-      const ret = await kbService.get_document_list({
-        kb_id: knowledgeId || id,
-        keywords: debouncedSearchString,
-        page_size: pagination.pageSize,
-        page: pagination.current,
-      });
+      const ret = await listDocument(
+        {
+          kb_id: knowledgeId || id,
+          keywords: debouncedSearchString,
+          page_size: pagination.pageSize,
+          page: pagination.current,
+        },
+        {
+          types: filterValue.type,
+          run_status: filterValue.run,
+        },
+      );
       if (ret.data.code === 0) {
         return ret.data.data;
       }
@@ -120,8 +134,38 @@ export const useFetchDocumentList = () => {
     pagination: { ...pagination, total: data?.total },
     handleInputChange: onInputChange,
     setPagination,
+    filterValue,
+    handleFilterSubmit,
   };
 };
+
+export function useFetchAllDocumentList() {
+  const { id } = useParams();
+  const { data, isFetching: loading } = useQuery<{
+    docs: IDocumentInfo[];
+    total: number;
+  }>({
+    queryKey: [DocumentApiAction.FetchAllDocumentList],
+    initialData: { docs: [], total: 0 },
+    refetchInterval: 15000,
+    enabled: !!id,
+    queryFn: async () => {
+      const ret = await listDocument({
+        kb_id: id,
+      });
+      if (ret.data.code === 0) {
+        return ret.data.data;
+      }
+
+      return {
+        docs: [],
+        total: 0,
+      };
+    },
+  });
+
+  return { data, loading };
+}
 
 export const useSetDocumentStatus = () => {
   const queryClient = useQueryClient();
@@ -322,4 +366,38 @@ export const useSetDocumentMeta = () => {
   });
 
   return { setDocumentMeta: mutateAsync, data, loading };
+};
+
+export const useCreateDocument = () => {
+  const { id } = useParams();
+  const { setPaginationParams, page } = useSetPaginationParams();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.CreateDocument],
+    mutationFn: async (name: string) => {
+      const { data } = await kbService.document_create({
+        name,
+        kb_id: id,
+      });
+      if (data.code === 0) {
+        if (page === 1) {
+          queryClient.invalidateQueries({
+            queryKey: [DocumentApiAction.FetchDocumentList],
+          });
+        } else {
+          setPaginationParams(); // fetch document list
+        }
+
+        message.success(i18n.t('message.created'));
+      }
+      return data.code;
+    },
+  });
+
+  return { createDocument: mutateAsync, loading, data };
 };

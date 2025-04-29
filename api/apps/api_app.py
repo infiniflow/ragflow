@@ -21,7 +21,7 @@ from flask import request, Response
 from api.db.services.llm_service import TenantLLMService
 from flask_login import login_required, current_user
 
-from api.db import FileType, LLMType, ParserType, FileSource
+from api.db import VALID_FILE_TYPES, VALID_TASK_STATUS, FileType, LLMType, ParserType, FileSource
 from api.db.db_models import APIToken, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
@@ -577,10 +577,23 @@ def list_kb_docs():
     orderby = req.get("orderby", "create_time")
     desc = req.get("desc", True)
     keywords = req.get("keywords", "")
-
+    status = req.get("status", [])
+    if status:
+        invalid_status = {s for s in status if s not in VALID_TASK_STATUS}
+        if invalid_status:
+            return get_data_error_result(
+                message=f"Invalid filter status conditions: {', '.join(invalid_status)}"
+            )
+    types = req.get("types", [])
+    if types:
+        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
+        if invalid_types:
+            return get_data_error_result(
+                message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
+            )
     try:
         docs, tol = DocumentService.get_by_kb_id(
-            kb_id, page_number, items_per_page, orderby, desc, keywords)
+            kb_id, page_number, items_per_page, orderby, desc, keywords, status, types)
         docs = [{"doc_id": doc['id'], "doc_name": doc['name']} for doc in docs]
 
         return get_json_result(data={"total": tol, "docs": docs})

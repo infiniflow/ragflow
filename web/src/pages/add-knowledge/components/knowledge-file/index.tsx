@@ -28,6 +28,7 @@ import RenameModal from './rename-modal';
 import WebCrawlModal from './web-crawl-modal';
 
 import FileUploadModal from '@/components/file-upload-modal';
+import { RunningStatus } from '@/constants/knowledge';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { formatDate } from '@/utils/date';
 import styles from './index.less';
@@ -159,6 +160,11 @@ const KnowledgeFile = () => {
       title: t('parsingStatus'),
       dataIndex: 'run',
       key: 'run',
+      filters: Object.entries(RunningStatus).map(([key, value]) => ({
+        text: t(`runningStatus${value}`),
+        value: value,
+      })),
+      onFilter: (value, record: IDocumentInfo) => record.run === value,
       render: (text, record) => {
         return <ParsingStatusCell record={record}></ParsingStatusCell>;
       },

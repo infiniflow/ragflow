@@ -12,7 +12,7 @@ export const useGetPageTitle = (): string => {
     [ProfileSettingRouteKey.Api]: 'Api',
     [ProfileSettingRouteKey.Team]: 'Team management',
     [ProfileSettingRouteKey.Prompt]: 'Prompt management',
-    [ProfileSettingRouteKey.Chunk]: 'Chunk method',
+    [ProfileSettingRouteKey.Chunk]: 'Chunking method',
     [ProfileSettingRouteKey.Logout]: 'Logout',
   };
 

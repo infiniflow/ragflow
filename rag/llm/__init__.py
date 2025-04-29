@@ -234,7 +234,7 @@ ChatModel = {
     "TogetherAI": TogetherAIChat,
     "PerfXCloud": PerfXCloudChat,
     "Upstage": UpstageChat,
-    "novita.ai": NovitaAIChat,
+    "NovitaAI": NovitaAIChat,
     "SILICONFLOW": SILICONFLOWChat,
     "PPIO": PPIOChat,
     "01.AI": YiChat,
