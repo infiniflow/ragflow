@@ -204,56 +204,56 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Qwen3-30B-A3B",
+                    "llm_name": "qwen3-30b-a3b",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Qwen3-235B-A22B",
+                    "llm_name": "qwen3-235b-a22b",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Qwen3-0.6B",
+                    "llm_name": "qwen3-0.6b",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Qwen3-1.7B",
+                    "llm_name": "qwen3-1.7b",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Qwen3-4B",
+                    "llm_name": "qwen3-4b",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Qwen3-8B",
+                    "llm_name": "qwen3-8b",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Qwen3-14B",
+                    "llm_name": "qwen3-14b",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Qwen3-32B",
+                    "llm_name": "qwen3-32b",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
                     "model_type": "chat",
@@ -262,6 +262,13 @@
                 {
                     "llm_name": "qwen-long",
                     "tags": "LLM,CHAT,10000K",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-turbo-2025-04-28",
+                    "tags": "LLM,CHAT,1M",
                     "max_tokens": 1000000,
                     "model_type": "chat",
                     "is_tools": true
@@ -284,6 +291,13 @@
                     "llm_name": "qwen-plus",
                     "tags": "LLM,CHAT,132k",
                     "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-plus-2025-04-28",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
