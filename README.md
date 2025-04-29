@@ -1,20 +1,19 @@
 # Ragflow - Jurix
 
 ## Instalación y Ejecución
-
-3. Construir la imagen Docker:
+1. Construir la imagen Docker:
 
    ```bash
    docker build -t ragflow-jurix .
    ```
 
-4. Exportar la variable de entorno para usar la imagen:
+2. Exportar la variable de entorno para usar la imagen:
 
    ```bash
    export RAGFLOW_IMAGE=ragflow-jurix
    ```
 
-5. Iniciar todos los servicios:
+3. Iniciar todos los servicios:
 
    CPU
 
@@ -32,6 +31,6 @@
    up -d
    ```
 
-6. Acceder a la aplicación:
+4. Acceder a la aplicación:
    - Interfaz web: http://localhost
    - API: http://localhost:9380
