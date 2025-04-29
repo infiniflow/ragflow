@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import random
 import traceback
 from flask import request, Response
 from flask_login import login_required, current_user
@@ -380,6 +381,12 @@ def get_by_catalog():
     catalog = req["catalog"]
     list=UserCanvasService.get_or_none(catalog=catalog)
     return get_json_result(data=list)
+
+@manager.route('/get_new_catalog', methods=['GET'])  # noqa: F821
+@login_required
+def get_by_catalog():
+    
+    return get_json_result(''.join(random.choice("123456789abcdefghijklmnopqrstuvwxyz") for i in range(16)))
 
 '''
 @manager.route('/get_conversation', methods=['POST'])  # noqa: F821
