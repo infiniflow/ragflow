@@ -63,8 +63,8 @@ export default function Datasets() {
         onChange={handleFilterSubmit}
         className="px-8"
       >
-        <Button variant={'tertiary'} size={'sm'} onClick={showModal}>
-          <Plus className="mr-2 h-4 w-4" />
+        <Button size={'sm'} onClick={showModal}>
+          <Plus className="mr-2 size-2.5" />
           {t('knowledgeList.createKnowledgeBase')}
         </Button>
       </ListFilterBar>

@@ -341,6 +341,7 @@ Creates a dataset.
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
+  - `"pagerank"`: `int`
   - `"parser_config"`: `object`
 
 ##### Request example
@@ -359,53 +360,83 @@ curl --request POST \
 
 - `"name"`: (*Body parameter*), `string`, *Required*  
   The unique name of the dataset to create. It must adhere to the following requirements:  
-  - Permitted characters include:
-    - English letters (a-z, A-Z)
-    - Digits (0-9)
-    - "_" (underscore)
-  - Must begin with an English letter or underscore.
-  - Maximum 65,535 characters.
-  - Case-insensitive.
+  - Basic Multilingual Plane (BMP) only
+  - Maximum 128 characters
+  - Case-insensitive
 
 - `"avatar"`: (*Body parameter*), `string`  
   Base64 encoding of the avatar.
+  - Maximum 65535 characters
 
 - `"description"`: (*Body parameter*), `string`  
   A brief description of the dataset to create.
+  - Maximum 65535 characters
 
 - `"embedding_model"`: (*Body parameter*), `string`  
-  The name of the embedding model to use. For example: `"BAAI/bge-zh-v1.5"`
+  The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
+  - Maximum 255 characters
+  - Must follow `model_name@model_factory` format
 
 - `"permission"`: (*Body parameter*), `string`  
   Specifies who can access the dataset to create. Available options:  
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 
+- `"pagerank"`: (*Body parameter*), `int`  
+  Set page rank: refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  - Default: `0`
+  - Minimum: `0`
+  - Maximum: `100`
+
 - `"chunk_method"`: (*Body parameter*), `enum<string>`  
   The chunking method of the dataset to create. Available options:  
   - `"naive"`: General (default)
+  - `"book"`: Book
+  - `"email"`: Email
+  - `"laws"`: Laws
   - `"manual"`: Manual
+  - `"one"`: One
+  - `"paper"`: Paper
+  - `"picture"`: Picture
+  - `"presentation"`: Presentation
   - `"qa"`: Q&A
   - `"table"`: Table
-  - `"paper"`: Paper
-  - `"book"`: Book
-  - `"laws"`: Laws
-  - `"presentation"`: Presentation
-  - `"picture"`: Picture
-  - `"one"`: One
-  - `"email"`: Email
+  - `"tag"`: Tag
 
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"layout_recognize"`: Defaults to `true`.
-    - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
-    - `"delimiter"`: Defaults to `"\n"`.
-    - `"task_page_size"`: Defaults to `12`. For PDF only.
-    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"auto_keywords"`: `int` 
+      - Defaults to `0`
+      - Minimum: `0`
+      - Maximum: `32`
+    - `"auto_questions"`: `int`
+      - Defaults to `0`
+      - Minimum: `0`
+      - Maximum: `10`
+    - `"chunk_token_num"`: `int`
+      - Defaults to `128`
+      - Minimum: `1`
+      - Maximum: `2048`
+    - `"delimiter"`: `string`
+      - Defaults to `"\n"`.
+    - `"html4excel"`: `bool` Indicates whether to convert Excel documents into HTML format. 
+      - Defaults to `false`
+    - `"layout_recognize"`: `string`
+      - Defaults to `DeepDOC`
+    - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+    - `"task_page_size"`: `int` For PDF only.
+      - Defaults to `12`
+      - Minimum: `1`
+      - Maximum: `10000`
+    - `"raptor"`: `object` RAPTOR-specific settings. 
+      - Defaults to: `{"use_raptor": false}`
+    - `"graphrag"`: `object` GRAPHRAG-specific settings. 
+      - Defaults to: `{"use_graphrag": false}`
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
-    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: `object` RAPTOR-specific settings.
+      - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 
 #### Response
@@ -419,33 +450,34 @@ Success:
         "avatar": null,
         "chunk_count": 0,
         "chunk_method": "naive",
-        "create_date": "Thu, 24 Oct 2024 09:14:07 GMT",
-        "create_time": 1729761247434,
-        "created_by": "69736c5e723611efb51b0242ac120007",
+        "create_date": "Mon, 28 Apr 2025 18:40:41 GMT",
+        "create_time": 1745836841611,
+        "created_by": "3af81804241d11f0a6a79f24fc270c7f",
         "description": null,
         "document_count": 0,
-        "embedding_model": "BAAI/bge-large-zh-v1.5",
-        "id": "527fa74891e811ef9c650242ac120006",
+        "embedding_model": "BAAI/bge-large-zh-v1.5@BAAI",
+        "id": "3b4de7d4241d11f0a6a79f24fc270c7f",
         "language": "English",
-        "name": "test_1",
+        "name": "RAGFlow example",
+        "pagerank": 0,
         "parser_config": {
-            "chunk_token_num": 128,
-            "delimiter": "\\n",
-            "html4excel": false,
-            "layout_recognize": true,
+            "chunk_token_num": 128, 
+            "delimiter": "\\n!?;。；！？", 
+            "html4excel": false, 
+            "layout_recognize": "DeepDOC", 
             "raptor": {
                 "use_raptor": false
-            }
-        },
+                }
+            },
         "permission": "me",
         "similarity_threshold": 0.2,
         "status": "1",
-        "tenant_id": "69736c5e723611efb51b0242ac120007",
+        "tenant_id": "3af81804241d11f0a6a79f24fc270c7f",
         "token_num": 0,
-        "update_date": "Thu, 24 Oct 2024 09:14:07 GMT",
-        "update_time": 1729761247434,
-        "vector_similarity_weight": 0.3
-    }
+        "update_date": "Mon, 28 Apr 2025 18:40:41 GMT",
+        "update_time": 1745836841611,
+        "vector_similarity_weight": 0.3,
+    },
 }
 ```
 
@@ -453,8 +485,8 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "Duplicated knowledgebase name in creating dataset."
+    "code": 101,
+    "message": "Dataset name 'RAGFlow example' already exists"
 }
 ```
 
