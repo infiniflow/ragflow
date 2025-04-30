@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field, StringConstraints, ValidationError, field
 from strenum import StrEnum
 
 
-def format_validation_error_message(e: ValidationError):
+def format_validation_error_message(e: ValidationError) -> str:
     error_messages = []
 
     for error in e.errors():
@@ -81,7 +81,7 @@ class RaptorConfig(Base):
     max_token: int = Field(default=256, ge=1, le=2048)
     threshold: float = Field(default=0.1, ge=0.0, le=1.0)
     max_cluster: int = Field(default=64, ge=1, le=1024)
-    random_seed: int = Field(default=0, ge=0, le=10_000)
+    random_seed: int = Field(default=0, ge=0)
 
 
 class GraphragConfig(Base):
@@ -104,7 +104,7 @@ class ParserConfig(Base):
     tag_kb_ids: List[str] = Field(default_factory=list)
     topn_tags: int = Field(default=1, ge=1, le=10)
     filename_embd_weight: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    task_page_size: Optional[int] = Field(default=None, ge=1, le=10_000)
+    task_page_size: Optional[int] = Field(default=None, ge=1)
     pages: Optional[List[List[int]]] = None
 
 

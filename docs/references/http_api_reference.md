@@ -429,7 +429,6 @@ curl --request POST \
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
-      - Maximum: `10000`
     - `"raptor"`: `object` RAPTOR-specific settings. 
       - Defaults to: `{"use_raptor": false}`
     - `"graphrag"`: `object` GRAPHRAG-specific settings. 
