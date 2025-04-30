@@ -115,9 +115,9 @@ class TestChunksDeletion:
         assert res["data"]["total"] == 1
 
     @pytest.mark.slow
-    def test_concurrent_deletion(self, get_http_api_auth, get_dataset_id_and_document_id):
+    def test_concurrent_deletion(self, get_http_api_auth, add_document):
         chunks_num = 100
-        dataset_id, document_id = get_dataset_id_and_document_id
+        dataset_id, document_id = add_document
         chunk_ids = batch_add_chunks(get_http_api_auth, dataset_id, document_id, chunks_num)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
@@ -135,9 +135,9 @@ class TestChunksDeletion:
         assert all(r["code"] == 0 for r in responses)
 
     @pytest.mark.slow
-    def test_delete_1k(self, get_http_api_auth, get_dataset_id_and_document_id):
+    def test_delete_1k(self, get_http_api_auth, add_document):
         chunks_num = 1_000
-        dataset_id, document_id = get_dataset_id_and_document_id
+        dataset_id, document_id = add_document
         chunk_ids = batch_add_chunks(get_http_api_auth, dataset_id, document_id, chunks_num)
 
         # issues/6487
