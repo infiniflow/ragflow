@@ -400,7 +400,7 @@ class TestDatasetCreation:
         if parser_config is None:
             assert res["data"]["parser_config"] == {
                 "chunk_token_num": 128,
-                "delimiter": r"\n!?;。；！？",
+                "delimiter": r"\n",
                 "html4excel": False,
                 "layout_recognize": "DeepDOC",
                 "raptor": {"use_raptor": False},
@@ -410,7 +410,7 @@ class TestDatasetCreation:
                 "auto_keywords": 0,
                 "auto_questions": 0,
                 "chunk_token_num": 128,
-                "delimiter": r"\n!?;。；！？",
+                "delimiter": r"\n",
                 "filename_embd_weight": None,
                 "graphrag": None,
                 "html4excel": False,
