@@ -65,7 +65,6 @@ if __name__ == "__main__":
         if not os.path.exists(filename):
             urllib.request.urlretrieve(url, filename)
 
-    local_dir = os.path.abspath('nltk_data')
     for data in ['wordnet', 'punkt', 'punkt_tab']:
         print(f"Downloading nltk {data}...")
         nltk.download(data)
