@@ -26,7 +26,7 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-10 w-full items-center justify-between rounded-md border border-input bg-colors-background-inverse-weak px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
+      'flex h-8 w-full items-center justify-between rounded-md border border-input bg-colors-background-inverse-weak px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
       className,
     )}
     {...props}
@@ -192,6 +192,7 @@ export type RAGFlowSelectProps = Partial<ControllerRenderProps> & {
   allowClear?: boolean;
   placeholder?: React.ReactNode;
   contentProps?: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>;
+  triggerClassName?: string;
 } & SelectPrimitive.SelectProps;
 
 /**
@@ -223,6 +224,7 @@ export const RAGFlowSelect = forwardRef<
     placeholder,
     contentProps = {},
     defaultValue,
+    triggerClassName,
   },
   ref,
 ) {
@@ -259,11 +261,11 @@ export const RAGFlowSelect = forwardRef<
     <Select onValueChange={handleChange} value={value} key={key}>
       <FormControlWidget>
         <SelectTrigger
-          className="bg-colors-background-inverse-weak"
           value={value}
           onReset={handleReset}
           allowClear={allowClear}
           ref={ref}
+          className={triggerClassName}
         >
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>

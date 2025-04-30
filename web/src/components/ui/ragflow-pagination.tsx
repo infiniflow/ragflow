@@ -98,7 +98,7 @@ export function RAGFlowPagination({
   }, [pageSize]);
 
   return (
-    <section className="flex items-center justify-end">
+    <section className="flex items-center justify-end text-text-sub-title-invert ">
       <span className="mr-4">Total {total}</span>
       <Pagination className="w-auto mx-0 mr-4">
         <PaginationContent>
@@ -108,9 +108,14 @@ export function RAGFlowPagination({
           {pages.map((x) => (
             <PaginationItem
               key={x}
-              className={cn({ ['bg-accent rounded-md']: currentPage === x })}
+              className={cn({
+                ['bg-background-header-bar rounded-md text-text-title']:
+                  currentPage === x,
+              })}
             >
-              <PaginationLink onClick={handlePageChange(x)}>{x}</PaginationLink>
+              <PaginationLink onClick={handlePageChange(x)} className="size-8">
+                {x}
+              </PaginationLink>
             </PaginationItem>
           ))}
           <PaginationItem>
@@ -126,6 +131,7 @@ export function RAGFlowPagination({
           options={sizeChangerOptions}
           value={currentPageSize}
           onChange={handlePageSizeChange}
+          triggerClassName="bg-background-header-bar"
         ></RAGFlowSelect>
       )}
     </section>

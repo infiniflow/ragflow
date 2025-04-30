@@ -53,18 +53,19 @@ export default function Datasets() {
   );
 
   return (
-    <section className="py-8 text-foreground">
+    <section className="py-4 text-foreground">
       <ListFilterBar
-        title="Datasets"
+        title={t('header.knowledgeBase')}
         searchString={searchString}
         onSearchChange={handleInputChange}
         value={filterValue}
         filters={owners}
         onChange={handleFilterSubmit}
         className="px-8"
+        icon={'data'}
       >
-        <Button size={'sm'} onClick={showModal}>
-          <Plus className="mr-2 size-2.5" />
+        <Button onClick={showModal}>
+          <Plus className=" size-2.5" />
           {t('knowledgeList.createKnowledgeBase')}
         </Button>
       </ListFilterBar>
