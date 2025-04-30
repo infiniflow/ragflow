@@ -71,6 +71,7 @@ export default {
       fileManager: '文件管理',
       flow: 'Agent',
       search: '搜索',
+      welcome: '欢迎来到',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -349,7 +350,8 @@ export default {
       promptTip:
         '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
       maxTokenTip: '用于设定每个被总结的文本块的最大 token 数。',
-      thresholdTip: '在 RAPTOR 中，数据块会根据它们的语义相似性进行聚类。阈值设定了数据块被分到同一组所需的最小相似度。阈值越高，每个聚类中的数据块越少；阈值越低，则每个聚类中的数据块越多。',
+      thresholdTip:
+        '在 RAPTOR 中，数据块会根据它们的语义相似性进行聚类。阈值设定了数据块被分到同一组所需的最小相似度。阈值越高，每个聚类中的数据块越少；阈值越低，则每个聚类中的数据块越多。',
       maxClusterTip: '最多可创建的聚类数。',
       entityTypes: '实体类型',
       pageRank: '页面排名',

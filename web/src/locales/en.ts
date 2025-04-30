@@ -71,6 +71,7 @@ export default {
       fileManager: 'File Management',
       flow: 'Agent',
       search: 'Search',
+      welcome: 'Welcome to',
     },
     knowledgeList: {
       welcome: 'Welcome back',
@@ -337,7 +338,8 @@ The above is the content you need to summarize.`,
       maxTokenTip: 'The maximum number of tokens per generated summary chunk.',
       maxTokenMessage: 'Max token is required',
       threshold: 'Threshold',
-      thresholdTip: 'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
+      thresholdTip:
+        'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
       thresholdMessage: 'Threshold is required',
       maxCluster: 'Max cluster',
       maxClusterTip: 'The maximum number of clusters to create.',
