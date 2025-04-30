@@ -26,7 +26,7 @@ export function DatasetCard({
   return (
     <Card
       key={dataset.id}
-      className="bg-colors-background-inverse-weak  w-40"
+      className="w-40"
       onClick={navigateToDataset(dataset.id)}
     >
       <CardContent className="p-2.5 pt-1 group">
@@ -81,7 +81,7 @@ export function SeeAllCard() {
       className="bg-colors-background-inverse-weak w-40"
       onClick={navigateToDatasetList}
     >
-      <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5">
+      <CardContent className="p-2.5 pt-1 w-full h-full flex items-center justify-center gap-1.5 text-text-sub-title">
         See All <ChevronRight className="size-4" />
       </CardContent>
     </Card>

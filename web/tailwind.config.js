@@ -48,6 +48,7 @@ module.exports = {
         'text-sub-title': 'var(--text-sub-title)',
         'text-title-invert': 'var(--text-title-invert)',
         'background-header-bar': 'var(--background-header-bar)',
+        'background-card': 'var(--background-card)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',
