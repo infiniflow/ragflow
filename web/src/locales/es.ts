@@ -95,6 +95,7 @@ export default {
       disabled: 'Deshabilitar',
       action: 'Acción',
       parsingStatus: 'Estado de análisis',
+      parsingStatusTip: 'El tiempo de procesamiento de documentos varía según varios factores. Activar funciones como Knowledge Graph, RAPTOR, extracción automática de preguntas o de palabras clave aumentará significativamente el tiempo de procesamiento. Si la barra de progreso se detiene, consulte estas dos preguntas frecuentes: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Proceso iniciado en',
       processDuration: 'Duración del proceso',
       progressMsg: 'Mensaje de progreso',
