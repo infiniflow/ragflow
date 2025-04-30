@@ -96,7 +96,7 @@ class ParserConfig(Base):
     auto_keywords: int = Field(default=0, ge=0, le=32)
     auto_questions: int = Field(default=0, ge=0, le=10)
     chunk_token_num: int = Field(default=128, ge=1, le=2048)
-    delimiter: str = Field(default=r"\n!?;。；！？", min_length=1)
+    delimiter: str = Field(default=r"\n", min_length=1)
     graphrag: Optional[GraphragConfig] = None
     html4excel: bool = False
     layout_recognize: str = "DeepDOC"
