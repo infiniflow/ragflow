@@ -1,10 +1,13 @@
+import { IconFont } from '@/components/icon-font';
 import { RenameDialog } from '@/components/rename-dialog';
 import { CardSkeleton } from '@/components/ui/skeleton';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
+import { useTranslation } from 'react-i18next';
 import { DatasetCard, SeeAllCard } from '../datasets/dataset-card';
 import { useRenameDataset } from '../datasets/use-rename-dataset';
 
 export function Datasets() {
+  const { t } = useTranslation();
   const { kbs, loading } = useFetchNextKnowledgeListByPage();
   const {
     datasetRenameLoading,
@@ -17,7 +20,10 @@ export function Datasets() {
 
   return (
     <section>
-      <h2 className="text-2xl font-bold mb-6">Datasets</h2>
+      <h2 className="text-2xl font-bold mb-6 flex gap-2.5 items-center">
+        <IconFont name="data" className="size-8"></IconFont>
+        {t('header.knowledgeBase')}
+      </h2>
       <div className="flex gap-6">
         {loading ? (
           <div className="flex-1">
