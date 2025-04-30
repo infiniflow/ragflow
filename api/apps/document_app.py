@@ -362,8 +362,8 @@ def rm():
             if doc_parser == ParserType.TABLE:
                 kb_id = doc.kb_id
                 if kb_id not in kb_table_num_map:
-                    all_docs,_ = DocumentService.get_by_kb_id(kb_id=kb_id, page_number=0, items_per_page=0, orderby="create_time", desc=False, keywords="", run_status=[TaskStatus.DONE], types=[])
-                    kb_table_num_map[kb_id] = sum(1 for d in all_docs if d["parser_id"] == ParserType.TABLE)
+                    counts = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[TaskStatus.DONE], types=[])
+                    kb_table_num_map[kb_id] = counts
                 kb_table_num_map[kb_id] -= 1
                 if kb_table_num_map[kb_id] <= 0:
                     KnowledgebaseService.delete_field_map(kb_id)
@@ -419,8 +419,8 @@ def run():
                     if not kb_id:
                         continue
                     if kb_id not in kb_table_num_map:
-                        all_docs,_ = DocumentService.get_by_kb_id(kb_id=kb_id, page_number=0, items_per_page=0, orderby="create_time", desc=False, keywords="", run_status=[TaskStatus.DONE], types=[])
-                        kb_table_num_map[kb_id] = sum(1 for d in all_docs if d["parser_id"] == ParserType.TABLE)
+                        count = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[TaskStatus.DONE], types=[])
+                        kb_table_num_map[kb_id] = count
                         if kb_table_num_map[kb_id] <=0:
                             KnowledgebaseService.delete_field_map(kb_id)
                 bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
