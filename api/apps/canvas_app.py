@@ -40,8 +40,16 @@ def templates():
 @manager.route('/list', methods=['GET'])  # noqa: F821
 @login_required
 def canvas_list():
+    query_params = request.json
+    filters = {}
+    if 'catalog' in query_params:
+        filters['catalog'] = query_params['catalog']
+    if 'is_virtual' in query_params:
+        filters['is_virtual'] = query_params['is_virtual']
+    if 'id' in query_params:
+        filters['id'] = query_params['id']
     return get_json_result(data=sorted([c.to_dict() for c in \
-                                 UserCanvasService.query(user_id=current_user.id)], key=lambda x: x["update_time"]*-1)
+                                 UserCanvasService.query(user_id=current_user.id,**filters)], key=lambda x: x["update_time"]*-1)
                            )
 
 
