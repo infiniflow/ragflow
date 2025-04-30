@@ -15,7 +15,6 @@ import * as React from 'react';
 
 import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
-import { TableSkeleton } from '@/components/table-skeleton';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
   Table,
@@ -48,7 +47,6 @@ export function DatasetTable({
   setPagination,
   rowSelection,
   setRowSelection,
-  loading,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -142,9 +140,7 @@ export function DatasetTable({
             ))}
           </TableHeader>
           <TableBody className="relative">
-            {loading ? (
-              <TableSkeleton columnsLength={columns.length}></TableSkeleton>
-            ) : table.getRowModel().rows?.length ? (
+            {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
