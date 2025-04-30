@@ -100,6 +100,7 @@ export default {
       disabled: 'Nonaktifkan',
       action: 'Aksi',
       parsingStatus: 'Status Parsing',
+      parsingStatusTip: 'Waktu pemrosesan dokumen bervariasi tergantung beberapa faktor. Mengaktifkan fitur seperti Knowledge Graph, RAPTOR, Ekstraksi Pertanyaan Otomatis, atau Ekstraksi Kata Kunci Otomatis akan secara signifikan menambah waktu pemrosesan. Jika bilah kemajuan macet, silakan lihat dua FAQ berikut: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Proses Dimulai Pada',
       processDuration: 'Durasi Proses',
       progressMsg: 'Pesan Kemajuan',

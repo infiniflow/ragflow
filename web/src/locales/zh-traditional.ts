@@ -105,6 +105,7 @@ export default {
       disabled: '禁用',
       action: '動作',
       parsingStatus: '解析狀態',
+      parsingStatusTip: '文件解析時間取決於多種因素。如果啟用了知識圖譜、RAPTOR、自動問題提取、自動關鍵詞提取等功能，解析時間將會顯著延長。如果解析進度條長時間未更新，請參考這兩條常見問題解答FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
