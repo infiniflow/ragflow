@@ -100,6 +100,7 @@ export default {
       disabled: '無効',
       action: 'アクション',
       parsingStatus: 'パースステータス',
+      parsingStatusTip: 'ドキュメントの解析時間はさまざまな要因によって異なります。Knowledge Graph、RAPTOR、自動質問抽出、自動キーワード抽出などの機能を有効にすると、処理時間が大幅に増加します。進行バーが止まった場合は、次の2つのFAQをご参照ください: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'プロセス開始時刻',
       processDuration: '処理時間',
       progressMsg: '進行状況メッセージ',
