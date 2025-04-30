@@ -103,6 +103,8 @@ class TenantLLMService(CommonService):
         if model_config:
             model_config = model_config.to_dict()
             llm = LLMService.query(llm_name=mdlnm) if not fid else LLMService.query(llm_name=mdlnm, fid=fid)
+            if not llm and fid: # for some cases seems fid mismatch
+                llm = LLMService.query(llm_name=mdlnm)
             if llm:
                 model_config["is_tools"] = llm[0].is_tools
         if not model_config:
