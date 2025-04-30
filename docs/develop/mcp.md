@@ -5,11 +5,7 @@ slug: /mcp_server
 
 # RAGFlow MCP server overview
 
-A RAGFlow Model Context Protocol (MCP) server is designed to operate as an independent, complementary component to the RAGFlow server. It requires a RAGFlow server to function well so that the MCP client and the MCP server can communicate with each other in MCP HTTP+SSE mode: once the connection is established, the MCP server pushes messages to the client *unidirectionally*, and responses are expected from the RAGFlow server.
-
-The MCP server currently offers a specialized tool to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
-
-- **retrieve**: Fetches relevant chunks from specified `dataset_ids` and optional `document_ids` using the RAGFlow retrieve interface, based on a given question. Details of all available datasets, namely, `id` and `description`, are provided within the tool description for each individual dataset.
+A RAGFlow Model Context Protocol (MCP) server is designed to operate as an independent, complementary component to the RAGFlow server. It requires a RAGFlow server to function well so that, when a connection is established, the MCP client and the MCP server can communicate with each other in MCP HTTP+SSE mode: the MCP server pushes responses from the RAGFlow server to the client *unidirectionally*.
 
 ## Launching the MCP server
 
@@ -192,9 +188,15 @@ if __name__ == "__main__":
     run(main)
 ```
 
+## API
+
+The MCP server currently offers a specialized tool to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
+
+- **retrieve**: Fetches relevant chunks from specified `dataset_ids` and optional `document_ids` using the RAGFlow retrieve interface, based on a given question. Details of all available datasets, namely, `id` and `description`, are provided within the tool description for each individual dataset.
+
 ## Security considerations
 
-As MCP technology is still at early stage and no official best practices for authentication or authorization have been established, RAGFlow currently uses `api_key` to validate identity for the operations described earlier. However, this makeshift solution could expose your MCP server to potential network attacks in public environments. Therefore, when running a local SSE server, it is recommended to bind only to localhost (`127.0.0.1`) rather than to all interfaces (`0.0.0.0`). 
+As MCP technology is still at early stage and no official best practices for authentication or authorization have been established, RAGFlow currently uses `api_key` to validate identity for the operations described earlier. However, in public environments, this makeshift solution could expose your MCP server to potential network attacks. Therefore, when running a local SSE server, it is recommended to bind only to localhost (`127.0.0.1`) rather than to all interfaces (`0.0.0.0`). 
 
 For further guidance, see the [official MCP documentation](https://modelcontextprotocol.io/docs/concepts/transports#security-considerations).
 
