@@ -20,29 +20,20 @@ import { DatasetActionCell } from './dataset-action-cell';
 import { ParsingStatusCell } from './parsing-status-cell';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { UseRenameDocumentShowType } from './use-rename-document';
+import { UseSaveMetaShowType } from './use-save-meta';
 
-type UseDatasetTableColumnsType = UseChangeDocumentParserShowType & {
-  setCurrentRecord: (record: IDocumentInfo) => void;
-} & UseRenameDocumentShowType;
+type UseDatasetTableColumnsType = UseChangeDocumentParserShowType &
+  UseRenameDocumentShowType &
+  UseSaveMetaShowType;
 
 export function useDatasetTableColumns({
   showChangeParserModal,
-  setCurrentRecord,
   showRenameModal,
+  showSetMetaModal,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
   });
-
-  // const onShowRenameModal = (record: IDocumentInfo) => {
-  //   setCurrentRecord(record);
-  //   showRenameModal();
-  // };
-
-  // const onShowSetMetaModal = useCallback(() => {
-  //   setRecord();
-  //   showSetMetaModal();
-  // }, [setRecord, showSetMetaModal]);
 
   const { navigateToChunkParsedResult } = useNavigatePage();
   const { setDocumentStatus } = useSetDocumentStatus();
@@ -83,7 +74,7 @@ export function useDatasetTableColumns({
           </Button>
         );
       },
-      // meta: { cellClassName: 'max-w-[20vw]' },
+      meta: { cellClassName: 'max-w-[20vw]' },
       cell: ({ row }) => {
         const name: string = row.getValue('name');
 
@@ -161,6 +152,7 @@ export function useDatasetTableColumns({
           <ParsingStatusCell
             record={row.original}
             showChangeParserModal={showChangeParserModal}
+            showSetMetaModal={showSetMetaModal}
           ></ParsingStatusCell>
         );
       },

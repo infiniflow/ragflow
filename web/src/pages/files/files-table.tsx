@@ -3,8 +3,6 @@
 import {
   ColumnDef,
   ColumnFiltersState,
-  OnChangeFn,
-  RowSelectionState,
   SortingState,
   VisibilityState,
   flexRender,
@@ -19,9 +17,9 @@ import * as React from 'react';
 import { RenameDialog } from '@/components/rename-dialog';
 import SvgIcon from '@/components/svg-icon';
 import { TableEmpty, TableSkeleton } from '@/components/table-skeleton';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
   Table,
   TableBody,
@@ -35,27 +33,30 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { getExtension } from '@/utils/document-util';
+import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionCell } from './action-cell';
 import { useHandleConnectToKnowledge, useRenameCurrentFile } from './hooks';
+import { KnowledgeCell } from './knowledge-cell';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
+import { isFolderType } from './util';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
   'files' | 'loading' | 'pagination' | 'setPagination' | 'total'
-> & {
-  rowSelection: RowSelectionState;
-  setRowSelection: OnChangeFn<RowSelectionState>;
-} & UseMoveDocumentShowType;
+> &
+  Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> &
+  UseMoveDocumentShowType;
 
 export function FilesTable({
   files,
@@ -135,7 +136,7 @@ export function FilesTable({
         const name: string = row.getValue('name');
         const type = row.original.type;
         const id = row.original.id;
-        const isFolder = type === 'folder';
+        const isFolder = isFolderType(type);
 
         const handleNameClick = () => {
           if (isFolder) {
@@ -206,24 +207,8 @@ export function FilesTable({
       accessorKey: 'kbs_info',
       header: t('knowledgeBase'),
       cell: ({ row }) => {
-        const value = row.getValue('kbs_info');
-        return Array.isArray(value) ? (
-          <section className="flex gap-2 items-center">
-            {value?.slice(0, 2).map((x) => (
-              <Badge key={x.kb_id} className="" variant={'tertiary'}>
-                {x.kb_name}
-              </Badge>
-            ))}
-
-            {value.length > 2 && (
-              <Button variant={'icon'} size={'auto'}>
-                +{value.length - 2}
-              </Button>
-            )}
-          </section>
-        ) : (
-          ''
-        );
+        const value: IFile['kbs_info'] = row.getValue('kbs_info');
+        return <KnowledgeCell value={value}></KnowledgeCell>;
       },
     },
     {
@@ -261,20 +246,7 @@ export function FilesTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    onPaginationChange: (updaterOrValue: any) => {
-      if (typeof updaterOrValue === 'function') {
-        const nextPagination = updaterOrValue(currentPagination);
-        setPagination({
-          page: nextPagination.pageIndex + 1,
-          pageSize: nextPagination.pageSize,
-        });
-      } else {
-        setPagination({
-          page: updaterOrValue.pageIndex,
-          pageSize: updaterOrValue.pageSize,
-        });
-      }
-    },
+
     manualPagination: true, //we're doing manual "server-side" pagination
 
     state: {
@@ -343,23 +315,15 @@ export function FilesTable({
           {table.getFilteredSelectedRowModel().rows.length} of {total} row(s)
           selected.
         </div>
+
         <div className="space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
+          <RAGFlowPagination
+            {...pick(pagination, 'current', 'pageSize')}
+            total={total}
+            onChange={(page, pageSize) => {
+              setPagination({ page, pageSize });
+            }}
+          ></RAGFlowPagination>
         </div>
       </div>
       {connectToKnowledgeVisible && (

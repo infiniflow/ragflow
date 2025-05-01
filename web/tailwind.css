@@ -71,6 +71,19 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --background-inverse-strong: rgba(255, 255, 255, 0.15);
+
+    --background-badge: rgba(22, 22, 24, 0.5);
+    --text-badge: rgba(151, 154, 171, 1);
+
+    --text-title: rgba(22, 22, 24, 1);
+    --text-sub-title: rgba(151, 154, 171, 1);
+    --text-sub-title-invert: rgba(91, 93, 106, 1);
+
+    --background-header-bar: rgba(11, 11, 12, 1);
+    --text-title-invert: rgba(255, 255, 255, 1);
+    --background-card: rgba(22, 22, 24, 0.05);
   }
 
   .dark {
@@ -120,6 +133,9 @@
     --background-core-weak: rgb(101, 75, 248);
     --background-core-weak-foreground: rgba(255, 255, 255, 1);
 
+    --background-badge: rgba(22, 22, 24, 0.5);
+    --text-badge: rgba(151, 154, 171, 1);
+
     --colors-background-core-standard: rgba(137, 126, 255, 1);
     --colors-background-core-strong: rgba(152, 147, 255, 1);
     --colors-background-core-weak: rgba(101, 75, 248, 1);
@@ -164,6 +180,15 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --text-title: rgba(255, 255, 255, 1);
+    --text-sub-title: rgba(91, 93, 106, 1);
+    --text-sub-title-invert: rgba(151, 154, 171, 1);
+    --background-header-bar: rgba(11, 11, 12, 1);
+
+    --text-title-invert: rgba(22, 22, 24, 1);
+
+    --background-card: rgba(255, 255, 255, 0.05);
   }
 }
 
@@ -172,7 +197,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-colors-background-neutral-standard text-foreground;
+    @apply bg-text-title-invert text-foreground;
     font-feature-settings:
       'rlig' 1,
       'calt' 1;

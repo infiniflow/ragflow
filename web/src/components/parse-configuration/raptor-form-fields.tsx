@@ -76,14 +76,14 @@ const RaptorFormFields = () => {
         )}
       />
       {useRaptor && (
-        <>
+        <div className="space-y-3">
           <FormField
             control={form.control}
             name={'parser_config.raptor.prompt'}
             render={({ field }) => (
               <FormItem>
                 <FormLabel tooltip={t('promptTip')}>{t('prompt')}</FormLabel>
-                <FormControl defaultValue={t('promptText')}>
+                <FormControl>
                   <Textarea {...field} rows={8} />
                 </FormControl>
                 <FormMessage />
@@ -124,7 +124,11 @@ const RaptorFormFields = () => {
                 <FormControl defaultValue={0}>
                   <div className="flex gap-4">
                     <Input {...field} />
-                    <Button size={'sm'} onClick={handleGenerate}>
+                    <Button
+                      size={'sm'}
+                      onClick={handleGenerate}
+                      type={'button'}
+                    >
                       <Plus />
                     </Button>
                   </div>
@@ -133,7 +137,7 @@ const RaptorFormFields = () => {
               </FormItem>
             )}
           />
-        </>
+        </div>
       )}
     </>
   );
