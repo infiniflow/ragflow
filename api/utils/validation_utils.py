@@ -14,13 +14,86 @@
 #  limitations under the License.
 #
 from enum import auto
-from typing import Annotated, List, Optional
+from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 
+from flask import Request
 from pydantic import BaseModel, Field, StringConstraints, ValidationError, field_validator
 from strenum import StrEnum
+from werkzeug.exceptions import BadRequest, UnsupportedMediaType
+
+
+def parse_and_validate_json_request(req: Request) -> Tuple[bool, Union[str, Dict[str, Any]]]:
+    """Validates and parses JSON payload from Flask requests with error handling.
+
+    Implements a three-stage validation pipeline:
+    1. Content-Type verification (must be application/json)
+    2. JSON syntax validation
+    3. Data structure type checking
+
+    Args:
+        req (Request): Flask request object containing raw HTTP payload
+
+    Returns:
+        Tuple[bool, Union[str, Dict[str, Any]]]:
+        - First element (bool):
+            - True: Validation successful with parsed data
+            - False: Validation failed with error message
+        - Second element contains:
+            - Parsed dict on success
+            - Diagnostic error message on failure
+
+    Examples:
+        >>> success, result = parse_and_validate_json_request(request)
+        >>> if not success:
+        ...     abort(400, description=result)
+        >>> # Valid JSON object
+        >>> print(result)
+        {'name': 'John', 'age': 30}
+
+        >>> # Invalid Content-Type
+        >>> print(result)
+        "Unsupported content type: Expected application/json, got text/plain"
+
+        >>> # Malformed JSON syntax
+        >>> print(result)
+        "Malformed JSON syntax: Missing commas/brackets or invalid encoding"
+    """
+    try:
+        data: Union[Dict[str, Any], None] = req.get_json() or {}
+    except UnsupportedMediaType:
+        return False, f"Unsupported content type: Expected application/json, got {req.content_type}"
+    except BadRequest:
+        return False, "Malformed JSON syntax: Missing commas/brackets or invalid encoding"
+
+    if not isinstance(data, dict):
+        return False, f"Invalid request payload: expected object, got {type(data).__name__}"
+
+    return True, data
 
 
 def format_validation_error_message(e: ValidationError) -> str:
+    """Formats validation errors into a standardized string format.
+
+    Processes pydantic ValidationError objects to create human-readable error messages
+    containing field locations, error descriptions, and input values.
+
+    Args:
+        e (ValidationError): The validation error instance containing error details
+
+    Returns:
+        str: Formatted error messages joined by newlines. Each line contains:
+            - Field path (dot-separated)
+            - Error message
+            - Truncated input value (max 128 chars)
+
+    Example:
+        >>> try:
+        ...     UserModel(name=123, email="invalid")
+        ... except ValidationError as e:
+        ...     print(format_validation_error_message(e))
+        Field: <name> - Message: <Input should be a valid string> - Value: <123>
+        Field: <email> - Message: <value is not a valid email address> - Value: <invalid>
+    """
     error_messages = []
 
     for error in e.errors():
@@ -113,7 +186,7 @@ class CreateDatasetReq(Base):
     avatar: Optional[str] = Field(default=None, max_length=65535)
     description: Optional[str] = Field(default=None, max_length=65535)
     embedding_model: Annotated[Optional[str], StringConstraints(strip_whitespace=True, max_length=255), Field(default=None, serialization_alias="embd_id")]
-    permission: Annotated[PermissionEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=16), Field(default=PermissionEnum.me)]
+    permission: Annotated[PermissionEnum, StringConstraints(strip_whitespace=True, to_lower=True, min_length=1, max_length=16), Field(default=PermissionEnum.me)]
     chunk_method: Annotated[ChunkMethodnEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=32), Field(default=ChunkMethodnEnum.naive, serialization_alias="parser_id")]
     pagerank: int = Field(default=0, ge=0, le=100)
     parser_config: Optional[ParserConfig] = Field(default=None)
@@ -121,6 +194,35 @@ class CreateDatasetReq(Base):
     @field_validator("avatar")
     @classmethod
     def validate_avatar_base64(cls, v: str) -> str:
+        """Validates Base64-encoded avatar string format and MIME type compliance.
+
+        Implements a three-stage validation workflow:
+        1. MIME prefix existence check
+        2. MIME type format validation
+        3. Supported type verification
+
+        Args:
+            v (str): Raw avatar field value
+
+        Returns:
+            str: Validated Base64 string
+
+        Raises:
+            ValueError: For structural errors in these cases:
+                - Missing MIME prefix header
+                - Invalid MIME prefix format
+                - Unsupported image MIME type
+
+        Example:
+            ```python
+            # Valid case
+            CreateDatasetReq(avatar="data:image/png;base64,iVBORw0KGg...")
+
+            # Invalid cases
+            CreateDatasetReq(avatar="image/jpeg;base64,...")  # Missing 'data:' prefix
+            CreateDatasetReq(avatar="data:video/mp4;base64,...")  # Unsupported MIME type
+            ```
+        """
         if v is None:
             return v
 
@@ -141,22 +243,65 @@ class CreateDatasetReq(Base):
     @field_validator("embedding_model", mode="after")
     @classmethod
     def validate_embedding_model(cls, v: str) -> str:
-        if "@" not in v:
-            raise ValueError("Embedding model must be xxx@yyy")
-        return v
+        """Validates embedding model identifier format compliance.
 
-    @field_validator("permission", mode="before")
-    @classmethod
-    def permission_auto_lowercase(cls, v: str) -> str:
-        if isinstance(v, str):
-            return v.lower()
+        Validation pipeline:
+        1. Structural format verification
+        2. Component non-empty check
+        3. Value normalization
+
+        Args:
+            v (str): Raw model identifier
+
+        Returns:
+            str: Validated <model_name>@<provider> format
+
+        Raises:
+            ValueError: For these violations:
+                - Missing @ separator
+                - Empty model_name/provider
+                - Invalid component structure
+
+        Examples:
+            Valid: "text-embedding-3-large@openai"
+            Invalid: "invalid_model" (no @)
+            Invalid: "@openai" (empty model_name)
+            Invalid: "text-embedding-3-large@" (empty provider)
+        """
+        if "@" not in v:
+            raise ValueError("Embedding model identifier must follow <model_name>@<provider> format")
+
+        components = v.split("@", 1)
+        if len(components) != 2 or not all(components):
+            raise ValueError("Both model_name and provider must be non-empty strings")
+
+        model_name, provider = components
+        if not model_name.strip() or not provider.strip():
+            raise ValueError("Model name and provider cannot be whitespace-only strings")
         return v
 
     @field_validator("parser_config", mode="after")
     @classmethod
     def validate_parser_config_json_length(cls, v: Optional[ParserConfig]) -> Optional[ParserConfig]:
-        if v is not None:
-            json_str = v.model_dump_json()
-            if len(json_str) > 65535:
-                raise ValueError("Parser config have at most 65535 characters")
+        """Validates serialized JSON length constraints for parser configuration.
+
+        Implements a three-stage validation workflow:
+        1. Null check - bypass validation for empty configurations
+        2. Model serialization - convert Pydantic model to JSON string
+        3. Size verification - enforce maximum allowed payload size
+
+        Args:
+            v (Optional[ParserConfig]): Raw parser configuration object
+
+        Returns:
+            Optional[ParserConfig]: Validated configuration object
+
+        Raises:
+            ValueError: When serialized JSON exceeds 65,535 characters
+        """
+        if v is None:
+            return v
+
+        if (json_str := v.model_dump_json()) and len(json_str) > 65535:
+            raise ValueError(f"Parser config exceeds size limit (max 65,535 characters). Current size: {len(json_str):,}")
         return v

@@ -42,7 +42,7 @@ from api.utils.api_utils import (
     valid,
     valid_parser_config,
 )
-from api.utils.validation_utils import CreateDatasetReq, format_validation_error_message
+from api.utils.validation_utils import CreateDatasetReq, format_validation_error_message, parse_and_validate_json_request
 
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
@@ -107,12 +107,12 @@ def create(tenant_id):
             data:
               type: object
     """
-    req_i = request.json
-    if not isinstance(req_i, dict):
-        return get_error_argument_result(f"Invalid request payload: expected object, got {type(req_i).__name__}")
+    ok, data = parse_and_validate_json_request(request)
+    if not ok:
+        return get_error_argument_result(data)
 
     try:
-        req_v = CreateDatasetReq(**req_i)
+        req_v = CreateDatasetReq(**data)
     except ValidationError as e:
         return get_error_argument_result(format_validation_error_message(e))
 
