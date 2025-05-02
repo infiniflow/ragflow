@@ -60,7 +60,7 @@ export default function Dataset() {
   });
 
   return (
-    <section className="p-8">
+    <section className="p-5">
       <ListFilterBar
         title="Dataset"
         onSearchChange={handleInputChange}

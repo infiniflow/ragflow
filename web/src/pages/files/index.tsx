@@ -88,7 +88,7 @@ export default function Files() {
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant={'tertiary'} size={'sm'}>
+            <Button>
               <Upload />
               {t('knowledgeDetails.addFile')}
             </Button>
