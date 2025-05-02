@@ -186,7 +186,7 @@ class CreateDatasetReq(Base):
     avatar: Optional[str] = Field(default=None, max_length=65535)
     description: Optional[str] = Field(default=None, max_length=65535)
     embedding_model: Annotated[Optional[str], StringConstraints(strip_whitespace=True, max_length=255), Field(default=None, serialization_alias="embd_id")]
-    permission: Annotated[PermissionEnum, StringConstraints(strip_whitespace=True, to_lower=True, min_length=1, max_length=16), Field(default=PermissionEnum.me)]
+    permission: Annotated[PermissionEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=16), Field(default=PermissionEnum.me)]
     chunk_method: Annotated[ChunkMethodnEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=32), Field(default=ChunkMethodnEnum.naive, serialization_alias="parser_id")]
     pagerank: int = Field(default=0, ge=0, le=100)
     parser_config: Optional[ParserConfig] = Field(default=None)
@@ -279,6 +279,24 @@ class CreateDatasetReq(Base):
         if not model_name.strip() or not provider.strip():
             raise ValueError("Model name and provider cannot be whitespace-only strings")
         return v
+
+    @field_validator("permission", mode="before")
+    @classmethod
+    def permission_auto_lowercase(cls, v: str) -> str:
+        """Normalize permission input to lowercase for consistent PermissionEnum matching.
+
+        Args:
+            v (str): Raw input value for the permission field
+
+        Returns:
+            Lowercase string if input is string type, otherwise returns original value
+
+        Behavior:
+            - Converts string inputs to lowercase (e.g., "ME" → "me")
+            - Non-string values pass through unchanged
+            - Works in validation pre-processing stage (before enum conversion)
+        """
+        return v.lower() if isinstance(v, str) else v
 
     @field_validator("parser_config", mode="after")
     @classmethod
