@@ -25,6 +25,7 @@ export interface IKnowledge {
   embd_id: string;
   nickname: string;
   operator_permission: number;
+  size: number;
 }
 
 export interface IKnowledgeResult {

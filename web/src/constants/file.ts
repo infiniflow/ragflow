@@ -1,0 +1,15 @@
+export const FileIconMap = {
+  doc: 'doc',
+  docx: 'doc',
+  pdf: 'pdf',
+  xls: 'excel',
+  xlsx: 'excel',
+  ppt: 'ppt',
+  pptx: 'ppt',
+  jpg: 'jpg',
+  jpeg: 'jpg',
+  png: 'png',
+  txt: 'text',
+  csv: 'pdf',
+  md: 'md',
+};
