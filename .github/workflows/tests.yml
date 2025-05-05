@@ -57,15 +57,15 @@ jobs:
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
           sudo docker pull ubuntu:22.04
-          sudo docker build --progress=plain --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+          sudo docker build --progress=plain --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t jjmata/ragflow:nightly-slim .
 
       - name: Build ragflow:nightly
         run: |
-          sudo docker build --progress=plain --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
+          sudo docker build --progress=plain --build-arg NEED_MIRROR=1 -f Dockerfile -t jjmata/ragflow:nightly .
 
       - name: Start ragflow:nightly-slim
         run: |
-          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
+          echo -e "\nRAGFLOW_IMAGE=jjmata/ragflow:nightly-slim" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Stop ragflow:nightly-slim
@@ -75,7 +75,7 @@ jobs:
 
       - name: Start ragflow:nightly
         run: |
-          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
+          echo -e "\nRAGFLOW_IMAGE=jjmata/ragflow:nightly" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Run sdk tests against Elasticsearch
