@@ -35,7 +35,7 @@ class UserCanvasVersionService(CommonService):
                 for i in range(20, user_canvas_version.count()):
                     delete_ids.append(user_canvas_version[i].id)
                 
-                UserCanvasVersionService.delete_by_ids(delete_ids)
+                cls.delete_by_ids(delete_ids)
             return True
         except DoesNotExist:
             return None

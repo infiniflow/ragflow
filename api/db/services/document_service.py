@@ -344,13 +344,11 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_doc_ids_by_doc_names(cls, doc_names):
-        fields = [cls.model.id]
-        doc_ids = cls.model.select(*fields) \
-            .where(cls.model.name.in_(doc_names))
-        doc_ids = doc_ids.dicts()
-        if not doc_ids:
-            return
-        return [doc["id"] for doc in doc_ids]
+        if not doc_names:
+            return []
+
+        query = cls.model.select(cls.model.id).where(cls.model.name.in_(doc_names))
+        return list(query.scalars().iterator())
 
     @classmethod
     @DB.connection_context()

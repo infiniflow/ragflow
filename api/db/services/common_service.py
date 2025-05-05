@@ -272,7 +272,9 @@ class CommonService:
         #     pids: List of record IDs
         # Returns:
         #     Number of records deleted
-        return cls.model.delete().where(cls.model.id.in_(pids)).execute()
+        with DB.atomic():
+            res = cls.model.delete().where(cls.model.id.in_(pids)).execute()
+            return res
 
     @classmethod
     @DB.connection_context()
