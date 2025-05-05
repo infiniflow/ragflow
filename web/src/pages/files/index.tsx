@@ -9,11 +9,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
-import { RowSelectionState } from '@tanstack/react-table';
-import { isEmpty } from 'lodash';
 import { Upload } from 'lucide-react';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CreateFolderDialog } from './create-folder-dialog';
 import { FileBreadcrumb } from './file-breadcrumb';
@@ -53,14 +51,19 @@ export default function Files() {
   } = useFetchFileList();
 
   const {
+    rowSelection,
+    setRowSelection,
+    rowSelectionIsEmpty,
+    clearRowSelection,
+  } = useRowSelection();
+
+  const {
     showMoveFileModal,
     moveFileVisible,
     onMoveFileOk,
     hideMoveFileModal,
     moveFileLoading,
-  } = useHandleMoveFile();
-
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  } = useHandleMoveFile({ clearRowSelection });
 
   const { list } = useBulkOperateFile({
     files,
@@ -85,7 +88,7 @@ export default function Files() {
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant={'tertiary'} size={'sm'}>
+            <Button>
               <Upload />
               {t('knowledgeDetails.addFile')}
             </Button>
@@ -101,7 +104,7 @@ export default function Files() {
           </DropdownMenuContent>
         </DropdownMenu>
       </ListFilterBar>
-      {!isEmpty(rowSelection) && <BulkOperateBar list={list}></BulkOperateBar>}
+      {!rowSelectionIsEmpty && <BulkOperateBar list={list}></BulkOperateBar>}
       <FilesTable
         files={files}
         total={total}
@@ -127,7 +130,6 @@ export default function Files() {
           onOk={onFolderCreateOk}
         ></CreateFolderDialog>
       )}
-
       {moveFileVisible && (
         <MoveDialog
           hideModal={hideMoveFileModal}
