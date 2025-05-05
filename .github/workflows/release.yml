@@ -2,7 +2,7 @@ name: release
 
 on:
   schedule:
-    - cron: '0 13 * * *'  # This schedule runs every 13:00:00Z(21:00:00+08:00)
+    - cron: '0 17 * * *'  # This schedule runs every 13:00:00Z(21:00:00+08:00)
   # The "create tags" trigger is specifically focused on the creation of new tags, while the "push tags" trigger is activated when tags are pushed, including both new tag creations and updates to existing tags.
   create:
     tags:
