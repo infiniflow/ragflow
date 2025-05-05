@@ -1,12 +1,12 @@
 import { Applications } from './applications';
-import { Banner } from './banner';
+import { NextBanner } from './banner';
 import { Datasets } from './datasets';
 
 const Home = () => {
   return (
     <div className="mx-8">
       <section>
-        <Banner></Banner>
+        <NextBanner></NextBanner>
         <Datasets></Datasets>
         <Applications></Applications>
       </section>

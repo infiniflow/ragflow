@@ -71,6 +71,7 @@ export default {
       fileManager: 'File Management',
       flow: 'Agent',
       search: 'Search',
+      welcome: 'Welcome to',
     },
     knowledgeList: {
       welcome: 'Welcome back',
@@ -105,6 +106,7 @@ export default {
       disabled: 'Disable',
       action: 'Action',
       parsingStatus: 'Parsing Status',
+      parsingStatusTip: 'Document parsing time varies based on several factors. Enabling features like Knowledge Graph, RAPTOR, Auto Question Extraction, or Auto Keyword Extraction will significantly increase processing time. If the progress bar stalls, please consult these two FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Begin at',
       processDuration: 'Duration',
       progressMsg: 'Progress',
@@ -1254,6 +1256,9 @@ This delimiter is used to split the input text into several text pieces echo of 
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
       infor: 'Information run',
+      knowledgeBasesTip:
+        'Select the knowledge bases to associate with this chat assistant, or choose variables containing knowledge base IDs below.',
+      knowledgeBaseVars: 'Knowledge base variables',
     },
   },
 };

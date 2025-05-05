@@ -51,15 +51,19 @@ export default function Files() {
   } = useFetchFileList();
 
   const {
+    rowSelection,
+    setRowSelection,
+    rowSelectionIsEmpty,
+    clearRowSelection,
+  } = useRowSelection();
+
+  const {
     showMoveFileModal,
     moveFileVisible,
     onMoveFileOk,
     hideMoveFileModal,
     moveFileLoading,
-  } = useHandleMoveFile();
-
-  const { rowSelection, setRowSelection, rowSelectionIsEmpty } =
-    useRowSelection();
+  } = useHandleMoveFile({ clearRowSelection });
 
   const { list } = useBulkOperateFile({
     files,
@@ -84,7 +88,7 @@ export default function Files() {
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant={'tertiary'} size={'sm'}>
+            <Button>
               <Upload />
               {t('knowledgeDetails.addFile')}
             </Button>
@@ -126,7 +130,6 @@ export default function Files() {
           onOk={onFolderCreateOk}
         ></CreateFolderDialog>
       )}
-
       {moveFileVisible && (
         <MoveDialog
           hideModal={hideMoveFileModal}
