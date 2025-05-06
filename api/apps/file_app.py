@@ -257,6 +257,7 @@ def rm():
                     STORAGE_IMPL.rm(file.parent_id, file.location)
                 FileService.delete_folder_by_pf_id(current_user.id, file_id)
             else:
+                STORAGE_IMPL.rm(file.parent_id, file.location)
                 if not FileService.delete(file):
                     return get_data_error_result(
                         message="Database error (File removal)!")
