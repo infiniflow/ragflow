@@ -51,8 +51,13 @@ class VisionFigureParser:
                 self.positions.append(item[1])
             else:
                 assert len(item) == 2 and isinstance(item, tuple) and isinstance(item[1], list), f"get {len(item)=}, {item=}"
-                self.figures.append(item[0])
-                self.descriptions.append(item[1])
+                if isinstance(item[0], tuple) and len(item[0]) == 2 and isinstance(item[0][0], Image.Image) and isinstance(item[0][1], list):
+                    self.figures.append(item[0][0])
+                    self.descriptions.append(item[0][1])
+                else:
+                    self.figures.append(item[0])
+                    self.descriptions.append(item[1])
+                
 
     def _assemble(self):
         self.assembled = []
