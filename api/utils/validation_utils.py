@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field, StringConstraints, ValidationError, field
 from strenum import StrEnum
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
+from api.constants import DATASET_NAME_LIMIT
+
 
 def validate_and_parse_json_request(request: Request, validator: type[BaseModel]) -> tuple[dict[str, Any] | None, str | None]:
     """Validates and parses JSON requests through a multi-stage validation pipeline.
@@ -196,7 +198,7 @@ class ParserConfig(Base):
 
 
 class CreateDatasetReq(Base):
-    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128), Field(...)]
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(...)]
     avatar: str | None = Field(default=None, max_length=65535)
     description: str | None = Field(default=None, max_length=65535)
     embedding_model: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=255), Field(default=None, serialization_alias="embd_id")]
