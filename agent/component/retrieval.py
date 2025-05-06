@@ -30,10 +30,10 @@ from rag.utils.tavily_conn import Tavily
 
 
 class RetrievalParam(ComponentParamBase):
-
     """
     Define the Retrieval component parameters.
     """
+
     def __init__(self):
         super().__init__()
         self.similarity_threshold = 0.2
@@ -67,7 +67,10 @@ class Retrieval(ComponentBase, ABC):
         if len(kb_vars) > 0:
             for kb_var in kb_vars:
                 if len(kb_var) == 1:
-                    kb_ids.append(str(kb_var["content"][0]))
+                    kb_var_value = str(kb_var["content"][0])
+
+                    for v in kb_var_value.split(","):
+                        kb_ids.append(v)
                 else:
                     for v in kb_var.to_dict("records"):
                         kb_ids.append(v["content"])
@@ -91,20 +94,24 @@ class Retrieval(ComponentBase, ABC):
             rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
 
         if kbs:
-            kbinfos = settings.retrievaler.retrieval(query, embd_mdl, kbs[0].tenant_id, filtered_kb_ids,
-                                        1, self._param.top_n,
-                                        self._param.similarity_threshold, 1 - self._param.keywords_similarity_weight,
-                                        aggs=False, rerank_mdl=rerank_mdl,
-                                        rank_feature=label_question(query, kbs))
+            kbinfos = settings.retrievaler.retrieval(
+                query,
+                embd_mdl,
+                kbs[0].tenant_id,
+                filtered_kb_ids,
+                1,
+                self._param.top_n,
+                self._param.similarity_threshold,
+                1 - self._param.keywords_similarity_weight,
+                aggs=False,
+                rerank_mdl=rerank_mdl,
+                rank_feature=label_question(query, kbs),
+            )
         else:
             kbinfos = {"chunks": [], "doc_aggs": []}
 
         if self._param.use_kg and kbs:
-            ck = settings.kg_retrievaler.retrieval(query,
-                                                   [kbs[0].tenant_id],
-                                                   filtered_kb_ids,
-                                                   embd_mdl,
-                                                   LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
+            ck = settings.kg_retrievaler.retrieval(query, [kbs[0].tenant_id], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 kbinfos["chunks"].insert(0, ck)
 
@@ -123,5 +130,3 @@ class Retrieval(ComponentBase, ABC):
         df = pd.DataFrame({"content": kb_prompt(kbinfos, 200000), "chunks": json.dumps(kbinfos["chunks"])})
         logging.debug("{} {}".format(query, df))
         return df.dropna()
-
-
