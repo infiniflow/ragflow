@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 from enum import auto
-from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
+from typing import Annotated, Any, Dict, List, Optional, Tuple
 
 from flask import Request
 from pydantic import BaseModel, Field, StringConstraints, ValidationError, field_validator
@@ -22,53 +22,67 @@ from strenum import StrEnum
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 
-def parse_and_validate_json_request(req: Request) -> Tuple[bool, Union[str, Dict[str, Any]]]:
-    """Validates and parses JSON payload from Flask requests with error handling.
+def validate_and_parse_json_request(request: Request) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Validates and parses JSON requests through a multi-stage validation pipeline.
 
-    Implements a three-stage validation pipeline:
+    Implements a robust four-stage validation process:
     1. Content-Type verification (must be application/json)
     2. JSON syntax validation
-    3. Data structure type checking
+    3. Payload structure type checking
+    4. Pydantic model validation with error formatting
 
     Args:
-        req (Request): Flask request object containing raw HTTP payload
+        request (Request): Flask request object containing HTTP payload
 
     Returns:
-        Tuple[bool, Union[str, Dict[str, Any]]]:
-        - First element (bool):
-            - True: Validation successful with parsed data
-            - False: Validation failed with error message
-        - Second element contains:
-            - Parsed dict on success
+        Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        - First element:
+            - Validated dictionary on success
+            - None on validation failure
+        - Second element:
+            - None on success
             - Diagnostic error message on failure
 
+    Raises:
+        UnsupportedMediaType: When Content-Type ≠ application/json
+        BadRequest: For structural JSON syntax errors
+        ValidationError: When payload violates Pydantic schema rules
+
     Examples:
-        >>> success, result = parse_and_validate_json_request(request)
-        >>> if not success:
-        ...     abort(400, description=result)
-        >>> # Valid JSON object
-        >>> print(result)
-        {'name': 'John', 'age': 30}
+        Successful validation:
+        ```python
+        # Input: {"name": "Dataset1", "format": "csv"}
+        # Returns: ({"name": "Dataset1", "format": "csv"}, None)
+        ```
 
-        >>> # Invalid Content-Type
-        >>> print(result)
-        "Unsupported content type: Expected application/json, got text/plain"
+        Invalid Content-Type:
+        ```python
+        # Returns: (None, "Unsupported content type: Expected application/json, got text/xml")
+        ```
 
-        >>> # Malformed JSON syntax
-        >>> print(result)
-        "Malformed JSON syntax: Missing commas/brackets or invalid encoding"
+        Malformed JSON:
+        ```python
+        # Returns: (None, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+        ```
     """
     try:
-        data: Union[Dict[str, Any], None] = req.get_json() or {}
+        payload = request.get_json() or {}
     except UnsupportedMediaType:
-        return False, f"Unsupported content type: Expected application/json, got {req.content_type}"
+        return None, f"Unsupported content type: Expected application/json, got {request.content_type}"
     except BadRequest:
-        return False, "Malformed JSON syntax: Missing commas/brackets or invalid encoding"
+        return None, "Malformed JSON syntax: Missing commas/brackets or invalid encoding"
 
-    if not isinstance(data, dict):
-        return False, f"Invalid request payload: expected object, got {type(data).__name__}"
+    if not isinstance(payload, dict):
+        return None, f"Invalid request payload: expected object, got {type(payload).__name__}"
 
-    return True, data
+    try:
+        validated_request = CreateDatasetReq(**payload)
+    except ValidationError as e:
+        return None, format_validation_error_message(e)
+
+    parsed_payload = validated_request.model_dump(by_alias=True)
+
+    return parsed_payload, None
 
 
 def format_validation_error_message(e: ValidationError) -> str:

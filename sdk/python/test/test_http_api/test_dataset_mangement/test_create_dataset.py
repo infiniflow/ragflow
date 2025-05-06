@@ -98,16 +98,22 @@ class TestDatasetCreation:
         assert res["code"] == 101, res
         assert res["message"] == f"Dataset name '{name.lower()}' already exists", res
 
+    def test_bad_content_type(self, get_http_api_auth):
+        BAD_CONTENT_TYPE = "text/xml"
+        res = create_dataset(get_http_api_auth, {"name": "name"}, {"Content-Type": BAD_CONTENT_TYPE})
+        assert res["code"] == 101, res
+        assert res["message"] == f"Unsupported content type: Expected application/json, got {BAD_CONTENT_TYPE}", res
+
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
             ("a", "Malformed JSON syntax: Missing commas/brackets or invalid encoding"),
-            ([], "Invalid request payload: expected objec"),
+            ('"a"', "Invalid request payload: expected objec"),
         ],
         ids=["malformed_json_syntax", "invalid_request_payload_type"],
     )
     def test_bad_payload(self, get_http_api_auth, payload, expected_message):
-        res = create_dataset(get_http_api_auth, payload)
+        res = create_dataset(get_http_api_auth, data=payload)
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
@@ -191,15 +197,19 @@ class TestDatasetCreation:
         [
             ("unknown_llm_name", "unknown@ZHIPU-AI"),
             ("unknown_llm_factory", "embedding-3@unknown"),
-            ("tenant_no_auth", "deepseek-chat@DeepSeek"),
+            ("tenant_no_auth_default_tenant_llm", "text-embedding-v3@Tongyi-Qianwen"),
+            ("tenant_no_auth", "text-embedding-3-small@OpenAI"),
         ],
-        ids=["unknown_llm_name", "unknown_llm_factory", "tenant_no_auth"],
+        ids=["unknown_llm_name", "unknown_llm_factory", "tenant_no_auth_default_tenant_llm", "tenant_no_auth"],
     )
     def test_invalid_embedding_model(self, get_http_api_auth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 101, res
-        assert res["message"] == f"The embedding_model '{embedding_model}' is not supported", res
+        if "tenant_no_auth" in name:
+            assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
+        else:
+            assert res["message"] == f"Unsupported model: <{embedding_model}>", res
 
     @pytest.mark.parametrize(
         "name, embedding_model",
