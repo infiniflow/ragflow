@@ -99,6 +99,26 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def count_by_kb_id(cls, kb_id, keywords, run_status, types):
+        if keywords:
+            docs = cls.model.select().where(
+                (cls.model.kb_id == kb_id),
+                (fn.LOWER(cls.model.name).contains(keywords.lower()))
+            )
+        else:
+            docs = cls.model.select().where(cls.model.kb_id == kb_id)
+
+        if run_status:
+            docs = docs.where(cls.model.run.in_(run_status))
+        if types:
+            docs = docs.where(cls.model.type.in_(types))
+
+        count = docs.count()
+
+        return count
+
+    @classmethod
+    @DB.connection_context()
     def insert(cls, doc):
         if not cls.save(**doc):
             raise RuntimeError("Database error (Document)!")
