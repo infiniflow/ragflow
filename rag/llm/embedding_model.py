@@ -57,6 +57,7 @@ class Base(ABC):
 
 
 class DefaultEmbedding(Base):
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     _model = None
     _model_name = ""
     _model_lock = threading.Lock()
