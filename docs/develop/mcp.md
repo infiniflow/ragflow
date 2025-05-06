@@ -63,7 +63,7 @@ Here are three augments required, the first two,`host` and `port`, are self-expl
 
 Building a standalone MCP server image is straightforward and easy, so we just proposed a way to launch it with RAGFlow server here.
 
-#### Alongside RAGFlow {#alongside_ragflow}
+#### Alongside RAGFlow
 
 As MCP server is an extra and optional component of RAGFlow server, we consume that not everybody going to use it. Thus, it is disable by default.
 To enable it, simply find `docker/docker-compose.yml` to uncomment `services.ragflow.command` section.
@@ -81,26 +81,10 @@ services:
       - --mcp-base-url=http://127.0.0.1:9380
       - --mcp-script-path=/ragflow/mcp/server/server.py
       - --mcp-mode=self-host # `self-host` or `host`
-      - --mcp-host-api-key=ragflow-xxxxxxx # only need to privide when mode is `self-host` and use bare string without quotation marks here.
+      - --mcp-host-api-key="ragflow-xxxxxxx" # only need to privide when mode is `self-host`
 ```
 
-To troubleshoot, launch the service in the foreground using `docker compose -f docker-compose.yml`.
-
-### For those upgrading from versions before v0.18.0
-
-1. Get all MCP related files ready.
-   1. copy `mcp/` directory to local.
-   1. copy `docker/docker-compose.yml` to local.
-   1. copy `docker/entrypoint.sh` to local.
-   1. resolve necessary dependencies via `uv`.
-      - simply run `uv add mcp` if it works for you. Or:
-      - copy `pyproject.toml` and run `uv sync --python 3.10 --all-extras`.
-1. Change `docker-compose.yml` to enable MCP as it is disable by default, [see last section](#alongside_ragflow).
-1. Launch the service with `docker compose -f docker-compose.yml up -d`
-
-### Check the MCP server status
-
-Checking logs of RAGFlow server with `docker logs ragflow-server`. If you see the MCP server ASCII art there, it means all is OK!
+Then launch it normally `docker compose -f docker-compose.yml`.
 
 ```bash
 ragflow-server  | Starting MCP Server on 0.0.0.0:9382 with base URL http://127.0.0.1:9380...
@@ -152,6 +136,25 @@ ragflow-server  | 2025-04-18 15:41:34,501 INFO     32 Use Elasticsearch http://e
 ```
 
 You are ready to brew🍺!
+
+#### Getting API Keys for Host Mode
+
+When running the MCP server in `host` mode (by setting `--mcp-mode=host` in the configuration), each client needs to provide their own API key in requests. This API key is **different** from the `--mcp-host-api-key` specified in the server configuration.
+
+To get a valid API key for use in your client scripts (like `test_mcp.py`):
+
+1. Access the RAGFlow UI in your browser (typically `http://localhost:9380`)
+2. Log in to your account
+3. Click on your avatar/profile in the top-right corner
+4. Select **API** from the dropdown menu
+5. On the API page, generate a new API key or copy an existing one
+6. Use this key in your client script as follows:
+
+```python
+# Client script example (test_mcp.py)
+async with sse_client("http://localhost:9382/sse", headers={"api_key": "YOUR_KEY_HERE"}) as streams:
+    # Rest of your code...
+```
 
 ## Testing and Usage
 
