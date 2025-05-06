@@ -47,6 +47,9 @@ STOP=false
 # Array to keep track of child PIDs
 PIDS=()
 
+# Set the path to the NLTK data directory
+export NLTK_DATA="./nltk_data"
+
 # Function to handle termination signals
 cleanup() {
   echo "Termination signal received. Shutting down..."
