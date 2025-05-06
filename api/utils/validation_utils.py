@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 from enum import auto
-from typing import Annotated, Any, Dict, List, Optional, Tuple
+from typing import Annotated, Any
 
 from flask import Request
 from pydantic import BaseModel, Field, StringConstraints, ValidationError, field_validator
@@ -22,7 +22,7 @@ from strenum import StrEnum
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 
-def validate_and_parse_json_request(request: Request) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def validate_and_parse_json_request(request: Request, validator: type[BaseModel]) -> tuple[dict[str, Any] | None, str | None]:
     """Validates and parses JSON requests through a multi-stage validation pipeline.
 
     Implements a robust four-stage validation process:
@@ -35,7 +35,7 @@ def validate_and_parse_json_request(request: Request) -> Tuple[Optional[Dict[str
         request (Request): Flask request object containing HTTP payload
 
     Returns:
-        Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        tuple[Dict[str, Any] | None, str | None]:
         - First element:
             - Validated dictionary on success
             - None on validation failure
@@ -76,7 +76,7 @@ def validate_and_parse_json_request(request: Request) -> Tuple[Optional[Dict[str
         return None, f"Invalid request payload: expected object, got {type(payload).__name__}"
 
     try:
-        validated_request = CreateDatasetReq(**payload)
+        validated_request = validator(**payload)
     except ValidationError as e:
         return None, format_validation_error_message(e)
 
@@ -173,7 +173,7 @@ class RaptorConfig(Base):
 
 class GraphragConfig(Base):
     use_graphrag: bool = Field(default=False)
-    entity_types: List[str] = Field(default_factory=lambda: ["organization", "person", "geo", "event", "category"])
+    entity_types: list[str] = Field(default_factory=lambda: ["organization", "person", "geo", "event", "category"])
     method: GraphragMethodEnum = Field(default=GraphragMethodEnum.light)
     community: bool = Field(default=False)
     resolution: bool = Field(default=False)
@@ -184,26 +184,26 @@ class ParserConfig(Base):
     auto_questions: int = Field(default=0, ge=0, le=10)
     chunk_token_num: int = Field(default=128, ge=1, le=2048)
     delimiter: str = Field(default=r"\n", min_length=1)
-    graphrag: Optional[GraphragConfig] = None
+    graphrag: GraphragConfig | None = None
     html4excel: bool = False
     layout_recognize: str = "DeepDOC"
-    raptor: Optional[RaptorConfig] = None
-    tag_kb_ids: List[str] = Field(default_factory=list)
+    raptor: RaptorConfig | None = None
+    tag_kb_ids: list[str] = Field(default_factory=list)
     topn_tags: int = Field(default=1, ge=1, le=10)
-    filename_embd_weight: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    task_page_size: Optional[int] = Field(default=None, ge=1)
-    pages: Optional[List[List[int]]] = None
+    filename_embd_weight: float | None = Field(default=None, ge=0.0, le=1.0)
+    task_page_size: int | None = Field(default=None, ge=1)
+    pages: list[list[int]] | None = None
 
 
 class CreateDatasetReq(Base):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128), Field(...)]
-    avatar: Optional[str] = Field(default=None, max_length=65535)
-    description: Optional[str] = Field(default=None, max_length=65535)
-    embedding_model: Annotated[Optional[str], StringConstraints(strip_whitespace=True, max_length=255), Field(default=None, serialization_alias="embd_id")]
+    avatar: str | None = Field(default=None, max_length=65535)
+    description: str | None = Field(default=None, max_length=65535)
+    embedding_model: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=255), Field(default=None, serialization_alias="embd_id")]
     permission: Annotated[PermissionEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=16), Field(default=PermissionEnum.me)]
     chunk_method: Annotated[ChunkMethodnEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=32), Field(default=ChunkMethodnEnum.naive, serialization_alias="parser_id")]
     pagerank: int = Field(default=0, ge=0, le=100)
-    parser_config: Optional[ParserConfig] = Field(default=None)
+    parser_config: ParserConfig | None = Field(default=None)
 
     @field_validator("avatar")
     @classmethod
@@ -314,7 +314,7 @@ class CreateDatasetReq(Base):
 
     @field_validator("parser_config", mode="after")
     @classmethod
-    def validate_parser_config_json_length(cls, v: Optional[ParserConfig]) -> Optional[ParserConfig]:
+    def validate_parser_config_json_length(cls, v: ParserConfig | None) -> ParserConfig | None:
         """Validates serialized JSON length constraints for parser configuration.
 
         Implements a three-stage validation workflow:
@@ -323,10 +323,10 @@ class CreateDatasetReq(Base):
         3. Size verification - enforce maximum allowed payload size
 
         Args:
-            v (Optional[ParserConfig]): Raw parser configuration object
+            v (ParserConfig | None): Raw parser configuration object
 
         Returns:
-            Optional[ParserConfig]: Validated configuration object
+            ParserConfig | None: Validated configuration object
 
         Raises:
             ValueError: When serialized JSON exceeds 65,535 characters

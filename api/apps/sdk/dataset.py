@@ -42,7 +42,7 @@ from api.utils.api_utils import (
     valid_parser_config,
     verify_embedding_availability,
 )
-from api.utils.validation_utils import validate_and_parse_json_request
+from api.utils.validation_utils import CreateDatasetReq, validate_and_parse_json_request
 
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
@@ -112,7 +112,7 @@ def create(tenant_id):
     # |----------------|-------------|
     # | embedding_model| embd_id     |
     # | chunk_method   | parser_id   |
-    req, err = validate_and_parse_json_request(request)
+    req, err = validate_and_parse_json_request(request, CreateDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
 

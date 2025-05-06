@@ -22,7 +22,6 @@ from base64 import b64encode
 from functools import wraps
 from hmac import HMAC
 from io import BytesIO
-from typing import Optional, Tuple
 from urllib.parse import quote, urlencode
 from uuid import uuid1
 
@@ -469,7 +468,7 @@ def check_duplicate_ids(ids, id_type="item"):
     return list(set(ids)), duplicate_messages
 
 
-def verify_embedding_availability(embd_id: str, tenant_id: str) -> Tuple[bool, Optional[Response]]:
+def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
     """Verifies availability of an embedding model for a specific tenant.
 
     Implements a four-stage validation process:
@@ -483,7 +482,7 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> Tuple[bool, O
         tenant_id (str): Tenant identifier for access control
 
     Returns:
-        Tuple[bool, Union[dict, None]]:
+        tuple[bool, Response | None]:
         - First element (bool):
             - True: Model is available and authorized
             - False: Validation failed
