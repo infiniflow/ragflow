@@ -30,6 +30,8 @@ This user guide does not intend to cover much of the installation or configurati
 
 ### 1. Deploy Ollama using Docker
 
+Ollama can be [installed from binaries](https://ollama.com/download) or [deployed with Docker](https://hub.docker.com/r/ollama/ollama). Here are the instructions to deploy with Docker:
+
 ```bash
 $ sudo docker run --name ollama -p 11434:11434 ollama/ollama
 > time=2024-12-02T02:20:21.360Z level=INFO source=routes.go:1248 msg="Listening on [::]:11434 (version 0.4.6)"
@@ -56,24 +58,24 @@ $ sudo docker exec ollama ollama pull bge-m3
 > success 
 ```
 
-### 2. Ensure Ollama is accessible
+### 2. Find Ollama URL and ensure it is accessible
 
-- If RAGFlow runs in Docker and Ollama runs on the same host machine, check if Ollama is accessible from inside the RAGFlow container:
+- If RAGFlow runs in Docker, the localhost is mapped within the RAGFlow Docker container as `host.docker.internal`. If Ollama runs on the same host machine, the right URL to use for Ollama would be `http://host.docker.internal:11434/' and you should check that Ollama is accessible from inside the RAGFlow container with:
 ```bash
 $ sudo docker exec -it ragflow-server bash
-$ curl  http://host.docker.internal:11434/
+$ curl http://host.docker.internal:11434/
 > Ollama is running
 ```
 
 - If RAGFlow is launched from source code and Ollama runs on the same host machine as RAGFlow, check if Ollama is accessible from RAGFlow's host machine:
 ```bash
-$ curl  http://localhost:11434/
+$ curl http://localhost:11434/
 > Ollama is running
 ```
 
 - If RAGFlow and Ollama run on different machines, check if Ollama is accessible from RAGFlow's host machine:
 ```bash
-$ curl  http://${IP_OF_OLLAMA_MACHINE}:11434/
+$ curl http://${IP_OF_OLLAMA_MACHINE}:11434/
 > Ollama is running
 ```
 
@@ -89,7 +91,7 @@ In RAGFlow, click on your logo on the top right of the page **>** **Model provid
 In the popup window, complete basic settings for Ollama:
 
 1. Ensure that your model name and type match those been pulled at step 1 (Deploy Ollama using Docker). For example, (`llama3.2` and `chat`) or (`bge-m3` and `embedding`).
-2. In Ollama base URL, as determined by step 2, replace `localhost` with `host.docker.internal`.
+2. In Ollama base URL, put the URL you found in step 2 followed by `/v1`, i.e. `http://host.docker.internal:11434/v1`, `http://localhost:11434/v1` or `http://${IP_OF_OLLAMA_MACHINE}:11434/v1`.
 3. OPTIONAL: Switch on the toggle under **Does it support Vision?** if your model includes an image-to-text model.
 
 
