@@ -36,11 +36,13 @@ from flask import (
     request as flask_request,
 )
 from itsdangerous import URLSafeTimedSerializer
+from peewee import OperationalError
 from werkzeug.http import HTTP_STATUS_CODES
 
 from api import settings
 from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
 from api.db.db_models import APIToken
+from api.db.services.llm_service import LLMService, TenantLLMService
 from api.utils import CustomJSONEncoder, get_uuid, json_dumps
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
@@ -464,3 +466,55 @@ def check_duplicate_ids(ids, id_type="item"):
 
     # Return unique IDs and error messages
     return list(set(ids)), duplicate_messages
+
+
+def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
+    """Verifies availability of an embedding model for a specific tenant.
+
+    Implements a four-stage validation process:
+    1. Model identifier parsing and validation
+    2. System support verification
+    3. Tenant authorization check
+    4. Database operation error handling
+
+    Args:
+        embd_id (str): Unique identifier for the embedding model in format "model_name@factory"
+        tenant_id (str): Tenant identifier for access control
+
+    Returns:
+        tuple[bool, Response | None]:
+        - First element (bool):
+            - True: Model is available and authorized
+            - False: Validation failed
+        - Second element contains:
+            - None on success
+            - Error detail dict on failure
+
+    Raises:
+        ValueError: When model identifier format is invalid
+        OperationalError: When database connection fails (auto-handled)
+
+    Examples:
+        >>> verify_embedding_availability("text-embedding@openai", "tenant_123")
+        (True, None)
+
+        >>> verify_embedding_availability("invalid_model", "tenant_123")
+        (False, {'code': 101, 'message': "Unsupported model: <invalid_model>"})
+    """
+    try:
+        llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(embd_id)
+        if not LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"):
+            return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
+
+        # Tongyi-Qianwen is added to TenantLLM by default, but remains unusable with empty api_key
+        tenant_llms = TenantLLMService.get_my_llms(tenant_id=tenant_id)
+        is_tenant_model = any(llm["llm_name"] == llm_name and llm["llm_factory"] == llm_factory and llm["model_type"] == "embedding" for llm in tenant_llms)
+
+        is_builtin_model = embd_id in settings.BUILTIN_EMBEDDING_MODELS
+        if not (is_builtin_model or is_tenant_model):
+            return False, get_error_argument_result(f"Unauthorized model: <{embd_id}>")
+    except OperationalError as e:
+        logging.exception(e)
+        return False, get_error_data_result(message="Database operation failed")
+
+    return True, None
