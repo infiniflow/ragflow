@@ -16,7 +16,7 @@
 import json
 import logging
 from abc import ABC
-
+import re
 import pandas as pd
 
 from api.db import LLMType
@@ -46,6 +46,7 @@ class RetrievalParam(ComponentParamBase):
         self.empty_response = ""
         self.tavily_api_key = ""
         self.use_kg = False
+        self.refine_multiturn = False
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -59,6 +60,8 @@ class Retrieval(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         query = self.get_input()
         query = str(query["content"][0]) if "content" in query else ""
+        if self._param.refine_multiturn:
+            query = ' '.join(f'USER:{segment.strip()}' for segment in re.findall(r'USER:(.*?)(?=ASSISTANT:|$)', query, re.DOTALL)) if "USER:" in query else query
 
         kb_ids: list[str] = self._param.kb_ids or []
 
