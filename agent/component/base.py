@@ -462,7 +462,11 @@ class ComponentBase(ABC):
     def set_output(self, v):
         setattr(self._param, self._param.output_var_name, v)
 
-    def _fetch_outputs_from(self, sources: list[dict[str, Any]]) -> list[pd.DataFrame]:
+    def _fetch_outputs_from(
+        self,
+        sources: list[dict[str, Any]],
+        latest_msg_only: bool = False,
+    ) -> list[pd.DataFrame]:
         outs = []
         for q in sources:
             if q.get("component_id"):
@@ -477,10 +481,17 @@ class ComponentBase(ABC):
                     continue
 
                 if q["component_id"].lower().find("answer") == 0:
-                    txt = []
-                    for r, c in self._canvas.history[::-1][:self._param.message_history_window_size][::-1]:
-                        txt.append(f"{r.upper()}:{c}")
-                    txt = "\n".join(txt)
+                    txt: str
+
+                    if latest_msg_only:
+                        latest_msg = self._canvas.history[-1][1]
+                        txt = latest_msg
+                    else:
+                        msg_list = []
+                        for r, c in self._canvas.history[::-1][:self._param.message_history_window_size][::-1]:
+                            msg_list.append(f"{r.upper()}:{c}")
+                        txt = "\n".join(msg_list)
+
                     outs.append(pd.DataFrame([{"content": txt}]))
                     continue
 
@@ -489,7 +500,10 @@ class ComponentBase(ABC):
                 outs.append(pd.DataFrame([{"content": q["value"]}]))
         return outs
 
-    def get_input(self):
+    def get_input(
+        self,
+        latest_msg_only: bool = False,
+    ):
         if self._param.debug_inputs:
             return pd.DataFrame([{"content": v["value"]} for v in self._param.debug_inputs if v.get("value")])
 
@@ -502,7 +516,10 @@ class ComponentBase(ABC):
 
         if self._param.query:
             self._param.inputs = []
-            outs = self._fetch_outputs_from(self._param.query)
+            outs = self._fetch_outputs_from(
+                self._param.query,
+                latest_msg_only=latest_msg_only
+            )
 
             for out in outs:
                 records = out.to_dict("records")
