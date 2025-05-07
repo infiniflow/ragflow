@@ -2317,7 +2317,7 @@
         {
             "name": "NovitaAI",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING",
+            "tags": "LLM",
             "status": "1",
             "llm": [
                 {
@@ -2432,12 +2432,6 @@
                     "tags": "LLM,CHAT,64k",
                     "max_tokens": 64000,
                     "model_type": "chat"
-                },
-                {
-                    "llm_name": "baai/bge-m3",
-                    "tags": "TEXT EMBEDDING,8K",
-                    "max_tokens": 8192,
-                    "model_type": "embedding"
                 }
             ]
         },
