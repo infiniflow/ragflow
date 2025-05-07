@@ -303,7 +303,7 @@ class TestUpdateDocumentParserConfig:
                     "chunk_token_num": 128,
                     "layout_recognize": "DeepDOC",
                     "html4excel": False,
-                    "delimiter": "\\n!?;。；！？",
+                    "delimiter": r"\n",
                     "task_page_size": 12,
                     "raptor": {"use_raptor": False},
                 },
@@ -530,7 +530,7 @@ class TestUpdateDocumentParserConfig:
             else:
                 assert res["data"]["docs"][0]["parser_config"] == {
                     "chunk_token_num": 128,
-                    "delimiter": "\\n!?;。；！？",
+                    "delimiter": r"\n",
                     "html4excel": False,
                     "layout_recognize": "DeepDOC",
                     "raptor": {"use_raptor": False},

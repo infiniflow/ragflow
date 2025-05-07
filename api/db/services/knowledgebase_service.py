@@ -271,6 +271,16 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def delete_field_map(cls, id):
+        e, m = cls.get_by_id(id)
+        if not e:
+            raise LookupError(f"knowledgebase({id}) not found.")
+
+        m.parser_config.pop("field_map", None)
+        cls.update_by_id(id, {"parser_config": m.parser_config})
+
+    @classmethod
+    @DB.connection_context()
     def get_field_map(cls, ids):
         # Get field mappings for knowledge bases
         # Args:

@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import * as AvatarPrimitive from '@radix-ui/react-avatar';
 import { random } from 'lodash';
 import { forwardRef } from 'react';
@@ -15,16 +16,24 @@ export const RAGFlowAvatar = forwardRef<
   React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Root> & {
     name?: string;
     avatar?: string;
+    isPerson?: boolean;
   }
->(({ name, avatar, ...props }, ref) => {
+>(({ name, avatar, isPerson = false, className, ...props }, ref) => {
   const index = random(0, 3);
   console.log('🚀 ~ index:', index);
   const value = Colors[index];
   return (
-    <Avatar ref={ref} {...props}>
+    <Avatar
+      ref={ref}
+      {...props}
+      className={cn(className, { 'rounded-md': !isPerson })}
+    >
       <AvatarImage src={avatar} />
       <AvatarFallback
-        className={`bg-gradient-to-b from-[${value.from}] to-[${value.to}]`}
+        className={cn(
+          `bg-gradient-to-b from-[${value.from}] to-[${value.to}]`,
+          { 'rounded-md': !isPerson },
+        )}
       >
         {name?.slice(0, 1)}
       </AvatarFallback>

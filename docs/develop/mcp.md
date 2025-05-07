@@ -1,6 +1,6 @@
 ---
 sidebar_position: 4
-slug: /mcp_server
+slug: /launch_mcp_server
 ---
 
 # Launch RAGFlow MCP server
@@ -9,7 +9,7 @@ Launch an MCP server from source or via Docker.
 
 ---
 
-A RAGFlow Model Context Protocol (MCP) server is designed as an independent component to complement the RAGFlow server. You can start an MCP server either from source code or via Docker. Note that an MCP server must operate alongside a properly functioning RAGFlow server. 
+A RAGFlow Model Context Protocol (MCP) server is designed as an independent component to complement the RAGFlow server. Note that an MCP server must operate alongside a properly functioning RAGFlow server. 
 
 An MCP server can start up in either self-host mode (default) or host mode: 
 
@@ -20,7 +20,20 @@ An MCP server can start up in either self-host mode (default) or host mode:
 
 Once a connection is established, an MCP server communicates with its client in MCP HTTP+SSE (Server-Sent Events) mode, unidirectionally pushing responses from the RAGFlow server to its client in real time.
 
-## Launch an MCP server from source code
+## Prerequisites
+
+1. Ensure RAGFlow is upgraded to v0.18.0 or later.
+2. Have your RAGFlow API key ready. See [Acquire a RAGFlow API key](./acquire_ragflow_api_key.md).
+
+:::tip INFO
+To try out our MCP server without upgrading RAGFlow, community contributor **yiminghub2024** 👏 shares their recommended steps [here]().
+::
+
+## Launch an MCP server 
+
+You can start an MCP server either from source code or via Docker. 
+
+### Launch from source code
 
 1. Ensure that a RAGFlow server v0.18.0+ is properly running.
 2. Launch the MCP server:
@@ -37,40 +50,24 @@ uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0
 
 Where: 
 
-- **`host`**: The MCP server's host address.
-- **`port`**: The MCP server's listening port.
-- **`base_url`**: The address of the running RAGFlow server.
-- **`mode`**: The launch mode.
+- `host`: The MCP server's host address.
+- `port`: The MCP server's listening port.
+- `base_url`**: The address of the running RAGFlow server.
+- `mode`: The launch mode.
   - `self-host`: (default) self-host mode.
   - `host`: host mode.
-- **`api_key`**: Required in self-host mode to authenticate the MCP server with the RAGFlow server.
-
-
-
-An [MCP client example](#example_mcp_client) is provided for testing purposes.
-
-#### Required arguments
-
-- **`host`**: The MCP server's host address.
-- **`port`**: Defines the server's listening port.
-- **`base_url`**: The address of the RAGFlow server that is already running and ready to handle tasks.
-- **`mode`**: The launch mode, only accept `self-host` or `host`.
-- **`api_key`**: Required when `mode` is `self-host` to authenticate the MCP server with the RAGFlow server.
-
-Here are three augments required, the first two,`host` and `port`, are self-explained. The`base_url` is the IP address of a well-functioning RAGFlow server.
+- `api_key`: Required in self-host mode to authenticate the MCP server with the RAGFlow server.
 
 ### Launch from Docker
 
-Building a standalone MCP server image is straightforward and easy, so we just proposed a way to launch it with RAGFlow server here.
-
 #### 1. Enable MCP server
 
-MCP server is disable by default, as it is designed as an optional, complementary component of the RAGFlow server. To enable MCP server, 
+The MCP server is designed as an optional, component that complements the RAGFlow server and is disable by default. To enable MCP server:
 
 1. Navigate to `docker/docker-compose.yml`.
 2. Uncomment the `services.ragflow.command` section as shown below:
 
-  ```yaml
+```yaml {6-13}
   services:
     ragflow:
       ...
@@ -82,15 +79,28 @@ MCP server is disable by default, as it is designed as an optional, complementar
         - --mcp-port=9382
         - --mcp-base-url=http://127.0.0.1:9380
         - --mcp-script-path=/ragflow/mcp/server/server.py
-        - --mcp-mode=self-host # either `self-host` or `host`
-        - --mcp-host-api-key="ragflow-xxxxxxx" # required only when `mode` is set to `self-host`
-  ```
+        - --mcp-mode=self-host
+        - --mcp-host-api-key=ragflow-xxxxxxx
+```
 
-#### 2. Launch a RAGFlow server along with an MCP server
+Where: 
+
+- `mcp-host`: The MCP server's host address.
+- `mcp-port`: The MCP server's listening port.
+- `mcp-base_url`: The address of the running RAGFlow server.
+- `mcp-script-path`: The file path to the MCP server’s main script.
+- `mcp-mode`: The launch mode.
+  - `self-host`: (default) self-host mode.
+  - `host`: host mode.
+- `mcp-host-api_key`: Required in self-host mode to authenticate the MCP server with the RAGFlow server.
+
+#### 2. Launch a RAGFlow server alongside an MCP server
 
 Run `docker compose -f docker-compose.yml` to launch the RAGFlow server together with the MCP server.
 
-  ```bash
+*The following ASCII art confirms a successful launch:*
+
+```bash
   ragflow-server  | Starting MCP Server on 0.0.0.0:9382 with base URL http://127.0.0.1:9380...
   ragflow-server  | Starting 1 task executor(s) on host 'dd0b5e07e76f'...
   ragflow-server  | 2025-04-18 15:41:18,816 INFO     27 ragflow_server log path: /ragflow/logs/ragflow_server.log, log levels: {'peewee': 'WARNING', 'pdfminer': 'WARNING', 'root': 'INFO'}
@@ -137,71 +147,56 @@ Run `docker compose -f docker-compose.yml` to launch the RAGFlow server together
   ragflow-server  | 2025-04-18 15:41:34,501 INFO     32 TaskExecutor: RAGFlow version: v0.18.0-285-gb2c299fa full
   ragflow-server  | 2025-04-18 15:41:34,501 INFO     32 Use Elasticsearch http://es01:9200 as the doc engine.
   ...
-  ```
-
-## Testing and usage
-
-Typically, there are various ways to utilize an MCP server. You can either integrate it with an LLM or use it as a standalone tool.
-
-### Example MCP client
-
-```python
-#
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-#
-
-
-from mcp.client.session import ClientSession
-from mcp.client.sse import sse_client
-
-
-async def main():
-    try:
-        # To access RAGFlow server in `host` mode, you need to attach `api_key` for each request to indicate identification.
-        # async with sse_client("http://localhost:9382/sse", headers={"api_key": "ragflow-IyMGI1ZDhjMTA2ZTExZjBiYTMyMGQ4Zm"}) as streams:
-        async with sse_client("http://localhost:9382/sse") as streams:
-            async with ClientSession(
-                streams[0],
-                streams[1],
-            ) as session:
-                await session.initialize()
-                tools = await session.list_tools()
-                print(f"{tools.tools=}")
-                response = await session.call_tool(name="ragflow_retrieval", arguments={"dataset_ids": ["ce3bb17cf27a11efa69751e139332ced"], "document_ids": [], "question": "How to install neovim?"})
-                print(f"Tool response: {response.model_dump()}")
-
-    except Exception as e:
-        print(e)
-
-
-if __name__ == "__main__":
-    from anyio import run
-
-    run(main)
 ```
+
+#### Launch an MCP server without upgrading RAGFlow
+
+:::tip KUDOS-TO
+This section is contributed by our community contributor **yiminghub2024**. 👏
+:::
+
+1. Prepare all MCP-specific files and directories.  
+   i. Copy the [mcp/](https://github.com/infiniflow/ragflow/tree/main/mcp) directory to your local working directory.  
+   ii. Copy [docker/docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml) locally.  
+   iii. Copy [docker/entrypoint.sh](https://github.com/infiniflow/ragflow/blob/main/docker/entrypoint.sh) locally.  
+   iv. Install required dependencies using `uv`:  
+       - Run `uv add mcp` or
+       - Copy pyproject.toml and run `uv sync --python 3.10 --all-extras`.
+2. Edit **docker-compose.yml** to enable MCP (disable by default).
+3. Launch the MCP server:
+
+```bash
+docker compose -f docker-compose.yml up -d`
+```
+
+### Check MCP server status
+
+Run the following to check the logs the RAGFlow server and the MCP server:
+
+```bash
+docker logs ragflow-server
+```
+
+## MCP client example
+
+We provide a *prototype* MCP client example for testing [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).
+
+:::danger IMPORTANT
+If your MCP server is running in host mode, include your acquired API key in your client's `headers` as shown below:
+```python
+async with sse_client("http://localhost:9382/sse", headers={"api_key": "YOUR_KEY_HERE"}) as streams:
+    # Rest of your code...
+```
+:::
 
 ## API
 
-The MCP server currently offers a specialized tool to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
+The MCP server currently offers an API to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
 
 - **retrieve**: Fetches relevant chunks from specified `dataset_ids` and optional `document_ids` using the RAGFlow retrieve interface, based on a given question. Details of all available datasets, namely, `id` and `description`, are provided within the tool description for each individual dataset.
 
 ## Security considerations
 
-As MCP technology is still at early stage and no official best practices for authentication or authorization have been established, RAGFlow currently uses `api_key` to validate identity for the operations described earlier. However, in public environments, this makeshift solution could expose your MCP server to potential network attacks. Therefore, when running a local SSE server, it is recommended to bind only to localhost (`127.0.0.1`) rather than to all interfaces (`0.0.0.0`). 
+As MCP technology is still at early stage and no official best practices for authentication or authorization have been established, RAGFlow currently uses [API key](./acquire_ragflow_api_key.md) to validate identity for the operations described earlier. However, in public environments, this makeshift solution could expose your MCP server to potential network attacks. Therefore, when running a local SSE server, it is recommended to bind only to localhost (`127.0.0.1`) rather than to all interfaces (`0.0.0.0`). 
 
 For further guidance, see the [official MCP documentation](https://modelcontextprotocol.io/docs/concepts/transports#security-considerations).
-
- 
