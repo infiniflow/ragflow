@@ -153,6 +153,25 @@ ragflow-server  | 2025-04-18 15:41:34,501 INFO     32 Use Elasticsearch http://e
 
 You are ready to brew🍺!
 
+#### Getting API Keys for Host Mode
+
+When running the MCP server in `host` mode (by setting `--mcp-mode=host` in the configuration), each client needs to provide their own API key in requests. This API key is **different** from the `--mcp-host-api-key` specified in the server configuration.
+
+To get a valid API key for use in your client scripts (like `test_mcp.py`):
+
+1. Access the RAGFlow UI in your browser (typically `http://localhost:9380`)
+2. Log in to your account
+3. Click on your avatar/profile in the top-right corner
+4. Select **API** from the dropdown menu
+5. On the API page, generate a new API key or copy an existing one
+6. Use this key in your client script as follows:
+
+```python
+# Client script example (test_mcp.py)
+async with sse_client("http://localhost:9382/sse", headers={"api_key": "YOUR_KEY_HERE"}) as streams:
+    # Rest of your code...
+```
+
 ## Testing and Usage
 
 Typically, there are various ways to utilize an MCP server. You can integrate it with LLMs or use it as a standalone tool. You find the way.
