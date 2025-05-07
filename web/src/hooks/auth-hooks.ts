@@ -1,4 +1,5 @@
 import authorizationUtil from '@/utils/authorization-util';
+import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'umi';
@@ -11,6 +12,7 @@ export const useLoginWithGithub = () => {
     [currentQueryParameters],
   );
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   if (error) {
     message.error(error);
@@ -26,6 +28,7 @@ export const useLoginWithGithub = () => {
     authorizationUtil.setAuthorization(auth);
     newQueryParameters.delete('auth');
     setSearchParams(newQueryParameters);
+    queryClient.invalidateQueries({ queryKey: ['tenantInfo'] });
   }
   return auth;
 };
