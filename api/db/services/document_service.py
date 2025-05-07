@@ -360,6 +360,15 @@ class DocumentService(CommonService):
         if not doc_id:
             return
         return doc_id[0]["id"]
+    
+    @classmethod
+    @DB.connection_context()
+    def get_doc_ids_by_doc_names(cls, doc_names):
+        if not doc_names:
+            return []
+
+        query = cls.model.select(cls.model.id).where(cls.model.name.in_(doc_names))
+        return list(query.scalars().iterator())
 
     @classmethod
     @DB.connection_context()
