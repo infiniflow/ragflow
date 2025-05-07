@@ -6,7 +6,7 @@ import TopNItem from '@/components/top-n-item';
 import { UseKnowledgeGraphItem } from '@/components/use-knowledge-graph-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import type { FormProps } from 'antd';
-import { Form, Input } from 'antd';
+import { Form, Input, Switch } from 'antd';
 import { IOperatorForm } from '../../interface';
 import DynamicInputVariable from '../components/dynamic-input-variable';
 
@@ -42,6 +42,14 @@ const RetrievalForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       <TopNItem></TopNItem>
       <Rerank></Rerank>
       <TavilyItem name={'tavily_api_key'}></TavilyItem>
+      <Form.Item
+        label={t('useLatestMessageOnly')}
+        tooltip={t('useLatestMessageOnlyTip')}
+        name="use_latest_msg_only"
+        initialValue={false}
+      >
+        <Switch></Switch>
+      </Form.Item>
       <UseKnowledgeGraphItem filedName={'use_kg'}></UseKnowledgeGraphItem>
       <KnowledgeBaseItem
         tooltipText={t('knowledgeBasesTip')}
