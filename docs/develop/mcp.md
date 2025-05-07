@@ -9,7 +9,7 @@ Launch an MCP server from source or via Docker.
 
 ---
 
-A RAGFlow Model Context Protocol (MCP) server functions as an independent component designed to complement the RAGFlow server. You can start an MCP server either from source code or via Docker. Note that an MCP server must work in tandem with a properly functioning RAGFlow server . 
+A RAGFlow Model Context Protocol (MCP) server is designed as an independent component to complement the RAGFlow server. You can start an MCP server either from source code or via Docker. Note that an MCP server must operate alongside a properly functioning RAGFlow server. 
 
 An MCP server can start up in either self-host mode (default) or host mode: 
 
@@ -27,10 +27,12 @@ Once a connection is established, an MCP server communicates with its client in 
 
 
 ```bash
-# Launch the MCP server to work in self-host mode
+# Launch the MCP server to work in self-host mode, run either of the following
 uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --api_key=ragflow-xxxxx
+# uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 mode=self-host --api_key=ragflow-xxxxx
+
 # To launch the MCP server to work in host mode, run the following instead:
-uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 mode=host
+# uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 mode=host
 ```
 
 Where: 
