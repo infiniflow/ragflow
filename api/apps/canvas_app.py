@@ -48,9 +48,12 @@ def canvas_list():
         filters['is_virtual'] = query_params['is_virtual']
     if 'id' in query_params:
         filters['id'] = query_params['id']
-    return get_json_result(data=sorted([c.to_dict() for c in \
-                                 UserCanvasService.query(user_id=current_user.id,**filters)], key=lambda x: x["update_time"]*-1)
-                           )
+
+    permitted_canvas_ids = UserCanvasService.get_permissions(current_user.id)
+
+    results = [c for c in UserCanvasService.query(user_id=current_user.id, **filters) if c.id in permitted_canvas_ids]
+
+    return get_json_result(data=sorted([c.to_dict() for c in results], key=lambda x: x["update_time"]*-1))
 
 
 @manager.route('/rm', methods=['POST'])  # noqa: F821
@@ -392,7 +395,7 @@ def get_by_catalog():
 
 @manager.route('/get_new_catalog', methods=['GET'])  # noqa: F821
 @login_required
-def get_by_catalog():
+def get_new_catalog():
     
     return get_json_result(''.join(random.choice("123456789abcdefghijklmnopqrstuvwxyz") for i in range(16)))
 

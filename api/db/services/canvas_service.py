@@ -72,6 +72,11 @@ class UserCanvasService(CommonService):
         UserCanvasPermission.bulk_create(permissions)
 
         return len(permissions)
+    
+    @classmethod
+    @DB.connection_context()
+    def get_permissions(cls, user_id):
+        return  [perm.user_canvas_id for perm in UserCanvasPermission.query(user_id=user_id)]
 
     @classmethod
     @DB.connection_context()
