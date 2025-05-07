@@ -17,6 +17,10 @@ es:
   hosts: 'http://${ES_HOST:-es01}:9200'
   username: '${ES_USER:-elastic}'
   password: '${ELASTIC_PASSWORD:-infini_rag_flow}'
+os:
+  hosts: 'http://${OS_HOST:-opensearch01}:9201'
+  username: '${OS_USER:-admin}'
+  password: '${OPENSEARCHH_PASSWORD:-infini_rag_flow_OS_01}'
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   db_name: 'default_db'
@@ -81,6 +85,13 @@ redis:
 #     app_access_token_url: https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal
 #     user_access_token_url: https://open.feishu.cn/open-apis/authen/v1/oidc/access_token
 #     grant_type: 'authorization_code'
+#   custom_channel:
+#     type: oidc
+#     issuer: https://provider.com/v1/oidc
+#     client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
+#     client_secret: xxxxxxxxxxxxxxxxxxxxxxxx
+#     scope: "openid email profile"
+#     redirect_uri: https://your-app.com/oauth/callback/custom_channel
 # authentication:
 #   client:
 #     switch: false

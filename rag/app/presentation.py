@@ -36,11 +36,14 @@ class Ppt(PptParser):
         imgs = []
         with slides.Presentation(BytesIO(fnm)) as presentation:
             for i, slide in enumerate(presentation.slides[from_page: to_page]):
-                buffered = BytesIO()
-                slide.get_thumbnail(
-                    0.5, 0.5).save(
-                    buffered, drawing.imaging.ImageFormat.jpeg)
-                imgs.append(Image.open(buffered))
+                try:
+                    buffered = BytesIO()
+                    slide.get_thumbnail(
+                        0.5, 0.5).save(
+                        buffered, drawing.imaging.ImageFormat.jpeg)
+                    imgs.append(Image.open(buffered))
+                except RuntimeError as e:
+                    raise RuntimeError(f'ppt parse error at page {i+1}, original error: {str(e)}') from e
         assert len(imgs) == len(
             txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
         callback(0.9, "Image extraction finished")

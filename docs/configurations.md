@@ -99,8 +99,8 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:v0.17.2-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.17.2`: The RAGFlow Docker image with embedding models including:
+  - `infiniflow/ragflow:v0.18.0-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.18.0`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
       - `maidalun1020/bce-embedding-base_v1`
@@ -132,6 +132,12 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `MACOS`  
   Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
 
+### User registration
+
+- `REGISTER_ENABLED`
+  - `1`: (Default) Enable user registration.
+  - `0`: Disable user registration.
+
 ## Service configuration
 
 [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
@@ -161,6 +167,20 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
 
 - `github`: The GitHub authentication settings for your application. Visit the [GitHub Developer Settings](https://github.com/settings/developers) page to obtain your client_id and secret_key.
+
+#### OAuth/OIDC
+
+RAGFlow supports OAuth/OIDC authentication through the following routes:
+
+- `/login/<channel>`: Initiates the OAuth flow for the specified channel
+- `/oauth/callback/<channel>`: Handles the OAuth callback after successful authentication
+
+The callback URL should be configured in your OAuth provider as:
+```
+https://your-app.com/oauth/callback/<channel>
+```
+
+For detailed instructions on configuring **service_conf.yaml.template**, please refer to [Usage](../api/apps/auth/README.md#usage).
 
 ### `user_default_llm`  
 

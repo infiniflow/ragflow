@@ -56,7 +56,7 @@ def perform_variable_replacements(
     def replace_all(input: str) -> str:
         result = input
         for k, v in variables.items():
-            result = result.replace(f"{{{k}}}", v)
+            result = result.replace(f"{{{k}}}", str(v))
         return result
 
     result = replace_all(result)
@@ -406,32 +406,33 @@ async def get_graph_doc_ids(tenant_id, kb_id) -> list[str]:
     return doc_ids
 
 
-async def get_graph(tenant_id, kb_id):
+async def get_graph(tenant_id, kb_id, exclude_rebuild=None):
     conds = {
-        "fields": ["content_with_weight", "source_id"],
-        "removed_kwd": "N",
+        "fields": ["content_with_weight", "removed_kwd", "source_id"],
         "size": 1,
         "knowledge_graph_kwd": ["graph"]
     }
     res = await trio.to_thread.run_sync(lambda: settings.retrievaler.search(conds, search.index_name(tenant_id), [kb_id]))
-    if res.total == 0:
-        return None
-    for id in res.ids:
-        try:
-            g = json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]), edges="edges")
-            if "source_id" not in g.graph:
-                g.graph["source_id"] = res.field[id]["source_id"]
-            return g
-        except Exception:
-            continue
-    result = await rebuild_graph(tenant_id, kb_id)
+    if not res.total == 0:
+        for id in res.ids:
+            try:
+                if res.field[id]["removed_kwd"] == "N":
+                    g = json_graph.node_link_graph(json.loads(res.field[id]["content_with_weight"]), edges="edges")
+                    if "source_id" not in g.graph:
+                        g.graph["source_id"] = res.field[id]["source_id"]
+                else:
+                    g = await rebuild_graph(tenant_id, kb_id, exclude_rebuild)
+                return g
+            except Exception:
+                continue
+    result = None
     return result
 
 
 async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, change: GraphChange, callback):
     start = trio.current_time()
 
-    await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph"]}, search.index_name(tenant_id), kb_id))
+    await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph"]}, search.index_name(tenant_id), kb_id))
 
     if change.removed_nodes:
         await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["entity"], "entity_kwd": sorted(change.removed_nodes)}, search.index_name(tenant_id), kb_id))
@@ -439,7 +440,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     if change.removed_edges:
         async with trio.open_nursery() as nursery:
             for from_node, to_node in change.removed_edges:
-                 nursery.start_soon(lambda: trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node}, search.index_name(tenant_id), kb_id)))
+                 nursery.start_soon(lambda from_node=from_node, to_node=to_node: trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node}, search.index_name(tenant_id), kb_id)))
     now = trio.current_time()
     if callback:
         callback(msg=f"set_graph removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges from index in {now - start:.2f}s.")
@@ -454,16 +455,33 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         "available_int": 0,
         "removed_kwd": "N"
     }]
+    
+    # generate updated subgraphs
+    for source in graph.graph["source_id"]:
+        subgraph = graph.subgraph([n for n in graph.nodes if source in graph.nodes[n]["source_id"]]).copy()
+        subgraph.graph["source_id"] = [source]
+        for n in subgraph.nodes:
+            subgraph.nodes[n]["source_id"] = [source]
+        chunks.append({
+            "id": get_uuid(),
+            "content_with_weight": json.dumps(nx.node_link_data(subgraph, edges="edges"), ensure_ascii=False),
+            "knowledge_graph_kwd": "subgraph",
+            "kb_id": kb_id,
+            "source_id": [source],
+            "available_int": 0,
+            "removed_kwd": "N"
+        })
+    
     async with trio.open_nursery() as nursery:
         for node in change.added_updated_nodes:
             node_attrs = graph.nodes[node]
-            nursery.start_soon(lambda: graph_node_to_chunk(kb_id, embd_mdl, node, node_attrs, chunks))
+            nursery.start_soon(graph_node_to_chunk, kb_id, embd_mdl, node, node_attrs, chunks)
         for from_node, to_node in change.added_updated_edges:
             edge_attrs = graph.get_edge_data(from_node, to_node)
             if not edge_attrs:
                 # added_updated_edges could record a non-existing edge if both from_node and to_node participate in nodes merging.
                 continue
-            nursery.start_soon(lambda: graph_edge_to_chunk(kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks))
+            nursery.start_soon(graph_edge_to_chunk, kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks)
     now = trio.current_time()
     if callback:
         callback(msg=f"set_graph converted graph change to {len(chunks)} chunks in {now - start:.2f}s.")
@@ -554,48 +572,45 @@ def flat_uniq_list(arr, key):
     return list(set(res))
 
 
-async def rebuild_graph(tenant_id, kb_id):
+async def rebuild_graph(tenant_id, kb_id, exclude_rebuild=None):
     graph = nx.Graph()
-    src_ids = set()
-    flds = ["entity_kwd", "from_entity_kwd", "to_entity_kwd", "knowledge_graph_kwd", "content_with_weight", "source_id"]
+    flds = ["knowledge_graph_kwd", "content_with_weight", "source_id"]
     bs = 256
     for i in range(0, 1024*bs, bs):
         es_res = await trio.to_thread.run_sync(lambda: settings.docStoreConn.search(flds, [],
-                                 {"kb_id": kb_id, "knowledge_graph_kwd": ["entity"]},
+                                 {"kb_id": kb_id, "knowledge_graph_kwd": ["subgraph"]},
                                  [],
                                  OrderByExpr(),
                                  i, bs, search.index_name(tenant_id), [kb_id]
                                  ))
-        tot = settings.docStoreConn.getTotal(es_res)
-        if tot == 0:
+        # tot = settings.docStoreConn.getTotal(es_res)
+        es_res = settings.docStoreConn.getFields(es_res, flds)
+
+        if len(es_res) == 0:
             break
 
-        es_res = settings.docStoreConn.getFields(es_res, flds)
         for id, d in es_res.items():
-            assert d["knowledge_graph_kwd"] == "relation"
-            src_ids.update(d.get("source_id", []))
-            attrs = json.load(d["content_with_weight"])
-            graph.add_node(d["entity_kwd"], **attrs)
+            assert d["knowledge_graph_kwd"] == "subgraph"
+            if isinstance(exclude_rebuild, list):
+                if sum([n in d["source_id"] for n in exclude_rebuild]):
+                    continue
+            elif exclude_rebuild in d["source_id"]:
+                continue
+            
+            next_graph = json_graph.node_link_graph(json.loads(d["content_with_weight"]), edges="edges")
+            merged_graph = nx.compose(graph, next_graph)
+            merged_source = {
+                n: graph.nodes[n]["source_id"] + next_graph.nodes[n]["source_id"]
+                for n in graph.nodes & next_graph.nodes
+            }
+            nx.set_node_attributes(merged_graph, merged_source, "source_id")
+            if "source_id" in graph.graph:
+                merged_graph.graph["source_id"] = graph.graph["source_id"] + next_graph.graph["source_id"]
+            else:
+                merged_graph.graph["source_id"] = next_graph.graph["source_id"]
+            graph = merged_graph
 
-    for i in range(0, 1024*bs, bs):
-        es_res = await trio.to_thread.run_sync(lambda: settings.docStoreConn.search(flds, [],
-                                 {"kb_id": kb_id, "knowledge_graph_kwd": ["relation"]},
-                                 [],
-                                 OrderByExpr(),
-                                 i, bs, search.index_name(tenant_id), [kb_id]
-                                 ))
-        tot = settings.docStoreConn.getTotal(es_res)
-        if tot == 0:
-            return None
-
-        es_res = settings.docStoreConn.getFields(es_res, flds)
-        for id, d in es_res.items():
-            assert d["knowledge_graph_kwd"] == "relation"
-            src_ids.update(d.get("source_id", []))
-            if graph.has_node(d["from_entity_kwd"]) and graph.has_node(d["to_entity_kwd"]):
-                attrs = json.load(d["content_with_weight"])
-                graph.add_edge(d["from_entity_kwd"], d["to_entity_kwd"], **attrs)
-
-    src_ids = sorted(src_ids)
-    graph.graph["source_id"] = src_ids
+    if len(graph.nodes) == 0:
+        return None
+    graph.graph["source_id"] = sorted(graph.graph["source_id"])
     return graph

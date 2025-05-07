@@ -36,11 +36,13 @@ from flask import (
     request as flask_request,
 )
 from itsdangerous import URLSafeTimedSerializer
+from peewee import OperationalError
 from werkzeug.http import HTTP_STATUS_CODES
 
 from api import settings
 from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
 from api.db.db_models import APIToken
+from api.db.services.llm_service import LLMService, TenantLLMService
 from api.utils import CustomJSONEncoder, get_uuid, json_dumps
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
@@ -322,9 +324,13 @@ def get_error_data_result(
     return jsonify(response)
 
 
-def generate_confirmation_token(tenent_id):
-    serializer = URLSafeTimedSerializer(tenent_id)
-    return "ragflow-" + serializer.dumps(get_uuid(), salt=tenent_id)[2:34]
+def get_error_argument_result(message="Invalid arguments"):
+    return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=message)
+
+
+def generate_confirmation_token(tenant_id):
+    serializer = URLSafeTimedSerializer(tenant_id)
+    return "ragflow-" + serializer.dumps(get_uuid(), salt=tenant_id)[2:34]
 
 
 def valid(permission, valid_permission, chunk_method, valid_chunk_method):
@@ -349,7 +355,7 @@ def get_parser_config(chunk_method, parser_config):
     if not chunk_method:
         chunk_method = "naive"
     key_mapping = {
-        "naive": {"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}},
+        "naive": {"chunk_token_num": 128, "delimiter": r"\n", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}},
         "qa": {"raptor": {"use_raptor": False}},
         "tag": None,
         "resume": None,
@@ -360,7 +366,7 @@ def get_parser_config(chunk_method, parser_config):
         "laws": {"raptor": {"use_raptor": False}},
         "presentation": {"raptor": {"use_raptor": False}},
         "one": None,
-        "knowledge_graph": {"chunk_token_num": 8192, "delimiter": "\\n!?;。；！？", "entity_types": ["organization", "person", "location", "event", "time"]},
+        "knowledge_graph": {"chunk_token_num": 8192, "delimiter": r"\n", "entity_types": ["organization", "person", "location", "event", "time"]},
         "email": None,
         "picture": None,
     }
@@ -368,46 +374,34 @@ def get_parser_config(chunk_method, parser_config):
     return parser_config
 
 
-def get_data_openai(id=None, 
-                    created=None, 
-                    model=None, 
-                    prompt_tokens= 0, 
-                    completion_tokens=0, 
-                    content = None, 
-                    finish_reason= None,
-                    object="chat.completion",
-                    param=None,
+def get_data_openai(
+    id=None,
+    created=None,
+    model=None,
+    prompt_tokens=0,
+    completion_tokens=0,
+    content=None,
+    finish_reason=None,
+    object="chat.completion",
+    param=None,
 ):
-   
-    total_tokens= prompt_tokens + completion_tokens
+    total_tokens = prompt_tokens + completion_tokens
     return {
-        "id":f"{id}",
+        "id": f"{id}",
         "object": object,
         "created": int(time.time()) if created else None,
         "model": model,
-        "param":param,
+        "param": param,
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
-            "completion_tokens_details": {
-                "reasoning_tokens": 0,
-                "accepted_prediction_tokens": 0,
-                "rejected_prediction_tokens": 0
-            }
+            "completion_tokens_details": {"reasoning_tokens": 0, "accepted_prediction_tokens": 0, "rejected_prediction_tokens": 0},
         },
-        "choices": [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": content
-                },
-                "logprobs": None,
-                "finish_reason": finish_reason,
-                "index": 0
-            }
-        ]
-    } 
+        "choices": [{"message": {"role": "assistant", "content": content}, "logprobs": None, "finish_reason": finish_reason, "index": 0}],
+    }
+
+
 def valid_parser_config(parser_config):
     if not parser_config:
         return
@@ -472,3 +466,55 @@ def check_duplicate_ids(ids, id_type="item"):
 
     # Return unique IDs and error messages
     return list(set(ids)), duplicate_messages
+
+
+def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
+    """Verifies availability of an embedding model for a specific tenant.
+
+    Implements a four-stage validation process:
+    1. Model identifier parsing and validation
+    2. System support verification
+    3. Tenant authorization check
+    4. Database operation error handling
+
+    Args:
+        embd_id (str): Unique identifier for the embedding model in format "model_name@factory"
+        tenant_id (str): Tenant identifier for access control
+
+    Returns:
+        tuple[bool, Response | None]:
+        - First element (bool):
+            - True: Model is available and authorized
+            - False: Validation failed
+        - Second element contains:
+            - None on success
+            - Error detail dict on failure
+
+    Raises:
+        ValueError: When model identifier format is invalid
+        OperationalError: When database connection fails (auto-handled)
+
+    Examples:
+        >>> verify_embedding_availability("text-embedding@openai", "tenant_123")
+        (True, None)
+
+        >>> verify_embedding_availability("invalid_model", "tenant_123")
+        (False, {'code': 101, 'message': "Unsupported model: <invalid_model>"})
+    """
+    try:
+        llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(embd_id)
+        if not LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"):
+            return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
+
+        # Tongyi-Qianwen is added to TenantLLM by default, but remains unusable with empty api_key
+        tenant_llms = TenantLLMService.get_my_llms(tenant_id=tenant_id)
+        is_tenant_model = any(llm["llm_name"] == llm_name and llm["llm_factory"] == llm_factory and llm["model_type"] == "embedding" for llm in tenant_llms)
+
+        is_builtin_model = embd_id in settings.BUILTIN_EMBEDDING_MODELS
+        if not (is_builtin_model or is_tenant_model):
+            return False, get_error_argument_result(f"Unauthorized model: <{embd_id}>")
+    except OperationalError as e:
+        logging.exception(e)
+        return False, get_error_data_result(message="Database operation failed")
+
+    return True, None

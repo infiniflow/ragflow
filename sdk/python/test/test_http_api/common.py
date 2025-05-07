@@ -39,23 +39,23 @@ SESSION_WITH_CHAT_NAME_LIMIT = 255
 
 
 # DATASET MANAGEMENT
-def create_dataset(auth, payload=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=HEADERS, auth=auth, json=payload)
+def create_dataset(auth, payload=None, headers=HEADERS, data=None):
+    res = requests.post(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
 
-def list_datasets(auth, params=None):
-    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=HEADERS, auth=auth, params=params)
+def list_datasets(auth, params=None, headers=HEADERS):
+    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=headers, auth=auth, params=params)
     return res.json()
 
 
-def update_dataset(auth, dataset_id, payload=None):
-    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}", headers=HEADERS, auth=auth, json=payload)
+def update_dataset(auth, dataset_id, payload=None, headers=HEADERS):
+    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}", headers=headers, auth=auth, json=payload)
     return res.json()
 
 
-def delete_datasets(auth, payload=None):
-    res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=HEADERS, auth=auth, json=payload)
+def delete_datasets(auth, payload=None, headers=HEADERS):
+    res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=headers, auth=auth, json=payload)
     return res.json()
 
 
@@ -247,3 +247,11 @@ def delete_session_with_chat_assistants(auth, chat_assistant_id, payload=None):
     url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}".format(chat_id=chat_assistant_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
+
+
+def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
+    session_ids = []
+    for i in range(num):
+        res = create_session_with_chat_assistant(auth, chat_assistant_id, {"name": f"session_with_chat_assistant_{i}"})
+        session_ids.append(res["data"]["id"])
+    return session_ids

@@ -193,6 +193,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
             if n in df.columns:
                 del df[n]
         clmns = df.columns.values
+        if len(clmns) != len(set(clmns)):
+            duplicates = [col for col in clmns if list(clmns).count(col) > 1]
+            raise ValueError(f"Duplicate column names detected: {set(duplicates)}")
         txts = list(copy.deepcopy(clmns))
         py_clmns = [
             PY.get_pinyins(

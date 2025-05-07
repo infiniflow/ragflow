@@ -63,6 +63,12 @@ const CreateAgentModal = ({ visible, hideModal, loading, onOk }: IProps) => {
     return Promise.resolve();
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      handleOk();
+    }
+  };
+
   return (
     <Modal
       title={t('createGraph', { keyPrefix: 'flow' })}

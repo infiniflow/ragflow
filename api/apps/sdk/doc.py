@@ -961,7 +961,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
                 "questions": sres.field[id].get("question_kwd", []),
                 "dataset_id": sres.field[id].get("kb_id", sres.field[id].get("dataset_id")),
                 "image_id": sres.field[id].get("img_id", ""),
-                "available": bool(sres.field[id].get("available_int", 1)),
+                "available": bool(int(sres.field[id].get("available_int", "1"))),
                 "positions": sres.field[id].get("position_int",[]),
             }
             res["chunks"].append(d)
@@ -1407,6 +1407,7 @@ def retrieval_test(tenant_id):
     else:
         highlight = True
     try:
+        tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(message="Dataset not found!")
@@ -1423,7 +1424,7 @@ def retrieval_test(tenant_id):
         ranks = settings.retrievaler.retrieval(
             question,
             embd_mdl,
-            kb.tenant_id,
+            tenant_ids,
             kb_ids,
             page,
             size,

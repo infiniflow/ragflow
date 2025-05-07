@@ -95,11 +95,12 @@ else:
 ```python
 RAGFlow.create_dataset(
     name: str,
-    avatar: str = "",
-    description: str = "",
-    embedding_model: str = "BAAI/bge-large-zh-v1.5",
+    avatar: Optional[str] = None,
+    description: Optional[str] = None,
+    embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
     permission: str = "me", 
     chunk_method: str = "naive",
+    pagerank: int = 0,
     parser_config: DataSet.ParserConfig = None
 ) -> DataSet
 ```
@@ -112,16 +113,16 @@ Creates a dataset.
 
 The unique name of the dataset to create. It must adhere to the following requirements:
 
-- Maximum 65,535 characters.
+- Maximum 128 characters.
 - Case-insensitive.
 
 ##### avatar: `str`
 
-Base64 encoding of the avatar. Defaults to `""`
+Base64 encoding of the avatar. Defaults to `None`
 
 ##### description: `str`
 
-A brief description of the dataset to create. Defaults to `""`.
+A brief description of the dataset to create. Defaults to `None`.
 
 
 ##### permission
@@ -145,32 +146,34 @@ The chunking method of the dataset to create. Available options:
 - `"presentation"`: Presentation
 - `"picture"`: Picture
 - `"one"`: One
-- `"knowledge_graph"`: Knowledge Graph  
-  Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
 - `"email"`: Email
+
+##### pagerank, `int`
+
+The pagerank of the dataset to create. Defaults to `0`.
 
 ##### parser_config
 
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
 - `chunk_method`=`"naive"`:  
-  `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+  `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
 - `chunk_method`=`"qa"`:  
-  `{"raptor": {"user_raptor": False}}`
+  `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"manuel"`:  
-  `{"raptor": {"user_raptor": False}}`
+  `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"table"`:  
   `None`
 - `chunk_method`=`"paper"`:  
-  `{"raptor": {"user_raptor": False}}`
+  `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"book"`:  
-  `{"raptor": {"user_raptor": False}}`
+  `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"laws"`:  
-  `{"raptor": {"user_raptor": False}}`
+  `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"picture"`:  
   `None`
 - `chunk_method`=`"presentation"`:  
-  `{"raptor": {"user_raptor": False}}`
+  `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"one"`:  
   `None`
 - `chunk_method`=`"knowledge-graph"`:  
@@ -398,26 +401,24 @@ A dictionary representing the attributes to update, with the following keys:
   - `"presentation"`: Presentation
   - `"picture"`: Picture
   - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
   - `"email"`: Email
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
   - `"chunk_method"`=`"naive"`:  
-    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
   - `chunk_method`=`"qa"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"manuel"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"table"`:  
     `None`
   - `chunk_method`=`"paper"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"book"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"laws"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"presentation"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"picture"`:  
     `None`
   - `chunk_method`=`"one"`:  
@@ -523,7 +524,7 @@ A `Document` object contains the following attributes:
 - `name`: The document name. Defaults to `""`.
 - `thumbnail`: The thumbnail image of the document. Defaults to `None`.
 - `dataset_id`: The dataset ID associated with the document. Defaults to `None`.
-- `chunk_method` The chunk method name. Defaults to `"naive"`.
+- `chunk_method` The chunking method name. Defaults to `"naive"`.
 - `source_type`: The source type of the document. Defaults to `"local"`.
 - `type`: Type or category of the document. Defaults to `""`. Reserved for future use.
 - `created_by`: `str` The creator of the document. Defaults to `""`.
@@ -543,27 +544,25 @@ A `Document` object contains the following attributes:
 - `status`: `str` Reserved for future use.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
   - `chunk_method`=`"naive"`:  
-    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"user_raptor":False}}`.
+    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
   - `chunk_method`=`"qa"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"manuel"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"table"`:  
     `None`
   - `chunk_method`=`"paper"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"book"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"laws"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"presentation"`:  
-    `{"raptor": {"user_raptor": False}}`
+    `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"picure"`:  
     `None`
   - `chunk_method`=`"one"`:  
     `None`
-  - `chunk_method`=`"knowledge-graph"`:  
-    `{"chunk_token_num":128,"delimiter": "\\n","entity_types":["organization","person","location","event","time"]}`
   - `chunk_method`=`"email"`:  
     `None`
 
@@ -879,7 +878,7 @@ chunk.update({"content":"sdfx..."})
 ### Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,higlight:bool=False) -> list[Chunk]
+RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,highlight:bool=False) -> list[Chunk]
 ```
 
 Retrieves chunks from specified datasets.

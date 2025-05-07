@@ -204,7 +204,7 @@ async def merge_subgraph(
 ):
     start = trio.current_time()
     change = GraphChange()
-    old_graph = await get_graph(tenant_id, kb_id)
+    old_graph = await get_graph(tenant_id, kb_id, subgraph.graph["source_id"])
     if old_graph is not None:
         logging.info("Merge with an exiting graph...................")
         tidy_graph(old_graph, callback)
@@ -277,7 +277,7 @@ async def extract_community(
     for stru, rep in zip(community_structure, community_reports):
         obj = {
             "report": rep,
-            "evidences": "\n".join([f["explanation"] for f in stru["findings"]]),
+            "evidences": "\n".join([f.get("explanation", "") for f in stru["findings"]]),
         }
         chunk = {
             "id": get_uuid(),

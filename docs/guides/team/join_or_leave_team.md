@@ -12,9 +12,8 @@ Accept an invite to join a team, decline an invite, or leave a team.
 Once you join a team, you can do the following:
 
 - Upload documents to the team owner's shared datasets (knowledge bases).
-- Update document configurations in the team owner's shared datasets.
-- Update the default configurations for the team owner's shared datasets.
 - Parse documents in the team owner's shared datasets.
+- Use the team owner's shared Agents.
 
 :::tip NOTE
 You cannot invite users to a team unless you are its owner.
@@ -27,7 +26,11 @@ You cannot invite users to a team unless you are its owner.
 
 ## Accept or decline team invite
 
-Click on your avatar in the top right corner of the page, then select **Team** in the left-hand panel to access the **Team** page.
+1. You will be notified when you receive an invitation to join a team:
+
+![team_notification](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/team_notification.jpg)
+
+2. Click on your avatar in the top right corner of the page, then select **Team** in the left-hand panel to access the **Team** page.
 
 ![team](https://github.com/user-attachments/assets/0eac2503-26bc-4568-b3f2-bcd84069a07a)
 

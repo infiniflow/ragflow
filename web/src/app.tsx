@@ -1,3 +1,5 @@
+import { Toaster as Sonner } from '@/components/ui/sonner';
+import { Toaster } from '@/components/ui/toaster';
 import i18n from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App, ConfigProvider, ConfigProviderProps, theme } from 'antd';
@@ -16,6 +18,7 @@ import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
 import { ReactNode, useEffect, useState } from 'react';
 import { ThemeProvider, useTheme } from './components/theme-provider';
+import { SidebarProvider } from './components/ui/sidebar';
 import { TooltipProvider } from './components/ui/tooltip';
 import storage from './utils/authorization-util';
 
@@ -65,7 +68,11 @@ function Root({ children }: React.PropsWithChildren) {
         }}
         locale={locale}
       >
-        <App>{children}</App>
+        <SidebarProvider>
+          <App>{children}</App>
+        </SidebarProvider>
+        <Sonner position={'top-right'} expand richColors closeButton></Sonner>
+        <Toaster />
       </ConfigProvider>
     </>
   );

@@ -21,7 +21,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.17.2-brightgreen" alt="docker pull infiniflow/ragflow:v0.17.2">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.18.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.18.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -54,12 +54,10 @@
 
 ## 🔥 近期更新
 
+- 2025-03-19 PDF和DOCX中的圖支持用多模態大模型去解析得到描述.
 - 2025-02-28 結合網路搜尋（Tavily），對於任意大模型實現類似 Deep Research 的推理功能.
-- 2025-02-05 更新「SILICONFLOW」的型號清單並新增 Deepseek-R1/DeepSeek-V3 的支援。
 - 2025-01-26 最佳化知識圖譜的擷取與應用，提供了多種配置選擇。
 - 2024-12-18 升級了 DeepDoc 的文檔佈局分析模型。
-- 2024-12-04 支援知識庫的 Pagerank 分數。
-- 2024-11-22 完善了 Agent 中的變數定義和使用。
 - 2024-11-01 對解析後的 chunk 加入關鍵字抽取和相關問題產生以提高回想的準確度。
 - 2024-08-22 支援用 RAG 技術實現從自然語言到 SQL 語句的轉換。
 
@@ -150,7 +148,7 @@
 > 所有 Docker 映像檔都是為 x86 平台建置的。目前，我們不提供 ARM64 平台的 Docker 映像檔。
 > 如果您使用的是 ARM64 平台，請使用 [這份指南](https://ragflow.io/docs/dev/build_docker_image) 來建置適合您系統的 Docker 映像檔。
 
-   > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.17.2-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.17.2-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.2` 來下載 RAGFlow 鏡像的 `v0.17.2` 完整發行版。
+   > 執行以下指令會自動下載 RAGFlow slim Docker 映像 `v0.18.0-slim`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.18.0-slim` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。例如，你可以透過設定 `RAGFLOW_IMAGE=infiniflow/ragflow:v0.18.0` 來下載 RAGFlow 鏡像的 `v0.18.0` 完整發行版。
 
    ```bash
    $ cd ragflow/docker
@@ -163,8 +161,8 @@
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.17.2           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.17.2-slim      | &approx;2       | ❌                    | Stable release           |
+   | v0.18.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.18.0-slim      | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
 
@@ -253,7 +251,7 @@ RAGFlow 預設使用 Elasticsearch 儲存文字和向量資料. 如果要切換�
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+docker build --platform linux/amd64 --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 原始碼編譯 Docker 映像（包含 embedding 模型）
@@ -263,7 +261,7 @@ docker build --build-arg LIGHTEN=1 --build-arg NEED_MIRROR=1 -f Dockerfile -t in
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 以原始碼啟動服務
@@ -271,7 +269,7 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
 1. 安裝 uv。如已安裝，可跳過此步驟：
 
    ```bash
-   pipx install uv
+   pipx install uv pre-commit
    export UV_INDEX=https://mirrors.aliyun.com/pypi/simple
    ```
 
@@ -281,6 +279,8 @@ docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t infiniflow/ragflow:night
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv run download_deps.py
+   pre-commit install
    ```
 
 3. 透過 Docker Compose 啟動依賴的服務（MinIO, Elasticsearch, Redis, and MySQL）：

@@ -71,6 +71,7 @@ export default {
       fileManager: '文件管理',
       flow: 'Agent',
       search: '搜尋',
+      welcome: '歡迎來到',
     },
     knowledgeList: {
       welcome: '歡迎回來',
@@ -104,6 +105,7 @@ export default {
       disabled: '禁用',
       action: '動作',
       parsingStatus: '解析狀態',
+      parsingStatusTip: '文件解析時間取決於多種因素。如果啟用了知識圖譜、RAPTOR、自動問題提取、自動關鍵詞提取等功能，解析時間將會顯著延長。如果解析進度條長時間未更新，請參考這兩條常見問題解答FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
@@ -162,7 +164,7 @@ export default {
       topKTip: `與 Rerank 模型配合使用，用於設定傳給 Rerank 模型的文本塊數量。`,
       delimiter: `文字分段標識符`,
       delimiterTip:
-        '支持多字符作為分隔符，多字符用 `` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建议文本块大小」設定的大小進行拼裝。在设置文本分段標識符之前，請確保您已理解上述文本分段切片機制。',
+        '支持多字符作為分隔符，多字符用兩個反引號 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建议文本块大小」設定的大小進行拼裝。在设置文本分段標識符之前，請確保您已理解上述文本分段切片機制。',
       html4excel: '表格轉HTML',
       html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel97~2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。`,
       autoKeywords: '自動關鍵字',
@@ -196,6 +198,7 @@ export default {
         '該文件與知識圖譜相關聯。刪除後，相關節點和關係資訊將被刪除，但圖不會立即更新。更新圖動作是在解析承載知識圖譜提取任務的新文件的過程中執行的。 ',
       plainText: 'Naive',
       reRankModelWaring: '重排序模型非常耗時。',
+      theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
@@ -330,9 +333,10 @@ export default {
       randomSeedMessage: '隨機種子是必填項',
       promptTip:
         '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
-      maxTokenTip: '用於匯總的最大token數。',
-      thresholdTip: '閾值越大，聚類越少。',
-      maxClusterTip: '最大聚類數。',
+      maxTokenTip: '用於設定每個被總結的文字塊的最大 token 數。',
+      thresholdTip:
+        '在 RAPTOR 中，數據塊會根據它們的語義相似性進行聚類。閾值參數設定了數據塊被分到同一組所需的最小相似度。閾值越高，每個聚類中的數據塊越少；閾值越低，則每個聚類中的數據塊越多。',
+      maxClusterTip: '最多可創建的聚類數。',
       entityTypes: '實體類型',
       pageRank: '頁面排名',
       pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dev/set_page_rank。`,
@@ -399,7 +403,7 @@ export default {
       chat: '聊天',
       newChat: '新建聊天',
       send: '發送',
-      sendPlaceholder: '消息概要助手...',
+      sendPlaceholder: '給助理髮送消息...',
       chatConfiguration: '聊天配置',
       chatConfigurationDescription: '為你的知識庫配置專屬聊天助手！💕',
       assistantName: '助理姓名',
@@ -537,6 +541,7 @@ export default {
       model: '模型提供商',
       modelDescription: '在此設置模型參數和 API KEY。',
       team: '團隊',
+      api: 'API',
       logout: '登出',
       system: '系統',
       username: '使用者名稱',
