@@ -27,7 +27,7 @@ Once a connection is established, an MCP server communicates with its client in 
 
 :::tip INFO
 If you wish to try out our MCP server without upgrading RAGFlow, community contributor **yiminghub2024** 👏 shares their recommended steps [here](#launch-an-mcp-server-without-upgrading-ragflow).
-::
+:::
 
 ## Launch an MCP server 
 
