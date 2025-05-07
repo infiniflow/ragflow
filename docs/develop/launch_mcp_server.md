@@ -26,7 +26,7 @@ Once a connection is established, an MCP server communicates with its client in 
 2. Have your RAGFlow API key ready. See [Acquire a RAGFlow API key](./acquire_ragflow_api_key.md).
 
 :::tip INFO
-To try out our MCP server without upgrading RAGFlow, community contributor **yiminghub2024** 👏 shares their recommended steps [here]().
+If you wish to try out our MCP server without upgrading RAGFlow, community contributor **yiminghub2024** 👏 shares their recommended steps [here](#launch-an-mcp-server-without-upgrading-ragflow).
 ::
 
 ## Launch an MCP server 
