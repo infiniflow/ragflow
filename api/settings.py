@@ -13,22 +13,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import os
 from datetime import date
-from enum import IntEnum, Enum
-import json
+from enum import Enum, IntEnum
+
+import rag.utils
 import rag.utils.es_conn
 import rag.utils.infinity_conn
 import rag.utils.opensearch_coon
-
-import rag.utils
-from rag.nlp import search
-from graphrag import search as kg_search
-from api.utils import get_base_config, decrypt_database_config
 from api.constants import RAG_FLOW_SERVICE_NAME
+from api.utils import decrypt_database_config, get_base_config
 from api.utils.file_utils import get_project_base_directory
+from graphrag import search as kg_search
+from rag.nlp import search
 
-LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
+LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
 
 LLM = None
 LLM_FACTORY = None
@@ -45,7 +45,7 @@ HOST_PORT = None
 SECRET_KEY = None
 FACTORY_LLM_INFOS = None
 
-DATABASE_TYPE = os.getenv("DB_TYPE", 'mysql')
+DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
 DATABASE = decrypt_database_config(name=DATABASE_TYPE)
 
 # authentication
@@ -66,11 +66,13 @@ kg_retrievaler = None
 # user registration switch
 REGISTER_ENABLED = 1
 
+BUILTIN_EMBEDDING_MODELS = ["BAAI/bge-large-zh-v1.5@BAAI", "maidalun1020/bce-embedding-base_v1@Youdao"]
+
 
 def init_settings():
     global LLM, LLM_FACTORY, LLM_BASE_URL, LIGHTEN, DATABASE_TYPE, DATABASE, FACTORY_LLM_INFOS, REGISTER_ENABLED
-    LIGHTEN = int(os.environ.get('LIGHTEN', "0"))
-    DATABASE_TYPE = os.getenv("DB_TYPE", 'mysql')
+    LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
+    DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
     LLM = get_base_config("user_default_llm", {})
     LLM_DEFAULT_MODELS = LLM.get("default_models", {})
@@ -79,8 +81,8 @@ def init_settings():
     try:
         REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
     except Exception:
-        pass  
-    
+        pass
+
     try:
         with open(os.path.join(get_project_base_directory(), "conf", "llm_factories.json"), "r") as f:
             FACTORY_LLM_INFOS = json.load(f)["factory_llm_infos"]
@@ -89,7 +91,7 @@ def init_settings():
 
     global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
     if not LIGHTEN:
-        EMBEDDING_MDL = "BAAI/bge-large-zh-v1.5@BAAI"
+        EMBEDDING_MDL = BUILTIN_EMBEDDING_MODELS[0]
 
     if LLM_DEFAULT_MODELS:
         CHAT_MDL = LLM_DEFAULT_MODELS.get("chat_model", CHAT_MDL)
@@ -103,30 +105,25 @@ def init_settings():
         EMBEDDING_MDL = EMBEDDING_MDL + (f"@{LLM_FACTORY}" if "@" not in EMBEDDING_MDL and EMBEDDING_MDL != "" else "")
         RERANK_MDL = RERANK_MDL + (f"@{LLM_FACTORY}" if "@" not in RERANK_MDL and RERANK_MDL != "" else "")
         ASR_MDL = ASR_MDL + (f"@{LLM_FACTORY}" if "@" not in ASR_MDL and ASR_MDL != "" else "")
-        IMAGE2TEXT_MDL = IMAGE2TEXT_MDL + (
-            f"@{LLM_FACTORY}" if "@" not in IMAGE2TEXT_MDL and IMAGE2TEXT_MDL != "" else "")
+        IMAGE2TEXT_MDL = IMAGE2TEXT_MDL + (f"@{LLM_FACTORY}" if "@" not in IMAGE2TEXT_MDL and IMAGE2TEXT_MDL != "" else "")
 
     global API_KEY, PARSERS, HOST_IP, HOST_PORT, SECRET_KEY
-    API_KEY = LLM.get("api_key", "")
+    API_KEY = LLM.get("api_key")
     PARSERS = LLM.get(
-        "parsers",
-        "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag")
+        "parsers", "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
+    )
 
     HOST_IP = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("host", "127.0.0.1")
     HOST_PORT = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("http_port")
 
-    SECRET_KEY = get_base_config(
-        RAG_FLOW_SERVICE_NAME,
-        {}).get("secret_key", str(date.today()))
+    SECRET_KEY = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("secret_key", str(date.today()))
 
     global AUTHENTICATION_CONF, CLIENT_AUTHENTICATION, HTTP_APP_KEY, GITHUB_OAUTH, FEISHU_OAUTH, OAUTH_CONFIG
     # authentication
     AUTHENTICATION_CONF = get_base_config("authentication", {})
 
     # client
-    CLIENT_AUTHENTICATION = AUTHENTICATION_CONF.get(
-        "client", {}).get(
-        "switch", False)
+    CLIENT_AUTHENTICATION = AUTHENTICATION_CONF.get("client", {}).get("switch", False)
     HTTP_APP_KEY = AUTHENTICATION_CONF.get("client", {}).get("http_app_key")
     GITHUB_OAUTH = get_base_config("oauth", {}).get("github")
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
@@ -134,7 +131,7 @@ def init_settings():
     OAUTH_CONFIG = get_base_config("oauth", {})
 
     global DOC_ENGINE, docStoreConn, retrievaler, kg_retrievaler
-    DOC_ENGINE = os.environ.get('DOC_ENGINE', "elasticsearch")
+    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
     # DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
