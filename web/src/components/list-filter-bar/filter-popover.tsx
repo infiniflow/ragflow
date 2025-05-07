@@ -72,7 +72,7 @@ function CheckboxFormMultiple({
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="space-y-8"
+        className="space-y-8 px-5 py-2.5"
         onReset={() => form.reset()}
       >
         {filters.map((x) => (
@@ -81,9 +81,11 @@ function CheckboxFormMultiple({
             control={form.control}
             name={x.field}
             render={() => (
-              <FormItem>
-                <div className="mb-4">
-                  <FormLabel className="text-base">{x.label}</FormLabel>
+              <FormItem className="space-y-4">
+                <div>
+                  <FormLabel className="text-base text-text-sub-title-invert">
+                    {x.label}
+                  </FormLabel>
                 </div>
                 {x.list.map((item) => (
                   <FormField
@@ -92,10 +94,10 @@ function CheckboxFormMultiple({
                     name={x.field}
                     render={({ field }) => {
                       return (
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between text-text-title text-xs">
                           <FormItem
                             key={item.id}
-                            className="flex flex-row  space-x-3 space-y-0 items-center"
+                            className="flex flex-row  space-x-3 space-y-0 items-center "
                           >
                             <FormControl>
                               <Checkbox
@@ -111,9 +113,7 @@ function CheckboxFormMultiple({
                                 }}
                               />
                             </FormControl>
-                            <FormLabel className="text-lg">
-                              {item.label}
-                            </FormLabel>
+                            <FormLabel>{item.label}</FormLabel>
                           </FormItem>
                           <span className=" text-sm">{item.count}</span>
                         </div>
@@ -126,7 +126,7 @@ function CheckboxFormMultiple({
             )}
           />
         ))}
-        <div className="flex justify-between">
+        <div className="flex justify-end gap-5">
           <Button
             type="button"
             variant={'outline'}
@@ -155,7 +155,7 @@ export function FilterPopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent>
+      <PopoverContent className="p-0">
         <CheckboxFormMultiple
           onChange={onChange}
           value={value}

@@ -31,7 +31,7 @@ export function SideBar() {
           <AvatarFallback className="rounded-lg">CN</AvatarFallback>
         </Avatar>
 
-        <h3 className="text-lg font-semibold mb-2">{data.name}</h3>
+        <h3 className="text-lg font-semibold mb-2 line-clamp-1">{data.name}</h3>
         <div className="text-sm opacity-80">
           {data.doc_num} files | {data.chunk_num} chunks
         </div>

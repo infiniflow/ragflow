@@ -3,45 +3,47 @@ sidebar_position: 4
 slug: /mcp_server
 ---
 
-# RAGFlow MCP server overview
+# Launch RAGFlow MCP server
 
-A RAGFlow Model Context Protocol (MCP) server is designed to operate as an independent, complementary component to the RAGFlow server. It requires a RAGFlow server to function well so that, when a connection is established, the MCP client and the MCP server can communicate with each other in MCP HTTP+SSE mode: the MCP server pushes responses from the RAGFlow server to the client *unidirectionally*.
+Launch an MCP server from source or via Docker.
 
-## Launching the MCP server
+---
 
-Similar to launching the RAGFlow server, the MCP server can be started either from source code or via Docker.
+A RAGFlow Model Context Protocol (MCP) server functions as an independent component designed to complement the RAGFlow server. You can start an MCP server either from source code or via Docker. Note that an MCP server must work in tandem with a properly functioning RAGFlow server . 
 
-### Launch modes
+An MCP server can start up in either self-host mode (default) or host mode: 
 
-The MCP server supports two launch modes: self-host mode (default) and host mode.
+- **Self-host mode**:  
+  When launching an MCP server in self-host mode, you must provide an API key to authenticate the MCP server with the RAGFlow server. In this mode, the MCP server can access *only* the datasets (knowledge bases) of a specified tenant on the RAGFlow server.
+- **Host mode**:  
+  In host mode, each MCP client can access their own knowledge bases on the RAGFlow server. However, each client request must include a valid API key to authenticate the client with the RAGFlow server.
 
-- **Self-host mode**: the default lanch mode
+Once a connection is established, an MCP server communicates with its client in MCP HTTP+SSE (Server-Sent Events) mode, unidirectionally pushing responses from the RAGFlow server to its client in real time.
 
-   - In this mode, the MCP server is launched to access a specific tenant's datasets.
-   - This is the default mode.
-   - The `--api_key` argument is **required** to authenticate the MCP server with the RAGFlow server.
-   - Example:
-     ```bash
-     uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --mode=self-host --api_key=ragflow-xxxxx
-     ```
+## Launch an MCP server from source code
 
-- **Host mode**:
+1. Ensure that a RAGFlow server v0.18.0+ is properly running.
+2. Launch the MCP server:
 
-   - In this mode, the MCP server allows each user to access their own datasets.
-   - To ensure secure access, a valid API key must be included in the request headers to identify each user.
-   - The `--api_key` argument is **not required** during server launch but must be provided in the headers on each client request for user authentication.
-   - Example:
-     ```bash
-     uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --mode=host
-     ```
-
-### Launch from source code
-
-Suppose you are on the project's working directory:
 
 ```bash
+# Launch the MCP server to work in self-host mode
 uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --api_key=ragflow-xxxxx
+# To launch the MCP server to work in host mode, run the following instead:
+uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 mode=host
 ```
+
+Where: 
+
+- **`host`**: The MCP server's host address.
+- **`port`**: The MCP server's listening port.
+- **`base_url`**: The address of the running RAGFlow server.
+- **`mode`**: The launch mode.
+  - `self-host`: (default) self-host mode.
+  - `host`: host mode.
+- **`api_key`**: Required in self-host mode to authenticate the MCP server with the RAGFlow server.
+
+
 
 An [MCP client example](#example_mcp_client) is provided for testing purposes.
 

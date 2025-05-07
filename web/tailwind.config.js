@@ -42,6 +42,15 @@ module.exports = {
         'colors-text-inverse-weak': 'var(--colors-text-inverse-weak)',
         'text-delete-red': 'var(--text-delete-red)',
 
+        'background-badge': 'var(--background-badge)',
+        'text-badge': 'var(--text-badge)',
+        'text-title': 'var(--text-title)',
+        'text-sub-title': 'var(--text-sub-title)',
+        'text-sub-title-invert': 'var(--text-sub-title-invert)',
+        'text-title-invert': 'var(--text-title-invert)',
+        'background-header-bar': 'var(--background-header-bar)',
+        'background-card': 'var(--background-card)',
+
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',

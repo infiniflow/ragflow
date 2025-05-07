@@ -95,11 +95,12 @@ else:
 ```python
 RAGFlow.create_dataset(
     name: str,
-    avatar: str = "",
-    description: str = "",
-    embedding_model: str = "BAAI/bge-large-zh-v1.5",
+    avatar: Optional[str] = None,
+    description: Optional[str] = None,
+    embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
     permission: str = "me", 
     chunk_method: str = "naive",
+    pagerank: int = 0,
     parser_config: DataSet.ParserConfig = None
 ) -> DataSet
 ```
@@ -112,16 +113,16 @@ Creates a dataset.
 
 The unique name of the dataset to create. It must adhere to the following requirements:
 
-- Maximum 65,535 characters.
+- Maximum 128 characters.
 - Case-insensitive.
 
 ##### avatar: `str`
 
-Base64 encoding of the avatar. Defaults to `""`
+Base64 encoding of the avatar. Defaults to `None`
 
 ##### description: `str`
 
-A brief description of the dataset to create. Defaults to `""`.
+A brief description of the dataset to create. Defaults to `None`.
 
 
 ##### permission
@@ -146,6 +147,10 @@ The chunking method of the dataset to create. Available options:
 - `"picture"`: Picture
 - `"one"`: One
 - `"email"`: Email
+
+##### pagerank, `int`
+
+The pagerank of the dataset to create. Defaults to `0`.
 
 ##### parser_config
 
