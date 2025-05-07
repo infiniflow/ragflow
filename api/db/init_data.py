@@ -119,7 +119,7 @@ def init_llm_factory():
             except Exception:
                 pass
 
-    LLMFactoriesService.filter_delete([LLMFactories.name == "Local"])
+    LLMFactoriesService.filter_delete([(LLMFactories.name == "Local") | (LLMFactories.name == "novita.ai")])
     LLMService.filter_delete([LLM.fid == "Local"])
     LLMService.filter_delete([LLM.llm_name == "qwen-vl-max"])
     LLMService.filter_delete([LLM.fid == "Moonshot", LLM.llm_name == "flag-embedding"])
