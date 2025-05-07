@@ -329,24 +329,103 @@ class Markdown(MarkdownParser):
         else:
             with open(filename, "r") as f:
                 txt = f.read()
+
         remainder, tables = self.extract_tables_and_remainder(f'{txt}\n')
-        sections = []
-        tbls = []
+
+        sections = []  
+        tbls = []      
+
         for sec in remainder.split("\n"):
-            if num_tokens_from_string(sec) > 3 * self.chunk_token_num:
-                sections.append((sec[:int(len(sec) / 2)], ""))
-                sections.append((sec[int(len(sec) / 2):], ""))
+            tokens = num_tokens_from_string(sec)
+
+            if tokens > 3 * self.chunk_token_num:
+                sentences = re.split(r'(?<=[.!?])\s+', sec)
+                current_chunk = ""
+                current_tokens = 0
+
+                for sentence in sentences:
+                    sentence_tokens = num_tokens_from_string(sentence)
+
+                    if sentence_tokens > 2 * self.chunk_token_num:
+                        parts = re.split(r'(?<=[,;:])\s+', sentence)
+                        for part in parts:
+                            part_tokens = num_tokens_from_string(part)
+                            if current_tokens + part_tokens > 3 * self.chunk_token_num:
+                                if current_chunk:
+                                    sections.append((current_chunk, ""))
+                                current_chunk = part
+                                current_tokens = part_tokens
+                            else:
+                                current_chunk += " " + part if current_chunk else part
+                                current_tokens += part_tokens
+                    else:
+                        if current_tokens + sentence_tokens > 3 * self.chunk_token_num:
+                            if current_chunk:
+                                sections.append((current_chunk, ""))
+                            current_chunk = sentence
+                            current_tokens = sentence_tokens
+                        else:
+                            current_chunk += " " + sentence if current_chunk else sentence
+                            current_tokens += sentence_tokens
+
+                if current_chunk:
+                    sections.append((current_chunk, ""))
+
             else:
-                if sec.strip().find("#") == 0:
+                if sec.strip().startswith("#"):
                     sections.append((sec, ""))
-                elif sections and sections[-1][0].strip().find("#") == 0:
+                elif sections and sections[-1][0].strip().startswith("#"):
                     sec_, _ = sections.pop(-1)
-                    sections.append((sec_ + "\n" + sec, ""))
+                    combined = sec_ + "\n" + sec
+                    combined_tokens = num_tokens_from_string(combined)
+
+                    if combined_tokens > 3 * self.chunk_token_num:
+
+                        sections.append((sec_, ""))
+                        sections.append((sec, ""))
+                    else:
+                        sections.append((combined, ""))
                 else:
                     sections.append((sec, ""))
 
+
         for table in tables:
-            tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
+            html_table = markdown(table, extensions=['markdown.extensions.tables'])
+            table_tokens = num_tokens_from_string(html_table)
+            
+            header_match = re.search(r'<thead>(.*?)</thead>|<tr>(.*?</th>.*?)</tr>', html_table, re.DOTALL)
+            header = header_match.group(0) if header_match else ""
+            header_tokens = num_tokens_from_string(header) if header else 0
+            
+            if table_tokens > 3 * self.chunk_token_num:
+                table_body = html_table.replace(header, "") if header else html_table
+                rows = re.findall(r'<tr>.*?</tr>', table_body, re.DOTALL)
+                
+                max_tokens_per_chunk = 2 * self.chunk_token_num - header_tokens
+                current_chunk_rows = []
+                current_chunk_tokens = header_tokens + num_tokens_from_string("<table></table>")
+                
+                for row in rows:
+                    row_tokens = num_tokens_from_string(row)
+                    if current_chunk_tokens + row_tokens > max_tokens_per_chunk:
+                        tbls.append((
+                            (None, f"<table>{header}{''.join(current_chunk_rows)}</table>"), 
+                            ""
+                        ))
+                        current_chunk_rows = [row]
+                        current_chunk_tokens = header_tokens + row_tokens + num_tokens_from_string("<table></table>")
+                    else:
+                        current_chunk_rows.append(row)
+                        current_chunk_tokens += row_tokens
+
+                if current_chunk_rows:
+                    tbls.append((
+                        (None, f"<table>{header}{''.join(current_chunk_rows)}</table>"), 
+                        ""
+                    ))
+            else:
+                tbls.append(((None, html_table), ""))
+
         return sections, tbls
 
 
