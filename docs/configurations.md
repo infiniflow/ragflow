@@ -180,7 +180,7 @@ The callback URL should be configured in your OAuth provider as:
 https://your-app.com/oauth/callback/<channel>
 ```
 
-For detailed instructions on configuring **service_conf.yaml.template**, please refer to [Usage](../api/apps/auth/README.md#usage).
+For detailed instructions on configuring **service_conf.yaml.template**, please refer to [Usage](https://github.com/infiniflow/ragflow/blob/main/api/apps/auth/README.md#usage).
 
 ### `user_default_llm`  
 

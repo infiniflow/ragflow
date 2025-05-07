@@ -316,8 +316,8 @@ export default {
 <p>標籤欄中，標籤之間用英文逗號分隔。</p>
 <i>不符合上述規則的文字行將被忽略。</i>
 `,
-      useRaptor: '使用RAPTOR文件增強策略',
-      useRaptorTip: '請參考 https://huggingface.co/papers/2401.18059',
+      useRaptor: '使用 RAPTOR 文件增強策略',
+      useRaptorTip: '啟用 RAPTOR 以用於多跳問答任務。詳情請參見：https://ragflow.io/docs/dev/enable_raptor',
       prompt: '提示詞',
       promptMessage: '提示詞是必填項',
       promptText: `请請總結以下段落。 小心數字，不要編造。 段落如下：

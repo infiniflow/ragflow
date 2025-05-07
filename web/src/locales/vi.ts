@@ -295,7 +295,7 @@ export default {
       <p>Đảm bảo bạn đã đặt <b>Loại thực thể</b>.</p>`,
       useRaptor: 'Sử dụng RAPTOR để cải thiện truy xuất',
       useRaptorTip:
-        'Recursive Abstractive Processing for Tree-Organized Retrieval, xem https://huggingface.co/papers/2401.18059 để biết thêm thông tin',
+        'Kích hoạt RAPTOR cho các tác vụ hỏi đáp đa bước. Xem chi tiết tại https://ragflow.io/docs/dev/enable_raptor.',
       prompt: 'Nhắc nhở',
       promptTip:
         'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',

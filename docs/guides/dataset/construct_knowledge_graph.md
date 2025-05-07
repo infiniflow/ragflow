@@ -90,3 +90,7 @@ Nope. The knowledge graph does *not* automatically update *until* a newly upload
 ### How to remove a generated knowledge graph?
 
 To remove the generated knowledge graph, delete all related files in your knowledge base. Although the **Knowledge graph** entry will still be visible, the graph has actually been deleted.
+
+### Where is the created knowledge graph stored?
+
+All chunks of the created knowledge graph are stored in RAGFlow's document engine: either Elasticsearch or [Infinity](https://github.com/infiniflow/infinity).

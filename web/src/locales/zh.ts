@@ -333,8 +333,8 @@ export default {
 <p>在标签列中，标签之间使用英文逗号分隔。</p>
 <i>不符合上述规则的文本行将被忽略。</i>
 `,
-      useRaptor: '使用召回增强RAPTOR策略',
-      useRaptorTip: '请参考 https://huggingface.co/papers/2401.18059',
+      useRaptor: '使用召回增强 RAPTOR 策略',
+      useRaptorTip: '为多跳问答任务启用 RAPTOR，详情请见 : https://ragflow.io/docs/dev/enable_raptor。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptText: `请总结以下段落。 小心数字，不要编造。 段落如下：
