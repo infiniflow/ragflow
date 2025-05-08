@@ -213,7 +213,7 @@ export default {
       chunkTokenNumber: '建議文本塊大小',
       chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
-        '用於嵌入塊的嵌入模型。一旦知識庫有了塊，它就無法更改。如果你想改變它，你需要刪除所有的塊。',
+        '知識庫的預設嵌入模型。一旦知識庫已有資料區塊，則無法更改。若要切換到不同的預設嵌入模型，必須刪除知識庫中所有現有的資料區塊。',
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
       chunkTokenNumberTip:
         '建議的生成文本塊的 token 數閾值。如果切分得到的小文本段 token 數達不到這一閾值，系統就會不斷與之後的文本段合併，直至再合併下一個文本段會超過這一閾值為止，此時產生一個最終文本塊。如果系統在切分文本段時始終沒有遇到文本分段標識符，即便文本段 token 數已經超過這一閾值，系統也不會生成新文本塊。',
@@ -419,7 +419,7 @@ export default {
       setAnOpenerTip: '您想如何歡迎您的客戶？',
       knowledgeBases: '知識庫',
       knowledgeBasesMessage: '請選擇',
-      knowledgeBasesTip: '選擇關聯的知識庫。',
+      knowledgeBasesTip: '選擇關聯的知識庫。新建或空的知識庫不會在下拉選單中顯示。',
       system: '系統提示词',
       systemInitialValue: `你是一個智能助手，請總結知識庫的內容來回答問題，請列舉知識庫中的數據詳細回答。當所有知識庫內容都與問題無關時，你的回答必須包括“知識庫中未找到您要的答案！”這句話。回答需要考慮聊天歷史。
       以下是知識庫：
@@ -817,7 +817,7 @@ export default {
       news: '新聞',
       messageHistoryWindowSize: '歷史訊息視窗大小',
       messageHistoryWindowSizeTip:
-        'LLM需要查看的對話記錄的視窗大小。越大越好。但要注意LLM的最大內容長度。',
+        'LLM 需要查看的對話歷史視窗大小。越大越好，但要注意 LLM 的最大 Token 數。',
       wikipedia: '維基百科',
       pubMed: 'PubMed',
       pubMedDescription:
