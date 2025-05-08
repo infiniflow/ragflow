@@ -22,7 +22,7 @@ export function FileIcon({
   return (
     <span className={cn('size-4', className)}>
       <IconFont
-        name={isFolder ? 'file' : FileIconMap[getExtension(name)]}
+        name={isFolder ? 'file-sub' : FileIconMap[getExtension(name)]}
       ></IconFont>
     </span>
   );

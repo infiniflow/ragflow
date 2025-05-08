@@ -56,10 +56,10 @@ export function ParsingStatusCell({
   }, [record, showSetMetaModal]);
 
   return (
-    <section className="flex gap-2 items-center ">
-      <div>
+    <section className="flex gap-2 items-center">
+      <div className="w-28 flex items-center justify-between">
         <DropdownMenu>
-          <DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild>
             <Button variant={'ghost'} size={'sm'}>
               {parser_id}
             </Button>
@@ -73,8 +73,7 @@ export function ParsingStatusCell({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-
-        <Separator orientation="vertical" />
+        <Separator orientation="vertical" className="h-2.5" />
       </div>
       <ConfirmDeleteDialog
         title={t(`knowledgeDetails.redo`, { chunkNum: chunk_num })}
