@@ -20,7 +20,7 @@ oauth_config = {
     "authorization_url": "https://provider.com/oauth/authorize",
     "token_url": "https://provider.com/oauth/token",
     "userinfo_url": "https://provider.com/oauth/userinfo",
-    "redirect_uri": "https://your-app.com/oauth/callback/<channel>"
+    "redirect_uri": "https://your-app.com/v1/user/oauth/callback/<channel>"
 }
 
 # OIDC configuration
@@ -29,7 +29,7 @@ oidc_config = {
     "issuer": "https://provider.com/v1/oidc",
     "client_id": "your_client_id",
     "client_secret": "your_client_secret",
-    "redirect_uri": "https://your-app.com/oauth/callback/<channel>"
+    "redirect_uri": "https://your-app.com/v1/user/oauth/callback/<channel>"
 }
 
 # Get client instance

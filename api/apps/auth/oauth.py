@@ -102,5 +102,7 @@ class OAuthClient:
         email = user_info.get("email")
         username = user_info.get("username", str(email).split("@")[0])
         nickname = user_info.get("nickname", username)
-        avatar_url = user_info.get("picture", "")
+        avatar_url = user_info.get("avatar_url", None)
+        if avatar_url is None:
+            avatar_url = user_info.get("picture", "")
         return UserInfo(email=email, username=username, nickname=nickname, avatar_url=avatar_url)
