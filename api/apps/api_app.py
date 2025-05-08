@@ -345,7 +345,7 @@ def completion():
 
 @manager.route('/conversation/<conversation_id>', methods=['GET'])  # noqa: F821
 # @login_required
-def get(conversation_id):
+def get_chunk(conversation_id):
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
