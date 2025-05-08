@@ -119,7 +119,7 @@ export function DatasetTable({
 
   return (
     <div className="w-full">
-      <Table>
+      <Table rootClassName="max-h-[82vh]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
