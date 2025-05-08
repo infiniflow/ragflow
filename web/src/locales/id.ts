@@ -290,7 +290,7 @@ export default {
     Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
-        'Pemrosesan Abstraktif Rekursif untuk Pengambilan Terorganisasi Pohon, silakan merujuk ke https://huggingface.co/papers/2401.18059',
+        'Aktifkan RAPTOR untuk tugas tanya jawab multi-langkah. Lihat https://ragflow.io/docs/dev/enable_raptor untuk informasi lebih lanjut.',
       prompt: 'Prompt',
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
