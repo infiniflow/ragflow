@@ -100,6 +100,7 @@ export default {
       disabled: 'Nonaktifkan',
       action: 'Aksi',
       parsingStatus: 'Status Parsing',
+      parsingStatusTip: 'Waktu pemrosesan dokumen bervariasi tergantung beberapa faktor. Mengaktifkan fitur seperti Knowledge Graph, RAPTOR, Ekstraksi Pertanyaan Otomatis, atau Ekstraksi Kata Kunci Otomatis akan secara signifikan menambah waktu pemrosesan. Jika bilah kemajuan macet, silakan lihat dua FAQ berikut: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Proses Dimulai Pada',
       processDuration: 'Durasi Proses',
       progressMsg: 'Pesan Kemajuan',
@@ -289,7 +290,7 @@ export default {
     Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
-        'Pemrosesan Abstraktif Rekursif untuk Pengambilan Terorganisasi Pohon, silakan merujuk ke https://huggingface.co/papers/2401.18059',
+        'Aktifkan RAPTOR untuk tugas tanya jawab multi-langkah. Lihat https://ragflow.io/docs/dev/enable_raptor untuk informasi lebih lanjut.',
       prompt: 'Prompt',
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',

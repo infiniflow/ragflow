@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import { ChevronDown } from 'lucide-react';
 import React, {
   ChangeEventHandler,
@@ -5,12 +6,13 @@ import React, {
   ReactNode,
   useMemo,
 } from 'react';
+import { IconFont } from '../icon-font';
 import { Button, ButtonProps } from '../ui/button';
 import { SearchInput } from '../ui/input';
 import { CheckboxFormMultipleProps, FilterPopover } from './filter-popover';
 
 interface IProps {
-  title?: string;
+  title?: ReactNode;
   searchString?: string;
   onSearchChange?: ChangeEventHandler<HTMLInputElement>;
   showFilter?: boolean;
@@ -22,8 +24,21 @@ const FilterButton = React.forwardRef<
   ButtonProps & { count?: number }
 >(({ count = 0, ...props }, ref) => {
   return (
-    <Button variant="outline" size={'sm'} {...props} ref={ref}>
-      Filter <span>{count}</span> <ChevronDown />
+    <Button variant="secondary" {...props} ref={ref}>
+      <span
+        className={cn({
+          'text-text-title': count > 0,
+          'text-text-sub-title-invert': count === 0,
+        })}
+      >
+        Filter
+      </span>
+      {count > 0 && (
+        <span className="rounded-full bg-text-badge px-1 text-xs ">
+          {count}
+        </span>
+      )}
+      <ChevronDown />
     </Button>
   );
 });
@@ -38,7 +53,12 @@ export default function ListFilterBar({
   value,
   onChange,
   filters,
-}: PropsWithChildren<IProps & Omit<CheckboxFormMultipleProps, 'setOpen'>>) {
+  className,
+  icon,
+}: PropsWithChildren<IProps & Omit<CheckboxFormMultipleProps, 'setOpen'>> & {
+  className?: string;
+  icon?: ReactNode;
+}) {
   const filterCount = useMemo(() => {
     return typeof value === 'object' && value !== null
       ? Object.values(value).reduce((pre, cur) => {
@@ -48,9 +68,16 @@ export default function ListFilterBar({
   }, [value]);
 
   return (
-    <div className="flex justify-between mb-6 items-center">
-      <span className="text-3xl font-bold ">{leftPanel || title}</span>
-      <div className="flex gap-4 items-center">
+    <div className={cn('flex justify-between mb-5 items-center', className)}>
+      <div className="text-2xl font-semibold flex items-center gap-2.5">
+        {typeof icon === 'string' ? (
+          <IconFont name={icon} className="size-6"></IconFont>
+        ) : (
+          icon
+        )}
+        {leftPanel || title}
+      </div>
+      <div className="flex gap-5 items-center">
         {showFilter && (
           <FilterPopover value={value} onChange={onChange} filters={filters}>
             <FilterButton count={filterCount}></FilterButton>
@@ -60,6 +87,7 @@ export default function ListFilterBar({
         <SearchInput
           value={searchString}
           onChange={onSearchChange}
+          className="w-32"
         ></SearchInput>
         {children}
       </div>

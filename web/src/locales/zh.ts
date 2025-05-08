@@ -71,6 +71,7 @@ export default {
       fileManager: '文件管理',
       flow: 'Agent',
       search: '搜索',
+      welcome: '欢迎来到',
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -104,6 +105,7 @@ export default {
       disabled: '禁用',
       action: '动作',
       parsingStatus: '解析状态',
+      parsingStatusTip: '文本解析的时间取决于诸多因素。如果开启了知识图谱、RAPTOR、自动问题提取、自动关键词提取等功能，时间会更长。如果解析进度条长时间不更新，也可以参考这两条 FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
@@ -331,8 +333,8 @@ export default {
 <p>在标签列中，标签之间使用英文逗号分隔。</p>
 <i>不符合上述规则的文本行将被忽略。</i>
 `,
-      useRaptor: '使用召回增强RAPTOR策略',
-      useRaptorTip: '请参考 https://huggingface.co/papers/2401.18059',
+      useRaptor: '使用召回增强 RAPTOR 策略',
+      useRaptorTip: '为多跳问答任务启用 RAPTOR，详情请见 : https://ragflow.io/docs/dev/enable_raptor。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptText: `请总结以下段落。 小心数字，不要编造。 段落如下：
@@ -349,7 +351,8 @@ export default {
       promptTip:
         '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
       maxTokenTip: '用于设定每个被总结的文本块的最大 token 数。',
-      thresholdTip: '在 RAPTOR 中，数据块会根据它们的语义相似性进行聚类。阈值设定了数据块被分到同一组所需的最小相似度。阈值越高，每个聚类中的数据块越少；阈值越低，则每个聚类中的数据块越多。',
+      thresholdTip:
+        '在 RAPTOR 中，数据块会根据它们的语义相似性进行聚类。阈值设定了数据块被分到同一组所需的最小相似度。阈值越高，每个聚类中的数据块越少；阈值越低，则每个聚类中的数据块越多。',
       maxClusterTip: '最多可创建的聚类数。',
       entityTypes: '实体类型',
       pageRank: '页面排名',
@@ -1207,6 +1210,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       promptMessage: '提示词是必填项',
       promptTip:
         '系统提示为大模型提供任务描述、规定回复方式，以及设置其他各种要求。系统提示通常与 key （变量）合用，通过变量设置大模型的输入数据。你可以通过斜杠或者 (x) 按钮显示可用的 key。',
+      knowledgeBasesTip: '选择关联的知识库，或者在下方选择包含知识库ID的变量。',
+      knowledgeBaseVars: '知识库变量',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -106,6 +106,7 @@ export default {
       disabled: 'Tắt',
       action: 'Hành động',
       parsingStatus: 'Trạng thái phân tích cú pháp',
+      parsingStatusTip: 'Thời gian xử lý tài liệu thay đổi tùy theo nhiều yếu tố. Bật các tính năng như Knowledge Graph, RAPTOR, Trích xuất Câu hỏi Tự động hoặc Trích xuất Từ khóa Tự động sẽ làm tăng đáng kể thời gian xử lý. Nếu thanh tiến trình bị dừng, vui lòng tham khảo hai câu hỏi thường gặp sau: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Bắt đầu xử lý lúc',
       processDuration: 'Thời gian xử lý',
       progressMsg: 'Thông báo tiến trình',
@@ -294,7 +295,7 @@ export default {
       <p>Đảm bảo bạn đã đặt <b>Loại thực thể</b>.</p>`,
       useRaptor: 'Sử dụng RAPTOR để cải thiện truy xuất',
       useRaptorTip:
-        'Recursive Abstractive Processing for Tree-Organized Retrieval, xem https://huggingface.co/papers/2401.18059 để biết thêm thông tin',
+        'Kích hoạt RAPTOR cho các tác vụ hỏi đáp đa bước. Xem chi tiết tại https://ragflow.io/docs/dev/enable_raptor.',
       prompt: 'Nhắc nhở',
       promptTip:
         'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',

@@ -71,6 +71,7 @@ export default {
       fileManager: '文件管理',
       flow: 'Agent',
       search: '搜尋',
+      welcome: '歡迎來到',
     },
     knowledgeList: {
       welcome: '歡迎回來',
@@ -104,6 +105,7 @@ export default {
       disabled: '禁用',
       action: '動作',
       parsingStatus: '解析狀態',
+      parsingStatusTip: '文件解析時間取決於多種因素。如果啟用了知識圖譜、RAPTOR、自動問題提取、自動關鍵詞提取等功能，解析時間將會顯著延長。如果解析進度條長時間未更新，請參考這兩條常見問題解答FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
@@ -314,8 +316,8 @@ export default {
 <p>標籤欄中，標籤之間用英文逗號分隔。</p>
 <i>不符合上述規則的文字行將被忽略。</i>
 `,
-      useRaptor: '使用RAPTOR文件增強策略',
-      useRaptorTip: '請參考 https://huggingface.co/papers/2401.18059',
+      useRaptor: '使用 RAPTOR 文件增強策略',
+      useRaptorTip: '啟用 RAPTOR 以用於多跳問答任務。詳情請參見：https://ragflow.io/docs/dev/enable_raptor',
       prompt: '提示詞',
       promptMessage: '提示詞是必填項',
       promptText: `请請總結以下段落。 小心數字，不要編造。 段落如下：
@@ -332,7 +334,8 @@ export default {
       promptTip:
         '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
       maxTokenTip: '用於設定每個被總結的文字塊的最大 token 數。',
-      thresholdTip: '在 RAPTOR 中，數據塊會根據它們的語義相似性進行聚類。閾值參數設定了數據塊被分到同一組所需的最小相似度。閾值越高，每個聚類中的數據塊越少；閾值越低，則每個聚類中的數據塊越多。',
+      thresholdTip:
+        '在 RAPTOR 中，數據塊會根據它們的語義相似性進行聚類。閾值參數設定了數據塊被分到同一組所需的最小相似度。閾值越高，每個聚類中的數據塊越少；閾值越低，則每個聚類中的數據塊越多。',
       maxClusterTip: '最多可創建的聚類數。',
       entityTypes: '實體類型',
       pageRank: '頁面排名',

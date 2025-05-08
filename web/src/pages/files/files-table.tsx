@@ -14,11 +14,12 @@ import {
 import { ArrowUpDown } from 'lucide-react';
 import * as React from 'react';
 
+import { FileIcon } from '@/components/icon-font';
 import { RenameDialog } from '@/components/rename-dialog';
-import SvgIcon from '@/components/svg-icon';
 import { TableEmpty, TableSkeleton } from '@/components/table-skeleton';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
   Table,
   TableBody,
@@ -38,7 +39,7 @@ import { IFile } from '@/interfaces/database/file-manager';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
-import { getExtension } from '@/utils/document-util';
+import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionCell } from './action-cell';
@@ -146,10 +147,9 @@ export function FilesTable({
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex gap-2">
-                <SvgIcon
-                  name={`file-icon/${isFolder ? 'folder' : getExtension(name)}`}
-                  width={24}
-                ></SvgIcon>
+                <span className="size-4">
+                  <FileIcon name={name} type={type}></FileIcon>
+                </span>
                 <span
                   className={cn('truncate', { ['cursor-pointer']: isFolder })}
                   onClick={handleNameClick}
@@ -244,20 +244,7 @@ export function FilesTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-    onPaginationChange: (updaterOrValue: any) => {
-      if (typeof updaterOrValue === 'function') {
-        const nextPagination = updaterOrValue(currentPagination);
-        setPagination({
-          page: nextPagination.pageIndex + 1,
-          pageSize: nextPagination.pageSize,
-        });
-      } else {
-        setPagination({
-          page: updaterOrValue.pageIndex,
-          pageSize: updaterOrValue.pageSize,
-        });
-      }
-    },
+
     manualPagination: true, //we're doing manual "server-side" pagination
 
     state: {
@@ -273,76 +260,64 @@ export function FilesTable({
 
   return (
     <div className="w-full">
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  );
-                })}
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => {
+                return (
+                  <TableHead key={header.id}>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
+                  </TableHead>
+                );
+              })}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {loading ? (
+            <TableSkeleton columnsLength={columns.length}></TableSkeleton>
+          ) : table.getRowModel().rows?.length ? (
+            table.getRowModel().rows.map((row) => (
+              <TableRow
+                key={row.id}
+                data-state={row.getIsSelected() && 'selected'}
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell
+                    key={cell.id}
+                    className={cell.column.columnDef.meta?.cellClassName}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
               </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableSkeleton columnsLength={columns.length}></TableSkeleton>
-            ) : table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && 'selected'}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      className={cell.column.columnDef.meta?.cellClassName}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableEmpty columnsLength={columns.length}></TableEmpty>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            ))
+          ) : (
+            <TableEmpty columnsLength={columns.length}></TableEmpty>
+          )}
+        </TableBody>
+      </Table>
+
       <div className="flex items-center justify-end space-x-2 py-4">
         <div className="flex-1 text-sm text-muted-foreground">
           {table.getFilteredSelectedRowModel().rows.length} of {total} row(s)
           selected.
         </div>
+
         <div className="space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
+          <RAGFlowPagination
+            {...pick(pagination, 'current', 'pageSize')}
+            total={total}
+            onChange={(page, pageSize) => {
+              setPagination({ page, pageSize });
+            }}
+          ></RAGFlowPagination>
         </div>
       </div>
       {connectToKnowledgeVisible && (

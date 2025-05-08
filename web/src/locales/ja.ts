@@ -100,6 +100,7 @@ export default {
       disabled: '無効',
       action: 'アクション',
       parsingStatus: 'パースステータス',
+      parsingStatusTip: 'ドキュメントの解析時間はさまざまな要因によって異なります。Knowledge Graph、RAPTOR、自動質問抽出、自動キーワード抽出などの機能を有効にすると、処理時間が大幅に増加します。進行バーが止まった場合は、次の2つのFAQをご参照ください: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'プロセス開始時刻',
       processDuration: '処理時間',
       progressMsg: '進行状況メッセージ',
@@ -284,7 +285,7 @@ export default {
 <p><b>エンティティタイプ</b>を設定することを忘れないでください。</p>`,
       useRaptor: 'RAPTORを使用して検索を強化',
       useRaptorTip:
-        'ツリー構造化検索のための再帰的抽象処理（RAPTOR）については、詳細はhttps://huggingface.co/papers/2401.18059をご覧ください',
+        'マルチホップ質問応答タスクでRAPTORを有効にしてください。詳細は https://ragflow.io/docs/dev/enable_raptor をご覧ください。',
       prompt: 'プロンプト',
       promptTip:
         'LLMのタスクを説明し、どのように応答すべきかを指定し、他のさまざまな要件を概説するためにシステムプロンプトを使用します。システムプロンプトは、LLMのさまざまなデータ入力として機能するキー（変数）と共に使用されることがよくあります。使用するキーを表示するには、スラッシュ `/` または (x) ボタンを使用します。',
