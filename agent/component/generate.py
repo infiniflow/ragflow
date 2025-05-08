@@ -234,7 +234,7 @@ class Generate(ComponentBase):
         if self._param.cite and "chunks" in retrieval_res.columns:
             res = self.set_cite(retrieval_res, answer)
             yield res
-
+        self._canvas.set_component_infor(self._id, {"prompt":msg[0]["content"],"messages":  msg[1:],"conf":  self._param.gen_conf()})
         self.set_output(Generate.be_output(res))
 
     def debug(self, **kwargs):
