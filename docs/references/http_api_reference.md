@@ -14,7 +14,7 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 ---
 
 | Code | Message               | Description                |
-|------|-----------------------|----------------------------|
+| ---- | --------------------- | -------------------------- |
 | 400  | Bad Request           | Invalid request parameters |
 | 401  | Unauthorized          | Unauthorized access        |
 | 403  | Forbidden             | Access denied              |
@@ -172,7 +172,9 @@ Failure:
   "message": "The last content of this conversation is not from user."
 }
 ```
+
 ---
+
 ### Create agent completion
 
 **POST** `/api/v1/agents_openai/{agent_id}/chat/completions`
@@ -406,7 +408,7 @@ curl --request POST \
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"auto_keywords"`: `int` 
+    - `"auto_keywords"`: `int`
       - Defaults to `0`
       - Minimum: `0`
       - Maximum: `32`
@@ -420,7 +422,7 @@ curl --request POST \
       - Maximum: `2048`
     - `"delimiter"`: `string`
       - Defaults to `"\n"`.
-    - `"html4excel"`: `bool` Indicates whether to convert Excel documents into HTML format. 
+    - `"html4excel"`: `bool` Indicates whether to convert Excel documents into HTML format.
       - Defaults to `false`
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
@@ -429,9 +431,9 @@ curl --request POST \
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
-    - `"raptor"`: `object` RAPTOR-specific settings. 
+    - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`
-    - `"graphrag"`: `object` GRAPHRAG-specific settings. 
+    - `"graphrag"`: `object` GRAPHRAG-specific settings.
       - Defaults to: `{"use_graphrag": false}`
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
     - `"raptor"`: `object` RAPTOR-specific settings.
@@ -3167,9 +3169,11 @@ Failure:
 
 ### Related Questions
 
-**POST** `/api/v1/conversation/related_questions`
+**POST** `/v1/conversation/related_questions`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
+
+This operation requires a `Bearer Login Token`, typically expires with in 24 hours. You can find the it in the browser request easily.
 
 :::tip NOTE
 The chat model dynamically determines the number of questions to generate based on the instruction, typically between five and ten.
@@ -3178,10 +3182,10 @@ The chat model dynamically determines the number of questions to generate based 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/conversation/related_questions`
+- URL: `/v1/conversation/related_questions`
 - Headers:
   - `'content-Type: application/json'`
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
+  - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
   - `"question"`: `string`
 
@@ -3189,9 +3193,9 @@ The chat model dynamically determines the number of questions to generate based 
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/conversation/related_questions \
+     --url http://{address}/v1/conversation/related_questions \
      --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '
      {
           "question": "What are the key advantages of Neovim over Vim?"
@@ -3351,3 +3355,4 @@ Failure:
 ```
 
 ---
+
