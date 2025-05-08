@@ -62,9 +62,9 @@ Where:
 
 #### 1. Enable MCP server
 
-The MCP server is designed as an optional, component that complements the RAGFlow server and is disable by default. To enable MCP server:
+The MCP server is designed as an optional component that complements the RAGFlow server and disabled by default. To enable MCP server:
 
-1. Navigate to `docker/docker-compose.yml`.
+1. Navigate to **docker/docker-compose.yml**.
 2. Uncomment the `services.ragflow.command` section as shown below:
 
 ```yaml {6-13}
@@ -189,9 +189,9 @@ async with sse_client("http://localhost:9382/sse", headers={"api_key": "YOUR_KEY
 ```
 :::
 
-## API
+## Tools
 
-The MCP server currently offers an API to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
+The MCP server currently offers a specialized tool to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
 
 - **retrieve**: Fetches relevant chunks from specified `dataset_ids` and optional `document_ids` using the RAGFlow retrieve interface, based on a given question. Details of all available datasets, namely, `id` and `description`, are provided within the tool description for each individual dataset.
 
@@ -200,3 +200,16 @@ The MCP server currently offers an API to assist users in searching for relevant
 As MCP technology is still at early stage and no official best practices for authentication or authorization have been established, RAGFlow currently uses [API key](./acquire_ragflow_api_key.md) to validate identity for the operations described earlier. However, in public environments, this makeshift solution could expose your MCP server to potential network attacks. Therefore, when running a local SSE server, it is recommended to bind only to localhost (`127.0.0.1`) rather than to all interfaces (`0.0.0.0`). 
 
 For further guidance, see the [official MCP documentation](https://modelcontextprotocol.io/docs/concepts/transports#security-considerations).
+
+## Frequently asked questions
+
+### When to use an API key for authentication?
+
+The use of an API key depends on the operating mode of your MCP server. 
+
+- **Self-host mode** (default):  
+  When starting the MCP server in self-host mode, you should provide an API key when launching it to authenticate it with the RAGFlow server:  
+  - If launching from source, include the API key in the command. 
+  - If launching from Docker, update the API key in **docker/docker-compose.yml**.
+- **Host mode**:  
+  If your RAGFlow MCP server is working in host mode, include the API key in the `headers` of your client requests to authenticate your client with the RAGFlow server. An example is available [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).
