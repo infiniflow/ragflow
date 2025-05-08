@@ -56,9 +56,12 @@ class LayoutRecognizer(Recognizer):
             super().__init__(self.labels, domain, model_dir)
 
         self.garbage_layouts = ["footer", "header", "reference"]
+        self.client = None
+        if os.environ.get("TENSORRT_DLA_SVR"):
+            from deepdoc.vision.dla_cli import DLAClient
+            self.client = DLAClient(os.environ["TENSORRT_DLA_SVR"])
 
-    def __call__(self, image_list, ocr_res, scale_factor=3,
-                 thr=0.2, batch_size=16, drop=True):
+    def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.2, batch_size=16, drop=True):
         def __is_garbage(b):
             patt = [r"^•+$", "^[0-9]{1,2} / ?[0-9]{1,2}$",
                     r"^[0-9]{1,2} of [0-9]{1,2}$", "^http://[^ ]{12,}",
@@ -66,7 +69,10 @@ class LayoutRecognizer(Recognizer):
                     ]
             return any([re.search(p, b["text"]) for p in patt])
 
-        layouts = super().__call__(image_list, thr, batch_size)
+        if self.client:
+            layouts = self.client.predict(image_list)
+        else:
+            layouts = super().__call__(image_list, thr, batch_size)
         # save_results(image_list, layouts, self.labels, output_dir='output/', threshold=0.7)
         assert len(image_list) == len(ocr_res)
         # Tag layout type

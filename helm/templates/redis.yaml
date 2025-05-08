@@ -1,35 +1,35 @@
 ---
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: Service
 metadata:
   name: {{ include "ragflow.fullname" . }}-redis
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis
 spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 8Gi
+  ports:
+    - port: 6379
+      name: redis
+      protocol: TCP
+  clusterIP: None  # Headless service for StatefulSet
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "ragflow.fullname" . }}-redis
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis
 spec:
+  serviceName: {{ include "ragflow.fullname" . }}-redis
   replicas: 1
   selector:
     matchLabels:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: redis
-  {{- with .Values.redis.deployment.strategy }}
-  strategy:
-    {{- . | toYaml | nindent 4 }}
-  {{- end }}
   template:
     metadata:
       labels:
@@ -38,44 +38,73 @@ spec:
       annotations:
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
     spec:
+      terminationGracePeriodSeconds: 60
       containers:
-      - name: redis
-        image: {{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}
-        command:
-          - "sh"
-          - "-c"
-          - "exec redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru"
-        envFrom:
-          - secretRef:
-              name: {{ include "ragflow.fullname" . }}-env-config
-        ports:
-          - containerPort: 6379
-            name: redis
-        {{- with .Values.redis.deployment.resources }}
-        resources:
-          {{- . | toYaml | nindent 10 }}
+        - name: redis
+          image: {{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}
+          command:
+            - "sh"
+            - "-c"
+            - "exec redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru"
+          envFrom:
+            - secretRef:
+                name: {{ include "ragflow.fullname" . }}-env-config
+          ports:
+            - containerPort: 6379
+              name: redis
+          {{- if .Values.redis.persistence.enabled }}
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          {{- end }}
+          {{- with .Values.redis.deployment.resources }}
+          resources:
+            {{- . | toYaml | nindent 12 }}
+          {{- end }}
+  {{- if .Values.redis.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+        labels:
+          {{- include "ragflow.labels" . | nindent 10 }}
+          app.kubernetes.io/component: redis
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- with .Values.redis.storage.className }}
+        storageClassName: {{ . }}
         {{- end }}
-        volumeMounts:
-          - mountPath: /data
-            name: redis-data
-      volumes:
-        - name: redis-data
-          persistentVolumeClaim:
-            claimName: {{ include "ragflow.fullname" . }}-redis
+        resources:
+          requests:
+            storage: 8Gi
+  {{- end }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "ragflow.fullname" . }}-redis
+  name: {{ include "ragflow.fullname" . }}-redis-svc
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis
 spec:
+  ports:
+    - port: 6379
+      targetPort: redis
+      protocol: TCP
   selector:
     {{- include "ragflow.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: redis
-  ports:
-    - protocol: TCP
-      port: 6379
-      targetPort: redis
-  type: {{ .Values.redis.service.type }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ragflow.fullname" . }}-redis-pdb
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis

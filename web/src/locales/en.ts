@@ -37,6 +37,7 @@ export default {
       embedIntoSite: 'Embed into webpage',
       previousPage: 'Previous',
       nextPage: 'Next',
+      add: 'Add',
     },
     login: {
       login: 'Sign in',
@@ -70,6 +71,7 @@ export default {
       fileManager: 'File Management',
       flow: 'Agent',
       search: 'Search',
+      welcome: 'Welcome to',
     },
     knowledgeList: {
       welcome: 'Welcome back',
@@ -99,11 +101,12 @@ export default {
       webCrawl: 'Web Crawl',
       chunkNumber: 'Chunk Number',
       uploadDate: 'Upload Date',
-      chunkMethod: 'Chunk Method',
+      chunkMethod: 'Chunking method',
       enabled: 'Enable',
       disabled: 'Disable',
       action: 'Action',
       parsingStatus: 'Parsing Status',
+      parsingStatusTip: 'Document parsing time varies based on several factors. Enabling features like Knowledge Graph, RAPTOR, Auto Question Extraction, or Auto Keyword Extraction will significantly increase processing time. If the progress bar stalls, please consult these two FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Begin at',
       processDuration: 'Duration',
       progressMsg: 'Progress',
@@ -111,7 +114,7 @@ export default {
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. That means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
       vectorSimilarityWeight: 'Keyword similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
@@ -160,12 +163,12 @@ export default {
       rerankPlaceholder: 'Please select',
       rerankTip: `If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time.`,
       topK: 'Top-K',
-      topKTip: `K chunks will be sent into the rerank model.`,
+      topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
       delimiter: `Delimiter for text`,
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
       html4excel: 'Excel to HTML',
-      html4excelTip: `When enabled, the spreadsheet will be parsed into HTML tables, and at most 256 rows for one table. Otherwise, it will be parsed into key-value pairs by row.`,
+      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel97~2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows.`,
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the chat model specified in 'System model settings'. You can check or update the added keywords for a chunk from the chunk list. `,
       autoQuestions: 'Auto-question',
@@ -200,7 +203,7 @@ export default {
     },
     knowledgeConfiguration: {
       titleDescription:
-        'Update your knowledge base configuration here, particularly the chunk method.',
+        'Update your knowledge base configuration here, particularly the chunking method.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
       description: 'Description',
@@ -217,19 +220,19 @@ export default {
         "If it is set to 'Team', all your team members will be able to manage the knowledge base.",
       chunkTokenNumberTip:
         'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
-      chunkMethod: 'Chunk method',
+      chunkMethod: 'Chunking method',
       chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
-      chunkMethodPlaceholder: 'Please select a chunk method.',
+      chunkMethodPlaceholder: 'Please select a chunking method.',
       save: 'Save',
       me: 'Only me',
       team: 'Team',
       cancel: 'Cancel',
-      methodTitle: 'Chunk method description',
+      methodTitle: 'Chunking method description',
       methodExamples: 'Examples',
       methodExamplesDescription:
         'The following screenshots are provided for clarity.',
@@ -257,10 +260,10 @@ export default {
       However, it also increases the context for AI conversations and adds to the computational cost for the LLM. So during a conversation, consider reducing the value of ‘<b>topN</b>’.</p>`,
       presentation: `<p>Supported file formats are <b>PDF</b>, <b>PPTX</b>.</p><p>
       Every page in the slides is treated as a chunk, with its thumbnail image stored.</p><p>
-      <i>This chunk method is automatically applied to all uploaded PPT files, so you do not need to specify it manually.</i></p>`,
+      <i>This chunking method is automatically applied to all uploaded PPT files, so you do not need to specify it manually.</i></p>`,
       qa: `
       <p>
-      This chunk method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
+      This chunking method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
     </p>
     <li>
       If a file is in <b>XLSX</b> or <b>XLS (Excel97~2003)</b> format, it should contain two columns without headers: one for questions and the other for answers, with the question column preceding the answer column. Multiple sheets are
@@ -313,8 +316,8 @@ export default {
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
 <p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
-      tag: `<p>A knowledge base using the 'Tag' chunk method functions as a tag set. Other knowledge bases can use it to tag their own chunks, and queries to these knowledge bases will also be tagged using this tag set.</p>
-<p>Knowledge base using 'Tag' as a chunk method will <b>NOT</b> be involved in a Retrieval-Augmented Generation (RAG) process.</p>
+      tag: `<p>A knowledge base using the 'Tag' chunking method functions as a tag set. Other knowledge bases can use it to tag their own chunks, and queries to these knowledge bases will also be tagged using this tag set.</p>
+<p>Knowledge base using 'Tag' as a chunking method will <b>NOT</b> be involved in a Retrieval-Augmented Generation (RAG) process.</p>
 <p>Each chunk in this knowledge base is an independent description-tag pair.</p>
 <p>Supported file formats include <b>XLSX</b> and <b>CSV/TXT</b>:</p>
 <p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for tag descriptions and the other for tag names, with the Description column preceding the Tag column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
@@ -324,28 +327,30 @@ export default {
 `,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:
-        'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information.',
+        'Enable RAPTOR for multi-hop question-answering tasks. See https://ragflow.io/docs/dev/enable_raptor for details.',
       prompt: 'Prompt',
-      promptTip: 'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
+      promptTip:
+        'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
       promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
       {cluster_content}
 The above is the content you need to summarize.`,
       maxToken: 'Max token',
-      maxTokenTip: 'Maximum token number for summarization.',
+      maxTokenTip: 'The maximum number of tokens per generated summary chunk.',
       maxTokenMessage: 'Max token is required',
       threshold: 'Threshold',
-      thresholdTip: 'The bigger the threshold is the less cluster will be.',
+      thresholdTip:
+        'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
       thresholdMessage: 'Threshold is required',
       maxCluster: 'Max cluster',
-      maxClusterTip: 'Maximum cluster number.',
+      maxClusterTip: 'The maximum number of clusters to create.',
       maxClusterMessage: 'Max cluster is required',
       randomSeed: 'Random seed',
       randomSeedMessage: 'Random seed is required',
       entityTypes: 'Entity types',
       vietnamese: 'Vietnamese',
       pageRank: 'Page rank',
-      pageRankTip: `This increases the relevance score of the knowledge base. Its value will be added to the relevance score of all retrieved chunks from this knowledge base. Useful when you are searching within multiple knowledge bases and wanting to assign a higher pagerank score to a specific one.`,
+      pageRankTip: `You can assign a higher PageRank score to specific knowledge bases during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these knowledge bases, increasing their ranking. See https://ragflow.io/docs/dev/set_page_rank for details.`,
       tagName: 'Tag',
       frequency: 'Frequency',
       searchTags: 'Search tags',
@@ -368,7 +373,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTag: 'Add tag',
       useGraphRag: 'Extract knowledge graph',
       useGraphRagTip:
-        'Construct a knowledge graph over extracted file chunks to enhance multi-hop question answering.',
+        'Construct a knowledge graph over file chunks of the current knowledge base to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
       graphRagMethod: 'Method',
       graphRagMethodTip: `Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
         General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
@@ -377,6 +382,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       community: 'Community reports generation',
       communityTip:
         'In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See here for more information: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+      theDocumentBeingParsedCannotBeDeleted:
+        'The document being parsed cannot be deleted',
     },
     chunk: {
       chunk: 'Chunk',
@@ -402,16 +409,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     chat: {
       newConversation: 'New conversation',
       createAssistant: 'Create an Assistant',
-      assistantSetting: 'Assistant Setting',
-      promptEngine: 'Prompt Engine',
-      modelSetting: 'Model Setting',
+      assistantSetting: 'Assistant settings',
+      promptEngine: 'Prompt engine',
+      modelSetting: 'Model settings',
       chat: 'Chat',
       newChat: 'New chat',
       send: 'Send',
       sendPlaceholder: 'Message the assistant...',
       chatConfiguration: 'Chat Configuration',
       chatConfigurationDescription:
-        ' Set up a chat assistant dedicated to your selected knowledge bases here! 💕',
+        ' Set up a chat assistant for your selected datasets (knowledge bases) here! 💕',
       assistantName: 'Assistant name',
       assistantNameMessage: 'Assistant name is required',
       namePlaceholder: 'e.g. Resume Jarvis',
@@ -438,7 +445,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       topN: 'Top N',
       topNTip: `Not all chunks with similarity score above the 'similarity threshold' will be sent to the LLM. This selects 'Top N' chunks from the retrieved ones.`,
       variable: 'Variable',
-      variableTip: `Variables can assist in developing more flexible strategies, particularly when you are using our chat assistant management APIs. These variables will be used by 'System prompt' as part of the prompts for the LLM. The variable {knowledge} is a reserved special variable representing your selected knowledge base(s), and all variables should be enclosed in curly braces {}.`,
+      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified knowledge base(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/dev/set_chat_variables for details.`,
       add: 'Add',
       key: 'Key',
       optional: 'Optional',
@@ -530,8 +537,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       locale: 'Locale',
       selectLanguage: 'Select a language',
       reasoning: 'Reasoning',
-      reasoningTip:
-        'It will trigger reasoning process like Deepseek-R1/OpenAI o1. Integrates an agentic search process into the reasoning workflow, allowing models itself to dynamically retrieve external knowledge whenever they encounter uncertain information.',
+      reasoningTip: `Whether to enable a reasoning workflow during question answering, as seen in models like Deepseek-R1 or OpenAI o1. When enabled, this allows the model to access external knowledge and tackle complex questions in a step-by-step manner, leveraging techniques like chain-of-thought reasoning. This approach enhances the model's ability to provide accurate responses by breaking down problems into manageable steps, improving performance on tasks that require logical reasoning and multi-step thinking.`,
       tavilyApiKeyTip:
         'If an API key is correctly set here, Tavily-based web searches will be used to supplement knowledge base retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
@@ -549,7 +555,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       passwordDescription:
         'Please enter your current password to change your password.',
       model: 'Model providers',
-      modelDescription: 'Set the model parameter and API KEY here.',
+      modelDescription: 'Configure model parameters and API KEY here.',
       team: 'Team',
       system: 'System',
       logout: 'Log out',
@@ -592,24 +598,24 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       baseUrlTip:
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
       modify: 'Modify',
-      systemModelSettings: 'System Model Settings',
+      systemModelSettings: 'Set default models',
       chatModel: 'Chat model',
       chatModelTip:
-        'The default chat LLM all the newly created knowledgebase will use.',
+        'The default chat model for each newly created knowledge base.',
       embeddingModel: 'Embedding model',
       embeddingModelTip:
-        'The default embedding model all the newly created knowledgebase will use.',
+        'The default embedding model for each newly created knowledge base. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       img2txtModel: 'Img2txt model',
       img2txtModelTip:
-        'The default multi-module model all the newly created knowledgebase will use. It can describe a picture or video.',
+        'The default img2txt model for each newly created knowledge base. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       sequence2txtModel: 'Speech2txt model',
       sequence2txtModelTip:
-        'The default ASR model all the newly created knowledgebase will use. Use this model to translate voices to corresponding text.',
+        'The default ASR model for each newly created knowledgebase. Use this model to translate voices to corresponding text.',
       rerankModel: 'Rerank model',
-      rerankModelTip: `The default rerank model is used to rerank chunks retrieved by users' questions.`,
+      rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
       ttsModel: 'TTS Model',
       ttsModelTip:
-        'The default TTS model will be used to generate speech during conversations upon request.',
+        'The default text-to-speech model. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       workspace: 'Workspace',
       upgrade: 'Upgrade',
       addLlmTitle: 'Add LLM',
@@ -706,6 +712,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Traces, evals, prompt management and metrics to debug and improve your LLM application.',
       viewLangfuseSDocumentation: "View Langfuse's documentation",
       view: 'View',
+      modelsToBeAddedTooltip:
+        'If your model provider is not listed but claims to be "OpenAI-compatible", select the OpenAI-API-compatible card to add the relevant model(s). ',
     },
     message: {
       registered: 'Registered!',
@@ -1211,7 +1219,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       }`,
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
-      historyversion: 'History version',
+      historyversion: 'Version history',
       filename: 'File name',
       version: {
         created: 'Created',
@@ -1221,14 +1229,14 @@ This delimiter is used to split the input text into several text pieces echo of 
         version: 'Version',
         select: 'No version selected',
       },
-      setting: 'Setting',
+      setting: 'Settings',
       settings: {
-        agentSetting: 'Agent Setting',
+        agentSetting: 'Agent settings',
         title: 'title',
         description: 'description',
         upload: 'Upload',
         photo: 'Photo',
-        permissions: 'Permission',
+        permissions: 'Permissions',
         permissionsTip: 'You can set the permissions of the team members here.',
         me: 'me',
         team: 'Team',
@@ -1243,6 +1251,13 @@ This delimiter is used to split the input text into several text pieces echo of 
         knowledge: 'knowledge',
         chat: 'chat',
       },
+      prompt: 'Prompt',
+      promptTip:
+        'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
+      promptMessage: 'Prompt is required',
+      knowledgeBasesTip:
+        'Select the knowledge bases to associate with this chat assistant, or choose variables containing knowledge base IDs below.',
+      knowledgeBaseVars: 'Knowledge base variables',
     },
   },
 };

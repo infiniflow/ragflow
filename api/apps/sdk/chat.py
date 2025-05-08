@@ -23,8 +23,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from api.utils import get_uuid
-from api.utils.api_utils import get_error_data_result, token_required
-from api.utils.api_utils import get_result
+from api.utils.api_utils import get_error_data_result, token_required, get_result, check_duplicate_ids
+
 
 
 @manager.route('/chats', methods=['POST'])  # noqa: F821
@@ -165,27 +165,24 @@ def update(tenant_id, chat_id):
     ids = req.get("dataset_ids")
     if "show_quotation" in req:
         req["do_refer"] = req.pop("show_quotation")
-    if "dataset_ids" in req:
-        if not ids:
-            return get_error_data_result("`dataset_ids` can't be empty")
-        if ids:
-            for kb_id in ids:
-                kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
-                if not kbs:
-                    return get_error_data_result(f"You don't own the dataset {kb_id}")
-                kbs = KnowledgebaseService.query(id=kb_id)
-                kb = kbs[0]
-                if kb.chunk_num == 0:
-                    return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
-                
-            kbs = KnowledgebaseService.get_by_ids(ids)
-            embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
-            embd_count = list(set(embd_ids))
-            if len(embd_count) != 1:
-                return get_result(
-                    message='Datasets use different embedding models."',
-                    code=settings.RetCode.AUTHENTICATION_ERROR)
-            req["kb_ids"] = ids
+    if ids is not None:
+        for kb_id in ids:
+            kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
+            if not kbs:
+                return get_error_data_result(f"You don't own the dataset {kb_id}")
+            kbs = KnowledgebaseService.query(id=kb_id)
+            kb = kbs[0]
+            if kb.chunk_num == 0:
+                return get_error_data_result(f"The dataset {kb_id} doesn't own parsed file")
+            
+        kbs = KnowledgebaseService.get_by_ids(ids)
+        embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
+        embd_count = list(set(embd_ids))
+        if len(embd_count) != 1:
+            return get_result(
+                message='Datasets use different embedding models."',
+                code=settings.RetCode.AUTHENTICATION_ERROR)
+        req["kb_ids"] = ids
     llm = req.get("llm")
     if llm:
         if "model_name" in llm:
@@ -223,11 +220,11 @@ def update(tenant_id, chat_id):
             return get_error_data_result(f"`rerank_model` {req.get('rerank_id')} doesn't exist")
     if "name" in req:
         if not req.get("name"):
-            return get_error_data_result(message="`name` is not empty.")
+            return get_error_data_result(message="`name` cannot be empty.")
         if req["name"].lower() != res["name"].lower() \
                 and len(
             DialogService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 0:
-            return get_error_data_result(message="Duplicated chat name in updating dataset.")
+            return get_error_data_result(message="Duplicated chat name in updating chat.")
     if "prompt_config" in req:
         res["prompt_config"].update(req["prompt_config"])
         for p in res["prompt_config"]["parameters"]:
@@ -252,6 +249,8 @@ def update(tenant_id, chat_id):
 @manager.route('/chats', methods=['DELETE'])  # noqa: F821
 @token_required
 def delete(tenant_id):
+    errors = []
+    success_count = 0
     req = request.json
     if not req:
         ids = None
@@ -264,12 +263,37 @@ def delete(tenant_id):
             id_list.append(dia.id)
     else:
         id_list = ids
-    for id in id_list:
+
+    unique_id_list, duplicate_messages = check_duplicate_ids(id_list, "assistant")
+
+    for id in unique_id_list:
         if not DialogService.query(tenant_id=tenant_id, id=id, status=StatusEnum.VALID.value):
-            return get_error_data_result(message=f"You don't own the chat {id}")
+            errors.append(f"Assistant({id}) not found.")
+            continue
         temp_dict = {"status": StatusEnum.INVALID.value}
         DialogService.update_by_id(id, temp_dict)
+        success_count += 1
+        
+    if errors:
+        if success_count > 0:
+            return get_result(
+                data={"success_count": success_count, "errors": errors},
+                message=f"Partially deleted {success_count} chats with {len(errors)} errors"
+            )
+        else:
+            return get_error_data_result(message="; ".join(errors))
+    
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(
+                message=f"Partially deleted {success_count} chats with {len(duplicate_messages)} errors", 
+                data={"success_count": success_count, "errors": duplicate_messages}
+            )
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
+    
     return get_result()
+
 
 
 @manager.route('/chats', methods=['GET'])  # noqa: F821

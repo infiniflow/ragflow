@@ -74,6 +74,8 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 
 ### MinIO
 
+RAGFlow utilizes MinIO as its object storage solution, leveraging its scalability to store and manage all uploaded files.
+
 - `MINIO_CONSOLE_PORT`  
   The port used to expose the MinIO console interface to the host machine, allowing **external** access to the web-based console running inside the Docker container. Defaults to `9001`
 - `MINIO_PORT`  
@@ -97,23 +99,13 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:v0.17.2-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.17.2`: The RAGFlow Docker image with embedding models including:
+  - `infiniflow/ragflow:v0.18.0-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.18.0`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
-      - `BAAI/bge-reranker-v2-m3`
       - `maidalun1020/bce-embedding-base_v1`
-      - `maidalun1020/bce-reranker-base_v1`
-    - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-      - `BAAI/bge-base-en-v1.5`
-      - `BAAI/bge-large-en-v1.5`
-      - `BAAI/bge-small-en-v1.5`
-      - `BAAI/bge-small-zh-v1.5`
-      - `jinaai/jina-embeddings-v2-base-en`
-      - `jinaai/jina-embeddings-v2-small-en`
-      - `nomic-ai/nomic-embed-text-v1.5`
-      - `sentence-transformers/all-MiniLM-L6-v2`
-  
+
+
 :::tip NOTE  
 If you cannot download the RAGFlow Docker image, try the following mirrors.  
 
@@ -139,6 +131,12 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 - `MACOS`  
   Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
+
+### User registration
+
+- `REGISTER_ENABLED`
+  - `1`: (Default) Enable user registration.
+  - `0`: Disable user registration.
 
 ## Service configuration
 
@@ -169,6 +167,20 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
 
 - `github`: The GitHub authentication settings for your application. Visit the [GitHub Developer Settings](https://github.com/settings/developers) page to obtain your client_id and secret_key.
+
+#### OAuth/OIDC
+
+RAGFlow supports OAuth/OIDC authentication through the following routes:
+
+- `/login/<channel>`: Initiates the OAuth flow for the specified channel
+- `/oauth/callback/<channel>`: Handles the OAuth callback after successful authentication
+
+The callback URL should be configured in your OAuth provider as:
+```
+https://your-app.com/oauth/callback/<channel>
+```
+
+For detailed instructions on configuring **service_conf.yaml.template**, please refer to [Usage](https://github.com/infiniflow/ragflow/blob/main/api/apps/auth/README.md#usage).
 
 ### `user_default_llm`  
 

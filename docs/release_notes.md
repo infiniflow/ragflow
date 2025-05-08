@@ -7,9 +7,55 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+:::info
+Each RAGFlow release is available in two editions:
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.18.0-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.18.0`
+:::
+
+## v0.18.0
+
+Released on April 23, 2025.
+
+### Compatibility changes
+
+From this release onwards, built-in rerank models have been removed because they have minimal impact on retrieval rates but significantly increase retrieval time.
+
+### New features
+
+- MCP server: enables access to RAGFlow's knowledge bases via MCP.
+- DeepDoc supports adopting VLM model as a processing pipeline during document layout recognition, enabling in-depth analysis of images in PDF and DOCX files.
+- OpenAI-compatible APIs: Agents can be called via OpenAI-compatible APIs.
+- User registration control: administrators can enable or disable user registration through an environment variable.
+- Team collaboration: Agents can be shared with team members.
+- Agent version control: all updates are continuously logged and can be rolled back to a previous version via export.
+
+![export_agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/export_agent_as_json.jpg)
+
+### Improvements
+
+- Enhanced answer referencing: Citation accuracy in generated responses is improved.
+- Enhanced question-answering experience: users can now manually stop streaming output during a conversation.
+
+### Documentation
+
+#### Added documents
+
+- [Set page rank](./guides/dataset/set_page_rank.md)
+- [Enable RAPTOR](./guides/dataset/enable_raptor.md)
+- [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
+- [RAGFlow MCP server overview](./develop/mcp.md)
+
 ## v0.17.2
 
 Released on March 13, 2025.
+
+### Compatibility changes
+
+- Removes the **Max_tokens** setting from **Chat configuration**.
+- Removes the **Max_tokens** setting from **Generate**, **Rewrite**, **Categorize**, **Keyword** agent components.
+
+From this release onwards, if you still see RAGFlow's responses being cut short or truncated, check the **Max_tokens** setting of your model provider.
 
 ### Improvements
 
@@ -18,7 +64,7 @@ Released on March 13, 2025.
 - Accelerates knowledge graph extraction.
 - Enables Tavily-based web search in the **Retrieval** agent component.
 - Adds Tongyi-Qianwen QwQ models (OpenAI-compatible).
-- Supports CSV files in the **General** chunk method.
+- Supports CSV files in the **General** chunking method.
 
 ### Fixed issues
 
@@ -67,8 +113,8 @@ Released on March 3, 2025.
 
 ### New features
 
-- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt Engine** tab of your chat assistant dialogue.
-- AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant Setting** tab of your chat assistant dialogue.
+- AI chat: Implements Deep Research for agentic reasoning. To activate this, enable the **Reasoning** toggle under the **Prompt engine** tab of your chat assistant dialogue.
+- AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue.
 - AI chat: Supports starting a chat without specifying knowledge bases.
 - AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
 - Dataset: Adds a **PDF parser**, aka **Document parser**, dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options.
@@ -245,7 +291,7 @@ Released on November 26, 2024.
 
 ### Compatibility changes
 
-As of this release, **service_config.yaml.template** replaces **service_config.yaml** for configuring backend services. Upon Docker container startup, the environment variables defined in this template file are automatically populated and a **service_config.yaml** is auto-generated from it. [#3341](https://github.com/infiniflow/ragflow/pull/3341)
+From this release onwards, **service_config.yaml.template** replaces **service_config.yaml** for configuring backend services. Upon Docker container startup, the environment variables defined in this template file are automatically populated and a **service_config.yaml** is auto-generated from it. [#3341](https://github.com/infiniflow/ragflow/pull/3341)
 
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
@@ -270,7 +316,7 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 #### Added documents
 
 - [Configurations](https://ragflow.io/docs/dev/configurations)
-- [Manage team members](https://ragflow.io/docs/dev/manage_team_members)
+- [Manage team members](./guides/team/manage_team_members.md)
 - [Run health check on RAGFlow's dependencies](https://ragflow.io/docs/dev/run_health_check)
 
 ## v0.13.0
@@ -281,7 +327,7 @@ Released on October 31, 2024.
 
 - Adds the team management functionality for all users.
 - Updates the Agent UI to improve usability.
-- Adds support for Markdown chunking in the **General** chunk method.
+- Adds support for Markdown chunking in the **General** chunking method.
 - Introduces an **invoke** tool within the Agent UI.
 - Integrates support for Dify's knowledge base API.
 - Adds support for GLM4-9B and Yi-Lightning models.
@@ -313,13 +359,13 @@ Released on September 30, 2024.
 - Improves the results of multi-round dialogues.
 - Enables users to remove added LLM vendors.
 - Adds support for **OpenTTS** and **SparkTTS** models.
-- Implements an **Excel to HTML** toggle in the **General** chunk method, allowing users to parse a spreadsheet into either HTML tables or key-value pairs by row.
+- Implements an **Excel to HTML** toggle in the **General** chunking method, allowing users to parse a spreadsheet into either HTML tables or key-value pairs by row.
 - Adds agent tools **YahooFinance** and **Jin10**.
 - Adds an investment advisor agent template.
 
 ### Compatibility changes
 
-As of this release, RAGFlow offers slim editions of its Docker images to improve the experience for users with limited Internet access. A slim edition of RAGFlow's Docker image does not include built-in BGE/BCE embedding models and has a size of about 1GB; a full edition of RAGFlow is approximately 9GB and includes both built-in embedding models and embedding models that will be downloaded once you select them in the RAGFlow UI.
+From this release onwards, RAGFlow offers slim editions of its Docker images to improve the experience for users with limited Internet access. A slim edition of RAGFlow's Docker image does not include built-in BGE/BCE embedding models and has a size of about 1GB; a full edition of RAGFlow is approximately 9GB and includes both built-in embedding models and embedding models that will be downloaded once you select them in the RAGFlow UI.
 
 The default Docker image edition is `nightly-slim`. The following list clarifies the differences between various editions:
 
@@ -366,7 +412,7 @@ Released on August 26, 2024.
 - Incorporates monitoring for the task executor.
 - Introduces Agent tools **GitHub**, **DeepL**, **BaiduFanyi**, **QWeather**, and **GoogleScholar**.
 - Supports chunking of EML files.
-- Supports more LLMs or model services: **GPT-4o-mini**, **PerfXCloud**, **TogetherAI**, **Upstage**, **Novita.AI**, **01.AI**, **SiliconFlow**, **PPIO**, **XunFei Spark**, **Baidu Yiyan**, and **Tencent Hunyuan**.
+- Supports more LLMs or model services: **GPT-4o-mini**, **PerfXCloud**, **TogetherAI**, **Upstage**, **Novita AI**, **01.AI**, **SiliconFlow**, **PPIO**, **XunFei Spark**, **Baidu Yiyan**, and **Tencent Hunyuan**.
 
 ## v0.9.0
 
@@ -374,7 +420,7 @@ Released on August 6, 2024.
 
 ### New features
 
-- Supports GraphRAG as a chunk method.
+- Supports GraphRAG as a chunking method.
 - Introduces Agent component **Keyword** and search tools, including **Baidu**, **DuckDuckGo**, **PubMed**, **Wikipedia**, **Bing**, and **Google**.
 - Supports speech-to-text recognition for audio files.
 - Supports model vendors **Gemini** and **Groq**.
@@ -389,8 +435,8 @@ Released on July 8, 2024.
 
 - Supports Agentic RAG, enabling graph-based workflow construction for RAG and agents.
 - Supports model vendors **Mistral**, **MiniMax**, **Bedrock**, and **Azure OpenAI**.
-- Supports DOCX files in the MANUAL chunk method.
-- Supports DOCX, MD, and PDF files in the Q&A chunk method.
+- Supports DOCX files in the MANUAL chunking method.
+- Supports DOCX, MD, and PDF files in the Q&A chunking method.
 
 ## v0.7.0
 
@@ -402,7 +448,7 @@ Released on May 31, 2024.
 - Integrates reranker and embedding models: [BCE](https://github.com/netease-youdao/BCEmbedding), [BGE](https://github.com/FlagOpen/FlagEmbedding), and [Jina](https://jina.ai/embeddings/).
 - Supports LLMs Baichuan and VolcanoArk.
 - Implements [RAPTOR](https://arxiv.org/html/2401.18059v1) for improved text retrieval.
-- Supports HTML files in the GENERAL chunk method.
+- Supports HTML files in the GENERAL chunking method.
 - Provides HTTP and Python APIs for deleting documents by ID.
 - Supports ARM64 platforms.
 
@@ -431,7 +477,7 @@ Released on May 21, 2024.
 - Supports streaming output.
 - Provides HTTP and Python APIs for retrieving document chunks.
 - Supports monitoring of system components, including Elasticsearch, MySQL, Redis, and MinIO.
-- Supports disabling **Layout Recognition** in the GENERAL chunk method to reduce file chunking time.
+- Supports disabling **Layout Recognition** in the GENERAL chunking method to reduce file chunking time.
 
 ### Related APIs
 

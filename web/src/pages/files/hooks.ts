@@ -1,16 +1,10 @@
-import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useConnectToKnowledge,
-  useCreateFolder,
-  useDeleteFile,
-  useFetchParentFolderList,
-  useMoveFile,
   useRenameFile,
-  useUploadFile,
 } from '@/hooks/file-manager-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
 import { TableRowSelection } from 'antd/es/table/interface';
-import { UploadFile } from 'antd/lib';
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'umi';
 
@@ -35,18 +29,6 @@ export const useGetRowSelection = () => {
   };
 
   return { rowSelection, setSelectedRowKeys };
-};
-
-export const useNavigateToOtherFolder = () => {
-  const navigate = useNavigate();
-  const navigateToOtherFolder = useCallback(
-    (folderId: string) => {
-      navigate(`/file?folderId=${folderId}`);
-    },
-    [navigate],
-  );
-
-  return navigateToOtherFolder;
 };
 
 export const useRenameCurrentFile = () => {
@@ -93,100 +75,6 @@ export const useRenameCurrentFile = () => {
 export type UseRenameCurrentFileReturnType = ReturnType<
   typeof useRenameCurrentFile
 >;
-
-export const useSelectBreadcrumbItems = () => {
-  const parentFolderList = useFetchParentFolderList();
-
-  return parentFolderList.length === 1
-    ? []
-    : parentFolderList.map((x) => ({
-        title: x.name === '/' ? 'root' : x.name,
-        path: `/file?folderId=${x.id}`,
-      }));
-};
-
-export const useHandleCreateFolder = () => {
-  const {
-    visible: folderCreateModalVisible,
-    hideModal: hideFolderCreateModal,
-    showModal: showFolderCreateModal,
-  } = useSetModalState();
-  const { createFolder, loading } = useCreateFolder();
-  const id = useGetFolderId();
-
-  const onFolderCreateOk = useCallback(
-    async (name: string) => {
-      const ret = await createFolder({ parentId: id, name });
-
-      if (ret === 0) {
-        hideFolderCreateModal();
-      }
-    },
-    [createFolder, hideFolderCreateModal, id],
-  );
-
-  return {
-    folderCreateLoading: loading,
-    onFolderCreateOk,
-    folderCreateModalVisible,
-    hideFolderCreateModal,
-    showFolderCreateModal,
-  };
-};
-
-export const useHandleDeleteFile = (
-  fileIds: string[],
-  setSelectedRowKeys: (keys: string[]) => void,
-) => {
-  const { deleteFile: removeDocument } = useDeleteFile();
-  const showDeleteConfirm = useShowDeleteConfirm();
-  const parentId = useGetFolderId();
-
-  const handleRemoveFile = () => {
-    showDeleteConfirm({
-      onOk: async () => {
-        const code = await removeDocument({ fileIds, parentId });
-        if (code === 0) {
-          setSelectedRowKeys([]);
-        }
-        return;
-      },
-    });
-  };
-
-  return { handleRemoveFile };
-};
-
-export const useHandleUploadFile = () => {
-  const {
-    visible: fileUploadVisible,
-    hideModal: hideFileUploadModal,
-    showModal: showFileUploadModal,
-  } = useSetModalState();
-  const { uploadFile, loading } = useUploadFile();
-  const id = useGetFolderId();
-
-  const onFileUploadOk = useCallback(
-    async (fileList: UploadFile[]): Promise<number | undefined> => {
-      if (fileList.length > 0) {
-        const ret: number = await uploadFile({ fileList, parentId: id });
-        if (ret === 0) {
-          hideFileUploadModal();
-        }
-        return ret;
-      }
-    },
-    [uploadFile, hideFileUploadModal, id],
-  );
-
-  return {
-    fileUploadLoading: loading,
-    onFileUploadOk,
-    fileUploadVisible,
-    hideFileUploadModal,
-    showFileUploadModal,
-  };
-};
 
 export const useHandleConnectToKnowledge = () => {
   const {
@@ -254,49 +142,4 @@ export const useHandleBreadcrumbClick = () => {
   );
 
   return { handleBreadcrumbClick };
-};
-
-export const useHandleMoveFile = (
-  setSelectedRowKeys: (keys: string[]) => void,
-) => {
-  const {
-    visible: moveFileVisible,
-    hideModal: hideMoveFileModal,
-    showModal: showMoveFileModal,
-  } = useSetModalState();
-  const { moveFile, loading } = useMoveFile();
-  const [sourceFileIds, setSourceFileIds] = useState<string[]>([]);
-
-  const onMoveFileOk = useCallback(
-    async (targetFolderId: string) => {
-      const ret = await moveFile({
-        src_file_ids: sourceFileIds,
-        dest_file_id: targetFolderId,
-      });
-
-      if (ret === 0) {
-        setSelectedRowKeys([]);
-        hideMoveFileModal();
-      }
-      return ret;
-    },
-    [moveFile, hideMoveFileModal, sourceFileIds, setSelectedRowKeys],
-  );
-
-  const handleShowMoveFileModal = useCallback(
-    (ids: string[]) => {
-      setSourceFileIds(ids);
-      showMoveFileModal();
-    },
-    [showMoveFileModal],
-  );
-
-  return {
-    initialValue: '',
-    moveFileLoading: loading,
-    onMoveFileOk,
-    moveFileVisible,
-    hideMoveFileModal,
-    showMoveFileModal: handleShowMoveFileModal,
-  };
 };

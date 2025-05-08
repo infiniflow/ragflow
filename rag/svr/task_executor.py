@@ -18,6 +18,8 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 import random
 import sys
+import threading
+import time
 
 from api.utils.log_utils import initRootLogger, get_project_base_directory
 from graphrag.general.index import run_graphrag
@@ -58,7 +60,7 @@ from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from rag.settings import DOC_MAXIMUM_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
 from rag.utils import num_tokens_from_string, truncate
-from rag.utils.redis_conn import REDIS_CONN
+from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
 
@@ -97,8 +99,19 @@ CURRENT_TASKS = {}
 
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
+MAX_CONCURRENT_MINIO = int(os.environ.get('MAX_CONCURRENT_MINIO', '10'))
 task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
 chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
+minio_limiter = trio.CapacityLimiter(MAX_CONCURRENT_MINIO)
+WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
+stop_event = threading.Event()
+
+
+def signal_handler(sig, frame):
+    logging.info("Received interrupt signal, shutting down...")
+    stop_event.set()
+    time.sleep(1)
+    sys.exit(0)
 
 
 # SIGUSR1 handler: start tracemalloc and take snapshot
@@ -259,38 +272,43 @@ async def build_chunks(task, progress_callback):
     }
     if task["pagerank"]:
         doc[PAGERANK_FLD] = int(task["pagerank"])
-    el = 0
-    for ck in cks:
-        d = copy.deepcopy(doc)
-        d.update(ck)
-        d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
-        d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-        d["create_timestamp_flt"] = datetime.now().timestamp()
-        if not d.get("image"):
-            _ = d.pop("image", None)
-            d["img_id"] = ""
-            docs.append(d)
-            continue
+    st = timer()
 
+    async def upload_to_minio(document, chunk):
         try:
-            output_buffer = BytesIO()
-            if isinstance(d["image"], bytes):
-                output_buffer = BytesIO(d["image"])
-            else:
-                d["image"].save(output_buffer, format='JPEG')
+            async with minio_limiter:
+                d = copy.deepcopy(document)
+                d.update(chunk)
+                d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
+                d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+                d["create_timestamp_flt"] = datetime.now().timestamp()
+                if not d.get("image"):
+                    _ = d.pop("image", None)
+                    d["img_id"] = ""
+                    docs.append(d)
+                    return
 
-            st = timer()
-            await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
-            el += timer() - st
+                output_buffer = BytesIO()
+                if isinstance(d["image"], bytes):
+                    output_buffer = BytesIO(d["image"])
+                else:
+                    d["image"].save(output_buffer, format='JPEG')
+                await trio.to_thread.run_sync(lambda: STORAGE_IMPL.put(task["kb_id"], d["id"], output_buffer.getvalue()))
+
+                d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
+                del d["image"]
+                docs.append(d)
         except Exception:
             logging.exception(
                 "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
             raise
 
-        d["img_id"] = "{}-{}".format(task["kb_id"], d["id"])
-        del d["image"]
-        docs.append(d)
-    logging.info("MINIO PUT({}):{}".format(task["name"], el))
+    async with trio.open_nursery() as nursery:
+        for ck in cks:
+            nursery.start_soon(upload_to_minio, doc, ck)
+
+    el = timer() - st
+    logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
 
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
@@ -309,7 +327,7 @@ async def build_chunks(task, progress_callback):
             return
         async with trio.open_nursery() as nursery:
             for d in docs:
-                nursery.start_soon(lambda: doc_keyword_extraction(chat_mdl, d, task["parser_config"]["auto_keywords"]))
+                nursery.start_soon(doc_keyword_extraction, chat_mdl, d, task["parser_config"]["auto_keywords"])
         progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["parser_config"].get("auto_questions", 0):
@@ -328,7 +346,7 @@ async def build_chunks(task, progress_callback):
                 d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
         async with trio.open_nursery() as nursery:
             for d in docs:
-                nursery.start_soon(lambda: doc_question_proposal(chat_mdl, d, task["parser_config"]["auto_questions"]))
+                nursery.start_soon(doc_question_proposal, chat_mdl, d, task["parser_config"]["auto_questions"])
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
@@ -370,7 +388,7 @@ async def build_chunks(task, progress_callback):
                 d[TAG_FLD] = json.loads(cached)
         async with trio.open_nursery() as nursery:
             for d in docs_to_tag:
-                nursery.start_soon(lambda: doc_content_tagging(chat_mdl, d, topn_tags))
+                nursery.start_soon(doc_content_tagging, chat_mdl, d, topn_tags)
         progress_callback(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     return docs
@@ -621,6 +639,7 @@ async def handle_task():
 async def report_status():
     global CONSUMER_NAME, BOOT_AT, PENDING_TASKS, LAG_TASKS, DONE_TASKS, FAILED_TASKS
     REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
+    redis_lock = RedisDistributedLock("clean_task_executor", lock_value=CONSUMER_NAME, timeout=60)
     while True:
         try:
             now = datetime.now()
@@ -646,18 +665,64 @@ async def report_status():
             expired = REDIS_CONN.zcount(CONSUMER_NAME, 0, now.timestamp() - 60 * 30)
             if expired > 0:
                 REDIS_CONN.zpopmin(CONSUMER_NAME, expired)
+
+            # clean task executor
+            if redis_lock.acquire():
+                task_executors = REDIS_CONN.smembers("TASKEXE")
+                for consumer_name in task_executors:
+                    if consumer_name == CONSUMER_NAME:
+                        continue
+                    expired = REDIS_CONN.zcount(
+                        consumer_name, now.timestamp() - WORKER_HEARTBEAT_TIMEOUT, now.timestamp() + 10
+                    )
+                    if expired == 0:
+                        logging.info(f"{consumer_name} expired, removed")
+                        REDIS_CONN.srem("TASKEXE", consumer_name)
+                        REDIS_CONN.delete(consumer_name)
         except Exception:
             logging.exception("report_status got exception")
+        finally:
+            redis_lock.release()
         await trio.sleep(30)
+
+
+def recover_pending_tasks():
+    redis_lock = RedisDistributedLock("recover_pending_tasks", lock_value=CONSUMER_NAME, timeout=60)
+    svr_queue_names = get_svr_queue_names()
+    while not stop_event.is_set():
+        try:
+            if redis_lock.acquire():
+                for queue_name in svr_queue_names:
+                    msgs = REDIS_CONN.get_pending_msg(queue=queue_name, group_name=SVR_CONSUMER_GROUP_NAME)
+                    msgs = [msg for msg in msgs if msg['consumer'] != CONSUMER_NAME]
+                    if len(msgs) == 0:
+                        continue
+
+                    task_executors = REDIS_CONN.smembers("TASKEXE")
+                    task_executor_set = {t for t in task_executors}
+                    msgs = [msg for msg in msgs if msg['consumer'] not in task_executor_set]
+                    for msg in msgs:
+                        logging.info(
+                            f"Recover pending task: {msg['message_id']}, consumer: {msg['consumer']}, "
+                            f"time since delivered: {msg['time_since_delivered'] / 1000} s"
+                        )
+                        REDIS_CONN.requeue_msg(queue_name, SVR_CONSUMER_GROUP_NAME, msg['message_id'])
+        except Exception:
+            logging.warning("recover_pending_tasks got exception")
+        finally:
+            redis_lock.release()
+            stop_event.wait(60)
+        
+
 
 
 async def main():
     logging.info(r"""
-  ______           __      ______                     __            
+  ______           __      ______                     __
  /_  __/___ ______/ /__   / ____/  _____  _______  __/ /_____  _____
   / / / __ `/ ___/ //_/  / __/ | |/_/ _ \/ ___/ / / / __/ __ \/ ___/
- / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /    
-/_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/                               
+ / / / /_/ (__  ) ,<    / /____>  </  __/ /__/ /_/ / /_/ /_/ / /
+/_/  \__,_/____/_/|_|  /_____/_/|_|\___/\___/\__,_/\__/\____/_/
     """)
     logging.info(f'TaskExecutor: RAGFlow version: {get_ragflow_version()}')
     settings.init_settings()
@@ -669,9 +734,14 @@ async def main():
     if TRACE_MALLOC_ENABLED:
         start_tracemalloc_and_snapshot(None, None)
 
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    threading.Thread(name="RecoverPendingTask", target=recover_pending_tasks).start()
+
     async with trio.open_nursery() as nursery:
         nursery.start_soon(report_status)
-        while True:
+        while not stop_event.is_set():
             async with task_limiter:
                 nursery.start_soon(handle_task)
     logging.error("BUG!!! You should not reach here!!!")

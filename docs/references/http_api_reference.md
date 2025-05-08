@@ -172,6 +172,150 @@ Failure:
   "message": "The last content of this conversation is not from user."
 }
 ```
+---
+### Create agent completion
+
+**POST** `/api/v1/agents_openai/{agent_id}/chat/completions`
+
+Creates a model response for a given chat conversation.
+
+This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/agents_openai/{agent_id}/chat/completions`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"model"`: `string`
+  - `"messages"`: `object list`
+  - `"stream"`: `boolean`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents_openai/{agent_id}/chat/completions \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+        "model": "model",
+        "messages": [{"role": "user", "content": "Say this is a test!"}],
+        "stream": true
+      }'
+```
+
+##### Request Parameters
+
+- `model` (*Body parameter*) `string`, *Required*
+  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+
+- `messages` (*Body parameter*) `list[object]`, *Required*
+  A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
+
+- `stream` (*Body parameter*) `boolean`
+  Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+#### Response
+
+Stream:
+
+```json
+{
+    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "choices": [
+        {
+            "delta": {
+                "content": "This is a test. If you have any specific questions or need information, feel",
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            },
+            "finish_reason": null,
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "created": 1740543996,
+    "model": "model",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "",
+    "usage": null
+}
+// omit duplicated information
+{"choices":[{"delta":{"content":" free to ask, and I will do my best to provide an answer based on","role":"assistant"}}]}
+{"choices":[{"delta":{"content":" the knowledge I have. If your question is unrelated to the provided knowledge base,","role":"assistant"}}]}
+{"choices":[{"delta":{"content":" I will let you know.","role":"assistant"}}]}
+// the last chunk
+{
+    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "choices": [
+        {
+            "delta": {
+                "content": null,
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            },
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "created": 1740543996,
+    "model": "model",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "",
+    "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 225,
+        "total_tokens": 243
+    }
+}
+```
+
+Non-stream:
+
+```json
+{
+    "choices":[
+        {
+            "finish_reason":"stop",
+            "index":0,
+            "logprobs":null,
+            "message":{
+                "content":"This is a test. If you have any specific questions or need information, feel free to ask, and I will do my best to provide an answer based on the knowledge I have. If your question is unrelated to the provided knowledge base, I will let you know.",
+                "role":"assistant"
+            }
+        }
+    ],
+    "created":1740543499,
+    "id":"chatcmpl-3a9c3572f29311efa69751e139332ced",
+    "model":"model",
+    "object":"chat.completion",
+    "usage":{
+        "completion_tokens":246,
+        "completion_tokens_details":{
+            "accepted_prediction_tokens":246,
+            "reasoning_tokens":18,
+            "rejected_prediction_tokens":0
+        },
+        "prompt_tokens":18,
+        "total_tokens":264
+    }
+}
+```
+
+Failure:
+
+```json
+{
+  "code": 102,
+  "message": "The last content of this conversation is not from user."
+}
+```
 
 ## DATASET MANAGEMENT
 
@@ -197,6 +341,7 @@ Creates a dataset.
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
+  - `"pagerank"`: `int`
   - `"parser_config"`: `object`
 
 ##### Request example
@@ -215,60 +360,83 @@ curl --request POST \
 
 - `"name"`: (*Body parameter*), `string`, *Required*  
   The unique name of the dataset to create. It must adhere to the following requirements:  
-  - Permitted characters include:
-    - English letters (a-z, A-Z)
-    - Digits (0-9)
-    - "_" (underscore)
-  - Must begin with an English letter or underscore.
-  - Maximum 65,535 characters.
-  - Case-insensitive.
+  - Basic Multilingual Plane (BMP) only
+  - Maximum 128 characters
+  - Case-insensitive
 
 - `"avatar"`: (*Body parameter*), `string`  
   Base64 encoding of the avatar.
+  - Maximum 65535 characters
 
 - `"description"`: (*Body parameter*), `string`  
   A brief description of the dataset to create.
+  - Maximum 65535 characters
 
 - `"embedding_model"`: (*Body parameter*), `string`  
-  The name of the embedding model to use. For example: `"BAAI/bge-zh-v1.5"`
+  The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
+  - Maximum 255 characters
+  - Must follow `model_name@model_factory` format
 
 - `"permission"`: (*Body parameter*), `string`  
   Specifies who can access the dataset to create. Available options:  
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 
+- `"pagerank"`: (*Body parameter*), `int`  
+  Set page rank: refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  - Default: `0`
+  - Minimum: `0`
+  - Maximum: `100`
+
 - `"chunk_method"`: (*Body parameter*), `enum<string>`  
   The chunking method of the dataset to create. Available options:  
   - `"naive"`: General (default)
+  - `"book"`: Book
+  - `"email"`: Email
+  - `"laws"`: Laws
   - `"manual"`: Manual
+  - `"one"`: One
+  - `"paper"`: Paper
+  - `"picture"`: Picture
+  - `"presentation"`: Presentation
   - `"qa"`: Q&A
   - `"table"`: Table
-  - `"paper"`: Paper
-  - `"book"`: Book
-  - `"laws"`: Laws
-  - `"presentation"`: Presentation
-  - `"picture"`: Picture
-  - `"one"`: One
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
-  - `"email"`: Email
+  - `"tag"`: Tag
 
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"layout_recognize"`: Defaults to `true`.
-    - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-    - `"task_page_size"`: Defaults to `12`. For PDF only.
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"auto_keywords"`: `int` 
+      - Defaults to `0`
+      - Minimum: `0`
+      - Maximum: `32`
+    - `"auto_questions"`: `int`
+      - Defaults to `0`
+      - Minimum: `0`
+      - Maximum: `10`
+    - `"chunk_token_num"`: `int`
+      - Defaults to `128`
+      - Minimum: `1`
+      - Maximum: `2048`
+    - `"delimiter"`: `string`
+      - Defaults to `"\n"`.
+    - `"html4excel"`: `bool` Indicates whether to convert Excel documents into HTML format. 
+      - Defaults to `false`
+    - `"layout_recognize"`: `string`
+      - Defaults to `DeepDOC`
+    - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+    - `"task_page_size"`: `int` For PDF only.
+      - Defaults to `12`
+      - Minimum: `1`
+    - `"raptor"`: `object` RAPTOR-specific settings. 
+      - Defaults to: `{"use_raptor": false}`
+    - `"graphrag"`: `object` GRAPHRAG-specific settings. 
+      - Defaults to: `{"use_graphrag": false}`
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: `object` RAPTOR-specific settings.
+      - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
-  - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:  
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-    - `"entity_types"`: Defaults to `["organization","person","location","event","time"]`
 
 #### Response
 
@@ -281,33 +449,34 @@ Success:
         "avatar": null,
         "chunk_count": 0,
         "chunk_method": "naive",
-        "create_date": "Thu, 24 Oct 2024 09:14:07 GMT",
-        "create_time": 1729761247434,
-        "created_by": "69736c5e723611efb51b0242ac120007",
+        "create_date": "Mon, 28 Apr 2025 18:40:41 GMT",
+        "create_time": 1745836841611,
+        "created_by": "3af81804241d11f0a6a79f24fc270c7f",
         "description": null,
         "document_count": 0,
-        "embedding_model": "BAAI/bge-large-zh-v1.5",
-        "id": "527fa74891e811ef9c650242ac120006",
+        "embedding_model": "BAAI/bge-large-zh-v1.5@BAAI",
+        "id": "3b4de7d4241d11f0a6a79f24fc270c7f",
         "language": "English",
-        "name": "test_1",
+        "name": "RAGFlow example",
+        "pagerank": 0,
         "parser_config": {
-            "chunk_token_num": 128,
-            "delimiter": "\\n!?;。；！？",
-            "html4excel": false,
-            "layout_recognize": true,
+            "chunk_token_num": 128, 
+            "delimiter": "\\n!?;。；！？", 
+            "html4excel": false, 
+            "layout_recognize": "DeepDOC", 
             "raptor": {
-                "user_raptor": false
-            }
-        },
+                "use_raptor": false
+                }
+            },
         "permission": "me",
         "similarity_threshold": 0.2,
         "status": "1",
-        "tenant_id": "69736c5e723611efb51b0242ac120007",
+        "tenant_id": "3af81804241d11f0a6a79f24fc270c7f",
         "token_num": 0,
-        "update_date": "Thu, 24 Oct 2024 09:14:07 GMT",
-        "update_time": 1729761247434,
-        "vector_similarity_weight": 0.3
-    }
+        "update_date": "Mon, 28 Apr 2025 18:40:41 GMT",
+        "update_time": 1745836841611,
+        "vector_similarity_weight": 0.3,
+    },
 }
 ```
 
@@ -315,8 +484,8 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "Duplicated knowledgebase name in creating dataset."
+    "code": 101,
+    "message": "Dataset name 'RAGFlow example' already exists"
 }
 ```
 
@@ -429,8 +598,6 @@ curl --request PUT \
   - `"picture"`: Picture
   - `"one"`:One
   - `"email"`: Email
-  - `"knowledge_graph"`: Knowledge Graph  
-    Ensure your LLM is properly configured on the **Settings** page before selecting this. Please also note that Knowledge Graph consumes a large number of Tokens!
 
 #### Response
 
@@ -511,10 +678,10 @@ Success:
             "id": "6e211ee0723611efa10a0242ac120007",
             "language": "English",
             "name": "mysql",
-            "chunk_method": "knowledge_graph",
+            "chunk_method": "naive",
             "parser_config": {
                 "chunk_token_num": 8192,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "entity_types": [
                     "organization",
                     "person",
@@ -602,11 +769,11 @@ Success:
             "name": "1.txt",
             "parser_config": {
                 "chunk_token_num": 128,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "run": "UNSTART",
@@ -688,19 +855,15 @@ curl --request PUT \
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `128`.
+    - `"chunk_token_count"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `true`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
+    - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
-    - `"raptor"`: Raptor-specific settings. Defaults to: `{"use_raptor": false}`.
+    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
-  - If `"chunk_method"` is `"knowledge_graph"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `128`.
-    - `"delimiter"`: Defaults to `"\n!?。；！？"`.
-    - `"entity_types"`: Defaults to `["organization","person","location","event","time"]`
 
 #### Response
 
@@ -834,7 +997,7 @@ Success:
                 "name": "Test_2.txt",
                 "parser_config": {
                     "chunk_token_count": 128,
-                    "delimiter": "\n!?。；！？",
+                    "delimiter": "\n",
                     "layout_recognize": true,
                     "task_page_size": 12
                 },
@@ -1167,7 +1330,7 @@ Success:
     "data": {
         "chunks": [
             {
-                "available_int": 1,
+                "available": true,
                 "content": "This is a test content.",
                 "docnm_kwd": "1.txt",
                 "document_id": "b330ec2e91ec11efbc510242ac120004",
@@ -1191,11 +1354,11 @@ Success:
             "name": "1.txt",
             "parser_config": {
                 "chunk_token_num": 128,
-                "delimiter": "\\n!?;。；！？",
+                "delimiter": "\\n",
                 "html4excel": false,
                 "layout_recognize": true,
                 "raptor": {
-                    "user_raptor": false
+                    "use_raptor": false
                 }
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
@@ -1533,14 +1696,14 @@ curl --request POST \
   - `"top_p"`: `float`  
     Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
   - `"presence_penalty"`: `float`  
-    This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
+    This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.4`.
   - `"frequency penalty"`: `float`  
     Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt"`: (*Body parameter*), `object`  
   Instructions for the LLM to follow. If it is not explicitly set, a JSON object with the following values will be generated as the default. A `prompt` JSON object contains the following attributes:  
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
-  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `8`.
+  - `"top_n"`: `int` This argument specifies the number of top chunks with similarity scores above the `similarity_threshold` that are fed to the LLM. The LLM will *only* access these 'top N' chunks.  The default value is `6`.
   - `"variables"`: `object[]` This argument lists the variables to use in the 'System' field of **Chat Configurations**. Note that:  
     - `"knowledge"` is a reserved variable, which represents the retrieved chunks.
     - All the variables in 'System' should be curly bracketed.
@@ -2535,9 +2698,13 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"sync_dsl"`: `boolean` (optional)
   - other parameters: `string`
 
+:::info IMPORTANT
+You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) agent component.
+:::
+
 ##### Request example
 
-If the **Begin** component does not take parameters, the following code will create a session.
+- If the **Begin** component does not take parameters, the following code will create a session.
 
 ```bash
 curl --request POST \
@@ -2549,7 +2716,7 @@ curl --request POST \
      }'
 ```
 
-If the **Begin** component takes parameters, the following code will create a session.
+- If the **Begin** component takes parameters, the following code will create a session.  
 
 ```bash
 curl --request POST \
@@ -3021,7 +3188,7 @@ The chat model dynamically determines the number of questions to generate based 
 ##### Request example
 
 ```bash
-curl --request DELETE \
+curl --request POST \
      --url http://{address}/api/v1/conversation/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \

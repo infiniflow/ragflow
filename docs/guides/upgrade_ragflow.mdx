@@ -3,11 +3,15 @@ sidebar_position: 11
 slug: /upgrade_ragflow
 ---
 
-# Upgrade
+# Upgrading
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 Upgrade RAGFlow to `nightly-slim`/`nightly` or the latest, published release.
+
+:::info NOTE
+Upgrading RAGFlow in itself will *not* remove your uploaded/historical data. However, be aware that `docker compose -f docker/docker-compose.yml down -v` will remove Docker container volumes, resulting in data loss.
+:::
 
 ## Upgrade RAGFlow to `nightly-slim`/`nightly`, the most recent, tested Docker image
 
@@ -62,16 +66,16 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-2. Switch to the latest, officially published release, e.g., `v0.17.2`:
+2. Switch to the latest, officially published release, e.g., `v0.18.0`:
 
    ```bash
-   git checkout -f v0.17.2
+   git checkout -f v0.18.0
    ```
 
 3. Update **ragflow/docker/.env** as follows:
 
    ```bash
-   RAGFLOW_IMAGE=infiniflow/ragflow:v0.17.2
+   RAGFLOW_IMAGE=infiniflow/ragflow:v0.18.0
    ```
 
 4. Update the RAGFlow image and restart RAGFlow:
@@ -79,4 +83,19 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
    ```bash
    docker compose -f docker/docker-compose.yml pull
    docker compose -f docker/docker-compose.yml up -d
+   ```
+
+## Frequently asked questions
+
+### Upgrade RAGFlow in an offline environment (without Internet access)
+
+1. From an environment with Internet access, pull the required Docker image.
+2. Save the Docker image to a **.tar** file.
+   ```bash
+   docker save -o ragflow.v0.18.0.tar infiniflow/ragflow:v0.18.0
+   ```
+3. Copy the **.tar** file to the target server.
+4. Load the **.tar** file into Docker:
+   ```bash
+   docker load -i ragflow.v0.18.0.tar
    ```

@@ -11,7 +11,7 @@ Use a tag set to tag chunks in your datasets.
 
 Retrieval accuracy is the touchstone for a production-ready RAG framework. In addition to retrieval-enhancing approaches like auto-keyword, auto-question, and knowledge graph, RAGFlow introduces an auto-tagging feature to address semantic gaps. The auto-tagging feature automatically maps tags in the user-defined tag sets to relevant chunks within your knowledge base based on similarity with each chunk. This automation mechanism allows you to apply an additional "layer" of domain-specific knowledge to existing datasets, which is particularly useful when dealing with a large number of chunks.
 
-To use this feature, ensure you have at least one properly configured tag set, specify the tag set(s) on the **Configuration** page of your knowledge base (dataset), and then re-parse your documents to initiate the auto-tag process. During this process, each chunk in your dataset is compared with every entry in the specified tag set(s), and tags are automatically applied based on similarity.
+To use this feature, ensure you have at least one properly configured tag set, specify the tag set(s) on the **Configuration** page of your knowledge base (dataset), and then re-parse your documents to initiate the auto-tagging process. During this process, each chunk in your dataset is compared with every entry in the specified tag set(s), and tags are automatically applied based on similarity.
 
 :::caution NOTE
 The auto-tagging feature is *unavailable* on the [Infinity](https://github.com/infiniflow/infinity) document engine.
@@ -19,7 +19,7 @@ The auto-tagging feature is *unavailable* on the [Infinity](https://github.com/i
 
 ## Scenarios
 
-Auto-tagging applies in situations where chunks are so similar to each other that the intended chunks cannot be distinguished from the rest. For example, when you have a few chunks about iPhone and a majority about iPhone case or iPhone accessaries, it becomes difficult to retrieve the iPhone-specific chunks without additional information.
+Auto-tagging applies in situations where chunks are so similar to each other that the intended chunks cannot be distinguished from the rest. For example, when you have a few chunks about iPhone and a majority about iPhone case or iPhone accessaries, it becomes difficult to retrieve those chunks about iPhone without additional information.
 
 ## Create tag set
 
@@ -42,7 +42,7 @@ As a rule of thumb, consider including the following entries in your tag table:
 ### Create a tag set
 
 1. Click **+ Create knowledge base** to create a knowledge base.
-2. Navigate to the **Configuration** page of the created knowledge base and choose **Tag** as the default chunk method.
+2. Navigate to the **Configuration** page of the created knowledge base and choose **Tag** as the default chunking method.
 3. Navigate to the **Dataset** page and upload and parse your table file in XLSX, CSV, or TXT formats.  
    _A tag cloud appears under the **Tag view** section, indicating the tag set is created:_  
    ![Image](https://github.com/user-attachments/assets/abefbcbf-c130-4abe-95e1-267b0d2a0505)

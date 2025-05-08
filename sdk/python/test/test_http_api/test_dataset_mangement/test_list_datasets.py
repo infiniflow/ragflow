@@ -16,16 +16,11 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import INVALID_API_TOKEN, list_dataset
+from common import INVALID_API_TOKEN, list_datasets
 from libs.auth import RAGFlowHttpApiAuth
+from libs.utils import is_sorted
 
 
-def is_sorted(data, field, descending=True):
-    timestamps = [ds[field] for ds in data]
-    return all(a >= b for a, b in zip(timestamps, timestamps[1:])) if descending else all(a <= b for a, b in zip(timestamps, timestamps[1:]))
-
-
-@pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -39,15 +34,15 @@ class TestAuthorization:
         ],
     )
     def test_invalid_auth(self, auth, expected_code, expected_message):
-        res = list_dataset(auth)
+        res = list_datasets(auth)
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
-@pytest.mark.usefixtures("get_dataset_ids")
-class TestDatasetList:
+@pytest.mark.usefixtures("add_datasets")
+class TestDatasetsList:
     def test_default(self, get_http_api_auth):
-        res = list_dataset(get_http_api_auth, params={})
+        res = list_datasets(get_http_api_auth, params={})
 
         assert res["code"] == 0
         assert len(res["data"]) == 5
@@ -77,7 +72,7 @@ class TestDatasetList:
         ],
     )
     def test_page(self, get_http_api_auth, params, expected_code, expected_page_size, expected_message):
-        res = list_dataset(get_http_api_auth, params=params)
+        res = list_datasets(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]) == expected_page_size
@@ -116,7 +111,7 @@ class TestDatasetList:
         expected_page_size,
         expected_message,
     ):
-        res = list_dataset(get_http_api_auth, params=params)
+        res = list_datasets(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]) == expected_page_size
@@ -126,24 +121,9 @@ class TestDatasetList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            (
-                {"orderby": None},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"orderby": "create_time"},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"orderby": "update_time"},
-                0,
-                lambda r: (is_sorted(r["data"], "update_time", True)),
-                "",
-            ),
+            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"], "update_time", True)), ""),
             pytest.param(
                 {"orderby": "name", "desc": "False"},
                 0,
@@ -168,7 +148,7 @@ class TestDatasetList:
         assertions,
         expected_message,
     ):
-        res = list_dataset(get_http_api_auth, params=params)
+        res = list_datasets(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -179,54 +159,14 @@ class TestDatasetList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            (
-                {"desc": None},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "true"},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "True"},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": True},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "false"},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": "False"},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": False},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": "False", "orderby": "update_time"},
-                0,
-                lambda r: (is_sorted(r["data"], "update_time", False)),
-                "",
-            ),
+            ({"desc": None}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"desc": True}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"desc": "false"}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
+            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
+            ({"desc": False}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"], "update_time", False)), ""),
             pytest.param(
                 {"desc": "unknown"},
                 102,
@@ -244,7 +184,7 @@ class TestDatasetList:
         assertions,
         expected_message,
     ):
-        res = list_dataset(get_http_api_auth, params=params)
+        res = list_datasets(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -262,7 +202,7 @@ class TestDatasetList:
         ],
     )
     def test_name(self, get_http_api_auth, params, expected_code, expected_num, expected_message):
-        res = list_dataset(get_http_api_auth, params=params)
+        res = list_datasets(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["name"] in [None, ""]:
@@ -284,19 +224,19 @@ class TestDatasetList:
     def test_id(
         self,
         get_http_api_auth,
-        get_dataset_ids,
+        add_datasets,
         dataset_id,
         expected_code,
         expected_num,
         expected_message,
     ):
-        dataset_ids = get_dataset_ids
+        dataset_ids = add_datasets
         if callable(dataset_id):
             params = {"id": dataset_id(dataset_ids)}
         else:
             params = {"id": dataset_id}
 
-        res = list_dataset(get_http_api_auth, params=params)
+        res = list_datasets(get_http_api_auth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["id"] in [None, ""]:
@@ -318,33 +258,35 @@ class TestDatasetList:
     def test_name_and_id(
         self,
         get_http_api_auth,
-        get_dataset_ids,
+        add_datasets,
         dataset_id,
         name,
         expected_code,
         expected_num,
         expected_message,
     ):
-        dataset_ids = get_dataset_ids
+        dataset_ids = add_datasets
         if callable(dataset_id):
             params = {"id": dataset_id(dataset_ids), "name": name}
         else:
             params = {"id": dataset_id, "name": name}
 
-        res = list_dataset(get_http_api_auth, params=params)
+        res = list_datasets(get_http_api_auth, params=params)
+        assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]) == expected_num
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.slow
     def test_concurrent_list(self, get_http_api_auth):
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_dataset, get_http_api_auth) for i in range(100)]
+            futures = [executor.submit(list_datasets, get_http_api_auth) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
     def test_invalid_params(self, get_http_api_auth):
         params = {"a": "b"}
-        res = list_dataset(get_http_api_auth, params=params)
+        res = list_datasets(get_http_api_auth, params=params)
         assert res["code"] == 0
         assert len(res["data"]) == 5

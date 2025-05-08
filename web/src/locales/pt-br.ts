@@ -103,6 +103,7 @@ export default {
       disabled: 'Desabilitar',
       action: 'Ação',
       parsingStatus: 'Status da análise',
+      parsingStatusTip: 'O tempo de processamento do documento varia conforme vários fatores. Ativar recursos como Knowledge Graph, RAPTOR, Extração Automática de Perguntas ou Extração Automática de Palavras-chave aumentará significativamente o tempo de processamento. Se a barra de progresso travar, consulte estas duas FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Início em',
       processDuration: 'Duração',
       progressMsg: 'Progresso',
@@ -161,13 +162,14 @@ export default {
       rerankTip:
         'Se deixado vazio, o RAGFlow usará uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada; se um modelo de reranking for selecionado, uma pontuação de reranking ponderada substituirá a similaridade de cosseno vetorial ponderada. Esteja ciente de que usar um modelo de reranking aumentará significativamente o tempo de resposta do sistema.',
       topK: 'Top-K',
-      topKTip: 'K fragmentos serão alimentados em modelos de reranking.',
+      topKTip:
+        'Usado em conjunto com o Rerank model, essa configuração define o número de trechos de texto a serem enviados ao modelo reranking especificado.',
       delimiter: 'Delimitadores para segmentação de texto',
       delimiterTip:
         'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \\n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula. Defina os delimitadores apenas após entender o mecanismo de segmentação e particionamento de texto.',
       html4excel: 'Excel para HTML',
       html4excelTip:
-        'Quando ativado, a planilha será analisada em tabelas HTML, com no máximo 256 linhas por tabela. Caso contrário, será analisada em pares chave-valor por linha.',
+        'Use em conjunto com o método de fragmentação General. Quando desativado, arquivos de planilhas (XLSX, XLS (Excel97~2003)) serão analisados linha por linha como pares chave-valor. Quando ativado, os arquivos de planilhas serão convertidos em tabelas HTML. Se a tabela original tiver mais de 12 linhas, o sistema dividirá automaticamente em várias tabelas HTML a cada 12 linhas.',
       autoKeywords: 'Palavras-chave automáticas',
       autoKeywordsTip:
         'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos.',
@@ -260,28 +262,29 @@ export default {
       <p><i>Linhas de texto que não seguirem essas regras serão ignoradas, e cada par de Pergunta & Resposta será tratado como um fragmento distinto.</i></p>`,
       useRaptor: 'Usar RAPTOR para melhorar a recuperação',
       useRaptorTip:
-        'Processamento Abstrativo Recursivo para Recuperação Organizada em Árvore. Veja mais em https://huggingface.co/papers/2401.18059.',
+        'Ative o RAPTOR para tarefas de perguntas e respostas multi-hop. Veja https://ragflow.io/docs/dev/enable_raptor para mais detalhes.',
       prompt: 'Prompt',
-      promptTip: 'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
+      promptTip:
+        'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
       promptMessage: 'O prompt é obrigatório',
       promptText: `Por favor, resuma os seguintes parágrafos. Tenha cuidado com os números, não invente informações. Os parágrafos são os seguintes:
       {cluster_content}
     O conteúdo acima precisa ser resumido.`,
       maxToken: 'Máximo de tokens',
-      maxTokenTip: 'Número máximo de tokens para sumarização.',
+      maxTokenTip: 'O número máximo de tokens por chunk de resumo gerado.',
       maxTokenMessage: 'O número máximo de tokens é obrigatório',
       threshold: 'Limite',
-      thresholdTip: 'Quanto maior o limite, menor será o número de clusters.',
+      thresholdTip: 'No RAPTOR, os chunks são agrupados de acordo com sua similaridade semântica. O parâmetro de Limite define a similaridade mínima necessária para que os chunks sejam agrupados. Um Limite mais alto significa menos chunks em cada grupo, enquanto um Limite mais baixo significa mais chunks por grupo.',
       thresholdMessage: 'O limite é obrigatório',
       maxCluster: 'Máximo de clusters',
-      maxClusterTip: 'Número máximo de clusters.',
+      maxClusterTip: 'O número máximo de clusters a serem criados.',
       maxClusterMessage: 'O número máximo de clusters é obrigatório',
       randomSeed: 'Semente aleatória',
       randomSeedMessage: 'A semente aleatória é obrigatória',
       entityTypes: 'Tipos de entidades',
       vietnamese: 'Vietnamita',
       pageRank: 'Ranking de páginas',
-      pageRankTip: `Isso aumenta a pontuação de relevância da base de conhecimento. Seu valor será adicionado à pontuação de relevância de todos os fragmentos recuperados dessa base de conhecimento. Útil ao pesquisar em múltiplas bases e querer priorizar uma específica.`,
+      pageRankTip: `Você pode atribuir uma pontuação PageRank mais alta a bases de conhecimento específicas durante a recuperação. A pontuação correspondente é adicionada às pontuações de similaridade híbrida dos fragmentos recuperados dessas bases de conhecimento, aumentando sua classificação. Veja https://ragflow.io/docs/dev/set_page_rank para mais detalhes.`,
       tagName: 'Etiqueta',
       frequency: 'Frequência',
       searchTags: 'Pesquisar etiquetas',
@@ -336,7 +339,7 @@ export default {
       sendPlaceholder: 'Envie uma mensagem para o assistente...',
       chatConfiguration: 'Configuração do Chat',
       chatConfigurationDescription:
-        'Configure aqui um assistente de chat dedicado às bases de conhecimento selecionadas! 💕',
+        'Configure um assistente de bate-papo para os conjuntos de dados selecionados (bases de conhecimento) aqui! 💕',
       assistantName: 'Nome do assistente',
       assistantNameMessage: 'O nome do assistente é obrigatório',
       namePlaceholder: 'Ex.: Jarvis Currículos',
@@ -362,7 +365,7 @@ export default {
       topN: 'Top N',
       topNTip: `Nem todos os fragmentos com pontuação de similaridade acima do 'limiar de similaridade' serão enviados ao LLM. Isso seleciona os 'Top N' fragmentos recuperados.`,
       variable: 'Variável',
-      variableTip: `As variáveis podem ajudar a desenvolver estratégias mais flexíveis, especialmente ao usar nossas APIs de gerenciamento de assistentes de chat. Essas variáveis serão usadas pelo 'Sistema' como parte dos prompts para o LLM. A variável {knowledge} é uma variável especial reservada que representa suas bases de conhecimento selecionadas, e todas as variáveis devem estar entre chaves { }.`,
+      variableTip: `Usados em conjunto com as APIs de gerenciamento de assistente de bate-papo do RAGFlow, as variáveis podem ajudar a desenvolver estratégias de prompt do sistema mais flexíveis. As variáveis definidas serão usadas pelo 'Prompt do sistema' como parte dos prompts para o LLM. {knowledge} é uma variável especial reservada que representa partes recuperadas de base(s) de conhecimento especificada(s), e todas as variáveis devem ser cercadas por chaves {} no 'Prompt do sistema'. Veja https://ragflow.io/docs/dev/set_chat_variables para mais detalhes.`,
       add: 'Adicionar',
       key: 'Chave',
       optional: 'Opcional',
@@ -498,25 +501,25 @@ export default {
       baseUrlTip:
         'Se sua chave da API for do OpenAI, ignore isso. Outros provedores intermediários fornecerão essa URL base com a chave da API.',
       modify: 'Modificar',
-      systemModelSettings: 'Configurações do Modelo do Sistema',
+      systemModelSettings: 'Definir modelos padrão',
       chatModel: 'Modelo de chat',
       chatModelTip:
         'O modelo LLM padrão que todos os novos bancos de conhecimento usarão.',
       embeddingModel: 'Modelo de incorporação',
       embeddingModelTip:
-        'O modelo de incorporação padrão que todos os novos bancos de conhecimento usarão.',
+        'O modelo de incorporação padrão para cada nova base de conhecimento criada. Se você não encontrar um modelo de incorporação na lista suspensa, verifique se está usando a edição slim do RAGFlow (que não inclui modelos de incorporação) ou consulte https://ragflow.io/docs/dev/supported_models para verificar se o provedor do modelo suporta este modelo.',
       img2txtModel: 'Modelo Img2Txt',
       img2txtModelTip:
-        'O modelo multimodal padrão que todos os novos bancos de conhecimento usarão. Ele pode descrever uma imagem ou vídeo.',
+        'O modelo padrão img2txt para cada base de conhecimento recém-criada. Ele descreve uma imagem ou vídeo. Se você não conseguir encontrar um modelo no menu suspenso, verifique https://ragflow.io/docs/dev/supported_models para ver se seu provedor de modelo suporta este modelo.',
       sequence2txtModel: 'Modelo Speech2Txt',
       sequence2txtModelTip:
-        'O modelo ASR padrão que todos os novos bancos de conhecimento usarão. Use este modelo para converter vozes em texto correspondente.',
+        'O modelo ASR padrão que todos os novos bancos de conhecimento usarão. Use este modelo para converter vozes em texto correspondente. Se você não conseguir encontrar um modelo no menu suspenso, verifique https://ragflow.io/docs/dev/supported_models para ver se seu provedor de modelo suporta este modelo.',
       rerankModel: 'Modelo de Reordenação',
       rerankModelTip:
-        'O modelo de reordenação padrão usado para reordenar os fragmentos recuperados pelas perguntas dos usuários.',
+        'O modelo de rerank padrão para reranking de trechos. Se você não encontrar um modelo no menu suspenso, verifique https://ragflow.io/docs/dev/supported_models para ver se o seu provedor de modelo oferece suporte a este modelo.',
       ttsModel: 'Modelo TTS',
       ttsModelTip:
-        'O modelo TTS padrão será usado para gerar fala durante as conversas sob demanda.',
+        'O modelo padrão de text-to-speech. Se você não encontrar um modelo no menu suspenso, verifique https://ragflow.io/docs/dev/supported_models para ver se o seu provedor de modelo oferece suporte a este modelo.',
       workspace: 'Área de trabalho',
       upgrade: 'Atualizar',
       addLlmTitle: 'Adicionar LLM',
@@ -594,6 +597,8 @@ export default {
       sureDelete: 'Tem certeza de que deseja remover este membro?',
       quit: 'Sair',
       sureQuit: 'Tem certeza de que deseja sair da equipe que você ingressou?',
+      modelsToBeAddedTooltip:
+        'Se o seu provedor de modelo não estiver listado, mas afirmar ser compatível com a OpenAI, selecione o card OpenAI-API-compatible para adicionar o(s) modelo(s) relevante(s). ',
     },
     message: {
       registered: 'Registrado!',
@@ -1118,14 +1123,18 @@ export default {
       addCategory: 'Adicionar categoria',
       categoryName: 'Nome da categoria',
       nextStep: 'Próximo passo',
-      footer: {
-        profile: 'Todos os direitos reservados @ React',
-      },
-      layout: {
-        file: 'arquivo',
-        knowledge: 'conhecimento',
-        chat: 'bate-papo',
-      },
+      prompt: 'Prompt',
+      promptTip:
+        'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
+      promptMessage: 'O prompt é obrigatório',
+    },
+    footer: {
+      profile: 'Todos os direitos reservados @ React',
+    },
+    layout: {
+      file: 'arquivo',
+      knowledge: 'conhecimento',
+      chat: 'bate-papo',
     },
   },
 };

@@ -17,6 +17,7 @@
 import logging
 import boto3
 from botocore.exceptions import ClientError
+from botocore.config import Config
 import time
 from io import BytesIO
 from rag.utils import singleton
@@ -30,7 +31,31 @@ class RAGFlowS3:
         self.access_key = self.s3_config.get('access_key', None)
         self.secret_key = self.s3_config.get('secret_key', None)
         self.region = self.s3_config.get('region', None)
+        self.endpoint_url = self.s3_config.get('endpoint_url', None)
+        self.signature_version = self.s3_config.get('signature_version', None)
+        self.addressing_style = self.s3_config.get('addressing_style', None)
+        self.bucket = self.s3_config.get('bucket', None)
+        self.prefix_path = self.s3_config.get('prefix_path', None)
         self.__open__()
+
+    @staticmethod
+    def use_default_bucket(method):
+        def wrapper(self, bucket, *args, **kwargs):
+            # If there is a default bucket, use the default bucket
+            actual_bucket = self.bucket if self.bucket else bucket
+            return method(self, actual_bucket, *args, **kwargs)
+        return wrapper
+
+    @staticmethod
+    def use_prefix_path(method):
+        def wrapper(self, bucket, fnm, *args, **kwargs):
+            # If the prefix path is set, use the prefix path.
+            # The bucket passed from the upstream call is 
+            # used as the file prefix. This is especially useful when you're using the default bucket
+            if self.prefix_path:
+                fnm = f"{self.prefix_path}/{bucket}/{fnm}"
+            return method(self, bucket, fnm, *args, **kwargs)
+        return wrapper
 
     def __open__(self):
         try:
@@ -40,19 +65,27 @@ class RAGFlowS3:
             pass
 
         try:
-            self.conn = boto3.client(
-                's3',
-                region_name=self.region,
-                aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key
-            )
+            s3_params = {
+                'aws_access_key_id': self.access_key,
+                'aws_secret_access_key': self.secret_key,
+            }
+            if self.region in self.s3_config:
+                s3_params['region_name'] = self.region
+            if 'endpoint_url' in self.s3_config:
+                s3_params['endpoint_url'] = self.endpoint_url
+            if 'signature_version' in self.s3_config:
+                s3_params['config'] = Config(s3={"signature_version": self.signature_version})
+            if 'addressing_style' in self.s3_config:
+                s3_params['config'] = Config(s3={"addressing_style": self.addressing_style})
+            self.conn = boto3.client('s3', **s3_params)
         except Exception:
-            logging.exception(f"Fail to connect at region {self.region}")
+            logging.exception(f"Fail to connect at region {self.region} or endpoint {self.endpoint_url}")
 
     def __close__(self):
         del self.conn
         self.conn = None
 
+    @use_default_bucket
     def bucket_exists(self, bucket):
         try:
             logging.debug(f"head_bucket bucketname {bucket}")
@@ -64,8 +97,9 @@ class RAGFlowS3:
         return exists
 
     def health(self):
-        bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
-
+        bucket = self.bucket
+        fnm = "txtxtxtxt1"
+        fnm, binary = f"{self.prefix_path}/{fnm}" if self.prefix_path else fnm, b"_t@@@1"
         if not self.bucket_exists(bucket):
             self.conn.create_bucket(Bucket=bucket)
             logging.debug(f"create bucket {bucket} ********")
@@ -79,6 +113,8 @@ class RAGFlowS3:
     def list(self, bucket, dir, recursive=True):
         return []
 
+    @use_prefix_path
+    @use_default_bucket
     def put(self, bucket, fnm, binary):
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
         for _ in range(1):
@@ -94,12 +130,16 @@ class RAGFlowS3:
                 self.__open__()
                 time.sleep(1)
 
+    @use_prefix_path
+    @use_default_bucket
     def rm(self, bucket, fnm):
         try:
             self.conn.delete_object(Bucket=bucket, Key=fnm)
         except Exception:
             logging.exception(f"Fail rm {bucket}/{fnm}")
 
+    @use_prefix_path
+    @use_default_bucket
     def get(self, bucket, fnm):
         for _ in range(1):
             try:
@@ -112,18 +152,20 @@ class RAGFlowS3:
                 time.sleep(1)
         return
 
+    @use_prefix_path
+    @use_default_bucket
     def obj_exist(self, bucket, fnm):
         try:
-
             if self.conn.head_object(Bucket=bucket, Key=fnm):
                 return True
         except ClientError as e:
             if e.response['Error']['Code'] == '404':
-
                 return False
             else:
                 raise
 
+    @use_prefix_path
+    @use_default_bucket
     def get_presigned_url(self, bucket, fnm, expires):
         for _ in range(10):
             try:

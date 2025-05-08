@@ -100,6 +100,7 @@ export default {
       disabled: 'Nonaktifkan',
       action: 'Aksi',
       parsingStatus: 'Status Parsing',
+      parsingStatusTip: 'Waktu pemrosesan dokumen bervariasi tergantung beberapa faktor. Mengaktifkan fitur seperti Knowledge Graph, RAPTOR, Ekstraksi Pertanyaan Otomatis, atau Ekstraksi Kata Kunci Otomatis akan secara signifikan menambah waktu pemrosesan. Jika bilah kemajuan macet, silakan lihat dua FAQ berikut: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Proses Dimulai Pada',
       processDuration: 'Durasi Proses',
       progressMsg: 'Pesan Kemajuan',
@@ -155,10 +156,10 @@ export default {
       rerankPlaceholder: 'Silakan pilih',
       rerankTip: `Jika kosong. Ini menggunakan embedding dari kueri dan potongan untuk menghitung kesamaan kosinus vektor. Jika tidak, ini menggunakan skor rerank sebagai pengganti kesamaan kosinus vektor.`,
       topK: 'Top-K',
-      topKTip: `K potongan akan dimasukkan ke dalam model rerank.`,
+      topKTip: `Digunakan bersama dengan Rerank model, pengaturan ini menentukan jumlah potongan teks yang akan dikirim ke model reranking yang ditentukan.`,
       delimiter: `Pemisah untuk segmentasi teks`,
       html4excel: 'Excel ke HTML',
-      html4excelTip: `Excel akan diparsing menjadi tabel HTML atau tidak. Jika FALSE, setiap baris di Excel akan dibentuk sebagai potongan.`,
+      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel97~2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris.`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -289,22 +290,23 @@ export default {
     Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
-        'Pemrosesan Abstraktif Rekursif untuk Pengambilan Terorganisasi Pohon, silakan merujuk ke https://huggingface.co/papers/2401.18059',
+        'Aktifkan RAPTOR untuk tugas tanya jawab multi-langkah. Lihat https://ragflow.io/docs/dev/enable_raptor untuk informasi lebih lanjut.',
       prompt: 'Prompt',
-      promptTip: 'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
+      promptTip:
+        'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
       promptText: `Silakan rangkum paragraf berikut. Berhati-hatilah dengan angka, jangan membuat hal-hal yang tidak ada. Paragraf sebagai berikut:
           {cluster_content}
     Di atas adalah konten yang perlu Anda rangkum.`,
       maxToken: 'Token maksimum',
-      maxTokenTip: 'Jumlah token maksimum untuk peringkasan.',
+      maxTokenTip: 'Jumlah maksimum token per potongan ringkasan yang dihasilkan.',
       maxTokenMessage: 'Token maksimum diperlukan',
       threshold: 'Ambang batas',
       thresholdTip:
-        'Semakin besar ambang batas, semakin sedikit kluster yang akan ada.',
+        'Dalam RAPTOR, potongan-potongan dikelompokkan berdasarkan kemiripan semantiknya. Parameter Ambang menetapkan tingkat kemiripan minimum yang diperlukan agar potongan-potongan dapat dikelompokkan bersama. Ambang yang lebih tinggi berarti lebih sedikit potongan dalam setiap kelompok, sedangkan ambang yang lebih rendah berarti lebih banyak potongan dalam satu kelompok.',
       thresholdMessage: 'Ambang batas diperlukan',
       maxCluster: 'Kluster maksimum',
-      maxClusterTip: 'Jumlah kluster maksimum.',
+      maxClusterTip: 'Jumlah maksimum klaster yang akan dibuat.',
       maxClusterMessage: 'Kluster maksimum diperlukan',
       randomSeed: 'Benih acak',
       randomSeedMessage: 'Benih acak diperlukan',
@@ -341,7 +343,7 @@ export default {
       sendPlaceholder: 'Pesan ke Asisten...',
       chatConfiguration: 'Konfigurasi Obrolan',
       chatConfigurationDescription:
-        'Di sini, dandani asisten khusus untuk basis pengetahuan khusus Anda! 💕',
+        'Atur asisten obrolan untuk dataset yang dipilih (basis pengetahuan) di sini. 💕',
       assistantName: 'Nama Asisten',
       assistantNameMessage: 'Nama asisten diperlukan',
       namePlaceholder: 'mis. Resume Jarvis',
@@ -366,10 +368,7 @@ export default {
       topN: 'Top N',
       topNTip: `Tidak semua potongan yang skor kesamaannya di atas 'ambang kesamaan' akan diberikan ke LLM. LLM hanya dapat melihat potongan 'Top N' ini.`,
       variable: 'Variabel',
-      variableTip: `Jika Anda menggunakan API dialog, variabel mungkin membantu Anda berbicara dengan klien Anda dengan strategi yang berbeda. 
-          Variabel digunakan untuk mengisi bagian 'Prompt Sistem' dalam prompt untuk memberikan petunjuk kepada LLM.
-          'knowledge' adalah variabel yang sangat khusus yang akan diisi dengan potongan yang diambil.
-          Semua variabel dalam 'Prompt Sistem' harus diberi kurung kurawal.`,
+      variableTip: `Digunakan bersama dengan API manajemen asisten obrolan RAGFlow, variabel dapat membantu mengembangkan strategi prompt sistem yang lebih fleksibel. Variabel yang didefinisikan akan digunakan oleh 'Prompt Sistem' sebagai bagian dari prompt untuk LLM. {knowledge} adalah variabel khusus yang dicadangkan, mewakili bagian-bagian yang diperoleh dari basis pengetahuan yang ditentukan, dan semua variabel harus dikelilingi oleh kurung kurawal {} dalam 'Prompt Sistem'. Lihat https://ragflow.io/docs/dev/set_chat_variables untuk detail lebih lanjut.`,
       add: 'Tambah',
       key: 'Kunci',
       optional: 'Opsional',
@@ -509,24 +508,24 @@ export default {
       baseUrlTip:
         'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan base url ini dengan kunci API.',
       modify: 'Ubah',
-      systemModelSettings: 'Pengaturan Model Sistem',
+      systemModelSettings: 'Tetapkan model default',
       chatModel: 'Model Obrolan',
       chatModelTip:
         'Model LLM obrolan default yang akan digunakan semua basis pengetahuan baru yang dibuat.',
       embeddingModel: 'Model Embedding',
       embeddingModelTip:
-        'Model embedding default yang akan digunakan semua basis pengetahuan baru yang dibuat.',
+        'Model embedding default untuk setiap basis pengetahuan baru yang dibuat. Jika Anda tidak dapat menemukan model embedding dari dropdown, periksa apakah Anda menggunakan RAGFlow slim edition (yang tidak menyertakan model embedding) atau periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
       img2txtModel: 'Model Img2txt',
       img2txtModelTip:
-        'Model multi-modul default yang akan digunakan semua basis pengetahuan baru yang dibuat. Ini dapat menggambarkan gambar atau video.',
+        'Model img2txt default untuk setiap basis pengetahuan yang baru dibuat. Model ini menggambarkan gambar atau video. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
       sequence2txtModel: 'Model Speech2txt',
       sequence2txtModelTip:
-        'Model ASR default yang akan digunakan semua basis pengetahuan baru yang dibuat. Gunakan model ini untuk menerjemahkan suara ke teks yang sesuai.',
+        'Model ASR default yang akan digunakan semua basis pengetahuan baru yang dibuat. Gunakan model ini untuk menerjemahkan suara ke teks yang sesuai. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
       rerankModel: 'Model Rerank',
-      rerankModelTip: `Model rerank default digunakan untuk mererank potongan yang diambil oleh pertanyaan pengguna.`,
+      rerankModelTip: `Model rerank default untuk reranking potongan teks. Jika Anda tidak dapat menemukan model dari dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.`,
       ttsModel: 'Model TTS',
       ttsModelTip:
-        'Model TTS default akan digunakan untuk menghasilkan ucapan selama percakapan atas permintaan.',
+        'Model text-to-speech default. Jika Anda tidak dapat menemukan model dari dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
       workspace: 'Ruang Kerja',
       upgrade: 'Tingkatkan',
       addLlmTitle: 'Tambahkan LLM',
@@ -602,6 +601,8 @@ export default {
         'Silakan tambahkan model embedding dan LLM di <b>Pengaturan > Penyedia Model</b> terlebih dahulu.',
       apiVersion: 'Versi API',
       apiVersionMessage: 'Silakan masukkan versi API',
+      modelsToBeAddedTooltip:
+        'Jika penyedia model Anda tidak tercantum tetapi mengklaim kompatibel dengan OpenAI, pilih kartu OpenAI-API-compatible untuk menambahkan model yang relevan.',
     },
     message: {
       registered: 'Terdaftar!',
@@ -1010,6 +1011,10 @@ export default {
       note: 'Catatan',
       noteDescription: 'Catatan',
       notePlaceholder: 'Silakan masukkan catatan',
+      prompt: 'Prompt',
+      promptTip:
+        'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
+      promptMessage: 'Prompt diperlukan',
     },
     footer: {
       profile: 'Semua hak dilindungi @ React',

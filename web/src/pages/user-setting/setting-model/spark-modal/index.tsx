@@ -43,6 +43,12 @@ const SparkModal = ({
     onOk?.(data);
   };
 
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
+  };
+
   return (
     <Modal
       title={t('addLlmTitle', { name: llmFactory })}
@@ -52,13 +58,7 @@ const SparkModal = ({
       okButtonProps={{ loading }}
       confirmLoading={loading}
     >
-      <Form
-        name="basic"
-        style={{ maxWidth: 600 }}
-        autoComplete="off"
-        layout={'vertical'}
-        form={form}
-      >
+      <Form>
         <Form.Item<FieldType>
           label={t('modelType')}
           name="model_type"
@@ -75,22 +75,20 @@ const SparkModal = ({
           name="llm_name"
           rules={[{ required: true, message: t('SparkModelNameMessage') }]}
         >
-          <Input placeholder={t('modelNameMessage')} />
+          <Input
+            placeholder={t('modelNameMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
-        <Form.Item noStyle dependencies={['model_type']}>
-          {({ getFieldValue }) =>
-            getFieldValue('model_type') === 'chat' && (
-              <Form.Item<FieldType>
-                label={t('addSparkAPIPassword')}
-                name="spark_api_password"
-                rules={[
-                  { required: true, message: t('SparkAPIPasswordMessage') },
-                ]}
-              >
-                <Input placeholder={t('SparkAPIPasswordMessage')} />
-              </Form.Item>
-            )
-          }
+        <Form.Item<FieldType>
+          label={t('addSparkAPIPassword')}
+          name="spark_api_password"
+          rules={[{ required: true, message: t('SparkAPIPasswordMessage') }]}
+        >
+          <Input
+            placeholder={t('SparkAPIPasswordMessage')}
+            onKeyDown={handleKeyDown}
+          />
         </Form.Item>
         <Form.Item noStyle dependencies={['model_type']}>
           {({ getFieldValue }) =>

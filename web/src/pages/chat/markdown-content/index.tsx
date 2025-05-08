@@ -3,7 +3,7 @@ import SvgIcon from '@/components/svg-icon';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import { InfoCircleOutlined } from '@ant-design/icons';
-import { Button, Flex, Popover, Space } from 'antd';
+import { Button, Flex, Popover } from 'antd';
 import DOMPurify from 'dompurify';
 import { useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
@@ -23,6 +23,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import { preprocessLaTeX, replaceThinkToSection } from '@/utils/chat';
 import { replaceTextByOldReg } from '../utils';
 
+import classNames from 'classnames';
 import { pipe } from 'lodash/fp';
 import styles from './index.less';
 
@@ -108,11 +109,7 @@ const MarkdownContent = ({
       const fileExtension = documentId ? getExtension(document?.doc_name) : '';
       const imageId = chunkItem?.image_id;
       return (
-        <Flex
-          key={chunkItem?.id}
-          gap={10}
-          className={styles.referencePopoverWrapper}
-        >
+        <div key={chunkItem?.id} className="flex gap-2">
           {imageId && (
             <Popover
               placement="left"
@@ -129,12 +126,12 @@ const MarkdownContent = ({
               ></Image>
             </Popover>
           )}
-          <Space direction={'vertical'}>
+          <div className={'space-y-2 max-w-[40vw]'}>
             <div
               dangerouslySetInnerHTML={{
                 __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
               }}
-              className={styles.chunkContentText}
+              className={classNames(styles.chunkContentText)}
             ></div>
             {documentId && (
               <Flex gap={'small'}>
@@ -152,7 +149,7 @@ const MarkdownContent = ({
                 )}
                 <Button
                   type="link"
-                  className={styles.documentLink}
+                  className={classNames(styles.documentLink, 'text-wrap')}
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
@@ -164,8 +161,8 @@ const MarkdownContent = ({
                 </Button>
               </Flex>
             )}
-          </Space>
-        </Flex>
+          </div>
+        </div>
       );
     },
     [reference, fileThumbnails, handleDocumentButtonClick],
@@ -204,11 +201,16 @@ const MarkdownContent = ({
             const { children, className, node, ...rest } = props;
             const match = /language-(\w+)/.exec(className || '');
             return match ? (
-              <SyntaxHighlighter {...rest} PreTag="div" language={match[1]}>
+              <SyntaxHighlighter
+                {...rest}
+                PreTag="div"
+                language={match[1]}
+                wrapLongLines
+              >
                 {String(children).replace(/\n$/, '')}
               </SyntaxHighlighter>
             ) : (
-              <code {...rest} className={className}>
+              <code {...rest} className={classNames(className, 'text-wrap')}>
                 {children}
               </code>
             );

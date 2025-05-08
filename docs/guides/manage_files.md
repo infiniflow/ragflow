@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 6
 slug: /manage_files
 ---
 
@@ -7,7 +7,7 @@ slug: /manage_files
 
 Knowledge base, hallucination-free chat, and file management are the three pillars of RAGFlow. RAGFlow's file management allows you to upload files individually or in bulk. You can then link an uploaded file to multiple target knowledge bases. This guide showcases some basic usages of the file management feature.
 
-:::danger IMPORTANT
+:::info IMPORTANT
 Compared to uploading files directly to various knowledge bases, uploading them to RAGFlow's file management and then linking them to different knowledge bases is *not* an unnecessary step, particularly when you want to delete some parsed files or an entire knowledge base but retain the original files.
 :::
 
@@ -17,7 +17,9 @@ RAGFlow's file management allows you to establish your file system with nested f
 
 ![create new folder](https://github.com/infiniflow/ragflow/assets/93570324/3a37a5f4-43a6-426d-a62a-e5cd2ff7a533)
 
-> Each knowledge base in RAGFlow has a corresponding folder under the **root/.knowledgebase** directory. You are not allowed to create a subfolder within it.
+:::caution NOTE
+Each knowledge base in RAGFlow has a corresponding folder under the **root/.knowledgebase** directory. You are not allowed to create a subfolder within it.
+:::
 
 ## Upload file
 
@@ -85,4 +87,4 @@ RAGFlow's file management allows you to download an uploaded file:
 
 ![download_file](https://github.com/infiniflow/ragflow/assets/93570324/cf3b297f-7d9b-4522-bf5f-4f45743e4ed5)
 
-> As of RAGFlow v0.17.2, bulk download is not supported, nor can you download an entire folder. 
+> As of RAGFlow v0.18.0, bulk download is not supported, nor can you download an entire folder. 

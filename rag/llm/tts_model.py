@@ -378,7 +378,7 @@ class GPUStackTTS:
         }
 
         response = requests.post(
-            f"{self.base_url}/v1-openai/audio/speech",
+            f"{self.base_url}/v1/audio/speech",
             headers=self.headers,
             json=payload,
             stream=stream

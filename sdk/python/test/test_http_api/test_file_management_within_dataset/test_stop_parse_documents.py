@@ -16,21 +16,14 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import (
-    INVALID_API_TOKEN,
-    batch_create_datasets,
-    bulk_upload_documents,
-    list_documnet,
-    parse_documnet,
-    stop_parse_documnet,
-)
+from common import INVALID_API_TOKEN, bulk_upload_documents, list_documnets, parse_documnets, stop_parse_documnets
 from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import wait_for
 
 
 def validate_document_parse_done(auth, dataset_id, document_ids):
     for document_id in document_ids:
-        res = list_documnet(auth, dataset_id, params={"id": document_id})
+        res = list_documnets(auth, dataset_id, params={"id": document_id})
         doc = res["data"]["docs"][0]
         assert doc["run"] == "DONE"
         assert len(doc["process_begin_at"]) > 0
@@ -41,14 +34,13 @@ def validate_document_parse_done(auth, dataset_id, document_ids):
 
 def validate_document_parse_cancel(auth, dataset_id, document_ids):
     for document_id in document_ids:
-        res = list_documnet(auth, dataset_id, params={"id": document_id})
+        res = list_documnets(auth, dataset_id, params={"id": document_id})
         doc = res["data"]["docs"][0]
         assert doc["run"] == "CANCEL"
         assert len(doc["process_begin_at"]) > 0
         assert doc["progress"] == 0.0
 
 
-@pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -61,15 +53,13 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(self, get_http_api_auth, auth, expected_code, expected_message):
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        res = stop_parse_documnet(auth, ids[0])
+    def test_invalid_auth(self, auth, expected_code, expected_message):
+        res = stop_parse_documnets(auth, "dataset_id")
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
 
 @pytest.mark.skip
-@pytest.mark.usefixtures("clear_datasets")
 class TestDocumentsParseStop:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
@@ -101,24 +91,22 @@ class TestDocumentsParseStop:
             (lambda r: {"document_ids": r}, 0, ""),
         ],
     )
-    def test_basic_scenarios(self, get_http_api_auth, tmp_path, payload, expected_code, expected_message):
+    def test_basic_scenarios(self, get_http_api_auth, add_documents_func, payload, expected_code, expected_message):
         @wait_for(10, 1, "Document parsing timeout")
         def condition(_auth, _dataset_id, _document_ids):
             for _document_id in _document_ids:
-                res = list_documnet(_auth, _dataset_id, {"id": _document_id})
+                res = list_documnets(_auth, _dataset_id, {"id": _document_id})
                 if res["data"]["docs"][0]["run"] != "DONE":
                     return False
             return True
 
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 3, tmp_path)
-        parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+        dataset_id, document_ids = add_documents_func
+        parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
 
         if callable(payload):
             payload = payload(document_ids)
 
-        res = stop_parse_documnet(get_http_api_auth, dataset_id, payload)
+        res = stop_parse_documnets(get_http_api_auth, dataset_id, payload)
         assert res["code"] == expected_code
         if expected_code != 0:
             assert res["message"] == expected_message
@@ -129,7 +117,7 @@ class TestDocumentsParseStop:
             validate_document_parse_done(get_http_api_auth, dataset_id, completed_document_ids)
 
     @pytest.mark.parametrize(
-        "dataset_id, expected_code, expected_message",
+        "invalid_dataset_id, expected_code, expected_message",
         [
             ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
             (
@@ -142,14 +130,14 @@ class TestDocumentsParseStop:
     def test_invalid_dataset_id(
         self,
         get_http_api_auth,
-        tmp_path,
-        dataset_id,
+        add_documents_func,
+        invalid_dataset_id,
         expected_code,
         expected_message,
     ):
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        document_ids = bulk_upload_documents(get_http_api_auth, ids[0], 1, tmp_path)
-        res = stop_parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+        dataset_id, document_ids = add_documents_func
+        parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+        res = stop_parse_documnets(get_http_api_auth, invalid_dataset_id, {"document_ids": document_ids})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -162,71 +150,65 @@ class TestDocumentsParseStop:
             lambda r: {"document_ids": r + ["invalid_id"]},
         ],
     )
-    def test_stop_parse_partial_invalid_document_id(self, get_http_api_auth, tmp_path, payload):
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 3, tmp_path)
-        parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+    def test_stop_parse_partial_invalid_document_id(self, get_http_api_auth, add_documents_func, payload):
+        dataset_id, document_ids = add_documents_func
+        parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
 
         if callable(payload):
             payload = payload(document_ids)
-        res = stop_parse_documnet(get_http_api_auth, dataset_id, payload)
+        res = stop_parse_documnets(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 102
         assert res["message"] == "You don't own the document invalid_id."
 
         validate_document_parse_cancel(get_http_api_auth, dataset_id, document_ids)
 
-    def test_repeated_stop_parse(self, get_http_api_auth, tmp_path):
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
-        parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
-        res = stop_parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+    def test_repeated_stop_parse(self, get_http_api_auth, add_documents_func):
+        dataset_id, document_ids = add_documents_func
+        parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+        res = stop_parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 0
 
-        res = stop_parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+        res = stop_parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 102
         assert res["message"] == "Can't stop parsing document with progress at 0 or 1"
 
-    def test_duplicate_stop_parse(self, get_http_api_auth, tmp_path):
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, 1, tmp_path)
-        parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
-        res = stop_parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids + document_ids})
+    def test_duplicate_stop_parse(self, get_http_api_auth, add_documents_func):
+        dataset_id, document_ids = add_documents_func
+        parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+        res = stop_parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids + document_ids})
         assert res["code"] == 0
-        assert res["data"]["success_count"] == 1
+        assert res["data"]["success_count"] == 3
         assert f"Duplicate document ids: {document_ids[0]}" in res["data"]["errors"]
 
-    @pytest.mark.slow
-    def test_stop_parse_100_files(self, get_http_api_auth, tmp_path):
-        document_num = 100
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
-        parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
-        res = stop_parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
-        assert res["code"] == 0
-        validate_document_parse_cancel(get_http_api_auth, dataset_id, document_ids)
 
-    @pytest.mark.slow
-    def test_concurrent_parse(self, get_http_api_auth, tmp_path):
-        document_num = 50
-        ids = batch_create_datasets(get_http_api_auth, 1)
-        dataset_id = ids[0]
-        document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
-        parse_documnet(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+@pytest.mark.slow
+def test_stop_parse_100_files(get_http_api_auth, add_datase_func, tmp_path):
+    document_num = 100
+    dataset_id = add_datase_func
+    document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
+    parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+    res = stop_parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+    assert res["code"] == 0
+    validate_document_parse_cancel(get_http_api_auth, dataset_id, document_ids)
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(
-                    stop_parse_documnet,
-                    get_http_api_auth,
-                    dataset_id,
-                    {"document_ids": document_ids[i : i + 1]},
-                )
-                for i in range(document_num)
-            ]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses)
-        validate_document_parse_cancel(get_http_api_auth, dataset_id, document_ids)
+
+@pytest.mark.slow
+def test_concurrent_parse(get_http_api_auth, add_datase_func, tmp_path):
+    document_num = 50
+    dataset_id = add_datase_func
+    document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
+    parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [
+            executor.submit(
+                stop_parse_documnets,
+                get_http_api_auth,
+                dataset_id,
+                {"document_ids": document_ids[i : i + 1]},
+            )
+            for i in range(document_num)
+        ]
+    responses = [f.result() for f in futures]
+    assert all(r["code"] == 0 for r in responses)
+    validate_document_parse_cancel(get_http_api_auth, dataset_id, document_ids)
