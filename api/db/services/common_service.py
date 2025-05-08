@@ -212,6 +212,12 @@ class CommonService:
         #     data: Updated field values
         # Returns:
         #     Number of records updated
+        try:
+            if not DB.is_connection_usable():
+                DB.connect()
+        except Exception:
+            DB.close()
+            DB.connect()
         data["update_time"] = current_timestamp()
         data["update_date"] = datetime_format(datetime.now())
         num = cls.model.update(data).where(cls.model.id == pid).execute()
@@ -257,6 +263,18 @@ class CommonService:
         # Returns:
         #     Number of records deleted
         return cls.model.delete().where(cls.model.id == pid).execute()
+    
+    @classmethod
+    @DB.connection_context()
+    def delete_by_ids(cls, pids):
+        # Delete multiple records by their IDs
+        # Args:
+        #     pids: List of record IDs
+        # Returns:
+        #     Number of records deleted
+        with DB.atomic():
+            res = cls.model.delete().where(cls.model.id.in_(pids)).execute()
+            return res
 
     @classmethod
     @DB.connection_context()

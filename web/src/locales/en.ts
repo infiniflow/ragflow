@@ -71,6 +71,7 @@ export default {
       fileManager: 'File Management',
       flow: 'Agent',
       search: 'Search',
+      welcome: 'Welcome to',
     },
     knowledgeList: {
       welcome: 'Welcome back',
@@ -100,11 +101,12 @@ export default {
       webCrawl: 'Web Crawl',
       chunkNumber: 'Chunk Number',
       uploadDate: 'Upload Date',
-      chunkMethod: 'Chunk Method',
+      chunkMethod: 'Chunking method',
       enabled: 'Enable',
       disabled: 'Disable',
       action: 'Action',
       parsingStatus: 'Parsing Status',
+      parsingStatusTip: 'Document parsing time varies based on several factors. Enabling features like Knowledge Graph, RAPTOR, Auto Question Extraction, or Auto Keyword Extraction will significantly increase processing time. If the progress bar stalls, please consult these two FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Begin at',
       processDuration: 'Duration',
       progressMsg: 'Progress',
@@ -166,7 +168,7 @@ export default {
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
       html4excel: 'Excel to HTML',
-      html4excelTip: `Use with the General chunk method. When disabled, spreadsheets (XLSX or XLS(Excel97~2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows.`,
+      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel97~2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows.`,
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the chat model specified in 'System model settings'. You can check or update the added keywords for a chunk from the chunk list. `,
       autoQuestions: 'Auto-question',
@@ -201,7 +203,7 @@ export default {
     },
     knowledgeConfiguration: {
       titleDescription:
-        'Update your knowledge base configuration here, particularly the chunk method.',
+        'Update your knowledge base configuration here, particularly the chunking method.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
       description: 'Description',
@@ -218,19 +220,19 @@ export default {
         "If it is set to 'Team', all your team members will be able to manage the knowledge base.",
       chunkTokenNumberTip:
         'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
-      chunkMethod: 'Chunk method',
+      chunkMethod: 'Chunking method',
       chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
-      chunkMethodPlaceholder: 'Please select a chunk method.',
+      chunkMethodPlaceholder: 'Please select a chunking method.',
       save: 'Save',
       me: 'Only me',
       team: 'Team',
       cancel: 'Cancel',
-      methodTitle: 'Chunk method description',
+      methodTitle: 'Chunking method description',
       methodExamples: 'Examples',
       methodExamplesDescription:
         'The following screenshots are provided for clarity.',
@@ -258,10 +260,10 @@ export default {
       However, it also increases the context for AI conversations and adds to the computational cost for the LLM. So during a conversation, consider reducing the value of ‘<b>topN</b>’.</p>`,
       presentation: `<p>Supported file formats are <b>PDF</b>, <b>PPTX</b>.</p><p>
       Every page in the slides is treated as a chunk, with its thumbnail image stored.</p><p>
-      <i>This chunk method is automatically applied to all uploaded PPT files, so you do not need to specify it manually.</i></p>`,
+      <i>This chunking method is automatically applied to all uploaded PPT files, so you do not need to specify it manually.</i></p>`,
       qa: `
       <p>
-      This chunk method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
+      This chunking method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
     </p>
     <li>
       If a file is in <b>XLSX</b> or <b>XLS (Excel97~2003)</b> format, it should contain two columns without headers: one for questions and the other for answers, with the question column preceding the answer column. Multiple sheets are
@@ -314,8 +316,8 @@ export default {
 <p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
 <p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
 <p>Ensure that you set the <b>Entity types</b>.</p>`,
-      tag: `<p>A knowledge base using the 'Tag' chunk method functions as a tag set. Other knowledge bases can use it to tag their own chunks, and queries to these knowledge bases will also be tagged using this tag set.</p>
-<p>Knowledge base using 'Tag' as a chunk method will <b>NOT</b> be involved in a Retrieval-Augmented Generation (RAG) process.</p>
+      tag: `<p>A knowledge base using the 'Tag' chunking method functions as a tag set. Other knowledge bases can use it to tag their own chunks, and queries to these knowledge bases will also be tagged using this tag set.</p>
+<p>Knowledge base using 'Tag' as a chunking method will <b>NOT</b> be involved in a Retrieval-Augmented Generation (RAG) process.</p>
 <p>Each chunk in this knowledge base is an independent description-tag pair.</p>
 <p>Supported file formats include <b>XLSX</b> and <b>CSV/TXT</b>:</p>
 <p>If a file is in <b>XLSX</b> format, it should contain two columns without headers: one for tag descriptions and the other for tag names, with the Description column preceding the Tag column. Multiple sheets are acceptable, provided the columns are properly structured.</p>
@@ -325,7 +327,7 @@ export default {
 `,
       useRaptor: 'Use RAPTOR to enhance retrieval',
       useRaptorTip:
-        'Recursive Abstractive Processing for Tree-Organized Retrieval, see https://huggingface.co/papers/2401.18059 for more information.',
+        'Enable RAPTOR for multi-hop question-answering tasks. See https://ragflow.io/docs/dev/enable_raptor for details.',
       prompt: 'Prompt',
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
@@ -334,13 +336,14 @@ export default {
       {cluster_content}
 The above is the content you need to summarize.`,
       maxToken: 'Max token',
-      maxTokenTip: 'Maximum token number for summarization.',
+      maxTokenTip: 'The maximum number of tokens per generated summary chunk.',
       maxTokenMessage: 'Max token is required',
       threshold: 'Threshold',
-      thresholdTip: 'The bigger the threshold is the less cluster will be.',
+      thresholdTip:
+        'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
       thresholdMessage: 'Threshold is required',
       maxCluster: 'Max cluster',
-      maxClusterTip: 'Maximum cluster number.',
+      maxClusterTip: 'The maximum number of clusters to create.',
       maxClusterMessage: 'Max cluster is required',
       randomSeed: 'Random seed',
       randomSeedMessage: 'Random seed is required',
@@ -1216,7 +1219,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       }`,
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
-      historyversion: 'History version',
+      historyversion: 'Version history',
       filename: 'File name',
       version: {
         created: 'Created',
@@ -1226,14 +1229,14 @@ This delimiter is used to split the input text into several text pieces echo of 
         version: 'Version',
         select: 'No version selected',
       },
-      setting: 'Setting',
+      setting: 'Settings',
       settings: {
-        agentSetting: 'Agent Setting',
+        agentSetting: 'Agent settings',
         title: 'title',
         description: 'description',
         upload: 'Upload',
         photo: 'Photo',
-        permissions: 'Permission',
+        permissions: 'Permissions',
         permissionsTip: 'You can set the permissions of the team members here.',
         me: 'me',
         team: 'Team',
@@ -1252,6 +1255,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
+      knowledgeBasesTip:
+        'Select the knowledge bases to associate with this chat assistant, or choose variables containing knowledge base IDs below.',
+      knowledgeBaseVars: 'Knowledge base variables',
     },
   },
 };

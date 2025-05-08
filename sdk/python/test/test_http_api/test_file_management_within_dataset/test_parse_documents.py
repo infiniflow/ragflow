@@ -51,6 +51,7 @@ def validate_document_details(auth, dataset_id, document_ids):
         assert "Task done" in doc["progress_msg"]
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -73,31 +74,13 @@ class TestDocumentsParse:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            pytest.param(
-                None,
-                102,
-                """AttributeError("\'NoneType\' object has no attribute \'get\'")""",
-                marks=pytest.mark.skip,
-            ),
-            ({"document_ids": []}, 102, "`document_ids` is required"),
-            (
-                {"document_ids": ["invalid_id"]},
-                102,
-                "Documents not found: ['invalid_id']",
-            ),
-            (
-                {"document_ids": ["\n!?。；！？\"'"]},
-                102,
-                """Documents not found: [\'\\n!?。；！？"\\\'\']""",
-            ),
-            pytest.param(
-                "not json",
-                102,
-                "AttributeError(\"'str' object has no attribute 'get'\")",
-                marks=pytest.mark.skip,
-            ),
-            (lambda r: {"document_ids": r[:1]}, 0, ""),
-            (lambda r: {"document_ids": r}, 0, ""),
+            pytest.param(None, 102, """AttributeError("\'NoneType\' object has no attribute \'get\'")""", marks=pytest.mark.skip),
+            pytest.param({"document_ids": []}, 102, "`document_ids` is required", marks=pytest.mark.p1),
+            pytest.param({"document_ids": ["invalid_id"]}, 102, "Documents not found: ['invalid_id']", marks=pytest.mark.p3),
+            pytest.param({"document_ids": ["\n!?。；！？\"'"]}, 102, """Documents not found: [\'\\n!?。；！？"\\\'\']""", marks=pytest.mark.p3),
+            pytest.param("not json", 102, "AttributeError(\"'str' object has no attribute 'get'\")", marks=pytest.mark.skip),
+            pytest.param(lambda r: {"document_ids": r[:1]}, 0, "", marks=pytest.mark.p1),
+            pytest.param(lambda r: {"document_ids": r}, 0, "", marks=pytest.mark.p1),
         ],
     )
     def test_basic_scenarios(self, get_http_api_auth, add_documents_func, payload, expected_code, expected_message):
@@ -112,6 +95,7 @@ class TestDocumentsParse:
             condition(get_http_api_auth, dataset_id, payload["document_ids"])
             validate_document_details(get_http_api_auth, dataset_id, payload["document_ids"])
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -139,9 +123,9 @@ class TestDocumentsParse:
     @pytest.mark.parametrize(
         "payload",
         [
-            lambda r: {"document_ids": ["invalid_id"] + r},
-            lambda r: {"document_ids": r[:1] + ["invalid_id"] + r[1:3]},
-            lambda r: {"document_ids": r + ["invalid_id"]},
+            pytest.param(lambda r: {"document_ids": ["invalid_id"] + r}, marks=pytest.mark.p3),
+            pytest.param(lambda r: {"document_ids": r[:1] + ["invalid_id"] + r[1:3]}, marks=pytest.mark.p1),
+            pytest.param(lambda r: {"document_ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
         ],
     )
     def test_parse_partial_invalid_document_id(self, get_http_api_auth, add_documents_func, payload):
@@ -156,6 +140,7 @@ class TestDocumentsParse:
 
         validate_document_details(get_http_api_auth, dataset_id, document_ids)
 
+    @pytest.mark.p3
     def test_repeated_parse(self, get_http_api_auth, add_documents_func):
         dataset_id, document_ids = add_documents_func
         res = parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
@@ -166,6 +151,7 @@ class TestDocumentsParse:
         res = parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 0
 
+    @pytest.mark.p3
     def test_duplicate_parse(self, get_http_api_auth, add_documents_func):
         dataset_id, document_ids = add_documents_func
         res = parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids + document_ids})
@@ -178,8 +164,8 @@ class TestDocumentsParse:
         validate_document_details(get_http_api_auth, dataset_id, document_ids)
 
 
-@pytest.mark.slow
-def test_parse_100_files(get_http_api_auth, add_datase_func, tmp_path):
+@pytest.mark.p3
+def test_parse_100_files(get_http_api_auth, add_dataset_func, tmp_path):
     @wait_for(100, 1, "Document parsing timeout")
     def condition(_auth, _dataset_id, _document_num):
         res = list_documnets(_auth, _dataset_id, {"page_size": _document_num})
@@ -189,7 +175,7 @@ def test_parse_100_files(get_http_api_auth, add_datase_func, tmp_path):
         return True
 
     document_num = 100
-    dataset_id = add_datase_func
+    dataset_id = add_dataset_func
     document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
     res = parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
     assert res["code"] == 0
@@ -199,8 +185,8 @@ def test_parse_100_files(get_http_api_auth, add_datase_func, tmp_path):
     validate_document_details(get_http_api_auth, dataset_id, document_ids)
 
 
-@pytest.mark.slow
-def test_concurrent_parse(get_http_api_auth, add_datase_func, tmp_path):
+@pytest.mark.p3
+def test_concurrent_parse(get_http_api_auth, add_dataset_func, tmp_path):
     @wait_for(120, 1, "Document parsing timeout")
     def condition(_auth, _dataset_id, _document_num):
         res = list_documnets(_auth, _dataset_id, {"page_size": _document_num})
@@ -210,7 +196,7 @@ def test_concurrent_parse(get_http_api_auth, add_datase_func, tmp_path):
         return True
 
     document_num = 100
-    dataset_id = add_datase_func
+    dataset_id = add_dataset_func
     document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
 
     with ThreadPoolExecutor(max_workers=5) as executor:

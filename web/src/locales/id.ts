@@ -100,6 +100,7 @@ export default {
       disabled: 'Nonaktifkan',
       action: 'Aksi',
       parsingStatus: 'Status Parsing',
+      parsingStatusTip: 'Waktu pemrosesan dokumen bervariasi tergantung beberapa faktor. Mengaktifkan fitur seperti Knowledge Graph, RAPTOR, Ekstraksi Pertanyaan Otomatis, atau Ekstraksi Kata Kunci Otomatis akan secara signifikan menambah waktu pemrosesan. Jika bilah kemajuan macet, silakan lihat dua FAQ berikut: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Proses Dimulai Pada',
       processDuration: 'Durasi Proses',
       progressMsg: 'Pesan Kemajuan',
@@ -289,7 +290,7 @@ export default {
     Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
-        'Pemrosesan Abstraktif Rekursif untuk Pengambilan Terorganisasi Pohon, silakan merujuk ke https://huggingface.co/papers/2401.18059',
+        'Aktifkan RAPTOR untuk tugas tanya jawab multi-langkah. Lihat https://ragflow.io/docs/dev/enable_raptor untuk informasi lebih lanjut.',
       prompt: 'Prompt',
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
@@ -298,14 +299,14 @@ export default {
           {cluster_content}
     Di atas adalah konten yang perlu Anda rangkum.`,
       maxToken: 'Token maksimum',
-      maxTokenTip: 'Jumlah token maksimum untuk peringkasan.',
+      maxTokenTip: 'Jumlah maksimum token per potongan ringkasan yang dihasilkan.',
       maxTokenMessage: 'Token maksimum diperlukan',
       threshold: 'Ambang batas',
       thresholdTip:
-        'Semakin besar ambang batas, semakin sedikit kluster yang akan ada.',
+        'Dalam RAPTOR, potongan-potongan dikelompokkan berdasarkan kemiripan semantiknya. Parameter Ambang menetapkan tingkat kemiripan minimum yang diperlukan agar potongan-potongan dapat dikelompokkan bersama. Ambang yang lebih tinggi berarti lebih sedikit potongan dalam setiap kelompok, sedangkan ambang yang lebih rendah berarti lebih banyak potongan dalam satu kelompok.',
       thresholdMessage: 'Ambang batas diperlukan',
       maxCluster: 'Kluster maksimum',
-      maxClusterTip: 'Jumlah kluster maksimum.',
+      maxClusterTip: 'Jumlah maksimum klaster yang akan dibuat.',
       maxClusterMessage: 'Kluster maksimum diperlukan',
       randomSeed: 'Benih acak',
       randomSeedMessage: 'Benih acak diperlukan',

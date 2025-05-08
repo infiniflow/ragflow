@@ -1,3 +1,4 @@
+import { BulkOperateBar } from '@/components/bulk-operate-bar';
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
 import { Button } from '@/components/ui/button';
@@ -8,12 +9,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
+import { useFetchFileList } from '@/hooks/use-file-request';
 import { Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CreateFolderDialog } from './create-folder-dialog';
 import { FileBreadcrumb } from './file-breadcrumb';
 import { FilesTable } from './files-table';
+import { MoveDialog } from './move-dialog';
+import { useBulkOperateFile } from './use-bulk-operate-file';
 import { useHandleCreateFolder } from './use-create-folder';
+import { useHandleMoveFile } from './use-move-file';
+import { useSelectBreadcrumbItems } from './use-navigate-to-folder';
 import { useHandleUploadFile } from './use-upload-file';
 
 export default function Files() {
@@ -34,18 +41,59 @@ export default function Files() {
     onFolderCreateOk,
   } = useHandleCreateFolder();
 
+  const {
+    pagination,
+    files,
+    total,
+    loading,
+    setPagination,
+    searchString,
+    handleInputChange,
+  } = useFetchFileList();
+
+  const {
+    rowSelection,
+    setRowSelection,
+    rowSelectionIsEmpty,
+    clearRowSelection,
+    selectedCount,
+  } = useRowSelection();
+
+  const {
+    showMoveFileModal,
+    moveFileVisible,
+    onMoveFileOk,
+    hideMoveFileModal,
+    moveFileLoading,
+  } = useHandleMoveFile({ clearRowSelection });
+
+  const { list } = useBulkOperateFile({
+    files,
+    rowSelection,
+    showMoveFileModal,
+    setRowSelection,
+  });
+
+  const breadcrumbItems = useSelectBreadcrumbItems();
+
   const leftPanel = (
     <div>
-      <FileBreadcrumb></FileBreadcrumb>
+      {breadcrumbItems.length > 0 ? <FileBreadcrumb></FileBreadcrumb> : 'File'}
     </div>
   );
 
   return (
     <section className="p-8">
-      <ListFilterBar leftPanel={leftPanel}>
+      <ListFilterBar
+        leftPanel={leftPanel}
+        searchString={searchString}
+        onSearchChange={handleInputChange}
+        showFilter={false}
+        icon={'file'}
+      >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant={'tertiary'} size={'sm'}>
+            <Button>
               <Upload />
               {t('knowledgeDetails.addFile')}
             </Button>
@@ -61,7 +109,19 @@ export default function Files() {
           </DropdownMenuContent>
         </DropdownMenu>
       </ListFilterBar>
-      <FilesTable></FilesTable>
+      {!rowSelectionIsEmpty && (
+        <BulkOperateBar list={list} count={selectedCount}></BulkOperateBar>
+      )}
+      <FilesTable
+        files={files}
+        total={total}
+        pagination={pagination}
+        setPagination={setPagination}
+        loading={loading}
+        rowSelection={rowSelection}
+        setRowSelection={setRowSelection}
+        showMoveFileModal={showMoveFileModal}
+      ></FilesTable>
       {fileUploadVisible && (
         <FileUploadDialog
           hideModal={hideFileUploadModal}
@@ -76,6 +136,13 @@ export default function Files() {
           hideModal={hideFolderCreateModal}
           onOk={onFolderCreateOk}
         ></CreateFolderDialog>
+      )}
+      {moveFileVisible && (
+        <MoveDialog
+          hideModal={hideMoveFileModal}
+          onOk={onMoveFileOk}
+          loading={moveFileLoading}
+        ></MoveDialog>
       )}
     </section>
   );

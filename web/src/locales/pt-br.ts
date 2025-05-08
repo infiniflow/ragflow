@@ -103,6 +103,7 @@ export default {
       disabled: 'Desabilitar',
       action: 'Ação',
       parsingStatus: 'Status da análise',
+      parsingStatusTip: 'O tempo de processamento do documento varia conforme vários fatores. Ativar recursos como Knowledge Graph, RAPTOR, Extração Automática de Perguntas ou Extração Automática de Palavras-chave aumentará significativamente o tempo de processamento. Se a barra de progresso travar, consulte estas duas FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Início em',
       processDuration: 'Duração',
       progressMsg: 'Progresso',
@@ -261,7 +262,7 @@ export default {
       <p><i>Linhas de texto que não seguirem essas regras serão ignoradas, e cada par de Pergunta & Resposta será tratado como um fragmento distinto.</i></p>`,
       useRaptor: 'Usar RAPTOR para melhorar a recuperação',
       useRaptorTip:
-        'Processamento Abstrativo Recursivo para Recuperação Organizada em Árvore. Veja mais em https://huggingface.co/papers/2401.18059.',
+        'Ative o RAPTOR para tarefas de perguntas e respostas multi-hop. Veja https://ragflow.io/docs/dev/enable_raptor para mais detalhes.',
       prompt: 'Prompt',
       promptTip:
         'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
@@ -270,13 +271,13 @@ export default {
       {cluster_content}
     O conteúdo acima precisa ser resumido.`,
       maxToken: 'Máximo de tokens',
-      maxTokenTip: 'Número máximo de tokens para sumarização.',
+      maxTokenTip: 'O número máximo de tokens por chunk de resumo gerado.',
       maxTokenMessage: 'O número máximo de tokens é obrigatório',
       threshold: 'Limite',
-      thresholdTip: 'Quanto maior o limite, menor será o número de clusters.',
+      thresholdTip: 'No RAPTOR, os chunks são agrupados de acordo com sua similaridade semântica. O parâmetro de Limite define a similaridade mínima necessária para que os chunks sejam agrupados. Um Limite mais alto significa menos chunks em cada grupo, enquanto um Limite mais baixo significa mais chunks por grupo.',
       thresholdMessage: 'O limite é obrigatório',
       maxCluster: 'Máximo de clusters',
-      maxClusterTip: 'Número máximo de clusters.',
+      maxClusterTip: 'O número máximo de clusters a serem criados.',
       maxClusterMessage: 'O número máximo de clusters é obrigatório',
       randomSeed: 'Semente aleatória',
       randomSeedMessage: 'A semente aleatória é obrigatória',
