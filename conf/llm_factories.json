@@ -2555,9 +2555,9 @@
                 },
                 {
                     "llm_name": "deepseek-ai/deepseek-vl2",
-                    "tags": "LLM,CHAT,4k",
+                    "tags": "LLM,IMAGE2TEXT,4k",
                     "max_tokens": 4096,
-                    "model_type": "chat"
+                    "model_type": "image2text"
                 },
                 {
                     "llm_name": "deepseek-ai/Janus-Pro-7B",
@@ -2567,6 +2567,36 @@
                 },
                 {
                     "llm_name": "Qwen/QVQ-72B-Preview",
+                    "tags": "LLM,IMAGE2TEXT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-VL-72B-Instruct",
+                    "tags": "LLM,IMAGE2TEXT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-VL-32B-Instruct",
+                    "tags": "LLM,IMAGE2TEXT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "Pro/Qwen/Qwen2.5-VL-7B-Instruct",
+                    "tags": "LLM,IMAGE2TEXT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "Qwen/Qwen2-VL-72B-Instruct",
+                    "tags": "LLM,IMAGE2TEXT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "Pro/Qwen/Qwen2-VL-7B-Instruct",
                     "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
                     "model_type": "image2text"
