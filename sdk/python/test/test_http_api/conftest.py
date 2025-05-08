@@ -40,6 +40,29 @@ from libs.utils.file_utils import (
     create_txt_file,
 )
 
+MARKER_EXPRESSIONS = {
+    "p1": "p1",
+    "p2": "p1 or p2",
+    "p3": "p1 or p2 or p3",
+}
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--level",
+        action="store",
+        default="p2",
+        choices=list(MARKER_EXPRESSIONS.keys()),
+        help=f"Test level ({'/'.join(MARKER_EXPRESSIONS)}): p1=smoke, p2=core, p3=full",
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    level = config.getoption("--level")
+    config.option.markexpr = MARKER_EXPRESSIONS[level]
+    if config.option.verbose > 0:
+        print(f"\n[CONFIG] Active test level: {level}")
+
 
 @wait_for(30, 1, "Document parsing timeout")
 def condition(_auth, _dataset_id):
