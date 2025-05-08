@@ -20,6 +20,7 @@ from common import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN, list_documnets, updat
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -39,6 +40,7 @@ class TestAuthorization:
 
 
 class TestDocumentsUpdated:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "name, expected_code, expected_message",
         [
@@ -90,6 +92,7 @@ class TestDocumentsUpdated:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
@@ -107,6 +110,7 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -124,6 +128,7 @@ class TestDocumentsUpdated:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "meta_fields, expected_code, expected_message",
         [({"test": "test"}, 0, ""), ("test", 102, "meta_fields must be a dictionary")],
@@ -137,6 +142,7 @@ class TestDocumentsUpdated:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "chunk_method, expected_code, expected_message",
         [
@@ -174,6 +180,7 @@ class TestDocumentsUpdated:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
@@ -293,6 +300,7 @@ class TestDocumentsUpdated:
 
 
 class TestUpdateDocumentParserConfig:
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "chunk_method, parser_config, expected_code, expected_message",
         [

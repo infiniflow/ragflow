@@ -20,6 +20,7 @@ from common import INVALID_API_TOKEN, batch_create_chat_assistants, delete_chat_
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -42,13 +43,13 @@ class TestChatAssistantsDelete:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
         [
-            (None, 0, "", 0),
-            ({"ids": []}, 0, "", 0),
-            ({"ids": ["invalid_id"]}, 102, "Assistant(invalid_id) not found.", 5),
-            ({"ids": ["\n!?。；！？\"'"]}, 102, """Assistant(\n!?。；！？"\') not found.""", 5),
-            ("not json", 100, "AttributeError(\"'str' object has no attribute 'get'\")", 5),
-            (lambda r: {"ids": r[:1]}, 0, "", 4),
-            (lambda r: {"ids": r}, 0, "", 0),
+            pytest.param(None, 0, "", 0, marks=pytest.mark.p3),
+            pytest.param({"ids": []}, 0, "", 0, marks=pytest.mark.p3),
+            pytest.param({"ids": ["invalid_id"]}, 102, "Assistant(invalid_id) not found.", 5, marks=pytest.mark.p3),
+            pytest.param({"ids": ["\n!?。；！？\"'"]}, 102, """Assistant(\n!?。；！？"\') not found.""", 5, marks=pytest.mark.p3),
+            pytest.param("not json", 100, "AttributeError(\"'str' object has no attribute 'get'\")", 5, marks=pytest.mark.p3),
+            pytest.param(lambda r: {"ids": r[:1]}, 0, "", 4, marks=pytest.mark.p3),
+            pytest.param(lambda r: {"ids": r}, 0, "", 0, marks=pytest.mark.p1),
         ],
     )
     def test_basic_scenarios(self, get_http_api_auth, add_chat_assistants_func, payload, expected_code, expected_message, remaining):
@@ -66,9 +67,9 @@ class TestChatAssistantsDelete:
     @pytest.mark.parametrize(
         "payload",
         [
-            lambda r: {"ids": ["invalid_id"] + r},
-            lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:5]},
-            lambda r: {"ids": r + ["invalid_id"]},
+            pytest.param(lambda r: {"ids": ["invalid_id"] + r}, marks=pytest.mark.p3),
+            pytest.param(lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:5]}, marks=pytest.mark.p1),
+            pytest.param(lambda r: {"ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
         ],
     )
     def test_delete_partial_invalid_id(self, get_http_api_auth, add_chat_assistants_func, payload):
@@ -83,6 +84,7 @@ class TestChatAssistantsDelete:
         res = list_chat_assistants(get_http_api_auth)
         assert len(res["data"]) == 0
 
+    @pytest.mark.p3
     def test_repeated_deletion(self, get_http_api_auth, add_chat_assistants_func):
         _, _, chat_assistant_ids = add_chat_assistants_func
         res = delete_chat_assistants(get_http_api_auth, {"ids": chat_assistant_ids})
@@ -92,6 +94,7 @@ class TestChatAssistantsDelete:
         assert res["code"] == 102
         assert "not found" in res["message"]
 
+    @pytest.mark.p3
     def test_duplicate_deletion(self, get_http_api_auth, add_chat_assistants_func):
         _, _, chat_assistant_ids = add_chat_assistants_func
         res = delete_chat_assistants(get_http_api_auth, {"ids": chat_assistant_ids + chat_assistant_ids})
@@ -102,7 +105,7 @@ class TestChatAssistantsDelete:
         res = list_chat_assistants(get_http_api_auth)
         assert res["code"] == 0
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_concurrent_deletion(self, get_http_api_auth):
         ids = batch_create_chat_assistants(get_http_api_auth, 100)
 
@@ -111,7 +114,7 @@ class TestChatAssistantsDelete:
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_delete_10k(self, get_http_api_auth):
         ids = batch_create_chat_assistants(get_http_api_auth, 10_000)
         res = delete_chat_assistants(get_http_api_auth, {"ids": ids})

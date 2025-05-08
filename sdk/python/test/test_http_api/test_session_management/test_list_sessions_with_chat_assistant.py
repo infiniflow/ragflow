@@ -21,6 +21,7 @@ from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import is_sorted
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -40,6 +41,7 @@ class TestAuthorization:
 
 
 class TestSessionsWithChatAssistantList:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -61,6 +63,7 @@ class TestSessionsWithChatAssistantList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -82,6 +85,7 @@ class TestSessionsWithChatAssistantList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
@@ -110,6 +114,7 @@ class TestSessionsWithChatAssistantList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
@@ -142,6 +147,7 @@ class TestSessionsWithChatAssistantList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_num, expected_message",
         [
@@ -163,6 +169,7 @@ class TestSessionsWithChatAssistantList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "session_id, expected_code, expected_num, expected_message",
         [
@@ -189,6 +196,7 @@ class TestSessionsWithChatAssistantList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "session_id, name, expected_code, expected_num, expected_message",
         [
@@ -212,7 +220,7 @@ class TestSessionsWithChatAssistantList:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_concurrent_list(self, get_http_api_auth, add_sessions_with_chat_assistant):
         chat_assistant_id, _ = add_sessions_with_chat_assistant
         with ThreadPoolExecutor(max_workers=5) as executor:
@@ -220,6 +228,7 @@ class TestSessionsWithChatAssistantList:
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
+    @pytest.mark.p3
     def test_invalid_params(self, get_http_api_auth, add_sessions_with_chat_assistant):
         chat_assistant_id, _ = add_sessions_with_chat_assistant
         params = {"a": "b"}
@@ -227,6 +236,7 @@ class TestSessionsWithChatAssistantList:
         assert res["code"] == 0
         assert len(res["data"]) == 5
 
+    @pytest.mark.p3
     def test_list_chats_after_deleting_associated_chat_assistant(self, get_http_api_auth, add_sessions_with_chat_assistant):
         chat_assistant_id, _ = add_sessions_with_chat_assistant
         res = delete_chat_assistants(get_http_api_auth, {"ids": [chat_assistant_id]})

@@ -20,7 +20,7 @@ from libs.utils import encode_avatar
 from libs.utils.file_utils import create_image_file
 
 
-@pytest.mark.usefixtures("clear_chat_assistants")
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -43,12 +43,12 @@ class TestChatAssistantUpdate:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"name": "valid_name"}, 0, ""),
+            pytest.param({"name": "valid_name"}, 0, "", marks=pytest.mark.p1),
             pytest.param({"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
-            ({"name": ""}, 102, "`name` cannot be empty."),
-            ({"name": "test_chat_assistant_1"}, 102, "Duplicated chat name in updating chat."),
-            ({"name": "TEST_CHAT_ASSISTANT_1"}, 102, "Duplicated chat name in updating chat."),
+            pytest.param({"name": ""}, 102, "`name` cannot be empty.", marks=pytest.mark.p3),
+            pytest.param({"name": "test_chat_assistant_1"}, 102, "Duplicated chat name in updating chat.", marks=pytest.mark.p3),
+            pytest.param({"name": "TEST_CHAT_ASSISTANT_1"}, 102, "Duplicated chat name in updating chat.", marks=pytest.mark.p3),
         ],
     )
     def test_name(self, get_http_api_auth, add_chat_assistants_func, payload, expected_code, expected_message):
@@ -66,9 +66,9 @@ class TestChatAssistantUpdate:
         "dataset_ids, expected_code, expected_message",
         [
             pytest.param([], 0, "", marks=pytest.mark.skip(reason="issues/")),
-            (lambda r: [r], 0, ""),
-            (["invalid_dataset_id"], 102, "You don't own the dataset invalid_dataset_id"),
-            ("invalid_dataset_id", 102, "You don't own the dataset i"),
+            pytest.param(lambda r: [r], 0, "", marks=pytest.mark.p1),
+            pytest.param(["invalid_dataset_id"], 102, "You don't own the dataset invalid_dataset_id", marks=pytest.mark.p3),
+            pytest.param("invalid_dataset_id", 102, "You don't own the dataset i", marks=pytest.mark.p3),
         ],
     )
     def test_dataset_ids(self, get_http_api_auth, add_chat_assistants_func, dataset_ids, expected_code, expected_message):
@@ -87,6 +87,7 @@ class TestChatAssistantUpdate:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     def test_avatar(self, get_http_api_auth, add_chat_assistants_func, tmp_path):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
@@ -94,6 +95,7 @@ class TestChatAssistantUpdate:
         res = update_chat_assistant(get_http_api_auth, chat_assistant_ids[0], payload)
         assert res["code"] == 0
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "llm, expected_code, expected_message",
         [
@@ -148,6 +150,7 @@ class TestChatAssistantUpdate:
         else:
             assert expected_message in res["message"]
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "prompt, expected_code, expected_message",
         [

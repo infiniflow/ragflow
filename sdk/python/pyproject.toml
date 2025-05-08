@@ -24,4 +24,8 @@ test = [
 
 
 [tool.pytest.ini_options]
-markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+markers = [
+    "p1: high priority test cases",
+    "p2: medium priority test cases",
+    "p3: low priority test cases",
+]

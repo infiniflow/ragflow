@@ -21,6 +21,7 @@ from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import is_sorted
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -41,12 +42,14 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_datasets")
 class TestDatasetsList:
+    @pytest.mark.p1
     def test_default(self, get_http_api_auth):
         res = list_datasets(get_http_api_auth, params={})
 
         assert res["code"] == 0
         assert len(res["data"]) == 5
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -79,6 +82,7 @@ class TestDatasetsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -118,6 +122,7 @@ class TestDatasetsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
@@ -156,6 +161,7 @@ class TestDatasetsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
@@ -192,6 +198,7 @@ class TestDatasetsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_num, expected_message",
         [
@@ -212,6 +219,7 @@ class TestDatasetsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_num, expected_message",
         [
@@ -246,6 +254,7 @@ class TestDatasetsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, name, expected_code, expected_num, expected_message",
         [
@@ -278,13 +287,14 @@ class TestDatasetsList:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_concurrent_list(self, get_http_api_auth):
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(list_datasets, get_http_api_auth) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
+    @pytest.mark.p3
     def test_invalid_params(self, get_http_api_auth):
         params = {"a": "b"}
         res = list_datasets(get_http_api_auth, params=params)

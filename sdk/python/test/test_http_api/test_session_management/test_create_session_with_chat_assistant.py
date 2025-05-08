@@ -20,6 +20,7 @@ from common import INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT, create_sessi
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -40,6 +41,7 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("clear_session_with_chat_assistants")
 class TestSessionWithChatAssistantCreate:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
@@ -66,6 +68,7 @@ class TestSessionWithChatAssistantCreate:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "chat_assistant_id, expected_code, expected_message",
         [
@@ -78,7 +81,7 @@ class TestSessionWithChatAssistantCreate:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_concurrent_create_session(self, get_http_api_auth, add_chat_assistants):
         chunk_num = 1000
         _, _, chat_assistant_ids = add_chat_assistants
@@ -104,6 +107,7 @@ class TestSessionWithChatAssistantCreate:
             assert False, res
         assert len(res["data"]) == chunks_count + chunk_num
 
+    @pytest.mark.p3
     def test_add_session_to_deleted_chat_assistant(self, get_http_api_auth, add_chat_assistants):
         _, _, chat_assistant_ids = add_chat_assistants
         res = delete_chat_assistants(get_http_api_auth, {"ids": [chat_assistant_ids[0]]})

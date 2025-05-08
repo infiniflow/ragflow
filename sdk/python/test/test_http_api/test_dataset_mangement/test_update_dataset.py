@@ -29,6 +29,7 @@ from libs.utils.file_utils import create_image_file
 # TODO: Missing scenario for updating embedding_model with chunk_count != 0
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -47,6 +48,7 @@ class TestAuthorization:
         assert res["message"] == expected_message
 
 
+@pytest.mark.p1
 class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "name, expected_code, expected_message",
@@ -235,7 +237,7 @@ class TestDatasetUpdate:
         res = update_dataset(get_http_api_auth, dataset_id, {"unknown_field": 0})
         assert res["code"] == 100
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_concurrent_update(self, get_http_api_auth, add_dataset_func):
         dataset_id = add_dataset_func
 
