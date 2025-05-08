@@ -557,21 +557,22 @@ def get(chunk_id):
     if not objs:
         return get_json_result(
             data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
-    
-    tenant_id = objs[0].tenant_id
-    kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
-    chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
-    if chunk is None:
-        return server_error_response(Exception("Chunk not found"))
-    k = []
-    for n in chunk.keys():
-        if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
-            k.append(n)
-    for n in k:
-        del chunk[n]
+    try:
+        tenant_id = objs[0].tenant_id
+        kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
+        chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
+        if chunk is None:
+            return server_error_response(Exception("Chunk not found"))
+        k = []
+        for n in chunk.keys():
+            if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
+                k.append(n)
+        for n in k:
+            del chunk[n]
 
-    return get_json_result(data=chunk)
-
+        return get_json_result(data=chunk)
+    except Exception as e:
+        return server_error_response(e)
 
 @manager.route('/list_kb_docs', methods=['POST'])  # noqa: F821
 # @login_required
