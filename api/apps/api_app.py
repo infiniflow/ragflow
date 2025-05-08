@@ -345,7 +345,7 @@ def completion():
 
 @manager.route('/conversation/<conversation_id>', methods=['GET'])  # noqa: F821
 # @login_required
-def get_chunk(conversation_id):
+def get_conversation(conversation_id):
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
@@ -550,7 +550,7 @@ def list_chunks():
 
 @manager.route('/get_chunk/<chunk_id>', methods=['GET'])  # noqa: F821
 # @login_required
-def get(chunk_id):
+def get_chunk(chunk_id):
     from rag.nlp import search
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
