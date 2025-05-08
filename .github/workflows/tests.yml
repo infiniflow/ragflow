@@ -106,7 +106,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && pytest -s --tb=short -m "not slow"
+          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && pytest -s --tb=short --level=p2
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
@@ -145,7 +145,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && DOC_ENGINE=infinity pytest -s --tb=short -m "not slow"
+          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && DOC_ENGINE=infinity pytest -s --tb=short --level=p2
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed

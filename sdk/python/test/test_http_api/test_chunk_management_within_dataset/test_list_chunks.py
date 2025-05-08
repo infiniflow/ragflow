@@ -21,6 +21,7 @@ from common import INVALID_API_TOKEN, batch_add_chunks, list_chunks
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -40,6 +41,7 @@ class TestAuthorization:
 
 
 class TestChunksList:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -61,6 +63,7 @@ class TestChunksList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -83,6 +86,7 @@ class TestChunksList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "params, expected_page_size",
         [
@@ -100,6 +104,7 @@ class TestChunksList:
         assert res["code"] == 0
         assert len(res["data"]["chunks"]) == expected_page_size
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "chunk_id, expected_code, expected_page_size, expected_message",
         [
@@ -133,6 +138,7 @@ class TestChunksList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     def test_invalid_params(self, get_http_api_auth, add_chunks):
         dataset_id, document_id, _ = add_chunks
         params = {"a": "b"}
@@ -140,6 +146,7 @@ class TestChunksList:
         assert res["code"] == 0
         assert len(res["data"]["chunks"]) == 5
 
+    @pytest.mark.p3
     def test_concurrent_list(self, get_http_api_auth, add_chunks):
         dataset_id, document_id, _ = add_chunks
 
@@ -149,6 +156,7 @@ class TestChunksList:
         assert all(r["code"] == 0 for r in responses)
         assert all(len(r["data"]["chunks"]) == 5 for r in responses)
 
+    @pytest.mark.p1
     def test_default(self, get_http_api_auth, add_document):
         dataset_id, document_id = add_document
 
@@ -164,6 +172,7 @@ class TestChunksList:
         assert len(res["data"]["chunks"]) == 30
         assert res["data"]["doc"]["chunk_count"] == chunks_count + 31
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -181,6 +190,7 @@ class TestChunksList:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
