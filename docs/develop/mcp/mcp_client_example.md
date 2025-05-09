@@ -3,9 +3,7 @@ sidebar_position: 3
 slug: /mcp_client
 ---
 
-# RAGFlow MCP client
-
-## MCP client example
+# RAGFlow MCP client example
 
 We provide a *prototype* MCP client example for testing [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).
 
