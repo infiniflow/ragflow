@@ -119,6 +119,22 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_total_size_by_kb_id(cls, kb_id, keywords="", run_status=[], types=[]):
+        query = cls.model.select(fn.COALESCE(fn.SUM(cls.model.size), 0)).where(
+            cls.model.kb_id == kb_id
+        )
+
+        if keywords:
+            query = query.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
+        if run_status:
+            query = query.where(cls.model.run.in_(run_status))
+        if types:
+            query = query.where(cls.model.type.in_(types))
+
+        return query.scalar() or 0
+
+    @classmethod
+    @DB.connection_context()
     def insert(cls, doc):
         if not cls.save(**doc):
             raise RuntimeError("Database error (Document)!")
