@@ -152,6 +152,7 @@ def detail():
         if not kb:
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
+        kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
         return get_json_result(data=kb)
     except Exception as e:
         return server_error_response(e)
