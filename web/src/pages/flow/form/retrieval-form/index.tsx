@@ -6,7 +6,7 @@ import TopNItem from '@/components/top-n-item';
 import { UseKnowledgeGraphItem } from '@/components/use-knowledge-graph-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import type { FormProps } from 'antd';
-import { Form, Input } from 'antd';
+import { Form, Input, Switch } from 'antd';
 import { IOperatorForm } from '../../interface';
 import DynamicInputVariable from '../components/dynamic-input-variable';
 
@@ -46,6 +46,14 @@ const RetrievalForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       <KnowledgeBaseItem
         tooltipText={t('knowledgeBasesTip')}
       ></KnowledgeBaseItem>
+      <Form.Item
+            label={t('multiTurn')}
+            tooltip={t('multiTurnTip')}
+            name={'refine_multiturn'}
+            initialValue={false}
+        >
+            <Switch></Switch>
+        </Form.Item>
       <DynamicInputVariable
         name={'kb_vars'}
         node={node}

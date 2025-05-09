@@ -4,9 +4,10 @@ import SimilaritySlider from '@/components/similarity-slider';
 import TopNItem from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import type { FormProps } from 'antd';
-import { Form, Input } from 'antd';
+import { Form, Input, Switch } from 'antd';
 import { IOperatorForm } from '../../interface';
 import DynamicInputVariable from '../components/dynamic-input-variable';
+
 
 type FieldType = {
   top_n?: number;
@@ -39,6 +40,14 @@ const RetrievalForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       ></SimilaritySlider>
       <TopNItem></TopNItem>
       <Rerank></Rerank>
+      <Form.Item
+        label={t('multiTurn')}
+        tooltip={t('multiTurnTip')}
+        name={'refine_multiturn'}
+        initialValue={false}
+      >
+        <Switch></Switch>
+      </Form.Item>
       <KnowledgeBaseItem></KnowledgeBaseItem>
       <Form.Item
         name={'empty_response'}

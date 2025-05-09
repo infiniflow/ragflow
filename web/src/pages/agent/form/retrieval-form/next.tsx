@@ -10,6 +10,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { Switch } from 'antd';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
 import { INextOperatorForm } from '../../interface';
@@ -32,6 +33,14 @@ const RetrievalForm = ({ form, node }: INextOperatorForm) => {
         ></SimilaritySliderFormField>
         <TopNFormField></TopNFormField>
         <RerankFormFields></RerankFormFields>
+        <Form.Item
+            label={t('multiTurn')}
+            tooltip={t('multiTurnTip')}
+            name={'refine_multiturn'}
+            initialValue={false}
+        >
+            <Switch></Switch>
+        </Form.Item>
         <KnowledgeBaseFormField></KnowledgeBaseFormField>
         <FormField
           control={form.control}
