@@ -175,7 +175,7 @@ export default {
       chunkTokenNumber: 'Ukuran potongan yang disarankan',
       chunkTokenNumberMessage: 'Jumlah token potongan diperlukan',
       embeddingModelTip:
-        'Model embedding yang digunakan untuk embedding potongan. Tidak dapat diubah setelah basis pengetahuan memiliki potongan. Anda perlu menghapus semua potongan jika ingin mengubahnya.',
+        'Model embedding default dari basis pengetahuan. Tidak dapat diubah setelah basis pengetahuan memiliki potongan data (chunks). Untuk beralih ke model embedding default yang berbeda, Anda harus menghapus semua potongan data yang ada di basis pengetahuan.',
       permissionsTip:
         "Jika izinnya 'Tim', semua anggota tim dapat memanipulasi basis pengetahuan.",
       chunkTokenNumberTip:
@@ -356,7 +356,7 @@ export default {
       setAnOpenerTip: 'Bagaimana Anda ingin menyambut klien Anda?',
       knowledgeBases: 'Basis Pengetahuan',
       knowledgeBasesMessage: 'Silakan pilih',
-      knowledgeBasesTip: 'Pilih basis pengetahuan yang terkait.',
+      knowledgeBasesTip: 'Pilih basis pengetahuan yang terkait. Basis pengetahuan yang kosong tidak akan muncul di daftar dropdown.',
       system: 'Prompt Sistem',
       systemInitialValue: `Anda adalah asisten cerdas. Silakan rangkum konten basis pengetahuan untuk menjawab pertanyaan. Silakan daftar data di basis pengetahuan dan jawab secara detail. Ketika semua konten basis pengetahuan tidak relevan dengan pertanyaan, jawaban Anda harus menyertakan kalimat "Jawaban yang Anda cari tidak ditemukan di basis pengetahuan!" Jawaban perlu mempertimbangkan riwayat obrolan.
           Berikut adalah basis pengetahuan:
@@ -732,7 +732,7 @@ export default {
       news: 'Berita',
       messageHistoryWindowSize: 'Ukuran jendela pesan',
       messageHistoryWindowSizeTip:
-        'Ukuran jendela riwayat percakapan yang perlu dilihat oleh LLM. Semakin besar semakin baik. Tetapi berhati-hatilah dengan panjang konten maksimum dari LLM.',
+        'Ukuran jendela riwayat percakapan yang terlihat oleh LLM. Semakin besar semakin baik, tetapi perhatikan batas maksimum token LLM.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       email: 'Email',

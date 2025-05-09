@@ -213,7 +213,7 @@ export default {
       chunkTokenNumber: '建议文本块大小',
       chunkTokenNumberMessage: '块Token数是必填项',
       embeddingModelTip:
-        '用于嵌入块的嵌入模型。 一旦知识库有了块，它就无法更改。 如果你想改变它，你需要删除所有的块。',
+        '知识库采用的默认嵌入模型。 一旦知识库内已经产生了文本块后，你将无法更改默认的嵌入模型，除非删除知识库内的所有文本块。',
       permissionsTip:
         '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
       chunkTokenNumberTip:
@@ -436,7 +436,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       setAnOpenerTip: '您想如何欢迎您的客户？',
       knowledgeBases: '知识库',
       knowledgeBasesMessage: '请选择',
-      knowledgeBasesTip: '选择关联的知识库。',
+      knowledgeBasesTip: '选择关联的知识库。新建或空知识库不会在下拉菜单中显示。',
       system: '系统提示词',
       systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
         以下是知识库：
@@ -841,7 +841,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       news: '新闻',
       messageHistoryWindowSize: '历史消息窗口大小',
       messageHistoryWindowSizeTip:
-        'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大内容长度。',
+        'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大 Token 数。',
       wikipedia: '维基百科',
       emailTip:
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
