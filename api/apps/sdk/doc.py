@@ -222,6 +222,9 @@ def update_doc(tenant_id, dataset_id, document_id):
             chunk_method:
               type: string
               description: Chunking method.
+            enabled:
+              type: boolean
+              description: Document status.
     responses:
       200:
         description: Document updated successfully.
@@ -231,6 +234,10 @@ def update_doc(tenant_id, dataset_id, document_id):
     req = request.json
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
+    e, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not e:
+        return get_error_data_result(
+            message="Can't find this knowledgebase!")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message="The dataset doesn't own the document.")
@@ -332,7 +339,23 @@ def update_doc(tenant_id, dataset_id, document_id):
                 return get_error_data_result(message="Document not found!")
             settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
 
+    if "enabled" in req:
+        status = int(req["enabled"])
+        if doc.status != req["enabled"]:
+            try:
+                if not DocumentService.update_by_id(
+                        doc.id, {"status": str(status)}):
+                    return get_error_data_result(
+                        message="Database error (Document update)!")
+
+                settings.docStoreConn.update({"doc_id": doc.id}, {"available_int": status},
+                                             search.index_name(kb.tenant_id), doc.kb_id)
+                return get_result(data=True)
+            except Exception as e:
+                return server_error_response(e)
+
     return get_result()
+
 
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
