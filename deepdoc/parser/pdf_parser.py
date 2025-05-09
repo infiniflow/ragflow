@@ -309,7 +309,7 @@ class RAGFlowPdfParser:
               "bottom": b[-1][1] / ZM,
               "chars": [],
               "page_number": pagenum} for b, t in bxs if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]],
-            self.mean_height[-1] / 3
+            self.mean_height[pagenum-1] / 3
         )
 
         # merge chars in the same rect
@@ -355,8 +355,8 @@ class RAGFlowPdfParser:
             del boxes_to_reg[i]["box_image"]
         logging.info(f"__ocr recognize {len(bxs)} boxes cost {timer() - start}s")
         bxs = [b for b in bxs if b["text"]]
-        if self.mean_height[-1] == 0:
-            self.mean_height[-1] = np.median([b["bottom"] - b["top"]
+        if self.mean_height[pagenum-1] == 0:
+            self.mean_height[pagenum-1] = np.median([b["bottom"] - b["top"]
                                               for b in bxs])
         self.boxes.append(bxs)
 
