@@ -24,23 +24,32 @@ const RagHeader = () => {
   const { t } = useTranslate('header');
   const appConf = useFetchAppConf();
   const { theme: themeRag } = useTheme();
+
+  /** navigation definitions */
   const tagsData = useMemo(
     () => [
       { path: '/knowledge', name: t('knowledgeBase'), icon: KnowledgeBaseIcon },
       { path: '/chat', name: t('chat'), icon: MessageOutlined },
-      { path: '/search', name: t('search'), icon: SearchOutlined },
-      { path: '/flow', name: t('flow'), icon: GraphIcon },
-      { path: '/file', name: t('fileManager'), icon: FileIcon },
+      {
+        path: '/search',
+        name: t('search'),
+        icon: SearchOutlined,
+        disabled: true,
+      }, // 🔒 disabled
+      { path: '/flow', name: t('flow'), icon: GraphIcon, disabled: true },
+      { path: '/file', name: t('fileManager'), icon: FileIcon, disabled: true },
     ],
     [t],
   );
 
   const currentPath = useMemo(() => {
     return (
-      tagsData.find((x) => pathname.startsWith(x.path))?.name || 'knowledge'
+      tagsData.find((x) => pathname.startsWith(x.path))?.name ||
+      t('knowledgeBase')
     );
-  }, [pathname, tagsData]);
+  }, [pathname, tagsData, t]);
 
+  /** click handler */
   const handleChange = useCallback(
     (path: string): MouseEventHandler =>
       (e) => {
@@ -75,9 +84,10 @@ const RagHeader = () => {
           <span className={styles.appName}>{appConf.appName}</span>
         </Space>
       </a>
+
+      {/* NAV TABS */}
       <Space size={[0, 8]} wrap>
         <Radio.Group
-          defaultValue="a"
           buttonStyle="solid"
           className={
             themeRag === 'dark' ? styles.radioGroupDark : styles.radioGroup
@@ -86,28 +96,34 @@ const RagHeader = () => {
         >
           {tagsData.map((item, index) => (
             <Radio.Button
-              className={`${themeRag === 'dark' ? 'dark' : 'light'} ${index === 0 ? 'first' : ''} ${index === tagsData.length - 1 ? 'last' : ''}`}
-              value={item.name}
               key={item.name}
+              value={item.name}
+              disabled={item.disabled}
+              className={`${themeRag === 'dark' ? 'dark' : 'light'} ${
+                index === 0 ? 'first' : ''
+              } ${index === tagsData.length - 1 ? 'last' : ''}`}
             >
-              <a href={item.path}>
-                <Flex
-                  align="center"
-                  gap={8}
-                  onClick={handleChange(item.path)}
-                  className="cursor-pointer"
-                >
-                  <item.icon
-                    className={styles.radioButtonIcon}
-                    stroke={item.name === currentPath ? 'black' : 'white'}
-                  ></item.icon>
-                  {item.name}
-                </Flex>
-              </a>
+              <Flex
+                align="center"
+                gap={8}
+                onClick={item.disabled ? undefined : handleChange(item.path)}
+                style={
+                  item.disabled
+                    ? { cursor: 'not-allowed', opacity: 0.4 }
+                    : undefined
+                }
+              >
+                <item.icon
+                  className={styles.radioButtonIcon}
+                  stroke={item.name === currentPath ? 'black' : 'white'}
+                />
+                {item.name}
+              </Flex>
             </Radio.Button>
           ))}
         </Radio.Group>
       </Space>
+
       <Toolbar></Toolbar>
     </Header>
   );

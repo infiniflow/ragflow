@@ -1,17 +1,5 @@
-import SimilaritySlider from '@/components/similarity-slider';
-import { DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons';
-import {
-  Button,
-  Col,
-  Divider,
-  Form,
-  Input,
-  Row,
-  Switch,
-  Table,
-  TableProps,
-  Tooltip,
-} from 'antd';
+import { DeleteOutlined } from '@ant-design/icons';
+import { Form, Input, Switch, TableProps } from 'antd';
 import classNames from 'classnames';
 import {
   ForwardedRef,
@@ -28,9 +16,6 @@ import {
 } from '../interface';
 import { EditableCell, EditableRow } from './editable-cell';
 
-import Rerank from '@/components/rerank';
-import TopNItem from '@/components/top-n-item';
-import { UseKnowledgeGraphItem } from '@/components/use-knowledge-graph-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectPromptConfigParameters } from '../hooks';
 import styles from './index.less';
@@ -158,7 +143,7 @@ const PromptEngine = (
       >
         <Input.TextArea autoSize={{ maxRows: 8, minRows: 5 }} />
       </Form.Item>
-      <Divider></Divider>
+      {/* <Divider></Divider>
       <SimilaritySlider isTooltipShown></SimilaritySlider>
       <TopNItem></TopNItem>
       <Form.Item
@@ -180,8 +165,8 @@ const PromptEngine = (
       >
         <Switch></Switch>
       </Form.Item>
-      <Rerank></Rerank>
-      <section className={classNames(styles.variableContainer)}>
+      <Rerank></Rerank> */}
+      {/* <section className={classNames(styles.variableContainer)}>
         <Row align={'middle'} justify="end">
           <Col span={9} className={styles.variableAlign}>
             <label className={styles.variableLabel}>
@@ -212,7 +197,7 @@ const PromptEngine = (
             </Col>
           </Row>
         )}
-      </section>
+      </section> */}
     </section>
   );
 };

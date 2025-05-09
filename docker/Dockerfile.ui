@@ -1,0 +1,2 @@
+FROM infiniflow/ragflow:v0.18.0-slim
+COPY web/dist /ragflow/web/dist
