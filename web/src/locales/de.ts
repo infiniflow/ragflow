@@ -220,7 +220,7 @@ export default {
       chunkTokenNumber: 'Empfohlene Chunk-Größe',
       chunkTokenNumberMessage: 'Chunk-Token-Anzahl ist erforderlich',
       embeddingModelTip:
-        'Das Modell, das Chunks in Embeddings umwandelt. Es kann nicht geändert werden, sobald die Wissensdatenbank Chunks enthält. Um zu einem anderen Embedding-Modell zu wechseln, müssen Sie alle vorhandenen Chunks in der Wissensdatenbank löschen.',
+        'Das Standard-Embedding-Modell der Wissensdatenbank. Es kann nicht geändert werden, sobald die Wissensdatenbank Chunks enthält. Um zu einem anderen Standard-Embedding-Modell zu wechseln, müssen alle vorhandenen Chunks in der Wissensdatenbank gelöscht werden.',
       permissionsTip:
         'Wenn auf "Team" gesetzt, können alle Teammitglieder die Wissensdatenbank verwalten.',
       chunkTokenNumberTip:
@@ -444,7 +444,7 @@ export default {
       knowledgeBases: 'Wissensdatenbanken',
       knowledgeBasesMessage: 'Bitte auswählen',
       knowledgeBasesTip:
-        'Wählen Sie die Wissensdatenbanken aus, die mit diesem Chat-Assistenten verknüpft werden sollen.',
+        'Wählen Sie die Wissensdatenbanken aus, die mit diesem Chat-Assistenten verknüpft werden sollen. Eine leere Wissensdatenbank wird nicht in der Dropdown-Liste angezeigt.',
       system: 'System',
       systemInitialValue:
         'Sie sind ein intelligenter Assistent. Bitte fassen Sie den Inhalt der Wissensdatenbank zusammen, um die Frage zu beantworten. Bitte listen Sie die Daten in der Wissensdatenbank auf und antworten Sie detailliert. Wenn alle Inhalte der Wissensdatenbank für die Frage irrelevant sind, muss Ihre Antwort den Satz "Die gesuchte Antwort wurde in der Wissensdatenbank nicht gefunden!" enthalten. Antworten müssen den Chat-Verlauf berücksichtigen.\nHier ist die Wissensdatenbank:\n{knowledge}\nDas oben Genannte ist die Wissensdatenbank.',
@@ -871,7 +871,7 @@ export default {
       news: 'Nachrichten',
       messageHistoryWindowSize: 'Nachrichtenfenstergröße',
       messageHistoryWindowSizeTip:
-        'Die Fenstergröße des Gesprächsverlaufs, der vom LLM gesehen werden muss. Je größer, desto besser. Aber Vorsicht mit der maximalen Inhaltslänge des LLM.',
+        'Die Fenstergröße des für das LLM sichtbaren Gesprächsverlaufs. Größer ist besser, aber achten Sie auf das maximale Token-Limit des LLM.',
       relevance: 'Relevanz',
       google: 'Google',
       googleDescription:

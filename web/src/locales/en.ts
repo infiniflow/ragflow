@@ -106,7 +106,8 @@ export default {
       disabled: 'Disable',
       action: 'Action',
       parsingStatus: 'Parsing Status',
-      parsingStatusTip: 'Document parsing time varies based on several factors. Enabling features like Knowledge Graph, RAPTOR, Auto Question Extraction, or Auto Keyword Extraction will significantly increase processing time. If the progress bar stalls, please consult these two FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
+      parsingStatusTip:
+        'Document parsing time varies based on several factors. Enabling features like Knowledge Graph, RAPTOR, Auto Question Extraction, or Auto Keyword Extraction will significantly increase processing time. If the progress bar stalls, please consult these two FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Begin at',
       processDuration: 'Duration',
       progressMsg: 'Progress',
@@ -215,7 +216,7 @@ export default {
       chunkTokenNumber: 'Recommended chunk size',
       chunkTokenNumberMessage: 'Chunk token number for text is required',
       embeddingModelTip:
-        'The model that converts chunks into embeddings. It cannot be changed once the knowledge base has chunks. To switch to a different embedding model, you must delete all existing chunks in the knowledge base.',
+        'The default embedding model for the knowledge base. It cannot be changed once the knowledge base has chunks. To switch to a different default embedding model, you must delete all existing chunks in the knowledge base.',
       permissionsTip:
         "If it is set to 'Team', all your team members will be able to manage the knowledge base.",
       chunkTokenNumberTip:
@@ -433,7 +434,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       knowledgeBases: 'Knowledge bases',
       knowledgeBasesMessage: 'Please select',
       knowledgeBasesTip:
-        'Select the knowledge bases to associate with this chat assistant.',
+        'Select the knowledge bases to associate with this chat assistant. An empty knowledge base will not appear in the dropdown list.',
       system: 'System prompt',
       systemInitialValue: `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
@@ -542,6 +543,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'If an API key is correctly set here, Tavily-based web searches will be used to supplement knowledge base retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       tavilyApiKeyHelp: 'How to get it?',
+      crossLanguage: 'Cross-language search',
+      crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
     },
     setting: {
       profile: 'Profile',
@@ -844,7 +847,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       news: 'News',
       messageHistoryWindowSize: 'Message window size',
       messageHistoryWindowSizeTip:
-        'The  window size of conversation history that needed to be seen by LLM. The larger the better. But be careful with the maximum content length of LLM.',
+        'The window size of conversation history visible to the LLM. Larger is better, but be mindful of the maximum token limit of LLM.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
