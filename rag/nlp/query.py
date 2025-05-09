@@ -77,6 +77,7 @@ class FulltextQueryer:
             " ",
             rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
         ).strip()
+        otxt = txt
         txt = FulltextQueryer.rmWWW(txt)
 
         if not self.isChinese(txt):
@@ -196,6 +197,8 @@ class FulltextQueryer:
 
         if qs:
             query = " OR ".join([f"({t})" for t in qs if t])
+            if not query:
+                query = otxt
             return MatchTextExpr(
                 self.query_fields, query, 100, {"minimum_should_match": min_match}
             ), keywords
