@@ -1,13 +1,19 @@
-import { useLogin, useRegister } from '@/hooks/login-hooks';
+import SvgIcon from '@/components/svg-icon';
+import { useAuth } from '@/hooks/auth-hooks';
+import {
+  useLogin,
+  useLoginChannels,
+  useLoginWithChannel,
+  useRegister,
+} from '@/hooks/login-hooks';
 import { useSystemConfig } from '@/hooks/system-hooks';
 import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input } from 'antd';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Icon, useNavigate } from 'umi';
+import { useNavigate } from 'umi';
 import RightPanel from './right-panel';
 
-import { Domain } from '@/constants/common';
 import styles from './index.less';
 
 const Login = () => {
@@ -15,10 +21,28 @@ const Login = () => {
   const navigate = useNavigate();
   const { login, loading: signLoading } = useLogin();
   const { register, loading: registerLoading } = useRegister();
+  const { channels, loading: channelsLoading } = useLoginChannels();
+  const { login: loginWithChannel, loading: loginWithChannelLoading } =
+    useLoginWithChannel();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
-  const loading = signLoading || registerLoading;
+  const loading =
+    signLoading ||
+    registerLoading ||
+    channelsLoading ||
+    loginWithChannelLoading;
   const { config } = useSystemConfig();
   const registerEnabled = config?.registerEnabled !== 0;
+
+  const { isLogin } = useAuth();
+  useEffect(() => {
+    if (isLogin) {
+      navigate('/knowledge');
+    }
+  }, [isLogin, navigate]);
+
+  const handleLoginWithChannel = async (channel: string) => {
+    await loginWithChannel(channel);
+  };
 
   const changeTitle = () => {
     if (title === 'login' && !registerEnabled) {
@@ -63,11 +87,6 @@ const Login = () => {
   const formItemLayout = {
     labelCol: { span: 6 },
     // wrapperCol: { span: 8 },
-  };
-
-  const toGoogle = () => {
-    window.location.href =
-      'https://github.com/login/oauth/authorize?scope=user:email&client_id=302129228f0d96055bee';
   };
 
   return (
@@ -151,39 +170,28 @@ const Login = () => {
             >
               {title === 'login' ? t('login') : t('continue')}
             </Button>
-            {title === 'login' && (
-              <>
-                {/* <Button
-                  block
-                  size="large"
-                  onClick={toGoogle}
-                  style={{ marginTop: 15 }}
-                >
-                  <div>
-                    <Icon
-                      icon="local:google"
-                      style={{ verticalAlign: 'middle', marginRight: 5 }}
-                    />
-                    Sign in with Google
-                  </div>
-                </Button> */}
-                {location.host === Domain && (
+            {title === 'login' && channels && channels.length > 0 && (
+              <div className={styles.thirdPartyLoginButton}>
+                {channels.map((item) => (
                   <Button
+                    key={item.channel}
                     block
                     size="large"
-                    onClick={toGoogle}
-                    style={{ marginTop: 15 }}
+                    onClick={() => handleLoginWithChannel(item.channel)}
+                    style={{ marginTop: 10 }}
                   >
                     <div className="flex items-center">
-                      <Icon
-                        icon="local:github"
-                        style={{ verticalAlign: 'middle', marginRight: 5 }}
+                      <SvgIcon
+                        name={item.icon || 'sso'}
+                        width={20}
+                        height={20}
+                        style={{ marginRight: 5 }}
                       />
-                      Sign in with Github
+                      Sign in with {item.display_name}
                     </div>
                   </Button>
-                )}
-              </>
+                ))}
+              </div>
             )}
           </Form>
         </div>
