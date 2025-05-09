@@ -7,8 +7,8 @@ mysql:
   password: 'infini_rag_flow'
   host: 'localhost'
   port: 5455
-  max_connections: 100
-  stale_timeout: 30
+  max_connections: 900
+  stale_timeout: 300
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
