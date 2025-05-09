@@ -182,7 +182,7 @@ export default {
       chunkTokenNumber: '推奨チャンクサイズ',
       chunkTokenNumberMessage: 'チャンクトークン数は必須です',
       embeddingModelTip:
-        'チャンクを埋め込みに変換するモデルです。一度チャンクが作成されると変更できません。',
+        'ナレッジベースのデフォルトの埋め込みモデルです。ナレッジベースにチャンクが存在する場合、変更することはできません。別のデフォルト埋め込みモデルに切り替えるには、ナレッジベース内のすべての既存チャンクを削除する必要があります。',
       permissionsTip:
         '「チーム」に設定すると、全てのチームメンバーがナレッジベースを管理できます。',
       chunkTokenNumberTip:
@@ -354,7 +354,7 @@ export default {
       setAnOpenerTip: 'お客様をどのように歓迎しますか？',
       knowledgeBases: 'ナレッジベース',
       knowledgeBasesMessage: '選択してください',
-      knowledgeBasesTip: '関連付けるナレッジベースを選択してください。',
+      knowledgeBasesTip: '関連付けるナレッジベースを選択してください。空のナレッジベースはドロップダウンリストに表示されません。',
       system: 'システムプロンプト',
       systemInitialValue: `あなたはインテリジェントなアシスタントです。質問に答えるためにナレッジベースの内容を要約してください。ナレッジベースのデータをリストし、詳細に答えてください。すべてのナレッジベースの内容が質問に関連しない場合、回答には「ナレッジベースにはお探しの回答が見つかりません！」という文を含める必要があります。回答はチャット履歴を考慮する必要があります。
       こちらがナレッジベースです：
@@ -737,7 +737,7 @@ export default {
       news: 'ニュース',
       messageHistoryWindowSize: 'メッセージウィンドウサイズ',
       messageHistoryWindowSizeTip:
-        'LLMが参照する会話履歴のウィンドウサイズ。大きいほど良いですが、LLMの最大コンテンツ長に注意してください。',
+        'LLMに表示される会話履歴のウィンドウサイズ。大きいほど良いですが、LLMの最大トークン制限に注意してください。',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:

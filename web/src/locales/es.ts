@@ -185,7 +185,7 @@ export default {
       setAnOpenerTip: '¿Cómo quieres dar la bienvenida a tus clientes?',
       knowledgeBases: 'Bases de conocimiento',
       knowledgeBasesMessage: 'Por favor selecciona',
-      knowledgeBasesTip: 'Selecciona las bases de conocimiento asociadas.',
+      knowledgeBasesTip: 'Selecciona las bases de conocimiento asociadas. Una base de conocimientos vacía no aparecerá en la lista desplegable.',
       system: 'prompt del sistema',
       systemInitialValue: `Eres un asistente inteligente. Por favor resume el contenido de la base de conocimiento para responder la pregunta. Enumera los datos en la base de conocimiento y responde con detalle. Cuando todo el contenido de la base de conocimiento sea irrelevante para la pregunta, tu respuesta debe incluir la frase "¡La respuesta que buscas no se encuentra en la base de conocimiento!". Las respuestas necesitan considerar el historial de chat.
         Aquí está la base de conocimiento:
@@ -575,7 +575,7 @@ export default {
       messageHistoryWindowSize:
         'Tamaño de la ventana del historial de mensajes',
       messageHistoryWindowSizeTip:
-        'El tamaño de ventana del historial de conversación que necesita ser visto por el LLM. Cuanto más grande mejor, pero ten cuidado con la longitud máxima de contenido que puede manejar el LLM.',
+        'El tamaño de la ventana del historial de conversación visible para el LLM. Cuanto más grande, mejor, pero tenga en cuenta el límite máximo de tokens del LLM.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       email: 'Correo electrónico',

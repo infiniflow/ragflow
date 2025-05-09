@@ -213,7 +213,7 @@ export default {
       chunkTokenNumber: 'Tamanho de bloco recomendado',
       chunkTokenNumberMessage: 'O número de tokens por fragmento é obrigatório',
       embeddingModelTip:
-        'O modelo que converte fragmentos em embeddings. Ele não pode ser alterado depois que a base de conhecimento tiver fragmentos. Para mudar para um modelo diferente, é necessário excluir todos os fragmentos existentes.',
+        'O modelo de embedding padrão da base de conhecimento. Não pode ser alterado uma vez que a base de conhecimento tenha chunks. Para mudar para um modelo de embedding padrão diferente, é necessário excluir todos os chunks existentes na base de conhecimento.',
       permissionsTip:
         "Se definido como 'Equipe', todos os membros da equipe poderão gerenciar a base de conhecimento.",
       chunkTokenNumberTip:
@@ -353,7 +353,7 @@ export default {
       knowledgeBases: 'Bases de conhecimento',
       knowledgeBasesMessage: 'Por favor, selecione',
       knowledgeBasesTip:
-        'Selecione as bases de conhecimento para associar a este assistente de chat.',
+        'Selecione as bases de conhecimento para associar a este assistente de chat. Uma base de conhecimento vazia não aparecerá na lista suspensa.',
       system: 'Sistema',
       systemInitialValue: `Você é um assistente inteligente. Por favor, resuma o conteúdo da base de conhecimento para responder à pergunta. Liste os dados da base de conhecimento e responda com detalhes. Quando todo o conteúdo da base de conhecimento for irrelevante para a pergunta, sua resposta deve incluir a frase "A resposta que você procura não foi encontrada na base de conhecimento!" As respostas devem considerar o histórico do chat.
       Aqui está a base de conhecimento:
@@ -728,7 +728,7 @@ export default {
       news: 'Notícias',
       messageHistoryWindowSize: 'Tamanho da janela de mensagens',
       messageHistoryWindowSizeTip:
-        'O tamanho da janela do histórico de conversa que precisa ser visualizado pelo LLM. Quanto maior, melhor. Mas tenha cuidado com o comprimento máximo de conteúdo do LLM.',
+        'O tamanho da janela do histórico de conversa visível para o LLM. Quanto maior, melhor, mas fique atento ao limite máximo de tokens do LLM.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
