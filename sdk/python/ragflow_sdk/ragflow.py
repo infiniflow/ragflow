@@ -59,21 +59,19 @@ class RAGFlow:
         pagerank: int = 0,
         parser_config: DataSet.ParserConfig = None,
     ) -> DataSet:
-        if parser_config:
-            parser_config = parser_config.to_json()
-        res = self.post(
-            "/datasets",
-            {
-                "name": name,
-                "avatar": avatar,
-                "description": description,
-                "embedding_model": embedding_model,
-                "permission": permission,
-                "chunk_method": chunk_method,
-                "pagerank": pagerank,
-                "parser_config": parser_config,
-            },
-        )
+        payload = {
+            "name": name,
+            "avatar": avatar,
+            "description": description,
+            "embedding_model": embedding_model,
+            "permission": permission,
+            "chunk_method": chunk_method,
+            "pagerank": pagerank,
+        }
+        if parser_config is not None:
+            payload["parser_config"] = parser_config.to_json()
+
+        res = self.post("/datasets", payload)
         res = res.json()
         if res.get("code") == 0:
             return DataSet(self, res["data"])
