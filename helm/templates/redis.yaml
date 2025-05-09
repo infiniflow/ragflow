@@ -76,7 +76,7 @@ spec:
         {{- end }}
         resources:
           requests:
-            storage: 8Gi
+            storage: {{ .Values.redis.storage.capacity }}
   {{- end }}
 ---
 apiVersion: v1
