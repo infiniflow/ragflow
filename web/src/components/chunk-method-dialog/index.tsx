@@ -43,8 +43,8 @@ import {
 import RaptorFormFields, {
   showRaptorParseConfiguration,
 } from '../parse-configuration/raptor-form-fields';
+import { ButtonLoading } from '../ui/button';
 import { Input } from '../ui/input';
-import { LoadingButton } from '../ui/loading-button';
 import { RAGFlowSelect } from '../ui/select';
 import { DynamicPageRange } from './dynamic-page-range';
 import { useFetchParserListOnMount, useShowAutoKeywords } from './hooks';
@@ -324,9 +324,9 @@ export function ChunkMethodDialog({
           </form>
         </Form>
         <DialogFooter>
-          <LoadingButton type="submit" form={FormId} loading={loading}>
+          <ButtonLoading type="submit" form={FormId} loading={loading}>
             {t('common.save')}
-          </LoadingButton>
+          </ButtonLoading>
         </DialogFooter>
       </DialogContent>
     </Dialog>
