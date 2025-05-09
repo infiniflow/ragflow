@@ -47,7 +47,10 @@ const ModelSetting = ({
         [styles.segmentedHidden]: !show,
       })}
     >
-      {visible && <LlmSettingItems prefix="llm_setting"></LlmSettingItems>}
+      {/* {visible && <LlmSettingItems prefix="llm_setting"></LlmSettingItems>} */}
+      {visible && (
+        <LlmSettingItems prefix="llm_setting" showParameters={false} />
+      )}
     </section>
   );
 };

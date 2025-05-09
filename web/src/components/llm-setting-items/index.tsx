@@ -15,10 +15,15 @@ import styles from './index.less';
 interface IProps {
   prefix?: string;
   formItemLayout?: any;
-  handleParametersChange?(value: ModelVariableType): void;
+  handleParametersChange?: (value: ModelVariableType) => void;
+  showParameters?: boolean;
 }
 
-const LlmSettingItems = ({ prefix, formItemLayout = {} }: IProps) => {
+const LlmSettingItems = ({
+  prefix,
+  formItemLayout = {},
+  showParameters = true,
+}: IProps) => {
   const form = Form.useFormInstance();
   const { t } = useTranslate('chat');
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
@@ -60,221 +65,226 @@ const LlmSettingItems = ({ prefix, formItemLayout = {} }: IProps) => {
           popupMatchSelectWidth={false}
         />
       </Form.Item>
-      <div className="border rounded-md">
-        <div className="flex justify-between bg-slate-100 p-2 mb-2">
-          <div className="space-x-1 items-center">
-            <span className="text-lg font-semibold">{t('freedom')}</span>
-            <Tooltip title={t('freedomTip')}>
-              <QuestionCircleOutlined></QuestionCircleOutlined>
-            </Tooltip>
-          </div>
-          <div className="w-1/4 min-w-32">
-            <Form.Item
-              label={t('freedom')}
-              name="parameter"
-              tooltip={t('freedomTip')}
-              initialValue={ModelVariableType.Precise}
-              labelCol={{ span: 0 }}
-              wrapperCol={{ span: 24 }}
-              className="m-0"
-            >
-              <Select<ModelVariableType>
-                options={parameterOptions}
-                onChange={handleParametersChange}
-              />
-            </Form.Item>
-          </div>
-        </div>
-
-        <div className="pr-2">
-          <Form.Item
-            label={t('temperature')}
-            tooltip={t('temperatureTip')}
-            {...formItemLayout}
-          >
-            <Flex gap={20} align="center">
+      {showParameters && (
+        <div className="border rounded-md">
+          <div className="flex justify-between bg-slate-100 p-2 mb-2">
+            <div className="space-x-1 items-center">
+              <span className="text-lg font-semibold">{t('freedom')}</span>
+              <Tooltip title={t('freedomTip')}>
+                <QuestionCircleOutlined></QuestionCircleOutlined>
+              </Tooltip>
+            </div>
+            <div className="w-1/4 min-w-32">
               <Form.Item
-                name={'temperatureEnabled'}
-                valuePropName="checked"
-                noStyle
+                label={t('freedom')}
+                name="parameter"
+                tooltip={t('freedomTip')}
+                initialValue={ModelVariableType.Precise}
+                labelCol={{ span: 0 }}
+                wrapperCol={{ span: 24 }}
+                className="m-0"
               >
-                <Switch size="small" />
+                <Select<ModelVariableType>
+                  options={parameterOptions}
+                  onChange={handleParametersChange}
+                />
               </Form.Item>
-              <Form.Item noStyle dependencies={['temperatureEnabled']}>
-                {({ getFieldValue }) => {
-                  const disabled = !getFieldValue('temperatureEnabled');
-                  return (
-                    <>
-                      <Flex flex={1}>
+            </div>
+          </div>
+
+          <div className="pr-2">
+            <Form.Item
+              label={t('temperature')}
+              tooltip={t('temperatureTip')}
+              {...formItemLayout}
+            >
+              <Flex gap={20} align="center">
+                <Form.Item
+                  name={'temperatureEnabled'}
+                  valuePropName="checked"
+                  noStyle
+                >
+                  <Switch size="small" />
+                </Form.Item>
+                <Form.Item noStyle dependencies={['temperatureEnabled']}>
+                  {({ getFieldValue }) => {
+                    const disabled = !getFieldValue('temperatureEnabled');
+                    return (
+                      <>
+                        <Flex flex={1}>
+                          <Form.Item
+                            name={[...memorizedPrefix, 'temperature']}
+                            noStyle
+                          >
+                            <Slider
+                              className={styles.variableSlider}
+                              max={1}
+                              step={0.01}
+                              disabled={disabled}
+                            />
+                          </Form.Item>
+                        </Flex>
                         <Form.Item
                           name={[...memorizedPrefix, 'temperature']}
                           noStyle
                         >
-                          <Slider
-                            className={styles.variableSlider}
+                          <InputNumber
+                            className={styles.sliderInputNumber}
                             max={1}
+                            min={0}
                             step={0.01}
                             disabled={disabled}
                           />
                         </Form.Item>
-                      </Flex>
-                      <Form.Item
-                        name={[...memorizedPrefix, 'temperature']}
-                        noStyle
-                      >
-                        <InputNumber
-                          className={styles.sliderInputNumber}
-                          max={1}
-                          min={0}
-                          step={0.01}
-                          disabled={disabled}
-                        />
-                      </Form.Item>
-                    </>
-                  );
-                }}
-              </Form.Item>
-            </Flex>
-          </Form.Item>
-          <Form.Item
-            label={t('topP')}
-            tooltip={t('topPTip')}
-            {...formItemLayout}
-          >
-            <Flex gap={20} align="center">
-              <Form.Item name={'topPEnabled'} valuePropName="checked" noStyle>
-                <Switch size="small" />
-              </Form.Item>
-              <Form.Item noStyle dependencies={['topPEnabled']}>
-                {({ getFieldValue }) => {
-                  const disabled = !getFieldValue('topPEnabled');
-                  return (
-                    <>
-                      <Flex flex={1}>
+                      </>
+                    );
+                  }}
+                </Form.Item>
+              </Flex>
+            </Form.Item>
+            <Form.Item
+              label={t('topP')}
+              tooltip={t('topPTip')}
+              {...formItemLayout}
+            >
+              <Flex gap={20} align="center">
+                <Form.Item name={'topPEnabled'} valuePropName="checked" noStyle>
+                  <Switch size="small" />
+                </Form.Item>
+                <Form.Item noStyle dependencies={['topPEnabled']}>
+                  {({ getFieldValue }) => {
+                    const disabled = !getFieldValue('topPEnabled');
+                    return (
+                      <>
+                        <Flex flex={1}>
+                          <Form.Item
+                            name={[...memorizedPrefix, 'top_p']}
+                            noStyle
+                          >
+                            <Slider
+                              className={styles.variableSlider}
+                              max={1}
+                              step={0.01}
+                              disabled={disabled}
+                            />
+                          </Form.Item>
+                        </Flex>
                         <Form.Item name={[...memorizedPrefix, 'top_p']} noStyle>
-                          <Slider
-                            className={styles.variableSlider}
+                          <InputNumber
+                            className={styles.sliderInputNumber}
                             max={1}
+                            min={0}
                             step={0.01}
                             disabled={disabled}
                           />
                         </Form.Item>
-                      </Flex>
-                      <Form.Item name={[...memorizedPrefix, 'top_p']} noStyle>
-                        <InputNumber
-                          className={styles.sliderInputNumber}
-                          max={1}
-                          min={0}
-                          step={0.01}
-                          disabled={disabled}
-                        />
-                      </Form.Item>
-                    </>
-                  );
-                }}
-              </Form.Item>
-            </Flex>
-          </Form.Item>
-          <Form.Item
-            label={t('presencePenalty')}
-            tooltip={t('presencePenaltyTip')}
-            {...formItemLayout}
-          >
-            <Flex gap={20} align="center">
-              <Form.Item
-                name={'presencePenaltyEnabled'}
-                valuePropName="checked"
-                noStyle
-              >
-                <Switch size="small" />
-              </Form.Item>
-              <Form.Item noStyle dependencies={['presencePenaltyEnabled']}>
-                {({ getFieldValue }) => {
-                  const disabled = !getFieldValue('presencePenaltyEnabled');
-                  return (
-                    <>
-                      <Flex flex={1}>
+                      </>
+                    );
+                  }}
+                </Form.Item>
+              </Flex>
+            </Form.Item>
+            <Form.Item
+              label={t('presencePenalty')}
+              tooltip={t('presencePenaltyTip')}
+              {...formItemLayout}
+            >
+              <Flex gap={20} align="center">
+                <Form.Item
+                  name={'presencePenaltyEnabled'}
+                  valuePropName="checked"
+                  noStyle
+                >
+                  <Switch size="small" />
+                </Form.Item>
+                <Form.Item noStyle dependencies={['presencePenaltyEnabled']}>
+                  {({ getFieldValue }) => {
+                    const disabled = !getFieldValue('presencePenaltyEnabled');
+                    return (
+                      <>
+                        <Flex flex={1}>
+                          <Form.Item
+                            name={[...memorizedPrefix, 'presence_penalty']}
+                            noStyle
+                          >
+                            <Slider
+                              className={styles.variableSlider}
+                              max={1}
+                              step={0.01}
+                              disabled={disabled}
+                            />
+                          </Form.Item>
+                        </Flex>
                         <Form.Item
                           name={[...memorizedPrefix, 'presence_penalty']}
                           noStyle
                         >
-                          <Slider
-                            className={styles.variableSlider}
+                          <InputNumber
+                            className={styles.sliderInputNumber}
                             max={1}
+                            min={0}
                             step={0.01}
                             disabled={disabled}
                           />
                         </Form.Item>
-                      </Flex>
-                      <Form.Item
-                        name={[...memorizedPrefix, 'presence_penalty']}
-                        noStyle
-                      >
-                        <InputNumber
-                          className={styles.sliderInputNumber}
-                          max={1}
-                          min={0}
-                          step={0.01}
-                          disabled={disabled}
-                        />
-                      </Form.Item>
-                    </>
-                  );
-                }}
-              </Form.Item>
-            </Flex>
-          </Form.Item>
-          <Form.Item
-            label={t('frequencyPenalty')}
-            tooltip={t('frequencyPenaltyTip')}
-            {...formItemLayout}
-          >
-            <Flex gap={20} align="center">
-              <Form.Item
-                name={'frequencyPenaltyEnabled'}
-                valuePropName="checked"
-                noStyle
-              >
-                <Switch size="small" />
-              </Form.Item>
-              <Form.Item noStyle dependencies={['frequencyPenaltyEnabled']}>
-                {({ getFieldValue }) => {
-                  const disabled = !getFieldValue('frequencyPenaltyEnabled');
-                  return (
-                    <>
-                      <Flex flex={1}>
+                      </>
+                    );
+                  }}
+                </Form.Item>
+              </Flex>
+            </Form.Item>
+            <Form.Item
+              label={t('frequencyPenalty')}
+              tooltip={t('frequencyPenaltyTip')}
+              {...formItemLayout}
+            >
+              <Flex gap={20} align="center">
+                <Form.Item
+                  name={'frequencyPenaltyEnabled'}
+                  valuePropName="checked"
+                  noStyle
+                >
+                  <Switch size="small" />
+                </Form.Item>
+                <Form.Item noStyle dependencies={['frequencyPenaltyEnabled']}>
+                  {({ getFieldValue }) => {
+                    const disabled = !getFieldValue('frequencyPenaltyEnabled');
+                    return (
+                      <>
+                        <Flex flex={1}>
+                          <Form.Item
+                            name={[...memorizedPrefix, 'frequency_penalty']}
+                            noStyle
+                          >
+                            <Slider
+                              className={styles.variableSlider}
+                              max={1}
+                              step={0.01}
+                              disabled={disabled}
+                            />
+                          </Form.Item>
+                        </Flex>
                         <Form.Item
                           name={[...memorizedPrefix, 'frequency_penalty']}
                           noStyle
                         >
-                          <Slider
-                            className={styles.variableSlider}
+                          <InputNumber
+                            className={styles.sliderInputNumber}
                             max={1}
+                            min={0}
                             step={0.01}
                             disabled={disabled}
                           />
                         </Form.Item>
-                      </Flex>
-                      <Form.Item
-                        name={[...memorizedPrefix, 'frequency_penalty']}
-                        noStyle
-                      >
-                        <InputNumber
-                          className={styles.sliderInputNumber}
-                          max={1}
-                          min={0}
-                          step={0.01}
-                          disabled={disabled}
-                        />
-                      </Form.Item>
-                    </>
-                  );
-                }}
-              </Form.Item>
-            </Flex>
-          </Form.Item>
+                      </>
+                    );
+                  }}
+                </Form.Item>
+              </Flex>
+            </Form.Item>
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 };

@@ -1,6 +1,5 @@
 import { ReactComponent as ConfigurationIcon } from '@/assets/svg/knowledge-configration.svg';
 import { ReactComponent as DatasetIcon } from '@/assets/svg/knowledge-dataset.svg';
-import { ReactComponent as TestingIcon } from '@/assets/svg/knowledge-testing.svg';
 import {
   useFetchKnowledgeBaseConfiguration,
   useFetchKnowledgeGraph,
@@ -22,60 +21,55 @@ import { GitGraph } from 'lucide-react';
 import styles from './index.less';
 
 const KnowledgeSidebar = () => {
-  let navigate = useNavigate();
+  const navigate = useNavigate();
   const activeKey = useSecondPathName();
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
   const [windowWidth, setWindowWidth] = useState(getWidth());
   const [collapsed, setCollapsed] = useState(false);
   const { t } = useTranslation();
+
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
+  const { data } = useFetchKnowledgeGraph();
+
+  /* ---------- helpers ---------- */
 
   const handleSelect: MenuProps['onSelect'] = (e) => {
+    if (e.item?.props?.disabled) return; // ignore greyed items
     navigate(`/knowledge/${e.key}?id=${knowledgeId}`);
   };
-
-  const { data } = useFetchKnowledgeGraph();
 
   type MenuItem = Required<MenuProps>['items'][number];
 
   const getItem = useCallback(
     (
-      label: string,
       key: React.Key,
-      icon?: React.ReactNode,
-      disabled?: boolean,
-      children?: MenuItem[],
-      type?: 'group',
-    ): MenuItem => {
-      return {
-        key,
-        icon,
-        children,
-        label: t(`knowledgeDetails.${label}`),
-        type,
-        disabled,
-      } as MenuItem;
-    },
+      routeKey: KnowledgeRouteKey,
+      icon: React.ReactNode,
+      disabled = false,
+    ): MenuItem => ({
+      key: routeKey,
+      icon,
+      label: t(`knowledgeDetails.${key as string}`),
+      disabled,
+    }),
     [t],
   );
 
+  /* ---------- menu items ---------- */
+
   const items: MenuItem[] = useMemo(() => {
-    const list = [
+    const list: MenuItem[] = [
       getItem(
-        KnowledgeRouteKey.Dataset, // TODO: Change icon color when selected
+        KnowledgeRouteKey.Dataset,
         KnowledgeRouteKey.Dataset,
         <DatasetIcon />,
-      ),
-      getItem(
-        KnowledgeRouteKey.Testing,
-        KnowledgeRouteKey.Testing,
-        <TestingIcon />,
       ),
       getItem(
         KnowledgeRouteKey.Configuration,
         KnowledgeRouteKey.Configuration,
         <ConfigurationIcon />,
+        true, // disabled / greyed-out
       ),
     ];
 
@@ -92,25 +86,19 @@ const KnowledgeSidebar = () => {
     return list;
   }, [data, getItem]);
 
+  /* ---------- responsive collapse ---------- */
+
   useEffect(() => {
-    if (windowWidth.width > 957) {
-      setCollapsed(false);
-    } else {
-      setCollapsed(true);
-    }
+    setCollapsed(windowWidth.width <= 957);
   }, [windowWidth.width]);
 
   useEffect(() => {
-    const widthSize = () => {
-      const width = getWidth();
-
-      setWindowWidth(width);
-    };
-    window.addEventListener('resize', widthSize);
-    return () => {
-      window.removeEventListener('resize', widthSize);
-    };
+    const onResize = () => setWindowWidth(getWidth());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  /* ---------- render ---------- */
 
   return (
     <div className={styles.sidebarWrapper}>
@@ -123,18 +111,19 @@ const KnowledgeSidebar = () => {
           {knowledgeDetails.description}
         </p>
       </div>
+
       <div className={styles.divider}></div>
+
       <div className={styles.menuWrapper}>
         <Menu
           selectedKeys={[activeKey]}
-          // mode="inline"
+          items={items}
+          onSelect={handleSelect}
           className={classNames(styles.menu, {
             [styles.defaultWidth]: windowWidth.width > 957,
             [styles.minWidth]: windowWidth.width <= 957,
           })}
-          // inlineCollapsed={collapsed}
-          items={items}
-          onSelect={handleSelect}
+          // inlineCollapsed={collapsed}  // keep original comment
         />
       </div>
     </div>

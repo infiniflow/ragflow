@@ -1,9 +1,8 @@
 import KnowledgeBaseItem from '@/components/knowledge-base-item';
-import { TavilyItem } from '@/components/tavily-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
 import { PlusOutlined } from '@ant-design/icons';
-import { Form, Input, message, Select, Switch, Upload } from 'antd';
+import { Form, Input, message } from 'antd';
 import classNames from 'classnames';
 import { useCallback } from 'react';
 import { ISegmentedContentProps } from '../interface';
@@ -77,7 +76,7 @@ const AssistantSetting = ({
       <Form.Item name={'description'} label={t('description')}>
         <Input placeholder={t('descriptionPlaceholder')} />
       </Form.Item>
-      <Form.Item
+      {/* <Form.Item
         name="icon"
         label={t('assistantAvatar')}
         valuePropName="fileList"
@@ -147,8 +146,8 @@ const AssistantSetting = ({
         initialValue={false}
       >
         <Switch onChange={handleTtsChange} />
-      </Form.Item>
-      <TavilyItem></TavilyItem>
+      </Form.Item> */}
+      {/* <TavilyItem></TavilyItem> */}
       <KnowledgeBaseItem
         required={false}
         onChange={handleChange}

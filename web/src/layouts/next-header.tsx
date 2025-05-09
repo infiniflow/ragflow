@@ -30,7 +30,7 @@ import {
   Search,
   Sun,
 } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'umi';
 
@@ -57,84 +57,96 @@ export function Header() {
 
   const { data } = useListTenant();
 
-  const showBell = useMemo(() => {
-    return data.some((x) => x.role === TenantRole.Invite);
-  }, [data]);
+  const showBell = useMemo(
+    () => data.some((x) => x.role === TenantRole.Invite),
+    [data],
+  );
 
-  const items = LanguageList.map((x) => ({
-    key: x,
-    label: <span>{LanguageMap[x as keyof typeof LanguageMap]}</span>,
-  }));
-
-  const onThemeClick = React.useCallback(() => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  }, [setTheme, theme]);
-
-  const handleBellClick = useCallback(() => {
-    navigate('/user-setting/team');
-  }, [navigate]);
-
+  /* nav definitions */
   const tagsData = useMemo(
     () => [
       { path: Routes.Home, name: t('header.home'), icon: House },
       { path: Routes.Datasets, name: t('header.knowledgeBase'), icon: Library },
       { path: Routes.Chats, name: t('header.chat'), icon: MessageSquareText },
-      { path: Routes.Searches, name: t('header.search'), icon: Search },
-      { path: Routes.Agents, name: t('header.flow'), icon: Cpu },
-      { path: Routes.Files, name: t('header.fileManager'), icon: File },
+      {
+        path: Routes.Searches,
+        name: t('header.search'),
+        icon: Search,
+        disabled: true,
+      }, // 🔒 disabled
+      {
+        path: Routes.Agents,
+        name: t('header.flow'),
+        icon: Cpu,
+        disabled: true,
+      },
+      {
+        path: Routes.Files,
+        name: t('header.fileManager'),
+        icon: File,
+        disabled: true,
+      },
     ],
     [t],
   );
 
-  const options = useMemo(() => {
-    return tagsData.map((tag) => {
-      const HeaderIcon = tag.icon;
+  /** Segmented control options */
+  const options = useMemo(
+    () =>
+      tagsData.map((tag) => {
+        const Icon = tag.icon;
+        return {
+          label:
+            tag.path === Routes.Home ? (
+              <Icon className="size-6" />
+            ) : (
+              <span>{tag.name}</span>
+            ),
+          value: tag.path,
+          disabled: tag.disabled,
+        };
+      }),
+    [tagsData],
+  );
 
-      return {
-        label:
-          tag.path === Routes.Home ? (
-            <HeaderIcon className="size-6"></HeaderIcon>
-          ) : (
-            <span>{tag.name}</span>
-          ),
-        value: tag.path,
-      };
-    });
-  }, [tagsData]);
+  const currentPath = useMemo(
+    () =>
+      tagsData.find((x) => pathname.startsWith(x.path))?.path || Routes.Home,
+    [pathname, tagsData],
+  );
 
-  const currentPath = useMemo(() => {
-    return (
-      tagsData.find((x) => pathname.startsWith(x.path))?.path || Routes.Home
-    );
-  }, [pathname, tagsData]);
-
+  /** handle nav change */
   const handleChange = (path: SegmentedValue) => {
+    if (path === Routes.Searches) return; // ignore disabled tab
     navigate(path as Routes);
   };
 
-  const handleLogoClick = useCallback(() => {
-    navigate(Routes.Home);
-  }, [navigate]);
+  const handleLogoClick = useCallback(() => navigate(Routes.Home), [navigate]);
 
   return (
     <section className="p-5 pr-14 flex justify-between items-center ">
+      {/* logo + stars */}
       <div className="flex items-center gap-4">
         <img
-          src={'/logo.svg'}
+          src="/logo.svg"
           alt="logo"
           className="size-10 mr-[12]"
           onClick={handleLogoClick}
         />
         <div className="flex items-center gap-1.5 text-text-sub-title">
           <Github className="size-3.5" />
-          <span className=" text-base">21.5k stars</span>
+          <span className="text-base">21.5k stars</span>
         </div>
       </div>
+
+      {/* segmented nav */}
       <Segmented
         options={options}
         value={currentPath}
         onChange={handleChange}
-      ></Segmented>
+      />
+
+      {/* right-side controls */}
       <div className="flex items-center gap-5 text-text-badge">
         <DropdownMenu>
           <DropdownMenuTrigger>
@@ -144,26 +156,31 @@ export function Header() {
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            {items.map((x) => (
-              <DropdownMenuItem key={x.key} onClick={handleItemClick(x.key)}>
-                {x.label}
+            {LanguageList.map((x) => (
+              <DropdownMenuItem key={x} onClick={handleItemClick(x)}>
+                {LanguageMap[x as keyof typeof LanguageMap]}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant={'ghost'} onClick={handleDocHelpCLick}>
+
+        <Button variant="ghost" onClick={handleDocHelpCLick}>
           <CircleHelp />
         </Button>
-        <Button variant={'ghost'} onClick={onThemeClick}>
+        <Button
+          variant="ghost"
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        >
           {theme === 'light' ? <Sun /> : <Moon />}
         </Button>
+
         <div className="relative">
           <RAGFlowAvatar
             name={nickname}
             avatar={avatar}
             className="size-8 cursor-pointer"
             onClick={navigateToProfile}
-          ></RAGFlowAvatar>
+          />
           <Badge className="h-5 w-8 absolute font-normal p-0 justify-center -right-8 -top-2 text-text-title-invert bg-gradient-to-l from-[#42D7E7] to-[#478AF5]">
             Pro
           </Badge>

@@ -1,0 +1,3 @@
+services:
+  ragflow:
+    image: ragflow-custom:login
