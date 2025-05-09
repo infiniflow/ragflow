@@ -1,6 +1,9 @@
 import { Authorization } from '@/constants/authorization';
 import userService from '@/services/user-service';
-import authorizationUtil, { redirectToLogin } from '@/utils/authorization-util';
+import authorizationUtil, {
+  LoginType,
+  redirectToLogin,
+} from '@/utils/authorization-util';
 import { useMutation } from '@tanstack/react-query';
 import { Form, message } from 'antd';
 import { FormInstance } from 'antd/lib';
@@ -67,8 +70,13 @@ export const useRegister = () => {
       const { data = {} } = await userService.register(params);
       if (data.code === 0) {
         message.success(t('message.registered'));
-      } else if (data.message && data.message.includes('registration is disabled')) {
-        message.error(t('message.registerDisabled') || 'User registration is disabled');
+      } else if (
+        data.message &&
+        data.message.includes('registration is disabled')
+      ) {
+        message.error(
+          t('message.registerDisabled') || 'User registration is disabled',
+        );
       }
       return data.code;
     },
@@ -90,7 +98,7 @@ export const useLogout = () => {
       if (data.code === 0) {
         message.success(t('message.logout'));
         authorizationUtil.removeAll();
-        redirectToLogin();
+        redirectToLogin({ type: LoginType.NORMAL });
       }
       return data.code;
     },

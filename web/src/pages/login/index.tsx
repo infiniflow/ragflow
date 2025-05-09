@@ -1,13 +1,14 @@
 import { useLogin, useRegister } from '@/hooks/login-hooks';
 import { useSystemConfig } from '@/hooks/system-hooks';
 import { rsaPsw } from '@/utils';
-import { Button, Checkbox, Form, Input } from 'antd';
-import { useEffect, useState } from 'react';
+import { Button, Checkbox, Form, Input, message } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Icon, useNavigate } from 'umi';
+import { Icon, useNavigate, useSearchParams } from 'umi';
 import RightPanel from './right-panel';
 
 import { Domain } from '@/constants/common';
+import { LoginType } from '@/utils/authorization-util';
 import styles from './index.less';
 
 const Login = () => {
@@ -19,6 +20,7 @@ const Login = () => {
   const loading = signLoading || registerLoading;
   const { config } = useSystemConfig();
   const registerEnabled = config?.registerEnabled !== 0;
+  const [isAutoLogin, setIsAutoLogin] = useState(false);
 
   const changeTitle = () => {
     if (title === 'login' && !registerEnabled) {
@@ -69,6 +71,33 @@ const Login = () => {
     window.location.href =
       'https://github.com/login/oauth/authorize?scope=user:email&client_id=302129228f0d96055bee';
   };
+
+  const autoLogin = useCallback(() => {
+    // setIsAutoLogin(true);
+    // window.location.href = `${OP_URL}/op/auth?${searchParams.toString()}`;
+  }, []);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const loginType = searchParams.get('type') || LoginType.NORMAL;
+
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error) {
+      message.error(error);
+      setSearchParams({});
+      return;
+    }
+
+    if (loginType === LoginType.AUTO) {
+      autoLogin();
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams, autoLogin, loginType]);
+
+  if (isAutoLogin || loginType === LoginType.AUTO) {
+    return <div></div>;
+  }
 
   return (
     <div className={styles.loginPage}>

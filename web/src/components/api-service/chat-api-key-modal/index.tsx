@@ -60,11 +60,7 @@ const ChatApiKeyModal = ({
           loading={listLoading}
           pagination={false}
         />
-        <Button
-          onClick={createToken}
-          loading={creatingLoading}
-          disabled={tokenList?.length > 0}
-        >
+        <Button onClick={createToken} loading={creatingLoading}>
           {t('createNewKey')}
         </Button>
       </Modal>

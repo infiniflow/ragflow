@@ -57,7 +57,40 @@ export const getAuthorization = () => {
 
 export default storage;
 
+function isURLSearchParamsEmpty(searchParams: URLSearchParams) {
+  // Use entries() method to get iterator and try to get first element
+  let firstItem = searchParams.entries().next();
+  return firstItem.done; // If done is true, means there are no elements, i.e. searchParams is empty
+}
+
+export enum LoginType {
+  AUTO = 'auto',
+  NORMAL = 'normal',
+}
 // Will not jump to the login page
-export function redirectToLogin() {
-  window.location.href = location.origin + `/login`;
+export function redirectToLogin(
+  { type, error }: { type?: LoginType; error?: string } = {
+    type: (LOGIN_TYPE as LoginType) || LoginType.NORMAL,
+  },
+) {
+  const searchParams = new URLSearchParams({});
+
+  if (
+    type &&
+    type !== LoginType.NORMAL &&
+    Object.values(LoginType).includes(type)
+  ) {
+    searchParams.set('type', type);
+  }
+
+  if (error) {
+    searchParams.set('error', error);
+  }
+
+  if (isURLSearchParamsEmpty(searchParams)) {
+    window.location.href = location.origin + '/login';
+  } else {
+    window.location.href =
+      location.origin + `/login?${searchParams.toString()}`;
+  }
 }
