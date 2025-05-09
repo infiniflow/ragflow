@@ -13,13 +13,19 @@ const Languages = [
 
 const options = Languages.map((x) => ({ label: x, value: x }));
 
-export const LanguageItem = () => {
+type CrossLanguageItemProps = {
+  name?: string | Array<string>;
+};
+
+export const CrossLanguageItem = ({
+  name = ['prompt_config', 'cross_languages'],
+}: CrossLanguageItemProps) => {
   const { t } = useTranslation();
 
   return (
     <Form.Item
       label={t('chat.crossLanguage')}
-      name={['prompt_config', 'cross_languages']}
+      name={name}
       tooltip={t('chat.crossLanguageTip')}
     >
       <AntSelect
