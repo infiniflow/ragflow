@@ -306,6 +306,60 @@ Output: What's the weather in Rochester on {tomorrow}?
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
+def cross_languages(tenant_id, llm_id, query, languages=[]):
+    from api.db.services.llm_service import LLMBundle
+
+    if llm_id and llm_id2llm_type(llm_id) == "image2text":
+        chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+    else:
+        chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
+
+    sys_prompt = """
+Act as a streamlined multilingual translator. Strictly output translations separated by ### without any explanations or formatting. Follow these rules:
+
+1. Accept batch translation requests in format:
+[source text]
+=== 
+[target languages separated by commas]
+
+2. Always maintain:
+- Original formatting (tables/lists/spacing)
+- Technical terminology accuracy
+- Cultural context appropriateness
+
+3. Output format:
+[language1 translation] 
+### 
+[language1 translation]
+
+**Examples:**
+Input:
+Hello World! Let's discuss AI safety.
+===
+Chinese, French, Jappanese
+
+Output:
+你好世界！让我们讨论人工智能安全问题。
+###
+Bonjour le monde ! Parlons de la sécurité de l'IA.
+###
+こんにちは世界！AIの安全性について話し合いましょう。
+"""
+    user_prompt=f"""
+Input:
+{query}
+===
+{', '.join(languages)}
+
+Output:
+"""
+
+    ans = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.2})
+    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+    if ans.find("**ERROR**") >= 0:
+        return query
+    return "\n".join([a for a in re.sub(r"(^Output:|\n+)", "", ans, flags=re.DOTALL).split("===") if a.strip()])
+
 
 def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
     prompt = f"""
