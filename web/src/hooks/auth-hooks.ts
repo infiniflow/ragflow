@@ -1,7 +1,6 @@
 import authorizationUtil from '@/utils/authorization-util';
-import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'umi';
+import { useSearchParams } from 'umi';
 
 export const useLoginWithGithub = () => {
   const [currentQueryParameters, setSearchParams] = useSearchParams();
@@ -10,33 +9,32 @@ export const useLoginWithGithub = () => {
     () => new URLSearchParams(currentQueryParameters.toString()),
     [currentQueryParameters],
   );
-  const navigate = useNavigate();
-
-  if (error) {
-    message.error(error);
-    navigate('/login');
-    newQueryParameters.delete('error');
-    setSearchParams(newQueryParameters);
-    return;
-  }
 
   const auth = currentQueryParameters.get('auth');
 
-  if (auth) {
-    authorizationUtil.setAuthorization(auth);
-    newQueryParameters.delete('auth');
-    setSearchParams(newQueryParameters);
-  }
-  return auth;
+  useEffect(() => {
+    if (auth) {
+      authorizationUtil.setAuthorization(auth);
+    }
+  }, [auth]);
+
+  const authResult = useMemo(() => {
+    return {
+      auth,
+      error,
+    };
+  }, [auth, error]);
+
+  return authResult;
 };
 
 export const useAuth = () => {
-  const auth = useLoginWithGithub();
+  const { auth, error } = useLoginWithGithub();
   const [isLogin, setIsLogin] = useState<Nullable<boolean>>(null);
 
   useEffect(() => {
     setIsLogin(!!authorizationUtil.getAuthorization() || !!auth);
   }, [auth]);
 
-  return { isLogin };
+  return { isLogin, error };
 };

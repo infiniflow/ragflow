@@ -1,13 +1,18 @@
 import { useAuth } from '@/hooks/auth-hooks';
-import { redirectToLogin } from '@/utils/authorization-util';
+import { LoginType, redirectToLogin } from '@/utils/authorization-util';
 import { Outlet } from 'umi';
 
 export default () => {
-  const { isLogin } = useAuth();
+  const { isLogin, error } = useAuth();
+
   if (isLogin === true) {
     return <Outlet />;
   } else if (isLogin === false) {
-    redirectToLogin();
+    if (error) {
+      return redirectToLogin({ error });
+    }
+
+    return redirectToLogin({ type: LoginType.AUTO });
   }
 
   return <></>;
