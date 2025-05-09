@@ -133,6 +133,8 @@ redis:
   storage:
     className:
     capacity: 5Gi
+  persistence:
+    enabled: true
   deployment:
     strategy:
     resources:
