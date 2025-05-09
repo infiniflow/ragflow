@@ -2,6 +2,7 @@ import {
   GitHubIcon,
   KeywordIcon,
   QWeatherIcon,
+  VarsIcon,
   WikipediaIcon,
 } from '@/assets/icon/Icon';
 import { ReactComponent as AkShareIcon } from '@/assets/svg/akshare.svg';
@@ -104,6 +105,7 @@ export enum Operator {
   Email = 'Email',
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
+  VariablesExtract = 'VariablesExtract',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -119,6 +121,7 @@ export const operatorIconMap = {
   [Operator.Message]: MessageOutlined,
   [Operator.Relevant]: BranchesOutlined,
   [Operator.RewriteQuestion]: FormOutlined,
+  [Operator.VariablesExtract]: VarsIcon,
   [Operator.KeywordExtract]: KeywordIcon,
   [Operator.DuckDuckGo]: DuckIcon,
   [Operator.Baidu]: BaiduIcon,
@@ -205,6 +208,8 @@ export const operatorMap: Record<
     fontSize: 12,
     iconFontSize: 16,
   },
+  [Operator.VariablesExtract]: { backgroundColor: '#e6f7ff' },
+
   [Operator.KeywordExtract]: {
     width: 70,
     height: 70,
@@ -323,6 +328,9 @@ export const componentMenuList = [
     name: Operator.Iteration,
   },
   {
+    name: Operator.VariablesExtract,
+  },
+  {
     name: Operator.Note,
   },
   {
@@ -438,6 +446,11 @@ export const initialRewriteQuestionValues = {
   message_history_window_size: 6,
 };
 
+export const initialVariableValues = {
+  ...initialLlmBaseValues,
+  message_history_window_size: 6,
+};
+
 export const initialRelevantValues = {
   ...initialLlmBaseValues,
 };
@@ -489,7 +502,8 @@ export const initialArXivValues = {
 
 export const initialGoogleValues = {
   top_n: 10,
-  api_key: 'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
+  provider: 'OpenSearch',
+  api_key: '',
   country: 'cn',
   language: 'en',
   ...initialQueryBaseValues,
@@ -605,7 +619,7 @@ export const initialInvokeValues = {
   "Accept": "*/*",
   "Cache-Control": "no-cache",
   "Connection": "keep-alive"
-}`,
+  }`,
   proxy: 'http://',
   clean_html: false,
   datatype: 'json',
@@ -682,6 +696,12 @@ export const RestrictedUpstreamMap = {
     Operator.RewriteQuestion,
     Operator.Relevant,
   ],
+  [Operator.VariablesExtract]: [
+    Operator.Begin,
+    Operator.Message,
+    Operator.RewriteQuestion,
+    Operator.Relevant,
+  ],
   [Operator.KeywordExtract]: [
     Operator.Begin,
     Operator.Message,
@@ -726,6 +746,7 @@ export const NodeMap = {
   [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.KeywordExtract]: 'keywordNode',
+  [Operator.VariablesExtract]: 'variablesNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Baidu]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
