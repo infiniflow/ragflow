@@ -2,7 +2,7 @@ import {
   AsyncTreeSelect,
   TreeNodeType,
 } from '@/components/ui/async-tree-select';
-import { Button } from '@/components/ui/button';
+import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,7 @@ import { isEmpty } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export function MoveDialog({ hideModal, onOk }: IModalProps<any>) {
+export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
   const { t } = useTranslation();
 
   const { fetchList } = useFetchPureFileList();
@@ -69,13 +69,14 @@ export function MoveDialog({ hideModal, onOk }: IModalProps<any>) {
           ></AsyncTreeSelect>
         </div>
         <DialogFooter>
-          <Button
+          <ButtonLoading
             type="submit"
             onClick={handleSubmit}
             disabled={isEmpty(treeValue)}
+            loading={loading}
           >
             {t('common.save')}
-          </Button>
+          </ButtonLoading>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button';
+import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -38,7 +38,11 @@ export function UploaderTabs({ setFiles }: UploaderTabsProps) {
   );
 }
 
-export function FileUploadDialog({ hideModal, onOk }: IModalProps<File[]>) {
+export function FileUploadDialog({
+  hideModal,
+  onOk,
+  loading,
+}: IModalProps<File[]>) {
   const { t } = useTranslation();
   const [files, setFiles] = useState<File[]>([]);
 
@@ -54,14 +58,9 @@ export function FileUploadDialog({ hideModal, onOk }: IModalProps<File[]>) {
         </DialogHeader>
         <UploaderTabs setFiles={setFiles}></UploaderTabs>
         <DialogFooter>
-          <Button
-            type="submit"
-            variant={'tertiary'}
-            size={'sm'}
-            onClick={handleOk}
-          >
+          <ButtonLoading type="submit" onClick={handleOk} loading={loading}>
             {t('common.save')}
-          </Button>
+          </ButtonLoading>
         </DialogFooter>
       </DialogContent>
     </Dialog>
