@@ -131,7 +131,7 @@ class DocumentService(CommonService):
         if types:
             query = query.where(cls.model.type.in_(types))
 
-        return query.scalar() or 0
+        return int(query.scalar()) or 0
 
     @classmethod
     @DB.connection_context()
