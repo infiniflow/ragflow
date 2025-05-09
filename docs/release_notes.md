@@ -44,7 +44,7 @@ From this release onwards, built-in rerank models have been removed because they
 - [Set page rank](./guides/dataset/set_page_rank.md)
 - [Enable RAPTOR](./guides/dataset/enable_raptor.md)
 - [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
-- [RAGFlow MCP server overview](./develop/mcp.md)
+- [RAGFlow MCP server overview](./develop/launch_mcp_server.md)
 
 ## v0.17.2
 
