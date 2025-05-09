@@ -1,0 +1,8 @@
+{
+  "label": "Model Context Protocol",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Guides and references on accessing RAGFlow's knowledge bases via MCP."
+  }
+}

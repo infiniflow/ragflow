@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 1
 slug: /launch_mcp_server
 ---
 
@@ -176,24 +176,6 @@ Run the following to check the logs the RAGFlow server and the MCP server:
 ```bash
 docker logs ragflow-server
 ```
-
-## MCP client example
-
-We provide a *prototype* MCP client example for testing [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).
-
-:::danger IMPORTANT
-If your MCP server is running in host mode, include your acquired API key in your client's `headers` as shown below:
-```python
-async with sse_client("http://localhost:9382/sse", headers={"api_key": "YOUR_KEY_HERE"}) as streams:
-    # Rest of your code...
-```
-:::
-
-## Tools
-
-The MCP server currently offers a specialized tool to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
-
-- **retrieve**: Fetches relevant chunks from specified `dataset_ids` and optional `document_ids` using the RAGFlow retrieve interface, based on a given question. Details of all available datasets, namely, `id` and `description`, are provided within the tool description for each individual dataset.
 
 ## Security considerations
 
