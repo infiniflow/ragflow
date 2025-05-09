@@ -194,7 +194,7 @@ export default {
       chunkTokenNumber: 'Kích thước khối được khuyến nghị',
       chunkTokenNumberMessage: 'Số token khối là bắt buộc',
       embeddingModelTip:
-        'Mô hình chuyển đổi các khối thành các nhúng. Nó không thể được thay đổi sau khi cơ sở kiến thức có các khối. Để chuyển sang mô hình nhúng khác, bạn phải xóa tất cả các khối trong cơ sở kiến thức.',
+        'Mô hình nhúng mặc định của cơ sở tri thức. Không thể thay đổi khi cơ sở tri thức đã có các đoạn dữ liệu. Để chuyển sang mô hình nhúng mặc định khác, bạn phải xóa tất cả các đoạn dữ liệu hiện có trong cơ sở tri thức.',
       permissionsTip:
         'Nếu được đặt thành "Đội", tất cả các thành viên trong nhóm sẽ có thể quản lý cơ sở kiến thức.',
       chunkTokenNumberTip:
@@ -397,7 +397,7 @@ export default {
       setAnOpenerTip: 'Bạn muốn chào đón khách hàng của mình như thế nào?',
       knowledgeBases: 'Cơ sở kiến thức',
       knowledgeBasesMessage: 'Vui lòng chọn',
-      knowledgeBasesTip: 'Chọn các cơ sở kiến thức liên kết.',
+      knowledgeBasesTip: 'Chọn các cơ sở kiến thức liên kết. Cơ sở tri thức trống sẽ không xuất hiện trong danh sách thả xuống.',
       system: 'Hệ thống',
       systemInitialValue: `Bạn là một trợ lý thông minh. Vui lòng tóm tắt nội dung của cơ sở kiến thức để trả lời câu hỏi. Vui lòng liệt kê dữ liệu trong cơ sở kiến thức và trả lời chi tiết. Khi tất cả nội dung cơ sở kiến thức không liên quan đến câu hỏi, câu trả lời của bạn phải bao gồm câu "Câu trả lời bạn đang tìm kiếm không được tìm thấy trong cơ sở kiến thức!" Câu trả lời cần xem xét lịch sử trò chuyện.
       Đây là cơ sở kiến thức:
@@ -791,7 +791,7 @@ export default {
       news: 'Tin tức',
       messageHistoryWindowSize: 'Cửa sổ lịch sử tin nhắn',
       messageHistoryWindowSizeTip:
-        'Kích thước cửa sổ của lịch sử cuộc hội thoại cần LLM xem. Càng lớn càng tốt. Nhưng hãy cẩn thận với chiều dài nội dung tối đa của LLM.',
+        'Kích thước cửa sổ lịch sử cuộc trò chuyện hiển thị với LLM. Càng lớn càng tốt, nhưng hãy chú ý đến giới hạn tối đa số token của LLM.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
