@@ -306,20 +306,40 @@ Updates configurations for the current dataset.
 A dictionary representing the attributes to update, with the following keys:
 
 - `"name"`: `str` The revised name of the dataset.
-- `"embedding_model"`: `str` The updated embedding model name.
+  - Basic Multilingual Plane (BMP) only
+  - Maximum 128 characters
+  - Case-insensitive
+- `"avatar"`: (*Body parameter*), `string`  
+  The updated base64 encoding of the avatar.
+  - Maximum 65535 characters
+- `"embedding_model"`: (*Body parameter*), `string`  
+  The updated embedding model name.  
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
-- `"chunk_method"`: `str` The chunking method for the dataset. Available options:
-  - `"naive"`: General
-  - `"manual`: Manual
+  - Maximum 255 characters
+  - Must follow `model_name@model_factory` format
+- `"permission"`: (*Body parameter*), `string`  
+  The updated dataset permission. Available options:  
+  - `"me"`: (Default) Only you can manage the dataset.
+  - `"team"`: All team members can manage the dataset.
+- `"pagerank"`: (*Body parameter*), `int`  
+  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  - Default: `0`
+  - Minimum: `0`
+  - Maximum: `100`
+- `"chunk_method"`: (*Body parameter*), `enum<string>`  
+  The chunking method for the dataset. Available options:  
+  - `"naive"`: General (default)
+  - `"book"`: Book
+  - `"email"`: Email
+  - `"laws"`: Laws
+  - `"manual"`: Manual
+  - `"one"`: One
+  - `"paper"`: Paper
+  - `"picture"`: Picture
+  - `"presentation"`: Presentation
   - `"qa"`: Q&A
   - `"table"`: Table
-  - `"paper"`: Paper
-  - `"book"`: Book
-  - `"laws"`: Laws
-  - `"presentation"`: Presentation
-  - `"picture"`: Picture
-  - `"one"`: One
-  - `"email"`: Email
+  - `"tag"`: Tag
 
 #### Returns
 

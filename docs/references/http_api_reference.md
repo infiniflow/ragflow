@@ -385,7 +385,7 @@ curl --request POST \
   - `"team"`: All team members can manage the dataset.
 
 - `"pagerank"`: (*Body parameter*), `int`  
-  Set page rank: refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
@@ -562,8 +562,13 @@ Updates configurations for a specified dataset.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
+  - `"avatar"`: `string`
+  - `"description"`: `string`
   - `"embedding_model"`: `string`
-  - `"chunk_method"`: `enum<string>`
+  - `"permission"`: `string`
+  - `"chunk_method"`: `string`
+  - `"pagerank"`: `int`
+  - `"parser_config"`: `object`
 
 ##### Request example
 
@@ -584,22 +589,74 @@ curl --request PUT \
   The ID of the dataset to update.
 - `"name"`: (*Body parameter*), `string`  
   The revised name of the dataset.
+  - Basic Multilingual Plane (BMP) only
+  - Maximum 128 characters
+  - Case-insensitive
+- `"avatar"`: (*Body parameter*), `string`  
+  The updated base64 encoding of the avatar.
+  - Maximum 65535 characters
 - `"embedding_model"`: (*Body parameter*), `string`  
   The updated embedding model name.  
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
+  - Maximum 255 characters
+  - Must follow `model_name@model_factory` format
+- `"permission"`: (*Body parameter*), `string`  
+  The updated dataset permission. Available options:  
+  - `"me"`: (Default) Only you can manage the dataset.
+  - `"team"`: All team members can manage the dataset.
+- `"pagerank"`: (*Body parameter*), `int`  
+  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  - Default: `0`
+  - Minimum: `0`
+  - Maximum: `100`
 - `"chunk_method"`: (*Body parameter*), `enum<string>`  
   The chunking method for the dataset. Available options:  
-  - `"naive"`: General
-  - `"manual`: Manual
+  - `"naive"`: General (default)
+  - `"book"`: Book
+  - `"email"`: Email
+  - `"laws"`: Laws
+  - `"manual"`: Manual
+  - `"one"`: One
+  - `"paper"`: Paper
+  - `"picture"`: Picture
+  - `"presentation"`: Presentation
   - `"qa"`: Q&A
   - `"table"`: Table
-  - `"paper"`: Paper
-  - `"book"`: Book
-  - `"laws"`: Laws
-  - `"presentation"`: Presentation
-  - `"picture"`: Picture
-  - `"one"`:One
-  - `"email"`: Email
+  - `"tag"`: Tag
+- `"parser_config"`: (*Body parameter*), `object`  
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
+  - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
+    - `"auto_keywords"`: `int`
+      - Defaults to `0`
+      - Minimum: `0`
+      - Maximum: `32`
+    - `"auto_questions"`: `int`
+      - Defaults to `0`
+      - Minimum: `0`
+      - Maximum: `10`
+    - `"chunk_token_num"`: `int`
+      - Defaults to `128`
+      - Minimum: `1`
+      - Maximum: `2048`
+    - `"delimiter"`: `string`
+      - Defaults to `"\n"`.
+    - `"html4excel"`: `bool` Indicates whether to convert Excel documents into HTML format.
+      - Defaults to `false`
+    - `"layout_recognize"`: `string`
+      - Defaults to `DeepDOC`
+    - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+    - `"task_page_size"`: `int` For PDF only.
+      - Defaults to `12`
+      - Minimum: `1`
+    - `"raptor"`: `object` RAPTOR-specific settings.
+      - Defaults to: `{"use_raptor": false}`
+    - `"graphrag"`: `object` GRAPHRAG-specific settings.
+      - Defaults to: `{"use_graphrag": false}`
+  - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:  
+    - `"raptor"`: `object` RAPTOR-specific settings.
+      - Defaults to: `{"use_raptor": false}`.
+  - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 
 #### Response
 
