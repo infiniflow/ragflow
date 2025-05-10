@@ -60,7 +60,12 @@ const ChatContainer = () => {
   return (
     <>
       <Flex flex={1} className={styles.chatContainer} vertical>
-        <Flex flex={1} vertical className={styles.messageContainer}>
+        <Flex
+          flex={1}
+          vertical
+          className={styles.messageContainer}
+          ref={ref} // Attach ref to the container instead of a bottom div
+        >
           <div>
             <Spin spinning={loading}>
               {derivedMessages?.map((message, i) => {
@@ -92,7 +97,7 @@ const ChatContainer = () => {
               })}
             </Spin>
           </div>
-          <div ref={ref} />
+          {/* Removed the bottom div with ref */}
         </Flex>
 
         <MessageInput
