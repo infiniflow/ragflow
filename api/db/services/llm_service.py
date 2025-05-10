@@ -226,6 +226,7 @@ class LLMBundle:
 
     def bind_tools(self, toolcall_session, tools):
         if not self.is_tools:
+            logging.warning(f"Model {self.llm_name} does not support tool call, but you have assigned one or more tools to it!")
             return
         self.mdl.bind_tools(toolcall_session, tools)
 

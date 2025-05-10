@@ -454,6 +454,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       model: 'Model',
       modelTip: 'Large language chat model',
       modelMessage: 'Please select!',
+      modelEnabledTools: 'Enabled tools',
+      modelEnabledToolsTip: 'Please select one or more tools for the chat model to use. It takes no effect for models not supporting tool call.',
       freedom: 'Freedom',
       improvise: 'Improvise',
       precise: 'Precise',
