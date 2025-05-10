@@ -344,9 +344,9 @@ class Markdown(MarkdownParser):
                     sections.append((sec_ + "\n" + sec, ""))
                 else:
                     sections.append((sec, ""))
-
+        md = markdown.Markdown(extensions=['markdown.extensions.tables'])
         for table in tables:
-            tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
+            tbls.append(((None, md.convert(table)), ""))
         return sections, tbls
 
 
