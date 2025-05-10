@@ -50,25 +50,23 @@ type ResultCode =
 const errorHandler = (error: {
   response: Response;
   message: string;
-}): Response => {
+  data?: object;
+}): Response | any => {
   const { response } = error;
   if (error.message === FAILED_TO_FETCH) {
     notification.error({
       description: i18n.t('message.networkAnomalyDescription'),
       message: i18n.t('message.networkAnomaly'),
     });
-  } else {
-    if (response && response.status) {
-      const errorText =
-        RetcodeMessage[response.status as ResultCode] || response.statusText;
-      const { status, url } = response;
-      notification.error({
-        message: `${i18n.t('message.requestError')} ${status}: ${url}`,
-        description: errorText,
-      });
-    }
+  } else if (!response && error.message) {
+    notification.error({
+      message: `${i18n.t('message.hint')}`,
+      description: error.message,
+      duration: 3,
+    });
+    error.data = { code: 1999, message: error.message };
   }
-  return response ?? { data: { code: 1999 } };
+  return error ?? { data: { code: 1999 } };
 };
 
 const request: RequestMethod = extend({
@@ -101,6 +99,10 @@ request.interceptors.request.use((url: string, options: any) => {
 request.interceptors.response.use(async (response: Response, options) => {
   if (response?.status === 413 || response?.status === 504) {
     message.error(RetcodeMessage[response?.status as ResultCode]);
+    return {
+      ...response,
+      data: { code: 1999 }
+    };
   }
 
   if (options.responseType === 'blob') {
