@@ -58,6 +58,8 @@ class KeywordExtract(Generate, ABC):
 
 
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
+        self._canvas.set_component_infor(self._id, {"prompt":self._param.get_prompt(),"messages":  [{"role": "user", "content": query}],"conf": self._param.gen_conf()})
+
         ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": query}],
                             self._param.gen_conf())
 
