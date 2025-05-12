@@ -218,7 +218,7 @@ class CreateDatasetReq(Base):
     permission: Annotated[PermissionEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=16), Field(default=PermissionEnum.me)]
     chunk_method: Annotated[ChunkMethodnEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=32), Field(default=ChunkMethodnEnum.naive, serialization_alias="parser_id")]
     pagerank: int = Field(default=0, ge=0, le=100)
-    parser_config: ParserConfig = Field(default_factory=dict)
+    parser_config: ParserConfig | None = Field(default=None)
 
     @field_validator("avatar")
     @classmethod
@@ -330,15 +330,42 @@ class CreateDatasetReq(Base):
         """
         return v.lower() if isinstance(v, str) else v
 
+    @field_validator("parser_config", mode="before")
+    @classmethod
+    def normalize_empty_parser_config(cls, v: Any) -> Any:
+        """
+        Normalizes empty parser configuration by converting empty dictionaries to None.
+
+        This validator ensures consistent handling of empty parser configurations across
+        the application by converting empty dicts to None values.
+
+        Args:
+            v (Any): Raw input value for the parser config field
+
+        Returns:
+            Any: Returns None if input is an empty dict, otherwise returns the original value
+
+        Example:
+            >>> normalize_empty_parser_config({})
+            None
+
+            >>> normalize_empty_parser_config({"key": "value"})
+            {"key": "value"}
+        """
+        if v == {}:
+            return None
+        return v
+
     @field_validator("parser_config", mode="after")
     @classmethod
-    def validate_parser_config_json_length(cls, v: ParserConfig) -> ParserConfig:
+    def validate_parser_config_json_length(cls, v: ParserConfig | None) -> ParserConfig | None:
         """
         Validates serialized JSON length constraints for parser configuration.
 
         Implements a two-stage validation workflow:
-        1. Model serialization - convert Pydantic model to JSON string
-        2. Size verification - enforce maximum allowed payload size
+        1. Null check - bypass validation for empty configurations
+        2. Model serialization - convert Pydantic model to JSON string
+        3. Size verification - enforce maximum allowed payload size
 
         Args:
             v (ParserConfig | None): Raw parser configuration object
@@ -349,6 +376,9 @@ class CreateDatasetReq(Base):
         Raises:
             ValueError: When serialized JSON exceeds 65,535 characters
         """
+        if v is None:
+            return None
+
         if (json_str := v.model_dump_json()) and len(json_str) > 65535:
             raise ValueError(f"Parser config exceeds size limit (max 65,535 characters). Current size: {len(json_str):,}")
         return v
