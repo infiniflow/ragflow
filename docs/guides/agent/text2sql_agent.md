@@ -5,7 +5,11 @@ slug: /text2sql_agent
 
 # Create a Text2SQL agent
 
-Build a Text2SQL agent leveraging RAGFlow's RAG capabilities. Contributed by @TeslaZY.
+Build a Text2SQL agent leveraging RAGFlow's RAG capabilities.
+
+:::info KUDOS
+This document is contributed by our community contributor [TeslaZY](https://github.com/TeslaZY). 👏
+:::
 
 ## Scenario
 

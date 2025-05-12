@@ -3,7 +3,15 @@ sidebar_position: 9
 slug: /tracing
 ---
 
-# Observability & Tracing with Langfuse
+# Tracing
+
+Observability & Tracing with Langfuse.
+
+---
+
+:::info KUDOS
+This document is contributed by our community contributor [jannikmaierhoefer](https://github.com/jannikmaierhoefer). 👏
+:::
 
 RAGFlow ships with a built-in [Langfuse](https://langfuse.com) integration so that you can **inspect and debug every retrieval and generation step** of your RAG pipelines in near real-time.
 
@@ -36,7 +44,7 @@ RAGFlow stores the credentials _per tenant_. You can configure them either via t
 3. Fill in you Langfuse **Host**, **Public Key** and **Secret Key**.  
 4. Click **Save**. 
 
-![Example Ragflow trace in Langfuse](https://langfuse.com/images/docs/ragflow/ragflow-configuration.gif)
+![Example RAGFlow trace in Langfuse](https://langfuse.com/images/docs/ragflow/ragflow-configuration.gif)
 
 Once saved, RAGFlow starts emitting traces automatically – no code change required.
 
@@ -54,7 +62,7 @@ For every user request you will see:
 • **spans** for retrieval, ranking and generation steps  
 • the complete **prompts**, **retrieved documents** and **LLM responses** as metadata
 
-![Example Ragflow trace in Langfuse](https://langfuse.com/images/docs/ragflow/ragflow-trace-frame.png)
+![Example RAGFlow trace in Langfuse](https://langfuse.com/images/docs/ragflow/ragflow-trace-frame.png)
 
 ([Example trace in Langfuse](https://cloud.langfuse.com/project/cloramnkj0002jz088vzn1ja4/traces/0bde9629-4251-4386-b583-26101b8e7561?timestamp=2025-05-09T19%3A15%3A37.797Z&display=details&observation=823997d8-ac40-40f3-8e7b-8aa6753b499e))
 
