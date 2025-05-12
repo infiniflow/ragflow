@@ -155,7 +155,7 @@ Run `docker compose -f docker-compose.yml` to launch the RAGFlow server together
 This section is contributed by our community contributor **yiminghub2024**. 👏
 :::
 :::info KUDOS
-This document is contributed by our community contributor [yiminghub2024](https://github.com/yiminghub2024). 👏
+This section is contributed by our community contributor [yiminghub2024](https://github.com/yiminghub2024). 👏
 :::
 
 1. Prepare all MCP-specific files and directories.  
