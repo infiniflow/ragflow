@@ -3,6 +3,8 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ include "ragflow.fullname" . }}-es-data
+  annotations:
+    "helm.sh/resource-policy": keep
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: elasticsearch
