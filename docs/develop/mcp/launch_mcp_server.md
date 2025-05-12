@@ -154,6 +154,9 @@ Run `docker compose -f docker-compose.yml` to launch the RAGFlow server together
 :::tip KUDOS-TO
 This section is contributed by our community contributor **yiminghub2024**. 👏
 :::
+:::info KUDOS
+This document is contributed by our community contributor [yiminghub2024](https://github.com/yiminghub2024). 👏
+:::
 
 1. Prepare all MCP-specific files and directories.  
    i. Copy the [mcp/](https://github.com/infiniflow/ragflow/tree/main/mcp) directory to your local working directory.  

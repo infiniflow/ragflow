@@ -7,6 +7,10 @@ slug: /text2sql_agent
 
 Build a Text2SQL agent leveraging RAGFlow's RAG capabilities. Contributed by @TeslaZY.
 
+:::info KUDOS
+This document is contributed by our community contributor [TeslaZY](https://github.com/TeslaZY). 👏
+:::
+
 ## Scenario
 
 The Text2SQL agent bridges the gap between Natural Language Processing (NLP) and Structured Query Language (SQL). Its key advantages are as follows:
