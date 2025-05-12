@@ -38,8 +38,19 @@ export function SliderInputFormField({
       defaultValue={defaultValue}
       render={({ field }) => (
         <FormItem>
-          <div className="flex items-center justify-between">
-            <FormLabel tooltip={tooltip}>{label}</FormLabel>
+          <FormLabel tooltip={tooltip}>{label}</FormLabel>
+          <div className="flex items-center gap-14 justify-between">
+            <FormControl>
+              <SingleFormSlider
+                {...field}
+                max={max}
+                min={min}
+                step={step}
+                // defaultValue={
+                //   typeof defaultValue === 'number' ? [defaultValue] : undefined
+                // }
+              ></SingleFormSlider>
+            </FormControl>
             <FormControl>
               <Input
                 type={'number'}
@@ -52,17 +63,6 @@ export function SliderInputFormField({
               ></Input>
             </FormControl>
           </div>
-          <FormControl>
-            <SingleFormSlider
-              {...field}
-              max={max}
-              min={min}
-              step={step}
-              // defaultValue={
-              //   typeof defaultValue === 'number' ? [defaultValue] : undefined
-              // }
-            ></SingleFormSlider>
-          </FormControl>
           <FormMessage />
         </FormItem>
       )}
