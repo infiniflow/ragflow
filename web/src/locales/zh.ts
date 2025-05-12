@@ -1219,6 +1219,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       knowledgeBaseVars: '知识库变量',
       code: '代码',
       codeDescription: '它允许开发人员编写自定义 Python 逻辑。',
+      inputVariables: '输入变量',
+      addVariable: '新增变量',
     },
     footer: {
       profile: 'All rights reserved @ React',

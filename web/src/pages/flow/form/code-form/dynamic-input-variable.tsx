@@ -22,7 +22,7 @@ export const DynamicInputVariable = ({
   );
 
   return (
-    <FormCollapse title={t('flow.output')}>
+    <FormCollapse title={t('flow.inputVariables')}>
       <Form.List name={name}>
         {(fields, { add, remove }) => (
           <>
