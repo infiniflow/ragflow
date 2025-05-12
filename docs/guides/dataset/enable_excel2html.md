@@ -17,7 +17,7 @@ The feature is disabled by default. If your knowledge base contains spreadsheets
 
 ## Scenarios
 
-Complex tables cannot be represented as key-value pairs. Examples include spreadsheet tables with multiple columns, tables with merged cells, or multiple tables within one sheet. In such cases, consider converting these spreadsheet tables into HTML tables.
+Works with complex tables cannot be represented as key-value pairs. Examples include spreadsheet tables with multiple columns, tables with merged cells, or multiple tables within one sheet. In such cases, consider converting these spreadsheet tables into HTML tables.
 
 ## Considerations
 
@@ -31,7 +31,7 @@ Complex tables cannot be represented as key-value pairs. Examples include spread
 
    _The **Excel to HTML** toggle appears._
 
-2. Enable **Excel to HTML** if your knowledge base contains spreadsheet tables that cannot be represented as key-value pairs.
+2. Enable **Excel to HTML** if your knowledge base contains complex spreadsheet tables that cannot be represented as key-value pairs.
 3. Leave **Excel to HTML** disabled if your knowledge base has no spreadsheet tables or if its spreadsheet tables can be represented as key-value pairs.
 4. If question-answering regarding complex tables is unsatisfactory, check if **Excel to HTML** is enabled.
 
