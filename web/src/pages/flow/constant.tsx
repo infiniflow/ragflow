@@ -640,7 +640,13 @@ export const initialIterationValues = {
 };
 export const initialIterationStartValues = {};
 
-export const initialCodeValues = {};
+export const initialCodeValues = {
+  lang: 'python',
+  script: `def main(arg1: str, arg2: str) -> dict:
+    return {
+        "result": arg1 + arg2,
+    }`,
+};
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },

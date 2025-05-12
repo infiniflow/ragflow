@@ -1,15 +1,21 @@
 import Editor, { loader } from '@monaco-editor/react';
-import { Form } from 'antd';
-import { useTranslation } from 'react-i18next';
+import { Form, Select } from 'antd';
 import { IOperatorForm } from '../../interface';
-import DynamicInputVariable from '../components/dynamic-input-variable';
-import { DynamicOutputVariable } from './dynamic-output-variable';
+import { DynamicInputVariable } from './dynamic-input-variable';
+
+import { ProgrammingLanguage } from '@/constants/agent';
+import { ICodeForm } from '@/interfaces/database/flow';
+import styles from './index.less';
 
 loader.config({ paths: { vs: '/vs' } });
 
-const CodeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
-  const { t } = useTranslation();
+const options = [
+  ProgrammingLanguage.Python,
+  ProgrammingLanguage.Javascript,
+].map((x) => ({ value: x, label: x }));
 
+const CodeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
+  const formData = node?.data.form as ICodeForm;
   return (
     <Form
       name="basic"
@@ -19,10 +25,29 @@ const CodeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       layout={'vertical'}
     >
       <DynamicInputVariable node={node}></DynamicInputVariable>
-      <Form.Item name={'code'} label={t('flow.code')}>
-        <Editor height={200} defaultLanguage="python" theme="vs-dark" />
+      <Form.Item
+        name={'script'}
+        label={
+          <Form.Item name={'lang'} className={styles.languageItem}>
+            <Select
+              defaultValue={'python'}
+              popupMatchSelectWidth={false}
+              options={options}
+            />
+          </Form.Item>
+        }
+        className="bg-gray-100 rounded dark:bg-gray-800"
+      >
+        <Editor
+          height={200}
+          theme="vs-dark"
+          language={formData.lang}
+          options={{
+            minimap: { enabled: false },
+            automaticLayout: true,
+          }}
+        />
       </Form.Item>
-      <DynamicOutputVariable></DynamicOutputVariable>
     </Form>
   );
 };
