@@ -141,7 +141,7 @@ class TestDatasetCreate:
     def test_avatar(self, get_http_api_auth, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {
-            "name": "avatar_test",
+            "name": "avatar",
             "avatar": f"data:image/png;base64,{encode_avatar(fn)}",
         }
         res = create_dataset(get_http_api_auth, payload)
@@ -149,14 +149,14 @@ class TestDatasetCreate:
 
     @pytest.mark.p2
     def test_avatar_exceeds_limit_length(self, get_http_api_auth):
-        payload = {"name": "exceeds_limit_length_avatar", "avatar": "a" * 65536}
+        payload = {"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 101, res
         assert "String should have at most 65535 characters" in res["message"], res
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
-        "name, avatar_prefix, expected_message",
+        "name, prefix, expected_message",
         [
             ("empty_prefix", "", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
             ("missing_comma", "data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
@@ -165,11 +165,11 @@ class TestDatasetCreate:
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
     )
-    def test_avatar_invalid_prefix(self, get_http_api_auth, tmp_path, name, avatar_prefix, expected_message):
+    def test_avatar_invalid_prefix(self, get_http_api_auth, tmp_path, name, prefix, expected_message):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {
             "name": name,
-            "avatar": f"{avatar_prefix}{encode_avatar(fn)}",
+            "avatar": f"{prefix}{encode_avatar(fn)}",
         }
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 101, res
@@ -177,42 +177,42 @@ class TestDatasetCreate:
 
     @pytest.mark.p3
     def test_avatar_unset(self, get_http_api_auth):
-        payload = {"name": "test_avatar_unset"}
+        payload = {"name": "avatar_unset"}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
         assert res["data"]["avatar"] is None, res
 
     @pytest.mark.p3
     def test_avatar_none(self, get_http_api_auth):
-        payload = {"name": "test_avatar_none", "avatar": None}
+        payload = {"name": "avatar_none", "avatar": None}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
         assert res["data"]["avatar"] is None, res
 
     @pytest.mark.p2
     def test_description(self, get_http_api_auth):
-        payload = {"name": "test_description", "description": "description"}
+        payload = {"name": "description", "description": "description"}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
         assert res["data"]["description"] == "description", res
 
     @pytest.mark.p2
     def test_description_exceeds_limit_length(self, get_http_api_auth):
-        payload = {"name": "exceeds_limit_length_description", "description": "a" * 65536}
+        payload = {"name": "description_exceeds_limit_length", "description": "a" * 65536}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 101, res
         assert "String should have at most 65535 characters" in res["message"], res
 
     @pytest.mark.p3
     def test_description_unset(self, get_http_api_auth):
-        payload = {"name": "test_description_unset"}
+        payload = {"name": "description_unset"}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
         assert res["data"]["description"] is None, res
 
     @pytest.mark.p3
     def test_description_none(self, get_http_api_auth):
-        payload = {"name": "test_description_none", "description": None}
+        payload = {"name": "description_none", "description": None}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
         assert res["data"]["description"] is None, res
@@ -283,7 +283,7 @@ class TestDatasetCreate:
 
     @pytest.mark.p2
     def test_embedding_model_none(self, get_http_api_auth):
-        payload = {"name": "test_embedding_model_none", "embedding_model": None}
+        payload = {"name": "embedding_model_none", "embedding_model": None}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 101, res
         assert "Input should be a valid string" in res["message"], res
@@ -323,14 +323,14 @@ class TestDatasetCreate:
 
     @pytest.mark.p2
     def test_permission_unset(self, get_http_api_auth):
-        payload = {"name": "test_permission_unset"}
+        payload = {"name": "permission_unset"}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
         assert res["data"]["permission"] == "me", res
 
     @pytest.mark.p3
     def test_permission_none(self, get_http_api_auth):
-        payload = {"name": "test_permission_none", "permission": None}
+        payload = {"name": "permission_none", "permission": None}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 101, res
         assert "Input should be 'me' or 'team'" in res["message"], res
@@ -378,7 +378,7 @@ class TestDatasetCreate:
 
     @pytest.mark.p2
     def test_chunk_method_unset(self, get_http_api_auth):
-        payload = {"name": "test_chunk_method_unset"}
+        payload = {"name": "chunk_method_unset"}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
         assert res["data"]["chunk_method"] == "naive", res
@@ -674,28 +674,20 @@ class TestDatasetCreate:
 
     @pytest.mark.p2
     def test_parser_config_empty(self, get_http_api_auth):
-        payload = {"name": "default_empty", "parser_config": {}}
+        payload = {"name": "parser_config_empty", "parser_config": {}}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
-            "auto_keywords": 0,
-            "auto_questions": 0,
             "chunk_token_num": 128,
             "delimiter": r"\n",
-            "filename_embd_weight": None,
-            "graphrag": None,
             "html4excel": False,
             "layout_recognize": "DeepDOC",
-            "pages": None,
-            "raptor": None,
-            "tag_kb_ids": [],
-            "task_page_size": None,
-            "topn_tags": 1,
-        }
+            "raptor": {"use_raptor": False},
+        }, res
 
     @pytest.mark.p2
     def test_parser_config_unset(self, get_http_api_auth):
-        payload = {"name": "default_unset"}
+        payload = {"name": "parser_config_unset"}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
@@ -708,10 +700,16 @@ class TestDatasetCreate:
 
     @pytest.mark.p3
     def test_parser_config_none(self, get_http_api_auth):
-        payload = {"name": "default_none", "parser_config": None}
+        payload = {"name": "parser_config_none", "parser_config": None}
         res = create_dataset(get_http_api_auth, payload)
-        assert res["code"] == 101, res
-        assert "Input should be a valid dictionary or instance of ParserConfig" in res["message"], res
+        assert res["code"] == 0, res
+        assert res["data"]["parser_config"] == {
+            "chunk_token_num": 128,
+            "delimiter": "\\n",
+            "html4excel": False,
+            "layout_recognize": "DeepDOC",
+            "raptor": {"use_raptor": False},
+        }, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

@@ -344,8 +344,11 @@ def update(tenant_id, dataset_id):
     if req.get("parser_config"):
         req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
 
-    if (chunk_method := req.get("parser_id")) and chunk_method != kb.parser_id and req.get("parser_config") is None:
-        req["parser_config"] = get_parser_config(chunk_method, None)
+    if (chunk_method := req.get("parser_id")) and chunk_method != kb.parser_id:
+        if not req.get("parser_config"):
+            req["parser_config"] = get_parser_config(chunk_method, None)
+    elif "parser_config" in req and not req["parser_config"]:
+        del req["parser_config"]
 
     if "name" in req and req["name"].lower() != kb.name.lower():
         try:
