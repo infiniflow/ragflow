@@ -85,6 +85,8 @@ class Categorize(Generate, ABC):
         input = self.get_input()
         input = " - ".join(input["content"]) if "content" in input else ""
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
+        self._canvas.set_component_infor(self._id, {"prompt":self._param.get_prompt(input),"messages":  [{"role": "user", "content": "\nCategory: "}],"conf": self._param.gen_conf()})
+
         ans = chat_mdl.chat(self._param.get_prompt(input), [{"role": "user", "content": "\nCategory: "}],
                             self._param.gen_conf())
         logging.debug(f"input: {input}, answer: {str(ans)}")    
