@@ -856,6 +856,12 @@ def list_chunks(tenant_id, dataset_id, document_id):
         required: false
         default: 30
         description: Number of items per page.
+      - in: query
+        name: id
+        type: string
+        required: false
+        default: ""
+        description: Chunk Id.
       - in: header
         name: Authorization
         type: string
