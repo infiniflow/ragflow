@@ -105,7 +105,8 @@ export default {
       disabled: '禁用',
       action: '動作',
       parsingStatus: '解析狀態',
-      parsingStatusTip: '文件解析時間取決於多種因素。如果啟用了知識圖譜、RAPTOR、自動問題提取、自動關鍵詞提取等功能，解析時間將會顯著延長。如果解析進度條長時間未更新，請參考這兩條常見問題解答FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
+      parsingStatusTip:
+        '文件解析時間取決於多種因素。如果啟用了知識圖譜、RAPTOR、自動問題提取、自動關鍵詞提取等功能，解析時間將會顯著延長。如果解析進度條長時間未更新，請參考這兩條常見問題解答FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
       processBeginAt: '流程開始於',
       processDuration: '過程持續時間',
       progressMsg: '進度消息',
@@ -317,7 +318,8 @@ export default {
 <i>不符合上述規則的文字行將被忽略。</i>
 `,
       useRaptor: '使用 RAPTOR 文件增強策略',
-      useRaptorTip: '啟用 RAPTOR 以用於多跳問答任務。詳情請參見：https://ragflow.io/docs/dev/enable_raptor',
+      useRaptorTip:
+        '啟用 RAPTOR 以用於多跳問答任務。詳情請參見：https://ragflow.io/docs/dev/enable_raptor',
       prompt: '提示詞',
       promptMessage: '提示詞是必填項',
       promptText: `请請總結以下段落。 小心數字，不要編造。 段落如下：
@@ -419,7 +421,8 @@ export default {
       setAnOpenerTip: '您想如何歡迎您的客戶？',
       knowledgeBases: '知識庫',
       knowledgeBasesMessage: '請選擇',
-      knowledgeBasesTip: '選擇關聯的知識庫。新建或空的知識庫不會在下拉選單中顯示。',
+      knowledgeBasesTip:
+        '選擇關聯的知識庫。新建或空的知識庫不會在下拉選單中顯示。',
       system: '系統提示词',
       systemInitialValue: `你是一個智能助手，請總結知識庫的內容來回答問題，請列舉知識庫中的數據詳細回答。當所有知識庫內容都與問題無關時，你的回答必須包括“知識庫中未找到您要的答案！”這句話。回答需要考慮聊天歷史。
       以下是知識庫：
@@ -526,6 +529,8 @@ export default {
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
       tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
       tavilyApiKeyHelp: '如何獲取？',
+      crossLanguage: '跨語言搜尋',
+      crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
     },
     setting: {
       profile: '概述',

@@ -915,7 +915,7 @@ class OllamaChat(Base):
             if "frequency_penalty" in gen_conf:
                 options["frequency_penalty"] = gen_conf["frequency_penalty"]
 
-            response = self.client.chat(model=self.model_name, messages=history, options=options, keep_alive=10)
+            response = self.client.chat(model=self.model_name, messages=history, options=options)
             ans = response["message"]["content"].strip()
             token_count = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
             return ans, token_count
@@ -944,7 +944,7 @@ class OllamaChat(Base):
 
             ans = ""
             try:
-                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options, keep_alive=10)
+                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options)
                 for resp in response:
                     if resp["done"]:
                         token_count = resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)

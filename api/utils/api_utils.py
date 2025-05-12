@@ -19,6 +19,7 @@ import logging
 import random
 import time
 from base64 import b64encode
+from copy import deepcopy
 from functools import wraps
 from hmac import HMAC
 from io import BytesIO
@@ -333,22 +334,6 @@ def generate_confirmation_token(tenant_id):
     return "ragflow-" + serializer.dumps(get_uuid(), salt=tenant_id)[2:34]
 
 
-def valid(permission, valid_permission, chunk_method, valid_chunk_method):
-    if valid_parameter(permission, valid_permission):
-        return valid_parameter(permission, valid_permission)
-    if valid_parameter(chunk_method, valid_chunk_method):
-        return valid_parameter(chunk_method, valid_chunk_method)
-
-
-def valid_parameter(parameter, valid_values):
-    if parameter and parameter not in valid_values:
-        return get_error_data_result(f"'{parameter}' is not in {valid_values}")
-
-
-def dataset_readonly_fields(field_name):
-    return field_name in ["chunk_count", "create_date", "create_time", "update_date", "update_time", "created_by", "document_count", "token_num", "status", "tenant_id", "id"]
-
-
 def get_parser_config(chunk_method, parser_config):
     if parser_config:
         return parser_config
@@ -402,43 +387,6 @@ def get_data_openai(
     }
 
 
-def valid_parser_config(parser_config):
-    if not parser_config:
-        return
-    scopes = set(
-        [
-            "chunk_token_num",
-            "delimiter",
-            "raptor",
-            "graphrag",
-            "layout_recognize",
-            "task_page_size",
-            "pages",
-            "html4excel",
-            "auto_keywords",
-            "auto_questions",
-            "tag_kb_ids",
-            "topn_tags",
-            "filename_embd_weight",
-        ]
-    )
-    for k in parser_config.keys():
-        assert k in scopes, f"Abnormal 'parser_config'. Invalid key: {k}"
-
-    assert isinstance(parser_config.get("chunk_token_num", 1), int), "chunk_token_num should be int"
-    assert 1 <= parser_config.get("chunk_token_num", 1) < 100000000, "chunk_token_num should be in range from 1 to 100000000"
-    assert isinstance(parser_config.get("task_page_size", 1), int), "task_page_size should be int"
-    assert 1 <= parser_config.get("task_page_size", 1) < 100000000, "task_page_size should be in range from 1 to 100000000"
-    assert isinstance(parser_config.get("auto_keywords", 1), int), "auto_keywords should be int"
-    assert 0 <= parser_config.get("auto_keywords", 0) < 32, "auto_keywords should be in range from 0 to 32"
-    assert isinstance(parser_config.get("auto_questions", 1), int), "auto_questions should be int"
-    assert 0 <= parser_config.get("auto_questions", 0) < 10, "auto_questions should be in range from 0 to 10"
-    assert isinstance(parser_config.get("topn_tags", 1), int), "topn_tags should be int"
-    assert 0 <= parser_config.get("topn_tags", 0) < 10, "topn_tags should be in range from 0 to 10"
-    assert isinstance(parser_config.get("html4excel", False), bool), "html4excel should be True or False"
-    assert isinstance(parser_config.get("delimiter", ""), str), "delimiter should be str"
-
-
 def check_duplicate_ids(ids, id_type="item"):
     """
     Check for duplicate IDs in a list and return unique IDs and error messages.
@@ -469,7 +417,8 @@ def check_duplicate_ids(ids, id_type="item"):
 
 
 def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
-    """Verifies availability of an embedding model for a specific tenant.
+    """
+    Verifies availability of an embedding model for a specific tenant.
 
     Implements a four-stage validation process:
     1. Model identifier parsing and validation
@@ -518,3 +467,50 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, R
         return False, get_error_data_result(message="Database operation failed")
 
     return True, None
+
+
+def deep_merge(default: dict, custom: dict) -> dict:
+    """
+    Recursively merges two dictionaries with priority given to `custom` values.
+
+    Creates a deep copy of the `default` dictionary and iteratively merges nested
+    dictionaries using a stack-based approach. Non-dict values in `custom` will
+    completely override corresponding entries in `default`.
+
+    Args:
+        default (dict): Base dictionary containing default values.
+        custom (dict): Dictionary containing overriding values.
+
+    Returns:
+        dict: New merged dictionary combining values from both inputs.
+
+    Example:
+        >>> from copy import deepcopy
+        >>> default = {"a": 1, "nested": {"x": 10, "y": 20}}
+        >>> custom = {"b": 2, "nested": {"y": 99, "z": 30}}
+        >>> deep_merge(default, custom)
+        {'a': 1, 'b': 2, 'nested': {'x': 10, 'y': 99, 'z': 30}}
+
+        >>> deep_merge({"config": {"mode": "auto"}}, {"config": "manual"})
+        {'config': 'manual'}
+
+    Notes:
+        1. Merge priority is always given to `custom` values at all nesting levels
+        2. Non-dict values (e.g. list, str) in `custom` will replace entire values
+           in `default`, even if the original value was a dictionary
+        3. Time complexity: O(N) where N is total key-value pairs in `custom`
+        4. Recommended for configuration merging and nested data updates
+    """
+    merged = deepcopy(default)
+    stack = [(merged, custom)]
+
+    while stack:
+        base_dict, override_dict = stack.pop()
+
+        for key, val in override_dict.items():
+            if key in base_dict and isinstance(val, dict) and isinstance(base_dict[key], dict):
+                stack.append((base_dict[key], val))
+            else:
+                base_dict[key] = val
+
+    return merged

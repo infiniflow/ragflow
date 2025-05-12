@@ -7,8 +7,8 @@ mysql:
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
   port: 3306
-  max_connections: 100
-  stale_timeout: 30
+  max_connections: 900
+  stale_timeout: 300
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'

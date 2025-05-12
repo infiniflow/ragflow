@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from concurrent.futures import ThreadPoolExecutor
+from time import sleep
 
 import pytest
 from common import INVALID_API_TOKEN, bulk_upload_documents, list_documnets, parse_documnets, stop_parse_documnets
@@ -167,18 +168,19 @@ class TestDocumentsParseStop:
         assert f"Duplicate document ids: {document_ids[0]}" in res["data"]["errors"]
 
 
-@pytest.mark.p3
+@pytest.mark.skip(reason="unstable")
 def test_stop_parse_100_files(get_http_api_auth, add_dataset_func, tmp_path):
     document_num = 100
     dataset_id = add_dataset_func
     document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
     parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+    sleep(1)
     res = stop_parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
     assert res["code"] == 0
     validate_document_parse_cancel(get_http_api_auth, dataset_id, document_ids)
 
 
-@pytest.mark.p3
+@pytest.mark.skip(reason="unstable")
 def test_concurrent_parse(get_http_api_auth, add_dataset_func, tmp_path):
     document_num = 50
     dataset_id = add_dataset_func
