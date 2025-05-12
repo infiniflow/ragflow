@@ -22,7 +22,7 @@ from timeit import default_timer as timer
 
 from docx import Document
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
-import markdown 
+from markdown import markdown 
 from PIL import Image
 from tika import parser
 
@@ -298,8 +298,7 @@ class Markdown(MarkdownParser):
             return []
         
         from bs4 import BeautifulSoup
-        md = markdown.Markdown()
-        html_content = md.convert(text)
+        html_content = markdown(text)
         soup = BeautifulSoup(html_content, 'html.parser')
         html_images = [img.get('src') for img in soup.find_all('img') if img.get('src')]
         return html_images
@@ -344,9 +343,8 @@ class Markdown(MarkdownParser):
                     sections.append((sec_ + "\n" + sec, ""))
                 else:
                     sections.append((sec, ""))
-        md = markdown.Markdown(extensions=['markdown.extensions.tables'])
         for table in tables:
-            tbls.append(((None, md.convert(table)), ""))
+            tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
         return sections, tbls
 
 
