@@ -52,7 +52,7 @@ Where:
 
 - `host`: The MCP server's host address.
 - `port`: The MCP server's listening port.
-- `base_url`**: The address of the running RAGFlow server.
+- `base_url`: The address of the running RAGFlow server.
 - `mode`: The launch mode.
   - `self-host`: (default) self-host mode.
   - `host`: host mode.
@@ -162,7 +162,7 @@ This section is contributed by our community contributor [yiminghub2024](https:/
    iv. Install required dependencies using `uv`:  
        - Run `uv add mcp` or
        - Copy pyproject.toml and run `uv sync --python 3.10 --all-extras`.
-2. Edit **docker-compose.yml** to enable MCP (disable by default).
+2. Edit **docker-compose.yml** to enable MCP (disabled by default).
 3. Launch the MCP server:
 
 ```bash
