@@ -1015,7 +1015,7 @@ class RAGFlowPdfParser:
             with sys.modules[LOCK_KEY_pdfplumber]:
                 with (pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))) as pdf:
                     self.pdf = pdf
-                    self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
+                    self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).annotated for i, p in
                                         enumerate(self.pdf.pages[page_from:page_to])]
 
                     try:
