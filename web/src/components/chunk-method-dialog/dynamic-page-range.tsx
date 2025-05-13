@@ -10,7 +10,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Separator } from '../ui/separator';
@@ -70,10 +70,9 @@ export function DynamicPageRange() {
                 </FormItem>
               )}
             />
-            <Trash2
-              className="cursor-pointer mx-3 size-4 text-colors-text-functional-danger"
-              onClick={() => remove(index)}
-            />
+            <Button variant={'ghost'} onClick={() => remove(index)}>
+              <X />
+            </Button>
           </div>
         );
       })}
