@@ -271,7 +271,9 @@ def beAdocPdf(d, q, a, eng, image, poss):
         [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
     d["content_ltks"] = rag_tokenizer.tokenize(q)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["image"] = image
+    if image:
+        d["image"] = image
+        d["doc_type_kwd"] = "image"
     add_positions(d, poss)
     return d
 
@@ -283,7 +285,9 @@ def beAdocDocx(d, q, a, eng, image, row_num=-1):
         [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
     d["content_ltks"] = rag_tokenizer.tokenize(q)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["image"] = image
+    if image:
+        d["image"] = image
+        d["doc_type_kwd"] = "image"
     if row_num >= 0:
         d["top_int"] = [row_num]
     return d

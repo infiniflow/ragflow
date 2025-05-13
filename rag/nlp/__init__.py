@@ -301,6 +301,7 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             d["content_with_weight"] = rows
             if img:
                 d["image"] = img
+                d["doc_type_kwd"] = "image"
             if poss:
                 add_positions(d, poss)
             res.append(d)
@@ -310,7 +311,9 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             d = copy.deepcopy(doc)
             r = de.join(rows[i:i + batch_size])
             tokenize(d, r, eng)
-            d["image"] = img
+            if img:
+                d["image"] = img
+                d["doc_type_kwd"] = "image"
             add_positions(d, poss)
             res.append(d)
     return res
