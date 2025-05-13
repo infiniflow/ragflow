@@ -355,6 +355,8 @@ class Dealer:
 
         RERANK_LIMIT = 64
         RERANK_LIMIT = int(RERANK_LIMIT//page_size + ((RERANK_LIMIT%page_size)/(page_size*1.) + 0.5)) * page_size if page_size>1 else 1
+        if RERANK_LIMIT < 1: ## when page_size is very large the RERANK_LIMIT will be 0.
+            RERANK_LIMIT = 1
         req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": math.ceil(page_size*page/RERANK_LIMIT), "size": RERANK_LIMIT,
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
