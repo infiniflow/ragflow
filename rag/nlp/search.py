@@ -83,7 +83,7 @@ class Dealer:
         src = req.get("fields",
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
-                       "question_kwd", "question_tks",
+                       "question_kwd", "question_tks", "doc_type_kwd",
                        "available_int", "content_with_weight", PAGERANK_FLD, TAG_FLD])
         kwds = set([])
 
@@ -355,6 +355,8 @@ class Dealer:
 
         RERANK_LIMIT = 64
         RERANK_LIMIT = int(RERANK_LIMIT//page_size + ((RERANK_LIMIT%page_size)/(page_size*1.) + 0.5)) * page_size if page_size>1 else 1
+        if RERANK_LIMIT < 1: ## when page_size is very large the RERANK_LIMIT will be 0.
+            RERANK_LIMIT = 1
         req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": math.ceil(page_size*page/RERANK_LIMIT), "size": RERANK_LIMIT,
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
@@ -415,6 +417,7 @@ class Dealer:
                 "term_similarity": tsim[i],
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": position_int,
+                "doc_type_kwd": chunk.get("doc_type_kwd", "")
             }
             if highlight and sres.highlight:
                 if id in sres.highlight:

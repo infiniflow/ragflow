@@ -38,5 +38,7 @@
 	"entity_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"source_id": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"n_hop_with_weight": {"type": "varchar", "default": ""},
-	"removed_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"}
+	"removed_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+
+	"doc_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"}
 }
