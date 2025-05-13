@@ -50,7 +50,7 @@ const KnowledgeList = () => {
   }, [data?.pages]);
 
   return (
-    <Flex className={styles.knowledge} vertical flex={1} id="scrollableDiv">
+    <Flex className={styles.knowledge} vertical flex={1}>
       <div className={styles.topWrapper}>
         <div>
           <span className={styles.title}>
@@ -82,8 +82,9 @@ const KnowledgeList = () => {
         <div
           id="scrollableDiv"
           style={{
-            height: 'calc(100vh - 200px)',
+            height: 'calc(100vh - 250px)',
             overflow: 'auto',
+            padding: '0 16px',
           }}
         >
           <InfiniteScroll
