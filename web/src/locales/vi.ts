@@ -106,6 +106,7 @@ export default {
       disabled: 'Tắt',
       action: 'Hành động',
       parsingStatus: 'Trạng thái phân tích cú pháp',
+      parsingStatusTip: 'Thời gian xử lý tài liệu thay đổi tùy theo nhiều yếu tố. Bật các tính năng như Knowledge Graph, RAPTOR, Trích xuất Câu hỏi Tự động hoặc Trích xuất Từ khóa Tự động sẽ làm tăng đáng kể thời gian xử lý. Nếu thanh tiến trình bị dừng, vui lòng tham khảo hai câu hỏi thường gặp sau: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Bắt đầu xử lý lúc',
       processDuration: 'Thời gian xử lý',
       progressMsg: 'Thông báo tiến trình',
@@ -164,7 +165,7 @@ export default {
       topKTip: `Sử dụng cùng với Rerank model, thiết lập này xác định số lượng đoạn văn cần gửi đến mô hình reranking được chỉ định.`,
       delimiter: 'Dấu phân cách cho phân đoạn văn bản',
       html4excel: 'Excel sang HTML',
-      html4excelTip: `Sử dụng cùng với phương pháp cắt khúc General. Khi chưa được bật, tệp bảng tính (XLSX, XLS (Excel97~2003)) sẽ được phân tích theo dòng thành các cặp khóa-giá trị. Khi bật, tệp bảng tính sẽ được phân tích thành bảng HTML. Nếu bảng gốc vượt quá 12 dòng, hệ thống sẽ tự động chia thành nhiều bảng HTML mỗi 12 dòng.`,
+      html4excelTip: `Sử dụng cùng với phương pháp cắt khúc General. Khi chưa được bật, tệp bảng tính (XLSX, XLS (Excel97~2003)) sẽ được phân tích theo dòng thành các cặp khóa-giá trị. Khi bật, tệp bảng tính sẽ được phân tích thành bảng HTML. Nếu bảng gốc vượt quá 12 dòng, hệ thống sẽ tự động chia thành nhiều bảng HTML mỗi 12 dòng. Để biết thêm thông tin, vui lòng xem https://ragflow.io/docs/dev/enable_excel2html.`,
       autoKeywords: 'Từ khóa tự động',
       autoKeywordsTip: `Tự động trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng trong các truy vấn chứa các từ khóa đó. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi mô hình trò chuyện được chỉ định trong "Cài đặt mô hình hệ thống". Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối.`,
       autoQuestions: 'Câu hỏi tự động',
@@ -193,7 +194,7 @@ export default {
       chunkTokenNumber: 'Kích thước khối được khuyến nghị',
       chunkTokenNumberMessage: 'Số token khối là bắt buộc',
       embeddingModelTip:
-        'Mô hình chuyển đổi các khối thành các nhúng. Nó không thể được thay đổi sau khi cơ sở kiến thức có các khối. Để chuyển sang mô hình nhúng khác, bạn phải xóa tất cả các khối trong cơ sở kiến thức.',
+        'Mô hình nhúng mặc định của cơ sở tri thức. Không thể thay đổi khi cơ sở tri thức đã có các đoạn dữ liệu. Để chuyển sang mô hình nhúng mặc định khác, bạn phải xóa tất cả các đoạn dữ liệu hiện có trong cơ sở tri thức.',
       permissionsTip:
         'Nếu được đặt thành "Đội", tất cả các thành viên trong nhóm sẽ có thể quản lý cơ sở kiến thức.',
       chunkTokenNumberTip:
@@ -294,7 +295,7 @@ export default {
       <p>Đảm bảo bạn đã đặt <b>Loại thực thể</b>.</p>`,
       useRaptor: 'Sử dụng RAPTOR để cải thiện truy xuất',
       useRaptorTip:
-        'Recursive Abstractive Processing for Tree-Organized Retrieval, xem https://huggingface.co/papers/2401.18059 để biết thêm thông tin',
+        'Kích hoạt RAPTOR cho các tác vụ hỏi đáp đa bước. Xem chi tiết tại https://ragflow.io/docs/dev/enable_raptor.',
       prompt: 'Nhắc nhở',
       promptTip:
         'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
@@ -396,7 +397,7 @@ export default {
       setAnOpenerTip: 'Bạn muốn chào đón khách hàng của mình như thế nào?',
       knowledgeBases: 'Cơ sở kiến thức',
       knowledgeBasesMessage: 'Vui lòng chọn',
-      knowledgeBasesTip: 'Chọn các cơ sở kiến thức liên kết.',
+      knowledgeBasesTip: 'Chọn các cơ sở kiến thức liên kết. Cơ sở tri thức trống sẽ không xuất hiện trong danh sách thả xuống.',
       system: 'Hệ thống',
       systemInitialValue: `Bạn là một trợ lý thông minh. Vui lòng tóm tắt nội dung của cơ sở kiến thức để trả lời câu hỏi. Vui lòng liệt kê dữ liệu trong cơ sở kiến thức và trả lời chi tiết. Khi tất cả nội dung cơ sở kiến thức không liên quan đến câu hỏi, câu trả lời của bạn phải bao gồm câu "Câu trả lời bạn đang tìm kiếm không được tìm thấy trong cơ sở kiến thức!" Câu trả lời cần xem xét lịch sử trò chuyện.
       Đây là cơ sở kiến thức:
@@ -790,7 +791,7 @@ export default {
       news: 'Tin tức',
       messageHistoryWindowSize: 'Cửa sổ lịch sử tin nhắn',
       messageHistoryWindowSizeTip:
-        'Kích thước cửa sổ của lịch sử cuộc hội thoại cần LLM xem. Càng lớn càng tốt. Nhưng hãy cẩn thận với chiều dài nội dung tối đa của LLM.',
+        'Kích thước cửa sổ lịch sử cuộc trò chuyện hiển thị với LLM. Càng lớn càng tốt, nhưng hãy chú ý đến giới hạn tối đa số token của LLM.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:

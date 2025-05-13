@@ -307,13 +307,13 @@ class RAGFlowPdfParser:
             [{"x0": b[0][0] / ZM, "x1": b[1][0] / ZM,
               "top": b[0][1] / ZM, "text": "", "txt": t,
               "bottom": b[-1][1] / ZM,
+              "chars": [],
               "page_number": pagenum} for b, t in bxs if b[0][0] <= b[1][0] and b[0][1] <= b[-1][1]],
-            self.mean_height[-1] / 3
+            self.mean_height[pagenum-1] / 3
         )
 
         # merge chars in the same rect
-        for c in Recognizer.sort_Y_firstly(
-                chars, self.mean_height[pagenum - 1] // 4):
+        for c in chars:
             ii = Recognizer.find_overlapped(c, bxs)
             if ii is None:
                 self.lefted_chars.append(c)
@@ -323,11 +323,20 @@ class RAGFlowPdfParser:
             if abs(ch - bh) / max(ch, bh) >= 0.7 and c["text"] != ' ':
                 self.lefted_chars.append(c)
                 continue
-            if c["text"] == " " and bxs[ii]["text"]:
-                if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", bxs[ii]["text"][-1]):
-                    bxs[ii]["text"] += " "
-            else:
-                bxs[ii]["text"] += c["text"]
+            bxs[ii]["chars"].append(c)
+
+        for b in bxs:
+            if not b["chars"]:
+                del b["chars"]
+                continue
+            m_ht = np.mean([c["height"] for c in b["chars"]])
+            for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
+                if c["text"] == " " and b["text"]:
+                    if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
+                        b["text"] += " "
+                else:
+                    b["text"] += c["text"]
+            del b["chars"]
 
         logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
         start = timer()
@@ -346,8 +355,8 @@ class RAGFlowPdfParser:
             del boxes_to_reg[i]["box_image"]
         logging.info(f"__ocr recognize {len(bxs)} boxes cost {timer() - start}s")
         bxs = [b for b in bxs if b["text"]]
-        if self.mean_height[-1] == 0:
-            self.mean_height[-1] = np.median([b["bottom"] - b["top"]
+        if self.mean_height[pagenum-1] == 0:
+            self.mean_height[pagenum-1] = np.median([b["bottom"] - b["top"]
                                               for b in bxs])
         self.boxes.append(bxs)
 
@@ -1006,7 +1015,7 @@ class RAGFlowPdfParser:
             with sys.modules[LOCK_KEY_pdfplumber]:
                 with (pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))) as pdf:
                     self.pdf = pdf
-                    self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in
+                    self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).annotated for i, p in
                                         enumerate(self.pdf.pages[page_from:page_to])]
 
                     try:

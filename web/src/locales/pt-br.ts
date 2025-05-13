@@ -103,6 +103,7 @@ export default {
       disabled: 'Desabilitar',
       action: 'Ação',
       parsingStatus: 'Status da análise',
+      parsingStatusTip: 'O tempo de processamento do documento varia conforme vários fatores. Ativar recursos como Knowledge Graph, RAPTOR, Extração Automática de Perguntas ou Extração Automática de Palavras-chave aumentará significativamente o tempo de processamento. Se a barra de progresso travar, consulte estas duas FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Início em',
       processDuration: 'Duração',
       progressMsg: 'Progresso',
@@ -168,7 +169,7 @@ export default {
         'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \\n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula. Defina os delimitadores apenas após entender o mecanismo de segmentação e particionamento de texto.',
       html4excel: 'Excel para HTML',
       html4excelTip:
-        'Use em conjunto com o método de fragmentação General. Quando desativado, arquivos de planilhas (XLSX, XLS (Excel97~2003)) serão analisados linha por linha como pares chave-valor. Quando ativado, os arquivos de planilhas serão convertidos em tabelas HTML. Se a tabela original tiver mais de 12 linhas, o sistema dividirá automaticamente em várias tabelas HTML a cada 12 linhas.',
+        'Use em conjunto com o método de fragmentação General. Quando desativado, arquivos de planilhas (XLSX, XLS (Excel97~2003)) serão analisados linha por linha como pares chave-valor. Quando ativado, os arquivos de planilhas serão convertidos em tabelas HTML. Se a tabela original tiver mais de 12 linhas, o sistema dividirá automaticamente em várias tabelas HTML a cada 12 linhas. Para mais informações, consulte https://ragflow.io/docs/dev/enable_excel2html.',
       autoKeywords: 'Palavras-chave automáticas',
       autoKeywordsTip:
         'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos.',
@@ -212,7 +213,7 @@ export default {
       chunkTokenNumber: 'Tamanho de bloco recomendado',
       chunkTokenNumberMessage: 'O número de tokens por fragmento é obrigatório',
       embeddingModelTip:
-        'O modelo que converte fragmentos em embeddings. Ele não pode ser alterado depois que a base de conhecimento tiver fragmentos. Para mudar para um modelo diferente, é necessário excluir todos os fragmentos existentes.',
+        'O modelo de embedding padrão da base de conhecimento. Não pode ser alterado uma vez que a base de conhecimento tenha chunks. Para mudar para um modelo de embedding padrão diferente, é necessário excluir todos os chunks existentes na base de conhecimento.',
       permissionsTip:
         "Se definido como 'Equipe', todos os membros da equipe poderão gerenciar a base de conhecimento.",
       chunkTokenNumberTip:
@@ -261,7 +262,7 @@ export default {
       <p><i>Linhas de texto que não seguirem essas regras serão ignoradas, e cada par de Pergunta & Resposta será tratado como um fragmento distinto.</i></p>`,
       useRaptor: 'Usar RAPTOR para melhorar a recuperação',
       useRaptorTip:
-        'Processamento Abstrativo Recursivo para Recuperação Organizada em Árvore. Veja mais em https://huggingface.co/papers/2401.18059.',
+        'Ative o RAPTOR para tarefas de perguntas e respostas multi-hop. Veja https://ragflow.io/docs/dev/enable_raptor para mais detalhes.',
       prompt: 'Prompt',
       promptTip:
         'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
@@ -352,7 +353,7 @@ export default {
       knowledgeBases: 'Bases de conhecimento',
       knowledgeBasesMessage: 'Por favor, selecione',
       knowledgeBasesTip:
-        'Selecione as bases de conhecimento para associar a este assistente de chat.',
+        'Selecione as bases de conhecimento para associar a este assistente de chat. Uma base de conhecimento vazia não aparecerá na lista suspensa.',
       system: 'Sistema',
       systemInitialValue: `Você é um assistente inteligente. Por favor, resuma o conteúdo da base de conhecimento para responder à pergunta. Liste os dados da base de conhecimento e responda com detalhes. Quando todo o conteúdo da base de conhecimento for irrelevante para a pergunta, sua resposta deve incluir a frase "A resposta que você procura não foi encontrada na base de conhecimento!" As respostas devem considerar o histórico do chat.
       Aqui está a base de conhecimento:
@@ -727,7 +728,7 @@ export default {
       news: 'Notícias',
       messageHistoryWindowSize: 'Tamanho da janela de mensagens',
       messageHistoryWindowSizeTip:
-        'O tamanho da janela do histórico de conversa que precisa ser visualizado pelo LLM. Quanto maior, melhor. Mas tenha cuidado com o comprimento máximo de conteúdo do LLM.',
+        'O tamanho da janela do histórico de conversa visível para o LLM. Quanto maior, melhor, mas fique atento ao limite máximo de tokens do LLM.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:

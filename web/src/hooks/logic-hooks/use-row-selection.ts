@@ -1,14 +1,24 @@
 import { RowSelectionState } from '@tanstack/react-table';
 import { isEmpty } from 'lodash';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 export function useRowSelection() {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  const clearRowSelection = useCallback(() => {
+    setRowSelection({});
+  }, []);
+
+  const selectedCount = useMemo(() => {
+    return Object.keys(rowSelection).length;
+  }, [rowSelection]);
 
   return {
     rowSelection,
     setRowSelection,
     rowSelectionIsEmpty: isEmpty(rowSelection),
+    clearRowSelection,
+    selectedCount,
   };
 }
 

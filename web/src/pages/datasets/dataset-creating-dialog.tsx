@@ -85,7 +85,7 @@ export function DatasetCreatingDialog({ hideModal, onOk }: IModalProps<any>) {
         </DialogHeader>
         <InputForm onOk={onOk}></InputForm>
         <DialogFooter>
-          <Button type="submit" variant={'tertiary'} size={'sm'} form={FormId}>
+          <Button type="submit" form={FormId}>
             {t('common.save')}
           </Button>
         </DialogFooter>

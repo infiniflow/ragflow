@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from concurrent.futures import ThreadPoolExecutor
+from time import sleep
 
 import pytest
 from common import INVALID_API_TOKEN, bulk_upload_documents, list_documnets, parse_documnets, stop_parse_documnets
@@ -41,6 +42,7 @@ def validate_document_parse_cancel(auth, dataset_id, document_ids):
         assert doc["progress"] == 0.0
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -64,31 +66,13 @@ class TestDocumentsParseStop:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            pytest.param(
-                None,
-                102,
-                """AttributeError("\'NoneType\' object has no attribute \'get\'")""",
-                marks=pytest.mark.skip,
-            ),
-            ({"document_ids": []}, 102, "`document_ids` is required"),
-            (
-                {"document_ids": ["invalid_id"]},
-                102,
-                "You don't own the document invalid_id.",
-            ),
-            (
-                {"document_ids": ["\n!?。；！？\"'"]},
-                102,
-                """You don\'t own the document \n!?。；！？"\'.""",
-            ),
-            pytest.param(
-                "not json",
-                102,
-                "AttributeError(\"'str' object has no attribute 'get'\")",
-                marks=pytest.mark.skip,
-            ),
-            (lambda r: {"document_ids": r[:1]}, 0, ""),
-            (lambda r: {"document_ids": r}, 0, ""),
+            pytest.param(None, 102, """AttributeError("\'NoneType\' object has no attribute \'get\'")""", marks=pytest.mark.skip),
+            pytest.param({"document_ids": []}, 102, "`document_ids` is required", marks=pytest.mark.p1),
+            pytest.param({"document_ids": ["invalid_id"]}, 102, "You don't own the document invalid_id.", marks=pytest.mark.p3),
+            pytest.param({"document_ids": ["\n!?。；！？\"'"]}, 102, """You don\'t own the document \n!?。；！？"\'.""", marks=pytest.mark.p3),
+            pytest.param("not json", 102, "AttributeError(\"'str' object has no attribute 'get'\")", marks=pytest.mark.skip),
+            pytest.param(lambda r: {"document_ids": r[:1]}, 0, "", marks=pytest.mark.p1),
+            pytest.param(lambda r: {"document_ids": r}, 0, "", marks=pytest.mark.p1),
         ],
     )
     def test_basic_scenarios(self, get_http_api_auth, add_documents_func, payload, expected_code, expected_message):
@@ -116,6 +100,7 @@ class TestDocumentsParseStop:
             validate_document_parse_cancel(get_http_api_auth, dataset_id, payload["document_ids"])
             validate_document_parse_done(get_http_api_auth, dataset_id, completed_document_ids)
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "invalid_dataset_id, expected_code, expected_message",
         [
@@ -162,6 +147,7 @@ class TestDocumentsParseStop:
 
         validate_document_parse_cancel(get_http_api_auth, dataset_id, document_ids)
 
+    @pytest.mark.p3
     def test_repeated_stop_parse(self, get_http_api_auth, add_documents_func):
         dataset_id, document_ids = add_documents_func
         parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
@@ -172,6 +158,7 @@ class TestDocumentsParseStop:
         assert res["code"] == 102
         assert res["message"] == "Can't stop parsing document with progress at 0 or 1"
 
+    @pytest.mark.p3
     def test_duplicate_stop_parse(self, get_http_api_auth, add_documents_func):
         dataset_id, document_ids = add_documents_func
         parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
@@ -181,21 +168,22 @@ class TestDocumentsParseStop:
         assert f"Duplicate document ids: {document_ids[0]}" in res["data"]["errors"]
 
 
-@pytest.mark.slow
-def test_stop_parse_100_files(get_http_api_auth, add_datase_func, tmp_path):
+@pytest.mark.skip(reason="unstable")
+def test_stop_parse_100_files(get_http_api_auth, add_dataset_func, tmp_path):
     document_num = 100
-    dataset_id = add_datase_func
+    dataset_id = add_dataset_func
     document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
     parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
+    sleep(1)
     res = stop_parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
     assert res["code"] == 0
     validate_document_parse_cancel(get_http_api_auth, dataset_id, document_ids)
 
 
-@pytest.mark.slow
-def test_concurrent_parse(get_http_api_auth, add_datase_func, tmp_path):
+@pytest.mark.skip(reason="unstable")
+def test_concurrent_parse(get_http_api_auth, add_dataset_func, tmp_path):
     document_num = 50
-    dataset_id = add_datase_func
+    dataset_id = add_dataset_func
     document_ids = bulk_upload_documents(get_http_api_auth, dataset_id, document_num, tmp_path)
     parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
 

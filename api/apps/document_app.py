@@ -333,6 +333,7 @@ def rm():
     pf_id = root_folder["id"]
     FileService.init_knowledgebase_docs(pf_id, current_user.id)
     errors = ""
+    kb_table_num_map = {}
     for doc_id in doc_ids:
         try:
             e, doc = DocumentService.get_by_id(doc_id)
@@ -356,6 +357,16 @@ def rm():
             File2DocumentService.delete_by_document_id(doc_id)
             if deleted_file_count > 0:
                 STORAGE_IMPL.rm(b, n)
+
+            doc_parser = doc.parser_id
+            if doc_parser == ParserType.TABLE:
+                kb_id = doc.kb_id
+                if kb_id not in kb_table_num_map:
+                    counts = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[TaskStatus.DONE], types=[])
+                    kb_table_num_map[kb_id] = counts
+                kb_table_num_map[kb_id] -= 1
+                if kb_table_num_map[kb_id] <= 0:
+                    KnowledgebaseService.delete_field_map(kb_id)
         except Exception as e:
             errors += str(e)
 
@@ -378,6 +389,7 @@ def run():
                 code=settings.RetCode.AUTHENTICATION_ERROR
             )
     try:
+        kb_table_num_map = {}
         for id in req["doc_ids"]:
             info = {"run": str(req["run"]), "progress": 0}
             if str(req["run"]) == TaskStatus.RUNNING.value and req.get("delete", False):
@@ -400,6 +412,17 @@ def run():
                 e, doc = DocumentService.get_by_id(id)
                 doc = doc.to_dict()
                 doc["tenant_id"] = tenant_id
+
+                doc_parser = doc.get("parser_id", ParserType.NAIVE)
+                if doc_parser == ParserType.TABLE:
+                    kb_id = doc.get("kb_id")
+                    if not kb_id:
+                        continue
+                    if kb_id not in kb_table_num_map:
+                        count = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[TaskStatus.DONE], types=[])
+                        kb_table_num_map[kb_id] = count
+                        if kb_table_num_map[kb_id] <=0:
+                            KnowledgebaseService.delete_field_map(kb_id)
                 bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
                 queue_tasks(doc, bucket, name, 0)
 
