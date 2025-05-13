@@ -11,7 +11,7 @@ type DynamicInputVariableProps = {
 };
 
 export const DynamicInputVariable = ({
-  name = 'inputs',
+  name = 'arguments',
   node,
 }: DynamicInputVariableProps) => {
   const { t } = useTranslation();
