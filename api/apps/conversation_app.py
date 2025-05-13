@@ -210,6 +210,7 @@ def completion():
                         "dataset_id": get_value(ck, "kb_id", "dataset_id"),
                         "image_id": get_value(ck, "image_id", "img_id"),
                         "positions": get_value(ck, "positions", "position_int"),
+                        "doc_type": get_value(ck, "doc_type_kwd", "doc_type_kwd"),
                     }
                     for ck in ref.get("chunks", [])
                 ]
