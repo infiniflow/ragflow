@@ -25,6 +25,7 @@ from common import (
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -44,6 +45,7 @@ class TestAuthorization:
 
 
 class TestDatasetsDeletion:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
         [
@@ -78,6 +80,7 @@ class TestDatasetsDeletion:
         res = list_datasets(get_http_api_auth)
         assert len(res["data"]) == remaining
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload",
         [
@@ -98,6 +101,7 @@ class TestDatasetsDeletion:
         res = list_datasets(get_http_api_auth)
         assert len(res["data"]) == 0
 
+    @pytest.mark.p2
     def test_repeated_deletion(self, get_http_api_auth, add_datasets_func):
         dataset_ids = add_datasets_func
         res = delete_datasets(get_http_api_auth, {"ids": dataset_ids})
@@ -107,6 +111,7 @@ class TestDatasetsDeletion:
         assert res["code"] == 102
         assert "You don't own the dataset" in res["message"]
 
+    @pytest.mark.p2
     def test_duplicate_deletion(self, get_http_api_auth, add_datasets_func):
         dataset_ids = add_datasets_func
         res = delete_datasets(get_http_api_auth, {"ids": dataset_ids + dataset_ids})
@@ -117,7 +122,7 @@ class TestDatasetsDeletion:
         res = list_datasets(get_http_api_auth)
         assert len(res["data"]) == 0
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_concurrent_deletion(self, get_http_api_auth):
         ids = batch_create_datasets(get_http_api_auth, 100)
 
@@ -126,7 +131,7 @@ class TestDatasetsDeletion:
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_delete_10k(self, get_http_api_auth):
         ids = batch_create_datasets(get_http_api_auth, 10_000)
         res = delete_datasets(get_http_api_auth, {"ids": ids})

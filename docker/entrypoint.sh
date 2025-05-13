@@ -150,7 +150,7 @@ function start_mcp_server() {
         --port="${MCP_PORT}" \
         --base_url="${MCP_BASE_URL}" \
         --mode="${MCP_MODE}" \
-        --api_key="${MCP_HOST_API_KEY}" \ &
+        --api_key="${MCP_HOST_API_KEY}" &
 }
 
 # -----------------------------------------------------------------------------

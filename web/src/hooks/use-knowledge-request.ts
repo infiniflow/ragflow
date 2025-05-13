@@ -1,4 +1,6 @@
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import {
+  IKnowledge,
   IKnowledgeResult,
   INextTestingResult,
 } from '@/interfaces/database/knowledge';
@@ -22,6 +24,7 @@ export const enum KnowledgeApiAction {
   CreateKnowledge = 'createKnowledge',
   DeleteKnowledge = 'deleteKnowledge',
   SaveKnowledge = 'saveKnowledge',
+  FetchKnowledgeDetail = 'fetchKnowledgeDetail',
 }
 
 export const useKnowledgeBaseId = () => {
@@ -70,8 +73,8 @@ export const useTestRetrieval = () => {
 export const useFetchNextKnowledgeListByPage = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
-  const [ownerIds, setOwnerIds] = useState<string[]>([]);
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
 
   const { data, isFetching: loading } = useQuery<IKnowledgeResult>({
     queryKey: [
@@ -79,7 +82,7 @@ export const useFetchNextKnowledgeListByPage = () => {
       {
         debouncedSearchString,
         ...pagination,
-        ownerIds,
+        filterValue,
       },
     ],
     initialData: {
@@ -95,7 +98,7 @@ export const useFetchNextKnowledgeListByPage = () => {
           page: pagination.current,
         },
         {
-          owner_ids: ownerIds,
+          owner_ids: filterValue.owner,
         },
       );
 
@@ -111,11 +114,6 @@ export const useFetchNextKnowledgeListByPage = () => {
     [handleInputChange],
   );
 
-  const handleOwnerIdsChange = useCallback((ids: string[]) => {
-    // setPagination({ page: 1 }); // TODO: 这里导致重复请求
-    setOwnerIds(ids);
-  }, []);
-
   return {
     ...data,
     searchString,
@@ -123,8 +121,8 @@ export const useFetchNextKnowledgeListByPage = () => {
     pagination: { ...pagination, total: data?.total },
     setPagination,
     loading,
-    setOwnerIds: handleOwnerIdsChange,
-    ownerIds,
+    filterValue,
+    handleFilterSubmit,
   };
 };
 
@@ -203,4 +201,22 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
   });
 
   return { data, loading, saveKnowledgeConfiguration: mutateAsync };
+};
+
+export const useFetchKnowledgeBaseConfiguration = () => {
+  const { id } = useParams();
+
+  const { data, isFetching: loading } = useQuery<IKnowledge>({
+    queryKey: [KnowledgeApiAction.FetchKnowledgeDetail],
+    initialData: {} as IKnowledge,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await kbService.get_kb_detail({
+        kb_id: id,
+      });
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading };
 };

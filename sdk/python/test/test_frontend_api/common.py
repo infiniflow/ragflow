@@ -70,7 +70,8 @@ def upload_file(auth, dataset_id, path):
 def list_document(auth, dataset_id):
     authorization = {"Authorization": auth}
     url = f"{HOST_ADDRESS}/v1/document/list?kb_id={dataset_id}"
-    res = requests.get(url=url, headers=authorization)
+    json = {}
+    res = requests.post(url=url, headers=authorization, json=json)
     return res.json()
 
 

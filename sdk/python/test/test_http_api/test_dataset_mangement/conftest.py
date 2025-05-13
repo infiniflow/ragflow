@@ -37,3 +37,13 @@ def add_datasets_func(get_http_api_auth, request):
     request.addfinalizer(cleanup)
 
     return batch_create_datasets(get_http_api_auth, 3)
+
+
+@pytest.fixture(scope="function")
+def add_dataset_func(get_http_api_auth, request):
+    def cleanup():
+        delete_datasets(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    return batch_create_datasets(get_http_api_auth, 1)[0]

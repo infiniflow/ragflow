@@ -88,7 +88,7 @@ async def run_graphrag(
         )
         assert new_graph is not None
 
-        if not with_resolution or not with_community:
+        if not with_resolution and not with_community:
             return
 
         if with_resolution:
@@ -204,7 +204,7 @@ async def merge_subgraph(
 ):
     start = trio.current_time()
     change = GraphChange()
-    old_graph = await get_graph(tenant_id, kb_id)
+    old_graph = await get_graph(tenant_id, kb_id, subgraph.graph["source_id"])
     if old_graph is not None:
         logging.info("Merge with an exiting graph...................")
         tidy_graph(old_graph, callback)

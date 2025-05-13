@@ -106,6 +106,7 @@ export default {
       disabled: 'Deaktiviert',
       action: 'Aktion',
       parsingStatus: 'Analysestatus',
+      parsingStatusTip: 'Die Verarbeitungszeit für Dokumente variiert je nach mehreren Faktoren. Das Aktivieren von Funktionen wie Knowledge Graph, RAPTOR, automatischer Frage- oder Schlüsselwort-Extraktion verlängert die Bearbeitungszeit deutlich. Wenn der Fortschrittsbalken stehen bleibt, konsultieren Sie bitte diese beiden FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Beginn',
       processDuration: 'Dauer',
       progressMsg: 'Fortschritt',
@@ -171,7 +172,7 @@ export default {
         'Ein Trennzeichen oder Separator kann aus einem oder mehreren Sonderzeichen bestehen. Bei mehreren Zeichen stellen Sie sicher, dass sie in Backticks (` `) eingeschlossen sind. Wenn Sie beispielsweise Ihre Trennzeichen so konfigurieren: \\n`##`;, dann werden Ihre Texte an Zeilenumbrüchen, doppelten Rautenzeichen (##) oder Semikolons getrennt. Setzen Sie Trennzeichen nur nachdem Sie das Mechanismus der Textsegmentierung und -chunking verstanden haben.',
       html4excel: 'Excel zu HTML',
       html4excelTip:
-        'Verwenden Sie dies zusammen mit der General-Schnittmethode. Wenn deaktiviert, werden Tabellenkalkulationsdateien (XLSX, XLS (Excel97~2003)) zeilenweise in Schlüssel-Wert-Paare analysiert. Wenn aktiviert, werden Tabellenkalkulationsdateien in HTML-Tabellen umgewandelt. Wenn die ursprüngliche Tabelle mehr als 12 Zeilen enthält, teilt das System sie automatisch alle 12 Zeilen in mehrere HTML-Tabellen auf.',
+        'Verwenden Sie dies zusammen mit der General-Schnittmethode. Wenn deaktiviert, werden Tabellenkalkulationsdateien (XLSX, XLS (Excel97~2003)) zeilenweise in Schlüssel-Wert-Paare analysiert. Wenn aktiviert, werden Tabellenkalkulationsdateien in HTML-Tabellen umgewandelt. Wenn die ursprüngliche Tabelle mehr als 12 Zeilen enthält, teilt das System sie automatisch alle 12 Zeilen in mehrere HTML-Tabellen auf. Für weitere Informationen siehe https://ragflow.io/docs/dev/enable_excel2html.',
       autoKeywords: 'Auto-Schlüsselwort',
       autoKeywordsTip:
         'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren.',
@@ -219,7 +220,7 @@ export default {
       chunkTokenNumber: 'Empfohlene Chunk-Größe',
       chunkTokenNumberMessage: 'Chunk-Token-Anzahl ist erforderlich',
       embeddingModelTip:
-        'Das Modell, das Chunks in Embeddings umwandelt. Es kann nicht geändert werden, sobald die Wissensdatenbank Chunks enthält. Um zu einem anderen Embedding-Modell zu wechseln, müssen Sie alle vorhandenen Chunks in der Wissensdatenbank löschen.',
+        'Das Standard-Embedding-Modell der Wissensdatenbank. Es kann nicht geändert werden, sobald die Wissensdatenbank Chunks enthält. Um zu einem anderen Standard-Embedding-Modell zu wechseln, müssen alle vorhandenen Chunks in der Wissensdatenbank gelöscht werden.',
       permissionsTip:
         'Wenn auf "Team" gesetzt, können alle Teammitglieder die Wissensdatenbank verwalten.',
       chunkTokenNumberTip:
@@ -333,7 +334,7 @@ export default {
   `,
       useRaptor: 'RAPTOR zur Verbesserung des Abrufs verwenden',
       useRaptorTip:
-        'Rekursive Abstrakte Verarbeitung für Baumorganisierten Abruf, weitere Informationen unter https://huggingface.co/papers/2401.18059.',
+        'RAPTOR für Multi-Hop-Frage-Antwort-Aufgaben aktivieren. Details unter https://ragflow.io/docs/dev/enable_raptor.',
       prompt: 'Prompt',
       promptTip:
         'Verwenden Sie den Systemprompt, um die Aufgabe für das LLM zu beschreiben, festzulegen, wie es antworten soll, und andere verschiedene Anforderungen zu skizzieren. Der Systemprompt wird oft in Verbindung mit Schlüsseln (Variablen) verwendet, die als verschiedene Dateninputs für das LLM dienen. Verwenden Sie einen Schrägstrich `/` oder die (x)-Schaltfläche, um die zu verwendenden Schlüssel anzuzeigen.',
@@ -342,14 +343,14 @@ export default {
         {cluster_content}
   Das oben Genannte ist der Inhalt, den Sie zusammenfassen müssen.`,
       maxToken: 'Maximale Token',
-      maxTokenTip: 'Maximale Token-Anzahl für die Zusammenfassung.',
+      maxTokenTip: 'Die maximale Anzahl an Token pro generiertem Zusammenfassungs-Chunk.',
       maxTokenMessage: 'Maximale Token sind erforderlich',
       threshold: 'Schwellenwert',
       thresholdTip:
-        'Je größer der Schwellenwert, desto weniger Cluster werden erzeugt.',
+        'In RAPTOR werden Chunks anhand ihrer semantischen Ähnlichkeit gruppiert. Der Schwellenwert-Parameter legt die minimale Ähnlichkeit fest, die erforderlich ist, damit Chunks zusammengefasst werden. Ein höherer Schwellenwert bedeutet weniger Chunks pro Cluster, während ein niedrigerer Wert mehr Chunks pro Cluster zulässt.',
       thresholdMessage: 'Schwellenwert ist erforderlich',
       maxCluster: 'Maximale Cluster',
-      maxClusterTip: 'Maximale Cluster-Anzahl.',
+      maxClusterTip: 'Die maximale Anzahl der zu erstellenden Cluster.',
       maxClusterMessage: 'Maximale Cluster sind erforderlich',
       randomSeed: 'Zufallszahl',
       randomSeedMessage: 'Zufallszahl ist erforderlich',
@@ -443,7 +444,7 @@ export default {
       knowledgeBases: 'Wissensdatenbanken',
       knowledgeBasesMessage: 'Bitte auswählen',
       knowledgeBasesTip:
-        'Wählen Sie die Wissensdatenbanken aus, die mit diesem Chat-Assistenten verknüpft werden sollen.',
+        'Wählen Sie die Wissensdatenbanken aus, die mit diesem Chat-Assistenten verknüpft werden sollen. Eine leere Wissensdatenbank wird nicht in der Dropdown-Liste angezeigt.',
       system: 'System',
       systemInitialValue:
         'Sie sind ein intelligenter Assistent. Bitte fassen Sie den Inhalt der Wissensdatenbank zusammen, um die Frage zu beantworten. Bitte listen Sie die Daten in der Wissensdatenbank auf und antworten Sie detailliert. Wenn alle Inhalte der Wissensdatenbank für die Frage irrelevant sind, muss Ihre Antwort den Satz "Die gesuchte Antwort wurde in der Wissensdatenbank nicht gefunden!" enthalten. Antworten müssen den Chat-Verlauf berücksichtigen.\nHier ist die Wissensdatenbank:\n{knowledge}\nDas oben Genannte ist die Wissensdatenbank.',
@@ -870,7 +871,7 @@ export default {
       news: 'Nachrichten',
       messageHistoryWindowSize: 'Nachrichtenfenstergröße',
       messageHistoryWindowSizeTip:
-        'Die Fenstergröße des Gesprächsverlaufs, der vom LLM gesehen werden muss. Je größer, desto besser. Aber Vorsicht mit der maximalen Inhaltslänge des LLM.',
+        'Die Fenstergröße des für das LLM sichtbaren Gesprächsverlaufs. Größer ist besser, aber achten Sie auf das maximale Token-Limit des LLM.',
       relevance: 'Relevanz',
       google: 'Google',
       googleDescription:

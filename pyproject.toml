@@ -127,6 +127,7 @@ dependencies = [
     "langfuse>=2.60.0",
     "debugpy>=1.8.13",
     "mcp>=1.6.0",
+    "opensearch-py==2.7.1"
 ]
 
 [project.optional-dependencies]

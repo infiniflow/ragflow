@@ -565,7 +565,7 @@ class QWenChat(Base):
 
         dashscope.api_key = key
         self.model_name = model_name
-        if self.is_reasoning_model(self.model_name):
+        if self.is_reasoning_model(self.model_name) or self.model_name in ["qwen-vl-plus", "qwen-vl-plus-latest", "qwen-vl-max", "qwen-vl-max-latest"]:
             super().__init__(key, model_name, "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict) -> tuple[str, int]:
@@ -643,7 +643,7 @@ class QWenChat(Base):
     def chat(self, system, history, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        if self.is_reasoning_model(self.model_name):
+        if self.is_reasoning_model(self.model_name) or self.model_name in ["qwen-vl-plus", "qwen-vl-plus-latest", "qwen-vl-max", "qwen-vl-max-latest"]:
             return super().chat(system, history, gen_conf)
 
         stream_flag = str(os.environ.get("QWEN_CHAT_BY_STREAM", "true")).lower() == "true"
@@ -811,7 +811,7 @@ class QWenChat(Base):
     def chat_streamly(self, system, history, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        if self.is_reasoning_model(self.model_name):
+        if self.is_reasoning_model(self.model_name) or self.model_name in ["qwen-vl-plus", "qwen-vl-plus-latest", "qwen-vl-max", "qwen-vl-max-latest"]:
             return super().chat_streamly(system, history, gen_conf)
 
         return self._chat_streamly(system, history, gen_conf)
@@ -915,7 +915,7 @@ class OllamaChat(Base):
             if "frequency_penalty" in gen_conf:
                 options["frequency_penalty"] = gen_conf["frequency_penalty"]
 
-            response = self.client.chat(model=self.model_name, messages=history, options=options, keep_alive=10)
+            response = self.client.chat(model=self.model_name, messages=history, options=options)
             ans = response["message"]["content"].strip()
             token_count = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
             return ans, token_count
@@ -944,7 +944,7 @@ class OllamaChat(Base):
 
             ans = ""
             try:
-                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options, keep_alive=10)
+                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options)
                 for resp in response:
                     if resp["done"]:
                         token_count = resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)

@@ -99,7 +99,7 @@ def update():
         if req.get("parser_id", "") == "tag" and os.environ.get('DOC_ENGINE', "elasticsearch") == "infinity":
             return get_json_result(
                 data=False,
-                message='The chunk method Tag has not been supported by Infinity yet.',
+                message='The chunking method Tag has not been supported by Infinity yet.',
                 code=settings.RetCode.OPERATING_ERROR
             )
 
@@ -152,6 +152,7 @@ def detail():
         if not kb:
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
+        kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
         return get_json_result(data=kb)
     except Exception as e:
         return server_error_response(e)
