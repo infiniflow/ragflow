@@ -5,19 +5,19 @@ slug: /enable_excel2html
 
 # Enable Excel2HTML
 
-Convert Excel spreadsheets into HTML tables.
+Convert complex Excel spreadsheets into HTML tables.
 
 ---
 
 When using the General chunking method, you can enable the **Excel to HTML** toggle to convert spreadsheet files into HTML tables. If it is disabled, spreadsheet tables will be represented as key-value pairs. For complex tables that cannot be simply represented this way, you must enable this feature.
 
-:::danger WARNING
+:::caution WARNING
 The feature is disabled by default. If your knowledge base contains spreadsheets with complex tables and you do not enable this feature, RAGFlow will not throw an error but your tables are likely to be garbled.
 :::
 
 ## Scenarios
 
-Works with complex tables cannot be represented as key-value pairs. Examples include spreadsheet tables with multiple columns, tables with merged cells, or multiple tables within one sheet. In such cases, consider converting these spreadsheet tables into HTML tables.
+Works with complex tables that cannot be represented as key-value pairs. Examples include spreadsheet tables with multiple columns, tables with merged cells, or multiple tables within one sheet. In such cases, consider converting these spreadsheet tables into HTML tables.
 
 ## Considerations
 
