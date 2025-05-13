@@ -537,9 +537,9 @@ async def do_handle_task(task):
     elif task.get("task_type", "") == "graphrag":
         global task_limiter
         task_limiter = trio.CapacityLimiter(2)
-        graphrag_conf = task_parser_config.get("graphrag", {})
-        if not graphrag_conf.get("use_graphrag", False):
+        if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
             return
+        graphrag_conf = task["kb_parser_config"].get("graphrag", {})
         start_ts = timer()
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
         with_resolution = graphrag_conf.get("resolution", False)

@@ -91,7 +91,7 @@ class TestCapability:
 class TestDatasetUpdate:
     @pytest.mark.p3
     def test_dataset_id_not_uuid(self, get_http_api_auth):
-        payload = {"name": "dataset_id_not_uuid"}
+        payload = {"name": "not_uuid"}
         res = update_dataset(get_http_api_auth, "not_uuid", payload)
         assert res["code"] == 101, res
         assert "Input should be a valid UUID" in res["message"], res
@@ -178,22 +178,19 @@ class TestDatasetUpdate:
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
-        "name, avatar_prefix, expected_message",
+        "avatar_prefix, expected_message",
         [
-            ("empty_prefix", "", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("missing_comma", "data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
-            ("invalid_mine_type", "data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
+            ("", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
     )
-    def test_avatar_invalid_prefix(self, get_http_api_auth, add_dataset_func, tmp_path, name, avatar_prefix, expected_message):
+    def test_avatar_invalid_prefix(self, get_http_api_auth, add_dataset_func, tmp_path, avatar_prefix, expected_message):
         dataset_id = add_dataset_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
-        payload = {
-            "name": name,
-            "avatar": f"{avatar_prefix}{encode_avatar(fn)}",
-        }
+        payload = {"avatar": f"{avatar_prefix}{encode_avatar(fn)}"}
         res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
@@ -312,18 +309,18 @@ class TestDatasetUpdate:
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "name, permission",
+        "permission",
         [
-            ("me", "me"),
-            ("team", "team"),
-            ("me_upercase", "ME"),
-            ("team_upercase", "TEAM"),
+            "me",
+            "team",
+            "ME",
+            "TEAM",
         ],
         ids=["me", "team", "me_upercase", "team_upercase"],
     )
-    def test_permission(self, get_http_api_auth, add_dataset_func, name, permission):
+    def test_permission(self, get_http_api_auth, add_dataset_func, permission):
         dataset_id = add_dataset_func
-        payload = {"name": name, "permission": permission}
+        payload = {"permission": permission}
         res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 0, res
 
@@ -351,7 +348,7 @@ class TestDatasetUpdate:
     @pytest.mark.p3
     def test_permission_none(self, get_http_api_auth, add_dataset_func):
         dataset_id = add_dataset_func
-        payload = {"name": "test_permission_none", "permission": None}
+        payload = {"permission": None}
         res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 101, res
         assert "Input should be 'me' or 'team'" in res["message"], res
@@ -697,32 +694,65 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {}
-
-    # @pytest.mark.p2
-    # def test_parser_config_unset(self, get_http_api_auth, add_dataset_func):
-    #     dataset_id = add_dataset_func
-    #     payload = {"name": "default_unset"}
-    #     res = update_dataset(get_http_api_auth, dataset_id, payload)
-    #     assert res["code"] == 0, res
-
-    #     res = list_datasets(get_http_api_auth)
-    #     assert res["code"] == 0, res
-    #     assert res["data"][0]["parser_config"] == {
-    #         "chunk_token_num": 128,
-    #         "delimiter": r"\n",
-    #         "html4excel": False,
-    #         "layout_recognize": "DeepDOC",
-    #         "raptor": {"use_raptor": False},
-    #     }, res
+        assert res["data"][0]["parser_config"] == {
+            "chunk_token_num": 128,
+            "delimiter": r"\n",
+            "html4excel": False,
+            "layout_recognize": "DeepDOC",
+            "raptor": {"use_raptor": False},
+        }, res
 
     @pytest.mark.p3
     def test_parser_config_none(self, get_http_api_auth, add_dataset_func):
         dataset_id = add_dataset_func
         payload = {"parser_config": None}
         res = update_dataset(get_http_api_auth, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert "Input should be a valid dictionary or instance of ParserConfig" in res["message"], res
+        assert res["code"] == 0, res
+
+        res = list_datasets(get_http_api_auth, {"id": dataset_id})
+        assert res["code"] == 0, res
+        assert res["data"][0]["parser_config"] == {
+            "chunk_token_num": 128,
+            "delimiter": r"\n",
+            "html4excel": False,
+            "layout_recognize": "DeepDOC",
+            "raptor": {"use_raptor": False},
+        }, res
+
+    @pytest.mark.p3
+    def test_parser_config_empty_with_chunk_method_change(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
+        payload = {"chunk_method": "qa", "parser_config": {}}
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
+        assert res["code"] == 0, res
+
+        res = list_datasets(get_http_api_auth)
+        print(res)
+        assert res["code"] == 0, res
+        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+
+    @pytest.mark.p3
+    def test_parser_config_unset_with_chunk_method_change(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
+        payload = {"chunk_method": "qa"}
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
+        assert res["code"] == 0, res
+
+        res = list_datasets(get_http_api_auth)
+        assert res["code"] == 0, res
+        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+
+    @pytest.mark.p3
+    def test_parser_config_none_with_chunk_method_change(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
+        payload = {"chunk_method": "qa", "parser_config": None}
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
+        assert res["code"] == 0, res
+
+        res = list_datasets(get_http_api_auth, {"id": dataset_id})
+        print(res)
+        assert res["code"] == 0, res
+        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -742,8 +772,35 @@ class TestDatasetUpdate:
             {"unknown_field": "unknown_field"},
         ],
     )
-    def test_unsupported_field(self, get_http_api_auth, add_dataset_func, payload):
+    def test_field_unsupported(self, get_http_api_auth, add_dataset_func, payload):
         dataset_id = add_dataset_func
         res = update_dataset(get_http_api_auth, dataset_id, payload)
         assert res["code"] == 101, res
         assert "Extra inputs are not permitted" in res["message"], res
+
+    @pytest.mark.p2
+    def test_field_unset(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
+        res = list_datasets(get_http_api_auth)
+        assert res["code"] == 0, res
+        original_data = res["data"][0]
+
+        payload = {"name": "default_unset"}
+        res = update_dataset(get_http_api_auth, dataset_id, payload)
+        assert res["code"] == 0, res
+
+        res = list_datasets(get_http_api_auth)
+        assert res["code"] == 0, res
+        assert res["data"][0]["avatar"] == original_data["avatar"], res
+        assert res["data"][0]["description"] == original_data["description"], res
+        assert res["data"][0]["embedding_model"] == original_data["embedding_model"], res
+        assert res["data"][0]["permission"] == original_data["permission"], res
+        assert res["data"][0]["chunk_method"] == original_data["chunk_method"], res
+        assert res["data"][0]["pagerank"] == original_data["pagerank"], res
+        assert res["data"][0]["parser_config"] == {
+            "chunk_token_num": 128,
+            "delimiter": r"\n",
+            "html4excel": False,
+            "layout_recognize": "DeepDOC",
+            "raptor": {"use_raptor": False},
+        }, res

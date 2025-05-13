@@ -7,6 +7,27 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "gpt-4.1",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1047576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4.1-mini",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1047576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4.1-nano",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1047576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "gpt-4.5-preview",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
@@ -569,7 +590,6 @@
                     "max_tokens": 64000,
                     "model_type": "chat",
                     "is_tools": true
-            
                 },
                 {
                     "llm_name": "deepseek-reasoner",
@@ -1296,7 +1316,7 @@
                     "llm_name": "ibm/granite-guardian-3.0-8b",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 131072,
-                    "model_type": "chat"                    
+                    "model_type": "chat"
                 },
                 {
                     "llm_name": "igenius / colosseum-355b_instruct_16k",
@@ -1829,8 +1849,6 @@
                     "max_tokens": 512,
                     "model_type": "embedding"
                 },
-
-
                 {
                     "llm_name": "adept/fuyu-8b",
                     "tags": "IMAGE2TEXT,1K",
