@@ -49,6 +49,12 @@ interface IProps {
   handleTesting: (documentIds?: string[]) => Promise<any>;
 }
 
+const ShowImageFields = ['image', 'table'];
+
+function showImage(filed: string) {
+  return ShowImageFields.some((x) => x === filed);
+}
+
 const TestingResult = ({ handleTesting }: IProps) => {
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const { documents, chunks, total } = useSelectTestingResult();
@@ -114,7 +120,7 @@ const TestingResult = ({ handleTesting }: IProps) => {
           chunks?.map((x) => (
             <Card key={x.chunk_id} title={<ChunkTitle item={x}></ChunkTitle>}>
               <div className="flex justify-center">
-                {x.image_id && (
+                {showImage(x.doc_type_kwd) && (
                   <Image
                     id={x.image_id}
                     className={'object-contain max-h-[30vh] w-full text-center'}
