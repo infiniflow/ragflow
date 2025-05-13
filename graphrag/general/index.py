@@ -88,7 +88,7 @@ async def run_graphrag(
         )
         assert new_graph is not None
 
-        if not with_resolution or not with_community:
+        if not with_resolution and not with_community:
             return
 
         if with_resolution:
