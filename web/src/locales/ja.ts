@@ -100,7 +100,8 @@ export default {
       disabled: '無効',
       action: 'アクション',
       parsingStatus: 'パースステータス',
-      parsingStatusTip: 'ドキュメントの解析時間はさまざまな要因によって異なります。Knowledge Graph、RAPTOR、自動質問抽出、自動キーワード抽出などの機能を有効にすると、処理時間が大幅に増加します。進行バーが止まった場合は、次の2つのFAQをご参照ください: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
+      parsingStatusTip:
+        'ドキュメントの解析時間はさまざまな要因によって異なります。Knowledge Graph、RAPTOR、自動質問抽出、自動キーワード抽出などの機能を有効にすると、処理時間が大幅に増加します。進行バーが止まった場合は、次の2つのFAQをご参照ください: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'プロセス開始時刻',
       processDuration: '処理時間',
       progressMsg: '進行状況メッセージ',
@@ -297,7 +298,8 @@ export default {
       maxTokenTip: '生成された要約チャンクごとの最大トークン数。',
       maxTokenMessage: '最大トークン数は必須です',
       threshold: 'しきい値',
-      thresholdTip: 'RAPTORでは、チャンクは意味的な類似性によってクラスタリングされます。しきい値パラメータは、チャンクをまとめるために必要な最小限の類似度を設定します。しきい値が高いほど各クラスタ内のチャンク数は少なくなり、しきい値が低いほど多くのチャンクが1つのクラスタに含まれます。',
+      thresholdTip:
+        'RAPTORでは、チャンクは意味的な類似性によってクラスタリングされます。しきい値パラメータは、チャンクをまとめるために必要な最小限の類似度を設定します。しきい値が高いほど各クラスタ内のチャンク数は少なくなり、しきい値が低いほど多くのチャンクが1つのクラスタに含まれます。',
       thresholdMessage: 'しきい値は必須です',
       maxCluster: '最大クラスター数',
       maxClusterTip: '作成するクラスタの最大数。',
@@ -354,7 +356,8 @@ export default {
       setAnOpenerTip: 'お客様をどのように歓迎しますか？',
       knowledgeBases: 'ナレッジベース',
       knowledgeBasesMessage: '選択してください',
-      knowledgeBasesTip: '関連付けるナレッジベースを選択してください。空のナレッジベースはドロップダウンリストに表示されません。',
+      knowledgeBasesTip:
+        '関連付けるナレッジベースを選択してください。空のナレッジベースはドロップダウンリストに表示されません。',
       system: 'システムプロンプト',
       systemInitialValue: `あなたはインテリジェントなアシスタントです。質問に答えるためにナレッジベースの内容を要約してください。ナレッジベースのデータをリストし、詳細に答えてください。すべてのナレッジベースの内容が質問に関連しない場合、回答には「ナレッジベースにはお探しの回答が見つかりません！」という文を含める必要があります。回答はチャット履歴を考慮する必要があります。
       こちらがナレッジベースです：
@@ -1083,6 +1086,7 @@ export default {
       promptTip:
         'LLMのタスクを説明し、どのように応答すべきかを指定し、他のさまざまな要件を概説するためにシステムプロンプトを使用します。システムプロンプトは、LLMのさまざまなデータ入力として機能するキー（変数）と共に使用されることがよくあります。使用するキーを表示するには、スラッシュ `/` または (x) ボタンを使用します。',
       promptMessage: 'プロンプトは必須です',
+      runningHintText: '動作中です...🕞 ',
     },
     footer: {
       profile: 'All rights reserved @ React',

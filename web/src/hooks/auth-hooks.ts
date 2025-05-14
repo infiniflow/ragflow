@@ -1,22 +1,30 @@
 import authorizationUtil from '@/utils/authorization-util';
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'umi';
+import { useNavigate, useSearchParams } from 'umi';
 
-export const useLoginWithGithub = () => {
+export const useOAuthCallback = () => {
   const [currentQueryParameters, setSearchParams] = useSearchParams();
   const error = currentQueryParameters.get('error');
   const newQueryParameters: URLSearchParams = useMemo(
     () => new URLSearchParams(currentQueryParameters.toString()),
     [currentQueryParameters],
   );
-
+  const navigate = useNavigate();
   const auth = currentQueryParameters.get('auth');
 
   useEffect(() => {
     if (auth) {
       authorizationUtil.setAuthorization(auth);
+      newQueryParameters.delete('auth');
+      setSearchParams(newQueryParameters);
     }
-  }, [auth]);
+  }, [
+    error,
+    currentQueryParameters,
+    newQueryParameters,
+    navigate,
+    setSearchParams,
+  ]);
 
   const authResult = useMemo(() => {
     return {
@@ -29,7 +37,7 @@ export const useLoginWithGithub = () => {
 };
 
 export const useAuth = () => {
-  const { auth, error } = useLoginWithGithub();
+  const { auth, error } = useOAuthCallback();
   const [isLogin, setIsLogin] = useState<Nullable<boolean>>(null);
 
   useEffect(() => {
