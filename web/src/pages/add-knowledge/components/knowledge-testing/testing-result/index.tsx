@@ -20,6 +20,7 @@ import {
 } from '@/hooks/knowledge-hooks';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import { api_host } from '@/utils/api';
+import { showImage } from '@/utils/chat';
 import { useCallback, useState } from 'react';
 import styles from './index.less';
 
@@ -47,12 +48,6 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
 
 interface IProps {
   handleTesting: (documentIds?: string[]) => Promise<any>;
-}
-
-const ShowImageFields = ['image', 'table'];
-
-function showImage(filed: string) {
-  return ShowImageFields.some((x) => x === filed);
 }
 
 const TestingResult = ({ handleTesting }: IProps) => {
