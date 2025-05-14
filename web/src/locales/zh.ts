@@ -105,7 +105,8 @@ export default {
       disabled: '禁用',
       action: '动作',
       parsingStatus: '解析状态',
-      parsingStatusTip: '文本解析的时间取决于诸多因素。如果开启了知识图谱、RAPTOR、自动问题提取、自动关键词提取等功能，时间会更长。如果解析进度条长时间不更新，也可以参考这两条 FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
+      parsingStatusTip:
+        '文本解析的时间取决于诸多因素。如果开启了知识图谱、RAPTOR、自动问题提取、自动关键词提取等功能，时间会更长。如果解析进度条长时间不更新，也可以参考这两条 FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
       processBeginAt: '开始于',
       processDuration: '持续时间',
       progressMsg: '进度',
@@ -166,7 +167,7 @@ export default {
       delimiterTip:
         '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
       html4excel: '表格转HTML',
-      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel97~2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。`,
+      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel97~2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dev/enable_excel2html。`,
       autoKeywords: '自动关键词提取',
       autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用“系统模型设置”中设置的默认聊天模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。`,
       autoQuestions: '自动问题提取',
@@ -334,7 +335,8 @@ export default {
 <i>不符合上述规则的文本行将被忽略。</i>
 `,
       useRaptor: '使用召回增强 RAPTOR 策略',
-      useRaptorTip: '为多跳问答任务启用 RAPTOR，详情请见 : https://ragflow.io/docs/dev/enable_raptor。',
+      useRaptorTip:
+        '为多跳问答任务启用 RAPTOR，详情请见 : https://ragflow.io/docs/dev/enable_raptor。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptText: `请总结以下段落。 小心数字，不要编造。 段落如下：
@@ -436,7 +438,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       setAnOpenerTip: '您想如何欢迎您的客户？',
       knowledgeBases: '知识库',
       knowledgeBasesMessage: '请选择',
-      knowledgeBasesTip: '选择关联的知识库。新建或空知识库不会在下拉菜单中显示。',
+      knowledgeBasesTip:
+        '选择关联的知识库。新建或空知识库不会在下拉菜单中显示。',
       system: '系统提示词',
       systemInitialValue: `你是一个智能助手，请总结知识库的内容来回答问题，请列举知识库中的数据详细回答。当所有知识库内容都与问题无关时，你的回答必须包括“知识库中未找到您要的答案！”这句话。回答需要考虑聊天历史。
         以下是知识库：
@@ -543,6 +546,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',
       tavilyApiKeyHelp: '如何获取？',
+      crossLanguage: '跨语言搜索',
+      crossLanguageTip: `选择一种或多种语言进行跨语言搜索。如果未选择任何语言，系统将使用原始查询进行搜索。`,
     },
     setting: {
       profile: '概要',

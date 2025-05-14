@@ -306,20 +306,40 @@ Updates configurations for the current dataset.
 A dictionary representing the attributes to update, with the following keys:
 
 - `"name"`: `str` The revised name of the dataset.
-- `"embedding_model"`: `str` The updated embedding model name.
+  - Basic Multilingual Plane (BMP) only
+  - Maximum 128 characters
+  - Case-insensitive
+- `"avatar"`: (*Body parameter*), `string`  
+  The updated base64 encoding of the avatar.
+  - Maximum 65535 characters
+- `"embedding_model"`: (*Body parameter*), `string`  
+  The updated embedding model name.  
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
-- `"chunk_method"`: `str` The chunking method for the dataset. Available options:
-  - `"naive"`: General
-  - `"manual`: Manual
+  - Maximum 255 characters
+  - Must follow `model_name@model_factory` format
+- `"permission"`: (*Body parameter*), `string`  
+  The updated dataset permission. Available options:  
+  - `"me"`: (Default) Only you can manage the dataset.
+  - `"team"`: All team members can manage the dataset.
+- `"pagerank"`: (*Body parameter*), `int`  
+  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  - Default: `0`
+  - Minimum: `0`
+  - Maximum: `100`
+- `"chunk_method"`: (*Body parameter*), `enum<string>`  
+  The chunking method for the dataset. Available options:  
+  - `"naive"`: General (default)
+  - `"book"`: Book
+  - `"email"`: Email
+  - `"laws"`: Laws
+  - `"manual"`: Manual
+  - `"one"`: One
+  - `"paper"`: Paper
+  - `"picture"`: Picture
+  - `"presentation"`: Presentation
   - `"qa"`: Q&A
   - `"table"`: Table
-  - `"paper"`: Paper
-  - `"book"`: Book
-  - `"laws"`: Laws
-  - `"presentation"`: Presentation
-  - `"picture"`: Picture
-  - `"one"`: One
-  - `"email"`: Email
+  - `"tag"`: Tag
 
 #### Returns
 
@@ -1734,4 +1754,133 @@ for agent in rag_object.list_agents():
 
 ---
 
+### Create agent
 
+```python
+RAGFlow.create_agent(
+    title: str,
+    dsl: dict,
+    description: str | None = None
+) -> None
+```
+
+Create an agent.
+
+#### Parameters
+
+##### title: `str`
+
+Specifies the title of the agent.
+
+##### dsl: `dict`
+
+Specifies the canvas DSL of the agent.
+
+##### description: `str`
+
+The description of the agent. Defaults to `None`.
+
+#### Returns
+
+- Success: Nothing.
+- Failure: `Exception`.
+
+#### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object.create_agent(
+  title="Test Agent",
+  description="A test agent",
+  dsl={
+    # ... canvas DSL here ...
+  }
+)
+```
+
+---
+
+### Update agent
+
+```python
+RAGFlow.update_agent(
+    agent_id: str,
+    title: str | None = None,
+    description: str | None = None,
+    dsl: dict | None = None
+) -> None
+```
+
+Update an agent.
+
+#### Parameters
+
+##### agent_id: `str`
+
+Specifies the id of the agent to be updated.
+
+##### title: `str`
+
+Specifies the new title of the agent. `None` if you do not want to update this.
+
+##### dsl: `dict`
+
+Specifies the new canvas DSL of the agent. `None` if you do not want to update this.
+
+##### description: `str`
+
+The new description of the agent. `None` if you do not want to update this.
+
+#### Returns
+
+- Success: Nothing.
+- Failure: `Exception`.
+
+#### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object.update_agent(
+  agent_id="58af890a2a8911f0a71a11b922ed82d6",
+  title="Test Agent",
+  description="A test agent",
+  dsl={
+    # ... canvas DSL here ...
+  }
+)
+```
+
+---
+
+### Delete agent
+
+```python
+RAGFlow.delete_agent(
+    agent_id: str
+) -> None
+```
+
+Delete an agent.
+
+#### Parameters
+
+##### agent_id: `str`
+
+Specifies the id of the agent to be deleted.
+
+#### Returns
+
+- Success: Nothing.
+- Failure: `Exception`.
+
+#### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object.delete_agent("58af890a2a8911f0a71a11b922ed82d6")
+```
+
+---

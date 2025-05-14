@@ -27,22 +27,19 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMService, TenantLLMService
 from api.db.services.user_service import TenantService
 from api.utils import get_uuid
 from api.utils.api_utils import (
     check_duplicate_ids,
-    dataset_readonly_fields,
+    deep_merge,
     get_error_argument_result,
     get_error_data_result,
     get_parser_config,
     get_result,
     token_required,
-    valid,
-    valid_parser_config,
     verify_embedding_availability,
 )
-from api.utils.validation_utils import CreateDatasetReq, validate_and_parse_json_request
+from api.utils.validation_utils import CreateDatasetReq, UpdateDatasetReq, validate_and_parse_json_request
 
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
@@ -117,8 +114,8 @@ def create(tenant_id):
         return get_error_argument_result(err)
 
     try:
-        if KnowledgebaseService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value):
-            return get_error_argument_result(message=f"Dataset name '{req['name']}' already exists")
+        if KnowledgebaseService.get_or_none(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value):
+            return get_error_data_result(message=f"Dataset name '{req['name']}' already exists")
     except OperationalError as e:
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")
@@ -145,7 +142,7 @@ def create(tenant_id):
 
     try:
         if not KnowledgebaseService.save(**req):
-            return get_error_data_result(message="Database operation failed")
+            return get_error_data_result(message="Create dataset error.(Database error)")
     except OperationalError as e:
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")
@@ -205,6 +202,7 @@ def delete(tenant_id):
         schema:
           type: object
     """
+
     errors = []
     success_count = 0
     req = request.json
@@ -291,16 +289,28 @@ def update(tenant_id, dataset_id):
             name:
               type: string
               description: New name of the dataset.
+            avatar:
+              type: string
+              description: Updated base64 encoding of the avatar.
+            description:
+              type: string
+              description: Updated description of the dataset.
+            embedding_model:
+              type: string
+              description: Updated embedding model Name.
             permission:
               type: string
               enum: ['me', 'team']
-              description: Updated permission.
+              description: Updated dataset permission.
             chunk_method:
               type: string
-              enum: ["naive", "manual", "qa", "table", "paper", "book", "laws",
-                     "presentation", "picture", "one", "email", "tag"
+              enum: ["naive", "book", "email", "laws", "manual", "one", "paper",
+                     "picture", "presentation", "qa", "table", "tag"
                      ]
               description: Updated chunking method.
+            pagerank:
+              type: integer
+              description: Updated page rank.
             parser_config:
               type: object
               description: Updated parser configuration.
@@ -310,98 +320,59 @@ def update(tenant_id, dataset_id):
         schema:
           type: object
     """
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset")
-    req = request.json
-    for k in req.keys():
-        if dataset_readonly_fields(k):
-            return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=f"'{k}' is readonly.")
-    e, t = TenantService.get_by_id(tenant_id)
-    invalid_keys = {"id", "embd_id", "chunk_num", "doc_num", "parser_id", "create_date", "create_time", "created_by", "status", "token_num", "update_date", "update_time"}
-    if any(key in req for key in invalid_keys):
-        return get_error_data_result(message="The input parameters are invalid.")
-    permission = req.get("permission")
-    chunk_method = req.get("chunk_method")
-    parser_config = req.get("parser_config")
-    valid_parser_config(parser_config)
-    valid_permission = ["me", "team"]
-    valid_chunk_method = ["naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "email", "tag"]
-    check_validation = valid(
-        permission,
-        valid_permission,
-        chunk_method,
-        valid_chunk_method,
-    )
-    if check_validation:
-        return check_validation
-    if "tenant_id" in req:
-        if req["tenant_id"] != tenant_id:
-            return get_error_data_result(message="Can't change `tenant_id`.")
-    e, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if "parser_config" in req:
-        temp_dict = kb.parser_config
-        temp_dict.update(req["parser_config"])
-        req["parser_config"] = temp_dict
-    if "chunk_count" in req:
-        if req["chunk_count"] != kb.chunk_num:
-            return get_error_data_result(message="Can't change `chunk_count`.")
-        req.pop("chunk_count")
-    if "document_count" in req:
-        if req["document_count"] != kb.doc_num:
-            return get_error_data_result(message="Can't change `document_count`.")
-        req.pop("document_count")
-    if req.get("chunk_method"):
-        if kb.chunk_num != 0 and req["chunk_method"] != kb.parser_id:
-            return get_error_data_result(message="If `chunk_count` is not 0, `chunk_method` is not changeable.")
-        req["parser_id"] = req.pop("chunk_method")
-        if req["parser_id"] != kb.parser_id:
-            if not req.get("parser_config"):
-                req["parser_config"] = get_parser_config(chunk_method, parser_config)
-    if "embedding_model" in req:
-        if kb.chunk_num != 0 and req["embedding_model"] != kb.embd_id:
-            return get_error_data_result(message="If `chunk_count` is not 0, `embedding_model` is not changeable.")
-        if not req.get("embedding_model"):
-            return get_error_data_result("`embedding_model` can't be empty")
-        valid_embedding_models = [
-            "BAAI/bge-large-zh-v1.5",
-            "BAAI/bge-base-en-v1.5",
-            "BAAI/bge-large-en-v1.5",
-            "BAAI/bge-small-en-v1.5",
-            "BAAI/bge-small-zh-v1.5",
-            "jinaai/jina-embeddings-v2-base-en",
-            "jinaai/jina-embeddings-v2-small-en",
-            "nomic-ai/nomic-embed-text-v1.5",
-            "sentence-transformers/all-MiniLM-L6-v2",
-            "text-embedding-v2",
-            "text-embedding-v3",
-            "maidalun1020/bce-embedding-base_v1",
-        ]
-        embd_model = LLMService.query(llm_name=req["embedding_model"], model_type="embedding")
-        if embd_model:
-            if req["embedding_model"] not in valid_embedding_models and not TenantLLMService.query(
-                tenant_id=tenant_id,
-                model_type="embedding",
-                llm_name=req.get("embedding_model"),
-            ):
-                return get_error_data_result(f"`embedding_model` {req.get('embedding_model')} doesn't exist")
-        if not embd_model:
-            embd_model = TenantLLMService.query(tenant_id=tenant_id, model_type="embedding", llm_name=req.get("embedding_model"))
+    # Field name transformations during model dump:
+    # | Original       | Dump Output  |
+    # |----------------|-------------|
+    # | embedding_model| embd_id     |
+    # | chunk_method   | parser_id   |
+    extras = {"dataset_id": dataset_id}
+    req, err = validate_and_parse_json_request(request, UpdateDatasetReq, extras=extras, exclude_unset=True)
+    if err is not None:
+        return get_error_argument_result(err)
 
-        if not embd_model:
-            return get_error_data_result(f"`embedding_model` {req.get('embedding_model')} doesn't exist")
-        req["embd_id"] = req.pop("embedding_model")
-    if "name" in req:
-        req["name"] = req["name"].strip()
-        if len(req["name"]) >= 128:
-            return get_error_data_result(message="Dataset name should not be longer than 128 characters.")
-        if req["name"].lower() != kb.name.lower() and len(KnowledgebaseService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) > 0:
-            return get_error_data_result(message="Duplicated dataset name in updating dataset.")
-    flds = list(req.keys())
-    for f in flds:
-        if req[f] == "" and f in ["permission", "parser_id", "chunk_method"]:
-            del req[f]
-    if not KnowledgebaseService.update_by_id(kb.id, req):
-        return get_error_data_result(message="Update dataset error.(Database error)")
+    if not req:
+        return get_error_argument_result(message="No properties were modified")
+
+    try:
+        kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
+        if kb is None:
+            return get_error_data_result(message=f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'")
+    except OperationalError as e:
+        logging.exception(e)
+        return get_error_data_result(message="Database operation failed")
+
+    if req.get("parser_config"):
+        req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
+
+    if (chunk_method := req.get("parser_id")) and chunk_method != kb.parser_id:
+        if not req.get("parser_config"):
+            req["parser_config"] = get_parser_config(chunk_method, None)
+    elif "parser_config" in req and not req["parser_config"]:
+        del req["parser_config"]
+
+    if "name" in req and req["name"].lower() != kb.name.lower():
+        try:
+            exists = KnowledgebaseService.get_or_none(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)
+            if exists:
+                return get_error_data_result(message=f"Dataset name '{req['name']}' already exists")
+        except OperationalError as e:
+            logging.exception(e)
+            return get_error_data_result(message="Database operation failed")
+
+    if "embd_id" in req:
+        if kb.chunk_num != 0 and req["embd_id"] != kb.embd_id:
+            return get_error_data_result(message=f"When chunk_num ({kb.chunk_num}) > 0, embedding_model must remain {kb.embd_id}")
+        ok, err = verify_embedding_availability(req["embd_id"], tenant_id)
+        if not ok:
+            return err
+
+    try:
+        if not KnowledgebaseService.update_by_id(kb.id, req):
+            return get_error_data_result(message="Update dataset error.(Database error)")
+    except OperationalError as e:
+        logging.exception(e)
+        return get_error_data_result(message="Database operation failed")
+
     return get_result(code=settings.RetCode.SUCCESS)
 
 

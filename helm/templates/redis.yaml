@@ -3,6 +3,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "ragflow.fullname" . }}-redis
+  annotations:
+    "helm.sh/resource-policy": keep
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis
@@ -76,7 +78,7 @@ spec:
         {{- end }}
         resources:
           requests:
-            storage: 8Gi
+            storage: {{ .Values.redis.storage.capacity }}
   {{- end }}
 ---
 apiVersion: v1

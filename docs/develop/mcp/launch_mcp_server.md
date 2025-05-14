@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 1
 slug: /launch_mcp_server
 ---
 
@@ -26,7 +26,7 @@ Once a connection is established, an MCP server communicates with its client in 
 2. Have your RAGFlow API key ready. See [Acquire a RAGFlow API key](./acquire_ragflow_api_key.md).
 
 :::tip INFO
-If you wish to try out our MCP server without upgrading RAGFlow, community contributor **yiminghub2024** 👏 shares their recommended steps [here](#launch-an-mcp-server-without-upgrading-ragflow).
+If you wish to try out our MCP server without upgrading RAGFlow, community contributor [yiminghub2024](https://github.com/yiminghub2024) 👏 shares their recommended steps [here](#launch-an-mcp-server-without-upgrading-ragflow).
 :::
 
 ## Launch an MCP server 
@@ -52,7 +52,7 @@ Where:
 
 - `host`: The MCP server's host address.
 - `port`: The MCP server's listening port.
-- `base_url`**: The address of the running RAGFlow server.
+- `base_url`: The address of the running RAGFlow server.
 - `mode`: The launch mode.
   - `self-host`: (default) self-host mode.
   - `host`: host mode.
@@ -94,7 +94,7 @@ Where:
   - `host`: host mode.
 - `mcp-host-api_key`: Required in self-host mode to authenticate the MCP server with the RAGFlow server.
 
-#### 2. Launch a RAGFlow server alongside an MCP server
+#### 2. Launch a RAGFlow server with an MCP server
 
 Run `docker compose -f docker-compose.yml` to launch the RAGFlow server together with the MCP server.
 
@@ -151,18 +151,18 @@ Run `docker compose -f docker-compose.yml` to launch the RAGFlow server together
 
 #### Launch an MCP server without upgrading RAGFlow
 
-:::tip KUDOS-TO
-This section is contributed by our community contributor **yiminghub2024**. 👏
+:::info KUDOS
+This section is contributed by our community contributor [yiminghub2024](https://github.com/yiminghub2024). 👏
 :::
 
 1. Prepare all MCP-specific files and directories.  
    i. Copy the [mcp/](https://github.com/infiniflow/ragflow/tree/main/mcp) directory to your local working directory.  
    ii. Copy [docker/docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml) locally.  
    iii. Copy [docker/entrypoint.sh](https://github.com/infiniflow/ragflow/blob/main/docker/entrypoint.sh) locally.  
-   iv. Install required dependencies using `uv`:  
+   iv. Install the required dependencies using `uv`:  
        - Run `uv add mcp` or
-       - Copy pyproject.toml and run `uv sync --python 3.10 --all-extras`.
-2. Edit **docker-compose.yml** to enable MCP (disable by default).
+       - Copy [pyproject.toml](https://github.com/infiniflow/ragflow/blob/main/pyproject.toml) locally and run `uv sync --python 3.10 --all-extras`.
+2. Edit **docker-compose.yml** to enable MCP (disabled by default).
 3. Launch the MCP server:
 
 ```bash
@@ -176,24 +176,6 @@ Run the following to check the logs the RAGFlow server and the MCP server:
 ```bash
 docker logs ragflow-server
 ```
-
-## MCP client example
-
-We provide a *prototype* MCP client example for testing [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).
-
-:::danger IMPORTANT
-If your MCP server is running in host mode, include your acquired API key in your client's `headers` as shown below:
-```python
-async with sse_client("http://localhost:9382/sse", headers={"api_key": "YOUR_KEY_HERE"}) as streams:
-    # Rest of your code...
-```
-:::
-
-## Tools
-
-The MCP server currently offers a specialized tool to assist users in searching for relevant information powered by RAGFlow DeepDoc technology:
-
-- **retrieve**: Fetches relevant chunks from specified `dataset_ids` and optional `document_ids` using the RAGFlow retrieve interface, based on a given question. Details of all available datasets, namely, `id` and `description`, are provided within the tool description for each individual dataset.
 
 ## Security considerations
 

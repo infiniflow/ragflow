@@ -13,21 +13,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import uuid
 from enum import auto
 from typing import Annotated, Any
 
 from flask import Request
-from pydantic import BaseModel, Field, StringConstraints, ValidationError, field_validator
+from pydantic import UUID1, BaseModel, Field, StringConstraints, ValidationError, field_serializer, field_validator
 from strenum import StrEnum
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from api.constants import DATASET_NAME_LIMIT
 
 
-def validate_and_parse_json_request(request: Request, validator: type[BaseModel]) -> tuple[dict[str, Any] | None, str | None]:
-    """Validates and parses JSON requests through a multi-stage validation pipeline.
+def validate_and_parse_json_request(request: Request, validator: type[BaseModel], *, extras: dict[str, Any] | None = None, exclude_unset: bool = False) -> tuple[dict[str, Any] | None, str | None]:
+    """
+    Validates and parses JSON requests through a multi-stage validation pipeline.
 
-    Implements a robust four-stage validation process:
+    Implements a four-stage validation process:
     1. Content-Type verification (must be application/json)
     2. JSON syntax validation
     3. Payload structure type checking
@@ -35,6 +37,10 @@ def validate_and_parse_json_request(request: Request, validator: type[BaseModel]
 
     Args:
         request (Request): Flask request object containing HTTP payload
+        validator (type[BaseModel]): Pydantic model class for data validation
+        extras (dict[str, Any] | None): Additional fields to merge into payload
+            before validation. These fields will be removed from the final output
+        exclude_unset (bool): Whether to exclude fields that have not been explicitly set
 
     Returns:
         tuple[Dict[str, Any] | None, str | None]:
@@ -46,26 +52,26 @@ def validate_and_parse_json_request(request: Request, validator: type[BaseModel]
             - Diagnostic error message on failure
 
     Raises:
-        UnsupportedMediaType: When Content-Type ≠ application/json
+        UnsupportedMediaType: When Content-Type header is not application/json
         BadRequest: For structural JSON syntax errors
         ValidationError: When payload violates Pydantic schema rules
 
     Examples:
-        Successful validation:
-        ```python
-        # Input: {"name": "Dataset1", "format": "csv"}
-        # Returns: ({"name": "Dataset1", "format": "csv"}, None)
-        ```
+        >>> validate_and_parse_json_request(valid_request, DatasetSchema)
+        ({"name": "Dataset1", "format": "csv"}, None)
 
-        Invalid Content-Type:
-        ```python
-        # Returns: (None, "Unsupported content type: Expected application/json, got text/xml")
-        ```
+        >>> validate_and_parse_json_request(xml_request, DatasetSchema)
+        (None, "Unsupported content type: Expected application/json, got text/xml")
 
-        Malformed JSON:
-        ```python
-        # Returns: (None, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
-        ```
+        >>> validate_and_parse_json_request(bad_json_request, DatasetSchema)
+        (None, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+
+    Notes:
+        1. Validation Priority:
+            - Content-Type verification precedes JSON parsing
+            - Structural validation occurs before schema validation
+        2. Extra fields added via `extras` parameter are automatically removed
+           from the final output after validation
     """
     try:
         payload = request.get_json() or {}
@@ -78,17 +84,25 @@ def validate_and_parse_json_request(request: Request, validator: type[BaseModel]
         return None, f"Invalid request payload: expected object, got {type(payload).__name__}"
 
     try:
+        if extras is not None:
+            payload.update(extras)
         validated_request = validator(**payload)
     except ValidationError as e:
         return None, format_validation_error_message(e)
 
-    parsed_payload = validated_request.model_dump(by_alias=True)
+    parsed_payload = validated_request.model_dump(by_alias=True, exclude_unset=exclude_unset)
+
+    if extras is not None:
+        for key in list(parsed_payload.keys()):
+            if key in extras:
+                del parsed_payload[key]
 
     return parsed_payload, None
 
 
 def format_validation_error_message(e: ValidationError) -> str:
-    """Formats validation errors into a standardized string format.
+    """
+    Formats validation errors into a standardized string format.
 
     Processes pydantic ValidationError objects to create human-readable error messages
     containing field locations, error descriptions, and input values.
@@ -155,7 +169,6 @@ class GraphragMethodEnum(StrEnum):
 class Base(BaseModel):
     class Config:
         extra = "forbid"
-        json_schema_extra = {"charset": "utf8mb4", "collation": "utf8mb4_0900_ai_ci"}
 
 
 class RaptorConfig(Base):
@@ -201,7 +214,7 @@ class CreateDatasetReq(Base):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(...)]
     avatar: str | None = Field(default=None, max_length=65535)
     description: str | None = Field(default=None, max_length=65535)
-    embedding_model: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=255), Field(default=None, serialization_alias="embd_id")]
+    embedding_model: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255), Field(default="", serialization_alias="embd_id")]
     permission: Annotated[PermissionEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=16), Field(default=PermissionEnum.me)]
     chunk_method: Annotated[ChunkMethodnEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=32), Field(default=ChunkMethodnEnum.naive, serialization_alias="parser_id")]
     pagerank: int = Field(default=0, ge=0, le=100)
@@ -209,8 +222,9 @@ class CreateDatasetReq(Base):
 
     @field_validator("avatar")
     @classmethod
-    def validate_avatar_base64(cls, v: str) -> str:
-        """Validates Base64-encoded avatar string format and MIME type compliance.
+    def validate_avatar_base64(cls, v: str | None) -> str | None:
+        """
+        Validates Base64-encoded avatar string format and MIME type compliance.
 
         Implements a three-stage validation workflow:
         1. MIME prefix existence check
@@ -259,7 +273,8 @@ class CreateDatasetReq(Base):
     @field_validator("embedding_model", mode="after")
     @classmethod
     def validate_embedding_model(cls, v: str) -> str:
-        """Validates embedding model identifier format compliance.
+        """
+        Validates embedding model identifier format compliance.
 
         Validation pipeline:
         1. Structural format verification
@@ -298,11 +313,12 @@ class CreateDatasetReq(Base):
 
     @field_validator("permission", mode="before")
     @classmethod
-    def permission_auto_lowercase(cls, v: str) -> str:
-        """Normalize permission input to lowercase for consistent PermissionEnum matching.
+    def permission_auto_lowercase(cls, v: Any) -> Any:
+        """
+        Normalize permission input to lowercase for consistent PermissionEnum matching.
 
         Args:
-            v (str): Raw input value for the permission field
+            v (Any): Raw input value for the permission field
 
         Returns:
             Lowercase string if input is string type, otherwise returns original value
@@ -314,12 +330,39 @@ class CreateDatasetReq(Base):
         """
         return v.lower() if isinstance(v, str) else v
 
+    @field_validator("parser_config", mode="before")
+    @classmethod
+    def normalize_empty_parser_config(cls, v: Any) -> Any:
+        """
+        Normalizes empty parser configuration by converting empty dictionaries to None.
+
+        This validator ensures consistent handling of empty parser configurations across
+        the application by converting empty dicts to None values.
+
+        Args:
+            v (Any): Raw input value for the parser config field
+
+        Returns:
+            Any: Returns None if input is an empty dict, otherwise returns the original value
+
+        Example:
+            >>> normalize_empty_parser_config({})
+            None
+
+            >>> normalize_empty_parser_config({"key": "value"})
+            {"key": "value"}
+        """
+        if v == {}:
+            return None
+        return v
+
     @field_validator("parser_config", mode="after")
     @classmethod
     def validate_parser_config_json_length(cls, v: ParserConfig | None) -> ParserConfig | None:
-        """Validates serialized JSON length constraints for parser configuration.
+        """
+        Validates serialized JSON length constraints for parser configuration.
 
-        Implements a three-stage validation workflow:
+        Implements a two-stage validation workflow:
         1. Null check - bypass validation for empty configurations
         2. Model serialization - convert Pydantic model to JSON string
         3. Size verification - enforce maximum allowed payload size
@@ -334,8 +377,17 @@ class CreateDatasetReq(Base):
             ValueError: When serialized JSON exceeds 65,535 characters
         """
         if v is None:
-            return v
+            return None
 
         if (json_str := v.model_dump_json()) and len(json_str) > 65535:
             raise ValueError(f"Parser config exceeds size limit (max 65,535 characters). Current size: {len(json_str):,}")
         return v
+
+
+class UpdateDatasetReq(CreateDatasetReq):
+    dataset_id: UUID1 = Field(...)
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(default="")]
+
+    @field_serializer("dataset_id")
+    def serialize_uuid_to_hex(self, v: uuid.UUID) -> str:
+        return v.hex

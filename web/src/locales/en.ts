@@ -106,7 +106,8 @@ export default {
       disabled: 'Disable',
       action: 'Action',
       parsingStatus: 'Parsing Status',
-      parsingStatusTip: 'Document parsing time varies based on several factors. Enabling features like Knowledge Graph, RAPTOR, Auto Question Extraction, or Auto Keyword Extraction will significantly increase processing time. If the progress bar stalls, please consult these two FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
+      parsingStatusTip:
+        'Document parsing time varies based on several factors. Enabling features like Knowledge Graph, RAPTOR, Auto Question Extraction, or Auto Keyword Extraction will significantly increase processing time. If the progress bar stalls, please consult these two FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Begin at',
       processDuration: 'Duration',
       progressMsg: 'Progress',
@@ -542,6 +543,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'If an API key is correctly set here, Tavily-based web searches will be used to supplement knowledge base retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
       tavilyApiKeyHelp: 'How to get it?',
+      crossLanguage: 'Cross-language search',
+      crossLanguageTip: `Select one or more languages for cross‑language search. If no language is selected, the system searches with the original query.`,
     },
     setting: {
       profile: 'Profile',
@@ -1255,6 +1258,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
+      infor: 'Information run',
       knowledgeBasesTip:
         'Select the knowledge bases to associate with this chat assistant, or choose variables containing knowledge base IDs below.',
       knowledgeBaseVars: 'Knowledge base variables',
