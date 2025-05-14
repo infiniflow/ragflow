@@ -288,7 +288,16 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. 백엔드 서비스를 시작합니다:
+5. 만약 운영 체제에 jemalloc이 없으면 다음 방식으로 설치하세요:
+
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   ```
+
+6. 백엔드 서비스를 시작합니다:
 
    ```bash
    source .venv/bin/activate
@@ -296,12 +305,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-6. 프론트엔드 의존성을 설치합니다:
+7. 프론트엔드 의존성을 설치합니다:
+
    ```bash
    cd web
    npm install
    ```
-7. 프론트엔드 서비스를 시작합니다:
+
+8. 프론트엔드 서비스를 시작합니다:
 
    ```bash
    npm run dev
@@ -310,6 +321,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _다음 인터페이스는 시스템이 성공적으로 시작되었음을 나타냅니다:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+
+9. 개발이 완료된 후 RAGFlow 프론트엔드 및 백엔드 서비스를 중지합니다.
+
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
+   
 
 ## 📚 문서
 
