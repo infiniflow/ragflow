@@ -312,7 +312,16 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Lance o serviço de back-end:
+5. Se o seu sistema operacional não tiver jemalloc, instale-o da seguinte maneira:
+
+    ```bash
+    # ubuntu
+    sudo apt-get install libjemalloc-dev
+    # centos
+    sudo yum instalar jemalloc
+    ```
+
+6. Lance o serviço de back-end:
 
    ```bash
    source .venv/bin/activate
@@ -320,14 +329,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-6. Instale as dependências do front-end:
+7. Instale as dependências do front-end:
 
    ```bash
    cd web
    npm install
    ```
 
-7. Lance o serviço de front-end:
+8. Lance o serviço de front-end:
 
    ```bash
    npm run dev
@@ -336,6 +345,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _O seguinte resultado confirma o lançamento bem-sucedido do sistema:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+9. Pare os serviços de front-end e back-end do RAGFlow após a conclusão do desenvolvimento:
+
+    ```bash
+    pkill -f "ragflow_server.py|task_executor.py"
+    ```
+
 
 ## 📚 Documentação
 

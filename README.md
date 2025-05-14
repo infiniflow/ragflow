@@ -327,7 +327,8 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. If your operating system does not have jemalloc, please install it as follows,
+5. If your operating system does not have jemalloc, please install it as follows:
+
    ```bash
    # ubuntu
    sudo apt-get install libjemalloc-dev
@@ -343,12 +344,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-
 7. Install frontend dependencies:
+
    ```bash
    cd web
    npm install
    ```
+
 8. Launch frontend service:
 
    ```bash
@@ -358,6 +360,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _The following output confirms a successful launch of the system:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+9. Stop RAGFlow front-end and back-end service after development is complete:
+
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
+
 
 ## 📚 Documentation
 
