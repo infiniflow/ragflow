@@ -103,7 +103,8 @@ export default {
       disabled: 'Desabilitar',
       action: 'Ação',
       parsingStatus: 'Status da análise',
-      parsingStatusTip: 'O tempo de processamento do documento varia conforme vários fatores. Ativar recursos como Knowledge Graph, RAPTOR, Extração Automática de Perguntas ou Extração Automática de Palavras-chave aumentará significativamente o tempo de processamento. Se a barra de progresso travar, consulte estas duas FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
+      parsingStatusTip:
+        'O tempo de processamento do documento varia conforme vários fatores. Ativar recursos como Knowledge Graph, RAPTOR, Extração Automática de Perguntas ou Extração Automática de Palavras-chave aumentará significativamente o tempo de processamento. Se a barra de progresso travar, consulte estas duas FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Início em',
       processDuration: 'Duração',
       progressMsg: 'Progresso',
@@ -274,7 +275,8 @@ export default {
       maxTokenTip: 'O número máximo de tokens por chunk de resumo gerado.',
       maxTokenMessage: 'O número máximo de tokens é obrigatório',
       threshold: 'Limite',
-      thresholdTip: 'No RAPTOR, os chunks são agrupados de acordo com sua similaridade semântica. O parâmetro de Limite define a similaridade mínima necessária para que os chunks sejam agrupados. Um Limite mais alto significa menos chunks em cada grupo, enquanto um Limite mais baixo significa mais chunks por grupo.',
+      thresholdTip:
+        'No RAPTOR, os chunks são agrupados de acordo com sua similaridade semântica. O parâmetro de Limite define a similaridade mínima necessária para que os chunks sejam agrupados. Um Limite mais alto significa menos chunks em cada grupo, enquanto um Limite mais baixo significa mais chunks por grupo.',
       thresholdMessage: 'O limite é obrigatório',
       maxCluster: 'Máximo de clusters',
       maxClusterTip: 'O número máximo de clusters a serem criados.',
@@ -1127,6 +1129,7 @@ export default {
       promptTip:
         'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
       promptMessage: 'O prompt é obrigatório',
+      runningHintText: 'está rodando...🕞',
     },
     footer: {
       profile: 'Todos os direitos reservados @ React',

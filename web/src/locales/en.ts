@@ -1262,6 +1262,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       knowledgeBasesTip:
         'Select the knowledge bases to associate with this chat assistant, or choose variables containing knowledge base IDs below.',
       knowledgeBaseVars: 'Knowledge base variables',
+      runningHintText: 'is running...🕞',
     },
   },
 };

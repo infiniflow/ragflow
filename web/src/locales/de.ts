@@ -106,7 +106,8 @@ export default {
       disabled: 'Deaktiviert',
       action: 'Aktion',
       parsingStatus: 'Analysestatus',
-      parsingStatusTip: 'Die Verarbeitungszeit für Dokumente variiert je nach mehreren Faktoren. Das Aktivieren von Funktionen wie Knowledge Graph, RAPTOR, automatischer Frage- oder Schlüsselwort-Extraktion verlängert die Bearbeitungszeit deutlich. Wenn der Fortschrittsbalken stehen bleibt, konsultieren Sie bitte diese beiden FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
+      parsingStatusTip:
+        'Die Verarbeitungszeit für Dokumente variiert je nach mehreren Faktoren. Das Aktivieren von Funktionen wie Knowledge Graph, RAPTOR, automatischer Frage- oder Schlüsselwort-Extraktion verlängert die Bearbeitungszeit deutlich. Wenn der Fortschrittsbalken stehen bleibt, konsultieren Sie bitte diese beiden FAQs: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Beginn',
       processDuration: 'Dauer',
       progressMsg: 'Fortschritt',
@@ -343,7 +344,8 @@ export default {
         {cluster_content}
   Das oben Genannte ist der Inhalt, den Sie zusammenfassen müssen.`,
       maxToken: 'Maximale Token',
-      maxTokenTip: 'Die maximale Anzahl an Token pro generiertem Zusammenfassungs-Chunk.',
+      maxTokenTip:
+        'Die maximale Anzahl an Token pro generiertem Zusammenfassungs-Chunk.',
       maxTokenMessage: 'Maximale Token sind erforderlich',
       threshold: 'Schwellenwert',
       thresholdTip:
@@ -1227,6 +1229,7 @@ export default {
       promptTip:
         'Verwenden Sie den Systemprompt, um die Aufgabe für das LLM zu beschreiben, festzulegen, wie es antworten soll, und andere verschiedene Anforderungen zu skizzieren. Der Systemprompt wird oft in Verbindung mit Schlüsseln (Variablen) verwendet, die als verschiedene Dateninputs für das LLM dienen. Verwenden Sie einen Schrägstrich `/` oder die (x)-Schaltfläche, um die zu verwendenden Schlüssel anzuzeigen.',
       promptMessage: 'Prompt ist erforderlich',
+      runningHintText: 'läuft...🕞',
     },
     footer: {
       profile: 'Alle Rechte vorbehalten @ React',
