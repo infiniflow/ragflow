@@ -447,7 +447,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         以上是知识库。`,
       systemMessage: '请输入',
       systemTip:
-        '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。',
+        '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。如果您的模型原生支持在问答中推理，可以通过 //no_thinking 关闭自动推理。',
       topN: 'Top N',
       topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
       variable: '变量',

@@ -452,7 +452,7 @@ export default {
         'Sie sind ein intelligenter Assistent. Bitte fassen Sie den Inhalt der Wissensdatenbank zusammen, um die Frage zu beantworten. Bitte listen Sie die Daten in der Wissensdatenbank auf und antworten Sie detailliert. Wenn alle Inhalte der Wissensdatenbank für die Frage irrelevant sind, muss Ihre Antwort den Satz "Die gesuchte Antwort wurde in der Wissensdatenbank nicht gefunden!" enthalten. Antworten müssen den Chat-Verlauf berücksichtigen.\nHier ist die Wissensdatenbank:\n{knowledge}\nDas oben Genannte ist die Wissensdatenbank.',
       systemMessage: 'Bitte eingeben!',
       systemTip:
-        'Ihre Prompts oder Anweisungen für das LLM, einschließlich, aber nicht beschränkt auf seine Rolle, die gewünschte Länge, den Ton und die Sprache seiner Antworten.',
+        'Ihre Prompts oder Anweisungen für das LLM, einschließlich, aber nicht beschränkt auf seine Rolle, die gewünschte Länge, den Ton und die Sprache seiner Antworten. Wenn Ihr Modell native Unterstützung für das Schlussfolgern hat, können Sie //no_thinking zum Prompt hinzufügen, um das Schlussfolgern zu stoppen.',
       topN: 'Top N',
       topNTip:
         'Nicht alle Chunks mit einem Ähnlichkeitswert über dem "Ähnlichkeitsschwellenwert" werden an das LLM gesendet. Dies wählt die "Top N" Chunks aus den abgerufenen aus.',

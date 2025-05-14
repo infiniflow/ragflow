@@ -363,7 +363,7 @@ export default {
       O acima é a base de conhecimento.`,
       systemMessage: 'Por favor, insira!',
       systemTip:
-        'Seus prompts ou instruções para o LLM, incluindo, mas não se limitando, ao papel, ao comprimento desejado, ao tom e ao idioma das respostas.',
+        'Seus prompts ou instruções para o LLM, incluindo, mas não se limitando, ao papel, ao comprimento desejado, ao tom e ao idioma das respostas. Se o seu modelo tem suporte nativo para raciocínio, você pode adicionar //no_thinking ao prompt para parar o raciocínio.',
       topN: 'Top N',
       topNTip: `Nem todos os fragmentos com pontuação de similaridade acima do 'limiar de similaridade' serão enviados ao LLM. Isso seleciona os 'Top N' fragmentos recuperados.`,
       variable: 'Variável',

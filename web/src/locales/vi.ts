@@ -408,7 +408,7 @@ export default {
       Trên đây là cơ sở kiến thức.`,
       systemMessage: 'Vui lòng nhập!',
       systemTip:
-        'Hướng dẫn bạn cần LLM để làm theo khi LLM trả lời câu hỏi, chẳng hạn như thiết kế nhân vật, độ dài câu trả lời và ngôn ngữ trả lời, v.v.',
+        'Hướng dẫn bạn cần LLM để làm theo khi LLM trả lời câu hỏi, chẳng hạn như thiết kế nhân vật, độ dài câu trả lời và ngôn ngữ trả lời, v.v. Nếu mô hình của bạn hỗ trợ suy luận nguyên bản, bạn có thể thêm //no_thinking vào prompt để dừng suy luận.',
       topN: 'Top N',
       topNTip: `Không phải tất cả các khối có điểm tương đồng vượt quá 'ngưỡng tương đồng' sẽ được cung cấp cho LLMs. LLM chỉ có thể xem 'Top N' khối này.`,
       variable: 'Biến',

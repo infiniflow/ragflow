@@ -430,7 +430,7 @@ export default {
       以上是知識庫。`,
       systemMessage: '請輸入',
       systemTip:
-        '當LLM回答問題時，你需要LLM遵循的說明，比如角色設計、答案長度和答案語言等。',
+        '當LLM回答問題時，你需要LLM遵循的說明，比如角色設計、答案長度和答案語言等。如果您的模型原生支持推理，您可以在提示中加入 //no_thinking 以停止推理。',
       topN: 'Top N',
       topNTip: `並非所有相似度得分高於“相似度閾值”的塊都會被提供給法學碩士。LLM 只能看到這些“Top N”塊。`,
       variable: '變量',
