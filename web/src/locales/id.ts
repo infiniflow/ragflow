@@ -160,7 +160,7 @@ export default {
       topKTip: `Digunakan bersama dengan Rerank model, pengaturan ini menentukan jumlah potongan teks yang akan dikirim ke model reranking yang ditentukan.`,
       delimiter: `Pemisah untuk segmentasi teks`,
       html4excel: 'Excel ke HTML',
-      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel97~2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/enable_excel2html.`,
+      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/enable_excel2html.`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -211,7 +211,7 @@ export default {
           Kami mengasumsikan manual memiliki struktur bagian hierarkis. Kami menggunakan judul bagian terendah sebagai poros untuk memotong dokumen.
           Jadi, gambar dan tabel dalam bagian yang sama tidak akan dipisahkan, dan ukuran potongan mungkin besar.
           </p>`,
-      naive: `<p>Format file yang didukung adalah <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      naive: `<p>Format file yang didukung adalah <b>DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
           <p>Metode ini menerapkan cara naif untuk memotong file: </p>
           <p>
           <li>Teks berturut-turut akan dipotong menjadi potongan menggunakan model deteksi visual.</li>
