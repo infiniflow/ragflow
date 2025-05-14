@@ -26,7 +26,7 @@ Once a connection is established, an MCP server communicates with its client in 
 2. Have your RAGFlow API key ready. See [Acquire a RAGFlow API key](./acquire_ragflow_api_key.md).
 
 :::tip INFO
-If you wish to try out our MCP server without upgrading RAGFlow, community contributor **yiminghub2024** 👏 shares their recommended steps [here](#launch-an-mcp-server-without-upgrading-ragflow).
+If you wish to try out our MCP server without upgrading RAGFlow, community contributor [yiminghub2024](https://github.com/yiminghub2024) 👏 shares their recommended steps [here](#launch-an-mcp-server-without-upgrading-ragflow).
 :::
 
 ## Launch an MCP server 
@@ -94,7 +94,7 @@ Where:
   - `host`: host mode.
 - `mcp-host-api_key`: Required in self-host mode to authenticate the MCP server with the RAGFlow server.
 
-#### 2. Launch a RAGFlow server alongside an MCP server
+#### 2. Launch a RAGFlow server with an MCP server
 
 Run `docker compose -f docker-compose.yml` to launch the RAGFlow server together with the MCP server.
 
@@ -159,9 +159,9 @@ This section is contributed by our community contributor [yiminghub2024](https:/
    i. Copy the [mcp/](https://github.com/infiniflow/ragflow/tree/main/mcp) directory to your local working directory.  
    ii. Copy [docker/docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml) locally.  
    iii. Copy [docker/entrypoint.sh](https://github.com/infiniflow/ragflow/blob/main/docker/entrypoint.sh) locally.  
-   iv. Install required dependencies using `uv`:  
+   iv. Install the required dependencies using `uv`:  
        - Run `uv add mcp` or
-       - Copy pyproject.toml and run `uv sync --python 3.10 --all-extras`.
+       - Copy [pyproject.toml](https://github.com/infiniflow/ragflow/blob/main/pyproject.toml) locally and run `uv sync --python 3.10 --all-extras`.
 2. Edit **docker-compose.yml** to enable MCP (disabled by default).
 3. Launch the MCP server:
 
