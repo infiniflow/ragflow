@@ -23,7 +23,7 @@ RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 
 # Get storage type and document engine from system environment variables
 STORAGE_IMPL_TYPE = os.getenv('STORAGE_IMPL', 'MINIO')
-DOC_ENGINE = os.getenv('DOC_ENGINE', 'baiduvdb')
+DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 
 ES = {}
 INFINITY = {}
