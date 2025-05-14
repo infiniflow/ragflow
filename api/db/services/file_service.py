@@ -432,7 +432,7 @@ class FileService(CommonService):
                 MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
                 if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
                     raise RuntimeError("Exceed the maximum file number of a free user!")
-                if len(file.filename) >= 128:
+                if len(file.filename.encode("utf-8")) >= 128:
                     raise RuntimeError("Exceed the maximum length of file name!")
 
                 filename = duplicate_name(
