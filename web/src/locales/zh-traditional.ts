@@ -1158,6 +1158,7 @@ export default {
       promptMessage: '提示詞是必填項',
       promptTip:
         '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
+      runningHintText: '正在運行...🕞',
     },
     footer: {
       profile: '“保留所有權利 @ react”',

@@ -106,7 +106,8 @@ export default {
       disabled: 'Tắt',
       action: 'Hành động',
       parsingStatus: 'Trạng thái phân tích cú pháp',
-      parsingStatusTip: 'Thời gian xử lý tài liệu thay đổi tùy theo nhiều yếu tố. Bật các tính năng như Knowledge Graph, RAPTOR, Trích xuất Câu hỏi Tự động hoặc Trích xuất Từ khóa Tự động sẽ làm tăng đáng kể thời gian xử lý. Nếu thanh tiến trình bị dừng, vui lòng tham khảo hai câu hỏi thường gặp sau: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
+      parsingStatusTip:
+        'Thời gian xử lý tài liệu thay đổi tùy theo nhiều yếu tố. Bật các tính năng như Knowledge Graph, RAPTOR, Trích xuất Câu hỏi Tự động hoặc Trích xuất Từ khóa Tự động sẽ làm tăng đáng kể thời gian xử lý. Nếu thanh tiến trình bị dừng, vui lòng tham khảo hai câu hỏi thường gặp sau: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Bắt đầu xử lý lúc',
       processDuration: 'Thời gian xử lý',
       progressMsg: 'Thông báo tiến trình',
@@ -307,7 +308,8 @@ export default {
       maxTokenTip: 'Số lượng token tối đa cho mỗi đoạn tóm tắt được tạo ra.',
       maxTokenMessage: 'Số token tối đa là bắt buộc',
       threshold: 'Ngưỡng',
-      thresholdTip: 'Trong RAPTOR, các đoạn văn bản được nhóm lại dựa trên sự tương đồng ngữ nghĩa của chúng. Tham số Ngưỡng thiết lập mức độ tương đồng tối thiểu cần thiết để các đoạn được nhóm lại với nhau. Ngưỡng càng cao thì mỗi nhóm sẽ có ít đoạn hơn, còn ngưỡng càng thấp thì mỗi nhóm sẽ có nhiều đoạn hơn.',
+      thresholdTip:
+        'Trong RAPTOR, các đoạn văn bản được nhóm lại dựa trên sự tương đồng ngữ nghĩa của chúng. Tham số Ngưỡng thiết lập mức độ tương đồng tối thiểu cần thiết để các đoạn được nhóm lại với nhau. Ngưỡng càng cao thì mỗi nhóm sẽ có ít đoạn hơn, còn ngưỡng càng thấp thì mỗi nhóm sẽ có nhiều đoạn hơn.',
       thresholdMessage: 'Ngưỡng là bắt buộc',
       maxCluster: 'Cụm tối đa',
       maxClusterTip: 'Số lượng cụm tối đa được tạo ra.',
@@ -397,7 +399,8 @@ export default {
       setAnOpenerTip: 'Bạn muốn chào đón khách hàng của mình như thế nào?',
       knowledgeBases: 'Cơ sở kiến thức',
       knowledgeBasesMessage: 'Vui lòng chọn',
-      knowledgeBasesTip: 'Chọn các cơ sở kiến thức liên kết. Cơ sở tri thức trống sẽ không xuất hiện trong danh sách thả xuống.',
+      knowledgeBasesTip:
+        'Chọn các cơ sở kiến thức liên kết. Cơ sở tri thức trống sẽ không xuất hiện trong danh sách thả xuống.',
       system: 'Hệ thống',
       systemInitialValue: `Bạn là một trợ lý thông minh. Vui lòng tóm tắt nội dung của cơ sở kiến thức để trả lời câu hỏi. Vui lòng liệt kê dữ liệu trong cơ sở kiến thức và trả lời chi tiết. Khi tất cả nội dung cơ sở kiến thức không liên quan đến câu hỏi, câu trả lời của bạn phải bao gồm câu "Câu trả lời bạn đang tìm kiếm không được tìm thấy trong cơ sở kiến thức!" Câu trả lời cần xem xét lịch sử trò chuyện.
       Đây là cơ sở kiến thức:
@@ -1153,6 +1156,7 @@ export default {
       promptTip:
         'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
       promptMessage: 'Nhắc nhở là bắt buộc',
+      runningHintText: 'đang chạy...🕞',
     },
     footer: {
       profile: 'All rights reserved @ React',
