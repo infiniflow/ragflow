@@ -95,7 +95,8 @@ export default {
       disabled: 'Deshabilitar',
       action: 'Acción',
       parsingStatus: 'Estado de análisis',
-      parsingStatusTip: 'El tiempo de procesamiento de documentos varía según varios factores. Activar funciones como Knowledge Graph, RAPTOR, extracción automática de preguntas o de palabras clave aumentará significativamente el tiempo de procesamiento. Si la barra de progreso se detiene, consulte estas dos preguntas frecuentes: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
+      parsingStatusTip:
+        'El tiempo de procesamiento de documentos varía según varios factores. Activar funciones como Knowledge Graph, RAPTOR, extracción automática de preguntas o de palabras clave aumentará significativamente el tiempo de procesamiento. Si la barra de progreso se detiene, consulte estas dos preguntas frecuentes: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Proceso iniciado en',
       processDuration: 'Duración del proceso',
       progressMsg: 'Mensaje de progreso',
@@ -185,7 +186,8 @@ export default {
       setAnOpenerTip: '¿Cómo quieres dar la bienvenida a tus clientes?',
       knowledgeBases: 'Bases de conocimiento',
       knowledgeBasesMessage: 'Por favor selecciona',
-      knowledgeBasesTip: 'Selecciona las bases de conocimiento asociadas. Una base de conocimientos vacía no aparecerá en la lista desplegable.',
+      knowledgeBasesTip:
+        'Selecciona las bases de conocimiento asociadas. Una base de conocimientos vacía no aparecerá en la lista desplegable.',
       system: 'prompt del sistema',
       systemInitialValue: `Eres un asistente inteligente. Por favor resume el contenido de la base de conocimiento para responder la pregunta. Enumera los datos en la base de conocimiento y responde con detalle. Cuando todo el contenido de la base de conocimiento sea irrelevante para la pregunta, tu respuesta debe incluir la frase "¡La respuesta que buscas no se encuentra en la base de conocimiento!". Las respuestas necesitan considerar el historial de chat.
         Aquí está la base de conocimiento:
@@ -854,6 +856,7 @@ export default {
       note: 'Nota',
       noteDescription: 'Nota',
       notePlaceholder: 'Por favor ingresa una nota',
+      runningHintText: 'está corriendo...🕞',
     },
     footer: {
       profile: 'Todos los derechos reservados @ React',
