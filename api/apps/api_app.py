@@ -861,7 +861,7 @@ def retrieval():
     doc_ids = req.get("doc_ids", [])
     question = req.get("question")
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size", 30))
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))

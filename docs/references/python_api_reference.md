@@ -1754,4 +1754,133 @@ for agent in rag_object.list_agents():
 
 ---
 
+### Create agent
 
+```python
+RAGFlow.create_agent(
+    title: str,
+    dsl: dict,
+    description: str | None = None
+) -> None
+```
+
+Create an agent.
+
+#### Parameters
+
+##### title: `str`
+
+Specifies the title of the agent.
+
+##### dsl: `dict`
+
+Specifies the canvas DSL of the agent.
+
+##### description: `str`
+
+The description of the agent. Defaults to `None`.
+
+#### Returns
+
+- Success: Nothing.
+- Failure: `Exception`.
+
+#### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object.create_agent(
+  title="Test Agent",
+  description="A test agent",
+  dsl={
+    # ... canvas DSL here ...
+  }
+)
+```
+
+---
+
+### Update agent
+
+```python
+RAGFlow.update_agent(
+    agent_id: str,
+    title: str | None = None,
+    description: str | None = None,
+    dsl: dict | None = None
+) -> None
+```
+
+Update an agent.
+
+#### Parameters
+
+##### agent_id: `str`
+
+Specifies the id of the agent to be updated.
+
+##### title: `str`
+
+Specifies the new title of the agent. `None` if you do not want to update this.
+
+##### dsl: `dict`
+
+Specifies the new canvas DSL of the agent. `None` if you do not want to update this.
+
+##### description: `str`
+
+The new description of the agent. `None` if you do not want to update this.
+
+#### Returns
+
+- Success: Nothing.
+- Failure: `Exception`.
+
+#### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object.update_agent(
+  agent_id="58af890a2a8911f0a71a11b922ed82d6",
+  title="Test Agent",
+  description="A test agent",
+  dsl={
+    # ... canvas DSL here ...
+  }
+)
+```
+
+---
+
+### Delete agent
+
+```python
+RAGFlow.delete_agent(
+    agent_id: str
+) -> None
+```
+
+Delete an agent.
+
+#### Parameters
+
+##### agent_id: `str`
+
+Specifies the id of the agent to be deleted.
+
+#### Returns
+
+- Success: Nothing.
+- Failure: `Exception`.
+
+#### Examples
+
+```python
+from ragflow_sdk import RAGFlow
+rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object.delete_agent("58af890a2a8911f0a71a11b922ed82d6")
+```
+
+---

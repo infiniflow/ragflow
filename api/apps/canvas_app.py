@@ -26,7 +26,6 @@ from api.utils.api_utils import get_json_result, server_error_response, validate
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken
-import logging
 import time
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
@@ -89,7 +88,6 @@ def save():
 @login_required
 def get(canvas_id):
     e, c = UserCanvasService.get_by_tenant_id(canvas_id)
-    logging.info(f"get canvas_id: {canvas_id} c: {c}")
     if not e:
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c)
