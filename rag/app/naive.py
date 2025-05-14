@@ -387,8 +387,6 @@ class Markdown(MarkdownParser):
                         sections.append((combined, ""))
                 else:
                     sections.append((sec, ""))
-
-
         for table in tables:
             html_table = markdown(table, extensions=['markdown.extensions.tables'])
             table_tokens = num_tokens_from_string(html_table)
