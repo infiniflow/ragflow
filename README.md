@@ -327,7 +327,15 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Launch backend service:
+5. If your operating system does not have jemalloc, please install it as follows,
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   ```
+   
+6. Launch backend service:
 
    ```bash
    source .venv/bin/activate
@@ -335,12 +343,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-6. Install frontend dependencies:
+
+7. Install frontend dependencies:
    ```bash
    cd web
    npm install
    ```
-7. Launch frontend service:
+8. Launch frontend service:
 
    ```bash
    npm run dev
