@@ -334,7 +334,8 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    # centos
    sudo yum install jemalloc
    ```
-   Launch backend service:
+   
+6. Launch backend service:
 
    ```bash
    source .venv/bin/activate
