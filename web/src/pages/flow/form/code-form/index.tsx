@@ -3,8 +3,9 @@ import { Form, Select } from 'antd';
 import { IOperatorForm } from '../../interface';
 import { DynamicInputVariable } from './dynamic-input-variable';
 
-import { ProgrammingLanguage } from '@/constants/agent';
+import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 import { ICodeForm } from '@/interfaces/database/flow';
+import { useEffect } from 'react';
 import styles from './index.less';
 
 loader.config({ paths: { vs: '/vs' } });
@@ -16,6 +17,17 @@ const options = [
 
 const CodeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const formData = node?.data.form as ICodeForm;
+
+  useEffect(() => {
+    setTimeout(() => {
+      // TODO: Direct operation zustand is more elegant
+      form?.setFieldValue(
+        'script',
+        CodeTemplateStrMap[formData.lang as ProgrammingLanguage],
+      );
+    }, 0);
+  }, [form, formData.lang]);
+
   return (
     <Form
       name="basic"

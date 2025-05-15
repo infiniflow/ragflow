@@ -27,6 +27,7 @@ import { ReactComponent as TemplateIcon } from '@/assets/svg/template.svg';
 import { ReactComponent as TuShareIcon } from '@/assets/svg/tushare.svg';
 import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
 import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
+import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 
 // 邮件功能
 
@@ -642,10 +643,15 @@ export const initialIterationStartValues = {};
 
 export const initialCodeValues = {
   lang: 'python',
-  script: `def main(arg1: str, arg2: str) -> dict:
-    return {
-        "result": arg1 + arg2,
-    }`,
+  script: CodeTemplateStrMap[ProgrammingLanguage.Python],
+  arguments: [
+    {
+      name: 'arg1',
+    },
+    {
+      name: 'arg2',
+    },
+  ],
 };
 
 export const CategorizeAnchorPointPositions = [
