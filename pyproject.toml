@@ -141,7 +141,7 @@ full = [
 ]
 
 [tool.setuptools]
-packages = ['rag', 'api', 'sdk', 'helm','agent', 'deepdoc', 'graphrag', 'flask_session', 'intergrations', 'agentic_reasoning']
+packages = ['agent', 'agentic_reasoning', 'api', 'deepdoc', 'graphrag', 'intergrations.chatgpt-on-wechat.plugins', 'mcp.server', 'rag', 'sdk.python.ragflow_sdk']
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
