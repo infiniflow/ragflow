@@ -1,8 +1,7 @@
 import { useFormContext, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
 
 import { DocumentParserType } from '@/constants/knowledge';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { AudioConfiguration } from './configuration/audio';
 import { BookConfiguration } from './configuration/book';
 import { EmailConfiguration } from './configuration/email';
@@ -18,7 +17,6 @@ import { QAConfiguration } from './configuration/qa';
 import { ResumeConfiguration } from './configuration/resume';
 import { TableConfiguration } from './configuration/table';
 import { TagConfiguration } from './configuration/tag';
-import { useFetchKnowledgeConfigurationOnMount } from './hooks';
 
 const ConfigurationComponentMap = {
   [DocumentParserType.Naive]: NaiveConfiguration,
@@ -44,14 +42,8 @@ function EmptyComponent() {
 
 export function ChunkMethodForm() {
   const form = useFormContext();
-  const { t } = useTranslation();
-  const [finalParserId, setFinalParserId] = useState<DocumentParserType>(
-    DocumentParserType.Naive,
-  );
 
-  const knowledgeDetails = useFetchKnowledgeConfigurationOnMount(form);
-
-  const parserId: DocumentParserType = useWatch({
+  const finalParserId: DocumentParserType = useWatch({
     control: form.control,
     name: 'parser_id',
   });
@@ -62,16 +54,8 @@ export function ChunkMethodForm() {
       : EmptyComponent;
   }, [finalParserId]);
 
-  //   useEffect(() => {
-  //     setFinalParserId(parserId);
-  //   }, [parserId]);
-
-  //   useEffect(() => {
-  //     setFinalParserId(knowledgeDetails.parser_id as DocumentParserType);
-  //   }, [knowledgeDetails.parser_id]);
-
   return (
-    <section>
+    <section className="overflow-auto max-h-[76vh]">
       <ConfigurationComponent></ConfigurationComponent>
     </section>
   );

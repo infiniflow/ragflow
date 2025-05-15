@@ -17,7 +17,7 @@ export function GeneralForm() {
   const { t } = useTranslation();
 
   return (
-    <FormContainer className="space-y-2">
+    <FormContainer className="space-y-2 p-10">
       <FormField
         control={form.control}
         name="name"

@@ -15,9 +15,11 @@ import {
 import { useIsFetching } from '@tanstack/react-query';
 import { Form, UploadFile } from 'antd';
 import { FormInstance } from 'antd/lib';
-import pick from 'lodash/pick';
+import { pick } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
+import { z } from 'zod';
+import { formSchema } from './form-schema';
 
 export const useSubmitKnowledgeConfiguration = (form: FormInstance) => {
   const { saveKnowledgeConfiguration, loading } = useUpdateKnowledge();
@@ -59,13 +61,17 @@ export function useHasParsedDocument() {
   return knowledgeDetails.chunk_num > 0;
 }
 
-export const useFetchKnowledgeConfigurationOnMount = (form: UseFormReturn) => {
+export const useFetchKnowledgeConfigurationOnMount = (
+  form: UseFormReturn<z.infer<typeof formSchema>, any, undefined>,
+) => {
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
   useEffect(() => {
     const fileList: UploadFile[] = getUploadFileListFromBase64(
       knowledgeDetails.avatar,
     );
+
+    console.log('🚀 ~ useEffect ~ fileList:', fileList);
     form.reset({
       ...pick(knowledgeDetails, [
         'description',
