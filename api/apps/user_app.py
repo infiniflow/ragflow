@@ -233,6 +233,8 @@ def oauth_callback(channel):
 @manager.route("/github_callback", methods=["GET"])  # noqa: F821
 def github_callback():
     """
+    **Deprecated**, Use `/oauth/callback/<channel>` instead.
+
     GitHub OAuth callback endpoint.
     ---
     tags:
