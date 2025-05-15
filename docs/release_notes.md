@@ -89,7 +89,7 @@ Released on March 11, 2025.
 - Improves English tokenization quality.
 - Improves the table extraction logic in Markdown document parsing.
 - Updates SiliconFlow's model list.
-- Supports parsing XLS files (Excel97~2003) with improved corresponding error handling.
+- Supports parsing XLS files (Excel 97-2003) with improved corresponding error handling.
 - Supports Huggingface rerank models.
 - Enables relative time expressions ("now", "yesterday", "last week", "next year", and more) in chat assistant and the **Rewrite** agent component.
 
