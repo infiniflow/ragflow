@@ -83,7 +83,11 @@ class Categorize(Generate, ABC):
 
     def _run(self, history, **kwargs):
         input = self.get_input()
-        input = " - ".join(input["content"]) if "content" in input else ""
+        if hasattr(input, "to_dict") and "content" in input:
+            input = " - ".join(map(str, query["content"].dropna()))
+        else:
+            input = str(query)
+        
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         self._canvas.set_component_infor(self._id, {"prompt":self._param.get_prompt(input),"messages":  [{"role": "user", "content": "\nCategory: "}],"conf": self._param.gen_conf()})
 
