@@ -169,7 +169,7 @@ export default {
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
       html4excel: 'Excel to HTML',
-      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel97~2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows.`,
+      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows.`,
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the chat model specified in 'System model settings'. You can check or update the added keywords for a chunk from the chunk list. `,
       autoQuestions: 'Auto-question',
@@ -250,7 +250,7 @@ export default {
       manual: `<p>Only <b>PDF</b> is supported.</p><p>
       We assume that the manual has a hierarchical section structure, using the lowest section titles as basic unit for chunking documents. Therefore, figures and tables in the same section will not be separated, which may result in larger chunk sizes.
       </p>`,
-      naive: `<p>Supported file formats are <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      naive: `<p>Supported file formats are <b>DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
       <p>This method chunks files using a 'naive' method: </p>
       <p>
       <li>Use vision detection model to split the texts into smaller segments.</li>
@@ -267,7 +267,7 @@ export default {
       This chunking method supports <b>XLSX</b> and <b>CSV/TXT</b> file formats.
     </p>
     <li>
-      If a file is in <b>XLSX</b> or <b>XLS (Excel97~2003)</b> format, it should contain two columns without headers: one for questions and the other for answers, with the question column preceding the answer column. Multiple sheets are
+      If a file is in <b>XLSX</b> or <b>XLS (Excel 97-2003)</b> format, it should contain two columns without headers: one for questions and the other for answers, with the question column preceding the answer column. Multiple sheets are
       acceptable, provided the columns are properly structured.
     </li>
     <li>
@@ -306,7 +306,7 @@ export default {
     If the text extracted by the OCR model is deemed insufficient, a specified visual LLM will be used to provide a description of the image.
     </p>`,
       one: `
-    <p>Supported file formats are <b>DOCX, XLSX, XLS (Excel97~2003), PDF, TXT</b>.
+    <p>Supported file formats are <b>DOCX, XLSX, XLS (Excel 97-2003), PDF, TXT</b>.
     </p><p>
     This method treats each document in its entirety as a chunk.
     </p><p>
