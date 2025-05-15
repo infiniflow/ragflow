@@ -200,17 +200,17 @@ dataset = rag_object.create_dataset(name="kb_1")
 ### Delete datasets
 
 ```python
-RAGFlow.delete_datasets(ids: list[str] = None)
+RAGFlow.delete_datasets(ids: list[str] | None = None)
 ```
 
 Deletes datasets by ID.
 
 #### Parameters
 
-##### ids: `list[str]`, *Required*
+##### ids: `list[str]` or `None`, *Required*
 
-Specifies datasets to delete:
-  - If `null`, all datasets will be deleted.
+The IDs of the datasets to delete. Defaults to `None`.
+  - If `None`, all datasets will be deleted.
   - If an array of IDs, only the specified datasets will be deleted.
   - If an empty array, no datasets will be deleted.
 
