@@ -22,6 +22,7 @@ import rag.utils
 import rag.utils.es_conn
 import rag.utils.infinity_conn
 import rag.utils.opensearch_coon
+import rag.utils.baidu_vdb_conn
 from api.constants import RAG_FLOW_SERVICE_NAME
 from api.utils import decrypt_database_config, get_base_config
 from api.utils.file_utils import get_project_base_directory
@@ -140,10 +141,12 @@ def init_settings():
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
         docStoreConn = rag.utils.opensearch_coon.OSConnection()
+    elif lower_case_doc_engine == "baiduvdb":
+        docStoreConn = rag.utils.baidu_vdb_conn.BaiduVDBConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
-    retrievaler = search.Dealer(docStoreConn)
+    retrievaler = search.Dealer(dataStore = docStoreConn, docEngine=DOC_ENGINE)
     kg_retrievaler = kg_search.KGSearch(docStoreConn)
 
 
