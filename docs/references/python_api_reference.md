@@ -209,7 +209,10 @@ Deletes datasets by ID.
 
 ##### ids: `list[str]`, *Required*
 
-The IDs of the datasets to delete. Defaults to `None`. If it is not specified, all datasets will be deleted.
+Specifies datasets to delete:
+  - If `null`, all datasets will be deleted.
+  - If an array of IDs, only the specified datasets will be deleted.
+  - If an empty array, no datasets will be deleted.
 
 #### Returns
 
@@ -219,7 +222,7 @@ The IDs of the datasets to delete. Defaults to `None`. If it is not specified, a
 #### Examples
 
 ```python
-rag_object.delete_datasets(ids=["id_1","id_2"])
+rag_object.delete_datasets(ids=["d94a8dc02c9711f0930f7fbc369eab6d","e94a8dc02c9711f0930f7fbc369eab6e"])
 ```
 
 ---

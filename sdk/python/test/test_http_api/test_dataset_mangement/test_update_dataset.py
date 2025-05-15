@@ -77,6 +77,13 @@ class TestRquest:
         assert res["code"] == 101, res
         assert res["message"] == "No properties were modified", res
 
+    @pytest.mark.p3
+    def test_payload_unset(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
+        res = update_dataset(get_http_api_auth, dataset_id, None)
+        assert res["code"] == 101, res
+        assert res["message"] == "Malformed JSON syntax: Missing commas/brackets or invalid encoding", res
+
 
 class TestCapability:
     @pytest.mark.p3

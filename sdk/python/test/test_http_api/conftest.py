@@ -76,7 +76,7 @@ def condition(_auth, _dataset_id):
 @pytest.fixture(scope="function")
 def clear_datasets(request, get_http_api_auth):
     def cleanup():
-        delete_datasets(get_http_api_auth)
+        delete_datasets(get_http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
@@ -132,7 +132,7 @@ def ragflow_tmp_dir(request, tmp_path_factory):
 @pytest.fixture(scope="class")
 def add_dataset(request, get_http_api_auth):
     def cleanup():
-        delete_datasets(get_http_api_auth)
+        delete_datasets(get_http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
@@ -143,12 +143,11 @@ def add_dataset(request, get_http_api_auth):
 @pytest.fixture(scope="function")
 def add_dataset_func(request, get_http_api_auth):
     def cleanup():
-        delete_datasets(get_http_api_auth)
+        delete_datasets(get_http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
-    dataset_ids = batch_create_datasets(get_http_api_auth, 1)
-    return dataset_ids[0]
+    return batch_create_datasets(get_http_api_auth, 1)[0]
 
 
 @pytest.fixture(scope="class")
