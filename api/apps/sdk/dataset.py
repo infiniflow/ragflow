@@ -196,7 +196,7 @@ def delete(tenant_id):
               items:
                 type: string
               description: |
-                Specifies datasets to delete:
+                Specifies the datasets to delete:
                 - If `null`, all datasets will be deleted.
                 - If an array of IDs, only the specified datasets will be deleted.
                 - If an empty array, no datasets will be deleted.
