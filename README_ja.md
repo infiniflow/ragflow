@@ -280,7 +280,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    `/etc/hosts` に以下の行を追加して、**conf/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. HuggingFace にアクセスできない場合は、`HF_ENDPOINT` 環境変数を設定してミラーサイトを使用してください:

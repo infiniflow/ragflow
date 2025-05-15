@@ -318,7 +318,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/.env** to `127.0.0.1`:
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:

@@ -292,7 +292,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    在 `/etc/hosts` 中加入以下程式碼，將 **conf/service_conf.yaml** 檔案中的所有 host 位址都解析為 `127.0.0.1`：
 
    ```
-   127.0.0.1 es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. 如果無法存取 HuggingFace，可以把環境變數 `HF_ENDPOINT` 設為對應的鏡像網站：
