@@ -17,8 +17,15 @@ An AI search is a single-turn AI conversation using a predefined retrieval strat
 When debugging your chat assistant, you can use AI search as a reference to verify your model settings and retrieval strategy.
 :::
 
+## Prerequisites
 
-:::info NOTE
+- Ensure that you have configured the system's default models on the **Model providers** page.
+- Ensure that the intended knowledge bases are properly configured and the intended documents have finished file parsing.
+
+
+## Frequently asked questions
+
+### key difference between an AI search and an AI chat?
+
 A chat is a multi-turn AI conversation where you can define your retrieval strategy (a weighted reranking score can be used to replace the weighted vector similarity in a hybrid search) and choose your chat model. In an AI chat, you can configure advanced RAG strategies, such as knowledge graphs, auto-keyword, and auto-question, for your specific case. Retrieved chunks are not displayed along with the answer.
-:::
 
