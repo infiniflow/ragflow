@@ -32,8 +32,16 @@ oidc_config = {
     "redirect_uri": "https://your-app.com/v1/user/oauth/callback/<channel>"
 }
 
+# Github OAuth configuration
+github_config = {
+    "type": "github"
+    "client_id": "your_client_id",
+    "client_secret": "your_client_secret",
+    "redirect_uri": "https://your-app.com/v1/user/oauth/callback/<channel>"
+}
+
 # Get client instance
-client = get_auth_client(oauth_config)  # or oidc_config
+client = get_auth_client(oauth_config)
 ```
 
 ### Authentication Flow

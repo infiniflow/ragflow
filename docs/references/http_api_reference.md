@@ -3413,3 +3413,190 @@ Failure:
 
 ---
 
+### Create agent
+
+**POST** `/api/v1/agents`
+
+Create an agent.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/agents`
+- Headers:
+  - `'Content-Type: application/json`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"title"`: `string`
+  - `"description"`: `string`
+  - `"dsl"`: `object`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+         "title": "Test Agent",
+         "description": "A test agent",
+         "dsl": {
+           // ... Canvas DSL here ...
+         }
+     }'
+```
+
+##### Request parameters
+
+- `title`: (*Body parameter*), `string`, *Required*  
+  The title of the agent.
+- `description`: (*Body parameter*), `string`  
+  The description of the agent. Defaults to `None`.
+- `dsl`: (*Body parameter*), `object`, *Required*  
+  The canvas DSL object of the agent.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true,
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Agent with title test already exists."
+}
+```
+
+---
+
+### Update agent
+
+**PUT** `/api/v1/agents/{agent_id}`
+
+Update an agent by id.
+
+#### Request
+
+- Method: PUT
+- URL: `/api/v1/agents/{agent_id}`
+- Headers:
+  - `'Content-Type: application/json`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"title"`: `string`
+  - `"description"`: `string`
+  - `"dsl"`: `object`
+
+##### Request example
+
+```bash
+curl --request PUT \
+     --url http://{address}/api/v1/agents/58af890a2a8911f0a71a11b922ed82d6 \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+         "title": "Test Agent",
+         "description": "A test agent",
+         "dsl": {
+           // ... Canvas DSL here ...
+         }
+     }'
+```
+
+##### Request parameters
+
+- `agent_id`: (*Path parameter*), `string`  
+  The id of the agent to be updated.
+- `title`: (*Body parameter*), `string`  
+  The title of the agent.
+- `description`: (*Body parameter*), `string`  
+  The description of the agent.
+- `dsl`: (*Body parameter*), `object`  
+  The canvas DSL object of the agent.
+
+Only specify the parameter you want to change in the request body. If a parameter does not exist or is `None`, it won't be updated.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true,
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 103,
+    "message": "Only owner of canvas authorized for this operation."
+}
+```
+
+---
+
+### Delete agent
+
+**DELETE** `/api/v1/agents/{agent_id}`
+
+Delete an agent by id.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/agents/{agent_id}`
+- Headers:
+  - `'Content-Type: application/json`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/agents/58af890a2a8911f0a71a11b922ed82d6 \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{}'
+```
+
+##### Request parameters
+
+- `agent_id`: (*Path parameter*), `string`  
+  The id of the agent to be deleted.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true,
+    "message": "success"
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 103,
+    "message": "Only owner of canvas authorized for this operation."
+}
+```
+
+---

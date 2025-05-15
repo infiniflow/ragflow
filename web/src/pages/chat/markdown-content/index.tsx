@@ -20,7 +20,11 @@ import { useTranslation } from 'react-i18next';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
-import { preprocessLaTeX, replaceThinkToSection } from '@/utils/chat';
+import {
+  preprocessLaTeX,
+  replaceThinkToSection,
+  showImage,
+} from '@/utils/chat';
 import { replaceTextByOldReg } from '../utils';
 
 import classNames from 'classnames';
@@ -108,6 +112,12 @@ const MarkdownContent = ({
       const fileThumbnail = documentId ? fileThumbnails[documentId] : '';
       const fileExtension = documentId ? getExtension(document?.doc_name) : '';
       const imageId = chunkItem?.image_id;
+      const docType = chunkItem?.doc_type;
+
+      return showImage(docType) ? (
+        <Image id={imageId} className={styles.referenceChunkImage}></Image>
+      ) : null;
+
       return (
         <div key={chunkItem?.id} className="flex gap-2">
           {imageId && (
@@ -172,6 +182,7 @@ const MarkdownContent = ({
     (text: string) => {
       let replacedText = reactStringReplace(text, reg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
+        return getPopoverContent(chunkIndex);
         return (
           <Popover content={getPopoverContent(chunkIndex)} key={i}>
             <InfoCircleOutlined className={styles.referenceIcon} />

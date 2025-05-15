@@ -41,17 +41,17 @@ RAGFlow offers multiple chunking template to facilitate chunking files of differ
 
 | **Template** | Description                                                           | File format                                                                                   |
 |--------------|-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
-| General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
-| Q&A          |                                                                       | XLSX, XLS (Excel97~2003), CSV/TXT                                                             |
+| General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
+| Q&A          |                                                                       | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
 | Resume       | Enterprise edition only. You can also try it out on demo.ragflow.io.  | DOCX, PDF, TXT                                                                                |
 | Manual       |                                                                       | PDF                                                                                           |
-| Table        |                                                                       | XLSX, XLS (Excel97~2003), CSV/TXT                                                             |
+| Table        |                                                                       | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
 | Paper        |                                                                       | PDF                                                                                           |
 | Book         |                                                                       | DOCX, PDF, TXT                                                                                |
 | Laws         |                                                                       | DOCX, PDF, TXT                                                                                |
 | Presentation |                                                                       | PDF, PPTX                                                                                     |
 | Picture      |                                                                       | JPEG, JPG, PNG, TIF, GIF                                                                      |
-| One          | Each document is chunked in its entirety (as one).                    | DOCX, XLSX, XLS (Excel97~2003), PDF, TXT                                                      |
+| One          | Each document is chunked in its entirety (as one).                    | DOCX, XLSX, XLS (Excel 97-2003), PDF, TXT                                                      |
 | Tag          | The knowledge base functions as a tag set for the others.             | XLSX, CSV/TXT                                                                                 |
 
 You can also change a file's chunking method on the **Datasets** page.

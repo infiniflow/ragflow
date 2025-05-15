@@ -2,10 +2,8 @@
 name = "ragflow"
 version = "0.18.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
-authors = [
-    { name = "Zhichang Yu", email = "yuzhichang@gmail.com" }
-]
-license = { file = "LICENSE" }
+authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
@@ -141,7 +139,7 @@ full = [
 ]
 
 [tool.setuptools]
-packages = ['rag', 'api', 'sdk', 'helm','agent', 'deepdoc', 'graphrag', 'flask_session', 'intergrations', 'agentic_reasoning']
+packages = ['agent', 'agentic_reasoning', 'api', 'deepdoc', 'graphrag', 'intergrations.chatgpt-on-wechat.plugins', 'mcp.server', 'rag', 'sdk.python.ragflow_sdk']
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
