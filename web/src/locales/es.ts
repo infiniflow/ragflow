@@ -195,7 +195,7 @@ export default {
         Esa es la base de conocimiento.`,
       systemMessage: '¡Por favor ingresa!',
       systemTip:
-        'Instrucciones que necesitas que el LLM siga cuando responda preguntas, como el diseño de carácter, la longitud de la respuesta y el idioma de la respuesta.',
+        'Instrucciones que necesitas que el LLM siga cuando responda preguntas, como el diseño de carácter, la longitud de la respuesta y el idioma de la respuesta. Si su modelo tiene soporte nativo para razonamiento, puede agregar //no_thinking al prompt para detener el razonamiento.',
       topN: 'Top N',
       topNTip: `No todos los fragmentos cuya puntuación de similitud esté por encima del "umbral de similitud" serán enviados a los LLMs. Los LLMs solo pueden ver estos "Top N" fragmentos.`,
       variable: 'Variable',

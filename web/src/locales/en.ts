@@ -442,7 +442,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       The above is the knowledge base.`,
       systemMessage: 'Please input!',
       systemTip:
-        'Your prompts or instructions for the LLM, including but not limited to its role, the desired length, tone, and language of its answers.',
+        'Your prompts or instructions for the LLM, including but not limited to its role, the desired length, tone, and language of its answers. If your model has native support for reasoning, you can add //no_thinking add the prompt to stop reasoning.',
       topN: 'Top N',
       topNTip: `Not all chunks with similarity score above the 'similarity threshold' will be sent to the LLM. This selects 'Top N' chunks from the retrieved ones.`,
       variable: 'Variable',

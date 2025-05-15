@@ -301,30 +301,47 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5.啟動後端服務：
-『`bash
-source .venv/bin/activate
-export PYTHONPATH=$(pwd)
-bash docker/launch_backend_service.sh
+5. 如果你的操作系统没有 jemalloc，请按照如下方式安装：
 
-```
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   ```
 
-6. 安裝前端依賴：
-『`bash
-cd web
-npm install
-```
+6. 啟動後端服務：
 
-7. 啟動前端服務：
-   『`bash
+   ```bash
+   source .venv/bin/activate
+   export PYTHONPATH=$(pwd)
+   bash docker/launch_backend_service.sh
+   ```
+
+7. 安裝前端依賴：
+
+   ```bash
+   cd web
+   npm install
+   ```
+
+8. 啟動前端服務：
+
+   ```bash
    npm run dev
-
    ```
 
    以下界面說明系統已成功啟動：_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
    ```
+
+9. 開發完成後停止 RAGFlow 前端和後端服務：
+
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
+
 
 ## 📚 技術文檔
 

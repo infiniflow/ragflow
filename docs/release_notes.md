@@ -91,7 +91,7 @@ Released on March 11, 2025.
 - Updates SiliconFlow's model list.
 - Supports parsing XLS files (Excel97~2003) with improved corresponding error handling.
 - Supports Huggingface rerank models.
-- Enables relative time expressions ("now", "yesterday", "last week", "next year", and more) in the **Rewrite** agent component.
+- Enables relative time expressions ("now", "yesterday", "last week", "next year", and more) in chat assistant and the **Rewrite** agent component.
 
 ### Fixed issues
 

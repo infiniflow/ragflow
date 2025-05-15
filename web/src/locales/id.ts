@@ -367,7 +367,7 @@ export default {
           Di atas adalah basis pengetahuan.`,
       systemMessage: 'Silakan masukkan!',
       systemTip:
-        'Instruksi yang perlu diikuti LLM saat menjawab pertanyaan, seperti desain karakter, panjang jawaban, dan bahasa jawaban, dll.',
+        'Instruksi yang perlu diikuti LLM saat menjawab pertanyaan, seperti desain karakter, panjang jawaban, dan bahasa jawaban, dll. Jika model Anda memiliki dukungan bawaan untuk penalaran, Anda dapat menambahkan //no_thinking ke prompt untuk menghentikan penalaran.',
       topN: 'Top N',
       topNTip: `Tidak semua potongan yang skor kesamaannya di atas 'ambang kesamaan' akan diberikan ke LLM. LLM hanya dapat melihat potongan 'Top N' ini.`,
       variable: 'Variabel',

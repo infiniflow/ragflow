@@ -293,7 +293,16 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Jalankan aplikasi backend:
+5. Jika sistem operasi Anda tidak memiliki jemalloc, instal sebagai berikut:
+
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   ```
+
+6. Jalankan aplikasi backend:
 
    ```bash
    source .venv/bin/activate
@@ -301,12 +310,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-6. Instal dependensi frontend:
+7. Instal dependensi frontend:
+
    ```bash
    cd web
    npm install
    ```
-7. Jalankan aplikasi frontend:
+
+8. Jalankan aplikasi frontend:
 
    ```bash
    npm run dev
@@ -315,6 +326,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _Output berikut menandakan bahwa sistem berhasil diluncurkan:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+
+9. Hentikan layanan front-end dan back-end RAGFlow setelah pengembangan selesai:
+
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
+
 
 ## 📚 Dokumentasi
 
