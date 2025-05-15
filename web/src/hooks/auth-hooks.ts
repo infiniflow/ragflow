@@ -24,6 +24,7 @@ export const useOAuthCallback = () => {
     newQueryParameters,
     navigate,
     setSearchParams,
+    auth,
   ]);
 
   const authResult = useMemo(() => {

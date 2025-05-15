@@ -1,4 +1,5 @@
 import { Authorization, Token, UserInfo } from '@/constants/authorization';
+import { Modal } from 'antd';
 import { getSearchValue } from './common-util';
 const KeySet = [Authorization, Token, UserInfo];
 
@@ -63,24 +64,37 @@ function isURLSearchParamsEmpty(searchParams: URLSearchParams) {
   return firstItem.done; // If done is true, means there are no elements, i.e. searchParams is empty
 }
 
+const autoLogin = () => {
+  // If current page is not login page, store current page URL in sessionStorage
+  if (window.location.pathname !== '/login') {
+    sessionStorage.setItem('auto_login_callback', window.location.href);
+  }
+
+  Modal.warning({
+    title:
+      'Auto login functionality needs to be implemented in web/src/utils/authorization-util.ts. This method is called when LoginType.AUTO is used.',
+    onOk: () => {
+      window.location.href = '/login';
+    },
+  });
+  // Example oauth login:
+  // window.location.href = `v1/user/login/github`;
+};
+
 export enum LoginType {
   AUTO = 'auto',
   NORMAL = 'normal',
 }
 // Will not jump to the login page
-export function redirectToLogin(
-  { type, error }: { type?: LoginType; error?: string } = {
-    type: (LOGIN_TYPE as LoginType) || LoginType.NORMAL,
-  },
-) {
-  const searchParams = new URLSearchParams({});
+export function redirectToLogin({
+  type,
+  error,
+}: { type?: LoginType; error?: string } = {}) {
+  const loginType = type || LOGIN_TYPE || LoginType.NORMAL;
+  const searchParams = new URLSearchParams();
 
-  if (
-    type &&
-    type !== LoginType.NORMAL &&
-    Object.values(LoginType).includes(type)
-  ) {
-    searchParams.set('type', type);
+  if (loginType === LoginType.AUTO && !error) {
+    return autoLogin();
   }
 
   if (error) {

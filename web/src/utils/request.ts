@@ -2,7 +2,6 @@ import { Authorization } from '@/constants/authorization';
 import { ResponseType } from '@/interfaces/database/base';
 import i18n from '@/locales/config';
 import authorizationUtil, {
-  LoginType,
   getAuthorization,
   redirectToLogin,
 } from '@/utils/authorization-util';
@@ -118,7 +117,7 @@ request.interceptors.response.use(async (response: Response, options) => {
       duration: 3,
     });
     authorizationUtil.removeAll();
-    redirectToLogin({ type: LoginType.AUTO });
+    redirectToLogin();
   } else if (data?.code !== 0) {
     notification.error({
       message: `${i18n.t('message.hint')} : ${data?.code}`,

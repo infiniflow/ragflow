@@ -9,12 +9,11 @@ import {
 import { useSystemConfig } from '@/hooks/system-hooks';
 import { rsaPsw } from '@/utils';
 import { Button, Checkbox, Form, Input, message } from 'antd';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'umi';
 import RightPanel from './right-panel';
 
-import { LoginType } from '@/utils/authorization-util';
 import styles from './index.less';
 
 const Login = () => {
@@ -33,7 +32,6 @@ const Login = () => {
     loginWithChannelLoading;
   const { config } = useSystemConfig();
   const registerEnabled = config?.registerEnabled !== 0;
-  const [isAutoLogin, setIsAutoLogin] = useState(false);
 
   const { isLogin } = useAuth();
   useEffect(() => {
@@ -91,32 +89,17 @@ const Login = () => {
     // wrapperCol: { span: 8 },
   };
 
-  const autoLogin = useCallback(() => {
-    // setIsAutoLogin(true);
-    // window.location.href = `${OP_URL}/op/auth?${searchParams.toString()}`;
-  }, []);
-
   const [searchParams, setSearchParams] = useSearchParams();
-
-  const loginType = searchParams.get('type') || LoginType.NORMAL;
 
   useEffect(() => {
     const error = searchParams.get('error');
     if (error) {
       message.error(error);
-      setSearchParams({});
+      searchParams.delete('error');
+      setSearchParams(searchParams);
       return;
     }
-
-    if (loginType === LoginType.AUTO) {
-      autoLogin();
-      setSearchParams({});
-    }
-  }, [searchParams, setSearchParams, autoLogin, loginType]);
-
-  if (isAutoLogin || loginType === LoginType.AUTO) {
-    return <div></div>;
-  }
+  }, [searchParams, setSearchParams]);
 
   return (
     <div className={styles.loginPage}>

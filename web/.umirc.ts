@@ -6,6 +6,9 @@ import routes from './src/routes';
 
 export default defineConfig({
   title: appName,
+  define: {
+    LOGIN_TYPE: process.env.LOGIN_TYPE || 'normal',
+  },
   outputPath: 'dist',
   alias: { '@parent': path.resolve(__dirname, '../') },
   npmClient: 'npm',
