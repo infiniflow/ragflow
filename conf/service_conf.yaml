@@ -64,9 +64,12 @@ redis:
 #   base_url: ''
 # oauth:
 #   github:
+#     type: github
+#     icon: github
+#     display_name: "Github"
 #     client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
-#     secret_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-#     url: https://github.com/login/oauth/access_token
+#     client_secret: xxxxxxxxxxxxxxxxxxxxxxxx
+#     redirect_uri: https://your-app.com/v1/user/oauth/callback/github
 #   feishu:
 #     app_id: cli_xxxxxxxxxxxxxxxxxxx
 #     app_secret: xxxxxxxxxxxxxxxxxxxxxxxxxxxx
