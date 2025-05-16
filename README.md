@@ -139,6 +139,7 @@ releases! 🌟
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > If you have not installed Docker on your local machine (Windows, Mac, or Linux),
   > see [Install Docker Engine](https://docs.docker.com/engine/install/).
+  > The [gVisor](https://gvisor.dev/docs/user_guide/install/) is optional and only needed if you plan to use the code executor (sandbox) feature of RAGFlow.
 
 ### 🚀 Start up the server
 
@@ -318,7 +319,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/.env** to `127.0.0.1`:
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
