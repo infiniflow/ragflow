@@ -1,4 +1,13 @@
+---
+sidebar_position: 1
+slug: /contributing
+---
+
 # Contribution guidelines
+
+General guidelines for RAGFlow's community contributors.
+
+---
 
 This document offers guidelines and major considerations for submitting your contributions to RAGFlow.
 

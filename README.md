@@ -137,9 +137,10 @@ releases! 🌟
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-  > If you have not installed Docker on your local machine (Windows, Mac, or Linux),
-  > see [Install Docker Engine](https://docs.docker.com/engine/install/).
-  > The [gVisor](https://gvisor.dev/docs/user_guide/install/) is optional and only needed if you plan to use the code executor (sandbox) feature of RAGFlow.
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only if you intend to use the code executor (sandbox) feature of RAGFlow.
+
+> [!TIP]
+> If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
 ### 🚀 Start up the server
 
@@ -392,4 +393,4 @@ See the [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214
 ## 🙌 Contributing
 
 RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community.
-If you would like to be a part, review our [Contribution Guidelines](./CONTRIBUTING.md) first.
+If you would like to be a part, review our [Contribution Guidelines](https://ragflow.io/docs/dev/contributing) first.
