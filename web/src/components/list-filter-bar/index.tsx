@@ -19,7 +19,7 @@ interface IProps {
   leftPanel?: ReactNode;
 }
 
-const FilterButton = React.forwardRef<
+export const FilterButton = React.forwardRef<
   HTMLButtonElement,
   ButtonProps & { count?: number }
 >(({ count = 0, ...props }, ref) => {

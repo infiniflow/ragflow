@@ -5,6 +5,7 @@ import { DocumentParserType } from '@/constants/knowledge';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { TopTitle } from '../dataset-title';
 import CategoryPanel from './category-panel';
 import { ChunkMethodForm } from './chunk-method-form';
 import { formSchema } from './form-schema';
@@ -74,13 +75,11 @@ export default function DatasetSettings() {
 
   return (
     <section className="p-5 ">
-      <div className="pb-5">
-        <div className="text-2xl font-semibold">Configuration</div>
-        <p className="text-text-sub-title pt-2">
-          Update your knowledge base configuration here, particularly the chunk
-          method.
-        </p>
-      </div>
+      <TopTitle
+        title={'Configuration'}
+        description={`  Update your knowledge base configuration here, particularly the chunk
+          method.`}
+      ></TopTitle>
       <div className="flex gap-14">
         <Form {...form}>
           <form
