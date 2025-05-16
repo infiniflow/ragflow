@@ -362,4 +362,4 @@ Lihat [Roadmap RAGFlow 2025](https://github.com/infiniflow/ragflow/issues/4214)
 ## 🙌 Kontribusi
 
 RAGFlow berkembang melalui kolaborasi open-source. Dalam semangat ini, kami menerima kontribusi dari komunitas.
-Jika Anda ingin berpartisipasi, tinjau terlebih dahulu [Panduan Kontribusi](./CONTRIBUTING.md).
+Jika Anda ingin berpartisipasi, tinjau terlebih dahulu [Panduan Kontribusi](https://ragflow.io/docs/dev/contributing).
