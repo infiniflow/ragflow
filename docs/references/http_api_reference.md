@@ -507,7 +507,7 @@ Deletes datasets by ID.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
   - Body:
-    - `"ids"`: `list[string]`
+    - `"ids"`: `list[string]` or `null`
 
 ##### Request example
 
@@ -517,14 +517,17 @@ curl --request DELETE \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-     "ids": ["test_1", "test_2"]
+     "ids": ["d94a8dc02c9711f0930f7fbc369eab6d", "e94a8dc02c9711f0930f7fbc369eab6e"]
      }'
 ```
 
 ##### Request parameters
 
-- `"ids"`: (*Body parameter*), `list[string]`  
-  The IDs of the datasets to delete. If it is not specified, all datasets will be deleted.
+- `"ids"`: (*Body parameter*), `list[string]` or `null`,   *Required*  
+  Specifies the datasets to delete:
+  - If `null`, all datasets will be deleted.
+  - If an array of IDs, only the specified datasets will be deleted.
+  - If an empty array, no datasets will be deleted.
 
 #### Response
 
