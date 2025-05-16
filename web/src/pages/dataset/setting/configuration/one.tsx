@@ -5,15 +5,16 @@ import {
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import PageRankFormField from '@/components/page-rank-form-field';
 import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
+import { ConfigurationFormContainer } from '../configuration-form-container';
 import { TagItems } from '../tag-item';
 import { ChunkMethodItem, EmbeddingModelItem } from './common-item';
 
 export function OneConfiguration() {
   return (
-    <>
+    <ConfigurationFormContainer>
+      <ChunkMethodItem></ChunkMethodItem>
       <LayoutRecognizeFormField></LayoutRecognizeFormField>
       <EmbeddingModelItem></EmbeddingModelItem>
-      <ChunkMethodItem></ChunkMethodItem>
 
       <PageRankFormField></PageRankFormField>
 
@@ -25,6 +26,6 @@ export function OneConfiguration() {
       <GraphRagItems marginBottom></GraphRagItems>
 
       <TagItems></TagItems>
-    </>
+    </ConfigurationFormContainer>
   );
 }

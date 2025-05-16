@@ -1,12 +1,15 @@
+import { ButtonLoading } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DocumentParserType } from '@/constants/knowledge';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import CategoryPanel from './category-panel';
 import { ChunkMethodForm } from './chunk-method-form';
+import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
+import { useFetchKnowledgeConfigurationOnMount } from './hooks';
 
 const enum DocumentType {
   DeepDOC = 'DeepDOC',
@@ -27,45 +30,6 @@ const enum MethodValue {
 }
 
 export default function DatasetSettings() {
-  const formSchema = z.object({
-    name: z.string().min(1, {
-      message: 'Username must be at least 2 characters.',
-    }),
-    description: z.string().min(2, {
-      message: 'Username must be at least 2 characters.',
-    }),
-    avatar: z.instanceof(File),
-    permission: z.string(),
-    parser_id: z.string(),
-    parser_config: z.object({
-      layout_recognize: z.string(),
-      chunk_token_num: z.number(),
-      delimiter: z.string(),
-      auto_keywords: z.number(),
-      auto_questions: z.number(),
-      html4excel: z.boolean(),
-      tag_kb_ids: z.array(z.string()),
-      topn_tags: z.number(),
-      raptor: z.object({
-        use_raptor: z.boolean(),
-        prompt: z.string(),
-        max_token: z.number(),
-        threshold: z.number(),
-        max_cluster: z.number(),
-        random_seed: z.number(),
-      }),
-      graphrag: z.object({
-        use_graphrag: z.boolean(),
-        entity_types: z.array(z.string()),
-        method: z.string(),
-        resolution: z.boolean(),
-        community: z.boolean(),
-      }),
-    }),
-    pagerank: z.number(),
-    // icon: z.array(z.instanceof(File)),
-  });
-
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -95,6 +59,13 @@ export default function DatasetSettings() {
       },
       pagerank: 0,
     },
+  });
+
+  useFetchKnowledgeConfigurationOnMount(form);
+
+  const parserId = useWatch({
+    control: form.control,
+    name: 'parser_id',
   });
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
@@ -128,9 +99,13 @@ export default function DatasetSettings() {
                 <ChunkMethodForm></ChunkMethodForm>
               </TabsContent>
             </Tabs>
+            <div className="text-right">
+              <ButtonLoading type="submit">Submit</ButtonLoading>
+            </div>
           </form>
         </Form>
-        <CategoryPanel chunkMethod={DocumentParserType.Naive}></CategoryPanel>
+
+        <CategoryPanel chunkMethod={parserId}></CategoryPanel>
       </div>
     </section>
   );

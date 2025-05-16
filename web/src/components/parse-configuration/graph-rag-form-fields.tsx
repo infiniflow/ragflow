@@ -46,6 +46,7 @@ export const showGraphRagItems = (parserId: DocumentParserType | undefined) => {
 
 type GraphRagItemsProps = {
   marginBottom?: boolean;
+  className?: string;
 };
 
 export function UseGraphRagFormField() {
@@ -75,7 +76,10 @@ export function UseGraphRagFormField() {
 }
 
 // The three types "table", "resume" and "one" do not display this configuration.
-const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
+const GraphRagItems = ({
+  marginBottom = false,
+  className = 'p-10',
+}: GraphRagItemsProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
 
@@ -99,7 +103,7 @@ const GraphRagItems = ({ marginBottom = false }: GraphRagItemsProps) => {
   );
 
   return (
-    <FormContainer className={cn({ 'mb-4': marginBottom })}>
+    <FormContainer className={cn({ 'mb-4': marginBottom }, className)}>
       <UseGraphRagFormField></UseGraphRagFormField>
       {useRaptor && (
         <>

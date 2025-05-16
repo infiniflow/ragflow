@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 import { PropsWithChildren } from 'react';
 
-type FormContainerProps = {
+export type FormContainerProps = {
   className?: string;
   show?: boolean;
 } & PropsWithChildren;
