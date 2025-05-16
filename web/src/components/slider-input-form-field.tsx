@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import { ReactNode } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { SingleFormSlider } from './ui/dual-range-slider';
@@ -18,6 +19,7 @@ type SliderInputFormFieldProps = {
   label: string;
   tooltip?: ReactNode;
   defaultValue?: number;
+  className?: string;
 };
 
 export function SliderInputFormField({
@@ -28,6 +30,7 @@ export function SliderInputFormField({
   name,
   tooltip,
   defaultValue,
+  className,
 }: SliderInputFormFieldProps) {
   const form = useFormContext();
 
@@ -39,7 +42,12 @@ export function SliderInputFormField({
       render={({ field }) => (
         <FormItem>
           <FormLabel tooltip={tooltip}>{label}</FormLabel>
-          <div className="flex items-center gap-14 justify-between">
+          <div
+            className={cn(
+              'flex items-center gap-14 justify-between',
+              className,
+            )}
+          >
             <FormControl>
               <SingleFormSlider
                 {...field}
