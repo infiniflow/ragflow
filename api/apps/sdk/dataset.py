@@ -148,14 +148,15 @@ def create(tenant_id):
             "BAAI/bge-large-zh-v1.5",
             "maidalun1020/bce-embedding-base_v1",
         ]
+        model_name,llm_factory = TenantLLMService.split_model_name_and_factory(req["embedding_model"])
         embd_model = LLMService.query(
-            llm_name=req["embedding_model"], model_type="embedding"
+            llm_name=model_name, model_type="embedding"
         )
         if embd_model:
-            if req["embedding_model"] not in valid_embedding_models and not TenantLLMService.query(tenant_id=tenant_id,model_type="embedding",llm_name=req.get("embedding_model"),):
-                return get_error_data_result(f"`embedding_model` {req.get('embedding_model')} doesn't exist")
+            if model_name not in valid_embedding_models and not TenantLLMService.query(tenant_id=tenant_id,model_type="embedding",llm_name=model_name):
+                return get_error_data_result(f"`embedding_model` {model_name} doesn't exist")
         if not embd_model:
-            embd_model=TenantLLMService.query(tenant_id=tenant_id,model_type="embedding", llm_name=req.get("embedding_model"))
+            embd_model=TenantLLMService.query(tenant_id=tenant_id,model_type="embedding", llm_name=model_name)
         if not embd_model:
             return get_error_data_result(
                 f"`embedding_model` {req.get('embedding_model')} doesn't exist"
@@ -409,14 +410,15 @@ def update(tenant_id, dataset_id):
             "text-embedding-v3",
             "maidalun1020/bce-embedding-base_v1",
         ]
+        model_name,llm_factory = TenantLLMService.split_model_name_and_factory(req["embedding_model"])
         embd_model = LLMService.query(
-            llm_name=req["embedding_model"], model_type="embedding"
+            llm_name=model_name, model_type="embedding"
         )
         if embd_model:
-            if req["embedding_model"] not in valid_embedding_models and not TenantLLMService.query(tenant_id=tenant_id,model_type="embedding",llm_name=req.get("embedding_model"),):
+            if model_name not in valid_embedding_models and not TenantLLMService.query(tenant_id=tenant_id,model_type="embedding",llm_name=model_name):
                 return get_error_data_result(f"`embedding_model` {req.get('embedding_model')} doesn't exist")
         if not embd_model:
-            embd_model=TenantLLMService.query(tenant_id=tenant_id,model_type="embedding", llm_name=req.get("embedding_model"))
+            embd_model=TenantLLMService.query(tenant_id=tenant_id,model_type="embedding", llm_name=model_name)
 
         if not embd_model:
             return get_error_data_result(
