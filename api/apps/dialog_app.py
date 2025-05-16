@@ -62,16 +62,14 @@ def set_dialog():
         ],
         "empty_response": ""
     }
-    if req.get("kb_ids"):
-        default_prompt = default_prompt_with_dataset
-    else:
-        default_prompt = default_prompt_no_dataset
-
-
-    prompt_config = req.get("prompt_config", default_prompt)
+    prompt_config = req.get("prompt_config", default_prompt_with_dataset)
 
     if not prompt_config["system"]:
-        prompt_config["system"] = default_prompt["system"]
+        prompt_config["system"] = default_prompt_with_dataset["system"]
+    
+    if not req.get("kb_ids", []):
+        if prompt_config['system'] == default_prompt_with_dataset['system'] or "{knowledge}" in prompt_config['system']:
+            prompt_config = default_prompt_no_dataset
 
     for p in prompt_config["parameters"]:
         if p["optional"]:
