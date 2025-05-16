@@ -113,6 +113,7 @@
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > 如果你并没有在本机安装 Docker（Windows、Mac，或者 Linux）, 可以参考文档 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安装。
+  > [gVisor](https://gvisor.dev/docs/user_guide/install/) 是可选的，仅在你打算使用 RAGFlow 的代码执行器（沙箱）功能时才需要安装。
 
 ### 🚀 启动服务器
 
@@ -293,7 +294,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    在 `/etc/hosts` 中添加以下代码，目的是将 **conf/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 4. 如果无法访问 HuggingFace，可以把环境变量 `HF_ENDPOINT` 设成相应的镜像站点：
 
@@ -301,7 +302,16 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. 启动后端服务：
+5. 如果你的操作系统没有 jemalloc，请按照如下方式安装：
+
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   ```
+
+6. 启动后端服务：
 
    ```bash
    source .venv/bin/activate
@@ -309,12 +319,14 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    bash docker/launch_backend_service.sh
    ```
 
-6. 安装前端依赖：
+7. 安装前端依赖：
+
    ```bash
    cd web
    npm install
    ```
-7. 启动前端服务：
+
+8. 启动前端服务：
 
    ```bash
    npm run dev
@@ -323,11 +335,13 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    _以下界面说明系统已经成功启动：_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-8. 开发完成后停止 RAGFlow 服务
-   停止 RAGFlow 前端和后端服务：
+
+9. 开发完成后停止 RAGFlow 前端和后端服务：
+
    ```bash
    pkill -f "ragflow_server.py|task_executor.py"
    ```
+
 
 ## 📚 技术文档
 

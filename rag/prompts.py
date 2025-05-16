@@ -44,6 +44,7 @@ def chunks_format(reference):
             "similarity": chunk.get("similarity"),
             "vector_similarity": chunk.get("vector_similarity"),
             "term_similarity": chunk.get("term_similarity"),
+            "doc_type": chunk.get("doc_type_kwd"),
         }
         for chunk in reference.get("chunks", [])
     ]
@@ -117,7 +118,9 @@ def kb_prompt(kbinfos, max_tokens):
 
     doc2chunks = defaultdict(lambda: {"chunks": [], "meta": []})
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
-        doc2chunks[ck["docnm_kwd"]]["chunks"].append((f"URL: {ck['url']}\n" if "url" in ck else "") + f"ID: {i}\n" + ck["content_with_weight"])
+        cnt = f"---\nID: {i}\n" + (f"URL: {ck['url']}\n" if "url" in ck else "")
+        cnt += ck["content_with_weight"]
+        doc2chunks[ck["docnm_kwd"]]["chunks"].append(cnt)
         doc2chunks[ck["docnm_kwd"]]["meta"] = docs.get(ck["doc_id"], {})
 
     knowledges = []

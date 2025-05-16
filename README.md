@@ -139,6 +139,7 @@ releases! 🌟
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
   > If you have not installed Docker on your local machine (Windows, Mac, or Linux),
   > see [Install Docker Engine](https://docs.docker.com/engine/install/).
+  > The [gVisor](https://gvisor.dev/docs/user_guide/install/) is optional and only needed if you plan to use the code executor (sandbox) feature of RAGFlow.
 
 ### 🚀 Start up the server
 
@@ -318,7 +319,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/.env** to `127.0.0.1`:
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
@@ -327,7 +328,16 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Launch backend service:
+5. If your operating system does not have jemalloc, please install it as follows:
+
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   ```
+   
+6. Launch backend service:
 
    ```bash
    source .venv/bin/activate
@@ -335,12 +345,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-6. Install frontend dependencies:
+7. Install frontend dependencies:
+
    ```bash
    cd web
    npm install
    ```
-7. Launch frontend service:
+
+8. Launch frontend service:
 
    ```bash
    npm run dev
@@ -349,6 +361,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _The following output confirms a successful launch of the system:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+9. Stop RAGFlow front-end and back-end service after development is complete:
+
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
+
 
 ## 📚 Documentation
 

@@ -115,6 +115,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             d = copy.deepcopy(doc)
             pn += from_page
             d["image"] = img
+            d["doc_type_kwd"] = "image"
             d["page_num_int"] = [pn + 1]
             d["top_int"] = [0]
             d["position_int"] = [(pn + 1, 0, img.size[0], 0, img.size[1])]
