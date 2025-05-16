@@ -115,6 +115,7 @@ jobs:
           else
             export HTTP_API_TEST_LEVEL=p2
           fi
+          echo "ZHIPU_AI_API_KEY is set: ${#ZHIPU_AI_API_KEY} characters"
           cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL}
 
       - name: Stop ragflow:nightly
