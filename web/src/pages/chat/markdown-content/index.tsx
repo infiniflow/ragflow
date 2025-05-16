@@ -112,11 +112,6 @@ const MarkdownContent = ({
       const fileThumbnail = documentId ? fileThumbnails[documentId] : '';
       const fileExtension = documentId ? getExtension(document?.doc_name) : '';
       const imageId = chunkItem?.image_id;
-      const docType = chunkItem?.doc_type;
-
-      return showImage(docType) ? (
-        <Image id={imageId} className={styles.referenceChunkImage}></Image>
-      ) : null;
 
       return (
         <div key={chunkItem?.id} className="flex gap-2">
@@ -181,9 +176,15 @@ const MarkdownContent = ({
   const renderReference = useCallback(
     (text: string) => {
       let replacedText = reactStringReplace(text, reg, (match, i) => {
+        const chunks = reference?.chunks ?? [];
         const chunkIndex = getChunkIndex(match);
-        return getPopoverContent(chunkIndex);
-        return (
+        const chunkItem = chunks[chunkIndex];
+        const imageId = chunkItem?.image_id;
+        const docType = chunkItem?.doc_type;
+
+        return showImage(docType) ? (
+          <Image id={imageId} className={styles.referenceChunkImage}></Image>
+        ) : (
           <Popover content={getPopoverContent(chunkIndex)} key={i}>
             <InfoCircleOutlined className={styles.referenceIcon} />
           </Popover>
@@ -196,7 +197,7 @@ const MarkdownContent = ({
 
       return replacedText;
     },
-    [getPopoverContent],
+    [getPopoverContent, reference?.chunks],
   );
 
   return (
