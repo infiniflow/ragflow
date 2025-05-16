@@ -276,11 +276,12 @@ export const useSpeechWithSse = (url: string = api.tts) => {
 //#region chat hooks
 
 export const useScrollToBottom = (messages?: unknown) => {
-  const ref = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
-    if (messages) {
-      ref.current?.scrollIntoView({ behavior: 'instant' });
+    if (messages && containerRef.current) {
+      // Use scrollTop to scroll within the container only
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [messages]); // If the message changes, scroll to the bottom
 
@@ -288,7 +289,7 @@ export const useScrollToBottom = (messages?: unknown) => {
     scrollToBottom();
   }, [scrollToBottom]);
 
-  return ref;
+  return containerRef;
 };
 
 export const useHandleMessageInputChange = () => {
