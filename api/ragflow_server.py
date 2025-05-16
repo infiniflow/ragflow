@@ -19,6 +19,7 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
 from api.utils.log_utils import initRootLogger
+from plugin import GlobalPluginManager
 initRootLogger("ragflow_server")
 
 import logging
@@ -118,6 +119,8 @@ if __name__ == '__main__':
 
     RuntimeConfig.init_env()
     RuntimeConfig.init_config(JOB_SERVER_HOST=settings.HOST_IP, HTTP_PORT=settings.HOST_PORT)
+
+    GlobalPluginManager.load_plugins()
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)

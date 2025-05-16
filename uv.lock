@@ -3953,6 +3953,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pluginlib"
+version = "0.9.4"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "setuptools" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/58/38/ca974ba2d8ccc7954d8ccb0394cce184ac6269bd1fbfe06f70a0da3c8946/pluginlib-0.9.4.tar.gz", hash = "sha256:88727037138f759a3952f6391ae3751536f04ad8be6023607620ea49695a3a83" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/b0/b5/c869b3d2ed1613afeb02c635be11f5d35fa5b2b665f4d059cfe5b8e82941/pluginlib-0.9.4-py2.py3-none-any.whl", hash = "sha256:d4cfb7d74a6d2454e256b6512fbc4bc2dd7620cb7764feb67331ef56ce4b33f2" },
+]
+
+[[package]]
 name = "polars-lts-cpu"
 version = "1.9.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -4872,6 +4884,7 @@ dependencies = [
     { name = "pdfplumber" },
     { name = "peewee" },
     { name = "pillow" },
+    { name = "pluginlib" },
     { name = "protobuf" },
     { name = "psycopg2-binary" },
     { name = "pyclipper" },
@@ -5009,6 +5022,7 @@ requires-dist = [
     { name = "pdfplumber", specifier = "==0.10.4" },
     { name = "peewee", specifier = "==3.17.1" },
     { name = "pillow", specifier = "==10.4.0" },
+    { name = "pluginlib", specifier = "==0.9.4" },
     { name = "protobuf", specifier = "==5.27.2" },
     { name = "psycopg2-binary", specifier = "==2.9.9" },
     { name = "pyclipper", specifier = "==1.3.0.post5" },

@@ -454,6 +454,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       model: 'Model',
       modelTip: 'Large language chat model',
       modelMessage: 'Please select!',
+      modelEnabledTools: 'Enabled tools',
+      modelEnabledToolsTip: 'Please select one or more tools for the chat model to use. It takes no effect for models not supporting tool call.',
       freedom: 'Freedom',
       improvise: 'Improvise',
       precise: 'Precise',
@@ -1266,6 +1268,16 @@ This delimiter is used to split the input text into several text pieces echo of 
       codeDescription: 'It allows developers to write custom Python logic.',
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
+    },
+    llmTools: {
+      bad_calculator: {
+        name: "Calculator",
+        description: "A tool to calculate the sum of two numbers (will give wrong answer)",
+        params: {
+          a: "The first number",
+          b: "The second number",
+        },
+      },
     },
   },
 };

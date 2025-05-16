@@ -71,6 +71,7 @@ function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
     ),
     value: `${x.llm_name}@${x.fid}`,
     disabled: !x.available,
+    is_tools: x.is_tools,
   };
 }
 
@@ -142,7 +143,7 @@ export const useComposeLlmOptionsByModelTypes = (
 
   return modelTypes.reduce<
     (DefaultOptionType & {
-      options: { label: JSX.Element; value: string; disabled: boolean }[];
+      options: { label: JSX.Element; value: string; disabled: boolean; is_tools: boolean }[];
     })[]
   >((pre, cur) => {
     const options = allOptions[cur];

@@ -32,6 +32,9 @@ export default {
   delete_llm: `${api_host}/llm/delete_llm`,
   deleteFactory: `${api_host}/llm/delete_factory`,
 
+  // plugin
+  llm_tools: `${api_host}/plugin/llm_tools`,
+
   // knowledge base
   kb_list: `${api_host}/kb/list`,
   create_kb: `${api_host}/kb/create`,
