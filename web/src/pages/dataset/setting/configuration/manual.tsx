@@ -6,28 +6,35 @@ import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-fie
 import PageRankFormField from '@/components/page-rank-form-field';
 import GraphRagItems from '@/components/parse-configuration/graph-rag-form-fields';
 import RaptorFormFields from '@/components/parse-configuration/raptor-form-fields';
+import {
+  ConfigurationFormContainer,
+  MainContainer,
+} from '../configuration-form-container';
 import { TagItems } from '../tag-item';
 import { ChunkMethodItem, EmbeddingModelItem } from './common-item';
 
 export function ManualConfiguration() {
   return (
-    <>
-      <LayoutRecognizeFormField></LayoutRecognizeFormField>
-      <EmbeddingModelItem></EmbeddingModelItem>
-      <ChunkMethodItem></ChunkMethodItem>
+    <MainContainer>
+      <ConfigurationFormContainer>
+        <ChunkMethodItem></ChunkMethodItem>
+        <LayoutRecognizeFormField></LayoutRecognizeFormField>
+        <EmbeddingModelItem></EmbeddingModelItem>
 
-      <PageRankFormField></PageRankFormField>
+        <PageRankFormField></PageRankFormField>
+      </ConfigurationFormContainer>
 
-      <>
+      <ConfigurationFormContainer>
         <AutoKeywordsFormField></AutoKeywordsFormField>
         <AutoQuestionsFormField></AutoQuestionsFormField>
-      </>
-
-      <RaptorFormFields></RaptorFormFields>
+      </ConfigurationFormContainer>
+      <ConfigurationFormContainer>
+        <RaptorFormFields></RaptorFormFields>
+      </ConfigurationFormContainer>
 
       <GraphRagItems marginBottom></GraphRagItems>
 
       <TagItems></TagItems>
-    </>
+    </MainContainer>
   );
 }

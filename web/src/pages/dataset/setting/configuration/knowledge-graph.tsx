@@ -7,8 +7,8 @@ import { ChunkMethodItem, EmbeddingModelItem } from './common-item';
 export function KnowledgeGraphConfiguration() {
   return (
     <>
-      <EmbeddingModelItem></EmbeddingModelItem>
       <ChunkMethodItem></ChunkMethodItem>
+      <EmbeddingModelItem></EmbeddingModelItem>
 
       <PageRankFormField></PageRankFormField>
 

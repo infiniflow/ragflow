@@ -18,7 +18,7 @@ import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Flex, message } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export const useFetchLlmList = (
@@ -77,7 +77,7 @@ function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
 export const useSelectLlmOptionsByModelType = () => {
   const llmInfo: IThirdOAIModelCollection = useFetchLlmList();
 
-  const groupImage2TextOptions = () => {
+  const groupImage2TextOptions = useCallback(() => {
     const modelType = LlmModelType.Image2text;
     const modelTag = modelType.toUpperCase();
 
@@ -96,27 +96,32 @@ export const useSelectLlmOptionsByModelType = () => {
         };
       })
       .filter((x) => x.options.length > 0);
-  };
+  }, [llmInfo]);
 
-  const groupOptionsByModelType = (modelType: LlmModelType) => {
-    return Object.entries(llmInfo)
-      .filter(([, value]) =>
-        modelType ? value.some((x) => x.model_type.includes(modelType)) : true,
-      )
-      .map(([key, value]) => {
-        return {
-          label: key,
-          options: value
-            .filter(
-              (x) =>
-                (modelType ? x.model_type.includes(modelType) : true) &&
-                x.available,
-            )
-            .map(buildLlmOptionsWithIcon),
-        };
-      })
-      .filter((x) => x.options.length > 0);
-  };
+  const groupOptionsByModelType = useCallback(
+    (modelType: LlmModelType) => {
+      return Object.entries(llmInfo)
+        .filter(([, value]) =>
+          modelType
+            ? value.some((x) => x.model_type.includes(modelType))
+            : true,
+        )
+        .map(([key, value]) => {
+          return {
+            label: key,
+            options: value
+              .filter(
+                (x) =>
+                  (modelType ? x.model_type.includes(modelType) : true) &&
+                  x.available,
+              )
+              .map(buildLlmOptionsWithIcon),
+          };
+        })
+        .filter((x) => x.options.length > 0);
+    },
+    [llmInfo],
+  );
 
   return {
     [LlmModelType.Chat]: groupOptionsByModelType(LlmModelType.Chat),
