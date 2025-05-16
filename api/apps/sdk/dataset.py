@@ -20,7 +20,6 @@ import logging
 from flask import request
 from peewee import OperationalError
 
-from api import settings
 from api.db import FileSource, StatusEnum
 from api.db.db_models import File
 from api.db.services.document_service import DocumentService
@@ -30,7 +29,6 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService
 from api.utils import get_uuid
 from api.utils.api_utils import (
-    check_duplicate_ids,
     deep_merge,
     get_error_argument_result,
     get_error_data_result,
@@ -39,7 +37,7 @@ from api.utils.api_utils import (
     token_required,
     verify_embedding_availability,
 )
-from api.utils.validation_utils import CreateDatasetReq, UpdateDatasetReq, validate_and_parse_json_request
+from api.utils.validation_utils import CreateDatasetReq, DeleteDatasetReq, UpdateDatasetReq, validate_and_parse_json_request
 
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
@@ -190,72 +188,85 @@ def delete(tenant_id):
         required: true
         schema:
           type: object
+          required:
+            - ids
           properties:
             ids:
-              type: array
+              type: array or null
               items:
                 type: string
-              description: List of dataset IDs to delete.
+              description: |
+                Specifies the datasets to delete:
+                - If `null`, all datasets will be deleted.
+                - If an array of IDs, only the specified datasets will be deleted.
+                - If an empty array, no datasets will be deleted.
     responses:
       200:
         description: Successful operation.
         schema:
           type: object
     """
+    req, err = validate_and_parse_json_request(request, DeleteDatasetReq)
+    if err is not None:
+        return get_error_argument_result(err)
+
+    kb_id_instance_pairs = []
+    if req["ids"] is None:
+        try:
+            kbs = KnowledgebaseService.query(tenant_id=tenant_id)
+            for kb in kbs:
+                kb_id_instance_pairs.append((kb.id, kb))
+        except OperationalError as e:
+            logging.exception(e)
+            return get_error_data_result(message="Database operation failed")
+    else:
+        error_kb_ids = []
+        for kb_id in req["ids"]:
+            try:
+                kb = KnowledgebaseService.get_or_none(id=kb_id, tenant_id=tenant_id)
+                if kb is None:
+                    error_kb_ids.append(kb_id)
+                    continue
+                kb_id_instance_pairs.append((kb_id, kb))
+            except OperationalError as e:
+                logging.exception(e)
+                return get_error_data_result(message="Database operation failed")
+        if len(error_kb_ids) > 0:
+            return get_error_data_result(message=f"""User '{tenant_id}' lacks permission for datasets: '{", ".join(error_kb_ids)}'""")
 
     errors = []
     success_count = 0
-    req = request.json
-    if not req:
-        ids = None
-    else:
-        ids = req.get("ids")
-    if not ids:
-        id_list = []
-        kbs = KnowledgebaseService.query(tenant_id=tenant_id)
-        for kb in kbs:
-            id_list.append(kb.id)
-    else:
-        id_list = ids
-    unique_id_list, duplicate_messages = check_duplicate_ids(id_list, "dataset")
-    id_list = unique_id_list
-
-    for id in id_list:
-        kbs = KnowledgebaseService.query(id=id, tenant_id=tenant_id)
-        if not kbs:
-            errors.append(f"You don't own the dataset {id}")
-            continue
-        for doc in DocumentService.query(kb_id=id):
-            if not DocumentService.remove_document(doc, tenant_id):
-                errors.append(f"Remove document error for dataset {id}")
+    for kb_id, kb in kb_id_instance_pairs:
+        try:
+            for doc in DocumentService.query(kb_id=kb_id):
+                if not DocumentService.remove_document(doc, tenant_id):
+                    errors.append(f"Remove document '{doc.id}' error for dataset '{kb_id}'")
+                    continue
+                f2d = File2DocumentService.get_by_document_id(doc.id)
+                FileService.filter_delete(
+                    [
+                        File.source_type == FileSource.KNOWLEDGEBASE,
+                        File.id == f2d[0].file_id,
+                    ]
+                )
+                File2DocumentService.delete_by_document_id(doc.id)
+            FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
+            if not KnowledgebaseService.delete_by_id(kb_id):
+                errors.append(f"Delete dataset error for {kb_id}")
                 continue
-            f2d = File2DocumentService.get_by_document_id(doc.id)
-            FileService.filter_delete(
-                [
-                    File.source_type == FileSource.KNOWLEDGEBASE,
-                    File.id == f2d[0].file_id,
-                ]
-            )
-            File2DocumentService.delete_by_document_id(doc.id)
-        FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
-        if not KnowledgebaseService.delete_by_id(id):
-            errors.append(f"Delete dataset error for {id}")
-            continue
-        success_count += 1
-    if errors:
-        if success_count > 0:
-            return get_result(data={"success_count": success_count, "errors": errors}, message=f"Partially deleted {success_count} datasets with {len(errors)} errors")
-        else:
-            return get_error_data_result(message="; ".join(errors))
-    if duplicate_messages:
-        if success_count > 0:
-            return get_result(
-                message=f"Partially deleted {success_count} datasets with {len(duplicate_messages)} errors",
-                data={"success_count": success_count, "errors": duplicate_messages},
-            )
-        else:
-            return get_error_data_result(message=";".join(duplicate_messages))
-    return get_result(code=settings.RetCode.SUCCESS)
+            success_count += 1
+        except OperationalError as e:
+            logging.exception(e)
+            return get_error_data_result(message="Database operation failed")
+
+    if not errors:
+        return get_result()
+
+    error_message = f"Successfully deleted {success_count} datasets, {len(errors)} failed. Details: {'; '.join(errors)[:128]}..."
+    if success_count == 0:
+        return get_error_data_result(message=error_message)
+
+    return get_result(data={"success_count": success_count, "errors": errors[:5]}, message=error_message)
 
 
 @manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821
@@ -373,7 +384,7 @@ def update(tenant_id, dataset_id):
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")
 
-    return get_result(code=settings.RetCode.SUCCESS)
+    return get_result()
 
 
 @manager.route("/datasets", methods=["GET"])  # noqa: F821
