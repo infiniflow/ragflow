@@ -13,8 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 
 import pytest
+import requests
 from common import (
     add_chunk,
     batch_create_datasets,
@@ -26,6 +28,7 @@ from common import (
     list_documnets,
     parse_documnets,
 )
+from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import wait_for
 from libs.utils.file_utils import (
     create_docx_file,
@@ -45,6 +48,11 @@ MARKER_EXPRESSIONS = {
     "p2": "p1 or p2",
     "p3": "p1 or p2 or p3",
 }
+HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
+ZHIPU_AI_API_KEY = os.getenv("ZHIPU_AI_API_KEY")
+print(f"{ZHIPU_AI_API_KEY=}")
+if ZHIPU_AI_API_KEY is None:
+    pytest.exit("Error: Environment variable ZHIPU_AI_API_KEY must be set")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -71,6 +79,72 @@ def condition(_auth, _dataset_id):
         if doc["run"] != "DONE":
             return False
     return True
+
+
+@pytest.fixture(scope="session")
+def get_http_api_auth(get_api_key_fixture):
+    return RAGFlowHttpApiAuth(get_api_key_fixture)
+
+
+def get_my_llms(auth, name):
+    url = HOST_ADDRESS + "/v1/llm/my_llms"
+    authorization = {"Authorization": auth}
+    response = requests.get(url=url, headers=authorization)
+    res = response.json()
+    if res.get("code") != 0:
+        raise Exception(res.get("message"))
+    if name in res.get("data"):
+        return True
+    return False
+
+
+def add_models(auth):
+    url = HOST_ADDRESS + "/v1/llm/set_api_key"
+    authorization = {"Authorization": auth}
+    models_info = {
+        "ZHIPU-AI": {"llm_factory": "ZHIPU-AI", "api_key": ZHIPU_AI_API_KEY},
+    }
+
+    for name, model_info in models_info.items():
+        if not get_my_llms(auth, name):
+            response = requests.post(url=url, headers=authorization, json=model_info)
+            res = response.json()
+            if res.get("code") != 0:
+                pytest.exit(f"Critical error in add_models: {res.get('message')}")
+
+
+def get_tenant_info(auth):
+    url = HOST_ADDRESS + "/v1/user/tenant_info"
+    authorization = {"Authorization": auth}
+    response = requests.get(url=url, headers=authorization)
+    res = response.json()
+    if res.get("code") != 0:
+        raise Exception(res.get("message"))
+    return res["data"].get("tenant_id")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info(get_auth):
+    auth = get_auth
+    try:
+        add_models(auth)
+        tenant_id = get_tenant_info(auth)
+    except Exception as e:
+        pytest.exit(f"Error in set_tenant_info: {str(e)}")
+    url = HOST_ADDRESS + "/v1/user/set_tenant_info"
+    authorization = {"Authorization": get_auth}
+    tenant_info = {
+        "tenant_id": tenant_id,
+        "llm_id": "glm-4-flash@ZHIPU-AI",
+        "embd_id": "BAAI/bge-large-zh-v1.5@BAAI",
+        "img2txt_id": "glm-4v@ZHIPU-AI",
+        "asr_id": "",
+        "tts_id": None,
+    }
+    response = requests.post(url=url, headers=authorization, json=tenant_info)
+    res = response.json()
+    if res.get("code") != 0:
+        raise Exception(res.get("message"))
 
 
 @pytest.fixture(scope="function")
