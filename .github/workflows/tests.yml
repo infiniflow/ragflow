@@ -102,7 +102,7 @@ jobs:
           
       - name: Run http api tests against Elasticsearch
         env:
-          ZHIPU_AI_API_KEY: ${{ secrets.ZHIPU_AI_API_KEY }}
+          ZHIPU_AI_API_KEY: ${{ vars.ZHIPU_AI_API_KEY }}
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           export HOST_ADDRESS=http://host.docker.internal:9380
@@ -148,7 +148,7 @@ jobs:
 
       - name: Run http api tests against Infinity
         env:
-          ZHIPU_AI_API_KEY: ${{ secrets.ZHIPU_AI_API_KEY }}
+          ZHIPU_AI_API_KEY: ${{ vars.ZHIPU_AI_API_KEY }}
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           export HOST_ADDRESS=http://host.docker.internal:9380
