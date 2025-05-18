@@ -20,6 +20,7 @@ from common import INVALID_API_TOKEN, batch_add_chunks, delete_chunks, list_chun
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -39,6 +40,7 @@ class TestAuthorization:
 
 
 class TestChunksDeletion:
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -56,6 +58,7 @@ class TestChunksDeletion:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
@@ -72,9 +75,9 @@ class TestChunksDeletion:
     @pytest.mark.parametrize(
         "payload",
         [
-            lambda r: {"chunk_ids": ["invalid_id"] + r},
-            lambda r: {"chunk_ids": r[:1] + ["invalid_id"] + r[1:4]},
-            lambda r: {"chunk_ids": r + ["invalid_id"]},
+            pytest.param(lambda r: {"chunk_ids": ["invalid_id"] + r}, marks=pytest.mark.p3),
+            pytest.param(lambda r: {"chunk_ids": r[:1] + ["invalid_id"] + r[1:4]}, marks=pytest.mark.p1),
+            pytest.param(lambda r: {"chunk_ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
         ],
     )
     def test_delete_partial_invalid_id(self, get_http_api_auth, add_chunks_func, payload):
@@ -91,6 +94,7 @@ class TestChunksDeletion:
         assert len(res["data"]["chunks"]) == 1
         assert res["data"]["total"] == 1
 
+    @pytest.mark.p3
     def test_repeated_deletion(self, get_http_api_auth, add_chunks_func):
         dataset_id, document_id, chunk_ids = add_chunks_func
         payload = {"chunk_ids": chunk_ids}
@@ -101,6 +105,7 @@ class TestChunksDeletion:
         assert res["code"] == 102
         assert res["message"] == "rm_chunk deleted chunks 0, expect 4"
 
+    @pytest.mark.p3
     def test_duplicate_deletion(self, get_http_api_auth, add_chunks_func):
         dataset_id, document_id, chunk_ids = add_chunks_func
         res = delete_chunks(get_http_api_auth, dataset_id, document_id, {"chunk_ids": chunk_ids * 2})
@@ -114,10 +119,10 @@ class TestChunksDeletion:
         assert len(res["data"]["chunks"]) == 1
         assert res["data"]["total"] == 1
 
-    @pytest.mark.slow
-    def test_concurrent_deletion(self, get_http_api_auth, get_dataset_id_and_document_id):
+    @pytest.mark.p3
+    def test_concurrent_deletion(self, get_http_api_auth, add_document):
         chunks_num = 100
-        dataset_id, document_id = get_dataset_id_and_document_id
+        dataset_id, document_id = add_document
         chunk_ids = batch_add_chunks(get_http_api_auth, dataset_id, document_id, chunks_num)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
@@ -134,10 +139,10 @@ class TestChunksDeletion:
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
-    @pytest.mark.slow
-    def test_delete_1k(self, get_http_api_auth, get_dataset_id_and_document_id):
+    @pytest.mark.p3
+    def test_delete_1k(self, get_http_api_auth, add_document):
         chunks_num = 1_000
-        dataset_id, document_id = get_dataset_id_and_document_id
+        dataset_id, document_id = add_document
         chunk_ids = batch_add_chunks(get_http_api_auth, dataset_id, document_id, chunks_num)
 
         # issues/6487
@@ -158,17 +163,11 @@ class TestChunksDeletion:
         "payload, expected_code, expected_message, remaining",
         [
             pytest.param(None, 100, """TypeError("argument of type \'NoneType\' is not iterable")""", 5, marks=pytest.mark.skip),
-            ({"chunk_ids": ["invalid_id"]}, 102, "rm_chunk deleted chunks 0, expect 1", 5),
-            pytest.param(
-                "not json",
-                100,
-                """UnboundLocalError("local variable \'duplicate_messages\' referenced before assignment")""",
-                5,
-                marks=pytest.mark.skip(reason="pull/6376"),
-            ),
-            (lambda r: {"chunk_ids": r[:1]}, 0, "", 4),
-            (lambda r: {"chunk_ids": r}, 0, "", 1),
-            ({"chunk_ids": []}, 0, "", 0),
+            pytest.param({"chunk_ids": ["invalid_id"]}, 102, "rm_chunk deleted chunks 0, expect 1", 5, marks=pytest.mark.p3),
+            pytest.param("not json", 100, """UnboundLocalError("local variable \'duplicate_messages\' referenced before assignment")""", 5, marks=pytest.mark.skip(reason="pull/6376")),
+            pytest.param(lambda r: {"chunk_ids": r[:1]}, 0, "", 4, marks=pytest.mark.p3),
+            pytest.param(lambda r: {"chunk_ids": r}, 0, "", 1, marks=pytest.mark.p1),
+            pytest.param({"chunk_ids": []}, 0, "", 0, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(

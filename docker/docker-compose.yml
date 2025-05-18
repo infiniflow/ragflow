@@ -8,7 +8,7 @@ services:
       mysql:
         condition: service_healthy
     image: ${RAGFLOW_IMAGE}
-    # example to setup MCP server
+    # Example configuration to set up an MCP server:
     # command:
     #   - --enable-mcpserver
     #   - --mcp-host=0.0.0.0
@@ -16,7 +16,7 @@ services:
     #   - --mcp-base-url=http://127.0.0.1:9380
     #   - --mcp-script-path=/ragflow/mcp/server/server.py
     #   - --mcp-mode=self-host
-    #   - --mcp-host-api-key="ragflow-xxxxxxx"
+    #   - --mcp-host-api-key=ragflow-xxxxxxx
     container_name: ragflow-server
     ports:
       - ${SVR_HTTP_PORT}:9380
@@ -24,7 +24,7 @@ services:
       - 443:443
       - 5678:5678
       - 5679:5679
-      - 9382:9382 # entry for MCP (host_port:docker_port). The docker_port should match with the value you set for `mcp-port` above
+      - 9382:9382 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
     volumes:
       - ./ragflow-logs:/ragflow/logs
       - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
@@ -43,7 +43,7 @@ services:
       - ragflow
     restart: on-failure
     # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
-    # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
+    # If you use Docker Desktop, the --add-host flag is optional. This flag ensures that the host's internal IP is exposed to the Prometheus container.
     extra_hosts:
       - "host.docker.internal:host-gateway"
   # executor:

@@ -30,10 +30,10 @@ import {
   AutoKeywordsFormField,
   AutoQuestionsFormField,
 } from '../auto-keywords-form-field';
-import { DatasetConfigurationContainer } from '../dataset-configuration-container';
 import { DelimiterFormField } from '../delimiter-form-field';
 import { EntityTypesFormField } from '../entity-types-form-field';
 import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
+import { FormContainer } from '../form-container';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
 import {
@@ -43,8 +43,8 @@ import {
 import RaptorFormFields, {
   showRaptorParseConfiguration,
 } from '../parse-configuration/raptor-form-fields';
+import { ButtonLoading } from '../ui/button';
 import { Input } from '../ui/input';
-import { LoadingButton } from '../ui/loading-button';
 import { RAGFlowSelect } from '../ui/select';
 import { DynamicPageRange } from './dynamic-page-range';
 import { useFetchParserListOnMount, useShowAutoKeywords } from './hooks';
@@ -242,46 +242,50 @@ export function ChunkMethodDialog({
             className="space-y-6 max-h-[70vh] overflow-auto"
             id={FormId}
           >
-            <FormField
-              control={form.control}
-              name="parser_id"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('knowledgeDetails.chunkMethod')}</FormLabel>
-                  <FormControl>
-                    <RAGFlowSelect
-                      {...field}
-                      options={parserList}
-                    ></RAGFlowSelect>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {showPages && <DynamicPageRange></DynamicPageRange>}
-            {showPages && layoutRecognize && (
+            <FormContainer>
               <FormField
                 control={form.control}
-                name="parser_config.task_page_size"
+                name="parser_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel tooltip={t('knowledgeDetails.taskPageSizeTip')}>
-                      {t('knowledgeDetails.taskPageSize')}
-                    </FormLabel>
+                    <FormLabel>{t('knowledgeDetails.chunkMethod')}</FormLabel>
                     <FormControl>
-                      <Input
+                      <RAGFlowSelect
                         {...field}
-                        type={'number'}
-                        min={1}
-                        max={128}
-                      ></Input>
+                        options={parserList}
+                      ></RAGFlowSelect>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-            )}
-            <DatasetConfigurationContainer
+              {showPages && <DynamicPageRange></DynamicPageRange>}
+              {showPages && layoutRecognize && (
+                <FormField
+                  control={form.control}
+                  name="parser_config.task_page_size"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel
+                        tooltip={t('knowledgeDetails.taskPageSizeTip')}
+                      >
+                        {t('knowledgeDetails.taskPageSize')}
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type={'number'}
+                          min={1}
+                          max={128}
+                        ></Input>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+            </FormContainer>
+            <FormContainer
               show={showOne || showMaxTokenNumber}
               className="space-y-3"
             >
@@ -298,8 +302,8 @@ export function ChunkMethodDialog({
                   <DelimiterFormField></DelimiterFormField>
                 </>
               )}
-            </DatasetConfigurationContainer>
-            <DatasetConfigurationContainer
+            </FormContainer>
+            <FormContainer
               show={showAutoKeywords(selectedTag) || showExcelToHtml}
               className="space-y-3"
             >
@@ -310,13 +314,13 @@ export function ChunkMethodDialog({
                 </>
               )}
               {showExcelToHtml && <ExcelToHtmlFormField></ExcelToHtmlFormField>}
-            </DatasetConfigurationContainer>
+            </FormContainer>
             {showRaptorParseConfiguration(
               selectedTag as DocumentParserType,
             ) && (
-              <DatasetConfigurationContainer>
+              <FormContainer>
                 <RaptorFormFields></RaptorFormFields>
-              </DatasetConfigurationContainer>
+              </FormContainer>
             )}
             {showGraphRagItems(selectedTag as DocumentParserType) &&
               useGraphRag && <UseGraphRagFormField></UseGraphRagFormField>}
@@ -324,9 +328,9 @@ export function ChunkMethodDialog({
           </form>
         </Form>
         <DialogFooter>
-          <LoadingButton type="submit" form={FormId} loading={loading}>
+          <ButtonLoading type="submit" form={FormId} loading={loading}>
             {t('common.save')}
-          </LoadingButton>
+          </ButtonLoading>
         </DialogFooter>
       </DialogContent>
     </Dialog>

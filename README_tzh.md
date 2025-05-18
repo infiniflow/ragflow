@@ -111,7 +111,10 @@
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-  > 如果你並沒有在本機安裝 Docker（Windows、Mac，或 Linux）, 可以參考文件 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安裝。
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): 僅在您打算使用 RAGFlow 的代碼執行器（沙箱）功能時才需要安裝。
+
+> [!TIP]
+> 如果你並沒有在本機安裝 Docker（Windows、Mac，或 Linux）, 可以參考文件 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安裝。
 
 ### 🚀 啟動伺服器
 
@@ -279,6 +282,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv run download_deps.py
    pre-commit install
    ```
 
@@ -291,7 +295,7 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    在 `/etc/hosts` 中加入以下程式碼，將 **conf/service_conf.yaml** 檔案中的所有 host 位址都解析為 `127.0.0.1`：
 
    ```
-   127.0.0.1 es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. 如果無法存取 HuggingFace，可以把環境變數 `HF_ENDPOINT` 設為對應的鏡像網站：
@@ -300,30 +304,47 @@ docker build --platform linux/amd64 --build-arg NEED_MIRROR=1 -f Dockerfile -t i
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5.啟動後端服務：
-『`bash
-source .venv/bin/activate
-export PYTHONPATH=$(pwd)
-bash docker/launch_backend_service.sh
+5. 如果你的操作系统没有 jemalloc，请按照如下方式安装：
 
-```
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   ```
 
-6. 安裝前端依賴：
-『`bash
-cd web
-npm install
-```
+6. 啟動後端服務：
 
-7. 啟動前端服務：
-   『`bash
+   ```bash
+   source .venv/bin/activate
+   export PYTHONPATH=$(pwd)
+   bash docker/launch_backend_service.sh
+   ```
+
+7. 安裝前端依賴：
+
+   ```bash
+   cd web
+   npm install
+   ```
+
+8. 啟動前端服務：
+
+   ```bash
    npm run dev
-
    ```
 
    以下界面說明系統已成功啟動：_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
    ```
+
+9. 開發完成後停止 RAGFlow 前端和後端服務：
+
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
+
 
 ## 📚 技術文檔
 
@@ -347,7 +368,7 @@ npm install
 
 ## 🙌 貢獻指南
 
-RAGFlow 只有透過開源協作才能蓬勃發展。秉持這項精神,我們歡迎來自社區的各種貢獻。如果您有意參與其中,請查閱我們的 [貢獻者指南](./CONTRIBUTING.md) 。
+RAGFlow 只有透過開源協作才能蓬勃發展。秉持這項精神,我們歡迎來自社區的各種貢獻。如果您有意參與其中,請查閱我們的 [貢獻者指南](https://ragflow.io/docs/dev/contributing) 。
 
 ## 🤝 商務合作
 

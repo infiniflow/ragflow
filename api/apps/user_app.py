@@ -116,7 +116,30 @@ def login():
         )
 
 
-@manager.route("/login/<channel>") # noqa: F821
+@manager.route("/login/channels", methods=["GET"]) # noqa: F821
+def get_login_channels():
+    """
+    Get all supported authentication channels.
+    """
+    try:
+        channels = []
+        for channel, config in settings.OAUTH_CONFIG.items():
+            channels.append({
+                "channel": channel,
+                "display_name": config.get("display_name", channel.title()),
+                "icon": config.get("icon", "sso"),
+            })
+        return get_json_result(data=channels)
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=[],
+            message=f"Load channels failure, error: {str(e)}",
+            code=settings.RetCode.EXCEPTION_ERROR
+        )
+
+
+@manager.route("/login/<channel>", methods=["GET"]) # noqa: F821
 def oauth_login(channel):
     channel_config = settings.OAUTH_CONFIG.get(channel)
     if not channel_config:
@@ -171,7 +194,7 @@ def oauth_callback(channel):
                 users = user_register(
                     user_id,
                     {
-                        "access_token": access_token,
+                        "access_token": get_uuid(),
                         "email": user_info.email,
                         "avatar": avatar,
                         "nickname": user_info.nickname,
@@ -189,7 +212,7 @@ def oauth_callback(channel):
                 # Try to log in
                 user = users[0]
                 login_user(user)
-                return redirect(f"/?auth_success=true&user_id={user.get_id()}")
+                return redirect(f"/?auth={user.get_id()}")
 
             except Exception as e:
                 rollback_user_registration(user_id)
@@ -201,14 +224,17 @@ def oauth_callback(channel):
         user.access_token = get_uuid()
         login_user(user)
         user.save()
-        return redirect(f"/?auth_success=true&user_id={user.get_id()}")
+        return redirect(f"/?auth={user.get_id()}")
     except Exception as e:
+        logging.exception(e)
         return redirect(f"/?error={str(e)}")
 
 
 @manager.route("/github_callback", methods=["GET"])  # noqa: F821
 def github_callback():
     """
+    **Deprecated**, Use `/oauth/callback/<channel>` instead.
+
     GitHub OAuth callback endpoint.
     ---
     tags:
