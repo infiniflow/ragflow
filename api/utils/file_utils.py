@@ -17,6 +17,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -237,6 +238,9 @@ def traversal_files(base):
 
 
 def repair_pdf_with_ghostscript(input_bytes):
+    if shutil.which("gs") is None:
+        return input_bytes
+
     with tempfile.NamedTemporaryFile(suffix=".pdf") as temp_in, tempfile.NamedTemporaryFile(suffix=".pdf") as temp_out:
         temp_in.write(input_bytes)
         temp_in.flush()
@@ -252,9 +256,9 @@ def repair_pdf_with_ghostscript(input_bytes):
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.returncode != 0:
-                return input
+                return input_bytes
         except Exception:
-            return input
+            return input_bytes
 
         temp_out.seek(0)
         repaired_bytes = temp_out.read()
@@ -263,14 +267,20 @@ def repair_pdf_with_ghostscript(input_bytes):
 
 
 def read_potential_broken_pdf(blob):
-    try:
-        pdf = pdfplumber.open(BytesIO(blob))
-    except Exception:
-        blob = repair_pdf_with_ghostscript(blob)
-        pdf = pdfplumber.open(BytesIO(blob))
+    def try_open(blob):
+        try:
+            with pdfplumber.open(BytesIO(blob)) as pdf:
+                if pdf.pages:
+                    return True
+        except Exception as e:
+            print(f"PDF open failed: {e}")
+        return False
 
-    if not pdf.pages:
-        pdf.close()
-        blob = repair_pdf_with_ghostscript(blob)
-        pdf = pdfplumber.open(BytesIO(blob))
+    if try_open(blob):
+        return blob
+
+    repaired = repair_pdf_with_ghostscript(blob)
+    if try_open(repaired):
+        return repaired
+
     return blob
