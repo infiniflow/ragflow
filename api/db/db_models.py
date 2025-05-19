@@ -48,7 +48,9 @@ def singleton(cls, *args, **kw):
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}
 AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {"create", "start", "end", "update", "read_access", "write_access"}
-
+DB_MAX_FILE_NAME_LENGTH = settings.MAX_FILE_NAME_BYTES_LENGTH
+if DB_MAX_FILE_NAME_LENGTH < 255:
+    DB_MAX_FILE_NAME_LENGTH = 255
 
 class TextFieldType(Enum):
     MYSQL = "LONGTEXT"
@@ -621,7 +623,7 @@ class Document(DataBaseModel):
     source_type = CharField(max_length=128, null=False, default="local", help_text="where dose this document come from", index=True)
     type = CharField(max_length=32, null=False, help_text="file extension", index=True)
     created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
-    name = CharField(max_length=255, null=True, help_text="file name", index=True)
+    name = CharField(max_length=DB_MAX_FILE_NAME_LENGTH, null=True, help_text="file name", index=True)
     location = CharField(max_length=255, null=True, help_text="where dose it store", index=True)
     size = IntegerField(default=0, index=True)
     token_num = IntegerField(default=0, index=True)
@@ -644,7 +646,7 @@ class File(DataBaseModel):
     parent_id = CharField(max_length=32, null=False, help_text="parent folder id", index=True)
     tenant_id = CharField(max_length=32, null=False, help_text="tenant id", index=True)
     created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
-    name = CharField(max_length=255, null=False, help_text="file name or folder name", index=True)
+    name = CharField(max_length=DB_MAX_FILE_NAME_LENGTH, null=False, help_text="file name or folder name", index=True)
     location = CharField(max_length=255, null=True, help_text="where dose it store", index=True)
     size = IntegerField(default=0, index=True)
     type = CharField(max_length=32, null=False, help_text="file extension", index=True)
