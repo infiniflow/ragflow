@@ -13,15 +13,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from abc import ABC
+from functools import partial
+import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
-class ConcentratorParam(ComponentParamBase):
-    """
-    Define the Concentrator component parameters.
-    """
+class FillupParam(ComponentParamBase):
 
+    """
+    Define the Begin component parameters.
+    """
     def __init__(self):
         super().__init__()
 
@@ -29,8 +30,13 @@ class ConcentratorParam(ComponentParamBase):
         return True
 
 
-class Concentrator(ComponentBase, ABC):
-    component_name = "Concentrator"
+class Fillup(ComponentBase):
+    component_name = "Fillup"
 
-    def _run(self, history, **kwargs):
-        return Concentrator.be_output("")
+    def _run(self, **kwargs):
+        for k in self._param.inputs.keys():
+            self._param.outputs[k]["value"] = self._param.inputs[k]["value"]
+
+
+
+

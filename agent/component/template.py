@@ -43,31 +43,20 @@ class Template(ComponentBase):
         return list(cpnts)
 
     def get_input_elements(self):
-        key_set = set([])
-        res = []
-        for r in re.finditer(r"\{([a-z]+[:@][a-z0-9_-]+)\}", self._param.content, flags=re.IGNORECASE):
-            cpn_id = r.group(1)
-            if cpn_id in key_set:
-                continue
-            if cpn_id.lower().find("begin@") == 0:
-                cpn_id, key = cpn_id.split("@")
-                for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
-                    if p["key"] != key:
-                        continue
-                    res.append({"key": r.group(1), "name": p["name"]})
-                    key_set.add(r.group(1))
-                continue
-            cpn_nm = self._canvas.get_component_name(cpn_id)
-            if not cpn_nm:
-                continue
-            res.append({"key": cpn_id, "name": cpn_nm})
-            key_set.add(cpn_id)
+        res = {}
+        for r in re.finditer(r"\{([a-z]+@[a-z0-9_-]+)\}", self._param.content, flags=re.IGNORECASE):
+            cpn_id, var_nm = r.group(1).split("@")
+            res[r.group(1)] = {
+                "name": f"{var_nm}@"+self._canvas.get_component_name(cpn_id),
+            }
         return res
 
-    def _run(self, history, **kwargs):
+    def _run(self):
         content = self._param.content
 
-        self._param.inputs = []
+        for k in self._param.inputs.keys():
+            cpn_id, var_nm = k.split("@") 
+
         for para in self.get_input_elements():
             if para["key"].lower().find("begin@") == 0:
                 cpn_id, key = para["key"].split("@")
