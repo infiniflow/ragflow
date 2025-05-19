@@ -75,25 +75,28 @@ redis:
 #     asr_model: ''
 #     image2text_model: ''
 # oauth:
-#   github:
-#     client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
-#     secret_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-#     url: https://github.com/login/oauth/access_token
-#   feishu:
-#     app_id: cli_xxxxxxxxxxxxxxxxxxx
-#     app_secret: xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-#     app_access_token_url: https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal
-#     user_access_token_url: https://open.feishu.cn/open-apis/authen/v1/oidc/access_token
-#     grant_type: 'authorization_code'
-#   custom_channel:
-#     type: oidc
-#     icon: sso
-#     display_name: "Custom Channel"
-#     issuer: https://provider.com/v1/oidc
-#     client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
-#     client_secret: xxxxxxxxxxxxxxxxxxxxxxxx
+#   oauth2:
+#     display_name: "OAuth2"
+#     client_id: "your_client_id"
+#     client_secret: "your_client_secret"
+#     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
+#     token_url: "https://your-oauth-provider.com/oauth/token"
+#     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
+#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+#   oidc:
+#     display_name: "OIDC"
+#     client_id: "your_client_id"
+#     client_secret: "your_client_secret"
+#     issuer: "https://your-oauth-provider.com/oidc"
 #     scope: "openid email profile"
-#     redirect_uri: https://your-app.com/v1/user/oauth/callback/custom_channel
+#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oidc"
+#   github:
+#     type: "github"
+#     icon: "github"
+#     display_name: "Github"
+#     client_id: "your_client_id"
+#     client_secret: "your_client_secret"
+#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
 # authentication:
 #   client:
 #     switch: false

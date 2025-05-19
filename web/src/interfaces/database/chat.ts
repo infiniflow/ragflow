@@ -86,6 +86,7 @@ export interface IReferenceChunk {
   vector_similarity: number;
   term_similarity: number;
   positions: number[];
+  doc_type?: string;
 }
 
 export interface IReference {

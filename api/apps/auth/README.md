@@ -17,23 +17,31 @@ oauth_config = {
     "type": "oauth2",
     "client_id": "your_client_id",
     "client_secret": "your_client_secret",
-    "authorization_url": "https://provider.com/oauth/authorize",
-    "token_url": "https://provider.com/oauth/token",
-    "userinfo_url": "https://provider.com/oauth/userinfo",
+    "authorization_url": "https://your-oauth-provider.com/oauth/authorize",
+    "token_url": "https://your-oauth-provider.com/oauth/token",
+    "userinfo_url": "https://your-oauth-provider.com/oauth/userinfo",
     "redirect_uri": "https://your-app.com/v1/user/oauth/callback/<channel>"
 }
 
 # OIDC configuration
 oidc_config = {
     "type": "oidc",
-    "issuer": "https://provider.com/v1/oidc",
+    "issuer": "https://your-oauth-provider.com/oidc",
+    "client_id": "your_client_id",
+    "client_secret": "your_client_secret",
+    "redirect_uri": "https://your-app.com/v1/user/oauth/callback/<channel>"
+}
+
+# Github OAuth configuration
+github_config = {
+    "type": "github"
     "client_id": "your_client_id",
     "client_secret": "your_client_secret",
     "redirect_uri": "https://your-app.com/v1/user/oauth/callback/<channel>"
 }
 
 # Get client instance
-client = get_auth_client(oauth_config)  # or oidc_config
+client = get_auth_client(oauth_config)
 ```
 
 ### Authentication Flow

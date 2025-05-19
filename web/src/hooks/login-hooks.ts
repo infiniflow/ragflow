@@ -1,7 +1,10 @@
 import { Authorization } from '@/constants/authorization';
-import userService from '@/services/user-service';
+import userService, {
+  getLoginChannels,
+  loginWithChannel,
+} from '@/services/user-service';
 import authorizationUtil, { redirectToLogin } from '@/utils/authorization-util';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Form, message } from 'antd';
 import { FormInstance } from 'antd/lib';
 import { useEffect, useState } from 'react';
@@ -15,6 +18,36 @@ export interface ILoginRequestBody {
 export interface IRegisterRequestBody extends ILoginRequestBody {
   nickname: string;
 }
+
+export interface ILoginChannel {
+  channel: string;
+  display_name: string;
+  icon: string;
+}
+
+export const useLoginChannels = () => {
+  const { data, isLoading } = useQuery({
+    queryKey: ['loginChannels'],
+    queryFn: async () => {
+      const { data: res = {} } = await getLoginChannels();
+      return res.data || [];
+    },
+  });
+
+  return { channels: data as ILoginChannel[], loading: isLoading };
+};
+
+export const useLoginWithChannel = () => {
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: ['loginWithChannel'],
+    mutationFn: async (channel: string) => {
+      loginWithChannel(channel);
+      return Promise.resolve();
+    },
+  });
+
+  return { loading, login: mutateAsync };
+};
 
 export const useLogin = () => {
   const { t } = useTranslation();
@@ -67,8 +100,13 @@ export const useRegister = () => {
       const { data = {} } = await userService.register(params);
       if (data.code === 0) {
         message.success(t('message.registered'));
-      } else if (data.message && data.message.includes('registration is disabled')) {
-        message.error(t('message.registerDisabled') || 'User registration is disabled');
+      } else if (
+        data.message &&
+        data.message.includes('registration is disabled')
+      ) {
+        message.error(
+          t('message.registerDisabled') || 'User registration is disabled',
+        );
       }
       return data.code;
     },
