@@ -44,7 +44,7 @@ From this release onwards, built-in rerank models have been removed because they
 - [Set page rank](./guides/dataset/set_page_rank.md)
 - [Enable RAPTOR](./guides/dataset/enable_raptor.md)
 - [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
-- [RAGFlow MCP server overview](./develop/mcp.md)
+- [Launch RAGFlow MCP server](./develop/mcp/launch_mcp_server.md)
 
 ## v0.17.2
 
@@ -89,9 +89,9 @@ Released on March 11, 2025.
 - Improves English tokenization quality.
 - Improves the table extraction logic in Markdown document parsing.
 - Updates SiliconFlow's model list.
-- Supports parsing XLS files (Excel97~2003) with improved corresponding error handling.
+- Supports parsing XLS files (Excel 97-2003) with improved corresponding error handling.
 - Supports Huggingface rerank models.
-- Enables relative time expressions ("now", "yesterday", "last week", "next year", and more) in the **Rewrite** agent component.
+- Enables relative time expressions ("now", "yesterday", "last week", "next year", and more) in chat assistant and the **Rewrite** agent component.
 
 ### Fixed issues
 
@@ -291,7 +291,7 @@ Released on November 26, 2024.
 
 ### Compatibility changes
 
-As of this release, **service_config.yaml.template** replaces **service_config.yaml** for configuring backend services. Upon Docker container startup, the environment variables defined in this template file are automatically populated and a **service_config.yaml** is auto-generated from it. [#3341](https://github.com/infiniflow/ragflow/pull/3341)
+From this release onwards, **service_config.yaml.template** replaces **service_config.yaml** for configuring backend services. Upon Docker container startup, the environment variables defined in this template file are automatically populated and a **service_config.yaml** is auto-generated from it. [#3341](https://github.com/infiniflow/ragflow/pull/3341)
 
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
@@ -365,7 +365,7 @@ Released on September 30, 2024.
 
 ### Compatibility changes
 
-As of this release, RAGFlow offers slim editions of its Docker images to improve the experience for users with limited Internet access. A slim edition of RAGFlow's Docker image does not include built-in BGE/BCE embedding models and has a size of about 1GB; a full edition of RAGFlow is approximately 9GB and includes both built-in embedding models and embedding models that will be downloaded once you select them in the RAGFlow UI.
+From this release onwards, RAGFlow offers slim editions of its Docker images to improve the experience for users with limited Internet access. A slim edition of RAGFlow's Docker image does not include built-in BGE/BCE embedding models and has a size of about 1GB; a full edition of RAGFlow is approximately 9GB and includes both built-in embedding models and embedding models that will be downloaded once you select them in the RAGFlow UI.
 
 The default Docker image edition is `nightly-slim`. The following list clarifies the differences between various editions:
 

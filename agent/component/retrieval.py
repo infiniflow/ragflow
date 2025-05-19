@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import re
 from abc import ABC
 
 import pandas as pd
@@ -59,6 +60,7 @@ class Retrieval(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         query = self.get_input()
         query = str(query["content"][0]) if "content" in query else ""
+        query = re.split(r"(USER:|ASSISTANT:)", query)[-1]
 
         kb_ids: list[str] = self._param.kb_ids or []
 
@@ -97,7 +99,7 @@ class Retrieval(ComponentBase, ABC):
             kbinfos = settings.retrievaler.retrieval(
                 query,
                 embd_mdl,
-                kbs[0].tenant_id,
+                [kb.tenant_id for kb in kbs],
                 filtered_kb_ids,
                 1,
                 self._param.top_n,
@@ -111,7 +113,7 @@ class Retrieval(ComponentBase, ABC):
             kbinfos = {"chunks": [], "doc_aggs": []}
 
         if self._param.use_kg and kbs:
-            ck = settings.kg_retrievaler.retrieval(query, [kbs[0].tenant_id], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
+            ck = settings.kg_retrievaler.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 kbinfos["chunks"].insert(0, ck)
 

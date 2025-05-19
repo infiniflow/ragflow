@@ -132,7 +132,10 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 - RAM >= 16 GB
 - Disco >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-  > Se você não instalou o Docker na sua máquina local (Windows, Mac ou Linux), veja [Instalar Docker Engine](https://docs.docker.com/engine/install/).
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Necessário apenas se você pretende usar o recurso de executor de código (sandbox) do RAGFlow.
+
+> [!TIP]
+> Se você não instalou o Docker na sua máquina local (Windows, Mac ou Linux), veja [Instalar Docker Engine](https://docs.docker.com/engine/install/).
 
 ### 🚀 Iniciar o servidor
 
@@ -303,7 +306,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    Adicione a seguinte linha ao arquivo `/etc/hosts` para resolver todos os hosts especificados em **docker/.env** para `127.0.0.1`:
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. Se não conseguir acessar o HuggingFace, defina a variável de ambiente `HF_ENDPOINT` para usar um site espelho:
@@ -312,7 +315,16 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Lance o serviço de back-end:
+5. Se o seu sistema operacional não tiver jemalloc, instale-o da seguinte maneira:
+
+    ```bash
+    # ubuntu
+    sudo apt-get install libjemalloc-dev
+    # centos
+    sudo yum instalar jemalloc
+    ```
+
+6. Lance o serviço de back-end:
 
    ```bash
    source .venv/bin/activate
@@ -320,14 +332,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-6. Instale as dependências do front-end:
+7. Instale as dependências do front-end:
 
    ```bash
    cd web
    npm install
    ```
 
-7. Lance o serviço de front-end:
+8. Lance o serviço de front-end:
 
    ```bash
    npm run dev
@@ -336,6 +348,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _O seguinte resultado confirma o lançamento bem-sucedido do sistema:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+9. Pare os serviços de front-end e back-end do RAGFlow após a conclusão do desenvolvimento:
+
+    ```bash
+    pkill -f "ragflow_server.py|task_executor.py"
+    ```
+
 
 ## 📚 Documentação
 
@@ -360,4 +379,4 @@ Veja o [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214)
 ## 🙌 Contribuindo
 
 O RAGFlow prospera por meio da colaboração de código aberto. Com esse espírito, abraçamos contribuições diversas da comunidade.
-Se você deseja fazer parte, primeiro revise nossas [Diretrizes de Contribuição](./CONTRIBUTING.md).
+Se você deseja fazer parte, primeiro revise nossas [Diretrizes de Contribuição](https://ragflow.io/docs/dev/contributing).

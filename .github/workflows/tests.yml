@@ -15,6 +15,8 @@ on:
       - 'docs/**'
       - '*.md'
       - '*.mdx'
+  schedule:
+    - cron: '0 16 * * *'  # This schedule runs every 16:00:00Z(00:00:00+08:00)
 
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
@@ -106,7 +108,12 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && pytest -s --tb=short -m "not slow"
+          if [[ $GITHUB_EVENT_NAME == 'schedule' ]]; then
+            export HTTP_API_TEST_LEVEL=p3
+          else
+            export HTTP_API_TEST_LEVEL=p2
+          fi
+          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL}
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
@@ -145,7 +152,12 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && DOC_ENGINE=infinity pytest -s --tb=short -m "not slow"
+          if [[ $GITHUB_EVENT_NAME == 'schedule' ]]; then
+            export HTTP_API_TEST_LEVEL=p3
+          else
+            export HTTP_API_TEST_LEVEL=p2
+          fi
+          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL}
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed

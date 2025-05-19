@@ -137,8 +137,10 @@ releases! 🌟
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-  > If you have not installed Docker on your local machine (Windows, Mac, or Linux),
-  > see [Install Docker Engine](https://docs.docker.com/engine/install/).
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only if you intend to use the code executor (sandbox) feature of RAGFlow.
+
+> [!TIP]
+> If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
 ### 🚀 Start up the server
 
@@ -318,7 +320,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/.env** to `127.0.0.1`:
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
@@ -327,7 +329,16 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Launch backend service:
+5. If your operating system does not have jemalloc, please install it as follows:
+
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   ```
+   
+6. Launch backend service:
 
    ```bash
    source .venv/bin/activate
@@ -335,12 +346,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-6. Install frontend dependencies:
+7. Install frontend dependencies:
+
    ```bash
    cd web
    npm install
    ```
-7. Launch frontend service:
+
+8. Launch frontend service:
 
    ```bash
    npm run dev
@@ -349,6 +362,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _The following output confirms a successful launch of the system:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+9. Stop RAGFlow front-end and back-end service after development is complete:
+
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
+
 
 ## 📚 Documentation
 
@@ -373,4 +393,4 @@ See the [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214
 ## 🙌 Contributing
 
 RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community.
-If you would like to be a part, review our [Contribution Guidelines](./CONTRIBUTING.md) first.
+If you would like to be a part, review our [Contribution Guidelines](https://ragflow.io/docs/dev/contributing) first.

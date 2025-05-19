@@ -3,7 +3,7 @@ import { message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'umi';
 
-export const useLoginWithGithub = () => {
+export const useOAuthCallback = () => {
   const [currentQueryParameters, setSearchParams] = useSearchParams();
   const error = currentQueryParameters.get('error');
   const newQueryParameters: URLSearchParams = useMemo(
@@ -12,26 +12,38 @@ export const useLoginWithGithub = () => {
   );
   const navigate = useNavigate();
 
-  if (error) {
-    message.error(error);
-    navigate('/login');
-    newQueryParameters.delete('error');
-    setSearchParams(newQueryParameters);
-    return;
-  }
+  useEffect(() => {
+    if (error) {
+      message.error(error);
+      setTimeout(() => {
+        navigate('/login');
+        newQueryParameters.delete('error');
+        setSearchParams(newQueryParameters);
+      }, 1000);
+      return;
+    }
 
-  const auth = currentQueryParameters.get('auth');
+    const auth = currentQueryParameters.get('auth');
+    if (auth) {
+      authorizationUtil.setAuthorization(auth);
+      newQueryParameters.delete('auth');
+      setSearchParams(newQueryParameters);
+      navigate('/knowledge');
+    }
+  }, [
+    error,
+    currentQueryParameters,
+    newQueryParameters,
+    navigate,
+    setSearchParams,
+  ]);
 
-  if (auth) {
-    authorizationUtil.setAuthorization(auth);
-    newQueryParameters.delete('auth');
-    setSearchParams(newQueryParameters);
-  }
-  return auth;
+  console.debug(currentQueryParameters.get('auth'));
+  return currentQueryParameters.get('auth');
 };
 
 export const useAuth = () => {
-  const auth = useLoginWithGithub();
+  const auth = useOAuthCallback();
   const [isLogin, setIsLogin] = useState<Nullable<boolean>>(null);
 
   useEffect(() => {

@@ -13,21 +13,25 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import uuid
+from collections import Counter
 from enum import auto
 from typing import Annotated, Any
 
 from flask import Request
-from pydantic import BaseModel, Field, StringConstraints, ValidationError, field_validator
+from pydantic import UUID1, BaseModel, Field, StringConstraints, ValidationError, field_serializer, field_validator
+from pydantic_core import PydanticCustomError
 from strenum import StrEnum
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from api.constants import DATASET_NAME_LIMIT
 
 
-def validate_and_parse_json_request(request: Request, validator: type[BaseModel]) -> tuple[dict[str, Any] | None, str | None]:
-    """Validates and parses JSON requests through a multi-stage validation pipeline.
+def validate_and_parse_json_request(request: Request, validator: type[BaseModel], *, extras: dict[str, Any] | None = None, exclude_unset: bool = False) -> tuple[dict[str, Any] | None, str | None]:
+    """
+    Validates and parses JSON requests through a multi-stage validation pipeline.
 
-    Implements a robust four-stage validation process:
+    Implements a four-stage validation process:
     1. Content-Type verification (must be application/json)
     2. JSON syntax validation
     3. Payload structure type checking
@@ -35,6 +39,10 @@ def validate_and_parse_json_request(request: Request, validator: type[BaseModel]
 
     Args:
         request (Request): Flask request object containing HTTP payload
+        validator (type[BaseModel]): Pydantic model class for data validation
+        extras (dict[str, Any] | None): Additional fields to merge into payload
+            before validation. These fields will be removed from the final output
+        exclude_unset (bool): Whether to exclude fields that have not been explicitly set
 
     Returns:
         tuple[Dict[str, Any] | None, str | None]:
@@ -46,26 +54,26 @@ def validate_and_parse_json_request(request: Request, validator: type[BaseModel]
             - Diagnostic error message on failure
 
     Raises:
-        UnsupportedMediaType: When Content-Type ≠ application/json
+        UnsupportedMediaType: When Content-Type header is not application/json
         BadRequest: For structural JSON syntax errors
         ValidationError: When payload violates Pydantic schema rules
 
     Examples:
-        Successful validation:
-        ```python
-        # Input: {"name": "Dataset1", "format": "csv"}
-        # Returns: ({"name": "Dataset1", "format": "csv"}, None)
-        ```
+        >>> validate_and_parse_json_request(valid_request, DatasetSchema)
+        ({"name": "Dataset1", "format": "csv"}, None)
 
-        Invalid Content-Type:
-        ```python
-        # Returns: (None, "Unsupported content type: Expected application/json, got text/xml")
-        ```
+        >>> validate_and_parse_json_request(xml_request, DatasetSchema)
+        (None, "Unsupported content type: Expected application/json, got text/xml")
 
-        Malformed JSON:
-        ```python
-        # Returns: (None, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
-        ```
+        >>> validate_and_parse_json_request(bad_json_request, DatasetSchema)
+        (None, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+
+    Notes:
+        1. Validation Priority:
+            - Content-Type verification precedes JSON parsing
+            - Structural validation occurs before schema validation
+        2. Extra fields added via `extras` parameter are automatically removed
+           from the final output after validation
     """
     try:
         payload = request.get_json() or {}
@@ -78,17 +86,25 @@ def validate_and_parse_json_request(request: Request, validator: type[BaseModel]
         return None, f"Invalid request payload: expected object, got {type(payload).__name__}"
 
     try:
+        if extras is not None:
+            payload.update(extras)
         validated_request = validator(**payload)
     except ValidationError as e:
         return None, format_validation_error_message(e)
 
-    parsed_payload = validated_request.model_dump(by_alias=True)
+    parsed_payload = validated_request.model_dump(by_alias=True, exclude_unset=exclude_unset)
+
+    if extras is not None:
+        for key in list(parsed_payload.keys()):
+            if key in extras:
+                del parsed_payload[key]
 
     return parsed_payload, None
 
 
 def format_validation_error_message(e: ValidationError) -> str:
-    """Formats validation errors into a standardized string format.
+    """
+    Formats validation errors into a standardized string format.
 
     Processes pydantic ValidationError objects to create human-readable error messages
     containing field locations, error descriptions, and input values.
@@ -155,7 +171,6 @@ class GraphragMethodEnum(StrEnum):
 class Base(BaseModel):
     class Config:
         extra = "forbid"
-        json_schema_extra = {"charset": "utf8mb4", "collation": "utf8mb4_0900_ai_ci"}
 
 
 class RaptorConfig(Base):
@@ -201,7 +216,7 @@ class CreateDatasetReq(Base):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(...)]
     avatar: str | None = Field(default=None, max_length=65535)
     description: str | None = Field(default=None, max_length=65535)
-    embedding_model: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=255), Field(default=None, serialization_alias="embd_id")]
+    embedding_model: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255), Field(default="", serialization_alias="embd_id")]
     permission: Annotated[PermissionEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=16), Field(default=PermissionEnum.me)]
     chunk_method: Annotated[ChunkMethodnEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=32), Field(default=ChunkMethodnEnum.naive, serialization_alias="parser_id")]
     pagerank: int = Field(default=0, ge=0, le=100)
@@ -209,8 +224,9 @@ class CreateDatasetReq(Base):
 
     @field_validator("avatar")
     @classmethod
-    def validate_avatar_base64(cls, v: str) -> str:
-        """Validates Base64-encoded avatar string format and MIME type compliance.
+    def validate_avatar_base64(cls, v: str | None) -> str | None:
+        """
+        Validates Base64-encoded avatar string format and MIME type compliance.
 
         Implements a three-stage validation workflow:
         1. MIME prefix existence check
@@ -224,7 +240,7 @@ class CreateDatasetReq(Base):
             str: Validated Base64 string
 
         Raises:
-            ValueError: For structural errors in these cases:
+            PydanticCustomError: For structural errors in these cases:
                 - Missing MIME prefix header
                 - Invalid MIME prefix format
                 - Unsupported image MIME type
@@ -245,21 +261,22 @@ class CreateDatasetReq(Base):
         if "," in v:
             prefix, _ = v.split(",", 1)
             if not prefix.startswith("data:"):
-                raise ValueError("Invalid MIME prefix format. Must start with 'data:'")
+                raise PydanticCustomError("format_invalid", "Invalid MIME prefix format. Must start with 'data:'")
 
             mime_type = prefix[5:].split(";")[0]
             supported_mime_types = ["image/jpeg", "image/png"]
             if mime_type not in supported_mime_types:
-                raise ValueError(f"Unsupported MIME type. Allowed: {supported_mime_types}")
+                raise PydanticCustomError("format_invalid", "Unsupported MIME type. Allowed: {supported_mime_types}", {"supported_mime_types": supported_mime_types})
 
             return v
         else:
-            raise ValueError("Missing MIME prefix. Expected format: data:<mime>;base64,<data>")
+            raise PydanticCustomError("format_invalid", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>")
 
     @field_validator("embedding_model", mode="after")
     @classmethod
     def validate_embedding_model(cls, v: str) -> str:
-        """Validates embedding model identifier format compliance.
+        """
+        Validates embedding model identifier format compliance.
 
         Validation pipeline:
         1. Structural format verification
@@ -273,7 +290,7 @@ class CreateDatasetReq(Base):
             str: Validated <model_name>@<provider> format
 
         Raises:
-            ValueError: For these violations:
+            PydanticCustomError: For these violations:
                 - Missing @ separator
                 - Empty model_name/provider
                 - Invalid component structure
@@ -285,24 +302,25 @@ class CreateDatasetReq(Base):
             Invalid: "text-embedding-3-large@" (empty provider)
         """
         if "@" not in v:
-            raise ValueError("Embedding model identifier must follow <model_name>@<provider> format")
+            raise PydanticCustomError("format_invalid", "Embedding model identifier must follow <model_name>@<provider> format")
 
         components = v.split("@", 1)
         if len(components) != 2 or not all(components):
-            raise ValueError("Both model_name and provider must be non-empty strings")
+            raise PydanticCustomError("format_invalid", "Both model_name and provider must be non-empty strings")
 
         model_name, provider = components
         if not model_name.strip() or not provider.strip():
-            raise ValueError("Model name and provider cannot be whitespace-only strings")
+            raise PydanticCustomError("format_invalid", "Model name and provider cannot be whitespace-only strings")
         return v
 
     @field_validator("permission", mode="before")
     @classmethod
-    def permission_auto_lowercase(cls, v: str) -> str:
-        """Normalize permission input to lowercase for consistent PermissionEnum matching.
+    def permission_auto_lowercase(cls, v: Any) -> Any:
+        """
+        Normalize permission input to lowercase for consistent PermissionEnum matching.
 
         Args:
-            v (str): Raw input value for the permission field
+            v (Any): Raw input value for the permission field
 
         Returns:
             Lowercase string if input is string type, otherwise returns original value
@@ -314,12 +332,39 @@ class CreateDatasetReq(Base):
         """
         return v.lower() if isinstance(v, str) else v
 
+    @field_validator("parser_config", mode="before")
+    @classmethod
+    def normalize_empty_parser_config(cls, v: Any) -> Any:
+        """
+        Normalizes empty parser configuration by converting empty dictionaries to None.
+
+        This validator ensures consistent handling of empty parser configurations across
+        the application by converting empty dicts to None values.
+
+        Args:
+            v (Any): Raw input value for the parser config field
+
+        Returns:
+            Any: Returns None if input is an empty dict, otherwise returns the original value
+
+        Example:
+            >>> normalize_empty_parser_config({})
+            None
+
+            >>> normalize_empty_parser_config({"key": "value"})
+            {"key": "value"}
+        """
+        if v == {}:
+            return None
+        return v
+
     @field_validator("parser_config", mode="after")
     @classmethod
     def validate_parser_config_json_length(cls, v: ParserConfig | None) -> ParserConfig | None:
-        """Validates serialized JSON length constraints for parser configuration.
+        """
+        Validates serialized JSON length constraints for parser configuration.
 
-        Implements a three-stage validation workflow:
+        Implements a two-stage validation workflow:
         1. Null check - bypass validation for empty configurations
         2. Model serialization - convert Pydantic model to JSON string
         3. Size verification - enforce maximum allowed payload size
@@ -331,11 +376,104 @@ class CreateDatasetReq(Base):
             ParserConfig | None: Validated configuration object
 
         Raises:
-            ValueError: When serialized JSON exceeds 65,535 characters
+            PydanticCustomError: When serialized JSON exceeds 65,535 characters
         """
         if v is None:
-            return v
+            return None
 
         if (json_str := v.model_dump_json()) and len(json_str) > 65535:
-            raise ValueError(f"Parser config exceeds size limit (max 65,535 characters). Current size: {len(json_str):,}")
+            raise PydanticCustomError("string_too_long", "Parser config exceeds size limit (max 65,535 characters). Current size: {actual}", {"actual": len(json_str)})
         return v
+
+
+class UpdateDatasetReq(CreateDatasetReq):
+    dataset_id: UUID1 = Field(...)
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(default="")]
+
+    @field_serializer("dataset_id")
+    def serialize_uuid_to_hex(self, v: uuid.UUID) -> str:
+        """
+        Serializes a UUID version 1 object to its hexadecimal string representation.
+
+        This field serializer specifically handles UUID version 1 objects, converting them
+        to their canonical 32-character hexadecimal format without hyphens. The conversion
+        is designed for consistent serialization in API responses and database storage.
+
+        Args:
+            v (uuid.UUID1): The UUID version 1 object to serialize. Must be a valid
+                        UUID1 instance generated by Python's uuid module.
+
+        Returns:
+            str: 32-character lowercase hexadecimal string representation
+                Example: "550e8400e29b41d4a716446655440000"
+
+        Raises:
+            AttributeError: If input is not a proper UUID object (missing hex attribute)
+            TypeError: If input is not a UUID1 instance (when type checking is enabled)
+
+        Notes:
+            - Version 1 UUIDs contain timestamp and MAC address information
+            - The .hex property automatically converts to lowercase hexadecimal
+            - For cross-version compatibility, consider typing as uuid.UUID instead
+        """
+        return v.hex
+
+
+class DeleteReq(Base):
+    ids: list[UUID1] | None = Field(...)
+
+    @field_validator("ids", mode="after")
+    def check_duplicate_ids(cls, v: list[UUID1] | None) -> list[str] | None:
+        """
+        Validates and converts a list of UUID1 objects to hexadecimal strings while checking for duplicates.
+
+        This validator implements a three-stage processing pipeline:
+        1. Null Handling - returns None for empty/null input
+        2. UUID Conversion - transforms UUID objects to hex strings
+        3. Duplicate Validation - ensures all IDs are unique
+
+        Behavior Specifications:
+        - Input: None → Returns None (indicates no operation)
+        - Input: [] → Returns [] (empty list for explicit no-op)
+        - Input: [UUID1,...] → Returns validated hex strings
+        - Duplicates: Raises formatted PydanticCustomError
+
+        Args:
+            v (list[UUID1] | None):
+                - None: Indicates no datasets should be processed
+                - Empty list: Explicit empty operation
+                - Populated list: Dataset UUIDs to validate/convert
+
+        Returns:
+            list[str] | None:
+                - None when input is None
+                - List of 32-character hex strings (lowercase, no hyphens)
+                Example: ["550e8400e29b41d4a716446655440000"]
+
+        Raises:
+            PydanticCustomError: When duplicates detected, containing:
+                - Error type: "duplicate_uuids"
+                - Template message: "Duplicate ids: '{duplicate_ids}'"
+                - Context: {"duplicate_ids": "id1, id2, ..."}
+
+        Example:
+            >>> validate([UUID("..."), UUID("...")])
+            ["2cdf0456e9a711ee8000000000000000", ...]
+
+            >>> validate([UUID("..."), UUID("...")])  # Duplicates
+            PydanticCustomError: Duplicate ids: '2cdf0456e9a711ee8000000000000000'
+        """
+        if not v:
+            return v
+
+        uuid_hex_list = [ids.hex for ids in v]
+        duplicates = [item for item, count in Counter(uuid_hex_list).items() if count > 1]
+
+        if duplicates:
+            duplicates_str = ", ".join(duplicates)
+            raise PydanticCustomError("duplicate_uuids", "Duplicate ids: '{duplicate_ids}'", {"duplicate_ids": duplicates_str})
+
+        return uuid_hex_list
+
+
+class DeleteDatasetReq(DeleteReq): ...

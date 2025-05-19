@@ -368,7 +368,7 @@ async def build_chunks(task, progress_callback):
 
         docs_to_tag = []
         for d in docs:
-            if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S):
+            if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
             else:
                 docs_to_tag.append(d)
@@ -537,9 +537,9 @@ async def do_handle_task(task):
     elif task.get("task_type", "") == "graphrag":
         global task_limiter
         task_limiter = trio.CapacityLimiter(2)
-        graphrag_conf = task_parser_config.get("graphrag", {})
-        if not graphrag_conf.get("use_graphrag", False):
+        if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
             return
+        graphrag_conf = task["kb_parser_config"].get("graphrag", {})
         start_ts = timer()
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
         with_resolution = graphrag_conf.get("resolution", False)
@@ -713,7 +713,10 @@ def recover_pending_tasks():
             redis_lock.release()
             stop_event.wait(60)
         
-
+async def task_manager():
+    global task_limiter
+    async with task_limiter:
+        await handle_task()
 
 
 async def main():
@@ -742,8 +745,8 @@ async def main():
     async with trio.open_nursery() as nursery:
         nursery.start_soon(report_status)
         while not stop_event.is_set():
-            async with task_limiter:
-                nursery.start_soon(handle_task)
+            nursery.start_soon(task_manager)
+            await trio.sleep(0.1)
     logging.error("BUG!!! You should not reach here!!!")
 
 if __name__ == "__main__":

@@ -85,8 +85,12 @@ Yes, you can. Just one graph is generated per knowledge base. The smaller graphs
 
 ### Does the knowledge graph automatically update when I remove a related file?
 
-Nope. The knowledge graph does *not* automatically update *until* a newly uploaded graph is parsed.
+Nope. The knowledge graph does *not* automatically update *until* a newly uploaded document is parsed.
 
 ### How to remove a generated knowledge graph?
 
 To remove the generated knowledge graph, delete all related files in your knowledge base. Although the **Knowledge graph** entry will still be visible, the graph has actually been deleted.
+
+### Where is the created knowledge graph stored?
+
+All chunks of the created knowledge graph are stored in RAGFlow's document engine: either Elasticsearch or [Infinity](https://github.com/infiniflow/infinity).
