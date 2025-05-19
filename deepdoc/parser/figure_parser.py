@@ -22,13 +22,19 @@ from rag.prompts import vision_llm_figure_describe_prompt
 
 
 def vision_figure_parser_figure_data_wraper(figures_data_without_positions):
-    return [(
-        (figure_data[1], [figure_data[0]]),
-        [(0, 0, 0, 0, 0)]
-    ) for figure_data in figures_data_without_positions if isinstance(figure_data[1], Image.Image)]
+    return [
+        (
+            (figure_data[1], [figure_data[0]]),
+            [(0, 0, 0, 0, 0)],
+        )
+        for figure_data in figures_data_without_positions
+        if isinstance(figure_data[1], Image.Image)
+    ]
 
 
 shared_executor = ThreadPoolExecutor(max_workers=10)
+
+
 class VisionFigureParser:
     def __init__(self, vision_model, figures_data, *args, **kwargs):
         self.vision_model = vision_model
@@ -43,21 +49,16 @@ class VisionFigureParser:
 
         for item in figures_data:
             # position
-            if len(item) == 2 and isinstance(item[1], list) and len(item[1]) == 1 and isinstance(item[1][0], tuple) and len(item[1][0]) == 5:
+            if len(item) == 2 and isinstance(item[0], tuple) and len(item[0]) == 2 and isinstance(item[1], list) and isinstance(item[1][0], tuple) and len(item[1][0]) == 5:
                 img_desc = item[0]
                 assert len(img_desc) == 2 and isinstance(img_desc[0], Image.Image) and isinstance(img_desc[1], list), "Should be (figure, [description])"
                 self.figures.append(img_desc[0])
                 self.descriptions.append(img_desc[1])
                 self.positions.append(item[1])
             else:
-                assert len(item) == 2 and isinstance(item, tuple) and isinstance(item[1], list), f"get {len(item)=}, {item=}"
-                if isinstance(item[0], tuple) and len(item[0]) == 2 and isinstance(item[0][0], Image.Image) and isinstance(item[0][1], list):
-                    self.figures.append(item[0][0])
-                    self.descriptions.append(item[0][1])
-                else:
-                    self.figures.append(item[0])
-                    self.descriptions.append(item[1])
-                
+                assert len(item) == 2 and isinstance(item[0], Image.Image) and isinstance(item[1], list), f"Unexpected form of figure data: get {len(item)=}, {item=}"
+                self.figures.append(item[0])
+                self.descriptions.append(item[1])
 
     def _assemble(self):
         self.assembled = []
