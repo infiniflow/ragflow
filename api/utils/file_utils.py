@@ -272,8 +272,8 @@ def read_potential_broken_pdf(blob):
             with pdfplumber.open(BytesIO(blob)) as pdf:
                 if pdf.pages:
                     return True
-        except Exception as e:
-            print(f"PDF open failed: {e}")
+        except Exception:
+            return False
         return False
 
     if try_open(blob):
