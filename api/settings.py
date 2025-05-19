@@ -73,6 +73,8 @@ SANDBOX_HOST = None
 
 BUILTIN_EMBEDDING_MODELS = ["BAAI/bge-large-zh-v1.5@BAAI", "maidalun1020/bce-embedding-base_v1@Youdao"]
 
+MAX_FILE_NAME_BYTES_LENGTH = int(os.get_env('MAX_FILE_NAME_BYTES_LENGT', "128"))
+
 
 def init_settings():
     global LLM, LLM_FACTORY, LLM_BASE_URL, LIGHTEN, DATABASE_TYPE, DATABASE, FACTORY_LLM_INFOS, REGISTER_ENABLED
