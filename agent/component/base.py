@@ -36,6 +36,7 @@ class ComponentParamBase(ABC):
         self.message_history_window_size = 22
         self.inputs = {}
         self.outputs = {}
+        self.description = ""
         self.debug_inputs = {}
 
     def set_name(self, name: str):

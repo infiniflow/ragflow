@@ -27,7 +27,11 @@ class TemplateParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.content = ""
-        self.parameters = []
+        self.outputs = {
+            "content": {
+                "type": "str"
+            }
+        }
 
     def check(self):
         self.check_empty(self.content, "[Template] Content")
@@ -36,11 +40,6 @@ class TemplateParam(ComponentParamBase):
 
 class Template(ComponentBase):
     component_name = "Template"
-
-    def get_dependent_components(self):
-        inputs = self.get_input_elements()
-        cpnts = set([i["key"] for i in inputs if i["key"].lower().find("answer") < 0 and i["key"].lower().find("begin") < 0])
-        return list(cpnts)
 
     def get_input_elements(self):
         res = {}
@@ -53,42 +52,12 @@ class Template(ComponentBase):
 
     def _run(self):
         content = self._param.content
-
+        kwargs = {}
         for k in self._param.inputs.keys():
-            cpn_id, var_nm = k.split("@") 
-
-        for para in self.get_input_elements():
-            if para["key"].lower().find("begin@") == 0:
-                cpn_id, key = para["key"].split("@")
-                for p in self._canvas.get_component(cpn_id)["obj"]._param.query:
-                    if p["key"] == key:
-                        value = p.get("value", "")
-                        self.make_kwargs(para, kwargs, value)
-                        break
-                else:
-                    assert False, f"Can't find parameter '{key}' for {cpn_id}"
-                continue
-
-            component_id = para["key"]
-            cpn = self._canvas.get_component(component_id)["obj"]
-            if cpn.component_name.lower() == "answer":
-                hist = self._canvas.get_history(1)
-                if hist:
-                    hist = hist[0]["content"]
-                else:
-                    hist = ""
-                self.make_kwargs(para, kwargs, hist)
-                continue
-
-            _, out = cpn.output(allow_partial=False)
-
-            result = ""
-            if "content" in out.columns:
-                result = "\n".join(
-                    [o if isinstance(o, str) else str(o) for o in out["content"]]
-                )
-
-            self.make_kwargs(para, kwargs, result)
+            cpn_id, var_nm = k.split("@")
+            if self._param.inputs[k]["value"] is None:
+                self._param.inputs[k]["value"] = self._canvas.get_component(cpn_id)["obj"].output(var_nm)
+            kwargs[k] = self._param.inputs[k]["value"]
 
         template = Jinja2Template(content)
 
@@ -110,14 +79,5 @@ class Template(ComponentBase):
                 r"(#+)", r" \1 ", content
             )
 
-        return Template.be_output(content)
+        self._param.outputs["content"]["value"] = content
 
-    def make_kwargs(self, para, kwargs, value):
-        self._param.inputs.append(
-            {"component_id": para["key"], "content": value}
-        )
-        try:
-            value = json.loads(value)
-        except Exception:
-            pass
-        kwargs[para["key"]] = value
