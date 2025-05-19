@@ -13,13 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import uuid
 from collections import Counter
 from enum import auto
 from typing import Annotated, Any
+from uuid import UUID
 
 from flask import Request
-from pydantic import UUID1, BaseModel, Field, StringConstraints, ValidationError, field_serializer, field_validator
+from pydantic import BaseModel, Field, StringConstraints, ValidationError, field_validator
 from pydantic_core import PydanticCustomError
 from strenum import StrEnum
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
@@ -102,6 +102,71 @@ def validate_and_parse_json_request(request: Request, validator: type[BaseModel]
     return parsed_payload, None
 
 
+def validate_and_parse_request_args(request: Request, validator: type[BaseModel], *, extras: dict[str, Any] | None = None) -> tuple[dict[str, Any] | None, str | None]:
+    """
+    Validates and parses request arguments against a Pydantic model.
+
+    This function performs a complete request validation workflow:
+    1. Extracts query parameters from the request
+    2. Merges with optional extra values (if provided)
+    3. Validates against the specified Pydantic model
+    4. Cleans the output by removing extra values
+    5. Returns either parsed data or an error message
+
+    Args:
+        request (Request): Web framework request object containing query parameters
+        validator (type[BaseModel]): Pydantic model class for validation
+        extras (dict[str, Any] | None): Optional additional values to include in validation
+                                      but exclude from final output. Defaults to None.
+
+    Returns:
+        tuple[dict[str, Any] | None, str | None]:
+            - First element: Validated/parsed arguments as dict if successful, None otherwise
+            - Second element: Formatted error message if validation failed, None otherwise
+
+    Behavior:
+        - Query parameters are merged with extras before validation
+        - Extras are automatically removed from the final output
+        - All validation errors are formatted into a human-readable string
+
+    Raises:
+        TypeError: If validator is not a Pydantic BaseModel subclass
+
+    Examples:
+        Successful validation:
+            >>> validate_and_parse_request_args(request, MyValidator)
+            ({'param1': 'value'}, None)
+
+        Failed validation:
+            >>> validate_and_parse_request_args(request, MyValidator)
+            (None, "param1: Field required")
+
+        With extras:
+            >>> validate_and_parse_request_args(request, MyValidator, extras={'internal_id': 123})
+            ({'param1': 'value'}, None)  # internal_id removed from output
+
+    Notes:
+        - Uses request.args.to_dict() for Flask-compatible parameter extraction
+        - Maintains immutability of original request arguments
+        - Preserves type conversion from Pydantic validation
+    """
+    args = request.args.to_dict(flat=True)
+    try:
+        if extras is not None:
+            args.update(extras)
+        validated_args = validator(**args)
+    except ValidationError as e:
+        return None, format_validation_error_message(e)
+
+    parsed_args = validated_args.model_dump()
+    if extras is not None:
+        for key in list(parsed_args.keys()):
+            if key in extras:
+                del parsed_args[key]
+
+    return parsed_args, None
+
+
 def format_validation_error_message(e: ValidationError) -> str:
     """
     Formats validation errors into a standardized string format.
@@ -141,6 +206,105 @@ def format_validation_error_message(e: ValidationError) -> str:
         error_messages.append(error_msg)
 
     return "\n".join(error_messages)
+
+
+def normalize_str(v: Any) -> Any:
+    """
+    Normalizes string values to a standard format while preserving non-string inputs.
+
+    Performs the following transformations when input is a string:
+    1. Trims leading/trailing whitespace (str.strip())
+    2. Converts to lowercase (str.lower())
+
+    Non-string inputs are returned unchanged, making this function safe for mixed-type
+    processing pipelines.
+
+    Args:
+        v (Any): Input value to normalize. Accepts any Python object.
+
+    Returns:
+        Any: Normalized string if input was string-type, original value otherwise.
+
+    Behavior Examples:
+        String Input: "  Admin " → "admin"
+        Empty String: "   " → "" (empty string)
+        Non-String:
+            - 123 → 123
+            - None → None
+            - ["User"] → ["User"]
+
+    Typical Use Cases:
+        - Standardizing user input
+        - Preparing data for case-insensitive comparison
+        - Cleaning API parameters
+        - Normalizing configuration values
+
+    Edge Cases:
+        - Unicode whitespace is handled by str.strip()
+        - Locale-independent lowercasing (str.lower())
+        - Preserves falsy values (0, False, etc.)
+
+    Example:
+        >>> normalize_str("  ReadOnly  ")
+        'readonly'
+        >>> normalize_str(42)
+        42
+    """
+    if isinstance(v, str):
+        stripped = v.strip()
+        normalized = stripped.lower()
+        return normalized
+    return v
+
+
+def validate_uuid1_hex(v: Any) -> str:
+    """
+    Validates and converts input to a UUID version 1 hexadecimal string.
+
+    This function performs strict validation and normalization:
+    1. Accepts either UUID objects or UUID-formatted strings
+    2. Verifies the UUID is version 1 (time-based)
+    3. Returns the 32-character hexadecimal representation
+
+    Args:
+        v (Any): Input value to validate. Can be:
+                - UUID object (must be version 1)
+                - String in UUID format (e.g. "550e8400-e29b-41d4-a716-446655440000")
+
+    Returns:
+        str: 32-character lowercase hexadecimal string without hyphens
+             Example: "550e8400e29b41d4a716446655440000"
+
+    Raises:
+        PydanticCustomError: With code "invalid_UUID1_format" when:
+            - Input is not a UUID object or valid UUID string
+            - UUID version is not 1
+            - String doesn't match UUID format
+
+    Examples:
+        Valid cases:
+            >>> validate_uuid1_hex("550e8400-e29b-41d4-a716-446655440000")
+            '550e8400e29b41d4a716446655440000'
+            >>> validate_uuid1_hex(UUID('550e8400-e29b-41d4-a716-446655440000'))
+            '550e8400e29b41d4a716446655440000'
+
+        Invalid cases:
+            >>> validate_uuid1_hex("not-a-uuid")  # raises PydanticCustomError
+            >>> validate_uuid1_hex(12345)  # raises PydanticCustomError
+            >>> validate_uuid1_hex(UUID(int=0))  # v4, raises PydanticCustomError
+
+    Notes:
+        - Uses Python's built-in UUID parser for format validation
+        - Version check prevents accidental use of other UUID versions
+        - Hyphens in input strings are automatically removed in output
+    """
+    try:
+        uuid_obj = UUID(v) if isinstance(v, str) else v
+        if uuid_obj.version != 1:
+            raise PydanticCustomError("invalid_UUID1_format", "Must be a UUID1 format")
+        return uuid_obj.hex
+    except (AttributeError, ValueError, TypeError):
+        raise PydanticCustomError("invalid_UUID1_format", "Invalid UUID1 format")
 
 
 class PermissionEnum(StrEnum):
@@ -217,8 +381,8 @@ class CreateDatasetReq(Base):
     avatar: str | None = Field(default=None, max_length=65535)
     description: str | None = Field(default=None, max_length=65535)
     embedding_model: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255), Field(default="", serialization_alias="embd_id")]
-    permission: Annotated[PermissionEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=16), Field(default=PermissionEnum.me)]
-    chunk_method: Annotated[ChunkMethodnEnum, StringConstraints(strip_whitespace=True, min_length=1, max_length=32), Field(default=ChunkMethodnEnum.naive, serialization_alias="parser_id")]
+    permission: PermissionEnum = Field(default=PermissionEnum.me, min_length=1, max_length=16)
+    chunk_method: ChunkMethodnEnum = Field(default=ChunkMethodnEnum.naive, min_length=1, max_length=32, serialization_alias="parser_id")
     pagerank: int = Field(default=0, ge=0, le=100)
     parser_config: ParserConfig | None = Field(default=None)
 
@@ -315,22 +479,8 @@ class CreateDatasetReq(Base):
 
     @field_validator("permission", mode="before")
     @classmethod
-    def permission_auto_lowercase(cls, v: Any) -> Any:
-        """
-        Normalize permission input to lowercase for consistent PermissionEnum matching.
-
-        Args:
-            v (Any): Raw input value for the permission field
-
-        Returns:
-            Lowercase string if input is string type, otherwise returns original value
-
-        Behavior:
-            - Converts string inputs to lowercase (e.g., "ME" → "me")
-            - Non-string values pass through unchanged
-            - Works in validation pre-processing stage (before enum conversion)
-        """
-        return v.lower() if isinstance(v, str) else v
+    def normalize_permission(cls, v: Any) -> Any:
+        return normalize_str(v)
 
     @field_validator("parser_config", mode="before")
     @classmethod
@@ -387,93 +537,117 @@ class CreateDatasetReq(Base):
 
 
 class UpdateDatasetReq(CreateDatasetReq):
-    dataset_id: UUID1 = Field(...)
+    dataset_id: str = Field(...)
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(default="")]
 
-    @field_serializer("dataset_id")
-    def serialize_uuid_to_hex(self, v: uuid.UUID) -> str:
-        """
-        Serializes a UUID version 1 object to its hexadecimal string representation.
-
-        This field serializer specifically handles UUID version 1 objects, converting them
-        to their canonical 32-character hexadecimal format without hyphens. The conversion
-        is designed for consistent serialization in API responses and database storage.
-
-        Args:
-            v (uuid.UUID1): The UUID version 1 object to serialize. Must be a valid
-                        UUID1 instance generated by Python's uuid module.
-
-        Returns:
-            str: 32-character lowercase hexadecimal string representation
-                Example: "550e8400e29b41d4a716446655440000"
-
-        Raises:
-            AttributeError: If input is not a proper UUID object (missing hex attribute)
-            TypeError: If input is not a UUID1 instance (when type checking is enabled)
-
-        Notes:
-            - Version 1 UUIDs contain timestamp and MAC address information
-            - The .hex property automatically converts to lowercase hexadecimal
-            - For cross-version compatibility, consider typing as uuid.UUID instead
-        """
-        return v.hex
+    @field_validator("dataset_id", mode="before")
+    @classmethod
+    def validate_dataset_id(cls, v: Any) -> str:
+        return validate_uuid1_hex(v)
 
 
 class DeleteReq(Base):
-    ids: list[UUID1] | None = Field(...)
+    ids: list[str] | None = Field(...)
 
     @field_validator("ids", mode="after")
-    def check_duplicate_ids(cls, v: list[UUID1] | None) -> list[str] | None:
+    @classmethod
+    def validate_ids(cls, v_list: list[str] | None) -> list[str] | None:
         """
-        Validates and converts a list of UUID1 objects to hexadecimal strings while checking for duplicates.
+        Validates and normalizes a list of UUID strings with None handling.
 
-        This validator implements a three-stage processing pipeline:
-        1. Null Handling - returns None for empty/null input
-        2. UUID Conversion - transforms UUID objects to hex strings
-        3. Duplicate Validation - ensures all IDs are unique
-
-        Behavior Specifications:
-        - Input: None → Returns None (indicates no operation)
-        - Input: [] → Returns [] (empty list for explicit no-op)
-        - Input: [UUID1,...] → Returns validated hex strings
-        - Duplicates: Raises formatted PydanticCustomError
+        This post-processing validator performs:
+        1. None input handling (pass-through)
+        2. UUID version 1 validation for each list item
+        3. Duplicate value detection
+        4. Returns normalized UUID hex strings or None
 
         Args:
-            v (list[UUID1] | None):
-                - None: Indicates no datasets should be processed
-                - Empty list: Explicit empty operation
-                - Populated list: Dataset UUIDs to validate/convert
+            v_list (list[str] | None): Input list that has passed initial validation.
+                                    Either a list of UUID strings or None.
 
         Returns:
             list[str] | None:
-                - None when input is None
-                - List of 32-character hex strings (lowercase, no hyphens)
-                Example: ["550e8400e29b41d4a716446655440000"]
+            - None if input was None
+            - List of normalized UUID hex strings otherwise:
+            * 32-character lowercase
+            * Valid UUID version 1
+            * Unique within list
 
         Raises:
-            PydanticCustomError: When duplicates detected, containing:
-                - Error type: "duplicate_uuids"
-                - Template message: "Duplicate ids: '{duplicate_ids}'"
-                - Context: {"duplicate_ids": "id1, id2, ..."}
+            PydanticCustomError: With structured error details when:
+                - "invalid_UUID1_format": Any string fails UUIDv1 validation
+                - "duplicate_uuids": If duplicate IDs are detected
 
-        Example:
-            >>> validate([UUID("..."), UUID("...")])
-            ["2cdf0456e9a711ee8000000000000000", ...]
+        Validation Rules:
+            - None input returns None
+            - Empty list returns empty list
+            - All non-None items must be valid UUIDv1
+            - No duplicates permitted
+            - Original order preserved
 
-            >>> validate([UUID("..."), UUID("...")])  # Duplicates
-            PydanticCustomError: Duplicate ids: '2cdf0456e9a711ee8000000000000000'
+        Examples:
+            Valid cases:
+                >>> validate_ids(None)
+                None
+                >>> validate_ids([])
+                []
+                >>> validate_ids(["550e8400-e29b-41d4-a716-446655440000"])
+                ["550e8400e29b41d4a716446655440000"]
+
+            Invalid cases:
+                >>> validate_ids(["invalid"])
+                # raises PydanticCustomError(invalid_UUID1_format)
+                >>> validate_ids(["550e...", "550e..."])
+                # raises PydanticCustomError(duplicate_uuids)
+
+        Security Notes:
+            - Validates UUID version to prevent version spoofing
+            - Duplicate check prevents data injection
+            - None handling maintains pipeline integrity
         """
-        if not v:
-            return v
+        if v_list is None:
+            return None
 
-        uuid_hex_list = [ids.hex for ids in v]
-        duplicates = [item for item, count in Counter(uuid_hex_list).items() if count > 1]
+        ids_list = []
+        for v in v_list:
+            try:
+                ids_list.append(validate_uuid1_hex(v))
+            except PydanticCustomError as e:
+                raise e
 
+        duplicates = [item for item, count in Counter(ids_list).items() if count > 1]
         if duplicates:
             duplicates_str = ", ".join(duplicates)
             raise PydanticCustomError("duplicate_uuids", "Duplicate ids: '{duplicate_ids}'", {"duplicate_ids": duplicates_str})
 
-        return uuid_hex_list
+        return ids_list
 
 
 class DeleteDatasetReq(DeleteReq): ...
+
+
+class OrderByEnum(StrEnum):
+    create_time = auto()
+    update_time = auto()
+
+
+class BaseListReq(Base):
+    id: str | None = None
+    name: str | None = None
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=30, ge=1)
+    orderby: OrderByEnum = Field(default=OrderByEnum.create_time)
+    desc: bool = Field(default=True)
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def validate_id(cls, v: Any) -> str:
+        return validate_uuid1_hex(v)
+
+    @field_validator("orderby", mode="before")
+    @classmethod
+    def normalize_orderby(cls, v: Any) -> Any:
+        return normalize_str(v)
+
+
+class ListDatasetReq(BaseListReq): ...
