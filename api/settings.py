@@ -66,6 +66,11 @@ kg_retrievaler = None
 # user registration switch
 REGISTER_ENABLED = 1
 
+
+# sandbox-executor-manager
+SANDBOX_ENABLED = 0
+SANDBOX_HOST = None
+
 BUILTIN_EMBEDDING_MODELS = ["BAAI/bge-large-zh-v1.5@BAAI", "maidalun1020/bce-embedding-base_v1@Youdao"]
 
 
@@ -145,6 +150,10 @@ def init_settings():
 
     retrievaler = search.Dealer(docStoreConn)
     kg_retrievaler = kg_search.KGSearch(docStoreConn)
+
+    if int(os.environ.get("SANDBOX_ENABLED", "0")):
+        global SANDBOX_HOST
+        SANDBOX_HOST = os.environ.get("SANDBOX_HOST", "sandbox-executor-manager")
 
 
 class CustomEnum(Enum):

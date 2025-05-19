@@ -461,6 +461,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       model: '模型',
       modelTip: '大语言聊天模型',
       modelMessage: '请选择',
+      modelEnabledTools: '可用的工具',
+      modelEnabledToolsTip: '请选择一个或多个可供该模型所使用的工具。仅对支持工具调用的模型生效。',
       freedom: '自由度',
       improvise: '即兴创作',
       precise: '精确',
@@ -1230,6 +1232,16 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       file: 'file',
       knowledge: 'knowledge',
       chat: 'chat',
+    },
+    llmTools: {
+      bad_calculator: {
+        name: "计算器",
+        description: "用于计算两个数的和的工具（会给出错误答案）",
+        params: {
+          a: "第一个数",
+          b: "第二个数",
+        },
+      },
     },
   },
 };

@@ -17,17 +17,20 @@ import base64
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import threading
 from io import BytesIO
 
 import pdfplumber
-from PIL import Image
 from cachetools import LRUCache, cached
+from PIL import Image
 from ruamel.yaml import YAML
 
-from api.db import FileType
 from api.constants import IMG_BASE64_PREFIX
+from api.db import FileType
 
 PROJECT_BASE = os.getenv("RAG_PROJECT_BASE") or os.getenv("RAG_DEPLOY_BASE")
 RAG_BASE = os.getenv("RAG_BASE")
@@ -74,7 +77,7 @@ def get_rag_python_directory(*args):
 
 
 def get_home_cache_dir():
-    dir = os.path.join(os.path.expanduser('~'), ".ragflow")
+    dir = os.path.join(os.path.expanduser("~"), ".ragflow")
     try:
         os.mkdir(dir)
     except OSError:
@@ -92,9 +95,7 @@ def load_json_conf(conf_path):
         with open(json_conf_path) as f:
             return json.load(f)
     except BaseException:
-        raise EnvironmentError(
-            "loading json file config from '{}' failed!".format(json_conf_path)
-        )
+        raise EnvironmentError("loading json file config from '{}' failed!".format(json_conf_path))
 
 
 def dump_json_conf(config_data, conf_path):
@@ -106,9 +107,7 @@ def dump_json_conf(config_data, conf_path):
         with open(json_conf_path, "w") as f:
             json.dump(config_data, f, indent=4)
     except BaseException:
-        raise EnvironmentError(
-            "loading json file config from '{}' failed!".format(json_conf_path)
-        )
+        raise EnvironmentError("loading json file config from '{}' failed!".format(json_conf_path))
 
 
 def load_json_conf_real_time(conf_path):
@@ -120,9 +119,7 @@ def load_json_conf_real_time(conf_path):
         with open(json_conf_path) as f:
             return json.load(f)
     except BaseException:
-        raise EnvironmentError(
-            "loading json file config from '{}' failed!".format(json_conf_path)
-        )
+        raise EnvironmentError("loading json file config from '{}' failed!".format(json_conf_path))
 
 
 def load_yaml_conf(conf_path):
@@ -130,12 +127,10 @@ def load_yaml_conf(conf_path):
         conf_path = os.path.join(get_project_base_directory(), conf_path)
     try:
         with open(conf_path) as f:
-            yaml = YAML(typ='safe', pure=True)
+            yaml = YAML(typ="safe", pure=True)
             return yaml.load(f)
     except Exception as e:
-        raise EnvironmentError(
-            "loading yaml file config from {} failed:".format(conf_path), e
-        )
+        raise EnvironmentError("loading yaml file config from {} failed:".format(conf_path), e)
 
 
 def rewrite_yaml_conf(conf_path, config):
@@ -146,13 +141,11 @@ def rewrite_yaml_conf(conf_path, config):
             yaml = YAML(typ="safe")
             yaml.dump(config, f)
     except Exception as e:
-        raise EnvironmentError(
-            "rewrite yaml file config {} failed:".format(conf_path), e
-        )
+        raise EnvironmentError("rewrite yaml file config {} failed:".format(conf_path), e)
 
 
 def rewrite_json_file(filepath, json_data):
-    with open(filepath, "w", encoding='utf-8') as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         json.dump(json_data, f, indent=4, separators=(",", ": "))
     f.close()
 
@@ -162,18 +155,17 @@ def filename_type(filename):
     if re.match(r".*\.pdf$", filename):
         return FileType.PDF.value
 
-    if re.match(
-             r".*\.(eml|doc|docx|ppt|pptx|yml|xml|htm|json|csv|txt|ini|xls|xlsx|wps|rtf|hlp|pages|numbers|key|md|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|html|sql)$", filename):
+    if re.match(r".*\.(eml|doc|docx|ppt|pptx|yml|xml|htm|json|csv|txt|ini|xls|xlsx|wps|rtf|hlp|pages|numbers|key|md|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|html|sql)$", filename):
         return FileType.DOC.value
 
-    if re.match(
-            r".*\.(wav|flac|ape|alac|wavpack|wv|mp3|aac|ogg|vorbis|opus|mp3)$", filename):
+    if re.match(r".*\.(wav|flac|ape|alac|wavpack|wv|mp3|aac|ogg|vorbis|opus|mp3)$", filename):
         return FileType.AURAL.value
 
     if re.match(r".*\.(jpg|jpeg|png|tif|gif|pcx|tga|exif|fpx|svg|psd|cdr|pcd|dxf|ufo|eps|ai|raw|WMF|webp|avif|apng|icon|ico|mpg|mpeg|avi|rm|rmvb|mov|wmv|asf|dat|asx|wvx|mpe|mpa|mp4)$", filename):
         return FileType.VISUAL.value
 
     return FileType.OTHER.value
+
 
 def thumbnail_img(filename, blob):
     """
@@ -183,6 +175,7 @@ def thumbnail_img(filename, blob):
     if re.match(r".*\.pdf$", filename):
         with sys.modules[LOCK_KEY_pdfplumber]:
             pdf = pdfplumber.open(BytesIO(blob))
+
             buffered = BytesIO()
             resolution = 32
             img = None
@@ -206,8 +199,9 @@ def thumbnail_img(filename, blob):
         return buffered.getvalue()
 
     elif re.match(r".*\.(ppt|pptx)$", filename):
-        import aspose.slides as slides
         import aspose.pydrawing as drawing
+        import aspose.slides as slides
+
         try:
             with slides.Presentation(BytesIO(blob)) as presentation:
                 buffered = BytesIO()
@@ -215,8 +209,7 @@ def thumbnail_img(filename, blob):
                 img = None
                 for _ in range(10):
                     # https://reference.aspose.com/slides/python-net/aspose.slides/slide/get_thumbnail/#float-float
-                    presentation.slides[0].get_thumbnail(scale, scale).save(
-                        buffered, drawing.imaging.ImageFormat.png)
+                    presentation.slides[0].get_thumbnail(scale, scale).save(buffered, drawing.imaging.ImageFormat.png)
                     img = buffered.getvalue()
                     if len(img) >= 64000:
                         scale = scale / 2.0
@@ -232,10 +225,9 @@ def thumbnail_img(filename, blob):
 def thumbnail(filename, blob):
     img = thumbnail_img(filename, blob)
     if img is not None:
-        return IMG_BASE64_PREFIX + \
-            base64.b64encode(img).decode("utf-8")
+        return IMG_BASE64_PREFIX + base64.b64encode(img).decode("utf-8")
     else:
-        return ''
+        return ""
 
 
 def traversal_files(base):
@@ -243,3 +235,52 @@ def traversal_files(base):
         for f in fs:
             fullname = os.path.join(root, f)
             yield fullname
+
+
+def repair_pdf_with_ghostscript(input_bytes):
+    if shutil.which("gs") is None:
+        return input_bytes
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as temp_in, tempfile.NamedTemporaryFile(suffix=".pdf") as temp_out:
+        temp_in.write(input_bytes)
+        temp_in.flush()
+
+        cmd = [
+            "gs",
+            "-o",
+            temp_out.name,
+            "-sDEVICE=pdfwrite",
+            "-dPDFSETTINGS=/prepress",
+            temp_in.name,
+        ]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode != 0:
+                return input_bytes
+        except Exception:
+            return input_bytes
+
+        temp_out.seek(0)
+        repaired_bytes = temp_out.read()
+
+    return repaired_bytes
+
+
+def read_potential_broken_pdf(blob):
+    def try_open(blob):
+        try:
+            with pdfplumber.open(BytesIO(blob)) as pdf:
+                if pdf.pages:
+                    return True
+        except Exception:
+            return False
+        return False
+
+    if try_open(blob):
+        return blob
+
+    repaired = repair_pdf_with_ghostscript(blob)
+    if try_open(repaired):
+        return repaired
+
+    return blob
