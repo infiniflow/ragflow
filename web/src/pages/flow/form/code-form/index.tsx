@@ -51,7 +51,7 @@ const CodeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         className="bg-gray-100 rounded dark:bg-gray-800"
       >
         <Editor
-          height={200}
+          height={600}
           theme="vs-dark"
           language={formData.lang}
           options={{
