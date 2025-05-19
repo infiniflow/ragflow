@@ -242,6 +242,20 @@ def update_doc(tenant_id, dataset_id, document_id):
     if not doc:
         return get_error_data_result(message="The dataset doesn't own the document.")
     doc = doc[0]
+    if "status" in req:
+        if str(req["status"]) not in ["0", "1"]:
+          return get_error_data_result('"Status" must be either 0 or 1!')
+        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+        if not e:
+            return get_error_data_result("Can't find this knowledgebase!")
+        if not DocumentService.update_by_id(
+                req["doc_id"], {"status": str(req["status"])}):
+            return get_error_data_result("Database error (Document update)!")
+
+        status = int(req["status"])
+        settings.docStoreConn.update({"doc_id": req["doc_id"]}, {"available_int": status},
+                                     search.index_name(kb.tenant_id), doc.kb_id)
+
     if "chunk_count" in req:
         if req["chunk_count"] != doc.chunk_num:
             return get_error_data_result(message="Can't change `chunk_count`.")

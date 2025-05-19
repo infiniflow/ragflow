@@ -411,6 +411,7 @@ Updates configurations for the current document.
 
 A dictionary representing the attributes to update, with the following keys:
 
+- `"status"`: `str` "0", "1" The status of the doucment to update.
 - `"display_name"`: `str` The name of the document to update.
 - `"meta_fields"`: `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: `str` The parsing method to apply to the document.
