@@ -7,6 +7,7 @@ import styles from './index.less';
 interface IImage {
   id: string;
   className: string;
+  onClick?(): void;
 }
 
 const Image = ({ id, className, ...props }: IImage) => {
