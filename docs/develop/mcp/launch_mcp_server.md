@@ -23,7 +23,7 @@ Once a connection is established, an MCP server communicates with its client in 
 ## Prerequisites
 
 1. Ensure RAGFlow is upgraded to v0.18.0 or later.
-2. Have your RAGFlow API key ready. See [Acquire a RAGFlow API key](./acquire_ragflow_api_key.md).
+2. Have your RAGFlow API key ready. See [Acquire a RAGFlow API key](../acquire_ragflow_api_key.md).
 
 :::tip INFO
 If you wish to try out our MCP server without upgrading RAGFlow, community contributor [yiminghub2024](https://github.com/yiminghub2024) 👏 shares their recommended steps [here](#launch-an-mcp-server-without-upgrading-ragflow).

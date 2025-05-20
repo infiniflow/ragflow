@@ -144,7 +144,7 @@ export default {
       toMessage: 'Endseitennummer fehlt (ausgeschlossen)',
       layoutRecognize: 'Dokumentenparser',
       layoutRecognizeTip:
-        'Verwendet ein visuelles Modell für die PDF-Layout-Analyse, um Dokumententitel, Textblöcke, Bilder und Tabellen effektiv zu lokalisieren. Wenn die einfache Option gewählt wird, wird nur der reine Text im PDF abgerufen. Bitte beachten Sie, dass diese Option derzeit NUR für PDF-Dokumente funktioniert.',
+        'Verwendet ein visuelles Modell für die PDF-Layout-Analyse, um Dokumententitel, Textblöcke, Bilder und Tabellen effektiv zu lokalisieren. Wenn die einfache Option gewählt wird, wird nur der reine Text im PDF abgerufen. Bitte beachten Sie, dass diese Option derzeit NUR für PDF-Dokumente funktioniert. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/select_pdf_parser.',
       taskPageSize: 'Aufgabenseitengröße',
       taskPageSizeMessage: 'Bitte geben Sie die Größe der Aufgabenseite ein!',
       taskPageSizeTip:

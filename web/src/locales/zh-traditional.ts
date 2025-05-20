@@ -143,7 +143,7 @@ export default {
       toMessage: '缺少結束頁碼（不包含）',
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
-        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。',
+        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dev/select_pdf_parser。',
       taskPageSize: '任務頁面大小',
       taskPageSizeMessage: '請輸入您的任務頁面大小！',
       taskPageSizeTip: `如果使用佈局識別，PDF 文件將被分成連續的組。佈局分析將在組之間並行執行，以提高處理速度。“任務頁面大小”決定組的大小。頁面大小越大，將頁面之間的連續文本分割成不同塊的機會就越低。`,

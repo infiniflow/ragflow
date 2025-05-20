@@ -138,7 +138,7 @@ export default {
       toMessage: '終了ページ番号が不足しています（除外）',
       layoutRecognize: 'レイアウト認識',
       layoutRecognizeTip:
-        'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。',
+        'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。詳細については、https://ragflow.io/docs/dev/select_pdf_parser をご覧ください。',
       taskPageSize: 'タスクページサイズ',
       taskPageSizeMessage: 'タスクページサイズを入力してください',
       taskPageSizeTip: `レイアウト認識中、PDFファイルはチャンクに分割され、処理速度を向上させるために並列処理されます。`,
