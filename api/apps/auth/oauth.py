@@ -45,7 +45,7 @@ class OAuthClient:
         self.http_request_timeout = 7
 
 
-    def get_authorization_url(self):
+    def get_authorization_url(self, state=None):
         """
         Generate the authorization URL for user login.
         """
@@ -56,6 +56,8 @@ class OAuthClient:
         }
         if self.scope:
             params["scope"] = self.scope
+        if state:
+            params["state"] = state
         authorization_url = f"{self.authorization_url}?{urllib.parse.urlencode(params)}"
         return authorization_url
 

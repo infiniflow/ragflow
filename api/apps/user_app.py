@@ -146,7 +146,9 @@ def oauth_login(channel):
         raise ValueError(f"Invalid channel name: {channel}")
     auth_cli = get_auth_client(channel_config)
 
-    auth_url = auth_cli.get_authorization_url()
+    state = get_uuid()
+    session["oauth_state"] = state
+    auth_url = auth_cli.get_authorization_url(state)
     return redirect(auth_url)
 
 
@@ -160,6 +162,12 @@ def oauth_callback(channel):
         if not channel_config:
             raise ValueError(f"Invalid channel name: {channel}")
         auth_cli = get_auth_client(channel_config)
+
+        # Check the state
+        state = request.args.get("state")
+        if not state or state != session.get("oauth_state"):
+            return redirect("/?error=invalid_state")
+        session.pop("oauth_state", None)
 
         # Obtain the authorization code
         code = request.args.get("code")
