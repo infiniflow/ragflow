@@ -91,6 +91,7 @@ export const useTestRetrieval = () => {
     page,
     pageSize,
     handleFilterSubmit,
+    filterValue,
   };
 };
 
