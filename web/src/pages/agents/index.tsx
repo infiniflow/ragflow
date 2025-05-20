@@ -16,12 +16,12 @@ export default function Agent() {
   const { navigateToAgentTemplates } = useNavigatePage();
 
   const {
-    datasetRenameLoading,
-    initialDatasetName,
-    onDatasetRenameOk,
-    datasetRenameVisible,
-    hideDatasetRenameModal,
-    showDatasetRenameModal,
+    agentRenameLoading,
+    initialAgentName,
+    onAgentRenameOk,
+    agentRenameVisible,
+    hideAgentRenameModal,
+    showAgentRenameModal,
   } = useRenameAgent();
 
   const handlePageChange = useCallback(
@@ -51,7 +51,7 @@ export default function Agent() {
             <AgentCard
               key={x.id}
               data={x}
-              showDatasetRenameModal={showDatasetRenameModal}
+              showAgentRenameModal={showAgentRenameModal}
             ></AgentCard>
           );
         })}
@@ -63,12 +63,12 @@ export default function Agent() {
           onChange={handlePageChange}
         ></RAGFlowPagination>
       </div>
-      {datasetRenameVisible && (
+      {agentRenameVisible && (
         <RenameDialog
-          hideModal={hideDatasetRenameModal}
-          onOk={onDatasetRenameOk}
-          initialName={initialDatasetName}
-          loading={datasetRenameLoading}
+          hideModal={hideAgentRenameModal}
+          onOk={onAgentRenameOk}
+          initialName={initialAgentName}
+          loading={agentRenameLoading}
         ></RenameDialog>
       )}
     </section>

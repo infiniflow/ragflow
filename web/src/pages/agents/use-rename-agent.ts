@@ -1,53 +1,46 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useUpdateKnowledge } from '@/hooks/use-knowledge-request';
+import { useUpdateAgentSetting } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/flow';
-import { omit } from 'lodash';
+import { pick } from 'lodash';
 import { useCallback, useState } from 'react';
 
 export const useRenameAgent = () => {
-  const [dataset, setDataset] = useState<IFlow>({} as IFlow);
+  const [agent, setAgent] = useState<IFlow>({} as IFlow);
   const {
-    visible: datasetRenameVisible,
-    hideModal: hideDatasetRenameModal,
-    showModal: showDatasetRenameModal,
+    visible: agentRenameVisible,
+    hideModal: hideAgentRenameModal,
+    showModal: showAgentRenameModal,
   } = useSetModalState();
-  const { saveKnowledgeConfiguration, loading } = useUpdateKnowledge(true);
+  const { updateAgentSetting, loading } = useUpdateAgentSetting();
 
-  const onDatasetRenameOk = useCallback(
+  const onAgentRenameOk = useCallback(
     async (name: string) => {
-      const ret = await saveKnowledgeConfiguration({
-        ...omit(dataset, [
-          'id',
-          'update_time',
-          'nickname',
-          'tenant_avatar',
-          'tenant_id',
-        ]),
-        kb_id: dataset.id,
-        name,
+      const ret = await updateAgentSetting({
+        ...pick(agent, ['id', 'avatar', 'description', 'permission']),
+        title: name,
       });
 
-      if (ret.code === 0) {
-        hideDatasetRenameModal();
+      if (ret === 0) {
+        hideAgentRenameModal();
       }
     },
-    [saveKnowledgeConfiguration, dataset, hideDatasetRenameModal],
+    [updateAgentSetting, agent, hideAgentRenameModal],
   );
 
-  const handleShowDatasetRenameModal = useCallback(
+  const handleShowAgentRenameModal = useCallback(
     async (record: IFlow) => {
-      setDataset(record);
-      showDatasetRenameModal();
+      setAgent(record);
+      showAgentRenameModal();
     },
-    [showDatasetRenameModal],
+    [showAgentRenameModal],
   );
 
   return {
-    datasetRenameLoading: loading,
-    initialDatasetName: dataset?.title,
-    onDatasetRenameOk,
-    datasetRenameVisible,
-    hideDatasetRenameModal,
-    showDatasetRenameModal: handleShowDatasetRenameModal,
+    agentRenameLoading: loading,
+    initialAgentName: agent?.title,
+    onAgentRenameOk,
+    agentRenameVisible,
+    hideAgentRenameModal,
+    showAgentRenameModal: handleShowAgentRenameModal,
   };
 };

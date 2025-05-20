@@ -6,7 +6,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useDeleteKnowledge } from '@/hooks/use-knowledge-request';
+import { useDeleteAgent } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/flow';
 import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
@@ -15,33 +15,33 @@ import { useRenameAgent } from './use-rename-agent';
 
 export function AgentDropdown({
   children,
-  showDatasetRenameModal,
-  dataset,
+  showAgentRenameModal,
+  agent: agent,
 }: PropsWithChildren &
-  Pick<ReturnType<typeof useRenameAgent>, 'showDatasetRenameModal'> & {
-    dataset: IFlow;
+  Pick<ReturnType<typeof useRenameAgent>, 'showAgentRenameModal'> & {
+    agent: IFlow;
   }) {
   const { t } = useTranslation();
-  const { deleteKnowledge } = useDeleteKnowledge();
+  const { deleteAgent } = useDeleteAgent();
 
-  const handleShowDatasetRenameModal: MouseEventHandler<HTMLDivElement> =
+  const handleShowAgentRenameModal: MouseEventHandler<HTMLDivElement> =
     useCallback(
       (e) => {
         e.stopPropagation();
-        showDatasetRenameModal(dataset);
+        showAgentRenameModal(agent);
       },
-      [dataset, showDatasetRenameModal],
+      [agent, showAgentRenameModal],
     );
 
   const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
-    deleteKnowledge(dataset.id);
-  }, [dataset.id, deleteKnowledge]);
+    deleteAgent([agent.id]);
+  }, [agent.id, deleteAgent]);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuItem onClick={handleShowDatasetRenameModal}>
+        <DropdownMenuItem onClick={handleShowAgentRenameModal}>
           {t('common.rename')} <PenLine />
         </DropdownMenuItem>
         <DropdownMenuSeparator />
