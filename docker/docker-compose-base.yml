@@ -124,6 +124,8 @@ services:
       - SANDBOX_BASE_PYTHON_IMAGE=${SANDBOX_BASE_PYTHON_IMAGE:-infiniflow/sandbox-base-python:latest}
       - SANDBOX_BASE_NODEJS_IMAGE=${SANDBOX_BASE_NODEJS_IMAGE:-infiniflow/sandbox-base-nodejs:latest}
       - SANDBOX_ENABLE_SECCOMP=${SANDBOX_ENABLE_SECCOMP:-false}
+      - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m}
+      - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-10s}
     healthcheck:
       test: ["CMD", "curl", "http://localhost:9385/healthz"]
       interval: 10s
