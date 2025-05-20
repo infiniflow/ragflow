@@ -1,7 +1,8 @@
 import { IFlow } from '@/interfaces/database/flow';
 import flowService from '@/services/flow-service';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
+import { message } from 'antd';
 import { useCallback } from 'react';
 import {
   useGetPaginationWithRouter,
@@ -10,6 +11,8 @@ import {
 
 export const enum AgentApiAction {
   FetchAgentList = 'fetchAgentList',
+  UpdateAgentSetting = 'updateAgentSetting',
+  DeleteAgent = 'deleteAgent',
 }
 
 export const useFetchAgentListByPage = () => {
@@ -57,4 +60,52 @@ export const useFetchAgentListByPage = () => {
     pagination: { ...pagination, total: data?.total },
     setPagination,
   };
+};
+
+export const useUpdateAgentSetting = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.UpdateAgentSetting],
+    mutationFn: async (params: any) => {
+      const ret = await flowService.settingCanvas(params);
+      if (ret?.data?.code === 0) {
+        message.success('success');
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchAgentList],
+        });
+      } else {
+        message.error(ret?.data?.data);
+      }
+      return ret?.data?.code;
+    },
+  });
+
+  return { data, loading, updateAgentSetting: mutateAsync };
+};
+
+export const useDeleteAgent = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.DeleteAgent],
+    mutationFn: async (canvasIds: string[]) => {
+      const { data } = await flowService.removeCanvas({ canvasIds });
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchAgentList],
+        });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, deleteAgent: mutateAsync };
 };
