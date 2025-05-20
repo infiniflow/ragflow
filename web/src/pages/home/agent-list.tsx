@@ -1,8 +1,8 @@
-import { useFetchAgentList } from '@/hooks/use-agent-request';
+import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
 import { ApplicationCard } from './application-card';
 
 export function Agents() {
-  const { data } = useFetchAgentList();
+  const { data } = useFetchAgentListByPage();
 
   return data
     .slice(0, 10)
