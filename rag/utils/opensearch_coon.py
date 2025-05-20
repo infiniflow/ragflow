@@ -269,7 +269,7 @@ class OSConnection(DocStoreConnection):
         for i in range(ATTEMPT_TIME):
             try:
                 res = self.os.get(index=(indexName),
-                                  id=chunkId, source=True, )
+                                  id=chunkId, _source=True, )
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 chunk = res["_source"]
@@ -329,7 +329,7 @@ class OSConnection(DocStoreConnection):
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
                 try:
-                    self.os.update(index=indexName, id=chunkId, doc=doc)
+                    self.os.update(index=indexName, id=chunkId, body=doc)
                     return True
                 except Exception as e:
                     logger.exception(

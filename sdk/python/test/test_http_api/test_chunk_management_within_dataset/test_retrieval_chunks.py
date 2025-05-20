@@ -192,7 +192,7 @@ class TestChunksRetrieval:
                 0,
                 1,
                 "",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "elasticsearch"], reason="elasticsearch"),
+                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch"),
             ),
             pytest.param(
                 {"top_k": -1},
@@ -206,7 +206,7 @@ class TestChunksRetrieval:
                 100,
                 4,
                 "3014",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "elasticsearch"], reason="elasticsearch"),
+                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch"),
             ),
             pytest.param(
                 {"top_k": "a"},
