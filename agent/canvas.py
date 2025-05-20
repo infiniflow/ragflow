@@ -15,7 +15,6 @@
 #
 import logging
 import json
-from abc import ABC
 from copy import deepcopy
 from functools import partial
 
@@ -25,7 +24,7 @@ from agent.component import component_class
 from agent.component.base import ComponentBase
 
 
-class Canvas(ABC):
+class Canvas:
     """
     dsl = {
         "components": {
@@ -162,7 +161,7 @@ class Canvas(ABC):
             self.components[k]["obj"].reset()
         self._embed_id = ""
 
-    def get_compnent_name(self, cid):
+    def get_component_name(self, cid):
         for n in self.dsl["graph"]["nodes"]:
             if cid == n["id"]:
                 return n["data"]["name"]
@@ -210,7 +209,7 @@ class Canvas(ABC):
                             if c not in waiting:
                                 waiting.append(c)
                             continue
-                    yield "*'{}'* is running...🕞".format(self.get_compnent_name(c))
+                    yield "*'{}'* is running...🕞".format(self.get_component_name(c))
 
                     if cpn.component_name.lower() == "iteration":
                         st_cpn = cpn.get_start()
@@ -236,7 +235,7 @@ class Canvas(ABC):
             pid = self.components[cid]["parent_id"]
             o, _ = self.components[cid]["obj"].output(allow_partial=False)
             oo, _ = self.components[pid]["obj"].output(allow_partial=False)
-            self.components[pid]["obj"].set(pd.concat([oo, o], ignore_index=True))
+            self.components[pid]["obj"].set_output(pd.concat([oo, o], ignore_index=True).dropna())
             downstream = [pid]
 
         for m in prepare2run(downstream):
@@ -253,20 +252,20 @@ class Canvas(ABC):
             if loop:
                 raise OverflowError(f"Too much loops: {loop}")
 
+            downstream = []
             if cpn["obj"].component_name.lower() in ["switch", "categorize", "relevant"]:
                 switch_out = cpn["obj"].output()[1].iloc[0, 0]
                 assert switch_out in self.components, \
                     "{}'s output: {} not valid.".format(cpn_id, switch_out)
-                for m in prepare2run([switch_out]):
-                    yield {"content": m, "running_status": True}
-                continue
+                downstream = [switch_out]
+            else:
+                downstream = cpn["downstream"]
 
-            downstream = cpn["downstream"]
             if not downstream and cpn.get("parent_id"):
                 pid = cpn["parent_id"]
                 _, o = cpn["obj"].output(allow_partial=False)
                 _, oo = self.components[pid]["obj"].output(allow_partial=False)
-                self.components[pid]["obj"].set_output(pd.concat([oo.dropna(axis=1), o.dropna(axis=1)], ignore_index=True))
+                self.components[pid]["obj"].set_output(pd.concat([oo.dropna(axis=1), o.dropna(axis=1)], ignore_index=True).dropna())
                 downstream = [pid]
 
             for m in prepare2run(downstream):

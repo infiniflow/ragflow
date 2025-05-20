@@ -252,7 +252,8 @@ class ZhipuEmbed(Base):
 
 class OllamaEmbed(Base):
     def __init__(self, key, model_name, **kwargs):
-        self.client = Client(host=kwargs["base_url"])
+        self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else \
+            Client(host=kwargs["base_url"], headers={"Authorization": f"Bear {key}"})
         self.model_name = model_name
 
     def encode(self, texts: list):
@@ -260,14 +261,16 @@ class OllamaEmbed(Base):
         tks_num = 0
         for txt in texts:
             res = self.client.embeddings(prompt=txt,
-                                         model=self.model_name)
+                                         model=self.model_name,
+                                         options={"use_mmap": True})
             arr.append(res["embedding"])
             tks_num += 128
         return np.array(arr), tks_num
 
     def encode_queries(self, text):
         res = self.client.embeddings(prompt=text,
-                                     model=self.model_name)
+                                     model=self.model_name,
+                                     options={"use_mmap": True})
         return np.array(res["embedding"]), 128
 
 
@@ -476,8 +479,13 @@ class BedrockEmbed(Base):
         self.bedrock_sk = json.loads(key).get('bedrock_sk', '')
         self.bedrock_region = json.loads(key).get('bedrock_region', '')
         self.model_name = model_name
-        self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
-                                   aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
+        
+        if self.bedrock_ak == '' or self.bedrock_sk == '' or self.bedrock_region == '':
+            # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
+            self.client = boto3.client('bedrock-runtime')
+        else:
+            self.client = boto3.client(service_name='bedrock-runtime', region_name=self.bedrock_region,
+                                    aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
 
     def encode(self, texts: list):
         texts = [truncate(t, 8196) for t in texts]
@@ -824,9 +832,8 @@ class GPUStackEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        if base_url.split("/")[-1] != "v1-openai":
-            base_url = os.path.join(base_url, "v1-openai")
+        if base_url.split("/")[-1] != "v1":
+            base_url = os.path.join(base_url, "v1")
 
-        print(key,base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name

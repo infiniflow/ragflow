@@ -57,6 +57,7 @@ class KeywordExtract(Generate, ABC):
         ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": query}],
                             self._param.gen_conf())
 
+        ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
         ans = re.sub(r".*keyword:", "", ans).strip()
         logging.debug(f"ans: {ans}")
         return KeywordExtract.be_output(ans)

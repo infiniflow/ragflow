@@ -3,9 +3,23 @@ import HightLightMarkdown from '@/components/highlight-markdown';
 import { SharedFrom } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { Card, Modal, Tabs, TabsProps, Typography } from 'antd';
+import {
+  Card,
+  Checkbox,
+  Form,
+  Modal,
+  Select,
+  Tabs,
+  TabsProps,
+  Typography,
+} from 'antd';
+import { useMemo, useState } from 'react';
 
 import { useIsDarkTheme } from '@/components/theme-provider';
+import {
+  LanguageAbbreviation,
+  LanguageAbbreviationMap,
+} from '@/constants/common';
 import { cn } from '@/lib/utils';
 import styles from './index.less';
 
@@ -27,10 +41,33 @@ const EmbedModal = ({
   const { t } = useTranslate('chat');
   const isDarkTheme = useIsDarkTheme();
 
+  const [visibleAvatar, setVisibleAvatar] = useState(false);
+  const [locale, setLocale] = useState('');
+
+  const languageOptions = useMemo(() => {
+    return Object.values(LanguageAbbreviation).map((x) => ({
+      label: LanguageAbbreviationMap[x],
+      value: x,
+    }));
+  }, []);
+
+  const generateIframeSrc = () => {
+    let src = `${location.origin}/chat/share?shared_id=${token}&from=${form}&auth=${beta}`;
+    if (visibleAvatar) {
+      src += '&visible_avatar=1';
+    }
+    if (locale) {
+      src += `&locale=${locale}`;
+    }
+    return src;
+  };
+
+  const iframeSrc = generateIframeSrc();
+
   const text = `
   ~~~ html
   <iframe
-  src="${location.origin}/chat/share?shared_id=${token}&from=${form}&auth=${beta}"
+  src="${iframeSrc}"
   style="width: 100%; height: 100%; min-height: 600px"
   frameborder="0"
 >
@@ -48,6 +85,32 @@ const EmbedModal = ({
           extra={<CopyToClipboard text={text}></CopyToClipboard>}
           className={styles.codeCard}
         >
+          <div className="p-2">
+            <h2 className="mb-3">Option:</h2>
+
+            <Form.Item
+              label={t('avatarHidden')}
+              labelCol={{ span: 6 }}
+              wrapperCol={{ span: 18 }}
+            >
+              <Checkbox
+                checked={visibleAvatar}
+                onChange={(e) => setVisibleAvatar(e.target.checked)}
+              ></Checkbox>
+            </Form.Item>
+            <Form.Item
+              label={t('locale')}
+              labelCol={{ span: 6 }}
+              wrapperCol={{ span: 18 }}
+            >
+              <Select
+                placeholder="Select a locale"
+                onChange={(value) => setLocale(value)}
+                options={languageOptions}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </div>
           <HightLightMarkdown>{text}</HightLightMarkdown>
         </Card>
       ),

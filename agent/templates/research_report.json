@@ -1,189 +1,45 @@
 {
   "id": 10,
-  "title": "Research Report Generator",
-  "description": "This generator can produce a research report based on the given title and language. It decomposes into sub-titles and queries to search engine from different angles, and generates sections based on search engine results and comprehension of the sub-titles.",
+  "title": "Research report generator",
+  "description": "A report generator that creates a research report from a given title, in the specified target language. It generates queries from the input title, then uses these to create subtitles and sections, compiling everything into a comprehensive report.",
   "canvas_type": "chatbot",
   "dsl": {
     "answer": [],
     "components": {
-      "begin": {
-        "obj": {
-          "component_name": "Begin",
-          "inputs": [],
-          "params": {
-            "prologue": "",
-            "query": [
-              {
-                "key": "title",
-                "name": "Title",
-                "optional": false,
-                "type": "line",
-                "value": ""
-              },
-              {
-                "key": "language",
-                "name": "Language",
-                "optional": false,
-                "type": "line",
-                "value": ""
-              }
-            ]
-          }
-        },
-        "downstream": [
-          "Generate:SmoothTeamsJoke"
-        ],
-        "upstream": []
-      },
-      "Generate:SmoothTeamsJoke": {
-        "obj": {
-          "component_name": "Generate",
-          "inputs": [],
-          "params": {
-            "cite": false,
-            "frequency_penalty": 0.7,
-            "llm_id": "deepseek-chat@DeepSeek",
-            "max_tokens": 256,
-            "message_history_window_size": 1,
-            "parameters": [
-              {
-                "component_id": "begin@title",
-                "id": "00bd69b8-6bda-48b5-9cbf-08c899d46d82",
-                "key": "title"
-              },
-              {
-                "component_id": "begin@language",
-                "id": "8d06024c-c87e-4fc2-bdb5-40ac1a2d2aa2",
-                "key": "language"
-              }
-            ],
-            "presence_penalty": 0.4,
-            "prompt": "<instruction>\n<task_description>\nGenerate a series of appropriate search engine queries to break down questions based on user inquiries\n</task_description>\n\n<examples>\n<example>\nInput: User asks how to learn programming\nOutput: programming learning methods, programming tutorials for beginners\n</example>\n\n<example>\nInput: User wants to understand latest technology trends  \nOutput: tech trends 2024, latest technology news\n</example>\n\n<example>\nInput: User seeks healthy eating advice\nOutput: healthy eating guide, balanced nutrition diet\n</example>\n</examples>\n\n<instructions>\n1. Take user's question as input.\n2. Identify relevant keywords or phrases based on the topic of user's question.\n3. Use these keywords or phrases to make search engine queries.\n4. Generate a series of appropriate search engine queries to help break down user's question.\n5. Ensure output content does not contain any xml tags.\n6. The output must be pure and conform to the <example> style without other explanations.\n7. Break down into at least 4-6 subproblems.\n8. Output is separated only by commas.\n</instructions>\n\n\ntitle：{title}\nlanguage：{language}\nThe output must be pure and conform to the <example> style without other explanations.\nOutput is separated only by commas.\nBreak down into at least 4-6 subproblems.\n\nOutput:",
-            "temperature": 0.1,
-            "top_p": 0.3
-          }
-        },
-        "downstream": [
-          "Generate:RedAliensLive",
-          "Iteration:BlueClothsGrab"
-        ],
-        "upstream": [
-          "begin"
-        ]
-      },
       "Answer:WittyBottlesJog": {
+        "downstream": [],
         "obj": {
           "component_name": "Answer",
           "inputs": [],
-          "params": {}
-        },
-        "downstream": [],
-        "upstream": [
-          "Template:LazyMasksFollow"
-        ]
-      },
-      "Generate:RedAliensLive": {
-        "obj": {
-          "component_name": "Generate",
-          "inputs": [],
+          "output": null,
           "params": {
-            "cite": false,
-            "frequency_penalty": 0.7,
-            "llm_id": "deepseek-chat@DeepSeek",
-            "message_history_window_size": 1,
-            "parameters": [
-              {
-                "component_id": "Generate:SmoothTeamsJoke",
-                "id": "c16dcf28-9525-4ad7-a9ac-c72565306af3",
-                "key": "query"
-              },
-              {
-                "component_id": "begin@title",
-                "id": "b1d43b2e-5c4d-4e6f-86b9-4d9dc303ae19",
-                "key": "title"
-              },
-              {
-                "component_id": "begin@language",
-                "id": "7b95cef3-f9ba-4ab1-9be7-df6e39639f4d",
-                "key": "language"
-              }
-            ],
-            "presence_penalty": 0.4,
-            "prompt": "According to query: '{query}'，for '{title}', generate 3 to 5 sub-titles.\n\n<instructions>\nPlease generate 4 subheadings for the main title following these steps:\n - 1. Carefully read the provided main title and related content\n - 2. Analyze the core theme and key information points of the main title\n - 3. Ensure the generated subheadings maintain consistency and relevance with the main title\n - 4. Each subheading should:\n        - Be concise and appropriate in length\n        - Highlight a unique angle or key point\n        - Capture readers' interest\n        - Match the overall style and tone of the article\n - 5. Between subheadings:\n        - Content should not overlap\n        - Logical order should be maintained\n        - Should collectively support the main title\n        - Use numerical sequence (1, 2, 3...) to mark each subheading\n - 6. Output format requirements:\n        - Each subheading on a separate line\n        - No XML tags included\n        - Output subheadings content only\n</instructions>\n\nlanguage：{language}\nGenerate a series of appropriate sub-title to help break down '{title}'.\nBreaks down complex topics into manageable subtopics.\n\nOutput:",
-            "temperature": 0.1,
-            "top_p": 0.3
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "post_answers": [],
+            "query": []
           }
         },
-        "downstream": [
-          "Iteration:ThreeParksChew"
-        ],
         "upstream": [
-          "Generate:SmoothTeamsJoke"
+          "Template:LegalDoorsAct"
         ]
-      },
-      "Template:LazyMasksFollow": {
-        "obj": {
-          "component_name": "Template",
-          "inputs": [],
-          "params": {
-            "content": "<h1>{title}</h1>\n\n{sections}",
-            "parameters": [
-              {
-                "component_id": "begin@title",
-                "id": "fe6f99aa-5bd8-4de7-aefd-e6645ad3ab4c",
-                "key": "title"
-              },
-              {
-                "component_id": "Iteration:ThreeParksChew",
-                "id": "2d6b43fd-3512-482e-8329-2d4d7c16a19f",
-                "key": "sections"
-              }
-            ]
-          }
-        },
-        "downstream": [
-          "Answer:WittyBottlesJog"
-        ],
-        "upstream": [
-          "Iteration:ThreeParksChew"
-        ]
-      },
-      "Iteration:BlueClothsGrab": {
-        "obj": {
-          "component_name": "Iteration",
-          "inputs": [],
-          "params": {
-            "delimiter": ",",
-            "query": [
-              {
-                "component_id": "Generate:SmoothTeamsJoke",
-                "type": "reference"
-              }
-            ]
-          }
-        },
-        "downstream": [],
-        "upstream": [
-          "Generate:SmoothTeamsJoke"
-        ]
-      },
-      "IterationItem:RudeTablesSmile": {
-        "obj": {
-          "component_name": "IterationItem",
-          "inputs": [],
-          "params": {}
-        },
-        "downstream": [
-          "Baidu:MeanBroomsMatter"
-        ],
-        "upstream": [],
-        "parent_id": "Iteration:BlueClothsGrab"
       },
       "Baidu:MeanBroomsMatter": {
+        "downstream": [
+          "Generate:YoungClownsKnock"
+        ],
         "obj": {
           "component_name": "Baidu",
           "inputs": [],
+          "output": null,
           "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
             "query": [
               {
                 "component_id": "IterationItem:RudeTablesSmile",
@@ -193,155 +49,473 @@
             "top_n": 10
           }
         },
-        "downstream": [
-          "Generate:FruityGrapesLook"
-        ],
+        "parent_id": "Iteration:BlueClothsGrab",
         "upstream": [
           "IterationItem:RudeTablesSmile"
-        ],
-        "parent_id": "Iteration:BlueClothsGrab"
+        ]
       },
-      "Generate:FruityGrapesLook": {
+      "Generate:EveryCoinsStare": {
+        "downstream": [
+          "Generate:RedWormsDouble",
+          "Iteration:BlueClothsGrab"
+        ],
         "obj": {
           "component_name": "Generate",
           "inputs": [],
+          "output": null,
           "params": {
             "cite": false,
+            "debug_inputs": [],
             "frequency_penalty": 0.7,
+            "inputs": [],
             "llm_id": "deepseek-chat@DeepSeek",
-            "max_tokens": 2048,
+            "max_tokens": 256,
             "message_history_window_size": 1,
-            "parameters": [
-              {
-                "component_id": "begin@language",
-                "id": "3af930e7-4b51-452a-ab32-cefabfab44ce",
-                "key": "language"
-              },
-              {
-                "component_id": "Baidu:MeanBroomsMatter",
-                "id": "59062b99-fe21-4e98-b95c-83c7f6fe1d97",
-                "key": "search_res"
-              },
-              {
-                "component_id": "IterationItem:RudeTablesSmile",
-                "id": "2728ed42-cf38-4904-a366-cc11726830ec",
-                "key": "item"
-              }
-            ],
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
             "presence_penalty": 0.4,
-            "prompt": "Your goal is to provide answers based on information from the internet. \nYou must use the provided search results to find relevant online information. \nYou should never use your own knowledge to answer questions.\nPlease include relevant url sources in the end of your answers.\n\n{search_res}\nlanguage：{language}\n \"{search_res}\" \nUsing the above information, answer the following question or topic: \"{item} \"\nin a detailed report — The report should focus on the answer to the question, should be well structured, informative, in depth, with facts and numbers if available, a minimum of 1,200 words and with markdown syntax and apa format. Write all source urls at the end of the report in apa format. You should write your report only based on the given information and nothing else.",
+            "prompt": "<instruction>\n<task_description>\nGenerate a series of appropriate search engine queries to break down questions based on user inquiries\n</task_description>\n\n<examples>\n<example>\nInput: User asks how to learn programming\nOutput: programming learning methods, programming tutorials for beginners\n</example>\n\n<example>\nInput: User wants to understand latest technology trends  \nOutput: tech trends 2024, latest technology news\n</example>\n\n<example>\nInput: User seeks healthy eating advice\nOutput: healthy eating guide, balanced nutrition diet\n</example>\n</examples>\n\n<instructions>\n1. Take user's question as input.\n2. Identify relevant keywords or phrases based on the topic of user's question.\n3. Use these keywords or phrases to make search engine queries.\n4. Generate a series of appropriate search engine queries to help break down user's question.\n5. Ensure output content does not contain any xml tags.\n6. The output must be pure and conform to the <example> style without other explanations.\n7. Break down into at least 4-6 subproblems.\n8. Output is separated only by commas.\n</instructions>\n\n\ntitle: {begin@title}\nlanguage: {begin@language}\nThe output must be pure and conform to the <example> style without other explanations.\nOutput is separated only by commas.\nBreak down into at least 4-6 subproblems.\n\nOutput:",
+            "query": [],
             "temperature": 0.1,
             "top_p": 0.3
           }
         },
+        "upstream": [
+          "begin"
+        ]
+      },
+      "Generate:RealLoopsVanish": {
+        "downstream": [
+          "Template:SpottyWaspsLose"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": false,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 0,
+            "message_history_window_size": 1,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "In a detailed report — The report should focus on the answer to {IterationItem:OliveStatesSmoke}and nothing else.\n\n\nLanguage: {begin@language}\nContext as bellow: \n\n\"{Iteration:BlueClothsGrab}\"\n\nProvide the research report in the specified language, avoiding small talk.\nThe main content is provided in markdown format\nWrite all source urls at the end of the report in apa format. ",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "parent_id": "Iteration:ThreeParksChew",
+        "upstream": [
+          "IterationItem:OliveStatesSmoke"
+        ]
+      },
+      "Generate:RedWormsDouble": {
+        "downstream": [
+          "Iteration:ThreeParksChew"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": false,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 0,
+            "message_history_window_size": 1,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "According to query: ' {Generate:EveryCoinsStare}'，for ' {begin@title}', generate 3 to 5 sub-titles.\n\n<instructions>\nPlease generate 4 subheadings for the main title following these steps:\n - 1. Carefully read the provided main title and related content\n - 2. Analyze the core theme and key information points of the main title\n - 3. Ensure the generated subheadings maintain consistency and relevance with the main title\n - 4. Each subheading should:\n        - Be concise and appropriate in length\n        - Highlight a unique angle or key point\n        - Capture readers' interest\n        - Match the overall style and tone of the article\n - 5. Between subheadings:\n        - Content should not overlap\n        - Logical order should be maintained\n        - Should collectively support the main title\n        - Use numerical sequence (1, 2, 3...) to mark each subheading\n - 6. Output format requirements:\n        - Each subheading on a separate line\n        - No XML tags included\n        - Output subheadings content only\n</instructions>\n\nlanguage: {begin@language}\nGenerate a series of appropriate sub-title to help break down ' {begin@title}'.\nBreaks down complex topics into manageable subtopics.\n\nOutput:",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Generate:EveryCoinsStare"
+        ]
+      },
+      "Generate:YoungClownsKnock": {
         "downstream": [],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": false,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 0,
+            "message_history_window_size": 1,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "Your goal is to provide answers based on information from the internet. \nYou must use the provided search results to find relevant online information. \nYou should never use your own knowledge to answer questions.\nPlease include relevant url sources in the end of your answers.\n{Baidu:MeanBroomsMatter}\n\n\n\n\n\nlanguage: {begin@language}\n\n\n \" {Baidu:MeanBroomsMatter}\" \n\n\n\n\nUsing the above information, answer the following question or topic: \" {IterationItem:RudeTablesSmile} \"\nin a detailed report — The report should focus on the answer to the question, should be well structured, informative, in depth, with facts and numbers if available, a minimum of 1,200 words and with markdown syntax and apa format. Write all source urls at the end of the report in apa format. You should write your report only based on the given information and nothing else.",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "parent_id": "Iteration:BlueClothsGrab",
         "upstream": [
           "Baidu:MeanBroomsMatter"
-        ],
-        "parent_id": "Iteration:BlueClothsGrab"
+        ]
       },
-      "Iteration:ThreeParksChew": {
+      "Iteration:BlueClothsGrab": {
+        "downstream": [],
         "obj": {
           "component_name": "Iteration",
           "inputs": [],
+          "output": null,
           "params": {
-            "delimiter": "\n",
+            "debug_inputs": [],
+            "delimiter": ",",
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
             "query": [
               {
-                "component_id": "Generate:RedAliensLive",
+                "component_id": "Generate:EveryCoinsStare",
                 "type": "reference"
               }
             ]
           }
         },
-        "downstream": [
-          "Template:LazyMasksFollow"
-        ],
         "upstream": [
-          "Generate:RedAliensLive"
+          "Generate:EveryCoinsStare"
         ]
       },
-      "IterationItem:OliveStatesSmoke": {
-        "obj": {
-          "component_name": "IterationItem",
-          "inputs": [],
-          "params": {}
-        },
+      "Iteration:ThreeParksChew": {
         "downstream": [
-          "Generate:EagerFliesTrade"
+          "Template:LegalDoorsAct"
         ],
-        "upstream": [],
-        "parent_id": "Iteration:ThreeParksChew"
-      },
-      "Generate:EagerFliesTrade": {
         "obj": {
-          "component_name": "Generate",
+          "component_name": "Iteration",
           "inputs": [],
+          "output": null,
           "params": {
-            "cite": false,
-            "frequency_penalty": 0.7,
-            "llm_id": "deepseek-chat@DeepSeek",
-            "message_history_window_size": 1,
-            "parameters": [
+            "debug_inputs": [],
+            "delimiter": "\n",
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [
               {
-                "component_id": "begin@language",
-                "id": "3e17849a-902d-48a2-8ba9-673cedc21f82",
-                "key": "language"
-              },
-              {
-                "component_id": "Iteration:BlueClothsGrab",
-                "id": "afa356ff-bc38-4363-b933-54e00562e89e",
-                "key": "context"
-              },
-              {
-                "component_id": "IterationItem:OliveStatesSmoke",
-                "id": "3e79ca4b-bfbb-4ae3-80ae-a1812b97223b",
-                "key": "sub_title"
-              }
-            ],
-            "presence_penalty": 0.4,
-            "prompt": "in a detailed report — The report should focus on the answer to {sub_title}and nothing else.\nlanguage：{language}\ncontext：{context}\n\nProvide the research report in the specified language, avoiding small talk.\nThe main content is provided in markdown format\nWrite all source urls at the end of the report in apa format. ",
-            "temperature": 0.1,
-            "top_p": 0.3
-          }
-        },
-        "downstream": [
-          "Template:SaltyMasksItch"
-        ],
-        "upstream": [
-          "IterationItem:OliveStatesSmoke"
-        ],
-        "parent_id": "Iteration:ThreeParksChew"
-      },
-      "Template:SaltyMasksItch": {
-        "obj": {
-          "component_name": "Template",
-          "inputs": [],
-          "params": {
-            "content": "<h2>{subtitle}</h2>\n<div>{content}</div>\n",
-            "parameters": [
-              {
-                "component_id": "IterationItem:OliveStatesSmoke",
-                "id": "3ccd05b1-afcd-4632-b48c-30c4fa0b7a70",
-                "key": "subtitle"
-              },
-              {
-                "component_id": "Generate:EagerFliesTrade",
-                "id": "004ae762-9a1e-4466-b3d5-6b03e0d300ad",
-                "key": "content"
+                "component_id": "Generate:RedWormsDouble",
+                "type": "reference"
               }
             ]
           }
         },
-        "downstream": [],
         "upstream": [
-          "Generate:EagerFliesTrade"
+          "Generate:RedWormsDouble"
+        ]
+      },
+      "IterationItem:OliveStatesSmoke": {
+        "downstream": [
+          "Generate:RealLoopsVanish"
         ],
-        "parent_id": "Iteration:ThreeParksChew"
+        "obj": {
+          "component_name": "IterationItem",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": []
+          }
+        },
+        "parent_id": "Iteration:ThreeParksChew",
+        "upstream": []
+      },
+      "IterationItem:RudeTablesSmile": {
+        "downstream": [
+          "Baidu:MeanBroomsMatter"
+        ],
+        "obj": {
+          "component_name": "IterationItem",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": []
+          }
+        },
+        "parent_id": "Iteration:BlueClothsGrab",
+        "upstream": []
+      },
+      "Template:LegalDoorsAct": {
+        "downstream": [
+          "Answer:WittyBottlesJog"
+        ],
+        "obj": {
+          "component_name": "Template",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "content": "<h1> {begin@title}</h1>\n\n\n\n{Iteration:ThreeParksChew}",
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "query": []
+          }
+        },
+        "upstream": [
+          "Iteration:ThreeParksChew"
+        ]
+      },
+      "Template:SpottyWaspsLose": {
+        "downstream": [],
+        "obj": {
+          "component_name": "Template",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "content": "<h2> {IterationItem:OliveStatesSmoke}</h2>\n<div> {Generate:RealLoopsVanish}</div>",
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "query": []
+          }
+        },
+        "parent_id": "Iteration:ThreeParksChew",
+        "upstream": [
+          "Generate:RealLoopsVanish"
+        ]
+      },
+      "begin": {
+        "downstream": [
+          "Generate:EveryCoinsStare"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "prologue": "",
+            "query": [
+              {
+                "key": "title",
+                "name": "Title",
+                "optional": false,
+                "type": "line"
+              },
+              {
+                "key": "language",
+                "name": "Language",
+                "optional": false,
+                "type": "line"
+              }
+            ]
+          }
+        },
+        "upstream": []
       }
     },
     "embed_id": "",
     "graph": {
+      "edges": [
+        {
+          "id": "reactflow__edge-Baidu:SharpHotelsNailb-Generate:RealCamerasSendb",
+          "markerEnd": "logo",
+          "source": "Baidu:SharpHotelsNail",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:RealCamerasSend",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "reactflow__edge-Generate:BeigeEyesFlyb-Template:ThinSnailsDreamc",
+          "markerEnd": "logo",
+          "source": "Generate:BeigeEyesFly",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Template:ThinSnailsDream",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "reactflow__edge-IterationItem:RudeTablesSmile-Baidu:MeanBroomsMatterc",
+          "markerEnd": "logo",
+          "source": "IterationItem:RudeTablesSmile",
+          "sourceHandle": null,
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Baidu:MeanBroomsMatter",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:EveryCoinsStareb-Generate:RedWormsDoublec",
+          "markerEnd": "logo",
+          "source": "Generate:EveryCoinsStare",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:RedWormsDouble",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__begin-Generate:EveryCoinsStarec",
+          "markerEnd": "logo",
+          "source": "begin",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:EveryCoinsStare",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:RedWormsDoubleb-Iteration:ThreeParksChewc",
+          "markerEnd": "logo",
+          "source": "Generate:RedWormsDouble",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Iteration:ThreeParksChew",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:EveryCoinsStareb-Iteration:BlueClothsGrabc",
+          "markerEnd": "logo",
+          "source": "Generate:EveryCoinsStare",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Iteration:BlueClothsGrab",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Baidu:MeanBroomsMatterb-Generate:YoungClownsKnockb",
+          "markerEnd": "logo",
+          "source": "Baidu:MeanBroomsMatter",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:YoungClownsKnock",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__IterationItem:OliveStatesSmoke-Generate:RealLoopsVanishc",
+          "markerEnd": "logo",
+          "source": "IterationItem:OliveStatesSmoke",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:RealLoopsVanish",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:RealLoopsVanishb-Template:SpottyWaspsLoseb",
+          "markerEnd": "logo",
+          "source": "Generate:RealLoopsVanish",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Template:SpottyWaspsLose",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Iteration:ThreeParksChewb-Template:LegalDoorsActc",
+          "markerEnd": "logo",
+          "source": "Iteration:ThreeParksChew",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Template:LegalDoorsAct",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Template:LegalDoorsActb-Answer:WittyBottlesJogc",
+          "markerEnd": "logo",
+          "source": "Template:LegalDoorsAct",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Answer:WittyBottlesJog",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        }
+      ],
       "nodes": [
         {
           "data": {
@@ -352,15 +526,13 @@
                   "key": "title",
                   "name": "Title",
                   "optional": false,
-                  "type": "line",
-                  "value": ""
+                  "type": "line"
                 },
                 {
                   "key": "language",
                   "name": "Language",
                   "optional": false,
-                  "type": "line",
-                  "value": ""
+                  "type": "line"
                 }
               ]
             },
@@ -375,8 +547,8 @@
             "width": 200
           },
           "position": {
-            "x": -185.67257819905137,
-            "y": 108.15225637884839
+            "x": -231.29149905979648,
+            "y": 95.28494230291383
           },
           "positionAbsolute": {
             "x": -185.67257819905137,
@@ -386,60 +558,6 @@
           "sourcePosition": "left",
           "targetPosition": "right",
           "type": "beginNode",
-          "width": 200
-        },
-        {
-          "data": {
-            "form": {
-              "cite": false,
-              "frequencyPenaltyEnabled": true,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "maxTokensEnabled": true,
-              "max_tokens": 256,
-              "message_history_window_size": 1,
-              "parameters": [
-                {
-                  "component_id": "begin@title",
-                  "id": "00bd69b8-6bda-48b5-9cbf-08c899d46d82",
-                  "key": "title"
-                },
-                {
-                  "component_id": "begin@language",
-                  "id": "8d06024c-c87e-4fc2-bdb5-40ac1a2d2aa2",
-                  "key": "language"
-                }
-              ],
-              "presencePenaltyEnabled": true,
-              "presence_penalty": 0.4,
-              "prompt": "<instruction>\n<task_description>\nGenerate a series of appropriate search engine queries to break down questions based on user inquiries\n</task_description>\n\n<examples>\n<example>\nInput: User asks how to learn programming\nOutput: programming learning methods, programming tutorials for beginners\n</example>\n\n<example>\nInput: User wants to understand latest technology trends  \nOutput: tech trends 2024, latest technology news\n</example>\n\n<example>\nInput: User seeks healthy eating advice\nOutput: healthy eating guide, balanced nutrition diet\n</example>\n</examples>\n\n<instructions>\n1. Take user's question as input.\n2. Identify relevant keywords or phrases based on the topic of user's question.\n3. Use these keywords or phrases to make search engine queries.\n4. Generate a series of appropriate search engine queries to help break down user's question.\n5. Ensure output content does not contain any xml tags.\n6. The output must be pure and conform to the <example> style without other explanations.\n7. Break down into at least 4-6 subproblems.\n8. Output is separated only by commas.\n</instructions>\n\n\ntitle：{title}\nlanguage：{language}\nThe output must be pure and conform to the <example> style without other explanations.\nOutput is separated only by commas.\nBreak down into at least 4-6 subproblems.\n\nOutput:",
-              "temperature": 0.1,
-              "temperatureEnabled": true,
-              "topPEnabled": true,
-              "top_p": 0.3
-            },
-            "label": "Generate",
-            "name": "GenQuery"
-          },
-          "dragging": false,
-          "height": 190,
-          "id": "Generate:SmoothTeamsJoke",
-          "measured": {
-            "height": 190,
-            "width": 200
-          },
-          "position": {
-            "x": 65.8240107033929,
-            "y": 77.859375
-          },
-          "positionAbsolute": {
-            "x": 65.8240107033929,
-            "y": 77.859375
-          },
-          "selected": false,
-          "sourcePosition": "right",
-          "targetPosition": "left",
-          "type": "generateNode",
           "width": 200
         },
         {
@@ -456,8 +574,8 @@
             "width": 200
           },
           "position": {
-            "x": 1461.7745767525992,
-            "y": 237.9248108743051
+            "x": 1458.2651570288865,
+            "y": 164.22699667633927
           },
           "positionAbsolute": {
             "x": 1462.7745767525992,
@@ -472,111 +590,10 @@
         {
           "data": {
             "form": {
-              "cite": false,
-              "frequencyPenaltyEnabled": true,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "maxTokensEnabled": false,
-              "max_tokens": 256,
-              "message_history_window_size": 1,
-              "parameter": "Precise",
-              "parameters": [
-                {
-                  "component_id": "Generate:SmoothTeamsJoke",
-                  "id": "c16dcf28-9525-4ad7-a9ac-c72565306af3",
-                  "key": "query"
-                },
-                {
-                  "component_id": "begin@title",
-                  "id": "b1d43b2e-5c4d-4e6f-86b9-4d9dc303ae19",
-                  "key": "title"
-                },
-                {
-                  "component_id": "begin@language",
-                  "id": "7b95cef3-f9ba-4ab1-9be7-df6e39639f4d",
-                  "key": "language"
-                }
-              ],
-              "presencePenaltyEnabled": true,
-              "presence_penalty": 0.4,
-              "prompt": "According to query: '{query}'，for '{title}', generate 3 to 5 sub-titles.\n\n<instructions>\nPlease generate 4 subheadings for the main title following these steps:\n - 1. Carefully read the provided main title and related content\n - 2. Analyze the core theme and key information points of the main title\n - 3. Ensure the generated subheadings maintain consistency and relevance with the main title\n - 4. Each subheading should:\n        - Be concise and appropriate in length\n        - Highlight a unique angle or key point\n        - Capture readers' interest\n        - Match the overall style and tone of the article\n - 5. Between subheadings:\n        - Content should not overlap\n        - Logical order should be maintained\n        - Should collectively support the main title\n        - Use numerical sequence (1, 2, 3...) to mark each subheading\n - 6. Output format requirements:\n        - Each subheading on a separate line\n        - No XML tags included\n        - Output subheadings content only\n</instructions>\n\nlanguage：{language}\nGenerate a series of appropriate sub-title to help break down '{title}'.\nBreaks down complex topics into manageable subtopics.\n\nOutput:",
-              "temperature": 0.1,
-              "temperatureEnabled": true,
-              "topPEnabled": true,
-              "top_p": 0.3
-            },
-            "label": "Generate",
-            "name": "Subtitles"
-          },
-          "dragging": false,
-          "height": 232,
-          "id": "Generate:RedAliensLive",
-          "measured": {
-            "height": 232,
-            "width": 200
-          },
-          "position": {
-            "x": 426.8776004103707,
-            "y": -12.491970174125129
-          },
-          "positionAbsolute": {
-            "x": 426.8776004103707,
-            "y": -12.491970174125129
-          },
-          "selected": false,
-          "sourcePosition": "right",
-          "targetPosition": "left",
-          "type": "generateNode",
-          "width": 200
-        },
-        {
-          "data": {
-            "form": {
-              "content": "<h1>{title}</h1>\n\n{sections}",
-              "parameters": [
-                {
-                  "component_id": "begin@title",
-                  "id": "fe6f99aa-5bd8-4de7-aefd-e6645ad3ab4c",
-                  "key": "title"
-                },
-                {
-                  "component_id": "Iteration:ThreeParksChew",
-                  "id": "2d6b43fd-3512-482e-8329-2d4d7c16a19f",
-                  "key": "sections"
-                }
-              ]
-            },
-            "label": "Template",
-            "name": "Article"
-          },
-          "dragging": false,
-          "height": 160,
-          "id": "Template:LazyMasksFollow",
-          "measured": {
-            "height": 160,
-            "width": 200
-          },
-          "position": {
-            "x": 1205.1589837159438,
-            "y": 178.93067822785585
-          },
-          "positionAbsolute": {
-            "x": 1209.1589837159438,
-            "y": 176.93067822785585
-          },
-          "selected": false,
-          "sourcePosition": "right",
-          "targetPosition": "left",
-          "type": "templateNode",
-          "width": 200
-        },
-        {
-          "data": {
-            "form": {
               "delimiter": ",",
               "query": [
                 {
-                  "component_id": "Generate:SmoothTeamsJoke",
+                  "component_id": "Generate:EveryCoinsStare",
                   "type": "reference"
                 }
               ]
@@ -585,15 +602,15 @@
             "name": "Search"
           },
           "dragging": false,
-          "height": 337,
+          "height": 192,
           "id": "Iteration:BlueClothsGrab",
           "measured": {
-            "height": 337,
-            "width": 356
+            "height": 192,
+            "width": 334
           },
           "position": {
-            "x": 441.29535207641436,
-            "y": 291.9929929170084
+            "x": 432.63496522555613,
+            "y": 228.82343789018051
           },
           "positionAbsolute": {
             "x": 441.29535207641436,
@@ -608,7 +625,7 @@
           },
           "targetPosition": "left",
           "type": "group",
-          "width": 356
+          "width": 334
         },
         {
           "data": {
@@ -677,72 +694,10 @@
         {
           "data": {
             "form": {
-              "cite": false,
-              "frequencyPenaltyEnabled": true,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "maxTokensEnabled": true,
-              "max_tokens": 2048,
-              "message_history_window_size": 1,
-              "parameter": "Precise",
-              "parameters": [
-                {
-                  "component_id": "begin@language",
-                  "id": "3af930e7-4b51-452a-ab32-cefabfab44ce",
-                  "key": "language"
-                },
-                {
-                  "component_id": "Baidu:MeanBroomsMatter",
-                  "id": "59062b99-fe21-4e98-b95c-83c7f6fe1d97",
-                  "key": "search_res"
-                },
-                {
-                  "component_id": "IterationItem:RudeTablesSmile",
-                  "id": "2728ed42-cf38-4904-a366-cc11726830ec",
-                  "key": "item"
-                }
-              ],
-              "presencePenaltyEnabled": true,
-              "presence_penalty": 0.4,
-              "prompt": "Your goal is to provide answers based on information from the internet. \nYou must use the provided search results to find relevant online information. \nYou should never use your own knowledge to answer questions.\nPlease include relevant url sources in the end of your answers.\n\n{search_res}\nlanguage：{language}\n \"{search_res}\" \nUsing the above information, answer the following question or topic: \"{item} \"\nin a detailed report — The report should focus on the answer to the question, should be well structured, informative, in depth, with facts and numbers if available, a minimum of 1,200 words and with markdown syntax and apa format. Write all source urls at the end of the report in apa format. You should write your report only based on the given information and nothing else.",
-              "temperature": 0.1,
-              "temperatureEnabled": true,
-              "topPEnabled": true,
-              "top_p": 0.3
-            },
-            "label": "Generate",
-            "name": "GenReport"
-          },
-          "dragging": false,
-          "extent": "parent",
-          "height": 229,
-          "id": "Generate:FruityGrapesLook",
-          "measured": {
-            "height": 229,
-            "width": 200
-          },
-          "parentId": "Iteration:BlueClothsGrab",
-          "position": {
-            "x": 139,
-            "y": 83.00000000000006
-          },
-          "positionAbsolute": {
-            "x": -74.50000000000003,
-            "y": -217.140625
-          },
-          "selected": false,
-          "sourcePosition": "right",
-          "targetPosition": "left",
-          "type": "generateNode",
-          "width": 200
-        },
-        {
-          "data": {
-            "form": {
               "delimiter": "\n",
               "query": [
                 {
-                  "component_id": "Generate:RedAliensLive",
+                  "component_id": "Generate:RedWormsDouble",
                   "type": "reference"
                 }
               ]
@@ -751,15 +706,15 @@
             "name": "Sections"
           },
           "dragging": false,
-          "height": 442,
+          "height": 225,
           "id": "Iteration:ThreeParksChew",
           "measured": {
-            "height": 442,
-            "width": 333
+            "height": 225,
+            "width": 315
           },
           "position": {
-            "x": 894.4430519048244,
-            "y": 39.64877134989487
+            "x": 888.9524716285371,
+            "y": 75.91277516159235
           },
           "positionAbsolute": {
             "x": 891.9430519048244,
@@ -774,7 +729,7 @@
           },
           "targetPosition": "left",
           "type": "group",
-          "width": 333
+          "width": 315
         },
         {
           "data": {
@@ -792,8 +747,8 @@
           },
           "parentId": "Iteration:ThreeParksChew",
           "position": {
-            "x": 27,
-            "y": 99
+            "x": 24.66038685085823,
+            "y": 37.00025154774299
           },
           "positionAbsolute": {
             "x": 780.5000000000002,
@@ -802,111 +757,6 @@
           "selected": false,
           "type": "iterationStartNode",
           "width": 44
-        },
-        {
-          "data": {
-            "form": {
-              "cite": false,
-              "frequencyPenaltyEnabled": true,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "maxTokensEnabled": false,
-              "max_tokens": 256,
-              "message_history_window_size": 1,
-              "parameter": "Precise",
-              "parameters": [
-                {
-                  "component_id": "begin@language",
-                  "id": "3e17849a-902d-48a2-8ba9-673cedc21f82",
-                  "key": "language"
-                },
-                {
-                  "component_id": "Iteration:BlueClothsGrab",
-                  "id": "afa356ff-bc38-4363-b933-54e00562e89e",
-                  "key": "context"
-                },
-                {
-                  "component_id": "IterationItem:OliveStatesSmoke",
-                  "id": "3e79ca4b-bfbb-4ae3-80ae-a1812b97223b",
-                  "key": "sub_title"
-                }
-              ],
-              "presencePenaltyEnabled": true,
-              "presence_penalty": 0.4,
-              "prompt": "in a detailed report — The report should focus on the answer to {sub_title}and nothing else.\nlanguage：{language}\ncontext：{context}\n\nProvide the research report in the specified language, avoiding small talk.\nThe main content is provided in markdown format\nWrite all source urls at the end of the report in apa format. ",
-              "temperature": 0.1,
-              "temperatureEnabled": true,
-              "topPEnabled": true,
-              "top_p": 0.3
-            },
-            "label": "Generate",
-            "name": "Subtitle-content"
-          },
-          "dragging": false,
-          "extent": "parent",
-          "height": 229,
-          "id": "Generate:EagerFliesTrade",
-          "measured": {
-            "height": 229,
-            "width": 200
-          },
-          "parentId": "Iteration:ThreeParksChew",
-          "position": {
-            "x": 194.65347489427984,
-            "y": 4.791910542395684
-          },
-          "positionAbsolute": {
-            "x": 923.8046162567085,
-            "y": 45.64877134989487
-          },
-          "selected": false,
-          "sourcePosition": "right",
-          "targetPosition": "left",
-          "type": "generateNode",
-          "width": 200
-        },
-        {
-          "data": {
-            "form": {
-              "content": "<h2>{subtitle}</h2>\n<div>{content}</div>\n",
-              "parameters": [
-                {
-                  "component_id": "IterationItem:OliveStatesSmoke",
-                  "id": "3ccd05b1-afcd-4632-b48c-30c4fa0b7a70",
-                  "key": "subtitle"
-                },
-                {
-                  "component_id": "Generate:EagerFliesTrade",
-                  "id": "004ae762-9a1e-4466-b3d5-6b03e0d300ad",
-                  "key": "content"
-                }
-              ]
-            },
-            "label": "Template",
-            "name": "Sub-section"
-          },
-          "dragging": false,
-          "extent": "parent",
-          "height": 153,
-          "id": "Template:SaltyMasksItch",
-          "measured": {
-            "height": 153,
-            "width": 200
-          },
-          "parentId": "Iteration:ThreeParksChew",
-          "position": {
-            "x": 110.79092018298843,
-            "y": 259.6247245989738
-          },
-          "positionAbsolute": {
-            "x": 835.863238290048,
-            "y": 367.9383674393832
-          },
-          "selected": false,
-          "sourcePosition": "right",
-          "targetPosition": "left",
-          "type": "templateNode",
-          "width": 200
         },
         {
           "data": {
@@ -978,8 +828,8 @@
             "width": 266
           },
           "position": {
-            "x": 439.2665425320009,
-            "y": -195
+            "x": 431.07789651000473,
+            "y": -161.0756093374443
           },
           "selected": false,
           "sourcePosition": "right",
@@ -1003,8 +853,8 @@
             "width": 364
           },
           "position": {
-            "x": 444.1465433196574,
-            "y": 651.3693016100851
+            "x": 435.9578972976612,
+            "y": 452.5021839330345
           },
           "resizing": false,
           "selected": false,
@@ -1030,8 +880,8 @@
             "width": 336
           },
           "position": {
-            "x": 889.6239047765729,
-            "y": -194.97855367579697
+            "x": 881.4352587545767,
+            "y": -165.7333893115248
           },
           "resizing": false,
           "selected": false,
@@ -1039,176 +889,212 @@
           "targetPosition": "left",
           "type": "noteNode",
           "width": 336
-        }
-      ],
-      "edges": [
-        {
-          "id": "reactflow__edge-begin-Generate:SmoothTeamsJokec",
-          "markerEnd": "logo",
-          "source": "begin",
-          "sourceHandle": null,
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
-          },
-          "target": "Generate:SmoothTeamsJoke",
-          "targetHandle": "c",
-          "type": "buttonEdge",
-          "zIndex": 1001
         },
         {
-          "id": "reactflow__edge-Baidu:SharpHotelsNailb-Generate:RealCamerasSendb",
-          "markerEnd": "logo",
-          "source": "Baidu:SharpHotelsNail",
-          "sourceHandle": "b",
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
+          "data": {
+            "form": {
+              "cite": false,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 1,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "<instruction>\n<task_description>\nGenerate a series of appropriate search engine queries to break down questions based on user inquiries\n</task_description>\n\n<examples>\n<example>\nInput: User asks how to learn programming\nOutput: programming learning methods, programming tutorials for beginners\n</example>\n\n<example>\nInput: User wants to understand latest technology trends  \nOutput: tech trends 2024, latest technology news\n</example>\n\n<example>\nInput: User seeks healthy eating advice\nOutput: healthy eating guide, balanced nutrition diet\n</example>\n</examples>\n\n<instructions>\n1. Take user's question as input.\n2. Identify relevant keywords or phrases based on the topic of user's question.\n3. Use these keywords or phrases to make search engine queries.\n4. Generate a series of appropriate search engine queries to help break down user's question.\n5. Ensure output content does not contain any xml tags.\n6. The output must be pure and conform to the <example> style without other explanations.\n7. Break down into at least 4-6 subproblems.\n8. Output is separated only by commas.\n</instructions>\n\n\ntitle: {begin@title}\nlanguage: {begin@language}\nThe output must be pure and conform to the <example> style without other explanations.\nOutput is separated only by commas.\nBreak down into at least 4-6 subproblems.\n\nOutput:",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "Generate",
+            "name": "GenQuery"
           },
-          "target": "Generate:RealCamerasSend",
-          "targetHandle": "b",
-          "type": "buttonEdge",
-          "zIndex": 1001
+          "dragging": false,
+          "id": "Generate:EveryCoinsStare",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "position": {
+            "x": 42.60311386535324,
+            "y": 107.45415912015176
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
         },
         {
-          "id": "reactflow__edge-Generate:SmoothTeamsJokeb-Generate:RedAliensLivec",
-          "markerEnd": "logo",
-          "source": "Generate:SmoothTeamsJoke",
-          "sourceHandle": "b",
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
+          "data": {
+            "form": {
+              "cite": false,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": false,
+              "max_tokens": 256,
+              "message_history_window_size": 1,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "According to query: ' {Generate:EveryCoinsStare}'，for ' {begin@title}', generate 3 to 5 sub-titles.\n\n<instructions>\nPlease generate 4 subheadings for the main title following these steps:\n - 1. Carefully read the provided main title and related content\n - 2. Analyze the core theme and key information points of the main title\n - 3. Ensure the generated subheadings maintain consistency and relevance with the main title\n - 4. Each subheading should:\n        - Be concise and appropriate in length\n        - Highlight a unique angle or key point\n        - Capture readers' interest\n        - Match the overall style and tone of the article\n - 5. Between subheadings:\n        - Content should not overlap\n        - Logical order should be maintained\n        - Should collectively support the main title\n        - Use numerical sequence (1, 2, 3...) to mark each subheading\n - 6. Output format requirements:\n        - Each subheading on a separate line\n        - No XML tags included\n        - Output subheadings content only\n</instructions>\n\nlanguage: {begin@language}\nGenerate a series of appropriate sub-title to help break down ' {begin@title}'.\nBreaks down complex topics into manageable subtopics.\n\nOutput:",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "Generate",
+            "name": "Subtitles"
           },
-          "target": "Generate:RedAliensLive",
-          "targetHandle": "c",
-          "type": "buttonEdge",
-          "zIndex": 1001
+          "dragging": false,
+          "id": "Generate:RedWormsDouble",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "position": {
+            "x": 433.41522248658606,
+            "y": 14.302437349777136
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
         },
         {
-          "id": "reactflow__edge-Generate:BeigeEyesFlyb-Template:ThinSnailsDreamc",
-          "markerEnd": "logo",
-          "source": "Generate:BeigeEyesFly",
-          "sourceHandle": "b",
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
+          "data": {
+            "form": {
+              "cite": false,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": false,
+              "max_tokens": 256,
+              "message_history_window_size": 1,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "Your goal is to provide answers based on information from the internet. \nYou must use the provided search results to find relevant online information. \nYou should never use your own knowledge to answer questions.\nPlease include relevant url sources in the end of your answers.\n{Baidu:MeanBroomsMatter}\n\n\n\n\n\nlanguage: {begin@language}\n\n\n \" {Baidu:MeanBroomsMatter}\" \n\n\n\n\nUsing the above information, answer the following question or topic: \" {IterationItem:RudeTablesSmile} \"\nin a detailed report — The report should focus on the answer to the question, should be well structured, informative, in depth, with facts and numbers if available, a minimum of 1,200 words and with markdown syntax and apa format. Write all source urls at the end of the report in apa format. You should write your report only based on the given information and nothing else.",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "Generate",
+            "name": "GenSearchReport"
           },
-          "target": "Template:ThinSnailsDream",
-          "targetHandle": "c",
-          "type": "buttonEdge",
-          "zIndex": 1001
+          "dragging": false,
+          "extent": "parent",
+          "id": "Generate:YoungClownsKnock",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "parentId": "Iteration:BlueClothsGrab",
+          "position": {
+            "x": 115.34644687476163,
+            "y": 73.07611243293042
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
         },
         {
-          "id": "reactflow__edge-Template:LazyMasksFollowb-Answer:WittyBottlesJogc",
-          "markerEnd": "logo",
-          "source": "Template:LazyMasksFollow",
-          "sourceHandle": "b",
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
+          "data": {
+            "form": {
+              "cite": false,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": false,
+              "max_tokens": 256,
+              "message_history_window_size": 1,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "In a detailed report — The report should focus on the answer to {IterationItem:OliveStatesSmoke}and nothing else.\n\n\nLanguage: {begin@language}\nContext as bellow: \n\n\"{Iteration:BlueClothsGrab}\"\n\nProvide the research report in the specified language, avoiding small talk.\nThe main content is provided in markdown format\nWrite all source urls at the end of the report in apa format. ",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
+            },
+            "label": "Generate",
+            "name": "Subtitle-content"
           },
-          "target": "Answer:WittyBottlesJog",
-          "targetHandle": "c",
-          "type": "buttonEdge",
-          "zIndex": 1001
+          "dragging": false,
+          "extent": "parent",
+          "id": "Generate:RealLoopsVanish",
+          "measured": {
+            "height": 106,
+            "width": 200
+          },
+          "parentId": "Iteration:ThreeParksChew",
+          "position": {
+            "x": 189.94391141062363,
+            "y": 5.408501635610101
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
         },
         {
-          "id": "reactflow__edge-IterationItem:RudeTablesSmile-Baidu:MeanBroomsMatterc",
-          "markerEnd": "logo",
-          "source": "IterationItem:RudeTablesSmile",
-          "sourceHandle": null,
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
+          "data": {
+            "form": {
+              "content": "<h2> {IterationItem:OliveStatesSmoke}</h2>\n<div> {Generate:RealLoopsVanish}</div>",
+              "parameters": []
+            },
+            "label": "Template",
+            "name": "Sub-section"
           },
-          "target": "Baidu:MeanBroomsMatter",
-          "targetHandle": "c",
-          "type": "buttonEdge",
-          "zIndex": 1001
+          "dragging": false,
+          "extent": "parent",
+          "id": "Template:SpottyWaspsLose",
+          "measured": {
+            "height": 76,
+            "width": 200
+          },
+          "parentId": "Iteration:ThreeParksChew",
+          "position": {
+            "x": 107.51010102435532,
+            "y": 127.82322102671017
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "templateNode"
         },
         {
-          "id": "reactflow__edge-Baidu:MeanBroomsMatterb-Generate:FruityGrapesLookb",
-          "markerEnd": "logo",
-          "source": "Baidu:MeanBroomsMatter",
-          "sourceHandle": "b",
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
+          "data": {
+            "form": {
+              "content": "<h1> {begin@title}</h1>\n\n\n\n{Iteration:ThreeParksChew}",
+              "parameters": []
+            },
+            "label": "Template",
+            "name": "Article"
           },
-          "target": "Generate:FruityGrapesLook",
-          "targetHandle": "b",
-          "type": "buttonEdge",
-          "zIndex": 1001
-        },
-        {
-          "id": "reactflow__edge-Generate:SmoothTeamsJokeb-Iteration:BlueClothsGrabc",
-          "markerEnd": "logo",
-          "source": "Generate:SmoothTeamsJoke",
-          "sourceHandle": "b",
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
+          "dragging": false,
+          "id": "Template:LegalDoorsAct",
+          "measured": {
+            "height": 76,
+            "width": 200
           },
-          "target": "Iteration:BlueClothsGrab",
-          "targetHandle": "c",
-          "type": "buttonEdge",
-          "zIndex": 1001
-        },
-        {
-          "id": "reactflow__edge-IterationItem:OliveStatesSmoke-Generate:EagerFliesTradec",
-          "markerEnd": "logo",
-          "source": "IterationItem:OliveStatesSmoke",
-          "sourceHandle": null,
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
+          "position": {
+            "x": 1209.0758608851872,
+            "y": 149.01984563839733
           },
-          "target": "Generate:EagerFliesTrade",
-          "targetHandle": "c",
-          "type": "buttonEdge",
-          "zIndex": 1001
-        },
-        {
-          "id": "reactflow__edge-Generate:RedAliensLiveb-Iteration:ThreeParksChewc",
-          "markerEnd": "logo",
-          "source": "Generate:RedAliensLive",
-          "sourceHandle": "b",
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
-          },
-          "target": "Iteration:ThreeParksChew",
-          "targetHandle": "c",
-          "type": "buttonEdge",
-          "zIndex": 1001
-        },
-        {
-          "id": "reactflow__edge-Iteration:ThreeParksChewb-Template:LazyMasksFollowc",
-          "markerEnd": "logo",
-          "source": "Iteration:ThreeParksChew",
-          "sourceHandle": "b",
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
-          },
-          "target": "Template:LazyMasksFollow",
-          "targetHandle": "c",
-          "type": "buttonEdge",
-          "zIndex": 1001
-        },
-        {
-          "id": "reactflow__edge-Generate:EagerFliesTradeb-Template:SaltyMasksItchb",
-          "markerEnd": "logo",
-          "source": "Generate:EagerFliesTrade",
-          "sourceHandle": "b",
-          "style": {
-            "stroke": "rgb(202 197 245)",
-            "strokeWidth": 2
-          },
-          "target": "Template:SaltyMasksItch",
-          "targetHandle": "b",
-          "type": "buttonEdge",
-          "zIndex": 1001
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "templateNode"
         }
       ]
     },

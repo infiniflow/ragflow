@@ -69,7 +69,8 @@ interface Es {
 }
 
 export interface ITenantUser {
-  avatar: null;
+  id: string;
+  avatar: string;
   delta_seconds: number;
   email: string;
   is_active: string;

@@ -1,4 +1,8 @@
 import { IRenameTag } from '@/interfaces/database/knowledge';
+import {
+  IFetchKnowledgeListRequestBody,
+  IFetchKnowledgeListRequestParams,
+} from '@/interfaces/request/knowledge';
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request, { post } from '@/utils/request';
@@ -54,7 +58,7 @@ const methods = {
   },
   getList: {
     url: kb_list,
-    method: 'get',
+    method: 'post',
   },
   // document manager
   get_document_list: {
@@ -168,5 +172,14 @@ export const renameTag = (
 export function getKnowledgeGraph(knowledgeId: string) {
   return request.get(api.getKnowledgeGraph(knowledgeId));
 }
+
+export function deleteKnowledgeGraph(knowledgeId: string) {
+  return request.delete(api.getKnowledgeGraph(knowledgeId));
+}
+
+export const listDataset = (
+  params?: IFetchKnowledgeListRequestParams,
+  body?: IFetchKnowledgeListRequestBody,
+) => request.post(api.kb_list, { data: body || {}, params });
 
 export default kbService;

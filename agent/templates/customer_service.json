@@ -4,50 +4,526 @@
   "description": "A customer service chatbot that explains product specifications, addresses customer queries, and alleviates negative emotions.",
   "canvas_type": "chatbot",
   "dsl": {
-      "answer": [],
-      "components": {
-        "begin": {
-          "obj": {
-            "component_name": "Begin",
-            "params": {
+    "answer": [],
+    "components": {
+      "Categorize:EightyWavesEnd": {
+        "downstream": [
+          "Generate:FullBeersSit",
+          "Message:GoodBugsTurn",
+          "Retrieval:WholeStarsDrive",
+          "Generate:EasyWaysBeg"
+        ],
+        "obj": {
+          "component_name": "Categorize",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "category_description": {
+              "1. contact": {
+                "description": "This answer provide a specific contact information, like e-mail, phone number, wechat number, line number, twitter, discord, etc,.",
+                "examples": "My phone number is 203921\nkevinhu.hk@gmail.com\nThis is my discord number: johndowson_29384\n13212123432\n8379829",
+                "to": "Message:GoodBugsTurn"
+              },
+              "2. casual": {
+                "description": "The question is not about the product usage, appearance and how it works. Just casual chat.",
+                "examples": "How are you doing?\nWhat is your name?\nAre you a robot?\nWhat's the weather?\nWill it rain?",
+                "to": "Generate:EasyWaysBeg"
+              },
+              "3. complain": {
+                "description": "Complain even curse about the product or service you provide. But the comment is not specific enough.",
+                "examples": "How bad is it.\nIt's really sucks.\nDamn, for God's sake, can it be more steady?\nShit, I just can't use this shit.\nI can't stand it anymore.",
+                "to": "Generate:FullBeersSit"
+              },
+              "4. product related": {
+                "description": "The question is about the product usage, appearance and how it works.",
+                "examples": "Why it always beaming?\nHow to install it onto the wall?\nIt leaks, what to do?\nException: Can't connect to ES cluster\nHow to build the RAGFlow image from scratch",
+                "to": "Retrieval:WholeStarsDrive"
+              }
+            },
+            "cite": true,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 512,
+            "message_history_window_size": 8,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "RewriteQuestion:AllNightsSniff"
+        ]
+      },
+      "Generate:EasyWaysBeg": {
+        "downstream": [
+          "answer:0"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": true,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "You are a customer support. But the customer wants to have a casual chat with you instead of consulting about the product. Be nice, funny, enthusiasm and concern.",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Categorize:EightyWavesEnd"
+        ]
+      },
+      "Generate:FullBeersSit": {
+        "downstream": [
+          "answer:0"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": false,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "You are a customer support. the Customers complain even curse about the products but not specific enough. You need to ask him/her what's the specific problem with the product. Be nice, patient and concern to soothe your customers’ emotions at first place.",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Categorize:EightyWavesEnd"
+        ]
+      },
+      "Generate:YoungTrainsSee": {
+        "downstream": [
+          "answer:0"
+        ],
+        "obj": {
+          "component_name": "Generate",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": false,
+            "debug_inputs": [],
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "max_tokens": 256,
+            "message_history_window_size": 12,
+            "output": null,
+            "output_var_name": "output",
+            "parameters": [],
+            "presence_penalty": 0.4,
+            "prompt": "Role: You are a customer support.  \n\nTask: Please answer the question based on content of knowledge base. \n\nRequirements & restrictions:\n  -  DO NOT make things up when all knowledge base content is irrelevant to the question. \n  - Answers need to consider chat history.\n  - Request about customer's contact information like, Wechat number, LINE number, twitter, discord, etc,. , when knowledge base content can't answer his question. So,  product expert could contact him soon to solve his problem.\n\n      Knowledge base content is as following:\n      {Retrieval:WholeStarsDrive}\n      The above is the content of knowledge base.",
+            "query": [],
+            "temperature": 0.1,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "Retrieval:WholeStarsDrive"
+        ]
+      },
+      "Message:GoodBugsTurn": {
+        "downstream": [
+          "answer:0"
+        ],
+        "obj": {
+          "component_name": "Message",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "messages": [
+              "Okay, I've already write this down. What else I can do for you?",
+              "Get it. What else I can do for you?",
+              "Thanks for your trust! Our expert will contact ASAP. So, anything else I can do for you?",
+              "Thanks! So, anything else I can do for you?"
+            ],
+            "output": null,
+            "output_var_name": "output",
+            "query": []
+          }
+        },
+        "upstream": [
+          "Categorize:EightyWavesEnd"
+        ]
+      },
+      "Retrieval:WholeStarsDrive": {
+        "downstream": [
+          "Generate:YoungTrainsSee"
+        ],
+        "obj": {
+          "component_name": "Retrieval",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "empty_response": "",
+            "inputs": [],
+            "kb_ids": [],
+            "keywords_similarity_weight": 0.3,
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "query": [],
+            "rerank_id": "",
+            "similarity_threshold": 0.2,
+            "top_k": 1024,
+            "top_n": 6
+          }
+        },
+        "upstream": [
+          "Categorize:EightyWavesEnd"
+        ]
+      },
+      "RewriteQuestion:AllNightsSniff": {
+        "downstream": [
+          "Categorize:EightyWavesEnd"
+        ],
+        "obj": {
+          "component_name": "RewriteQuestion",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "cite": true,
+            "debug_inputs": [],
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "inputs": [],
+            "llm_id": "deepseek-chat@DeepSeek",
+            "loop": 1,
+            "maxTokensEnabled": true,
+            "max_tokens": 256,
+            "message_history_window_size": 6,
+            "output": null,
+            "output_var_name": "output",
+            "parameter": "Precise",
+            "parameters": [],
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompt": "",
+            "query": [],
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_p": 0.3
+          }
+        },
+        "upstream": [
+          "answer:0"
+        ]
+      },
+      "answer:0": {
+        "downstream": [
+          "RewriteQuestion:AllNightsSniff"
+        ],
+        "obj": {
+          "component_name": "Answer",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "post_answers": [],
+            "query": []
+          }
+        },
+        "upstream": [
+          "Message:GoodBugsTurn",
+          "Generate:FullBeersSit",
+          "begin",
+          "Generate:YoungTrainsSee",
+          "Generate:EasyWaysBeg"
+        ]
+      },
+      "begin": {
+        "downstream": [
+          "answer:0"
+        ],
+        "obj": {
+          "component_name": "Begin",
+          "inputs": [],
+          "output": null,
+          "params": {
+            "debug_inputs": [],
+            "inputs": [],
+            "message_history_window_size": 22,
+            "output": null,
+            "output_var_name": "output",
+            "prologue": "Hi! How can I help you?",
+            "query": []
+          }
+        },
+        "upstream": []
+      }
+    },
+    "embed_id": "",
+    "graph": {
+      "edges": [
+        {
+          "id": "reactflow__edge-Retrieval:WholeStarsDriveb-Generate:YoungTrainsSeeb",
+          "markerEnd": "logo",
+          "source": "Retrieval:WholeStarsDrive",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:YoungTrainsSee",
+          "targetHandle": "b",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Message:GoodBugsTurnb-answer:0b",
+          "markerEnd": "logo",
+          "source": "Message:GoodBugsTurn",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "answer:0",
+          "targetHandle": "b",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Generate:FullBeersSitb-answer:0b",
+          "markerEnd": "logo",
+          "source": "Generate:FullBeersSit",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "answer:0",
+          "targetHandle": "b",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-begin-answer:0b",
+          "markerEnd": "logo",
+          "source": "begin",
+          "sourceHandle": null,
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "answer:0",
+          "targetHandle": "b",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Generate:YoungTrainsSeec-answer:0b",
+          "markerEnd": "logo",
+          "source": "Generate:YoungTrainsSee",
+          "sourceHandle": "c",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "answer:0",
+          "targetHandle": "b",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "xy-edge__answer:0c-RewriteQuestion:AllNightsSniffb",
+          "markerEnd": "logo",
+          "source": "answer:0",
+          "sourceHandle": "c",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "RewriteQuestion:AllNightsSniff",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__RewriteQuestion:AllNightsSniffc-Categorize:EightyWavesEnda",
+          "markerEnd": "logo",
+          "source": "RewriteQuestion:AllNightsSniff",
+          "sourceHandle": "c",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Categorize:EightyWavesEnd",
+          "targetHandle": "a",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "reactflow__edge-Categorize:EightyWavesEnd3. complain-Generate:FullBeersSitc",
+          "markerEnd": "logo",
+          "source": "Categorize:EightyWavesEnd",
+          "sourceHandle": "3. complain",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:FullBeersSit",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "reactflow__edge-Categorize:EightyWavesEnd1. contact-Message:GoodBugsTurnc",
+          "markerEnd": "logo",
+          "source": "Categorize:EightyWavesEnd",
+          "sourceHandle": "1. contact",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Message:GoodBugsTurn",
+          "targetHandle": "c",
+          "type": "buttonEdge"
+        },
+        {
+          "id": "xy-edge__Categorize:EightyWavesEnd4. product related-Retrieval:WholeStarsDrivec",
+          "markerEnd": "logo",
+          "source": "Categorize:EightyWavesEnd",
+          "sourceHandle": "4. product related",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Retrieval:WholeStarsDrive",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Generate:EasyWaysBegb-answer:0b",
+          "markerEnd": "logo",
+          "source": "Generate:EasyWaysBeg",
+          "sourceHandle": "b",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "answer:0",
+          "targetHandle": "b",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        },
+        {
+          "id": "xy-edge__Categorize:EightyWavesEnd2. casual-Generate:EasyWaysBegc",
+          "markerEnd": "logo",
+          "source": "Categorize:EightyWavesEnd",
+          "sourceHandle": "2. casual",
+          "style": {
+            "stroke": "rgb(202 197 245)",
+            "strokeWidth": 2
+          },
+          "target": "Generate:EasyWaysBeg",
+          "targetHandle": "c",
+          "type": "buttonEdge",
+          "zIndex": 1001
+        }
+      ],
+      "nodes": [
+        {
+          "data": {
+            "form": {
               "prologue": "Hi! How can I help you?"
-            }
+            },
+            "label": "Begin",
+            "name": "Opener"
           },
-          "downstream": [
-            "answer:0"
-          ],
-          "upstream": []
-        },
-        "answer:0": {
-          "obj": {
-            "component_name": "Answer",
-            "params": {}
+          "dragging": false,
+          "height": 44,
+          "id": "begin",
+          "measured": {
+            "height": 44,
+            "width": 100
           },
-          "downstream": [
-            "Categorize:EightyWavesEnd"
-          ],
-          "upstream": [
-            "Message:GoodBugsTurn",
-            "Generate:HipWallsFollow",
-            "Generate:FullBeersSit",
-            "begin",
-            "Generate:YoungTrainsSee"
-          ]
+          "position": {
+            "x": 392.4805720357097,
+            "y": -51.634011497163186
+          },
+          "positionAbsolute": {
+            "x": 392.4805720357097,
+            "y": -51.634011497163186
+          },
+          "selected": false,
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "beginNode"
         },
-        "Categorize:EightyWavesEnd": {
-          "obj": {
-            "component_name": "Categorize",
-            "params": {
+        {
+          "data": {
+            "form": {},
+            "label": "Answer",
+            "name": "Interface"
+          },
+          "dragging": false,
+          "height": 44,
+          "id": "answer:0",
+          "measured": {
+            "height": 44,
+            "width": 200
+          },
+          "position": {
+            "x": 254.80252337926834,
+            "y": 311.451851495964
+          },
+          "positionAbsolute": {
+            "x": 248.41227675535197,
+            "y": 216.6631932412045
+          },
+          "selected": false,
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "logicNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
               "category_description": {
                 "1. contact": {
                   "description": "This answer provide a specific contact information, like e-mail, phone number, wechat number, line number, twitter, discord, etc,.",
-                  "examples": "My phone number is 203921\nkevinhu.hk@gmail.com\nThis is my discord number: johndowson_29384",
+                  "examples": "My phone number is 203921\nkevinhu.hk@gmail.com\nThis is my discord number: johndowson_29384\n13212123432\n8379829",
                   "to": "Message:GoodBugsTurn"
                 },
                 "2. casual": {
                   "description": "The question is not about the product usage, appearance and how it works. Just casual chat.",
                   "examples": "How are you doing?\nWhat is your name?\nAre you a robot?\nWhat's the weather?\nWill it rain?",
-                  "to": "Generate:HipWallsFollow"
+                  "to": "Generate:EasyWaysBeg"
                 },
                 "3. complain": {
                   "description": "Complain even curse about the product or service you provide. But the comment is not specific enough.",
@@ -57,144 +533,15 @@
                 "4. product related": {
                   "description": "The question is about the product usage, appearance and how it works.",
                   "examples": "Why it always beaming?\nHow to install it onto the wall?\nIt leaks, what to do?\nException: Can't connect to ES cluster\nHow to build the RAGFlow image from scratch",
-                  "to": "RewriteQuestion:AllNightsSniff"
+                  "to": "Retrieval:WholeStarsDrive"
                 }
               },
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 512,
-              "message_history_window_size": 8,
-              "presence_penalty": 0.4,
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "downstream": [
-            "RewriteQuestion:AllNightsSniff",
-            "Generate:FullBeersSit",
-            "Generate:HipWallsFollow",
-            "Message:GoodBugsTurn"
-          ],
-          "upstream": [
-            "answer:0"
-          ]
-        },
-        "Generate:YoungTrainsSee": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
-              "cite": false,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 12,
-              "parameters": [],
-              "presence_penalty": 0.4,
-              "prompt": "Role: You are a customer support.  \n\nTask: Please answer the question based on content of knowledge base. \n\nRequirements & restrictions:\n  -  DO NOT make things up when all knowledge base content is irrelevant to the question. \n  - Answers need to consider chat history.\n  - Request about customer's contact information like, Wechat number, LINE number, twitter, discord, etc,. , when knowledge base content can't answer his question. So,  product expert could contact him soon to solve his problem.\n\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "downstream": [
-            "answer:0"
-          ],
-          "upstream": [
-            "Retrieval:WholeStarsDrive"
-          ]
-        },
-        "Retrieval:WholeStarsDrive": {
-          "obj": {
-            "component_name": "Retrieval",
-            "params": {
-              "kb_ids": [],
-              "keywords_similarity_weight": 0.3,
-              "similarity_threshold": 0.2,
-              "top_k": 1024,
-              "top_n": 6
-            }
-          },
-          "downstream": [
-            "Generate:YoungTrainsSee"
-          ],
-          "upstream": [
-            "RewriteQuestion:AllNightsSniff"
-          ]
-        },
-        "Message:GoodBugsTurn": {
-          "obj": {
-            "component_name": "Message",
-            "params": {
-              "messages": [
-                "Okay, I've already write this down. What else I can do for you?",
-                "Get it. What else I can do for you?",
-                "Thanks for your trust! Our expert will contact ASAP. So, anything else I can do for you?",
-                "Thanks! So, anything else I can do for you?"
-              ]
-            }
-          },
-          "downstream": [
-            "answer:0"
-          ],
-          "upstream": [
-            "Categorize:EightyWavesEnd"
-          ]
-        },
-        "Generate:HipWallsFollow": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
-              "cite": false,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 12,
-              "parameters": [],
-              "presence_penalty": 0.4,
-              "prompt": "You are a customer support. But the customer wants to have a casual chat with you instead of consulting about the product. Be nice, funny, enthusiasm and concern.",
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "downstream": [
-            "answer:0"
-          ],
-          "upstream": [
-            "Categorize:EightyWavesEnd"
-          ]
-        },
-        "Generate:FullBeersSit": {
-          "obj": {
-            "component_name": "Generate",
-            "params": {
-              "cite": false,
-              "frequency_penalty": 0.7,
-              "llm_id": "deepseek-chat@DeepSeek",
-              "max_tokens": 256,
-              "message_history_window_size": 12,
-              "parameters": [],
-              "presence_penalty": 0.4,
-              "prompt": "You are a customer support. the Customers complain even curse about the products but not specific enough. You need to ask him/her what's the specific problem with the product. Be nice, patient and concern to soothe your customers’ emotions at first place.",
-              "temperature": 0.1,
-              "top_p": 0.3
-            }
-          },
-          "downstream": [
-            "answer:0"
-          ],
-          "upstream": [
-            "Categorize:EightyWavesEnd"
-          ]
-        },
-        "RewriteQuestion:AllNightsSniff": {
-          "obj": {
-            "component_name": "RewriteQuestion",
-            "params": {
               "frequencyPenaltyEnabled": true,
               "frequency_penalty": 0.7,
               "llm_id": "deepseek-chat@DeepSeek",
-              "loop": 1,
               "maxTokensEnabled": true,
-              "max_tokens": 256,
+              "max_tokens": 512,
+              "message_history_window_size": 8,
               "parameter": "Precise",
               "presencePenaltyEnabled": true,
               "presence_penalty": 0.4,
@@ -202,708 +549,505 @@
               "temperatureEnabled": true,
               "topPEnabled": true,
               "top_p": 0.3
-            }
+            },
+            "label": "Categorize",
+            "name": "Question Categorize"
           },
-          "downstream": [
-            "Retrieval:WholeStarsDrive"
-          ],
-          "upstream": [
-            "Categorize:EightyWavesEnd"
-          ]
-        }
-      },
-      "embed_id": "",
-      "graph": {
-        "nodes": [
-          {
-            "data": {
-              "form": {
-                "prologue": "Hi! How can I help you?"
-              },
-              "label": "Begin",
-              "name": "Opener"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "begin",
-            "position": {
-              "x": 392.4805720357097,
-              "y": -51.634011497163186
-            },
-            "positionAbsolute": {
-              "x": 392.4805720357097,
-              "y": -51.634011497163186
-            },
-            "selected": false,
-            "sourcePosition": "left",
-            "targetPosition": "right",
-            "type": "beginNode",
-            "width": 100
-          },
-          {
-            "data": {
-              "form": {},
-              "label": "Answer",
-              "name": "Interface"
-            },
-            "dragging": false,
-            "height": 44,
-            "id": "answer:0",
-            "position": {
-              "x": 248.41227675535197,
-              "y": 216.6631932412045
-            },
-            "positionAbsolute": {
-              "x": 248.41227675535197,
-              "y": 216.6631932412045
-            },
-            "selected": false,
-            "sourcePosition": "left",
-            "targetPosition": "right",
-            "type": "logicNode",
-            "width": 200
-          },
-          {
-            "data": {
-              "form": {
-                "category_description": {
-                  "1. contact": {
-                    "description": "This answer provide a specific contact information, like e-mail, phone number, wechat number, line number, twitter, discord, etc,.",
-                    "examples": "My phone number is 203921\nkevinhu.hk@gmail.com\nThis is my discord number: johndowson_29384",
-                    "to": "Message:GoodBugsTurn"
-                  },
-                  "2. casual": {
-                    "description": "The question is not about the product usage, appearance and how it works. Just casual chat.",
-                    "examples": "How are you doing?\nWhat is your name?\nAre you a robot?\nWhat's the weather?\nWill it rain?",
-                    "to": "Generate:HipWallsFollow"
-                  },
-                  "3. complain": {
-                    "description": "Complain even curse about the product or service you provide. But the comment is not specific enough.",
-                    "examples": "How bad is it.\nIt's really sucks.\nDamn, for God's sake, can it be more steady?\nShit, I just can't use this shit.\nI can't stand it anymore.",
-                    "to": "Generate:FullBeersSit"
-                  },
-                  "4. product related": {
-                    "description": "The question is about the product usage, appearance and how it works.",
-                    "examples": "Why it always beaming?\nHow to install it onto the wall?\nIt leaks, what to do?\nException: Can't connect to ES cluster\nHow to build the RAGFlow image from scratch",
-                    "to": "RewriteQuestion:AllNightsSniff"
-                  }
-                },
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 512,
-                "message_history_window_size": 8,
-                "parameter": "Precise",
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Categorize",
-              "name": "Question Categorize"
-            },
-            "dragging": false,
+          "dragging": false,
+          "height": 223,
+          "id": "Categorize:EightyWavesEnd",
+          "measured": {
             "height": 223,
-            "id": "Categorize:EightyWavesEnd",
-            "position": {
-              "x": -47.29188154660176,
-              "y": 702.9033359893137
-            },
-            "positionAbsolute": {
-              "x": -47.29188154660176,
-              "y": 702.9033359893137
-            },
-            "selected": false,
-            "sourcePosition": "left",
-            "targetPosition": "right",
-            "type": "categorizeNode",
             "width": 200
           },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "Role: You are a customer support.  \n\nTask: Please answer the question based on content of knowledge base. \n\nRequirements & restrictions:\n  -  DO NOT make things up when all knowledge base content is irrelevant to the question. \n  - Answers need to consider chat history.\n  - Request about customer's contact information like, Wechat number, LINE number, twitter, discord, etc,. , when knowledge base content can't answer his question. So,  product expert could contact him soon to solve his problem.\n\n      Knowledge base content is as following:\n      {input}\n      The above is the content of knowledge base.",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Product info"
+          "position": {
+            "x": -47.29188154660176,
+            "y": 702.9033359893137
+          },
+          "positionAbsolute": {
+            "x": -47.29188154660176,
+            "y": 702.9033359893137
+          },
+          "selected": false,
+          "sourcePosition": "left",
+          "targetPosition": "right",
+          "type": "categorizeNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
+              "cite": false,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "Role: You are a customer support.  \n\nTask: Please answer the question based on content of knowledge base. \n\nRequirements & restrictions:\n  -  DO NOT make things up when all knowledge base content is irrelevant to the question. \n  - Answers need to consider chat history.\n  - Request about customer's contact information like, Wechat number, LINE number, twitter, discord, etc,. , when knowledge base content can't answer his question. So,  product expert could contact him soon to solve his problem.\n\n      Knowledge base content is as following:\n      {Retrieval:WholeStarsDrive}\n      The above is the content of knowledge base.",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
             },
-            "dragging": false,
+            "label": "Generate",
+            "name": "Product info"
+          },
+          "dragging": false,
+          "height": 86,
+          "id": "Generate:YoungTrainsSee",
+          "measured": {
             "height": 86,
-            "id": "Generate:YoungTrainsSee",
-            "position": {
-              "x": 634.1215549262979,
-              "y": 195.4436083122431
-            },
-            "positionAbsolute": {
-              "x": 634.1215549262979,
-              "y": 195.4436083122431
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
             "width": 200
           },
-          {
-            "data": {
-              "form": {
-                "kb_ids": [],
-                "keywords_similarity_weight": 0.3,
-                "similarity_threshold": 0.2,
-                "top_k": 1024,
-                "top_n": 6
-              },
-              "label": "Retrieval",
-              "name": "Search product info"
+          "position": {
+            "x": 559.5686776472737,
+            "y": 290.2322665670026
+          },
+          "positionAbsolute": {
+            "x": 634.1215549262979,
+            "y": 195.4436083122431
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
+              "kb_ids": [],
+              "keywords_similarity_weight": 0.3,
+              "similarity_threshold": 0.2,
+              "top_k": 1024,
+              "top_n": 6
             },
-            "dragging": false,
+            "label": "Retrieval",
+            "name": "Search product info"
+          },
+          "dragging": false,
+          "height": 44,
+          "id": "Retrieval:WholeStarsDrive",
+          "measured": {
             "height": 44,
-            "id": "Retrieval:WholeStarsDrive",
-            "position": {
-              "x": 674.4543037737495,
-              "y": 855.3858500356805
-            },
-            "positionAbsolute": {
-              "x": 674.4543037737495,
-              "y": 855.3858500356805
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "retrievalNode",
             "width": 200
           },
-          {
-            "data": {
-              "form": {
-                "messages": [
-                  "Okay, I've already write this down. What else I can do for you?",
-                  "Get it. What else I can do for you?",
-                  "Thanks for your trust! Our expert will contact ASAP. So, anything else I can do for you?",
-                  "Thanks! So, anything else I can do for you?"
-                ]
-              },
-              "label": "Message",
-              "name": "What else?"
+          "position": {
+            "x": 667.7576170144173,
+            "y": 897.9742909437947
+          },
+          "positionAbsolute": {
+            "x": 674.4543037737495,
+            "y": 855.3858500356805
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "retrievalNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
+              "messages": [
+                "Okay, I've already write this down. What else I can do for you?",
+                "Get it. What else I can do for you?",
+                "Thanks for your trust! Our expert will contact ASAP. So, anything else I can do for you?",
+                "Thanks! So, anything else I can do for you?"
+              ]
             },
-            "dragging": false,
+            "label": "Message",
+            "name": "What else?"
+          },
+          "dragging": false,
+          "height": 185,
+          "id": "Message:GoodBugsTurn",
+          "measured": {
             "height": 185,
-            "id": "Message:GoodBugsTurn",
-            "position": {
-              "x": 255.51379306491577,
-              "y": 378.5054855804349
-            },
-            "positionAbsolute": {
-              "x": 255.51379306491577,
-              "y": 378.5054855804349
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "messageNode",
             "width": 200
           },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "You are a customer support. But the customer wants to have a casual chat with you instead of consulting about the product. Be nice, funny, enthusiasm and concern.",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Casual chat"
+          "position": {
+            "x": 255.51379306491577,
+            "y": 378.5054855804349
+          },
+          "positionAbsolute": {
+            "x": 255.51379306491577,
+            "y": 378.5054855804349
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "messageNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
+              "cite": false,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "You are a customer support. the Customers complain even curse about the products but not specific enough. You need to ask him/her what's the specific problem with the product. Be nice, patient and concern to soothe your customers’ emotions at first place.",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
             },
-            "dragging": false,
+            "label": "Generate",
+            "name": "Soothe mood"
+          },
+          "dragging": false,
+          "height": 86,
+          "id": "Generate:FullBeersSit",
+          "measured": {
             "height": 86,
-            "id": "Generate:HipWallsFollow",
-            "position": {
-              "x": 284.06028065118653,
-              "y": 644.4392986871846
-            },
-            "positionAbsolute": {
-              "x": 284.06028065118653,
-              "y": 644.4392986871846
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
             "width": 200
           },
-          {
-            "data": {
-              "form": {
-                "cite": false,
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "message_history_window_size": 12,
-                "parameter": "Precise",
-                "parameters": [],
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "prompt": "You are a customer support. the Customers complain even curse about the products but not specific enough. You need to ask him/her what's the specific problem with the product. Be nice, patient and concern to soothe your customers’ emotions at first place.",
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "Generate",
-              "name": "Soothe mood"
+          "position": {
+            "x": 310.50668739661876,
+            "y": 752.9913068679249
+          },
+          "positionAbsolute": {
+            "x": 282.6177403844678,
+            "y": 738.0651678233716
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "loop": 1,
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 6,
+              "parameter": "Precise",
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
             },
-            "dragging": false,
+            "label": "RewriteQuestion",
+            "name": "Refine Question"
+          },
+          "dragging": false,
+          "height": 86,
+          "id": "RewriteQuestion:AllNightsSniff",
+          "measured": {
             "height": 86,
-            "id": "Generate:FullBeersSit",
-            "position": {
-              "x": 282.6177403844678,
-              "y": 738.0651678233716
-            },
-            "positionAbsolute": {
-              "x": 282.6177403844678,
-              "y": 738.0651678233716
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "generateNode",
             "width": 200
           },
-          {
-            "data": {
-              "form": {
-                "frequencyPenaltyEnabled": true,
-                "frequency_penalty": 0.7,
-                "llm_id": "deepseek-chat@DeepSeek",
-                "loop": 1,
-                "maxTokensEnabled": true,
-                "max_tokens": 256,
-                "parameter": "Precise",
-                "presencePenaltyEnabled": true,
-                "presence_penalty": 0.4,
-                "temperature": 0.1,
-                "temperatureEnabled": true,
-                "topPEnabled": true,
-                "top_p": 0.3
-              },
-              "label": "RewriteQuestion",
-              "name": "Refine Question"
-            },
-            "dragging": false,
-            "height": 86,
-            "id": "RewriteQuestion:AllNightsSniff",
-            "position": {
-              "x": 324.6407948253129,
-              "y": 858.5461701082726
-            },
-            "positionAbsolute": {
-              "x": 324.6407948253129,
-              "y": 858.5461701082726
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "rewriteNode",
-            "width": 200
+          "position": {
+            "x": -76.01780399206896,
+            "y": 578.5800110192073
           },
-          {
-            "data": {
-              "form": {
-                "text": "Receives the user's input and displays content returned by the large model or a static message."
-              },
-              "label": "Note",
-              "name": "N: Interface"
+          "positionAbsolute": {
+            "x": 324.6407948253129,
+            "y": 858.5461701082726
+          },
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "rewriteNode",
+          "width": 200
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Receives the user's input and displays content returned by the large model or a static message."
             },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+            "label": "Note",
+            "name": "N: Interface"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 165,
+          "id": "Note:NeatEelsJam",
+          "measured": {
+            "height": 165,
+            "width": 246
+          },
+          "position": {
+            "x": 254.241356823277,
+            "y": 125.88467020717172
+          },
+          "positionAbsolute": {
+            "x": 264.90767475037154,
+            "y": 38.182206466391165
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
             "height": 157,
-            "id": "Note:NeatEelsJam",
-            "position": {
-              "x": 264.90767475037154,
-              "y": 38.182206466391165
-            },
-            "positionAbsolute": {
-              "x": 264.90767475037154,
-              "y": 38.182206466391165
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 157,
-              "width": 218
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
             "width": 218
           },
-          {
-            "data": {
-              "form": {
-                "text": "The large model returns the product information needed by the user based on the content in the knowledge base."
-              },
-              "label": "Note",
-              "name": "N: Product info"
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 246
+        },
+        {
+          "data": {
+            "form": {
+              "text": "The large model returns the product information needed by the user based on the content in the knowledge base."
             },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+            "label": "Note",
+            "name": "N: Product info"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 174,
+          "id": "Note:VastBusesStop",
+          "measured": {
+            "height": 174,
+            "width": 251
+          },
+          "position": {
+            "x": 552.2937732862443,
+            "y": 112.23751311378777
+          },
+          "positionAbsolute": {
+            "x": 631.2555350351256,
+            "y": 39.608910328453874
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
             "height": 146,
-            "id": "Note:VastBusesStop",
-            "position": {
-              "x": 631.2555350351256,
-              "y": 39.608910328453874
-            },
-            "positionAbsolute": {
-              "x": 631.2555350351256,
-              "y": 39.608910328453874
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 146,
-              "width": 239
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
             "width": 239
           },
-          {
-            "data": {
-              "form": {
-                "text": "Static messages.\nDefine response after receive user's contact information."
-              },
-              "label": "Note",
-              "name": "N: What else?"
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 251
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Static messages.\nDefine response after receive user's contact information."
             },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 128,
-            "id": "Note:YellowSlothsCall",
-            "position": {
-              "x": 555.9717758467305,
-              "y": 383.35075112209097
-            },
-            "positionAbsolute": {
-              "x": 555.9717758467305,
-              "y": 383.35075112209097
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 269
+            "label": "Note",
+            "name": "N: What else?"
           },
-          {
-            "data": {
-              "form": {
-                "text": "LLMs chat with users based on the prompts."
-              },
-              "label": "Note",
-              "name": "N: Casual & Soothe"
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 140,
+          "id": "Note:YellowSlothsCall",
+          "measured": {
+            "height": 140,
+            "width": 301
+          },
+          "position": {
+            "x": 560.5616335948474,
+            "y": 442.25458284060795
+          },
+          "positionAbsolute": {
+            "x": 555.9717758467305,
+            "y": 383.35075112209097
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 301
+        },
+        {
+          "data": {
+            "form": {
+              "text": "LLMs chat with users based on the prompts."
             },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+            "label": "Note",
+            "name": "N: Casual & Soothe"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 128,
+          "id": "Note:MightyMealsBegin",
+          "measured": {
             "height": 128,
-            "id": "Note:MightyMealsBegin",
-            "position": {
-              "x": 579.1117030677617,
-              "y": 639.9891755684794
-            },
-            "positionAbsolute": {
-              "x": 579.1117030677617,
-              "y": 639.9891755684794
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 128,
-              "width": 330
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
             "width": 330
           },
-          {
-            "data": {
-              "form": {
-                "text": "Receives content related to product usage, appearance, and operation, searches the knowledge base, and returns the retrieved content."
-              },
-              "label": "Note",
-              "name": "N: Search product info"
+          "position": {
+            "x": 602.4076699989065,
+            "y": 727.2225988541959
+          },
+          "positionAbsolute": {
+            "x": 579.1117030677617,
+            "y": 639.9891755684794
+          },
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "style": {
+            "height": 128,
+            "width": 330
+          },
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 330
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Receives content related to product usage, appearance, and operation, searches the knowledge base, and returns the retrieved content."
             },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
+            "label": "Note",
+            "name": "N: Search product info"
+          },
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 164,
+          "id": "Note:PurpleReadersLike",
+          "measured": {
+            "height": 164,
+            "width": 288
+          },
+          "position": {
+            "x": 671.3026627091103,
+            "y": 969.3826268059544
+          },
+          "positionAbsolute": {
+            "x": 713.5806084319482,
+            "y": 962.5655101584402
+          },
+          "resizing": false,
+          "selected": true,
+          "sourcePosition": "right",
+          "style": {
             "height": 163,
-            "id": "Note:PurpleReadersLike",
-            "position": {
-              "x": 713.5806084319482,
-              "y": 962.5655101584402
-            },
-            "positionAbsolute": {
-              "x": 713.5806084319482,
-              "y": 962.5655101584402
-            },
-            "resizing": false,
-            "selected": false,
-            "sourcePosition": "right",
-            "style": {
-              "height": 163,
-              "width": 271
-            },
-            "targetPosition": "left",
-            "type": "noteNode",
             "width": 271
           },
-          {
-            "data": {
-              "form": {
-                "text": "Complete questions by conversation history.\nUser: What's RAGFlow?\nAssistant: RAGFlow is xxx.\nUser: How to deploy it?\n\nRefine it: How to deploy RAGFlow?"
-              },
-              "label": "Note",
-              "name": "N: Refine Question"
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 288
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Complete questions by conversation history.\nUser: What's RAGFlow?\nAssistant: RAGFlow is xxx.\nUser: How to deploy it?\n\nRefine it: How to deploy RAGFlow?"
             },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 128,
-            "id": "Note:TidyJarsCarry",
-            "position": {
-              "x": 360.7515003553832,
-              "y": 968.8600371483907
-            },
-            "positionAbsolute": {
-              "x": 360.7515003553832,
-              "y": 968.8600371483907
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 269
+            "label": "Note",
+            "name": "N: Refine Question"
           },
-          {
-            "data": {
-              "form": {
-                "text": "Determines which category the user's input belongs to and passes it to different components."
-              },
-              "label": "Note",
-              "name": "N: Question cate"
-            },
-            "dragHandle": ".note-drag-handle",
-            "dragging": false,
-            "height": 128,
-            "id": "Note:BigPawsThink",
-            "position": {
-              "x": -12.744183915886367,
-              "y": 966.112564833565
-            },
-            "positionAbsolute": {
-              "x": -12.744183915886367,
-              "y": 966.112564833565
-            },
-            "selected": false,
-            "sourcePosition": "right",
-            "targetPosition": "left",
-            "type": "noteNode",
-            "width": 269
-          }
-        ],
-        "edges": [
-          {
-            "id": "reactflow__edge-answer:0c-Categorize:EightyWavesEnda",
-            "markerEnd": "logo",
-            "source": "answer:0",
-            "sourceHandle": "c",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Categorize:EightyWavesEnd",
-            "targetHandle": "a",
-            "type": "buttonEdge"
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 247,
+          "id": "Note:TidyJarsCarry",
+          "measured": {
+            "height": 247,
+            "width": 279
           },
-          {
-            "id": "reactflow__edge-Retrieval:WholeStarsDriveb-Generate:YoungTrainsSeeb",
-            "markerEnd": "logo",
-            "source": "Retrieval:WholeStarsDrive",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:YoungTrainsSee",
-            "targetHandle": "b",
-            "type": "buttonEdge"
+          "position": {
+            "x": -76.39310344274921,
+            "y": 303.33344775187555
           },
-          {
-            "id": "reactflow__edge-RewriteQuestion:AllNightsSniffb-Retrieval:WholeStarsDrivec",
-            "markerEnd": "logo",
-            "source": "RewriteQuestion:AllNightsSniff",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Retrieval:WholeStarsDrive",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+          "positionAbsolute": {
+            "x": 360.7515003553832,
+            "y": 968.8600371483907
           },
-          {
-            "id": "reactflow__edge-Categorize:EightyWavesEnd4. product related-RewriteQuestion:AllNightsSniffc",
-            "markerEnd": "logo",
-            "source": "Categorize:EightyWavesEnd",
-            "sourceHandle": "4. product related",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 279
+        },
+        {
+          "data": {
+            "form": {
+              "text": "Determines which category the user's input belongs to and passes it to different components."
             },
-            "target": "RewriteQuestion:AllNightsSniff",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+            "label": "Note",
+            "name": "N: Question cate"
           },
-          {
-            "id": "reactflow__edge-Categorize:EightyWavesEnd3. complain-Generate:FullBeersSitc",
-            "markerEnd": "logo",
-            "source": "Categorize:EightyWavesEnd",
-            "sourceHandle": "3. complain",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:FullBeersSit",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+          "dragHandle": ".note-drag-handle",
+          "dragging": false,
+          "height": 141,
+          "id": "Note:BigPawsThink",
+          "measured": {
+            "height": 141,
+            "width": 289
           },
-          {
-            "id": "reactflow__edge-Categorize:EightyWavesEnd2. casual-Generate:HipWallsFollowc",
-            "markerEnd": "logo",
-            "source": "Categorize:EightyWavesEnd",
-            "sourceHandle": "2. casual",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Generate:HipWallsFollow",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+          "position": {
+            "x": -32.89190582677969,
+            "y": 999.0009887363577
           },
-          {
-            "id": "reactflow__edge-Categorize:EightyWavesEnd1. contact-Message:GoodBugsTurnc",
-            "markerEnd": "logo",
-            "source": "Categorize:EightyWavesEnd",
-            "sourceHandle": "1. contact",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "Message:GoodBugsTurn",
-            "targetHandle": "c",
-            "type": "buttonEdge"
+          "positionAbsolute": {
+            "x": -12.744183915886367,
+            "y": 966.112564833565
           },
-          {
-            "id": "reactflow__edge-Message:GoodBugsTurnb-answer:0b",
-            "markerEnd": "logo",
-            "source": "Message:GoodBugsTurn",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
+          "resizing": false,
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "noteNode",
+          "width": 289
+        },
+        {
+          "data": {
+            "form": {
+              "cite": true,
+              "frequencyPenaltyEnabled": true,
+              "frequency_penalty": 0.7,
+              "llm_id": "deepseek-chat@DeepSeek",
+              "maxTokensEnabled": true,
+              "max_tokens": 256,
+              "message_history_window_size": 12,
+              "parameter": "Precise",
+              "parameters": [],
+              "presencePenaltyEnabled": true,
+              "presence_penalty": 0.4,
+              "prompt": "You are a customer support. But the customer wants to have a casual chat with you instead of consulting about the product. Be nice, funny, enthusiasm and concern.",
+              "temperature": 0.1,
+              "temperatureEnabled": true,
+              "topPEnabled": true,
+              "top_p": 0.3
             },
-            "target": "answer:0",
-            "targetHandle": "b",
-            "type": "buttonEdge"
+            "label": "Generate",
+            "name": "Causal chat"
           },
-          {
-            "id": "reactflow__edge-Generate:HipWallsFollowb-answer:0b",
-            "markerEnd": "logo",
-            "source": "Generate:HipWallsFollow",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "answer:0",
-            "targetHandle": "b",
-            "type": "buttonEdge"
+          "dragging": false,
+          "id": "Generate:EasyWaysBeg",
+          "measured": {
+            "height": 106,
+            "width": 200
           },
-          {
-            "id": "reactflow__edge-Generate:FullBeersSitb-answer:0b",
-            "markerEnd": "logo",
-            "source": "Generate:FullBeersSit",
-            "sourceHandle": "b",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "answer:0",
-            "targetHandle": "b",
-            "type": "buttonEdge"
+          "position": {
+            "x": 271.29649004050304,
+            "y": 621.5563111579619
           },
-          {
-            "id": "reactflow__edge-begin-answer:0b",
-            "markerEnd": "logo",
-            "source": "begin",
-            "sourceHandle": null,
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "answer:0",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          },
-          {
-            "id": "reactflow__edge-Generate:YoungTrainsSeec-answer:0b",
-            "markerEnd": "logo",
-            "source": "Generate:YoungTrainsSee",
-            "sourceHandle": "c",
-            "style": {
-              "stroke": "rgb(202 197 245)",
-              "strokeWidth": 2
-            },
-            "target": "answer:0",
-            "targetHandle": "b",
-            "type": "buttonEdge"
-          }
-        ]
-      },
-      "history": [],
-      "messages": [],
-      "path": [],
-      "reference": []
+          "selected": false,
+          "sourcePosition": "right",
+          "targetPosition": "left",
+          "type": "generateNode"
+        }
+      ]
     },
+    "history": [],
+    "messages": [],
+    "path": [],
+    "reference": []
+  },
   "avatar": "data:image/jpeg;base64,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"
 }

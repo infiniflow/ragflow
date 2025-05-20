@@ -37,6 +37,8 @@ export declare interface IFlow {
   update_date: string;
   update_time: number;
   user_id: string;
+  permission: string;
+  nickname: string;
 }
 
 export interface IFlowTemplate {

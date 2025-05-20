@@ -1,12 +1,11 @@
 import { Authorization } from '@/constants/authorization';
 import userService from '@/services/user-service';
-import authorizationUtil from '@/utils/authorization-util';
+import authorizationUtil, { redirectToLogin } from '@/utils/authorization-util';
 import { useMutation } from '@tanstack/react-query';
 import { Form, message } from 'antd';
 import { FormInstance } from 'antd/lib';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { history } from 'umi';
 
 export interface ILoginRequestBody {
   email: string;
@@ -68,6 +67,8 @@ export const useRegister = () => {
       const { data = {} } = await userService.register(params);
       if (data.code === 0) {
         message.success(t('message.registered'));
+      } else if (data.message && data.message.includes('registration is disabled')) {
+        message.error(t('message.registerDisabled') || 'User registration is disabled');
       }
       return data.code;
     },
@@ -89,7 +90,7 @@ export const useLogout = () => {
       if (data.code === 0) {
         message.success(t('message.logout'));
         authorizationUtil.removeAll();
-        history.push('/login');
+        redirectToLogin();
       }
       return data.code;
     },

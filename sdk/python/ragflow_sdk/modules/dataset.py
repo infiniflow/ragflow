@@ -30,7 +30,6 @@ class DataSet(Base):
         self.avatar = ""
         self.tenant_id = None
         self.description = ""
-        self.language = "English"
         self.embedding_model = ""
         self.permission = "me"
         self.document_count = 0

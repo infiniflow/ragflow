@@ -2,12 +2,14 @@ import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/knowledge';
+import { ILangfuseConfig } from '@/interfaces/database/system';
 import {
   ISystemStatus,
   ITenant,
   ITenantUser,
   IUserInfo,
 } from '@/interfaces/database/user-setting';
+import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
 import userService, {
   addTenantUser,
   agreeTenant,
@@ -46,7 +48,9 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
   return { data, loading };
 };
 
-export const useFetchTenantInfo = (): ResponseGetType<ITenantInfo> => {
+export const useFetchTenantInfo = (
+  showEmptyModelWarn = false,
+): ResponseGetType<ITenantInfo> => {
   const { t } = useTranslation();
   const { data, isFetching: loading } = useQuery({
     queryKey: ['tenantInfo'],
@@ -58,7 +62,10 @@ export const useFetchTenantInfo = (): ResponseGetType<ITenantInfo> => {
         // llm_id is chat_id
         // asr_id is speech2txt
         const { data } = res;
-        if (isEmpty(data.embd_id) || isEmpty(data.llm_id)) {
+        if (
+          showEmptyModelWarn &&
+          (isEmpty(data.embd_id) || isEmpty(data.llm_id))
+        ) {
           Modal.warning({
             title: t('common.warn'),
             content: (
@@ -90,7 +97,7 @@ export const useSelectParserList = (): Array<{
   value: string;
   label: string;
 }> => {
-  const { data: tenantInfo } = useFetchTenantInfo();
+  const { data: tenantInfo } = useFetchTenantInfo(true);
 
   const parserList = useMemo(() => {
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
@@ -369,4 +376,58 @@ export const useAgreeTenant = () => {
   });
 
   return { data, loading, agreeTenant: mutateAsync };
+};
+
+export const useSetLangfuseConfig = () => {
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['setLangfuseConfig'],
+    mutationFn: async (params: ISetLangfuseConfigRequestBody) => {
+      const { data } = await userService.setLangfuseConfig(params);
+      if (data.code === 0) {
+        message.success(t('message.operated'));
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, setLangfuseConfig: mutateAsync };
+};
+
+export const useDeleteLangfuseConfig = () => {
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteLangfuseConfig'],
+    mutationFn: async () => {
+      const { data } = await userService.deleteLangfuseConfig();
+      if (data.code === 0) {
+        message.success(t('message.deleted'));
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, deleteLangfuseConfig: mutateAsync };
+};
+
+export const useFetchLangfuseConfig = () => {
+  const { data, isFetching: loading } = useQuery<ILangfuseConfig>({
+    queryKey: ['fetchLangfuseConfig'],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await userService.getLangfuseConfig();
+
+      return data?.data;
+    },
+  });
+
+  return { data, loading };
 };

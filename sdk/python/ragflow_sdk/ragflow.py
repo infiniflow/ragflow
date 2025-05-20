@@ -129,7 +129,7 @@ class RAGFlow:
 
         temp_dict = {"name": name,
                      "avatar": avatar,
-                     "dataset_ids": dataset_list,
+                     "dataset_ids": dataset_list if dataset_list else [],
                      "llm": llm.to_json(),
                      "prompt": prompt.to_json()}
         res = self.post("/chats", temp_dict)
@@ -170,7 +170,7 @@ class RAGFlow:
                 "keyword": keyword,
                 "question": question,
                 "dataset_ids": dataset_ids,
-                "documents": document_ids
+                "document_ids": document_ids
             }
             # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
             res = self.post('/retrieval',json=data_json)

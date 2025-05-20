@@ -11,6 +11,8 @@ export interface IThirdOAIModel {
   tags: string;
   update_date: string;
   update_time: number;
+  tenant_id?: string;
+  tenant_name?: string;
 }
 
 export type IThirdOAIModelCollection = Record<string, IThirdOAIModel[]>;

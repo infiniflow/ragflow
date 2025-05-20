@@ -1,5 +1,6 @@
 import {
   DSLComponents,
+  ICategorizeItem,
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/flow';
@@ -388,4 +389,30 @@ export const generateDuplicateNode = (
     position: nextPosition,
     dragHandle: getNodeDragHandle(label),
   };
+};
+
+/**
+   * convert the following object into a list
+   * 
+   * {
+      "product_related": {
+      "description": "The question is about product usage, appearance and how it works.",
+      "examples": "Why it always beaming?\nHow to install it onto the wall?\nIt leaks, what to do?",
+      "to": "generate:0"
+      }
+      }
+*/
+export const buildCategorizeListFromObject = (
+  categorizeItem: ICategorizeItemResult,
+) => {
+  // Categorize's to field has two data sources, with edges as the data source.
+  // Changes in the edge or to field need to be synchronized to the form field.
+  return Object.keys(categorizeItem)
+    .reduce<Array<ICategorizeItem>>((pre, cur) => {
+      // synchronize edge data to the to field
+
+      pre.push({ name: cur, ...categorizeItem[cur] });
+      return pre;
+    }, [])
+    .sort((a, b) => a.index - b.index);
 };

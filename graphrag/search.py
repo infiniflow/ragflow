@@ -19,11 +19,12 @@ from collections import defaultdict
 from copy import deepcopy
 import json_repair
 import pandas as pd
+import trio
 
 from api.utils import get_uuid
 from graphrag.query_analyze_prompt import PROMPTS
 from graphrag.utils import get_entity_type2sampels, get_llm_cache, set_llm_cache, get_relation
-from rag.utils import num_tokens_from_string
+from rag.utils import num_tokens_from_string, get_float
 from rag.utils.doc_store_conn import OrderByExpr
 
 from rag.nlp.search import Dealer, index_name
@@ -41,7 +42,7 @@ class KGSearch(Dealer):
         return response
 
     def query_rewrite(self, llm, question, idxnms, kb_ids):
-        ty2ents = get_entity_type2sampels(idxnms, kb_ids)
+        ty2ents = trio.run(lambda: get_entity_type2sampels(idxnms, kb_ids))
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question,
                                                           TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
         result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {"temperature": .5})
@@ -65,16 +66,19 @@ class KGSearch(Dealer):
 
     def _ent_info_from_(self, es_res, sim_thr=0.3):
         res = {}
-        es_res = self.dataStore.getFields(es_res, ["content_with_weight", "_score", "entity_kwd", "rank_flt",
-                                                   "n_hop_with_weight"])
+        flds = ["content_with_weight", "_score", "entity_kwd", "rank_flt", "n_hop_with_weight"]
+        es_res = self.dataStore.getFields(es_res, flds)
         for _, ent in es_res.items():
-            if float(ent.get("_score", 0)) < sim_thr:
+            for f in flds:
+                if f in ent and ent[f] is None:
+                    del ent[f]
+            if get_float(ent.get("_score", 0)) < sim_thr:
                 continue
             if isinstance(ent["entity_kwd"], list):
                 ent["entity_kwd"] = ent["entity_kwd"][0]
             res[ent["entity_kwd"]] = {
-                "sim": float(ent.get("_score", 0)),
-                "pagerank": float(ent.get("rank_flt", 0)),
+                "sim": get_float(ent.get("_score", 0)),
+                "pagerank": get_float(ent.get("rank_flt", 0)),
                 "n_hop_ents": json.loads(ent.get("n_hop_with_weight", "[]")),
                 "description": ent.get("content_with_weight", "{}")
             }
@@ -85,7 +89,7 @@ class KGSearch(Dealer):
         es_res = self.dataStore.getFields(es_res, ["content_with_weight", "_score", "from_entity_kwd", "to_entity_kwd",
                                                    "weight_int"])
         for _, ent in es_res.items():
-            if float(ent["_score"]) < sim_thr:
+            if get_float(ent["_score"]) < sim_thr:
                 continue
             f, t = sorted([ent["from_entity_kwd"], ent["to_entity_kwd"]])
             if isinstance(f, list):
@@ -93,8 +97,8 @@ class KGSearch(Dealer):
             if isinstance(t, list):
                 t = t[0]
             res[(f, t)] = {
-                "sim": float(ent["_score"]),
-                "pagerank": float(ent.get("weight_int", 0)),
+                "sim": get_float(ent["_score"]),
+                "pagerank": get_float(ent.get("weight_int", 0)),
                 "description": ent["content_with_weight"]
             }
         return res
@@ -144,6 +148,7 @@ class KGSearch(Dealer):
                comm_topn: int = 1,
                ent_sim_threshold: float = 0.3,
                rel_sim_threshold: float = 0.3,
+                  **kwargs
                ):
         qst = question
         filters = self.get_filters({"kb_ids": kb_ids})
@@ -151,7 +156,6 @@ class KGSearch(Dealer):
             tenant_ids = tenant_ids.split(",")
         idxnms = [index_name(tid) for tid in tenant_ids]
         ty_kwds = []
-        ents = []
         try:
             ty_kwds, ents = self.query_rewrite(llm, qst, [index_name(tid) for tid in tenant_ids], kb_ids)
             logging.info(f"Q: {qst}, Types: {ty_kwds}, Entities: {ents}")
@@ -166,6 +170,9 @@ class KGSearch(Dealer):
         nhop_pathes = defaultdict(dict)
         for _, ent in ents_from_query.items():
             nhops = ent.get("n_hop_ents", [])
+            if not isinstance(nhops, list):
+                logging.warning(f"Abnormal n_hop_ents: {nhops}")
+                continue
             for nbr in nhops:
                 path = nbr["path"]
                 wts = nbr["weights"]
@@ -223,7 +230,7 @@ class KGSearch(Dealer):
             ents.append({
                 "Entity": n,
                 "Score": "%.2f" % (ent["sim"] * ent["pagerank"]),
-                "Description": json.loads(ent["description"]).get("description", "")
+                "Description": json.loads(ent["description"]).get("description", "") if ent["description"] else ""
             })
             max_token -= num_tokens_from_string(str(ents[-1]))
             if max_token <= 0:
@@ -239,11 +246,16 @@ class KGSearch(Dealer):
                 else:
                     continue
                 rel["description"] = rela["description"]
+            desc = rel["description"]
+            try:
+                desc = json.loads(desc).get("description", "")
+            except Exception:
+                pass
             relas.append({
                 "From Entity": f,
                 "To Entity": t,
                 "Score": "%.2f" % (rel["sim"] * rel["pagerank"]),
-                "Description": json.loads(ent["description"]).get("description", "")
+                "Description": desc
             })
             max_token -= num_tokens_from_string(str(relas[-1]))
             if max_token <= 0:

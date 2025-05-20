@@ -1,6 +1,6 @@
 import { Col, Divider, Row, Spin, Typography } from 'antd';
 import CategoryPanel from './category-panel';
-import ConfigurationForm from './configuration';
+import { ConfigurationForm } from './configuration';
 import {
   useHandleChunkMethodChange,
   useSelectKnowledgeDetailsLoading,

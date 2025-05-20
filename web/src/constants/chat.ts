@@ -3,12 +3,20 @@ export enum MessageType {
   User = 'user',
 }
 
+export enum ChatVariableEnabledField {
+  TemperatureEnabled = 'temperatureEnabled',
+  TopPEnabled = 'topPEnabled',
+  PresencePenaltyEnabled = 'presencePenaltyEnabled',
+  FrequencyPenaltyEnabled = 'frequencyPenaltyEnabled',
+  MaxTokensEnabled = 'maxTokensEnabled',
+}
+
 export const variableEnabledFieldMap = {
-  temperatureEnabled: 'temperature',
-  topPEnabled: 'top_p',
-  presencePenaltyEnabled: 'presence_penalty',
-  frequencyPenaltyEnabled: 'frequency_penalty',
-  maxTokensEnabled: 'max_tokens',
+  [ChatVariableEnabledField.TemperatureEnabled]: 'temperature',
+  [ChatVariableEnabledField.TopPEnabled]: 'top_p',
+  [ChatVariableEnabledField.PresencePenaltyEnabled]: 'presence_penalty',
+  [ChatVariableEnabledField.FrequencyPenaltyEnabled]: 'frequency_penalty',
+  [ChatVariableEnabledField.MaxTokensEnabled]: 'max_tokens',
 };
 
 export enum SharedFrom {

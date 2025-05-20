@@ -84,7 +84,7 @@ export const useGetChatSearchParams = () => {
 
 //#region dialog
 
-export const useFetchNextDialogList = () => {
+export const useFetchNextDialogList = (pureFetch = false) => {
   const { handleClickDialog } = useClickDialogCard();
   const { dialogId } = useGetChatSearchParams();
 
@@ -103,14 +103,36 @@ export const useFetchNextDialogList = () => {
 
       if (data.code === 0) {
         const list: IDialog[] = data.data;
-        if (list.length > 0) {
-          if (list.every((x) => x.id !== dialogId)) {
-            handleClickDialog(data.data[0].id);
+        if (!pureFetch) {
+          if (list.length > 0) {
+            if (list.every((x) => x.id !== dialogId)) {
+              handleClickDialog(data.data[0].id);
+            }
+          } else {
+            history.push('/chat');
           }
-        } else {
-          history.push('/chat');
         }
       }
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, refetch };
+};
+
+export const useFetchChatAppList = () => {
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IDialog[]>({
+    queryKey: ['fetchChatAppList'],
+    initialData: [],
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data } = await chatService.listDialog();
 
       return data?.data ?? [];
     },
@@ -233,8 +255,12 @@ export const useFetchNextConversationList = () => {
     enabled: !!dialogId,
     queryFn: async () => {
       const { data } = await chatService.listConversation({ dialogId });
-      if (data.code === 0 && data.data.length > 0) {
-        handleClickConversation(data.data[0].id, '');
+      if (data.code === 0) {
+        if (data.data.length > 0) {
+          handleClickConversation(data.data[0].id, '');
+        } else {
+          handleClickConversation('', '');
+        }
       }
       return data?.data;
     },
