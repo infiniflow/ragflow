@@ -38,7 +38,7 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 - A third-party visual model provided by a specific model provider.
 
 :::caution WARNING
-Third-party visual models are marked **Experimental**, because they have not been fully tested for the aforementioned data extraction tasks.
+Third-party visual models are marked **Experimental**, because we have not fully tested these models for the aforementioned data extraction tasks.
 :::
 
 ## Frequently asked questions
