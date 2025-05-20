@@ -329,6 +329,14 @@ def get_error_argument_result(message="Invalid arguments"):
     return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=message)
 
 
+def get_error_permission_result(message="Permission error"):
+    return get_result(code=settings.RetCode.PERMISSION_ERROR, message=message)
+
+
+def get_error_operating_result(message="Operating error"):
+    return get_result(code=settings.RetCode.OPERATING_ERROR, message=message)
+
+
 def generate_confirmation_token(tenant_id):
     serializer = URLSafeTimedSerializer(tenant_id)
     return "ragflow-" + serializer.dumps(get_uuid(), salt=tenant_id)[2:34]
@@ -514,3 +522,38 @@ def deep_merge(default: dict, custom: dict) -> dict:
                 base_dict[key] = val
 
     return merged
+
+
+def remap_dictionary_keys(source_data: dict, key_aliases: dict = None) -> dict:
+    """
+    Transform dictionary keys using a configurable mapping schema.
+
+    Args:
+        source_data: Original dictionary to process
+        key_aliases: Custom key transformation rules (Optional)
+            When provided, overrides default key mapping
+            Format: {<original_key>: <new_key>, ...}
+
+    Returns:
+        dict: New dictionary with transformed keys preserving original values
+
+    Example:
+        >>> input_data = {"old_key": "value", "another_field": 42}
+        >>> remap_dictionary_keys(input_data, {"old_key": "new_key"})
+        {'new_key': 'value', 'another_field': 42}
+    """
+    DEFAULT_KEY_MAP = {
+        "chunk_num": "chunk_count",
+        "doc_num": "document_count",
+        "parser_id": "chunk_method",
+        "embd_id": "embedding_model",
+    }
+
+    transformed_data = {}
+    mapping = key_aliases or DEFAULT_KEY_MAP
+
+    for original_key, value in source_data.items():
+        mapped_key = mapping.get(original_key, original_key)
+        transformed_data[mapped_key] = value
+
+    return transformed_data
