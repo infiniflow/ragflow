@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 import re
 from functools import partial
 from typing import Any
@@ -23,6 +24,8 @@ from api.db.services.conversation_service import structure_answer
 from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.db.services.mcp_server_service import MCPServerService
+from mcp_client import MCPToolCallSession, close_multiple_mcp_toolcall_sessions, mcp_tool_metadata_to_openai_tool
 from plugin import GlobalPluginManager
 from plugin.llm_tool_plugin import llm_tool_metadata_to_openai_tool
 from rag.llm.chat_model import ToolCallSession
@@ -56,6 +59,7 @@ class GenerateParam(ComponentParamBase):
         self.cite = True
         self.parameters = []
         self.llm_enabled_tools = []
+        self.llm_enabled_mcp_servers = []
 
     def check(self):
         self.check_decimal_float(self.temperature, "[Generate] Temperature")
@@ -157,6 +161,27 @@ class Generate(ComponentBase):
                 [llm_tool_metadata_to_openai_tool(t.get_metadata()) for t in tools]
             )
 
+        mcp_toolcall_sessions: list[MCPToolCallSession] = []
+
+        if len(self._param.llm_enabled_mcp_servers) > 0:
+            for mcp_server_id in self._param.llm_enabled_mcp_servers:
+                found, mcp_server = MCPServerService.get_by_id(mcp_server_id)
+
+                if not found:
+                    logging.warning(f"MCP server {mcp_server_id} in component {self.component_name} does not exist, it will be skipped!")
+                    continue
+
+                toolcall_session = MCPToolCallSession(mcp_server)
+                tools = [mcp_tool_metadata_to_openai_tool(t) for t in toolcall_session.get_tools()]
+
+                if len(tools) > 0:
+                    chat_mdl.bind_tools(toolcall_session, tools)
+                else:
+                    logging.warning(f"MCP server {mcp_server_id} in component {self.component_name} does not have any tools, it will take no effect!")
+                    toolcall_session.close_sync()
+                
+                mcp_toolcall_sessions.append(toolcall_session)
+
         prompt = self._param.prompt
 
         retrieval_res = []
@@ -223,7 +248,12 @@ class Generate(ComponentBase):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
         if len(msg) < 2:
             msg.append({"role": "user", "content": "Output: "})
-        ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
+
+        try:
+            ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
+        finally:
+            close_multiple_mcp_toolcall_sessions(mcp_toolcall_sessions)
+
         ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
         self._canvas.set_component_infor(self._id, {"prompt":msg[0]["content"],"messages":  msg[1:],"conf":  self._param.gen_conf()})
         if self._param.cite and "chunks" in retrieval_res.columns:
@@ -232,7 +262,7 @@ class Generate(ComponentBase):
 
         return Generate.be_output(ans)
 
-    def stream_output(self, chat_mdl, prompt, retrieval_res):
+    def stream_output(self, chat_mdl, prompt, retrieval_res, mcp_toolcall_sessions: list[MCPToolCallSession] = []):
         res = None
         if "empty_response" in retrieval_res.columns and not "".join(retrieval_res["content"]):
             empty_res = "\n- ".join([str(t) for t in retrieval_res["empty_response"] if str(t)])
@@ -250,10 +280,14 @@ class Generate(ComponentBase):
         if len(msg) < 2:
             msg.append({"role": "user", "content": "Output: "})
         answer = ""
-        for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
-            res = {"content": ans, "reference": []}
-            answer = ans
-            yield res
+
+        try:
+            for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
+                res = {"content": ans, "reference": []}
+                answer = ans
+                yield res
+        finally:
+            close_multiple_mcp_toolcall_sessions(mcp_toolcall_sessions)
 
         if self._param.cite and "chunks" in retrieval_res.columns:
             res = self.set_cite(retrieval_res, answer)

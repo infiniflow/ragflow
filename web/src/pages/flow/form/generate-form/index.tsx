@@ -6,6 +6,7 @@ import { Form, Switch } from 'antd';
 import { IOperatorForm } from '../../interface';
 import LLMToolsSelect from '@/components/llm-tools-select';
 import { useState } from 'react';
+import LLMMcpServerSelect from '@/components/llm-mcp-server-select';
 
 const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
@@ -52,6 +53,13 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
         tooltip={t('modelEnabledToolsTip', { keyPrefix: 'chat' })}
       >
         <LLMToolsSelect disabled={!isCurrentLlmSupportTools}></LLMToolsSelect>
+      </Form.Item>
+      <Form.Item
+        name={'llm_enabled_mcp_servers'}
+        label={t('modelEnabledMcpServers', { keyPrefix: 'chat' })}
+        tooltip={t('modelEnabledMcpServersTip', { keyPrefix: 'chat' })}
+      >
+        <LLMMcpServerSelect disabled={!isCurrentLlmSupportTools}></LLMMcpServerSelect>
       </Form.Item>
       <Form.Item
         name={['cite']}

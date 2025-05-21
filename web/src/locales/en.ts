@@ -457,6 +457,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       modelEnabledTools: 'Enabled tools',
       modelEnabledToolsTip:
         'Please select one or more tools for the chat model to use. It takes no effect for models not supporting tool call.',
+      modelEnabledMcpServers: 'Enabled MCP servers',
+      modelEnabledMcpServersTip: 'Please select one or more MCP servers for the chat model to use. It takes no effect for models not supporting tool call.',
       freedom: 'Freedom',
       improvise: 'Improvise',
       precise: 'Precise',
@@ -562,6 +564,18 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Please enter your current password to change your password.',
       model: 'Model providers',
       modelDescription: 'Configure model parameters and API KEY here.',
+      mcpserver: 'MCP Servers',
+      mcpServerSettingsDescription: 'Manage usable MCP servers here.',
+      addMcpServer: 'Add MCP Server',
+      mcpServerDescription: 'Description',
+      mcpServerType: 'Server Type',
+      mcpServerTypes: {
+        sse: 'SSE',
+        streamableHttp: 'Streamable HTTP',
+      },
+      mcpServerUrl: 'URL',
+      mcpServerHeaders: 'HTTP Headers',
+      mcpServerSureDelete: 'Are you sure to remove this MCP server?',
       team: 'Team',
       system: 'System',
       logout: 'Log out',
@@ -1278,6 +1292,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       modeTip: 'The mode defines how the workflow is initiated.',
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
+      modelMcpServers: 'MCP Servers',
     },
     llmTools: {
       bad_calculator: {

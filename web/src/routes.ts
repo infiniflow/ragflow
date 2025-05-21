@@ -108,6 +108,10 @@ const routes = [
             component: '@/pages/user-setting/setting-model',
           },
           {
+            path: '/user-setting/mcpserver',
+            component: '@/pages/user-setting/setting-mcpserver',
+          },
+          {
             path: '/user-setting/team',
             component: '@/pages/user-setting/setting-team',
           },
