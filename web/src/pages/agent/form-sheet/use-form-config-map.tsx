@@ -133,14 +133,12 @@ export function useFormConfigMap() {
     },
     [Operator.Code]: {
       component: CodeForm,
-      defaultValues: {
-        message_history_window_size: 6,
-      },
+      defaultValues: { arguments: [] },
       schema: z.object({
         script: z.string(),
-        arguments: z
-          .array(z.object({ name: z.string(), component_id: z.string() }))
-          .optional(),
+        arguments: z.array(
+          z.object({ name: z.string(), component_id: z.string() }),
+        ),
         lang: z.string(),
       }),
     },

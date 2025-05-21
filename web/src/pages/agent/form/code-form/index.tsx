@@ -10,8 +10,9 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { RAGFlowSelect } from '@/components/ui/select';
-import { ProgrammingLanguage } from '@/constants/agent';
+import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 import { ICodeForm } from '@/interfaces/database/flow';
+import { useEffect } from 'react';
 import { DynamicInputVariable } from './next-variable';
 
 loader.config({ paths: { vs: '/vs' } });
@@ -24,15 +25,13 @@ const options = [
 const CodeForm = ({ form, node }: INextOperatorForm) => {
   const formData = node?.data.form as ICodeForm;
 
-  // useEffect(() => {
-  //   setTimeout(() => {
-  //     // TODO: Direct operation zustand is more elegant
-  //     form?.setFieldValue(
-  //       'script',
-  //       CodeTemplateStrMap[formData.lang as ProgrammingLanguage],
-  //     );
-  //   }, 0);
-  // }, [form, formData.lang]);
+  useEffect(() => {
+    // TODO: Direct operation zustand is more elegant
+    form?.setValue(
+      'script',
+      CodeTemplateStrMap[formData.lang as ProgrammingLanguage],
+    );
+  }, [form, formData.lang]);
 
   return (
     <Form {...form}>
