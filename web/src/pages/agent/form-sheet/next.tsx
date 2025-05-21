@@ -85,6 +85,7 @@ const FormSheet = ({
         const formData = node?.data?.form;
         if (isPlainObject(formData)) {
           //   form.setFieldsValue({ ...formData, items });
+          console.info('xxx');
           form.reset({ ...formData, items });
         }
       } else {
