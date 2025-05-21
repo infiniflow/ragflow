@@ -50,7 +50,7 @@ const SelectFiles = ({ setSelectedDocumentIds, handleTesting }: IProps) => {
 
   const rowSelection = {
     onChange: (selectedRowKeys: React.Key[]) => {
-      handleTesting(selectedRowKeys as string[]);
+      //handleTesting(selectedRowKeys as string[]); remove due to #7753
       setSelectedDocumentIds(selectedRowKeys as string[]);
     },
     getCheckboxProps: (record: ITestingDocument) => ({
