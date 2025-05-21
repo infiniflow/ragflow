@@ -81,7 +81,7 @@ def init_settings():
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
     LLM = get_base_config("user_default_llm", {})
     LLM_DEFAULT_MODELS = LLM.get("default_models", {})
-    LLM_FACTORY = LLM.get("factory", "Tongyi-Qianwen")
+    LLM_FACTORY = LLM.get("factory")
     LLM_BASE_URL = LLM.get("base_url")
     try:
         REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
