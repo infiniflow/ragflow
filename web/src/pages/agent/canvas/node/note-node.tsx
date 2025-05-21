@@ -8,10 +8,8 @@ import { useTheme } from '@/components/theme-provider';
 import { INoteNode } from '@/interfaces/database/flow';
 import { memo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  useHandleFormValuesChange,
-  useHandleNodeNameChange,
-} from '../../hooks';
+import { useHandleNodeNameChange } from '../../hooks';
+import { useHandleFormValuesChange } from '../../hooks/use-watch-form-change';
 import styles from './index.less';
 
 const { TextArea } = Input;

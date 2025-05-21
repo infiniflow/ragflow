@@ -54,7 +54,10 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
                 <FormItem className="w-2/5">
                   <FormDescription />
                   <FormControl>
-                    <Input placeholder={t('common.pleaseInput')} {...field} />
+                    <Input
+                      {...field}
+                      placeholder={t('common.pleaseInput')}
+                    ></Input>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -84,7 +87,12 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
           </div>
         );
       })}
-      <Button onClick={append} className="mt-4" variant={'outline'} size={'sm'}>
+      <Button
+        onClick={() => append({ name: '', component_id: undefined })}
+        className="mt-4"
+        variant={'outline'}
+        size={'sm'}
+      >
         <Plus />
         {t('flow.addVariable')}
       </Button>
