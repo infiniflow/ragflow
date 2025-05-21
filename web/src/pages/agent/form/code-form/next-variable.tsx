@@ -1,23 +1,19 @@
 'use client';
 
-import { SideDown } from '@/assets/icon/Icon';
+import { FormContainer } from '@/components/form-container';
 import { Button } from '@/components/ui/button';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
+import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
@@ -26,6 +22,15 @@ interface IProps {
   node?: RAGFlowNodeType;
   name?: string;
 }
+
+export const TypeOptions = [
+  'String',
+  'Number',
+  'Boolean',
+  'Array[String]',
+  'Array[Number]',
+  'Object',
+].map((x) => ({ label: x, value: x }));
 
 export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
   const { t } = useTranslation();
@@ -42,17 +47,16 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
   );
 
   return (
-    <div>
+    <div className="space-y-5">
       {fields.map((field, index) => {
         const typeField = `${name}.${index}.name`;
         return (
-          <div key={field.id} className="flex items-center gap-1">
+          <div key={field.id} className="flex items-center gap-2">
             <FormField
               control={form.control}
               name={typeField}
               render={({ field }) => (
                 <FormItem className="w-2/5">
-                  <FormDescription />
                   <FormControl>
                     <Input
                       {...field}
@@ -63,16 +67,18 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
                 </FormItem>
               )}
             />
+            <Separator className="w-3 text-text-sub-title" />
             <FormField
               control={form.control}
               name={`${name}.${index}.component_id`}
               render={({ field }) => (
                 <FormItem className="flex-1">
-                  <FormDescription />
                   <FormControl>
                     <RAGFlowSelect
                       placeholder={t('common.pleaseSelect')}
-                      options={valueOptions}
+                      options={
+                        name === 'arguments' ? valueOptions : TypeOptions
+                      }
                       {...field}
                     ></RAGFlowSelect>
                   </FormControl>
@@ -80,18 +86,16 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
                 </FormItem>
               )}
             />
-            <Trash2
-              className="cursor-pointer mx-3 size-4 text-colors-text-functional-danger"
-              onClick={() => remove(index)}
-            />
+            <Button variant={'ghost'} onClick={() => remove(index)}>
+              <X className="text-text-sub-title-invert " />
+            </Button>
           </div>
         );
       })}
       <Button
         onClick={() => append({ name: '', component_id: undefined })}
-        className="mt-4"
+        className="mt-4 border-dashed w-full"
         variant={'outline'}
-        size={'sm'}
       >
         <Plus />
         {t('flow.addVariable')}
@@ -100,22 +104,21 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
   );
 }
 
-export function DynamicInputVariable({ node }: IProps) {
-  const { t } = useTranslation();
+export function VariableTitle({ title }: { title: ReactNode }) {
+  return <div className="font-medium text-text-title pb-2">{title}</div>;
+}
 
+export function DynamicInputVariable({
+  node,
+  name,
+  title,
+}: IProps & { title: ReactNode }) {
   return (
-    <Collapsible defaultOpen className="group/collapsible">
-      <CollapsibleTrigger className="flex justify-between w-full pb-2">
-        <span className="font-bold text-2xl text-colors-text-neutral-strong">
-          {t('flow.input')}
-        </span>
-        <Button variant={'icon'} size={'icon'}>
-          <SideDown />
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <DynamicVariableForm node={node}></DynamicVariableForm>
-      </CollapsibleContent>
-    </Collapsible>
+    <section>
+      <VariableTitle title={title}></VariableTitle>
+      <FormContainer>
+        <DynamicVariableForm node={node} name={name}></DynamicVariableForm>
+      </FormContainer>
+    </section>
   );
 }

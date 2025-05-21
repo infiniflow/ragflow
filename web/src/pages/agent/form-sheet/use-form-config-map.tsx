@@ -1,3 +1,4 @@
+import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { Operator } from '../constant';
@@ -133,13 +134,17 @@ export function useFormConfigMap() {
     },
     [Operator.Code]: {
       component: CodeForm,
-      defaultValues: { arguments: [] },
+      defaultValues: {
+        lang: ProgrammingLanguage.Python,
+        script: CodeTemplateStrMap[ProgrammingLanguage.Python],
+        arguments: [],
+      },
       schema: z.object({
+        lang: z.string(),
         script: z.string(),
         arguments: z.array(
           z.object({ name: z.string(), component_id: z.string() }),
         ),
-        lang: z.string(),
       }),
     },
     [Operator.Baidu]: {
