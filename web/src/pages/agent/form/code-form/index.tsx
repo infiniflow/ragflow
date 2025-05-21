@@ -1,6 +1,5 @@
 import Editor, { loader } from '@monaco-editor/react';
 import { INextOperatorForm } from '../../interface';
-import { DynamicInputVariable } from './dynamic-input-variable';
 
 import {
   Form,
@@ -13,7 +12,7 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { ProgrammingLanguage } from '@/constants/agent';
 import { ICodeForm } from '@/interfaces/database/flow';
-import { useTranslation } from 'react-i18next';
+import { DynamicInputVariable } from './next-variable';
 
 loader.config({ paths: { vs: '/vs' } });
 
@@ -24,7 +23,6 @@ const options = [
 
 const CodeForm = ({ form, node }: INextOperatorForm) => {
   const formData = node?.data.form as ICodeForm;
-  const { t } = useTranslation();
 
   // useEffect(() => {
   //   setTimeout(() => {
@@ -47,12 +45,9 @@ const CodeForm = ({ form, node }: INextOperatorForm) => {
             <FormLabel>
               <FormField
                 control={form.control}
-                name="channel"
+                name="lang"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel tooltip={t('channelTip')}>
-                      {t('channel')}
-                    </FormLabel>
                     <FormControl>
                       <RAGFlowSelect {...field} options={options} />
                     </FormControl>
