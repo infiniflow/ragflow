@@ -320,7 +320,10 @@ export const useHandleFormValuesChange = (
             category_description: buildCategorizeObjectFromList(value.items),
           };
         }
-        updateNodeForm(id, nextValues);
+        if (type) {
+          // Manually triggered form updates are synchronized to the canvas
+          updateNodeForm(id, nextValues);
+        }
       }
     });
     return () => subscription?.unsubscribe();

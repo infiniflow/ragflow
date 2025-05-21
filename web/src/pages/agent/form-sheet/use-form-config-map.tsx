@@ -137,9 +137,11 @@ export function useFormConfigMap() {
         message_history_window_size: 6,
       },
       schema: z.object({
-        llm_id: z.string(),
-        message_history_window_size: z.number(),
-        language: z.string(),
+        script: z.string(),
+        arguments: z
+          .array(z.object({ name: z.string(), component_id: z.string() }))
+          .optional(),
+        lang: z.string(),
       }),
     },
     [Operator.Baidu]: {
