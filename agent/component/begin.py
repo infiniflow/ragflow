@@ -40,7 +40,7 @@ class BeginParam(FillupParam):
 class Begin(Fillup):
     component_name = "Begin"
 
-    def _run(self, **kwargs):
+    def _invoke(self, **kwargs):
         if self.mode == "conversational":
             self._param.outputs["assistant"]["value"] = self.prologue
             return

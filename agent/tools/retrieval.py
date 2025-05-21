@@ -20,6 +20,7 @@ from abc import ABC
 
 import pandas as pd
 
+from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from api.db import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
@@ -30,12 +31,23 @@ from rag.prompts import kb_prompt
 from rag.utils.tavily_conn import Tavily
 
 
-class RetrievalParam(ComponentParamBase):
+class RetrievalParam(ToolParamBase):
     """
     Define the Retrieval component parameters.
     """
 
     def __init__(self):
+        self.meta:ToolMeta = {
+            "name": "dataset_retrival",
+            "description": "This tool can be utilized for relevant content searching in the datasets.",
+            "parameters": {
+                "query": {
+                    "type": "str",
+                    "description": "Query to search the dataset.",
+                    "required": True
+                }
+            }
+        }
         super().__init__()
         self.similarity_threshold = 0.2
         self.keywords_similarity_weight = 0.5
@@ -45,7 +57,6 @@ class RetrievalParam(ComponentParamBase):
         self.kb_vars = []
         self.rerank_id = ""
         self.empty_response = ""
-        self.tavily_api_key = ""
         self.use_kg = False
 
     def check(self):
@@ -54,34 +65,29 @@ class RetrievalParam(ComponentParamBase):
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
 
 
-class Retrieval(ComponentBase, ABC):
+class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
 
-    def _run(self, history, **kwargs):
-        query = self.get_input()
-        query = str(query["content"][0]) if "content" in query else ""
-        query = re.split(r"(USER:|ASSISTANT:)", query)[-1]
+    async def _invoke(self, **kwargs):
+        if not kwargs.get("query"):
+            self._param.outputs["result"] = {"_references": None, "formalized_content": self._param.empty_response}
 
-        kb_ids: list[str] = self._param.kb_ids or []
+        kb_ids: list[str] = []
+        for id in self._param.kb_ids:
+            if id.find("@") > 0:
+                kb_ids.append(id)
+                continue
+            kb_nm = self._canvas.get_variable_value(id)
+            e, kb = KnowledgebaseService.get_by_name(kb_nm)
+            if not e:
+                raise Exception(f"Dataset({kb_nm}) does not exist.")
+            kb_ids.append(kb.id)
 
-        kb_vars = self._fetch_outputs_from(self._param.kb_vars)
-
-        if len(kb_vars) > 0:
-            for kb_var in kb_vars:
-                if len(kb_var) == 1:
-                    kb_var_value = str(kb_var["content"][0])
-
-                    for v in kb_var_value.split(","):
-                        kb_ids.append(v)
-                else:
-                    for v in kb_var.to_dict("records"):
-                        kb_ids.append(v["content"])
-
-        filtered_kb_ids: list[str] = [kb_id for kb_id in kb_ids if kb_id]
+        filtered_kb_ids: list[str] = list(set([kb_id for kb_id in kb_ids if kb_id]))
 
         kbs = KnowledgebaseService.get_by_ids(filtered_kb_ids)
         if not kbs:
-            return Retrieval.be_output("")
+            raise Exception(f"No dataset is selected.")
 
         embd_nms = list(set([kb.embd_id for kb in kbs]))
         assert len(embd_nms) == 1, "Knowledge bases use different embedding models."
@@ -97,7 +103,7 @@ class Retrieval(ComponentBase, ABC):
 
         if kbs:
             kbinfos = settings.retrievaler.retrieval(
-                query,
+                kwargs["query"],
                 embd_mdl,
                 [kb.tenant_id for kb in kbs],
                 filtered_kb_ids,
@@ -107,28 +113,24 @@ class Retrieval(ComponentBase, ABC):
                 1 - self._param.keywords_similarity_weight,
                 aggs=False,
                 rerank_mdl=rerank_mdl,
-                rank_feature=label_question(query, kbs),
+                rank_feature=label_question(kwargs["query"], kbs),
             )
         else:
             kbinfos = {"chunks": [], "doc_aggs": []}
 
         if self._param.use_kg and kbs:
-            ck = settings.kg_retrievaler.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
+            ck = settings.kg_retrievaler.retrieval(kwargs["query"], [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 kbinfos["chunks"].insert(0, ck)
 
         if self._param.tavily_api_key:
             tav = Tavily(self._param.tavily_api_key)
-            tav_res = tav.retrieve_chunks(query)
+            tav_res = tav.retrieve_chunks(kwargs["query"])
             kbinfos["chunks"].extend(tav_res["chunks"])
             kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
 
         if not kbinfos["chunks"]:
-            df = Retrieval.be_output("")
-            if self._param.empty_response and self._param.empty_response.strip():
-                df["empty_response"] = self._param.empty_response
-            return df
+            self._param.outputs["result"] = {"_references": None, "formalized_content": self._param.empty_response}
+            return
 
-        df = pd.DataFrame({"content": kb_prompt(kbinfos, 200000), "chunks": json.dumps(kbinfos["chunks"])})
-        logging.debug("{} {}".format(query, df))
-        return df.dropna()
+        self._param.outputs["result"] = {"_references": kbinfos, "formalized_content": kb_prompt(kbinfos, 200000, prefix=self._id)}

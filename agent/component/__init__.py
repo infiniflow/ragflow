@@ -16,8 +16,8 @@
 
 import importlib
 from .begin import Begin, BeginParam
-from .generate import Generate, GenerateParam
-from .retrieval import Retrieval, RetrievalParam
+from .llm import Generate, GenerateParam
+from agent.tools.retrieval import Retrieval, RetrievalParam
 from .answer import Answer, AnswerParam
 from .categorize import Categorize, CategorizeParam
 from .switch import Switch, SwitchParam
@@ -46,7 +46,7 @@ from agent.tools.tushare import TuShare, TuShareParam
 from agent.tools.akshare import AkShare, AkShareParam
 from agent.tools.crawler import Crawler, CrawlerParam
 from agent.tools.invoke import Invoke, InvokeParam
-from .template import Template, TemplateParam
+from .message import Template, TemplateParam
 from agent.tools.email import Email, EmailParam
 from .iteration import Iteration, IterationParam
 from .iterationitem import IterationItem, IterationItemParam

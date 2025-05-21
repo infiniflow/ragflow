@@ -18,11 +18,8 @@ import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
-class FillupParam(ComponentParamBase):
+class UserFillUpParam(ComponentParamBase):
 
-    """
-    Define the Begin component parameters.
-    """
     def __init__(self):
         super().__init__()
 
@@ -30,10 +27,10 @@ class FillupParam(ComponentParamBase):
         return True
 
 
-class Fillup(ComponentBase):
-    component_name = "Fillup"
+class UserFillUp(ComponentBase):
+    component_name = "UserFillUp"
 
-    def _run(self, **kwargs):
+    def _invoke(self, **kwargs):
         for k in self._param.inputs.keys():
             self._param.outputs[k]["value"] = self._param.inputs[k]["value"]
 

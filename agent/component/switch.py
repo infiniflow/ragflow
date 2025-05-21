@@ -61,7 +61,7 @@ class Switch(ComponentBase, ABC):
 
         return list(set(res))
 
-    def _run(self, history, **kwargs):
+    async def _invoke(self, **kwargs):
         for cond in self._param.conditions:
             res = []
             for item in cond["items"]:
@@ -83,9 +83,9 @@ class Switch(ComponentBase, ABC):
                     return Switch.be_output(cond["to"])
 
             if all(res):
-                return Switch.be_output(cond["to"])
+                self._param.outputs["to"]["value"] = cond["to"]
 
-        return Switch.be_output(self._param.end_cpn_id)
+        assert False, "No matching condition"
 
     def process_operator(self, input: str, operator: str, value: str) -> bool:
         if not isinstance(input, str) or not isinstance(value, str):

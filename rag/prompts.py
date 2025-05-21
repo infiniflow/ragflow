@@ -99,7 +99,7 @@ def message_fit_in(msg, max_length=4000):
     return max_length, msg
 
 
-def kb_prompt(kbinfos, max_tokens):
+def kb_prompt(kbinfos, max_tokens, prefix=""):
     from api.db.services.document_service import DocumentService
 
     knowledges = [ck["content_with_weight"] for ck in kbinfos["chunks"]]
@@ -118,7 +118,7 @@ def kb_prompt(kbinfos, max_tokens):
 
     doc2chunks = defaultdict(lambda: {"chunks": [], "meta": []})
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
-        cnt = f"---\nID: {i}\n" + (f"URL: {ck['url']}\n" if "url" in ck else "")
+        cnt = f"---\nID: {prefix}_{i}\n" + (f"URL: {ck['url']}\n" if "url" in ck else "")
         cnt += ck["content_with_weight"]
         doc2chunks[ck["docnm_kwd"]]["chunks"].append(cnt)
         doc2chunks[ck["docnm_kwd"]]["meta"] = docs.get(ck["doc_id"], {})

@@ -18,6 +18,8 @@ import re
 from functools import partial
 from typing import Any
 import pandas as pd
+
+from agent.component.llm import LLMParam
 from api.db import LLMType
 from api.db.services.conversation_service import structure_answer
 from api.db.services.llm_service import LLMBundle
@@ -29,7 +31,7 @@ from rag.llm.chat_model import ToolCallSession
 from rag.prompts import message_fit_in
 
 
-class LLMToolPluginCallSession(ToolCallSession):
+class AgentToolPluginCallSession(ToolCallSession):
     def tool_call(self, name: str, arguments: dict[str, Any]) -> str:
         tool = GlobalPluginManager.get_llm_tool_by_name(name)
 
@@ -39,9 +41,9 @@ class LLMToolPluginCallSession(ToolCallSession):
         return tool().invoke(**arguments)
 
 
-class GenerateParam(ComponentParamBase):
+class AgentParam(LLMParam):
     """
-    Define the Generate component parameters.
+    Define the Agent component parameters.
     """
 
     def __init__(self):
@@ -54,7 +56,6 @@ class GenerateParam(ComponentParamBase):
         self.presence_penalty = 0
         self.frequency_penalty = 0
         self.cite = True
-        self.parameters = []
         self.llm_enabled_tools = []
 
     def check(self):
@@ -64,7 +65,6 @@ class GenerateParam(ComponentParamBase):
         self.check_nonnegative_number(self.max_tokens, "[Generate] Max tokens")
         self.check_decimal_float(self.top_p, "[Generate] Top P")
         self.check_empty(self.llm_id, "[Generate] LLM")
-        # self.check_defined_type(self.parameters, "Parameters", ["list"])
 
     def gen_conf(self):
         conf = {}

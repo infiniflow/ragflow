@@ -105,7 +105,6 @@ class Canvas:
             cpn_nms.add(cpn["obj"]["component_name"])
 
         assert "Begin" in cpn_nms, "There have to be an 'Begin' component."
-        assert "Answer" in cpn_nms, "There have to be an 'Answer' component."
 
         for k, cpn in self.components.items():
             cpn_nms.add(cpn["obj"]["component_name"])
@@ -297,7 +296,14 @@ class Canvas:
             raise Exception("The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow.")
 
     def get_component(self, cpn_id):
-        return self.components[cpn_id]
+        return self.components.get(cpn_id)
+
+    def get_variable_value(self, nm):
+        cpn_id, var_nm = nm.split("@")
+        cpn = self.get_component(cpn_id)
+        if not cpn:
+            raise Exception(f"Can't find variable: '{var_nm}'")
+        return cpn["obj"].output(var_nm)
 
     def get_tenant_id(self):
         return self._tenant_id

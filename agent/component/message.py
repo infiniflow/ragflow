@@ -13,41 +13,63 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import random
-from abc import ABC
-from functools import partial
+import json
+import re
 from agent.component.base import ComponentBase, ComponentParamBase
+from jinja2 import Template as Jinja2Template
 
 
 class MessageParam(ComponentParamBase):
-
     """
     Define the Message component parameters.
     """
     def __init__(self):
         super().__init__()
-        self.messages = []
+        self.content = ""
+        self.outputs = {
+            "content": {
+                "type": "str"
+            }
+        }
 
     def check(self):
-        self.check_empty(self.messages, "[Message]")
+        self.check_empty(self.content, "[Message] Content")
         return True
 
 
-class Message(ComponentBase, ABC):
+class Message(ComponentBase):
     component_name = "Message"
 
-    def _run(self, history, **kwargs):
-        if kwargs.get("stream"):
-            return partial(self.stream_output)
+    def get_input_elements(self):
+        return self.get_input_elements_from_text(self._param.content)
 
-        return Message.be_output(random.choice(self._param.messages))
+    def _invoke(self):
+        content = self._param.content
+        kwargs = {}
+        for k in self._param.inputs.keys():
+            if self._param.inputs[k]["value"] is None:
+                self.set_input_value(k, self._canvas.get_variable_value(k))
+            kwargs[k] = self._param.inputs[k]["value"]
 
-    def stream_output(self):
-        res = None
-        if self._param.messages:
-            res = {"content": random.choice(self._param.messages)}
-            yield res
+        template = Jinja2Template(content)
 
-        self.set_output(res)
+        try:
+            content = template.render(kwargs)
+        except Exception:
+            pass
 
+        for n, v in kwargs.items():
+            if not isinstance(v, str):
+                try:
+                    v = json.dumps(v, ensure_ascii=False)
+                except Exception:
+                    pass
+            content = re.sub(
+                r"\{%s\}" % re.escape(n), v, content
+            )
+            content = re.sub(
+                r"(#+)", r" \1 ", content
+            )
+
+        self._param.outputs["content"]["value"] = content
 

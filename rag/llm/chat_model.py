@@ -308,12 +308,6 @@ class Base(ABC):
                                     ],
                                 }
                             )
-                            # if tool_response.choices[0].finish_reason == "length":
-                            #     if is_chinese(ans):
-                            #         ans += LENGTH_NOTIFICATION_CN
-                            #     else:
-                            #         ans += LENGTH_NOTIFICATION_EN
-                            #     return ans, total_tokens + self.total_token_count(tool_response)
                             history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
                         final_tool_calls = {}
                         response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, **gen_conf)

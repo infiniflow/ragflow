@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import re
 from abc import ABC
 import builtins
 import json
@@ -37,6 +38,7 @@ class ComponentParamBase(ABC):
         self.inputs = {}
         self.outputs = {}
         self.description = ""
+        self.retry_times = 0
         self.debug_inputs = {}
 
     def set_name(self, name: str):
@@ -399,19 +401,18 @@ class ComponentBase(ABC):
         self._param = param
         self._param.check()
 
-    async def run(self, **kwargs):
+    async def invoke(self, **kwargs):
         logging.debug("{}, history: {}, kwargs: {}".format(self, json.dumps(history, ensure_ascii=False),
                                                               json.dumps(kwargs, ensure_ascii=False)))
         self._param.debug_inputs = []
         try:
-            await self._run(**kwargs)
+            await self._invoke(**kwargs)
         except Exception as e:
-            self.set_output(pd.DataFrame([{"content": str(e)}]))
             raise e
 
         return self.output()
 
-    async def _run(self, **kwargs):
+    async def _invoke(self, **kwargs):
         raise NotImplementedError()
 
     def output(self, var_nm=None):
@@ -434,6 +435,15 @@ class ComponentBase(ABC):
 
         return {k: value_from_cpn(k) for k in self._param.inputs.keys()}
 
+    def get_input_elements_from_text(self, txt):
+        res = {}
+        for r in re.finditer(r"\{([a-z]+[:@][a-z0-9_.-]+)\}", txt, flags=re.IGNORECASE):
+            cpn_id, var_nm = r.group(1).split("@")
+            res[r.group(1)] = {
+                "name": f"{var_nm}@"+self._canvas.get_component_name(cpn_id),
+            }
+        return res
+
     def get_input_elements(self):
         return self._param.inputs
 
@@ -450,15 +460,14 @@ class ComponentBase(ABC):
                 continue
             return self._canvas.get_component(u)["obj"].output()[1]
 
-    @staticmethod
-    def be_output(v):
-        return pd.DataFrame([{"content": v}])
+    def set_input_value(self, key, value):
+        self._param.inputs[key]["value"] = value
 
     def get_component_name(self, cpn_id):
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()
 
     def debug(self, **kwargs):
-        return self._run(**kwargs)
+        return self._invoke(**kwargs)
 
     def get_parent(self):
         pid = self._canvas.get_component(self._id)["parent_id"]
