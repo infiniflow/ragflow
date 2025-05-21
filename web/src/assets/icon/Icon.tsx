@@ -255,6 +255,9 @@ export const LogOutIcon = (props: Partial<IconComponentProps>) => (
 export const ModelProviderIcon = (props: Partial<IconComponentProps>) => (
   <Icon component={ModelProviderSvg} {...props} />
 );
+export const McpServerIcon = (props: Partial<IconComponentProps>) => (
+  <Icon component={ModelProviderSvg} {...props} />
+);
 export const PromptIcon = (props: Partial<IconComponentProps>) => (
   <Icon component={PromptSvg} {...props} />
 );
