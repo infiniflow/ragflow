@@ -577,6 +577,16 @@ async def do_handle_task(task):
     start_ts = timer()
     doc_store_result = ""
     es_bulk_size = 4
+
+    async def delete_image(kb_id, chunk_id):
+        try:
+            async with minio_limiter:
+                STORAGE_IMPL.delete(kb_id, chunk_id)
+        except Exception:
+            logging.exception(
+                "Deleting image of chunk {}/{}/{} got exception".format(task["location"], task["name"], chunk_id))
+            raise
+
     for b in range(0, len(chunks), es_bulk_size):
         doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + es_bulk_size], search.index_name(task_tenant_id), task_dataset_id))
         if b % 128 == 0:
@@ -592,7 +602,11 @@ async def do_handle_task(task):
         except DoesNotExist:
             logging.warning(f"do_handle_task update_chunk_ids failed since task {task['id']} is unknown.")
             doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id))
+            async with trio.open_nursery() as nursery:
+                for chunk_id in chunk_ids:
+                    nursery.start_soon(delete_image, task_dataset_id, chunk_id)
             return
+        
     logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page,
                                                                                      task_to_page, len(chunks),
                                                                                      timer() - start_ts))
