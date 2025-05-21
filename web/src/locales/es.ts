@@ -133,7 +133,7 @@ export default {
       toMessage: 'Falta el número de página final (excluido)',
       layoutRecognize: 'Reconocimiento de disposición',
       layoutRecognizeTip:
-        'Usa modelos visuales para el análisis de disposición y así identificar mejor la estructura del documento, encontrar dónde están los títulos, bloques de texto, imágenes y tablas. Sin esta función, solo se obtendrá el texto plano del PDF.',
+        'Usa modelos visuales para el análisis de disposición y así identificar mejor la estructura del documento, encontrar dónde están los títulos, bloques de texto, imágenes y tablas. Sin esta función, solo se obtendrá el texto plano del PDF. Para más información, consulte https://ragflow.io/docs/dev/select_pdf_parser.',
       taskPageSize: 'Tamaño de la tarea por página',
       taskPageSizeMessage:
         '¡Por favor ingresa el tamaño de la tarea por página!',
