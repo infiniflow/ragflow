@@ -1,5 +1,5 @@
 ---
-sidebar_position: 0
+sidebar_position: 2
 slug: /select_pdf_parser
 ---
 
@@ -23,7 +23,7 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
     - **Laws**
     - **Presentation**
     - **One**
-- To use a third-party visual model for parsing PDFs, ensure you have set a default image2txt model under **Set default models** on the **Model providers** page.
+- To use a third-party visual model for parsing PDFs, ensure you have set a default img2txt model under **Set default models** on the **Model providers** page.
 
 ## Procedure
 
@@ -33,9 +33,9 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 
 2. Select the option that works best with your scenario:
 
-- DeepDoc: (Default) The default visual model for OCR, TSR, and DLR tasks.
-- Naive: Skip OCR, TSR, and DLR tasks if *all* your PDFs are plain text.
-- A third-party visual model provided by a specific model provider.
+  - DeepDoc: (Default) The default visual model for OCR, TSR, and DLR tasks, which is time-consuming.
+  - Naive: Skip OCR, TSR, and DLR tasks if *all* your PDFs are plain text.
+  - A third-party visual model provided by a specific model provider.
 
 :::caution WARNING
 Third-party visual models are marked **Experimental**, because we have not fully tested these models for the aforementioned data extraction tasks.

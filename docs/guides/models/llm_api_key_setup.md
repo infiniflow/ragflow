@@ -49,6 +49,6 @@ After logging into RAGFlow, you can *only* configure API Key on the **Model prov
 5. Click **OK** to confirm your changes.
 
 :::note
-To update an existing model API key at a later point:
+To update an existing model API key:
 ![update api key](https://github.com/infiniflow/ragflow/assets/93570324/0bfba679-33f7-4f6b-9ed6-f0e6e4b228ad)
 :::

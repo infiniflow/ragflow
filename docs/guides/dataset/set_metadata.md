@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 0
 slug: /set_metada
 ---
 
@@ -20,3 +20,9 @@ Ensure that your metadata is in JSON format; otherwise, your updates will not be
 :::
 
 ![Image](https://github.com/user-attachments/assets/379cf2c5-4e37-4b79-8aeb-53bf8e01d326)
+
+## Frequently asked questions
+
+### Can I set metadata for multiple documents at once?
+
+No, RAGFlow does not support batch metadata setting. If you still consider this feature essential, please [raise an issue](https://github.com/infiniflow/ragflow/issues) explaining your use case and its importance.
