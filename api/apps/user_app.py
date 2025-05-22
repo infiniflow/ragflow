@@ -13,36 +13,37 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
 import json
+import logging
 import re
 from datetime import datetime
 
-from flask import request, session, redirect
-from werkzeug.security import generate_password_hash, check_password_hash
-from flask_login import login_required, current_user, login_user, logout_user
+from flask import redirect, request, session
+from flask_login import current_user, login_required, login_user, logout_user
+from werkzeug.security import check_password_hash, generate_password_hash
 
+from api import settings
+from api.apps.auth import get_auth_client
+from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM
-from api.db.services.llm_service import TenantLLMService, LLMService
-from api.utils.api_utils import (
-    server_error_response,
-    validate_request,
-    get_data_error_result,
-)
+from api.db.services.file_service import FileService
+from api.db.services.llm_service import LLMService, TenantLLMService
+from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.utils import (
-    get_uuid,
-    get_format_time,
-    decrypt,
-    download_img,
     current_timestamp,
     datetime_format,
+    decrypt,
+    download_img,
+    get_format_time,
+    get_uuid,
 )
-from api.db import UserTenantRole, FileType
-from api import settings
-from api.db.services.user_service import UserService, TenantService, UserTenantService
-from api.db.services.file_service import FileService
-from api.utils.api_utils import get_json_result, construct_response
-from api.apps.auth import get_auth_client
+from api.utils.api_utils import (
+    construct_response,
+    get_data_error_result,
+    get_json_result,
+    server_error_response,
+    validate_request,
+)
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
@@ -77,9 +78,7 @@ def login():
           type: object
     """
     if not request.json:
-        return get_json_result(
-            data=False, code=settings.RetCode.AUTHENTICATION_ERROR, message="Unauthorized!"
-        )
+        return get_json_result(data=False, code=settings.RetCode.AUTHENTICATION_ERROR, message="Unauthorized!")
 
     email = request.json.get("email", "")
     users = UserService.query(email=email)
@@ -94,9 +93,7 @@ def login():
     try:
         password = decrypt(password)
     except BaseException:
-        return get_json_result(
-            data=False, code=settings.RetCode.SERVER_ERROR, message="Fail to crypt password"
-        )
+        return get_json_result(data=False, code=settings.RetCode.SERVER_ERROR, message="Fail to crypt password")
 
     user = UserService.query_user(email, password)
     if user:
@@ -116,7 +113,7 @@ def login():
         )
 
 
-@manager.route("/login/channels", methods=["GET"]) # noqa: F821
+@manager.route("/login/channels", methods=["GET"])  # noqa: F821
 def get_login_channels():
     """
     Get all supported authentication channels.
@@ -124,22 +121,20 @@ def get_login_channels():
     try:
         channels = []
         for channel, config in settings.OAUTH_CONFIG.items():
-            channels.append({
-                "channel": channel,
-                "display_name": config.get("display_name", channel.title()),
-                "icon": config.get("icon", "sso"),
-            })
+            channels.append(
+                {
+                    "channel": channel,
+                    "display_name": config.get("display_name", channel.title()),
+                    "icon": config.get("icon", "sso"),
+                }
+            )
         return get_json_result(data=channels)
     except Exception as e:
         logging.exception(e)
-        return get_json_result(
-            data=[],
-            message=f"Load channels failure, error: {str(e)}",
-            code=settings.RetCode.EXCEPTION_ERROR
-        )
+        return get_json_result(data=[], message=f"Load channels failure, error: {str(e)}", code=settings.RetCode.EXCEPTION_ERROR)
 
 
-@manager.route("/login/<channel>", methods=["GET"]) # noqa: F821
+@manager.route("/login/<channel>", methods=["GET"])  # noqa: F821
 def oauth_login(channel):
     channel_config = settings.OAUTH_CONFIG.get(channel)
     if not channel_config:
@@ -152,7 +147,7 @@ def oauth_login(channel):
     return redirect(auth_url)
 
 
-@manager.route("/oauth/callback/<channel>", methods=["GET"]) # noqa: F821
+@manager.route("/oauth/callback/<channel>", methods=["GET"])  # noqa: F821
 def oauth_callback(channel):
     """
     Handle the OAuth/OIDC callback for various channels dynamically.
@@ -190,7 +185,7 @@ def oauth_callback(channel):
         # Login or register
         users = UserService.query(email=user_info.email)
         user_id = get_uuid()
-        
+
         if not users:
             try:
                 try:
@@ -434,9 +429,7 @@ def user_info_from_feishu(access_token):
         "Content-Type": "application/json; charset=utf-8",
         "Authorization": f"Bearer {access_token}",
     }
-    res = requests.get(
-        "https://open.feishu.cn/open-apis/authen/v1/user_info", headers=headers
-    )
+    res = requests.get("https://open.feishu.cn/open-apis/authen/v1/user_info", headers=headers)
     user_info = res.json()["data"]
     user_info["email"] = None if user_info.get("email") == "" else user_info["email"]
     return user_info
@@ -446,17 +439,13 @@ def user_info_from_github(access_token):
     import requests
 
     headers = {"Accept": "application/json", "Authorization": f"token {access_token}"}
-    res = requests.get(
-        f"https://api.github.com/user?access_token={access_token}", headers=headers
-    )
+    res = requests.get(f"https://api.github.com/user?access_token={access_token}", headers=headers)
     user_info = res.json()
     email_info = requests.get(
         f"https://api.github.com/user/emails?access_token={access_token}",
         headers=headers,
     ).json()
-    user_info["email"] = next(
-        (email for email in email_info if email["primary"]), None
-    )["email"]
+    user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
     return user_info
 
 
@@ -516,9 +505,7 @@ def setting_user():
     request_data = request.json
     if request_data.get("password"):
         new_password = request_data.get("new_password")
-        if not check_password_hash(
-                current_user.password, decrypt(request_data["password"])
-        ):
+        if not check_password_hash(current_user.password, decrypt(request_data["password"])):
             return get_json_result(
                 data=False,
                 code=settings.RetCode.AUTHENTICATION_ERROR,
@@ -549,9 +536,7 @@ def setting_user():
         return get_json_result(data=True)
     except Exception as e:
         logging.exception(e)
-        return get_json_result(
-            data=False, message="Update failure!", code=settings.RetCode.EXCEPTION_ERROR
-        )
+        return get_json_result(data=False, message="Update failure!", code=settings.RetCode.EXCEPTION_ERROR)
 
 
 @manager.route("/info", methods=["GET"])  # noqa: F821
@@ -643,9 +628,23 @@ def user_register(user_id, user):
                 "model_type": llm.model_type,
                 "api_key": settings.API_KEY,
                 "api_base": settings.LLM_BASE_URL,
-                "max_tokens": llm.max_tokens if llm.max_tokens else 8192
+                "max_tokens": llm.max_tokens if llm.max_tokens else 8192,
             }
         )
+    if settings.LIGHTEN != 1:
+        for buildin_embedding_model in settings.BUILTIN_EMBEDDING_MODELS:
+            mdlnm, fid = TenantLLMService.split_model_name_and_factory(buildin_embedding_model)
+            tenant_llm.append(
+                {
+                    "tenant_id": user_id,
+                    "llm_factory": fid,
+                    "llm_name": mdlnm,
+                    "model_type": "embedding",
+                    "api_key": "",
+                    "api_base": "",
+                    "max_tokens": 1024 if buildin_embedding_model == "BAAI/bge-large-zh-v1.5@BAAI" else 512,
+                }
+            )
 
     if not UserService.save(**user):
         return

@@ -567,7 +567,7 @@
         {
             "name": "Youdao",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
+            "tags": "TEXT EMBEDDING",
             "status": "1",
             "llm": [
                 {
@@ -755,7 +755,7 @@
         {
             "name": "BAAI",
             "logo": "",
-            "tags": "TEXT EMBEDDING, TEXT RE-RANK",
+           "tags": "TEXT EMBEDDING",
             "status": "1",
             "llm": [
                 {
