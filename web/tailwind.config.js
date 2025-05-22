@@ -52,6 +52,8 @@ module.exports = {
         'background-card': 'var(--background-card)',
         'background-checked': 'var(--background-checked)',
 
+        'input-border': 'var(--input-border)',
+
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',

@@ -1,4 +1,3 @@
-import { toast } from '@/components/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -44,13 +43,15 @@ function ParameterForm({
     key: z
       .string()
       .trim()
+      .min(1)
       .refine(
         (value) =>
           !value || !otherThanCurrentQuery.some((x) => x.key === value),
         { message: 'The key cannot be repeated!' },
       ),
     optional: z.boolean(),
-    options: z.array(z.string().or(z.boolean()).or(z.number())),
+    name: z.string().trim().min(1),
+    options: z.array(z.string().or(z.boolean()).or(z.number())).optional(),
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -58,6 +59,8 @@ function ParameterForm({
     defaultValues: {
       type: BeginQueryType.Line,
       optional: false,
+      key: '',
+      name: '',
     },
   });
 
@@ -95,19 +98,17 @@ function ParameterForm({
   }, [form, initialValue]);
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    toast({
-      title: 'You submitted the following values:',
-      description: (
-        <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4">
-          <code className="text-white">{JSON.stringify(data, null, 2)}</code>
-        </pre>
-      ),
-    });
+    console.log('🚀 ~ onSubmit ~ data:', data);
   }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} id={FormId}>
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        id={FormId}
+        className="space-y-5"
+        autoComplete="off"
+      >
         <FormField
           name="type"
           control={form.control}
@@ -127,6 +128,19 @@ function ParameterForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Key</FormLabel>
+              <FormControl>
+                <Input {...field} autoComplete="off" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name="name"
+          control={form.control}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Name</FormLabel>
               <FormControl>
                 <Input {...field} />
               </FormControl>
@@ -175,12 +189,12 @@ export function ParameterDialog({
           initialValue={initialValue}
           otherThanCurrentQuery={otherThanCurrentQuery}
         ></ParameterForm>
+        <DialogFooter>
+          <Button type="submit" form={FormId}>
+            Confirm
+          </Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogFooter>
-        <Button type="submit" id={FormId}>
-          Confirm
-        </Button>
-      </DialogFooter>
     </Dialog>
   );
 }
