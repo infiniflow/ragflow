@@ -30,7 +30,7 @@ In the **Variable** section, you add, remove, or update variables.
 `{knowledge}` is the system's reserved variable, representing the chunks retrieved from the knowledge base(s) specified by **Knowledge bases** under the **Assistant settings** tab. If your chat assistant is associated with certain knowledge bases, you can keep it as is.
 
 :::info NOTE
-It does not currently make a difference whether you set `{knowledge}` to optional or mandatory, but note that this design will be updated at a later point.
+It currently makes no difference whether  `{knowledge}` is set as optional or mandatory, but please note this design will be updated in due course.
 :::
 
 From v0.17.0 onward, you can start an AI chat without specifying knowledge bases. In this case, we recommend removing the `{knowledge}` variable to prevent unnecessary reference and keeping the **Empty response** field empty to avoid errors.
