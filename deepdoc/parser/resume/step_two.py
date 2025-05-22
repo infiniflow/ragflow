@@ -51,7 +51,7 @@ PY = Pinyin()
 
 
 def rmHtmlTag(line):
-    return re.sub(r"<[a-z0-9.\"=';,:\+_/ -]+>", " ", line, 100000, re.IGNORECASE)
+    return re.sub(r"<[a-z0-9.\"=';,:\+_/ -]+>", " ", line, count=100000, flags=re.IGNORECASE)
 
 
 def highest_degree(dg):
@@ -507,7 +507,7 @@ def parse(cv):
                      (r".*国有.*", "国企"),
                      (r"[ （）\(\)人/·0-9-]+", ""),
                      (r".*(元|规模|于|=|北京|上海|至今|中国|工资|州|shanghai|强|餐饮|融资|职).*", "")]:
-            cv["corporation_type"] = re.sub(p, r, cv["corporation_type"], 1000, re.IGNORECASE)
+            cv["corporation_type"] = re.sub(p, r, cv["corporation_type"], count=1000, flags=re.IGNORECASE)
         if len(cv["corporation_type"]) < 2:
             del cv["corporation_type"]
 
