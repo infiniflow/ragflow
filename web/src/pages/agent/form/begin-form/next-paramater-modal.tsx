@@ -1,0 +1,186 @@
+import { toast } from '@/components/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { IModalProps } from '@/interfaces/common';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect, useMemo } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
+import { z } from 'zod';
+import { BeginQueryType, BeginQueryTypeIconMap } from '../../constant';
+import { BeginQuery } from '../../interface';
+import { BeginDynamicOptions } from './next-begin-dynamic-options';
+
+type ModalFormProps = {
+  initialValue: BeginQuery;
+  otherThanCurrentQuery: BeginQuery[];
+};
+
+const FormId = 'BeginParameterForm';
+
+function ParameterForm({
+  initialValue,
+  otherThanCurrentQuery,
+}: ModalFormProps) {
+  const FormSchema = z.object({
+    type: z.string(),
+    key: z
+      .string()
+      .trim()
+      .refine(
+        (value) =>
+          !value || !otherThanCurrentQuery.some((x) => x.key === value),
+        { message: 'The key cannot be repeated!' },
+      ),
+    optional: z.boolean(),
+    options: z.array(z.string().or(z.boolean()).or(z.number())),
+  });
+
+  const form = useForm<z.infer<typeof FormSchema>>({
+    resolver: zodResolver(FormSchema),
+    defaultValues: {
+      type: BeginQueryType.Line,
+      optional: false,
+    },
+  });
+
+  const options = useMemo(() => {
+    return Object.values(BeginQueryType).reduce<RAGFlowSelectOptionType[]>(
+      (pre, cur) => {
+        const Icon = BeginQueryTypeIconMap[cur];
+
+        return [
+          ...pre,
+          {
+            label: (
+              <div className="flex items-center gap-2">
+                <Icon
+                  className={`size-${cur === BeginQueryType.Options ? 4 : 5}`}
+                ></Icon>
+                {cur}
+              </div>
+            ),
+            value: cur,
+          },
+        ];
+      },
+      [],
+    );
+  }, []);
+
+  const type = useWatch({
+    control: form.control,
+    name: 'type',
+  });
+
+  useEffect(() => {
+    form.reset(initialValue);
+  }, [form, initialValue]);
+
+  function onSubmit(data: z.infer<typeof FormSchema>) {
+    toast({
+      title: 'You submitted the following values:',
+      description: (
+        <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4">
+          <code className="text-white">{JSON.stringify(data, null, 2)}</code>
+        </pre>
+      ),
+    });
+  }
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} id={FormId}>
+        <FormField
+          name="type"
+          control={form.control}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Type</FormLabel>
+              <FormControl>
+                <RAGFlowSelect {...field} options={options} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name="key"
+          control={form.control}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Key</FormLabel>
+              <FormControl>
+                <Input {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name="optional"
+          control={form.control}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Optional</FormLabel>
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        {type === BeginQueryType.Options && (
+          <BeginDynamicOptions></BeginDynamicOptions>
+        )}
+      </form>
+    </Form>
+  );
+}
+
+export function ParameterDialog({
+  initialValue,
+  hideModal,
+  otherThanCurrentQuery,
+}: ModalFormProps & IModalProps<BeginQuery>) {
+  const { t } = useTranslation();
+
+  return (
+    <Dialog open onOpenChange={hideModal}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('flow.variableSettings')}</DialogTitle>
+        </DialogHeader>
+        <ParameterForm
+          initialValue={initialValue}
+          otherThanCurrentQuery={otherThanCurrentQuery}
+        ></ParameterForm>
+      </DialogContent>
+      <DialogFooter>
+        <Button type="submit" id={FormId}>
+          Confirm
+        </Button>
+      </DialogFooter>
+    </Dialog>
+  );
+}

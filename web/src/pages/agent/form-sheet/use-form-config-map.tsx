@@ -43,20 +43,26 @@ export function useFormConfigMap() {
   const FormConfigMap = {
     [Operator.Begin]: {
       component: BeginForm,
-      defaultValues: {},
+      defaultValues: {
+        prologue: t('chat.setAnOpenerInitial'),
+      },
       schema: z.object({
-        name: z
+        prologue: z
           .string()
           .min(1, {
             message: t('common.namePlaceholder'),
           })
           .trim(),
-        age: z
-          .string()
-          .min(1, {
-            message: t('common.namePlaceholder'),
-          })
-          .trim(),
+        query: z.array(
+          z.object({
+            key: z.string(),
+            type: z.string(),
+            value: z.string(),
+            optional: z.boolean(),
+            name: z.string(),
+            options: z.array(z.union([z.number(), z.string(), z.boolean()])),
+          }),
+        ),
       }),
     },
     [Operator.Retrieval]: {

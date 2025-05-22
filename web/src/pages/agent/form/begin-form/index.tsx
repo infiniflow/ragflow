@@ -1,20 +1,26 @@
-import { PlusOutlined } from '@ant-design/icons';
-import { Button, Form, Input } from 'antd';
+import { Button } from '@/components/ui/button';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Textarea } from '@/components/ui/textarea';
 import { useCallback } from 'react';
+import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { BeginQuery, IOperatorForm } from '../../interface';
+import { BeginQuery, INextOperatorForm } from '../../interface';
 import { useEditQueryRecord } from './hooks';
-import { ModalForm } from './paramater-modal';
+import { ParameterDialog } from './next-paramater-modal';
 import QueryTable from './query-table';
 
-import styles from './index.less';
-
-type FieldType = {
-  prologue?: string;
-};
-
-const BeginForm = ({ onValuesChange, form }: IOperatorForm) => {
+const BeginForm = ({ form }: INextOperatorForm) => {
   const { t } = useTranslation();
+
+  const query = useWatch({ control: form.control, name: 'query' });
+
   const {
     ok,
     currentRecord,
@@ -24,87 +30,68 @@ const BeginForm = ({ onValuesChange, form }: IOperatorForm) => {
     otherThanCurrentQuery,
   } = useEditQueryRecord({
     form,
-    onValuesChange,
   });
 
   const handleDeleteRecord = useCallback(
     (idx: number) => {
-      const query = form?.getFieldValue('query') || [];
+      const query = form?.getValues('query') || [];
       const nextQuery = query.filter(
         (item: BeginQuery, index: number) => index !== idx,
       );
-      onValuesChange?.(
-        { query: nextQuery },
-        { query: nextQuery, prologue: form?.getFieldValue('prologue') },
-      );
+      // onValuesChange?.(
+      //   { query: nextQuery },
+      //   { query: nextQuery, prologue: form?.getFieldValue('prologue') },
+      // );
     },
-    [form, onValuesChange],
+    [form],
   );
 
   return (
-    <Form.Provider
-      onFormFinish={(name, { values }) => {
-        if (name === 'queryForm') {
-          ok(values as BeginQuery);
-        }
-      }}
-    >
-      <Form
-        name="basicForm"
-        onValuesChange={onValuesChange}
-        autoComplete="off"
-        form={form}
-        layout="vertical"
-      >
-        <Form.Item<FieldType>
-          name={'prologue'}
-          label={t('chat.setAnOpener')}
-          tooltip={t('chat.setAnOpenerTip')}
-          initialValue={t('chat.setAnOpenerInitial')}
-        >
-          <Input.TextArea autoSize={{ minRows: 5 }} />
-        </Form.Item>
-        {/* Create a hidden field to make Form instance record this */}
-        <Form.Item name="query" noStyle />
-
-        <Form.Item
-          shouldUpdate={(prevValues, curValues) =>
-            prevValues.query !== curValues.query
-          }
-        >
-          {({ getFieldValue }) => {
-            const query: BeginQuery[] = getFieldValue('query') || [];
-            return (
-              <QueryTable
-                data={query}
-                showModal={showModal}
-                deleteRecord={handleDeleteRecord}
-              ></QueryTable>
-            );
-          }}
-        </Form.Item>
-
-        <Button
-          htmlType="button"
-          style={{ margin: '0 8px' }}
-          onClick={() => showModal()}
-          icon={<PlusOutlined />}
-          block
-          className={styles.addButton}
-        >
-          {t('flow.addItem')}
-        </Button>
-        {visible && (
-          <ModalForm
-            visible={visible}
-            hideModal={hideModal}
-            initialValue={currentRecord}
-            onOk={ok}
-            otherThanCurrentQuery={otherThanCurrentQuery}
-          />
+    <Form {...form}>
+      <FormField
+        control={form.control}
+        name={'prologue'}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel tooltip={t('chat.setAnOpenerTip')}>
+              {t('chat.setAnOpener')}
+            </FormLabel>
+            <FormControl>
+              <Textarea
+                rows={5}
+                {...field}
+                placeholder={t('common.pleaseInput')}
+              ></Textarea>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
         )}
-      </Form>
-    </Form.Provider>
+      />
+      {/* Create a hidden field to make Form instance record this */}
+      <FormField
+        control={form.control}
+        name={'query'}
+        render={() => <div></div>}
+      />
+
+      <QueryTable
+        data={query}
+        showModal={showModal}
+        deleteRecord={handleDeleteRecord}
+      ></QueryTable>
+
+      <Button onClick={() => showModal()}>{t('flow.addItem')}</Button>
+
+      {visible && (
+        <ParameterDialog
+          visible={visible}
+          hideModal={hideModal}
+          initialValue={currentRecord}
+          onOk={ok}
+          otherThanCurrentQuery={otherThanCurrentQuery}
+        ></ParameterDialog>
+      )}
+    </Form>
   );
 };
 
