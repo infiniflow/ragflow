@@ -15,16 +15,16 @@ import { useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { AgentDialogueMode } from '../../constant';
-import { BeginQuery, INextOperatorForm } from '../../interface';
-import { useEditQueryRecord } from './hooks';
-import { ParameterDialog } from './paramater-dialog';
+import { INextOperatorForm } from '../../interface';
+import { ParameterDialog } from './parameter-dialog';
 import QueryTable from './query-table';
+import { useEditQueryRecord } from './use-edit-query';
 
 const ModeOptions = buildSelectOptions([
   (AgentDialogueMode.Conversational, AgentDialogueMode.Task),
 ]);
 
-const BeginForm = ({ form }: INextOperatorForm) => {
+const BeginForm = ({ form, node }: INextOperatorForm) => {
   const { t } = useTranslation();
 
   const query = useWatch({ control: form.control, name: 'query' });
@@ -40,22 +40,17 @@ const BeginForm = ({ form }: INextOperatorForm) => {
     hideModal,
     showModal,
     otherThanCurrentQuery,
+    handleDeleteRecord,
   } = useEditQueryRecord({
     form,
+    node,
   });
 
-  const handleDeleteRecord = useCallback(
-    (idx: number) => {
-      const query = form?.getValues('query') || [];
-      const nextQuery = query.filter(
-        (item: BeginQuery, index: number) => index !== idx,
-      );
-      // onValuesChange?.(
-      //   { query: nextQuery },
-      //   { query: nextQuery, prologue: form?.getFieldValue('prologue') },
-      // );
+  const handleParameterDialogSubmit = useCallback(
+    (values: any) => {
+      ok(values);
     },
-    [form],
+    [ok],
   );
 
   return (
@@ -118,11 +113,11 @@ const BeginForm = ({ form }: INextOperatorForm) => {
           />
         )}
         {/* Create a hidden field to make Form instance record this */}
-        {/* <FormField
+        <FormField
           control={form.control}
           name={'query'}
           render={() => <div></div>}
-        /> */}
+        />
         <QueryTable
           data={query}
           showModal={showModal}
@@ -138,6 +133,7 @@ const BeginForm = ({ form }: INextOperatorForm) => {
             initialValue={currentRecord}
             onOk={ok}
             otherThanCurrentQuery={otherThanCurrentQuery}
+            submit={handleParameterDialogSubmit}
           ></ParameterDialog>
         )}
       </Form>
