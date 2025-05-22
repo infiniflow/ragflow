@@ -3006,3 +3006,8 @@ export const NoDebugOperatorsList = [
   Operator.Switch,
   Operator.Iteration,
 ];
+
+export enum AgentDialogueMode {
+  Conversational = 'Conversational',
+  Task = 'Task',
+}
