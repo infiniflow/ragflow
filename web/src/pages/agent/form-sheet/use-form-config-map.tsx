@@ -1,7 +1,7 @@
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { Operator } from '../constant';
+import { AgentDialogueMode, Operator } from '../constant';
 import AkShareForm from '../form/akshare-form';
 import AnswerForm from '../form/answer-form';
 import ArXivForm from '../form/arxiv-form';
@@ -44,15 +44,19 @@ export function useFormConfigMap() {
     [Operator.Begin]: {
       component: BeginForm,
       defaultValues: {
+        enablePrologue: true,
         prologue: t('chat.setAnOpenerInitial'),
+        mode: AgentDialogueMode.Conversational,
       },
       schema: z.object({
+        enablePrologue: z.boolean(),
         prologue: z
           .string()
           .min(1, {
             message: t('common.namePlaceholder'),
           })
           .trim(),
+        mode: z.string(),
         query: z.array(
           z.object({
             key: z.string(),
