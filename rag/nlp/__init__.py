@@ -343,7 +343,7 @@ def remove_contents_table(sections, eng=False):
                                               type("")) else sections[i][0]).strip()
 
         if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$",
-                        re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], re.IGNORECASE)):
+                        re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], flags=re.IGNORECASE)):
             i += 1
             continue
         sections.pop(i)
