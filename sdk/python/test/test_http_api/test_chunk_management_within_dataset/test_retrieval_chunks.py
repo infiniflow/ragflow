@@ -185,7 +185,7 @@ class TestChunksRetrieval:
                 0,
                 4,
                 "",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="Infinity"),
+                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in ["infinity", "opensearch"], reason="Infinity"),
             ),
             pytest.param(
                 {"top_k": 1},
@@ -199,7 +199,7 @@ class TestChunksRetrieval:
                 100,
                 4,
                 "must be greater than 0",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="Infinity"),
+                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in ["infinity", "opensearch"], reason="Infinity"),
             ),
             pytest.param(
                 {"top_k": -1},
