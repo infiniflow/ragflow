@@ -327,8 +327,8 @@ def chat(dialog, messages, stream=True, **kwargs):
         find_and_replace(r"\$\[(\d+)\]\$")  # $[12]$
         find_and_replace(r"\$\$(\d+)\${2,}")  # $$12$$$$
         find_and_replace(r"\$(\d+)\$")  # $12$
-        find_and_replace(r"#(\d+)\$\$")  # #12$$
-        find_and_replace(r"##(\d+)\$")  # ##12$
+        find_and_replace(r"(#{2,})(\d+)(\${2,})", group_index=2)  # 2+ # and 2+ $
+        find_and_replace(r"(#{2,})(\d+)(#{1,})", group_index=2)  # 2+ # and 1+ #
         find_and_replace(r"##(\d+)#{2,}")  # ##12###
         find_and_replace(r"【(\d+)】")  # 【12】
         find_and_replace(r"ref\s*(\d+)", flags=re.IGNORECASE)  # ref12, ref 12, REF 12
