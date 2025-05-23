@@ -58,6 +58,7 @@ class RetrievalParam(ToolParamBase):
         self.rerank_id = ""
         self.empty_response = ""
         self.use_kg = False
+        self.inputs["query"]["ref"] = "sys.query"
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -70,11 +71,12 @@ class Retrieval(ToolBase, ABC):
 
     async def _invoke(self, **kwargs):
         if not kwargs.get("query"):
-            self._param.outputs["result"] = {"_references": None, "formalized_content": self._param.empty_response}
+            self.set_output("_references", None)
+            self.set_output("formalized_content", self._param.empty_response)
 
         kb_ids: list[str] = []
         for id in self._param.kb_ids:
-            if id.find("@") > 0:
+            if id.find("@") < 0:
                 kb_ids.append(id)
                 continue
             kb_nm = self._canvas.get_variable_value(id)
@@ -95,7 +97,6 @@ class Retrieval(ToolBase, ABC):
         embd_mdl = None
         if embd_nms:
             embd_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.EMBEDDING, embd_nms[0])
-            self._canvas.set_embedding_model(embd_nms[0])
 
         rerank_mdl = None
         if self._param.rerank_id:
@@ -123,14 +124,14 @@ class Retrieval(ToolBase, ABC):
             if ck["content_with_weight"]:
                 kbinfos["chunks"].insert(0, ck)
 
-        if self._param.tavily_api_key:
-            tav = Tavily(self._param.tavily_api_key)
-            tav_res = tav.retrieve_chunks(kwargs["query"])
-            kbinfos["chunks"].extend(tav_res["chunks"])
-            kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
+        for ck in kbinfos["chunks"]:
+            if "vector" in ck:
+                del ck["vector"]
 
         if not kbinfos["chunks"]:
-            self._param.outputs["result"] = {"_references": None, "formalized_content": self._param.empty_response}
+            self.set_output("_references", None)
+            self.set_output("formalized_content", self._param.empty_response)
             return
 
-        self._param.outputs["result"] = {"_references": kbinfos, "formalized_content": kb_prompt(kbinfos, 200000, prefix=self._id)}
+        self.set_output("_references", kbinfos)
+        self.set_output("formalized_content", kb_prompt(kbinfos, 200000, prefix=self._id))

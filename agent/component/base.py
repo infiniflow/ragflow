@@ -14,15 +14,16 @@
 #  limitations under the License.
 #
 import re
+import time
 from abc import ABC
 import builtins
 import json
 import os
 import logging
-from functools import partial
-from typing import Any, Tuple, Union
+from typing import Any, List, Union
 
 import pandas as pd
+import trio
 
 from agent import settings
 
@@ -378,6 +379,7 @@ class ComponentParamBase(ABC):
 
 class ComponentBase(ABC):
     component_name: str
+    thread_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
 
     def __str__(self):
         """
@@ -401,78 +403,102 @@ class ComponentBase(ABC):
         self._param = param
         self._param.check()
 
-    async def invoke(self, **kwargs):
-        logging.debug("{}, history: {}, kwargs: {}".format(self, json.dumps(history, ensure_ascii=False),
-                                                              json.dumps(kwargs, ensure_ascii=False)))
+    async def invoke(self, **kwargs) -> dict[str, Any]:
         self._param.debug_inputs = []
-        try:
-            await self._invoke(**kwargs)
-        except Exception as e:
-            raise e
+        st = time.perf_counter()
+        TIMEOUT = os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)
+        with trio.move_on_after(TIMEOUT) as cancel_scope:
+            try:
+                await self._invoke(**kwargs)
+            except Exception as e:
+                self._param.outputs["_ERROR"] = {"value": e}
 
+        self._param.outputs["_elapsed_time"] = {"value": time.perf_counter() - st}
+        if cancel_scope.cancelled_caught:
+            if "_ERROR" not in self._param.outputs:
+                self._param.outputs["_ERROR"] = {"value": ""}
+            self._param.outputs["_ERROR"]["value"] += f"\nExecution timeout: {TIMEOUT}s"
         return self.output()
 
     async def _invoke(self, **kwargs):
         raise NotImplementedError()
 
-    def output(self, var_nm=None):
+    def output(self, var_nm: str=None) -> Union[dict[str, Any], Any]:
         if var_nm:
             return self._param.outputs.get(var_nm, {}).get("value")
         return {k: o.get("value") for k,o in self._param.outputs.items()}
 
+    def set_output(self, key: str, value: Any):
+        if key not in self._param.outputs:
+            self._param.outputs[key] = {"value": None, "type": str(type(value))}
+        self._param.outputs[key]["value"] = value
+
+    def error(self):
+        return self._param.outputs.get("_ERROR", {}).get("value")
+
     def reset(self):
         for k in self._param.outputs.keys():
             self._param.outputs[k]["value"] = None
+        for k in self._param.inputs.keys():
+            self._param.inputs[k]["value"] = None
         self._param.debug_inputs = {}
 
-    def get_input(self):
+    def get_input(self, key: str=None) -> Union[Any, dict[str, Any]]:
         if self._param.debug_inputs:
+            if key:
+                return self._param.debug_inputs.get(key, {}).get("value")
             return self._param.debug_inputs
 
-        def value_from_cpn(cpn_id_and_var):
-            cpn_id, var_nm = cpn_id_and_var.split("@")
-            self._canvas.get_component(cpn_id)["obj"].output(var_nm)
+        if key:
+            return self._param.inputs.get(key, {}).get("value")
 
-        return {k: value_from_cpn(k) for k in self._param.inputs.keys()}
-
-    def get_input_elements_from_text(self, txt):
         res = {}
-        for r in re.finditer(r"\{([a-z]+[:@][a-z0-9_.-]+)\}", txt, flags=re.IGNORECASE):
-            cpn_id, var_nm = r.group(1).split("@")
-            res[r.group(1)] = {
-                "name": f"{var_nm}@"+self._canvas.get_component_name(cpn_id),
+        for k, o in self._param.inputs.items():
+            res[k] = self._canvas.get_variable_value(k if "ref" not in o else o["ref"])
+            self.set_input_value(k, res[k])
+        return res
+
+    def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
+        res = {}
+        for r in re.finditer(r"\{([a-z:0-9]+@[a-z0-9_.-]+|sys\.[a-z_]+)\}", txt, flags=re.IGNORECASE):
+            exp = r.group(1)
+            cpn_id, var_nm = exp.split("@") if exp.find("@")>0 else ("", exp)
+            res[exp] = {
+                "name": (self._canvas.get_component_name(cpn_id) +f"@{var_nm}") if cpn_id else exp,
+                "ref": exp,
+                "value": self._canvas.get_variable_value(exp),
+                "_retrival": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
+                "_cpn_id": cpn_id
             }
         return res
 
-    def get_input_elements(self):
+    def get_input_elements(self) -> dict[str, Any]:
         return self._param.inputs
 
-    def get_stream_input(self):
-        reversed_cpnts = []
-        if len(self._canvas.path) > 1:
-            reversed_cpnts.extend(self._canvas.path[-2])
-        reversed_cpnts.extend(self._canvas.path[-1])
-        up_cpns = self.get_upstream()
-        reversed_up_cpnts = [cpn for cpn in reversed_cpnts if cpn in up_cpns]
-
-        for u in reversed_up_cpnts[::-1]:
-            if self.get_component_name(u) in ["switch", "answer"]:
-                continue
-            return self._canvas.get_component(u)["obj"].output()[1]
-
-    def set_input_value(self, key, value):
+    def set_input_value(self, key: str, value: Any):
+        if key not in self._param.inputs:
+            self._param.inputs[key] = {"value": None}
         self._param.inputs[key]["value"] = value
 
-    def get_component_name(self, cpn_id):
+    def get_component_name(self, cpn_id) -> str:
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()
 
     def debug(self, **kwargs):
         return self._invoke(**kwargs)
 
-    def get_parent(self):
+    def get_parent(self) -> object:
         pid = self._canvas.get_component(self._id)["parent_id"]
         return self._canvas.get_component(pid)["obj"]
 
-    def get_upstream(self):
+    def get_upstream(self) -> List[str]:
         cpn_nms = self._canvas.get_component(self._id)['upstream']
         return cpn_nms
+
+    @staticmethod
+    def string_format(content: str, kv: dict[str, str]) -> str:
+        for n, v in kv.items():
+            content = re.sub(
+                r"\{%s\}" % re.escape(n), v, content
+            )
+        return content
+

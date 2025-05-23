@@ -15,6 +15,7 @@
 #
 import json
 import re
+from functools import partial
 from agent.component.base import ComponentBase, ComponentParamBase
 from jinja2 import Template as Jinja2Template
 
@@ -26,6 +27,7 @@ class MessageParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.content = ""
+        self.stream = True
         self.outputs = {
             "content": {
                 "type": "str"
@@ -34,24 +36,66 @@ class MessageParam(ComponentParamBase):
 
     def check(self):
         self.check_empty(self.content, "[Message] Content")
+        self.check_boolean(self.stream, "[Message] stream")
         return True
 
 
 class Message(ComponentBase):
     component_name = "Message"
 
-    def get_input_elements(self):
-        return self.get_input_elements_from_text(self._param.content)
+    def get_kwargs(self) -> dict[str, str]:
+        res = {}
+        for k,v in self.get_input_elements_from_text(self._param.content).items():
+            v = v["value"]
+            ans = ""
+            if isinstance(v, partial):
+                for t in v():
+                    ans += t
+            else:
+                if not isinstance(v, str):
+                    try:
+                        v = json.dumps(v, ensure_ascii=False)
+                    except Exception:
+                        pass
+                ans = v
+            res[k] = ans
+        return res
 
-    def _invoke(self):
-        content = self._param.content
-        kwargs = {}
-        for k in self._param.inputs.keys():
-            if self._param.inputs[k]["value"] is None:
-                self.set_input_value(k, self._canvas.get_variable_value(k))
-            kwargs[k] = self._param.inputs[k]["value"]
+    def _stream(self):
+        s = 0
+        all_content = ""
+        for r in re.finditer(r"\{([a-z:0-9]+@[a-z0-9_.-]+|sys\.[a-z_]+)\}", self._param.content, flags=re.DOTALL):
+            all_content += self._param.content[s: r.start()]
+            yield self._param.content[s: r.start()]
+            s = r.end()
+            exp = r.group(1)
+            v = self._canvas.get_variable_value(exp)
+            if isinstance(v, partial):
+                for t in v():
+                    all_content += t
+                    yield t
+            else:
+                if not isinstance(v, str):
+                    try:
+                        v = json.dumps(v, ensure_ascii=False)
+                    except Exception:
+                        pass
+                all_content += v
+                yield v
 
-        template = Jinja2Template(content)
+        if s < len(self._param.content):
+            all_content += self._param.content[s: ]
+            yield self._param.content[s: ]
+
+        self.set_output("content", all_content)
+
+    async def _invoke(self):
+        if self._param.stream:
+            self.set_output("content", partial(self._stream))
+            return
+
+        template = Jinja2Template(self._param.content)
+        kwargs = self.get_kwargs()
 
         try:
             content = template.render(kwargs)
@@ -71,5 +115,5 @@ class Message(ComponentBase):
                 r"(#+)", r" \1 ", content
             )
 
-        self._param.outputs["content"]["value"] = content
+        self.set_output("content", content)
 

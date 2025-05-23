@@ -17,10 +17,10 @@ import logging
 from abc import ABC
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from agent.component import GenerateParam, Generate
+from agent.component import LLMParam, LLM
 
 
-class CategorizeParam(GenerateParam):
+class CategorizeParam(LLMParam):
 
     """
     Define the Categorize component parameters.
@@ -78,7 +78,7 @@ USER: {}\n
         return self.prompt
 
 
-class Categorize(Generate, ABC):
+class Categorize(LLM, ABC):
     component_name = "Categorize"
 
     def _run(self, history, **kwargs):

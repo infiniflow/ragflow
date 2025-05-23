@@ -13,14 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
 import json
+import time
 from copy import deepcopy
 from functools import partial
-import pandas as pd
+from typing import Any
 
+import trio
 from agent.component import component_class
-from agent.component.base import ComponentBase
+from api.utils import get_uuid
 
 
 class Canvas:
@@ -34,14 +35,6 @@ class Canvas:
                 },
                 "downstream": ["answer_0"],
                 "upstream": [],
-            },
-            "answer_0": {
-                "obj": {
-                    "component_name": "Answer",
-                    "params": {}
-                },
-                "downstream": ["retrieval_0"],
-                "upstream": ["begin", "generate_0"],
             },
             "retrieval_0": {
                 "obj": {
@@ -61,19 +54,27 @@ class Canvas:
             }
         },
         "history": [],
-        "messages": [],
-        "reference": [],
-        "path": [["begin"]],
-        "answer": []
+        "path": ["begin"],
+        "retrival": {"chunks": [], "doc_aggs": []},
+        "globals": {
+            "sys.query": "",
+            "sys.user_id": tenant_id,
+            "sys.convsation_turns": 0,
+            "sys.files": []
+        }
     }
     """
 
-    def __init__(self, dsl: str, tenant_id=None):
+    def __init__(self, dsl: str, tenant_id=None, task_id=None):
         self.path = []
         self.history = []
-        self.messages = []
-        self.answer = []
         self.components = {}
+        self.globals = {
+            "sys.query": "",
+            "sys.user_id": tenant_id,
+            "sys.convsation_turns": 0,
+            "sys.files": []
+        }
         self.dsl = json.loads(dsl) if dsl else {
             "components": {
                 "begin": {
@@ -89,13 +90,17 @@ class Canvas:
                 }
             },
             "history": [],
-            "messages": [],
-            "reference": [],
             "path": [],
-            "answer": []
+            "retrival": {"chunks": [], "doc_aggs": []},
+            "globals": {
+                "sys.query": "",
+                "sys.user_id": "",
+                "sys.convsation_turns": 0,
+                "sys.files": []
+            }
         }
         self._tenant_id = tenant_id
-        self._embed_id = ""
+        self.task_id = task_id if task_id else get_uuid()
         self.load()
 
     def load(self):
@@ -110,7 +115,10 @@ class Canvas:
             cpn_nms.add(cpn["obj"]["component_name"])
             param = component_class(cpn["obj"]["component_name"] + "Param")()
             param.update(cpn["obj"]["params"])
-            param.check()
+            try:
+                param.check()
+            except Exception as e:
+                raise ValueError(self.get_component_name(k) + f": {e}")
             cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
             if cpn["obj"].component_name == "Categorize":
                 for _, desc in param.category_description.items():
@@ -119,18 +127,15 @@ class Canvas:
 
         self.path = self.dsl["path"]
         self.history = self.dsl["history"]
-        self.messages = self.dsl["messages"]
-        self.answer = self.dsl["answer"]
-        self.reference = self.dsl["reference"]
-        self._embed_id = self.dsl.get("embed_id", "")
+        self.globals = self.dsl["globals"]
+        self.retrival = self.dsl["retrival"]
 
     def __str__(self):
         self.dsl["path"] = self.path
         self.dsl["history"] = self.history
-        self.dsl["messages"] = self.messages
-        self.dsl["answer"] = self.answer
-        self.dsl["reference"] = self.reference
-        self.dsl["embed_id"] = self._embed_id
+        self.dsl["globals"] = self.globals
+        self.dsl["task_id"] = self.task_id
+        self.dsl["retrival"] = self.retrival
         dsl = {
             "components": {}
         }
@@ -149,156 +154,114 @@ class Canvas:
                 dsl["components"][k][c] = deepcopy(cpn[c])
         return json.dumps(dsl, ensure_ascii=False)
 
-    def reset(self):
+    def reset(self, mem=False):
         self.path = []
-        self.history = []
-        self.messages = []
-        self.answer = []
-        self.reference = []
+        self.retrival = {"chunks": [], "doc_aggs": []}
+        if not mem:
+            self.history = []
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset()
-        self._embed_id = ""
 
     def get_component_name(self, cid):
-        for n in self.dsl["graph"]["nodes"]:
+        for n in self.dsl.get("graph", {}).get("nodes", []):
             if cid == n["id"]:
                 return n["data"]["name"]
         return ""
 
-    def run(self, running_hint_text = "is running...🕞", **kwargs):
-        if not running_hint_text or not isinstance(running_hint_text, str):
-            running_hint_text = "is running...🕞"
+    def run(self, **kwargs):
+        st = time.perf_counter()
+        message_id = get_uuid()
+        created_at = int(time.time())
+        self.add_user_input(kwargs.get("query"))
 
-        if self.answer:
-            cpn_id = self.answer[0]
-            self.answer.pop(0)
-            try:
-                ans = self.components[cpn_id]["obj"].run(self.history, **kwargs)
-            except Exception as e:
-                ans = ComponentBase.be_output(str(e))
-            self.path[-1].append(cpn_id)
-            if kwargs.get("stream"):
-                for an in ans():
-                    yield an
-            else:
-                yield ans
-            return
+        def decorate(event, dt):
+            nonlocal message_id, created_at
+            return {
+                "event": event,
+                #"conversation_id": "f3cc152b-24b0-4258-a1a1-7d5e9fc8a115",
+                "message_id": message_id,
+                "created_at": created_at,
+                "task_id": self.task_id,
+                "data": dt
+            }
 
         if not self.path:
-            self.components["begin"]["obj"].run(self.history, **kwargs)
-            self.path.append(["begin"])
+            self.path.append("begin")
+            self.globals = {
+                "sys.query": kwargs.get("query"),
+                "sys.user_id": kwargs.get("user_id"),
+                "sys.convsation_turns": 1,
+                "sys.files": kwargs.get("files", [])
+            }
+            inputs = self.get_component_obj("begin").get_input()
+            inputs.update(self.globals)
+            yield decorate("workflow_started", {"inputs": inputs})
 
-        self.path.append([])
+        async def _run_batch(f, t):
+            async with trio.open_nursery() as nursery:
+                for i in range(f, t):
+                    cpn = self.get_component_obj(self.path[i])
+                    for var, o in cpn.get_input_elements().items():
+                        cpn.set_input_value(var, self.get_variable_value(o["ref"]))
+                    nursery.start_soon(lambda: cpn.invoke(**cpn.get_input()))
 
-        ran = -1
-        waiting = []
-        without_dependent_checking = []
+        error = ""
+        idx = len(self.path) - 1
+        st_idx = idx
+        while idx < len(self.path):
+            to = len(self.path)
+            for i in range(idx, to):
+                yield decorate("node_started", {"inputs": None, "created_at": int(time.time()), "component_id": self.path[i]})
+            trio.run(_run_batch, idx, to)
 
-        def prepare2run(cpns):
-            nonlocal ran, ans
-            for c in cpns:
-                if self.path[-1] and c == self.path[-1][-1]:
-                    continue
-                cpn = self.components[c]["obj"]
-                if cpn.component_name == "Answer":
-                    self.answer.append(c)
-                else:
-                    logging.debug(f"Canvas.prepare2run: {c}")
-                    if c not in without_dependent_checking:
-                        cpids = cpn.get_dependent_components()
-                        if any([cc not in self.path[-1] for cc in cpids]):
-                            if c not in waiting:
-                                waiting.append(c)
-                            continue
-                    yield "*'{}'* {}".format(self.get_component_name(c), running_hint_text)
+            for i in range(idx, to):
+                cpn = self.get_component(self.path[i])
+                error = cpn["obj"].error() if not error else error
+                if not error and cpn["obj"].component_name.lower() == "message":
+                    if isinstance(cpn["obj"].output("content"), partial):
+                        for m in cpn["obj"].output("content")():
+                            yield decorate("message", {"content": m})
+                    else:
+                        yield decorate("message", {"content": cpn["obj"].output("content")})
+                    yield decorate("message_end", {})
 
-                    if cpn.component_name.lower() == "iteration":
-                        st_cpn = cpn.get_start()
-                        assert st_cpn, "Start component not found for Iteration."
-                        if not st_cpn["obj"].end():
-                            cpn = st_cpn["obj"]
-                            c = cpn._id
-
-                    try:
-                        ans = cpn.run(self.history, **kwargs)
-                    except Exception as e:
-                        logging.exception(f"Canvas.run got exception: {e}")
-                        self.path[-1].append(c)
-                        ran += 1
-                        raise e
-                    self.path[-1].append(c)
-
-            ran += 1
-
-        downstream = self.components[self.path[-2][-1]]["downstream"]
-        if not downstream and self.components[self.path[-2][-1]].get("parent_id"):
-            cid = self.path[-2][-1]
-            pid = self.components[cid]["parent_id"]
-            o, _ = self.components[cid]["obj"].output(allow_partial=False)
-            oo, _ = self.components[pid]["obj"].output(allow_partial=False)
-            self.components[pid]["obj"].set_output(pd.concat([oo, o], ignore_index=True).dropna())
-            downstream = [pid]
-
-        for m in prepare2run(downstream):
-            yield {"content": m, "running_status": True}
-
-        while 0 <= ran < len(self.path[-1]):
-            logging.debug(f"Canvas.run: {ran} {self.path}")
-            cpn_id = self.path[-1][ran]
-            cpn = self.get_component(cpn_id)
-            if not any([cpn["downstream"], cpn.get("parent_id"), waiting]):
+                yield decorate("node_finished",
+                               {
+                                   "inputs": cpn["obj"].get_input(),
+                                   "outputs": cpn["obj"].output(),
+                                   "component_id": self.path[i],
+                                   "error": cpn["obj"].error(),
+                                   "elapsed_time": cpn["obj"].output("_elapsed_time"),
+                                   "created_at": int(time.time()),
+                                })
+                for c in cpn["downstream"]:
+                    if c in self.path:
+                        continue
+                    self.path.append(c)
+            if error:
                 break
+            idx = to
 
-            loop = self._find_loop()
-            if loop:
-                raise OverflowError(f"Too much loops: {loop}")
+        self.path = self.path[:idx]
+        if not error:
+            yield decorate("workflow_finished",
+                       {
+                           "inputs": self.get_component_obj(self.path[st_idx]).get_input(),
+                           "outputs": self.get_component_obj(self.path[-1]).output(),
+                           "elapsed_time": time.perf_counter() - st,
+                           "created_at": int(time.time()),
+                       })
+            self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
 
-            downstream = []
-            if cpn["obj"].component_name.lower() in ["switch", "categorize", "relevant"]:
-                switch_out = cpn["obj"].output()[1].iloc[0, 0]
-                assert switch_out in self.components, \
-                    "{}'s output: {} not valid.".format(cpn_id, switch_out)
-                downstream = [switch_out]
-            else:
-                downstream = cpn["downstream"]
-
-            if not downstream and cpn.get("parent_id"):
-                pid = cpn["parent_id"]
-                _, o = cpn["obj"].output(allow_partial=False)
-                _, oo = self.components[pid]["obj"].output(allow_partial=False)
-                self.components[pid]["obj"].set_output(pd.concat([oo.dropna(axis=1), o.dropna(axis=1)], ignore_index=True).dropna())
-                downstream = [pid]
-
-            for m in prepare2run(downstream):
-                yield {"content": m, "running_status": True}
-
-            if ran >= len(self.path[-1]) and waiting:
-                without_dependent_checking = waiting
-                waiting = []
-                for m in prepare2run(without_dependent_checking):
-                    yield {"content": m, "running_status": True}
-                without_dependent_checking = []
-                ran -= 1
-
-        if self.answer:
-            cpn_id = self.answer[0]
-            self.answer.pop(0)
-            ans = self.components[cpn_id]["obj"].run(self.history, **kwargs)
-            self.path[-1].append(cpn_id)
-            if kwargs.get("stream"):
-                assert isinstance(ans, partial)
-                for an in ans():
-                    yield an
-            else:
-                yield ans
-
-        else:
-            raise Exception("The dialog flow has no way to interact with you. Please add an 'Interact' component to the end of the flow.")
-
-    def get_component(self, cpn_id):
+    def get_component(self, cpn_id) -> dict[str, Any]:
         return self.components.get(cpn_id)
 
-    def get_variable_value(self, nm):
+    def get_component_obj(self, cpn_id) -> object:
+        return self.components.get(cpn_id)["obj"]
+
+    def get_variable_value(self, nm: str) -> Any:
+        if nm.find("@") < 0:
+            return self.globals[nm]
         cpn_id, var_nm = nm.split("@")
         cpn = self.get_component(cpn_id)
         if not cpn:
@@ -311,20 +274,14 @@ class Canvas:
     def get_history(self, window_size):
         convs = []
         for role, obj in self.history[window_size * -1:]:
-            if isinstance(obj, list) and obj and all([isinstance(o, dict) for o in obj]):
-                convs.append({"role": role, "content": '\n'.join([str(s.get("content", "")) for s in obj])})
+            if isinstance(obj, dict):
+                convs.append({"role": role, "content": obj.get("content", "")})
             else:
                 convs.append({"role": role, "content": str(obj)})
         return convs
 
     def add_user_input(self, question):
         self.history.append(("user", question))
-
-    def set_embedding_model(self, embed_id):
-        self._embed_id = embed_id
-
-    def get_embedding_model(self):
-        return self._embed_id
 
     def _find_loop(self, max_loops=6):
         path = self.path[-1][::-1]
@@ -360,17 +317,11 @@ class Canvas:
         return self.components["begin"]["obj"]._param.prologue
 
     def set_global_param(self, **kwargs):
-        for k, v in kwargs.items():
-            for q in self.components["begin"]["obj"]._param.query:
-                if k != q["key"]:
-                    continue
-                q["value"] = v
+        self.globals.update(kwargs)
 
     def get_preset_param(self):
-        return self.components["begin"]["obj"]._param.query
+        return self.components["begin"]["obj"]._param.inputs
 
     def get_component_input_elements(self, cpnnm):
         return self.components[cpnnm]["obj"].get_input_elements()
-    
-    def set_component_infor(self, cpn_id, infor):
-        self.components[cpn_id]["obj"].set_infor(infor)
+

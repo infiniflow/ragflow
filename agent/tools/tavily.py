@@ -76,7 +76,6 @@ class TavilySearchParam(ToolParamBase):
         self.include_answer = False
         self.include_raw_content = False
         self.include_images = False
-        self.include_images = False
         self.include_image_descriptions = False
         self.include_domains = []
         self.exclude_domains = []
@@ -119,7 +118,9 @@ class TavilySearch(ToolBase, ABC):
                 "url": r["url"]
             })
         ref = {"chunks": chunks, "doc_aggs": aggs}
-        self._param.outputs["result"] = {"_references": ref, "formalized_content": kb_prompt(ref, 200000, prefix=self._id), "json": response}
+        self.set_output("_references", ref)
+        self.set_output("formalized_content", kb_prompt(ref, 200000, prefix=self._id))
+        self.set_output("json", response)
 
     async def _invoke(self, **kwargs):
         self.tavily_client = TavilyClient(api_key=self._param.api_key)

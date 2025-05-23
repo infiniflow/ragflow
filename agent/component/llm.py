@@ -16,27 +16,18 @@
 import json
 import logging
 import re
+from typing import Any
+
 import json_repair
 from copy import deepcopy
 from functools import partial
-from typing import Any
 import pandas as pd
+import trio
+
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component.base import ComponentBase, ComponentParamBase
-from plugin import GlobalPluginManager
-from rag.llm.chat_model import ToolCallSession
 from rag.prompts import message_fit_in, citation_prompt
-
-
-class LLMToolPluginCallSession(ToolCallSession):
-    def tool_call(self, name: str, arguments: dict[str, Any]) -> str:
-        tool = GlobalPluginManager.get_llm_tool_by_name(name)
-
-        if tool is None:
-            raise ValueError(f"LLM tool {name} does not exist")
-
-        return tool().invoke(**arguments)
 
 
 class LLMParam(ComponentParamBase):
@@ -48,7 +39,7 @@ class LLMParam(ComponentParamBase):
         super().__init__()
         self.llm_id = ""
         self.sys_prompt = ""
-        self.prompts = [{"role": "user", "assistant": "begin@sys.query"}]
+        self.prompts = [{"role": "user", "content": "{sys.query}"}]
         self.max_tokens = 0
         self.temperature = 0
         self.top_p = 0
@@ -57,12 +48,12 @@ class LLMParam(ComponentParamBase):
         self.output_structure = None
 
     def check(self):
-        self.check_decimal_float(self.temperature, "[Generate] Temperature")
-        self.check_decimal_float(self.presence_penalty, "[Generate] Presence penalty")
-        self.check_decimal_float(self.frequency_penalty, "[Generate] Frequency penalty")
-        self.check_nonnegative_number(self.max_tokens, "[Generate] Max tokens")
-        self.check_decimal_float(self.top_p, "[Generate] Top P")
-        self.check_empty(self.llm_id, "[Generate] LLM")
+        self.check_decimal_float(self.temperature, "Temperature")
+        self.check_decimal_float(self.presence_penalty, "Presence penalty")
+        self.check_decimal_float(self.frequency_penalty, "Frequency penalty")
+        self.check_nonnegative_number(self.max_tokens, "Max tokens")
+        self.check_decimal_float(self.top_p, "Top P")
+        self.check_empty(self.llm_id, "LLM")
 
     def gen_conf(self):
         conf = {}
@@ -82,7 +73,7 @@ class LLMParam(ComponentParamBase):
 class LLM(ComponentBase):
     component_name = "LLM"
 
-    def get_input_elements(self):
+    def get_input_elements(self) -> dict[str, Any]:
         res = self.get_input_elements_from_text(self._param.sys_prompt)
         for prompt in self._param.prompts:
             d = self.get_input_elements_from_text(prompt["content"])
@@ -92,29 +83,31 @@ class LLM(ComponentBase):
     async def _invoke(self, **kwargs):
         def replace_ids(cnt, start_idx, prefix):
             patt = []
-            for r in re.finditer(r"ID: %s_([0-9]+)\n", cnt, flags=re.DOTALL):
+            for r in re.finditer(r"ID: %s_([0-9]+)\n"%prefix, cnt, flags=re.DOTALL):
                 idx = int(r.group(1))
                 patt.append((f"ID: {prefix}_{idx}", f"ID: {prefix}_{idx+start_idx}"))
             for p, r in patt:
+                cnt = cnt.replace(p, r)
                 cnt = re.sub(r, p, cnt, flags=re.DOTALL)
             return cnt
+
+        def clean_formated_answer(ans: str) -> str:
+            ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+            ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
+            return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
         vars = self.get_input_elements()
         args = {}
         references = {"chunks": [], "doc_aggs": []}
         prompt = self._param.sys_prompt
-        for k in vars.keys():
-            cpn_id, var_nm = k.split("@")
-            cpn = self._canvas.get_component(cpn_id)
-            if not cpn:
-                raise Exception(f"Can't find variable: '{var_nm}'")
-            ref = self._canvas.get_variable_value(f"{cpn_id}@_references")
-            if ref:
-                prompt = replace_ids(prompt, len(references["chunks"]), cpn_id)
+        for k, o in vars.items():
+            ref = o["_retrival"]
+            if o["_retrival"]:
+                prompt = replace_ids(prompt, len(references["chunks"]), o["_cpn_id"])
                 references["chunks"].extend(ref["chunks"])
                 references["doc_aggs"].extend(ref["doc_aggs"])
-            args[k] = self._canvas.get_variable_value(k)
+            args[k] = o["value"]
             if not isinstance(args[k], str):
                 try:
                     args[k] = json.dumps(args[k], ensure_ascii=False)
@@ -123,67 +116,67 @@ class LLM(ComponentBase):
             self.set_input_value(k, args[k])
 
         prompt = self._param.sys_prompt
-        msg = self._canvas.get_history(self._param.message_history_window_size)
+        msg = self._canvas.get_history(self._param.message_history_window_size)[:-1]
         msg.extend(deepcopy(self._param.prompts))
-        prompt = prompt.format(**args)
+        prompt = self.string_format(prompt, args)
         for m in msg:
-            m["content"] = m["content"].format(**args)
-        prompt += citation_prompt() if references["chunks"] else ""
+            m["content"] = self.string_format(m["content"], args)
+        if references["chunks"]:
+            prompt += citation_prompt()
+            self._canvas.retrival = references
+        error = ""
 
         if self._param.output_structure:
             prompt += "\nThe output MUST follow this JSON format:\n"+json.dumps(self._param.output_structure, ensure_ascii=False, indent=2)
             for _ in range(self._param.retry_times+1):
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
-                ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
+                error = ""
+                async with self.thread_limiter:
+                    ans = await trio.to_thread.run_sync(chat_mdl.chat, msg[0]["content"], msg[1:], self._param.gen_conf())
                 msg.pop(0)
                 if ans.find("**ERROR**") >= 0:
                     logging.error(f"Extractor._chat got error. response: {ans}")
-                    raise Exception(ans)
-                ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-                ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
-                ans = re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
+                    error = ans
+                    continue
                 try:
-                    self._param.outputs["structured_content"] = json_repair.loads(ans)
+                    self.set_output("structured_content", json_repair.loads(clean_formated_answer(ans)))
                     return
                 except Exception as e:
                     msg.append({"role": "user", "content": "The answer can't not be parsed as JSON"})
+                    error = "The answer can't not be parsed as JSON"
+            if error:
+                self.set_output("_ERROR", error)
+            return
 
+        print(prompt, "\n####################################")
         downstreams = self._canvas.get_component(self._id)["downstream"]
-        if kwargs.get("stream") and not downstreams and not self._param.output_structure:
-            self._param.outputs["content"]["value"] = partial(self.stream_output, chat_mdl, prompt, msg)
-
-        if self._param.output_structure:
-            prompt += "\nThe output MUST follow this JSON format:\n"+json.dumps(self._param.output_structure, ensure_ascii=False, indent=2)
+        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure:
+            self.set_output("content", partial(self._stream_output, chat_mdl, prompt, msg, references))
+            return
 
         for _ in range(self._param.retry_times+1):
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
-            ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
+            error = ""
+            async with self.thread_limiter:
+                ans = await trio.to_thread.run_sync(chat_mdl.chat, msg[0]["content"], msg[1:], self._param.gen_conf())
             msg.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"Extractor._chat got error. response: {ans}")
-                raise Exception(ans)
-            if self._param.output_structure:
-                ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-                ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
-                ans = re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
-                try:
-                    self._param.outputs["structured_content"]["value"] = json_repair.loads(ans)
-                    return
-                except Exception as e:
-                    msg.append({"role": "user", "content": "The answer can't not be parsed as JSON"})
-            else:
-                self._param.outputs["content"]["value"] = ans
-                return
+                error = ans
+                continue
+            self.set_output("content", ans)
 
-    def stream_output(self, chat_mdl, prompt, msg):
+        if error:
+            self.set_output("_ERROR", error)
+
+    def _stream_output(self, chat_mdl, prompt, msg, ref):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
         answer = ""
         for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
-            res = {"content": ans, "reference": []}
+            yield ans[len(answer):]
             answer = ans
-            yield res
 
-        self._param.outputs["content"]["value"] = answer
+        self.set_output("content", answer)
 
     def debug(self, **kwargs):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)

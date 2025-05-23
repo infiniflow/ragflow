@@ -13,10 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from agent.component.fillup import FillupParam, Fillup
+from agent.component.fillup import UserFillUpParam, UserFillUp
 
 
-class BeginParam(FillupParam):
+class BeginParam(UserFillUpParam):
 
     """
     Define the Begin component parameters.
@@ -25,29 +25,12 @@ class BeginParam(FillupParam):
         super().__init__()
         self.mode = "conversational"
         self.prologue = "Hi! I'm your smart assistant. What can I do for you?"
-        self.globals = {
-            "sys.query": "",
-            "sys.user_id": "",
-            "sys.convsation_turns": 0,
-            "sys.files": []
-        }
 
     def check(self):
         self.check_valid_value(self.mode, "The 'mode' should be either `conversational` or `task`", ["conversational", "task"])
-        return True
 
 
-class Begin(Fillup):
+class Begin(UserFillUp):
     component_name = "Begin"
 
-    def _invoke(self, **kwargs):
-        if self.mode == "conversational":
-            self._param.outputs["assistant"]["value"] = self.prologue
-            return
-
-        for k in self._param.inputs.keys():
-            self._param.outputs[k]["value"] = self._param.inputs[k]["value"]
-
-
-
-
+    async def _invoke(self, **kwargs): ...

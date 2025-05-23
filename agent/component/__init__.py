@@ -16,66 +16,39 @@
 
 import importlib
 from .begin import Begin, BeginParam
-from .llm import Generate, GenerateParam
-from agent.tools.retrieval import Retrieval, RetrievalParam
-from .answer import Answer, AnswerParam
+from .llm import LLM, LLMParam
 from .categorize import Categorize, CategorizeParam
 from .switch import Switch, SwitchParam
-from .relevant import Relevant, RelevantParam
 from .message import Message, MessageParam
-from .rewrite import RewriteQuestion, RewriteQuestionParam
-from .keyword import KeywordExtract, KeywordExtractParam
-from .concentrator import Concentrator, ConcentratorParam
-from agent.tools.baidu import Baidu, BaiduParam
-from agent.tools.duckduckgo import DuckDuckGo, DuckDuckGoParam
-from agent.tools.wikipedia import Wikipedia, WikipediaParam
-from agent.tools.pubmed import PubMed, PubMedParam
-from agent.tools.arxiv import ArXiv, ArXivParam
-from agent.tools.google import Google, GoogleParam
-from agent.tools.bing import Bing, BingParam
-from agent.tools.googlescholar import GoogleScholar, GoogleScholarParam
-from agent.tools.deepl import DeepL, DeepLParam
-from agent.tools.github import GitHub, GitHubParam
-from agent.tools.baidufanyi import BaiduFanyi, BaiduFanyiParam
-from agent.tools.qweather import QWeather, QWeatherParam
-from agent.tools.exesql import ExeSQL, ExeSQLParam
-from agent.tools.yahoofinance import YahooFinance, YahooFinanceParam
-from agent.tools.wencai import WenCai, WenCaiParam
-from agent.tools.jin10 import Jin10, Jin10Param
-from agent.tools.tushare import TuShare, TuShareParam
-from agent.tools.akshare import AkShare, AkShareParam
-from agent.tools.crawler import Crawler, CrawlerParam
-from agent.tools.invoke import Invoke, InvokeParam
-from .message import Template, TemplateParam
-from agent.tools.email import Email, EmailParam
 from .iteration import Iteration, IterationParam
 from .iterationitem import IterationItem, IterationItemParam
 from .code import Code, CodeParam
+from .fillup import UserFillUp, UserFillUpParam
 
 
 def component_class(class_name):
     m = importlib.import_module("agent.component")
-    c = getattr(m, class_name)
-    return c
+    try:
+        return getattr(m, class_name)
+    except:
+        return getattr(importlib.import_module("agent.tools"), class_name)
 
 
 __all__ = [
     "Begin",
     "BeginParam",
-    "Generate",
-    "GenerateParam",
-    "Retrieval",
-    "RetrievalParam",
-    "Answer",
-    "AnswerParam",
+    "UserFillUp",
+    "UserFillUpParam",
+    "LLMParam",
+    "LLM",
     "Categorize",
     "CategorizeParam",
     "Switch",
     "SwitchParam",
-    "Relevant",
-    "RelevantParam",
     "Message",
-    "MessageParam",
+    "MessageParam"
+]
+"""
     "RewriteQuestion",
     "RewriteQuestionParam",
     "KeywordExtract",
@@ -133,4 +106,4 @@ __all__ = [
     "Code",
     "CodeParam",
     "component_class"
-]
+"""

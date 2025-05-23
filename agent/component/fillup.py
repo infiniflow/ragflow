@@ -13,8 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from functools import partial
-import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
@@ -23,16 +21,16 @@ class UserFillUpParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
 
-    def check(self):
+    def check(self) -> bool:
         return True
 
 
 class UserFillUp(ComponentBase):
     component_name = "UserFillUp"
 
-    def _invoke(self, **kwargs):
+    async def _invoke(self, **kwargs):
         for k in self._param.inputs.keys():
-            self._param.outputs[k]["value"] = self._param.inputs[k]["value"]
+            self.set_output(k, self.get_input(k))
 
 
 

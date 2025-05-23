@@ -81,11 +81,7 @@ class ToolBase(ComponentBase):
         for k,p in self._param.inputs.items():
             if not p.get("ref"):
                 continue
-            cpn_id, var_nm = p["ref"].split("@")
-            cpn = self._canvas.get_component(cpn_id)
-            if not cpn:
-                raise Exception(f"Can't find variable: '{var_nm}'")
-            kwargs[k] = cpn["obj"].output(var_nm)
+            kwargs[k] = self._canvas.get_variable_value(p.get("ref"))
         try:
             await self._invoke(**kwargs)
         except Exception as e:
