@@ -789,7 +789,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       examples: 'Examples',
       to: 'To',
       msg: 'Messages',
-      messagePlaceholder: 'message',
+      msgTip:
+        'Output the variable content of the upstream component or the text entered by yourself.',
+      messagePlaceholder: `Please enter your message content, use '/' to quickly insert variables.`,
       messageMsg: 'Please input message or delete this field.',
       addField: 'Add option',
       addMessage: 'Add message',
@@ -813,7 +815,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
       rewriteQuestionDescription: `A component that rewrites a user query from the Interact component, based on the context of previous dialogues.`,
       messageDescription:
-        "A component that sends out a static message. If multiple messages are supplied, it randomly selects one to send. Ensure its downstream is 'Interact', the interface component.",
+        'This component returns the final data output of the workflow along with predefined message content. ',
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
       switchDescription: `A component that evaluates conditions based on the output of previous components and directs the flow of execution accordingly. It allows for complex branching logic by defining cases and specifying actions for each case or default action if no conditions are met.`,
       wikipediaDescription: `A component that searches from wikipedia.org, using TopN to specify the number of search results. It supplements the existing knowledge bases.`,

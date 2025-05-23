@@ -1,6 +1,7 @@
+import { BlockButton } from '@/components/ui/button';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Form, Input, Select } from 'antd';
+import { MinusCircleOutlined } from '@ant-design/icons';
+import { Form, Input, Select } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
 import { FormCollapse } from '../components/dynamic-input-variable';
@@ -49,14 +50,9 @@ export const DynamicInputVariable = ({
               </div>
             ))}
             <Form.Item>
-              <Button
-                type="dashed"
-                onClick={() => add()}
-                block
-                icon={<PlusOutlined />}
-              >
+              <BlockButton onClick={() => add()}>
                 {t('flow.addVariable')}
-              </Button>
+              </BlockButton>
             </Form.Item>
           </>
         )}

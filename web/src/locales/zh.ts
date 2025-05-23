@@ -789,7 +789,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       examples: '示例',
       to: '下一步',
       msg: '消息',
-      messagePlaceholder: '消息',
+      msgTip: '输出上游组件的变量内容或者自己输入的文本。',
+      messagePlaceholder: '请输入您的消息内容，使用‘/’快速插入变量。',
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       addMessage: '新增消息',
@@ -813,7 +814,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:
-        '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
+        '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
       switchDescription: `该组件用于根据前面组件的输出评估条件，并相应地引导执行流程。通过定义各种情况并指定操作，或在不满足条件时采取默认操作，实现复杂的分支逻辑。`,
       wikipediaDescription: `此组件用于从 https://www.wikipedia.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,

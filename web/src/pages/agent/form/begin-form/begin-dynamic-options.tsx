@@ -49,11 +49,7 @@ export function BeginDynamicOptions() {
           </div>
         );
       })}
-      <BlockButton
-        onClick={() => append({ value: '' })}
-        variant={'outline'}
-        type="button"
-      >
+      <BlockButton onClick={() => append({ value: '' })} type="button">
         {t('flow.addVariable')}
       </BlockButton>
     </div>
