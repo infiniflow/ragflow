@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { AgentDialogueMode } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
-import QueryTable from './query-table';
+import { QueryTable } from './query-table';
 import { useEditQueryRecord } from './use-edit-query';
 
 const ModeOptions = buildSelectOptions([
