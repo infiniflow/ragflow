@@ -796,6 +796,19 @@ class UserCanvasVersion(DataBaseModel):
         db_table = "user_canvas_version"
 
 
+class MCPServer(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    name = CharField(max_length=255, null=False, help_text="MCP Server name")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    url = CharField(max_length=2048, null=False, help_text="MCP Server URL")
+    server_type = CharField(max_length=32, null=False, help_text="MCP Server type")
+    description = TextField(null=True, help_text="MCP Server description")
+    headers = JSONField(null=True, default={}, help_text="MCP Server additional request headers")
+
+    class Meta:
+        db_table = "mcp_server"
+
+
 def migrate_db():
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
     try:

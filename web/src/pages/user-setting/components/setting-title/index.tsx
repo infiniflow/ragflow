@@ -1,6 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { SettingOutlined } from '@ant-design/icons';
-import { Button, Flex, Typography } from 'antd';
+import { Button, Flex, Space, Typography } from 'antd';
+import { ReactElement } from 'react';
 
 const { Title, Paragraph } = Typography;
 
@@ -8,6 +9,8 @@ interface IProps {
   title: string;
   description: string;
   showRightButton?: boolean;
+  rightButtonIcon?: ReactElement<any>;
+  rightButtonTitle?: string;
   clickButton?: () => void;
 }
 
@@ -16,6 +19,8 @@ const SettingTitle = ({
   description,
   clickButton,
   showRightButton = false,
+  rightButtonIcon,
+  rightButtonTitle,
 }: IProps) => {
   const { t } = useTranslate('setting');
 
@@ -28,8 +33,10 @@ const SettingTitle = ({
       {showRightButton && (
         <Button type={'primary'} onClick={clickButton}>
           <Flex align="center" gap={4}>
-            <SettingOutlined />
-            {t('systemModelSettings')}
+            <Space>
+              {rightButtonIcon || <SettingOutlined />}
+              {rightButtonTitle || t('systemModelSettings')}
+            </Space>
           </Flex>
         </Button>
       )}
