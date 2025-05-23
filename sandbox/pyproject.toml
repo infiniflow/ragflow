@@ -1,0 +1,28 @@
+[project]
+name = "gvisor-sandbox"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.12",
+    "httpx>=0.28.1",
+    "pydantic>=2.11.4",
+    "requests>=2.32.3",
+    "slowapi>=0.1.9",
+    "uvicorn>=0.34.2",
+]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.29.1",
+]
+
+[tool.ruff]
+line-length = 200
+
+[tool.ruff.lint]
+extend-select = ["C4", "SIM", "TCH"]
