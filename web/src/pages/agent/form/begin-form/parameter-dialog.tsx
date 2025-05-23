@@ -25,11 +25,12 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { BeginQueryType, BeginQueryTypeIconMap } from '../../constant';
 import { BeginQuery } from '../../interface';
-import { BeginDynamicOptions } from './next-begin-dynamic-options';
+import { BeginDynamicOptions } from './begin-dynamic-options';
 
 type ModalFormProps = {
   initialValue: BeginQuery;
   otherThanCurrentQuery: BeginQuery[];
+  submit(values: any): void;
 };
 
 const FormId = 'BeginParameterForm';
@@ -37,6 +38,7 @@ const FormId = 'BeginParameterForm';
 function ParameterForm({
   initialValue,
   otherThanCurrentQuery,
+  submit,
 }: ModalFormProps) {
   const FormSchema = z.object({
     type: z.string(),
@@ -51,7 +53,9 @@ function ParameterForm({
       ),
     optional: z.boolean(),
     name: z.string().trim().min(1),
-    options: z.array(z.string().or(z.boolean()).or(z.number())).optional(),
+    options: z
+      .array(z.object({ value: z.string().or(z.boolean()).or(z.number()) }))
+      .optional(),
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -94,11 +98,17 @@ function ParameterForm({
   });
 
   useEffect(() => {
-    form.reset(initialValue);
+    form.reset({
+      ...initialValue,
+      options: initialValue.options?.map((x) => ({ value: x })),
+    });
   }, [form, initialValue]);
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log('🚀 ~ onSubmit ~ data:', data);
+    const values = { ...data, options: data.options?.map((x) => x.value) };
+    console.log('🚀 ~ onSubmit ~ values:', values);
+
+    submit(values);
   }
 
   return (
@@ -176,6 +186,7 @@ export function ParameterDialog({
   initialValue,
   hideModal,
   otherThanCurrentQuery,
+  submit,
 }: ModalFormProps & IModalProps<BeginQuery>) {
   const { t } = useTranslation();
 
@@ -188,6 +199,7 @@ export function ParameterDialog({
         <ParameterForm
           initialValue={initialValue}
           otherThanCurrentQuery={otherThanCurrentQuery}
+          submit={submit}
         ></ParameterForm>
         <DialogFooter>
           <Button type="submit" form={FormId}>
