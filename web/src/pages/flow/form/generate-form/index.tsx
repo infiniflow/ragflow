@@ -8,13 +8,18 @@ import LLMToolsSelect from '@/components/llm-tools-select';
 import { useState } from 'react';
 import LLMMcpServerSelect from '@/components/llm-mcp-server-select';
 
-const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
+const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   const [isCurrentLlmSupportTools, setCurrentLlmSupportTools] = useState(false);
 
   const onLlmSelectChanged = (_: string, option: any) => {
     setCurrentLlmSupportTools(option.is_tools);
+
+    if (!option.is_tools) {
+      node!!.data.form.llm_enabled_tools = [];
+      node!!.data.form.llm_enabled_mcp_servers = [];
+    }
   };
 
   return (
