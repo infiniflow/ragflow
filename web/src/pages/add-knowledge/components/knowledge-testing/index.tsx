@@ -3,11 +3,13 @@ import { Flex, Form } from 'antd';
 import TestingControl from './testing-control';
 import TestingResult from './testing-result';
 
+import { useState } from 'react';
 import styles from './index.less';
 
 const KnowledgeTesting = () => {
   const [form] = Form.useForm();
   const { testChunk } = useTestChunkRetrieval();
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
 
   const handleTesting = async (documentIds: string[] = []) => {
     const values = await form.validateFields();
@@ -23,8 +25,13 @@ const KnowledgeTesting = () => {
       <TestingControl
         form={form}
         handleTesting={handleTesting}
+        selectedDocumentIds={selectedDocumentIds}
       ></TestingControl>
-      <TestingResult handleTesting={handleTesting}></TestingResult>
+      <TestingResult
+        handleTesting={handleTesting}
+        selectedDocumentIds={selectedDocumentIds}
+        setSelectedDocumentIds={setSelectedDocumentIds}
+      ></TestingResult>
     </Flex>
   );
 };
