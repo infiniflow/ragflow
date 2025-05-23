@@ -60,6 +60,15 @@ The switch is disabled by default. When enabled, RAGFlow performs the following 
 Using a knowledge graph in a retrieval test will significantly increase the time to receive a response.
 :::
 
+### Cross-language search
+
+To perform a cross-language search, select one or more target languages from the dropdown menu. The system’s default chat model will then translate your query entered in the Test text field into the selected target language(s). This translation ensures accurate semantic matching across languages, allowing you to retrieve relevant results regardless of language differences.
+
+:::tip NOTE
+- When selecting target languages, please ensure that these languages are present in the knowledge base to guarantee an effective search.
+- If no target language is selected, the system will search only in the language of your query, which may cause relevant information in other languages to be missed.
+:::
+
 ### Test text
 
 This field is where you put in your testing query.
