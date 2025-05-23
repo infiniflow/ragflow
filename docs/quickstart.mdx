@@ -205,7 +205,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 <APITable>
 ```
 
-| RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
+| RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages?:collision: | Stable?                  |
 | ------------------- | --------------- | ----------------------------------------- | ------------------------ |
 | `v0.18.0`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
 | `v0.18.0-slim`      | &approx;2       | ❌                                        | Stable release           |
@@ -215,6 +215,15 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 ```mdx-code-block
 </APITable>
 ```
+
+:::danger IMPORTANT
+:collision: The embedding models included in `v0.18.0` and `nightly` are:
+
+- BAAI/bge-large-zh-v1.5
+- maidalun1020/bce-embedding-base_v1
+
+Please note these two embedding models support both English and Chinese. If your knowledge base contains other languages, the performance may be COMPROMISED.
+:::
 
 4. Check the server status after having the server up and running:
 
