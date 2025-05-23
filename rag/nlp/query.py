@@ -71,7 +71,19 @@ class FulltextQueryer:
             txt = otxt
         return txt
 
+    @staticmethod
+    def addSpaceEnNumZh(txt):
+        # 英文或英文+数字后跟中文
+        txt = re.sub(r'([A-Za-z]+[0-9]+)([\u4e00-\u9fa5]+)', r'\1 \2', txt)
+        # 英文后跟中文
+        txt = re.sub(r'([A-Za-z])([\u4e00-\u9fa5]+)', r'\1 \2', txt)
+        # 中文后跟英文或英文+数字
+        txt = re.sub(r'([\u4e00-\u9fa5]+)([A-Za-z]+[0-9]+)', r'\1 \2', txt)
+        txt = re.sub(r'([\u4e00-\u9fa5]+)([A-Za-z])', r'\1 \2', txt)
+        return txt
+
     def question(self, txt, tbl="qa", min_match: float = 0.6):
+        txt = FulltextQueryer.addSpaceEnNumZh(txt)
         txt = re.sub(
             r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
             " ",
