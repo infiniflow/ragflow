@@ -1,4 +1,5 @@
-import { BlockButton } from '@/components/ui/button';
+import { Collapse } from '@/components/collapse';
+import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
@@ -10,7 +11,9 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { FormTooltip } from '@/components/ui/tooltip';
 import { buildSelectOptions } from '@/utils/common-util';
+import { Plus } from 'lucide-react';
 import { useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -21,13 +24,16 @@ import { QueryTable } from './query-table';
 import { useEditQueryRecord } from './use-edit-query';
 
 const ModeOptions = buildSelectOptions([
-  (AgentDialogueMode.Conversational, AgentDialogueMode.Task),
+  AgentDialogueMode.Conversational,
+  AgentDialogueMode.Task,
 ]);
 
 const BeginForm = ({ form, node }: INextOperatorForm) => {
   const { t } = useTranslation();
 
   const query = useWatch({ control: form.control, name: 'query' });
+  const mode = useWatch({ control: form.control, name: 'mode' });
+
   const enablePrologue = useWatch({
     control: form.control,
     name: 'enablePrologue',
@@ -61,7 +67,7 @@ const BeginForm = ({ form, node }: INextOperatorForm) => {
           name={'mode'}
           render={({ field }) => (
             <FormItem>
-              <FormLabel tooltip={t('chat.setAnOpenerTip')}>Mode</FormLabel>
+              <FormLabel tooltip={t('flow.modeTip')}>Mode</FormLabel>
               <FormControl>
                 <RAGFlowSelect
                   placeholder={t('common.pleaseSelect')}
@@ -73,24 +79,26 @@ const BeginForm = ({ form, node }: INextOperatorForm) => {
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name={'enablePrologue'}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t('chat.setAnOpenerTip')}>
-                Welcome Message
-              </FormLabel>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        {mode === AgentDialogueMode.Conversational && (
+          <FormField
+            control={form.control}
+            name={'enablePrologue'}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel tooltip={t('flow.openingSwitchTip')}>
+                  {t('flow.openingSwitch')}
+                </FormLabel>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
         {enablePrologue && (
           <FormField
             control={form.control}
@@ -98,7 +106,7 @@ const BeginForm = ({ form, node }: INextOperatorForm) => {
             render={({ field }) => (
               <FormItem>
                 <FormLabel tooltip={t('chat.setAnOpenerTip')}>
-                  {t('chat.setAnOpener')}
+                  {t('flow.openingCopy')}
                 </FormLabel>
                 <FormControl>
                   <Textarea
@@ -118,14 +126,32 @@ const BeginForm = ({ form, node }: INextOperatorForm) => {
           name={'query'}
           render={() => <div></div>}
         />
-        <QueryTable
-          data={query}
-          showModal={showModal}
-          deleteRecord={handleDeleteRecord}
-        ></QueryTable>
-        <BlockButton onClick={() => showModal()}>
-          {t('flow.addItem')}
-        </BlockButton>
+        <Collapse
+          title={
+            <div>
+              {t('flow.input')}
+              <FormTooltip tooltip={t('flow.beginInputTip')}></FormTooltip>
+            </div>
+          }
+          rightContent={
+            <Button
+              variant={'ghost'}
+              onClick={(e) => {
+                e.preventDefault();
+                showModal();
+              }}
+            >
+              <Plus />
+            </Button>
+          }
+        >
+          <QueryTable
+            data={query}
+            showModal={showModal}
+            deleteRecord={handleDeleteRecord}
+          ></QueryTable>
+        </Collapse>
+
         {visible && (
           <ParameterDialog
             visible={visible}
