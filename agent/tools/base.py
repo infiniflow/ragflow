@@ -45,6 +45,7 @@ class ToolParamBase(ComponentParamBase):
         self.inputs = {}
         for k,p in self.meta["parameters"].items():
             self.inputs[k] = deepcopy(p)
+            self.inputs[k]["ref"] = None
 
     def get_meta(self):
         return {

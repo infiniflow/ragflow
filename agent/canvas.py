@@ -202,6 +202,8 @@ class Canvas:
                 for i in range(f, t):
                     cpn = self.get_component_obj(self.path[i])
                     for var, o in cpn.get_input_elements().items():
+                        if not o.get("ref"):
+                            continue
                         cpn.set_input_value(var, self.get_variable_value(o["ref"]))
                     nursery.start_soon(lambda: cpn.invoke(**cpn.get_input()))
 

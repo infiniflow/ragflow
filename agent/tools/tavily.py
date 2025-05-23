@@ -79,6 +79,7 @@ class TavilySearchParam(ToolParamBase):
         self.include_image_descriptions = False
         self.include_domains = []
         self.exclude_domains = []
+        self.inputs["query"]["ref"] = "sys.query"
 
     def check(self):
         self.check_valid_value(self.topic, "Tavily topic: should be in 'general/news'", ["general", "news"])
@@ -125,7 +126,10 @@ class TavilySearch(ToolBase, ABC):
     async def _invoke(self, **kwargs):
         self.tavily_client = TavilyClient(api_key=self._param.api_key)
         last_e = None
-        for _ in range(self._param.retry_times):
+        for fld in ["search_depth", "topic", "max_results", "days", "include_answer", "include_raw_content", "include_images", "include_image_descriptions", "include_domains", "exclude_domains"]:
+            if fld not in kwargs:
+                kwargs[fld] = getattr(self._param, fld)
+        for _ in range(self._param.retry_times+1):
             try:
                 res = self.tavily_client.search(**kwargs)
                 self._retrieve_chunks(res)
@@ -134,4 +138,4 @@ class TavilySearch(ToolBase, ABC):
                 last_e = e
                 logging.error(f"Tavily error: {e}")
         if last_e:
-            raise last_e
+            self.set_output("_ERROR", str(last_e))

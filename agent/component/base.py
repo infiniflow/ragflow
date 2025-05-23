@@ -454,8 +454,9 @@ class ComponentBase(ABC):
 
         res = {}
         for k, o in self._param.inputs.items():
-            res[k] = self._canvas.get_variable_value(k if "ref" not in o else o["ref"])
-            self.set_input_value(k, res[k])
+            if o.get("ref") or k.find("@") > 0:
+                res[k] = self._canvas.get_variable_value(k if not o.get("ref") else o["ref"])
+                self.set_input_value(k, res[k])
         return res
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
