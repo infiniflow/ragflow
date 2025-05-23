@@ -105,6 +105,7 @@ class ExeSQL(Generate, ABC):
         sql_res = []
         for i in range(len(input_list)):
             single_sql = input_list[i]
+            single_sql = single_sql.replace('```','')
             while self._loop <= self._param.loop:
                 self._loop += 1
                 if not single_sql:
