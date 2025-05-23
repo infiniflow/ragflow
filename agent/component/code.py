@@ -79,15 +79,23 @@ class Code(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         arguments = {}
         for input in self._param.arguments:
-            assert "@" in input["component_id"], "Each code argument should bind to a specific compontent"
-            component_id = input["component_id"].split("@")[0]
-            refered_component_key = input["component_id"].split("@")[1]
-            refered_component = self._canvas.get_component(component_id)["obj"]
+            if "@" in input["component_id"]:
+                component_id = input["component_id"].split("@")[0]
+                refered_component_key = input["component_id"].split("@")[1]
+                refered_component = self._canvas.get_component(component_id)["obj"]
 
-            for param in refered_component._param.query:
-                if param["key"] == refered_component_key:
-                    if "value" in param:
-                        arguments[input["name"]] = param["value"]
+                for param in refered_component._param.query:
+                    if param["key"] == refered_component_key:
+                        if "value" in param:
+                            arguments[input["name"]] = param["value"]
+            else:
+                cpn = self._canvas.get_component(input["component_id"])["obj"]
+                if cpn.component_name.lower() == "answer":
+                    arguments[input["name"]] = self._canvas.get_history(1)[0]["content"]
+                    continue
+                _, out = cpn.output(allow_partial=False)
+                if not out.empty:
+                    arguments[input["name"]] = "\n".join(out["content"])
 
         return self._execute_code(
             language=self._param.lang,
