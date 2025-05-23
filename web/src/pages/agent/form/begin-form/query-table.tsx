@@ -4,7 +4,6 @@ import { Collapse, Space, Table, Tooltip } from 'antd';
 import { BeginQuery } from '../../interface';
 
 import { useTranslation } from 'react-i18next';
-import styles from './index.less';
 
 interface IProps {
   data: BeginQuery[];
@@ -71,11 +70,10 @@ const QueryTable = ({ data, deleteRecord, showModal }: IProps) => {
   return (
     <Collapse
       defaultActiveKey={['1']}
-      className={styles.dynamicInputVariable}
       items={[
         {
           key: '1',
-          label: <span className={styles.title}>{t('flow.input')}</span>,
+          label: <span>{t('flow.input')}</span>,
           children: (
             <Table<BeginQuery>
               columns={columns}

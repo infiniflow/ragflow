@@ -53,14 +53,14 @@ def corpNorm(nm, add_region=True):
     nm = re.sub(r"&amp;", "&", nm)
     nm = re.sub(r"[\(\)（）\+'\"\t \*\\【】-]+", " ", nm)
     nm = re.sub(
-        r"([—-]+.*| +co\..*|corp\..*| +inc\..*| +ltd.*)", "", nm, 10000, re.IGNORECASE
+        r"([—-]+.*| +co\..*|corp\..*| +inc\..*| +ltd.*)", "", nm, count=10000, flags=re.IGNORECASE
     )
     nm = re.sub(
         r"(计算机|技术|(技术|科技|网络)*有限公司|公司|有限|研发中心|中国|总部)$",
         "",
         nm,
-        10000,
-        re.IGNORECASE,
+        count=10000,
+        flags=re.IGNORECASE,
     )
     if not nm or (len(nm) < 5 and not regions.isName(nm[0:2])):
         return nm

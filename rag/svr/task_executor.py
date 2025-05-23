@@ -368,6 +368,10 @@ async def build_chunks(task, progress_callback):
 
         docs_to_tag = []
         for d in docs:
+            task_canceled = TaskService.do_cancel(task["id"])
+            if task_canceled:
+                progress_callback(-1, msg="Task has been canceled.")
+                return
             if settings.retrievaler.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
             else:
@@ -589,6 +593,10 @@ async def do_handle_task(task):
 
     for b in range(0, len(chunks), es_bulk_size):
         doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + es_bulk_size], search.index_name(task_tenant_id), task_dataset_id))
+        task_canceled = TaskService.do_cancel(task_id)
+        if task_canceled:
+            progress_callback(-1, msg="Task has been canceled.")
+            return
         if b % 128 == 0:
             progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
         if doc_store_result:
