@@ -1,4 +1,4 @@
-# RAGFlow Code Executor Manager
+# RAGFlow Sandbox
 
 A secure, pluggable code execution backend for RAGFlow and beyond.
 
@@ -25,8 +25,8 @@ A secure, pluggable code execution backend for RAGFlow and beyond.
 - Linux distro compatible with gVisor
 - [gVisor](https://gvisor.dev/docs/user_guide/install/)
 - Docker >= `24.0.0`
-- Docker Compose >= `v2.26.1` like [RAGFlow](https://github.com/infiniflow/ragflow).
-- [uv](https://docs.astral.sh/uv/) as package and project manager.
+- Docker Compose >= `v2.26.1` like [RAGFlow](https://github.com/infiniflow/ragflow)
+- [uv](https://docs.astral.sh/uv/) as package and project manager
 
 #### Optional (Recommended)
 
@@ -134,7 +134,7 @@ make logs                                 # With Make
 
 ## 🔐 Security
 
-The RAGFlow Code Executor Manager is designed to balance security and usability, offering solid protection without compromising developer experience.
+The RAGFlow sandbox is designed to balance security and usability, offering solid protection without compromising developer experience.
 
 ### ✅ gVisor Isolation
 
