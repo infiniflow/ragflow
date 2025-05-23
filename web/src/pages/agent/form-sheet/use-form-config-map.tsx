@@ -49,24 +49,27 @@ export function useFormConfigMap() {
         mode: AgentDialogueMode.Conversational,
       },
       schema: z.object({
-        enablePrologue: z.boolean(),
+        enablePrologue: z.boolean().optional(),
         prologue: z
           .string()
           .min(1, {
             message: t('common.namePlaceholder'),
           })
-          .trim(),
+          .trim()
+          .optional(),
         mode: z.string(),
-        query: z.array(
-          z.object({
-            key: z.string(),
-            type: z.string(),
-            value: z.string(),
-            optional: z.boolean(),
-            name: z.string(),
-            options: z.array(z.union([z.number(), z.string(), z.boolean()])),
-          }),
-        ),
+        query: z
+          .array(
+            z.object({
+              key: z.string(),
+              type: z.string(),
+              value: z.string(),
+              optional: z.boolean(),
+              name: z.string(),
+              options: z.array(z.union([z.number(), z.string(), z.boolean()])),
+            }),
+          )
+          .optional(),
       }),
     },
     [Operator.Retrieval]: {

@@ -455,7 +455,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       modelTip: 'Large language chat model',
       modelMessage: 'Please select!',
       modelEnabledTools: 'Enabled tools',
-      modelEnabledToolsTip: 'Please select one or more tools for the chat model to use. It takes no effect for models not supporting tool call.',
+      modelEnabledToolsTip:
+        'Please select one or more tools for the chat model to use. It takes no effect for models not supporting tool call.',
       freedom: 'Freedom',
       improvise: 'Improvise',
       precise: 'Precise',
@@ -1268,14 +1269,22 @@ This delimiter is used to split the input text into several text pieces echo of 
       codeDescription: 'It allows developers to write custom Python logic.',
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
+      openingSwitch: 'Opening switch',
+      openingCopy: 'Opening copy',
+      openingSwitchTip:
+        'Your users will see this welcome message at the beginning.',
+      modeTip: 'The mode defines how the workflow is initiated.',
+      beginInputTip:
+        'By defining input parameters, this content can be accessed by other components in subsequent processes.',
     },
     llmTools: {
       bad_calculator: {
-        name: "Calculator",
-        description: "A tool to calculate the sum of two numbers (will give wrong answer)",
+        name: 'Calculator',
+        description:
+          'A tool to calculate the sum of two numbers (will give wrong answer)',
         params: {
-          a: "The first number",
-          b: "The second number",
+          a: 'The first number',
+          b: 'The second number',
         },
       },
     },
