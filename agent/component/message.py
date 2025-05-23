@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import random
 import re
 from functools import partial
 from agent.component.base import ComponentBase, ComponentParamBase
@@ -26,7 +27,7 @@ class MessageParam(ComponentParamBase):
     """
     def __init__(self):
         super().__init__()
-        self.content = ""
+        self.content = []
         self.stream = True
         self.outputs = {
             "content": {
@@ -63,10 +64,11 @@ class Message(ComponentBase):
 
     def _stream(self):
         s = 0
+        rand_cnt = random.choice(self._param.content)
         all_content = ""
-        for r in re.finditer(r"\{([a-z:0-9]+@[a-z0-9_.-]+|sys\.[a-z_]+)\}", self._param.content, flags=re.DOTALL):
-            all_content += self._param.content[s: r.start()]
-            yield self._param.content[s: r.start()]
+        for r in re.finditer(r"\{([a-z:0-9]+@[a-z0-9_.-]+|sys\.[a-z_]+)\}", rand_cnt, flags=re.DOTALL):
+            all_content += rand_cnt[s: r.start()]
+            yield rand_cnt[s: r.start()]
             s = r.end()
             exp = r.group(1)
             v = self._canvas.get_variable_value(exp)
@@ -83,9 +85,9 @@ class Message(ComponentBase):
                 all_content += v
                 yield v
 
-        if s < len(self._param.content):
-            all_content += self._param.content[s: ]
-            yield self._param.content[s: ]
+        if s < len(rand_cnt):
+            all_content += rand_cnt[s: ]
+            yield rand_cnt[s: ]
 
         self.set_output("content", all_content)
 
@@ -94,7 +96,8 @@ class Message(ComponentBase):
             self.set_output("content", partial(self._stream))
             return
 
-        template = Jinja2Template(self._param.content)
+        rand_cnt = random.choice(self._param.content)
+        template = Jinja2Template(rand_cnt)
         kwargs = self.get_kwargs()
 
         try:

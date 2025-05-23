@@ -28,7 +28,7 @@ class CategorizeParam(LLMParam):
     def __init__(self):
         super().__init__()
         self.category_description = {}
-        self.prompt = ""
+        self.prompts = []
 
     def check(self):
         super().check()
@@ -39,55 +39,46 @@ class CategorizeParam(LLMParam):
             if not v.get("to"):
                 raise ValueError(f"[Categorize] 'To' of category {k} can not be empty!")
 
-    def get_prompt(self, chat_hist):
-        cate_lines = []
-        for c, desc in self.category_description.items():
-            for line in desc.get("examples", "").split("\n"):
-                if not line:
-                    continue
-                cate_lines.append("USER: {}\nCategory: {}".format(line, c))
+    def update_prompt(self, chat_hist):
         descriptions = []
         for c, desc in self.category_description.items():
             if desc.get("description"):
                 descriptions.append(
-                    "\nCategory: {}\nDescription: {}".format(c, desc["description"]))
+                    "\n------\nCategory: {}\nDescription: {}".format(c, desc["description"]))
 
-        self.prompt = """
-Role: You're a text classifier. 
-Task: You need to categorize the user’s questions into {} categories, namely: {}
+        self.sys_prompt = """
+You are an advanced classification system that categorizes user questions into specific types. Analyze the input question and classify it into ONE of the following categories:
+{}
 
 Here's description of each category:
-{}
+ - {}
 
-You could learn from the following examples:
-{}
-You could learn from the above examples.
-
-Requirements:
-- Just mention the category names, no need for any additional words.
+Instructions:
+ - Consider both explicit mentions and implied context
+ - Prioritize the most specific applicable category
+ - Return only the category name without explanations
+ - Use "Other" only when no other category fits
 
 ---- Real Data ----
-USER: {}\n
+{}\n
         """.format(
-            len(self.category_description.keys()),
-            "/".join(list(self.category_description.keys())),
+            "\n - ".join(list(self.category_description.keys())),
             "\n".join(descriptions),
-            "\n\n- ".join(cate_lines),
-            chat_hist
+            "\n".join(["{}: {}".format(c["role"].upper(), c["content"]) for c in chat_hist])
         )
-        return self.prompt
 
 
 class Categorize(LLM, ABC):
     component_name = "Categorize"
 
-    def _run(self, history, **kwargs):
-        input = self.get_input()
-        input = " - ".join(input["content"]) if "content" in input else ""
+    async def _invoke(self, **kwargs):
+        msg = self._canvas.get_history(self._param.message_history_window_size)
+        self._param.update_prompt(msg)
+        args = self.get_input_elements()
+        prompt = self.string_format(self._param.sys_prompt, args)
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
-        self._canvas.set_component_infor(self._id, {"prompt":self._param.get_prompt(input),"messages":  [{"role": "user", "content": "\nCategory: "}],"conf": self._param.gen_conf()})
 
-        ans = chat_mdl.chat(self._param.get_prompt(input), [{"role": "user", "content": "\nCategory: "}],
+        ans = chat_mdl.chat(prompt, [{"role": "user", "content": "\nCategory: "}],
                             self._param.gen_conf())
         logging.debug(f"input: {input}, answer: {str(ans)}")    
         # Count the number of times each category appears in the answer.
@@ -95,13 +86,14 @@ class Categorize(LLM, ABC):
         for c in self._param.category_description.keys():
             count = ans.lower().count(c.lower())
             category_counts[c] = count
-            
-        # If a category is found, return the category with the highest count.
+
+        cpn_id = list(self._param.category_description.items())[-1][1]["to"]
         if any(category_counts.values()):
             max_category = max(category_counts.items(), key=lambda x: x[1])
-            return Categorize.be_output(self._param.category_description[max_category[0]]["to"])
+            cpn_id = self._param.category_description[max_category[0]]["to"]
 
-        return Categorize.be_output(list(self._param.category_description.items())[-1][1]["to"])
+        self.set_output("next", self._canvas.get_component_name(cpn_id))
+        self.set_output("_next", cpn_id)
 
     def debug(self, **kwargs):
         df = self._run([], **kwargs)

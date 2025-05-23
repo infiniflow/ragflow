@@ -36,7 +36,7 @@
                 "obj": {
                     "component_name": "Message",
                     "params": {
-                      "content": "{generate:0@content}"
+                      "content": ["{generate:0@content}"]
                     }
                 },
                 "downstream": [],
