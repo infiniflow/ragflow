@@ -140,3 +140,7 @@ export function formatFileSize(bytes: number, si = true, dp = 1) {
 
   return nextBytes.toFixed(dp) + ' ' + units[u];
 }
+
+export function buildSelectOptions(list: Array<string>) {
+  return list.map((x) => ({ label: x, value: x }));
+}

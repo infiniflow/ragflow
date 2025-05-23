@@ -1,4 +1,3 @@
-import { toast } from '@/components/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -26,11 +25,12 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { BeginQueryType, BeginQueryTypeIconMap } from '../../constant';
 import { BeginQuery } from '../../interface';
-import { BeginDynamicOptions } from './next-begin-dynamic-options';
+import { BeginDynamicOptions } from './begin-dynamic-options';
 
 type ModalFormProps = {
   initialValue: BeginQuery;
   otherThanCurrentQuery: BeginQuery[];
+  submit(values: any): void;
 };
 
 const FormId = 'BeginParameterForm';
@@ -38,19 +38,24 @@ const FormId = 'BeginParameterForm';
 function ParameterForm({
   initialValue,
   otherThanCurrentQuery,
+  submit,
 }: ModalFormProps) {
   const FormSchema = z.object({
     type: z.string(),
     key: z
       .string()
       .trim()
+      .min(1)
       .refine(
         (value) =>
           !value || !otherThanCurrentQuery.some((x) => x.key === value),
         { message: 'The key cannot be repeated!' },
       ),
     optional: z.boolean(),
-    options: z.array(z.string().or(z.boolean()).or(z.number())),
+    name: z.string().trim().min(1),
+    options: z
+      .array(z.object({ value: z.string().or(z.boolean()).or(z.number()) }))
+      .optional(),
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -58,6 +63,8 @@ function ParameterForm({
     defaultValues: {
       type: BeginQueryType.Line,
       optional: false,
+      key: '',
+      name: '',
     },
   });
 
@@ -91,23 +98,27 @@ function ParameterForm({
   });
 
   useEffect(() => {
-    form.reset(initialValue);
+    form.reset({
+      ...initialValue,
+      options: initialValue.options?.map((x) => ({ value: x })),
+    });
   }, [form, initialValue]);
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    toast({
-      title: 'You submitted the following values:',
-      description: (
-        <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4">
-          <code className="text-white">{JSON.stringify(data, null, 2)}</code>
-        </pre>
-      ),
-    });
+    const values = { ...data, options: data.options?.map((x) => x.value) };
+    console.log('🚀 ~ onSubmit ~ values:', values);
+
+    submit(values);
   }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} id={FormId}>
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        id={FormId}
+        className="space-y-5"
+        autoComplete="off"
+      >
         <FormField
           name="type"
           control={form.control}
@@ -127,6 +138,19 @@ function ParameterForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Key</FormLabel>
+              <FormControl>
+                <Input {...field} autoComplete="off" />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          name="name"
+          control={form.control}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Name</FormLabel>
               <FormControl>
                 <Input {...field} />
               </FormControl>
@@ -162,6 +186,7 @@ export function ParameterDialog({
   initialValue,
   hideModal,
   otherThanCurrentQuery,
+  submit,
 }: ModalFormProps & IModalProps<BeginQuery>) {
   const { t } = useTranslation();
 
@@ -174,13 +199,14 @@ export function ParameterDialog({
         <ParameterForm
           initialValue={initialValue}
           otherThanCurrentQuery={otherThanCurrentQuery}
+          submit={submit}
         ></ParameterForm>
+        <DialogFooter>
+          <Button type="submit" form={FormId}>
+            Confirm
+          </Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogFooter>
-        <Button type="submit" id={FormId}>
-          Confirm
-        </Button>
-      </DialogFooter>
     </Dialog>
   );
 }

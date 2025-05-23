@@ -205,7 +205,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 <APITable>
 ```
 
-| RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
+| RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages?:collision: | Stable?                  |
 | ------------------- | --------------- | ----------------------------------------- | ------------------------ |
 | `v0.18.0`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
 | `v0.18.0-slim`      | &approx;2       | ❌                                        | Stable release           |
@@ -215,6 +215,15 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 ```mdx-code-block
 </APITable>
 ```
+
+:::danger IMPORTANT
+:collision: The embedding models included in `v0.18.0` and `nightly` are:
+
+- BAAI/bge-large-zh-v1.5
+- maidalun1020/bce-embedding-base_v1
+
+Please note these two embedding models support both English and Chinese. If your knowledge base contains other languages, the performance may be COMPROMISED.
+:::
 
 4. Check the server status after having the server up and running:
 
@@ -257,8 +266,6 @@ To add and configure an LLM:
 1. Click on your logo on the top right of the page **>** **Model providers**:
 
    ![add llm](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
-
-   > Each RAGFlow account is able to use **text-embedding-v2** for free, an embedding model of Tongyi-Qianwen. This is why you can see Tongyi-Qianwen in the **Added models** list. And you may need to update your Tongyi-Qianwen API key at a later point.
 
 2. Click on the desired LLM and update the API key accordingly (DeepSeek-V2 in this case):
 
