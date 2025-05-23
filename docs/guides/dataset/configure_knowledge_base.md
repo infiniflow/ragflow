@@ -67,6 +67,10 @@ The following embedding models can be deployed locally:
 - BAAI/bge-large-zh-v1.5
 - maidalun1020/bce-embedding-base_v1
 
+:::danger IMPORTANT
+Please note these two embedding models support both English and Chinese. If your knowledge base contains other languages, the performance may be COMPROMISED.
+:::
+
 ### Upload file
 
 - RAGFlow's **File Management** allows you to link a file to multiple knowledge bases, in which case each target knowledge base holds a reference to the file.
