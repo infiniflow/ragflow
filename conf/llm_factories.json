@@ -3134,6 +3134,20 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "claude-opus-4-20250514",
+                    "tags": "LLM,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-sonnet-4-20250514",
+                    "tags": "LLM,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "claude-3-7-sonnet-20250219",
                     "tags": "LLM,IMAGE2TEXT,200k",
                     "max_tokens": 204800,
