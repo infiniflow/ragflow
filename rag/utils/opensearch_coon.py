@@ -217,7 +217,7 @@ class OSConnection(DocStoreConnection):
         if bqry:
             s = s.query(bqry)
         for field in highlightFields:
-            s = s.highlight(field)
+            s = s.highlight(field,force_source=True,no_match_size=30,require_field_match=False)
 
         if orderBy:
             orders = list()
@@ -269,7 +269,7 @@ class OSConnection(DocStoreConnection):
         for i in range(ATTEMPT_TIME):
             try:
                 res = self.os.get(index=(indexName),
-                                  id=chunkId, source=True, )
+                                  id=chunkId, _source=True, )
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 chunk = res["_source"]
@@ -329,7 +329,7 @@ class OSConnection(DocStoreConnection):
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
                 try:
-                    self.os.update(index=indexName, id=chunkId, doc=doc)
+                    self.os.update(index=indexName, id=chunkId, body=doc)
                     return True
                 except Exception as e:
                     logger.exception(
@@ -411,7 +411,10 @@ class OSConnection(DocStoreConnection):
             chunk_ids = condition["id"]
             if not isinstance(chunk_ids, list):
                 chunk_ids = [chunk_ids]
-            qry = Q("ids", values=chunk_ids)
+            if not chunk_ids:  # when chunk_ids is empty, delete all
+                qry = Q("match_all")
+            else:
+                qry = Q("ids", values=chunk_ids)
         else:
             qry = Q("bool")
             for k, v in condition.items():
