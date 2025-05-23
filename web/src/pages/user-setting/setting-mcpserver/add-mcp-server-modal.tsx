@@ -46,7 +46,7 @@ const AddingMcpServerModal = ({
           description: currentMcpServerInfo.description,
           serverType: currentMcpServerInfo.server_type,
           url: currentMcpServerInfo.url,
-          headers: JSON.stringify(currentMcpServerInfo.headers),
+          headers: JSON.stringify(currentMcpServerInfo.headers, null, 4),
         };
 
         form.setFieldsValue(data);
@@ -135,7 +135,18 @@ const AddingMcpServerModal = ({
           name="headers"
           rules={[{ required: false }]}
         >
-          <Editor height={200} defaultLanguage="json" theme="vs-dark" />
+          <Editor
+            height={200}
+            defaultLanguage="json"
+            theme="vs-dark"
+            options={
+              {
+                minimap: {
+                  enabled: false
+                }
+              }
+            }
+          />
         </Form.Item>
       </Form>
     </Modal>
