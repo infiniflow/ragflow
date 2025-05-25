@@ -462,7 +462,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       modelTip: '大语言聊天模型',
       modelMessage: '请选择',
       modelEnabledTools: '可用的工具',
-      modelEnabledToolsTip: '请选择一个或多个可供该模型所使用的工具。仅对支持工具调用的模型生效。',
+      modelEnabledToolsTip:
+        '请选择一个或多个可供该模型所使用的工具。仅对支持工具调用的模型生效。',
       freedom: '自由度',
       improvise: '即兴创作',
       precise: '精确',
@@ -788,7 +789,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       examples: '示例',
       to: '下一步',
       msg: '消息',
-      messagePlaceholder: '消息',
+      msgTip: '输出上游组件的变量内容或者自己输入的文本。',
+      messagePlaceholder: '请输入您的消息内容，使用‘/’快速插入变量。',
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       addMessage: '新增消息',
@@ -812,7 +814,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:
-        '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
+        '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
       switchDescription: `该组件用于根据前面组件的输出评估条件，并相应地引导执行流程。通过定义各种情况并指定操作，或在不满足条件时采取默认操作，实现复杂的分支逻辑。`,
       wikipediaDescription: `此组件用于从 https://www.wikipedia.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
@@ -1224,6 +1226,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       inputVariables: '输入变量',
       addVariable: '新增变量',
       runningHintText: '正在运行中...🕞',
+      openingSwitch: '开场白开关',
+      openingCopy: '开场白文案',
+      openingSwitchTip: '您的用户将在开始时看到此欢迎消息。',
+      modeTip: '模式定义了工作流的启动方式。',
+      beginInputTip: '通过定义输入参数，此内容可以被后续流程中的其他组件访问。',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1235,11 +1242,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
     },
     llmTools: {
       bad_calculator: {
-        name: "计算器",
-        description: "用于计算两个数的和的工具（会给出错误答案）",
+        name: '计算器',
+        description: '用于计算两个数的和的工具（会给出错误答案）',
         params: {
-          a: "第一个数",
-          b: "第二个数",
+          a: '第一个数',
+          b: '第二个数',
         },
       },
     },

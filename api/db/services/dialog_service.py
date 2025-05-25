@@ -302,7 +302,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
 
-    def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: dict):
+    def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
         max_index = len(kbinfos["chunks"])
 
         def safe_add(i):
@@ -327,8 +327,8 @@ def chat(dialog, messages, stream=True, **kwargs):
         find_and_replace(r"\$\[(\d+)\]\$")  # $[12]$
         find_and_replace(r"\$\$(\d+)\${2,}")  # $$12$$$$
         find_and_replace(r"\$(\d+)\$")  # $12$
-        find_and_replace(r"#(\d+)\$\$")  # #12$$
-        find_and_replace(r"##(\d+)\$")  # ##12$
+        find_and_replace(r"(#{2,})(\d+)(\${2,})", group_index=2)  # 2+ # and 2+ $
+        find_and_replace(r"(#{2,})(\d+)(#{1,})", group_index=2)  # 2+ # and 1+ #
         find_and_replace(r"##(\d+)#{2,}")  # ##12###
         find_and_replace(r"【(\d+)】")  # 【12】
         find_and_replace(r"ref\s*(\d+)", flags=re.IGNORECASE)  # ref12, ref 12, REF 12
@@ -623,4 +623,3 @@ def ask(question, kb_ids, tenant_id):
         answer = ans
         yield {"answer": answer, "reference": {}}
     yield decorate_answer(answer)
-

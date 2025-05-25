@@ -67,6 +67,10 @@ The following embedding models can be deployed locally:
 - BAAI/bge-large-zh-v1.5
 - maidalun1020/bce-embedding-base_v1
 
+:::danger IMPORTANT
+Please note these two embedding models support both English and Chinese. If your knowledge base contains other languages, the performance may be COMPROMISED.
+:::
+
 ### Upload file
 
 - RAGFlow's **File Management** allows you to link a file to multiple knowledge bases, in which case each target knowledge base holds a reference to the file.
@@ -124,7 +128,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for knowledge base
 
-As of RAGFlow v0.18.0, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
+As of RAGFlow v0.19.0, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
 
 ![search knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/836ae94c-2438-42be-879e-c7ad2a59693e)
 

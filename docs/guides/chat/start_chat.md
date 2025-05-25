@@ -42,9 +42,13 @@ You start an AI conversation by creating an assistant.
    - **Rerank model** sets the reranker model to use. It is left empty by default.
      - If **Rerank model** is left empty, the hybrid score system uses keyword similarity and vector similarity, and the default weight assigned to the vector similarity component is 1-0.7=0.3.
      - If **Rerank model** is selected, the hybrid score system uses keyword similarity and reranker score, and the default weight assigned to the reranker score is 1-0.7=0.3.
+   - **Cross-language search**: Optional  
+     Select one or more target languages from the dropdown menu. The system’s default chat model will then translate your query into the selected target language(s). This translation ensures accurate semantic matching across languages, allowing you to retrieve relevant results regardless of language differences.  
+     - When selecting target languages, please ensure that these languages are present in the knowledge base to guarantee an effective search.
+     - If no target language is selected, the system will search only in the language of your query, which may cause relevant information in other languages to be missed.
    - **Variable** refers to the variables (keys) to be used in the system prompt. `{knowledge}` is a reserved variable. Click **Add** to add more variables for the system prompt.
       - If you are uncertain about the logic behind **Variable**, leave it *as-is*.
-      - As of v0.18.0, if you add custom variables here, the only way you can pass in their values is to call:
+      - As of v0.19.0, if you add custom variables here, the only way you can pass in their values is to call:
          - HTTP method [Converse with chat assistant](../../references/http_api_reference.md#converse-with-chat-assistant), or
          - Python method [Converse with chat assistant](../../references/python_api_reference.md#converse-with-chat-assistant).
 

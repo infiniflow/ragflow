@@ -29,7 +29,10 @@ import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
 import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 
-// 邮件功能
+export enum AgentDialogueMode {
+  Conversational = 'Conversational',
+  Task = 'Task',
+}
 
 import {
   ChatVariableEnabledField,
@@ -424,6 +427,7 @@ export const initialRetrievalValues = {
 };
 
 export const initialBeginValues = {
+  mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant, what can I do for you?`,
 };
 
@@ -3006,8 +3010,3 @@ export const NoDebugOperatorsList = [
   Operator.Switch,
   Operator.Iteration,
 ];
-
-export enum AgentDialogueMode {
-  Conversational = 'Conversational',
-  Task = 'Task',
-}
