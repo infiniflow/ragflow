@@ -14,25 +14,19 @@
 #  limitations under the License.
 #
 
-# from beartype import BeartypeConf
-# from beartype.claw import beartype_all  # <-- you didn't sign up for this
-# beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
-
 from api.utils.log_utils import initRootLogger
 from plugin import GlobalPluginManager
+
+# Initialize logging first
 initRootLogger("ragflow_server")
 
 import logging
 import os
 import signal
-import sys
-import time
-import traceback
-from concurrent.futures import ThreadPoolExecutor
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
-from werkzeug.serving import run_simple
 from api import settings
 from api.apps import app
 from api.db.runtime_config import RuntimeConfig
@@ -46,11 +40,15 @@ from api.utils import show_configs
 from rag.settings import print_rag_settings
 from rag.utils.redis_conn import RedisDistributedLock
 
+# Global stop event and executor for background tasks
 stop_event = threading.Event()
+background_executor = None
 
 RAGFLOW_DEBUGPY_LISTEN = int(os.environ.get('RAGFLOW_DEBUGPY_LISTEN', "0"))
 
+
 def update_progress():
+    """Background task to update document processing progress"""
     lock_value = str(uuid.uuid4())
     redis_lock = RedisDistributedLock("update_progress", lock_value=lock_value, timeout=60)
     logging.info(f"update_progress lock_value: {lock_value}")
@@ -65,13 +63,19 @@ def update_progress():
         finally:
             redis_lock.release()
 
+
 def signal_handler(sig, frame):
+    """Handle shutdown signals gracefully"""
     logging.info("Received interrupt signal, shutting down...")
     stop_event.set()
-    time.sleep(1)
-    sys.exit(0)
+    if background_executor:
+        background_executor.shutdown(wait=False)
 
-if __name__ == '__main__':
+
+def initialize_ragflow():
+    """Initialize RAGFlow application"""
+    global background_executor
+
     logging.info(r"""
         ____   ___    ______ ______ __               
        / __ \ /   |  / ____// ____// /____  _      __
@@ -80,23 +84,8 @@ if __name__ == '__main__':
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
 
     """)
-    logging.info(
-        f'RAGFlow version: {get_ragflow_version()}'
-    )
-    logging.info(
-        f'project base: {utils.file_utils.get_project_base_directory()}'
-    )
-
-    # Warning about development mode
-    logging.warning("=" * 80)
-    logging.warning("⚠️  DEVELOPMENT MODE WARNING ⚠️")
-    logging.warning("You are running RAGFlow in development mode using FastAPI development server.")
-    logging.warning("This is NOT recommended for production environments!")
-    logging.warning("")
-    logging.warning("For production deployment, please use:")
-    logging.warning("1. Docker: The entrypoint.sh will automatically use Gunicorn WSGI")
-    logging.warning("2. Manual: gunicorn --workers 4 --bind 0.0.0.0:9380 api.wsgi:application")
-    logging.warning("=" * 80)
+    logging.info(f'RAGFlow version: {get_ragflow_version()}')
+    logging.info(f'project base: {utils.file_utils.get_project_base_directory()}')
 
     show_configs()
     settings.init_settings()
@@ -107,54 +96,45 @@ if __name__ == '__main__':
         import debugpy
         debugpy.listen(("0.0.0.0", RAGFLOW_DEBUGPY_LISTEN))
 
-    # init db
+    # Initialize database
     init_web_db()
     init_web_data()
-    # init runtime config
-    import argparse
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--version", default=False, help="RAGFlow version", action="store_true"
-    )
-    parser.add_argument(
-        "--debug", default=False, help="debug mode", action="store_true"
-    )
-    args = parser.parse_args()
-    if args.version:
-        print(get_ragflow_version())
-        sys.exit(0)
-
-    RuntimeConfig.DEBUG = args.debug
-    if RuntimeConfig.DEBUG:
-        logging.info("run on debug mode")
-
+    # Initialize runtime config
+    RuntimeConfig.DEBUG = False  # Force production mode for WSGI
     RuntimeConfig.init_env()
     RuntimeConfig.init_config(JOB_SERVER_HOST=settings.HOST_IP, HTTP_PORT=settings.HOST_PORT)
 
+    # Load plugins
     GlobalPluginManager.load_plugins()
 
+    # Set up signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    thread = ThreadPoolExecutor(max_workers=1)
-    thread.submit(update_progress)
+    # Start background progress update task
+    background_executor = ThreadPoolExecutor(max_workers=1)
+    background_executor.submit(update_progress)
 
-    # start http server
-    try:
-        logging.warning("Starting RAGFlow HTTP server in DEVELOPMENT mode...")
-        logging.warning(
-            "Consider using Gunicorn for production: gunicorn --workers 4 --bind 0.0.0.0:9380 api.wsgi:application")
-        run_simple(
-            hostname=settings.HOST_IP,
-            port=settings.HOST_PORT,
-            application=app,
-            threaded=True,
-            use_reloader=RuntimeConfig.DEBUG,
-            use_debugger=RuntimeConfig.DEBUG,
-        )
-    except Exception:
-        traceback.print_exc()
-        stop_event.set()
-        time.sleep(1)
-        os.kill(os.getpid(), signal.SIGKILL)
+    logging.info("RAGFlow WSGI application initialized successfully in production mode")
+
+
+# Initialize the application when module is imported
+initialize_ragflow()
+
+# Export the Flask app for WSGI
+application = app
+
+if __name__ == '__main__':
+    # This should not be used in production
+    logging.warning("Running WSGI module directly - this is not recommended for production")
+    from werkzeug.serving import run_simple
+
+    run_simple(
+        hostname=settings.HOST_IP,
+        port=settings.HOST_PORT,
+        application=app,
+        threaded=True,
+        use_reloader=False,
+        use_debugger=False,
+    )

@@ -30,6 +30,7 @@ ENABLE_MCP_SERVER=0
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
+GUNICORN_WORKERS=${GUNICORN_WORKERS:-4} # Number of Gunicorn workers for the web server
 
 MCP_HOST="127.0.0.1"
 MCP_PORT=9382
@@ -161,10 +162,36 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
 
-    echo "Starting ragflow_server..."
-    while true; do
-        "$PY" api/ragflow_server.py
-    done &
+    echo "Starting ragflow_server with Gunicorn (Production Mode)..."
+    # Get host and port from environment variables or use defaults
+    RAGFLOW_HOST=${RAGFLOW_HOST_IP:-0.0.0.0}
+    RAGFLOW_PORT=${RAGFLOW_HOST_PORT:-9380}
+    GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
+    GUNICORN_TIMEOUT=${GUNICORN_WORKERS:120}
+
+    echo "Gunicorn config: Workers=${GUNICORN_WORKERS}, Host=${RAGFLOW_HOST}, Port=${RAGFLOW_PORT}"
+
+    # Check if gunicorn config file exists and use it, otherwise use command line options
+    if [[ -f "/ragflow/conf/gunicorn.conf.py" ]]; then
+        echo "Using Gunicorn configuration file..."
+        exec gunicorn --config /ragflow/conf/gunicorn.conf.py 'api.wsgi:application'
+    else
+        echo "Using Gunicorn command line configuration..."
+        # Start gunicorn with our WSGI application
+        exec gunicorn --workers ${GUNICORN_WORKERS} \
+                       --worker-class sync \
+                       --worker-connections 1000 \
+                       --max-requests 1000 \
+                       --max-requests-jitter 100 \
+                       --timeout ${GUNICORN_TIMEOUT} \
+                       --keep-alive 2 \
+                       --preload \
+                       --bind ${RAGFLOW_HOST}:${RAGFLOW_PORT} \
+                       --access-logfile - \
+                       --error-logfile - \
+                       --log-level info \
+                       'api.wsgi:application'
+    fi
 fi
 
 

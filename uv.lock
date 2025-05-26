@@ -4936,6 +4936,7 @@ dependencies = [
     { name = "xxhash" },
     { name = "yfinance" },
     { name = "zhipuai" },
+    { name = "gunicorn" },
 ]
 
 [package.optional-dependencies]
@@ -5076,6 +5077,7 @@ requires-dist = [
     { name = "xxhash", specifier = ">=3.5.0,<4.0.0" },
     { name = "yfinance", specifier = "==0.1.96" },
     { name = "zhipuai", specifier = "==2.0.1" },
+    { name = "gunicorn", specifier = ">=21.2.0,<22.0.0" },
 ]
 provides-extras = ["full"]
 
@@ -6860,4 +6862,16 @@ wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/f2/61/ac78a1263bc83a5cf29e7458b77a568eda5a8f81980691bbc6eb6a0d45cc/zstandard-0.23.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:a8fffdbd9d1408006baaf02f1068d7dd1f016c6bcb7538682622c556e7b68e35" },
     { url = "https://mirrors.aliyun.com/pypi/packages/e7/54/967c478314e16af5baf849b6ee9d6ea724ae5b100eb506011f045d3d4e16/zstandard-0.23.0-cp312-cp312-win32.whl", hash = "sha256:dc1d33abb8a0d754ea4763bad944fd965d3d95b5baef6b121c0c9013eaf1907d" },
     { url = "https://mirrors.aliyun.com/pypi/packages/75/37/872d74bd7739639c4553bf94c84af7d54d8211b626b352bc57f0fd8d1e3f/zstandard-0.23.0-cp312-cp312-win_amd64.whl", hash = "sha256:64585e1dba664dc67c7cdabd56c1e5685233fbb1fc1966cfba2a340ec0dfff7b" },
+]
+
+[[package]]
+name = "gunicorn"
+version = "21.2.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/06/89/acd9879fa6a5309b4bf16a5a8855f1e58f26d38e0c18ede9b3a70996b021/gunicorn-21.2.0.tar.gz", hash = "sha256:88ec8bff1d634f98e61b9f65bc4bf3cd918a90806c6f5c48bc5603849ec81033" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/0e/2a/c3a878eccb100ccddf45c50b6b8db8cf3301a6adede6e31d48e8531cab13/gunicorn-21.2.0-py3-none-any.whl", hash = "sha256:3213aa5e8c24949e792bcacfc176fef362e7aac80b76c56f6b5122bf350722f0" },
 ]
