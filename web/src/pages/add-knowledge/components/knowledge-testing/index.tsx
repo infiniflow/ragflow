@@ -1,4 +1,7 @@
-import { useTestChunkRetrieval } from '@/hooks/knowledge-hooks';
+import {
+  useTestChunkAllRetrieval,
+  useTestChunkRetrieval,
+} from '@/hooks/knowledge-hooks';
 import { Flex, Form } from 'antd';
 import TestingControl from './testing-control';
 import TestingResult from './testing-result';
@@ -9,6 +12,7 @@ import styles from './index.less';
 const KnowledgeTesting = () => {
   const [form] = Form.useForm();
   const { testChunk } = useTestChunkRetrieval();
+  const { testChunkAll } = useTestChunkAllRetrieval();
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
 
   const handleTesting = async (documentIds: string[] = []) => {
@@ -16,6 +20,12 @@ const KnowledgeTesting = () => {
     testChunk({
       ...values,
       doc_ids: Array.isArray(documentIds) ? documentIds : [],
+      vector_similarity_weight: 1 - values.vector_similarity_weight,
+    });
+
+    testChunkAll({
+      ...values,
+      doc_ids: [],
       vector_similarity_weight: 1 - values.vector_similarity_weight,
     });
   };

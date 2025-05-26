@@ -15,6 +15,8 @@ import camelCase from 'lodash/camelCase';
 import SelectFiles from './select-files';
 
 import {
+  useAllTestingResult,
+  useAllTestingSuccess,
   useSelectIsTestingSuccess,
   useSelectTestingResult,
 } from '@/hooks/knowledge-hooks';
@@ -58,9 +60,11 @@ const TestingResult = ({
   setSelectedDocumentIds,
 }: IProps) => {
   const { documents, chunks, total } = useSelectTestingResult();
+  const { documents: documentsAll, total: totalAll } = useAllTestingResult();
   const { t } = useTranslate('knowledgeDetails');
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const isSuccess = useSelectIsTestingSuccess();
+  const isAllSuccess = useAllTestingSuccess();
 
   const onChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
     pagination.onChange?.(pageNumber, pageSize);
@@ -93,7 +97,8 @@ const TestingResult = ({
               >
                 <Space>
                   <span>
-                    {selectedDocumentIds?.length ?? 0}/{documents?.length ?? 0}
+                    {selectedDocumentIds?.length ?? 0}/
+                    {documentsAll?.length ?? 0}
                   </span>
                   {t('filesSelected')}
                 </Space>
