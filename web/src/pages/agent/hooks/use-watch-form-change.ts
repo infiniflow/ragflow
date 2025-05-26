@@ -40,6 +40,7 @@ export const useHandleFormValuesChange = (
   useEffect(() => {
     const subscription = form?.watch((value, { name, type, values }) => {
       console.log('🚀 ~ subscription ~ value:', value);
+
       if (id && name) {
         console.log(
           '🚀 ~ useEffect ~ value:',
@@ -84,8 +85,12 @@ export const useHandleFormValuesChange = (
             script: CodeTemplateStrMap[value.lang as ProgrammingLanguage],
           };
         }
+
+        if (operatorName === Operator.Message) {
+        }
+
         // Manually triggered form updates are synchronized to the canvas
-        if (type) {
+        if (form.formState.isDirty) {
           // run(id, nextValues);
           updateNodeForm(id, nextValues);
         }

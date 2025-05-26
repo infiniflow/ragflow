@@ -126,9 +126,17 @@ export function useFormConfigMap() {
     },
     [Operator.Message]: {
       component: MessageForm,
-      defaultValues: {},
+      defaultValues: {
+        content: [],
+      },
       schema: z.object({
-        content: z.array(z.string()).optional(),
+        content: z
+          .array(
+            z.object({
+              value: z.string(),
+            }),
+          )
+          .optional(),
       }),
     },
     [Operator.Relevant]: {
