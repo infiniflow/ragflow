@@ -7,6 +7,7 @@ import { IOperatorForm } from '../../interface';
 import LLMToolsSelect from '@/components/llm-tools-select';
 import { useState } from 'react';
 import LLMMcpServerSelect from '@/components/llm-mcp-server-select';
+import McpInputVariable from './mcp-input-variable';
 
 const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
@@ -66,6 +67,7 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
       >
         <LLMMcpServerSelect disabled={!isCurrentLlmSupportTools}></LLMMcpServerSelect>
       </Form.Item>
+      <McpInputVariable name="mcp_server_variable_map" node={node!!} />
       <Form.Item
         name={['cite']}
         label={t('cite')}

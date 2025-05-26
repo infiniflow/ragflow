@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react';
 import { v4 as uuid } from 'uuid';
 import { IGenerateParameter } from '../../interface';
 import useGraphStore from '../../store';
+import { useFetchMultipleMcpServers } from '@/hooks/mcp-server-setting-hooks';
 
 export const useHandleOperateParameters = (nodeId: string) => {
   const { getNode, updateNodeForm } = useGraphStore((state) => state);
@@ -67,4 +68,26 @@ export const useHandleOperateParameters = (nodeId: string) => {
     handleSave,
     dataSource,
   };
+};
+
+export const useBuildMcpServerVariableOptions = (nodeId: string) => {
+  const { getNode } = useGraphStore((state) => state);
+  const node = getNode(nodeId);
+  const selectedMcpServerIdList = node?.data.form.llm_enabled_mcp_servers;
+
+  if (!selectedMcpServerIdList) {
+    return [];
+  }
+
+  const { data: selectedMcpServers } = useFetchMultipleMcpServers(selectedMcpServerIdList);
+
+  return selectedMcpServers.map(s => ({
+    label: s.name,
+    title: s.name,
+    options: (s.variables || []).map(v => ({
+      label: v.name,
+      fullLabel: `${s.name}: ${v.name}`,
+      value: `${v.key}@${s.id}`,
+    })),
+  }));
 };

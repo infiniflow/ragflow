@@ -803,6 +803,7 @@ class MCPServer(DataBaseModel):
     url = CharField(max_length=2048, null=False, help_text="MCP Server URL")
     server_type = CharField(max_length=32, null=False, help_text="MCP Server type")
     description = TextField(null=True, help_text="MCP Server description")
+    variables = JSONField(null=True, default=[], help_text="MCP Server variables")
     headers = JSONField(null=True, default={}, help_text="MCP Server additional request headers")
 
     class Meta:
@@ -898,5 +899,9 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=[])))
     except Exception:
         pass

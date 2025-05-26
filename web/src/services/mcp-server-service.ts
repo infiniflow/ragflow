@@ -4,6 +4,7 @@ import request from '@/utils/request';
 
 const {
   getMcpServerList,
+  getMultipleMcpServers,
   createMcpServer,
   updateMcpServer,
   deleteMcpServer,
@@ -13,6 +14,10 @@ const methods = {
   get_list: {
     url: getMcpServerList,
     method: 'get',
+  },
+  get_multiple: {
+    url: getMultipleMcpServers,
+    method: 'post',
   },
   add: {
     url: createMcpServer,

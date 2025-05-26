@@ -17,6 +17,18 @@ def get_list() -> Response:
         return server_error_response(e)
 
 
+@manager.route("/get_multiple", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("id_list")
+def get_multiple() -> Response:
+    req = request.json
+
+    try:
+        return get_json_result(data=MCPServerService.get_servers(current_user.id, id_list=req["id_list"]) or [])
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/get/<ms_id>", methods=["GET"])  # noqa: F821
 @login_required
 def get(ms_id: str) -> Response:

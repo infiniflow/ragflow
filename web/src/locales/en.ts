@@ -574,7 +574,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         streamableHttp: 'Streamable HTTP',
       },
       mcpServerUrl: 'URL',
+      mcpServerVariables: 'Variables',
+      mcpServerVariablesTip: 'Define variables which can be used in the HTTP headers',
+      mcpServerVariableKey: 'Variable key',
+      mcpServerVariableName: 'Variable name',
       mcpServerHeaders: 'HTTP Headers',
+      mcpServerHeadersTip: 'Define headers that will be sent to the MCP server. Can use variables in the form ${key}',
       mcpServerSureDelete: 'Are you sure to remove this MCP server?',
       team: 'Team',
       system: 'System',
@@ -1293,6 +1298,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       modelMcpServers: 'MCP Servers',
+      mcpInputVariable: 'MCP server input variable mapping',
     },
     llmTools: {
       bad_calculator: {

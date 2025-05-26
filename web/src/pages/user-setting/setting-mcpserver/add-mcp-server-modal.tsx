@@ -1,11 +1,12 @@
 import { useFetchMcpServerInfo } from '@/hooks/mcp-server-setting-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { IMcpServerInfo, McpServerType } from '@/interfaces/database/mcp-server';
+import { IMcpServerInfo, IMcpServerVariable, McpServerType } from '@/interfaces/database/mcp-server';
 import { Editor } from '@monaco-editor/react';
 import { Form, Input, message, Modal, Select } from 'antd';
 import { camelCase } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import McpServerVariable from './mcp-server-variable';
 
 interface IProps extends IModalProps<IMcpServerInfo> {
   currentMcpServerId?: string;
@@ -35,6 +36,7 @@ const AddingMcpServerModal = ({
     description?: string;
     serverType: McpServerType;
     url: string;
+    serverVariables?: IMcpServerVariable[];
     headers: string;
   };
 
@@ -46,6 +48,7 @@ const AddingMcpServerModal = ({
           description: currentMcpServerInfo.description,
           serverType: currentMcpServerInfo.server_type,
           url: currentMcpServerInfo.url,
+          serverVariables: currentMcpServerInfo.variables || [],
           headers: JSON.stringify(currentMcpServerInfo.headers, null, 4),
         };
 
@@ -81,6 +84,15 @@ const AddingMcpServerModal = ({
       server_type: ret.serverType,
       url: ret.url,
       headers: headerData,
+    };
+
+    if (ret.serverVariables) {
+      mcpServerData.variables = ret.serverVariables.map((v: any) => ({
+        name: v.name,
+        key: v.key,
+      }));
+    } else {
+      mcpServerData.variables = [];
     }
 
     return onOk?.(mcpServerData);
@@ -130,9 +142,18 @@ const AddingMcpServerModal = ({
         >
           <Input />
         </Form.Item>
+        <Form.Item
+          label={t('setting.mcpServerVariables')}
+          name="serverVariables"
+          tooltip={t('setting.mcpServerVariablesTip')}
+          rules={[{ required: false }]}
+        >
+          <McpServerVariable />
+        </Form.Item>
         <Form.Item<FieldType>
           label={t('setting.mcpServerHeaders')}
           name="headers"
+          tooltip={t('setting.mcpServerHeadersTip')}
           rules={[{ required: false }]}
         >
           <Editor

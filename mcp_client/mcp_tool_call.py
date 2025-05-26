@@ -1,6 +1,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import logging
+from string import Template
 from typing import Any, Literal
 from typing_extensions import override
 
@@ -22,6 +23,7 @@ class MCPToolCallSession(ToolCallSession):
     _THREAD_POOL = ThreadPoolExecutor(max_workers=1)
 
     _mcp_server: Any
+    _server_variables: dict[str, Any]
     _queue: asyncio.Queue[MCPTask]
     _stop = False
 
@@ -29,15 +31,22 @@ class MCPToolCallSession(ToolCallSession):
     def _init_thread_pool(cls) -> None:
         cls._THREAD_POOL.submit(cls._EVENT_LOOP.run_forever)
 
-    def __init__(self, mcp_server: Any) -> None:
+    def __init__(self, mcp_server: Any, server_variables: dict[str, Any] | None = None) -> None:
         self._mcp_server = mcp_server
+        self._server_variables = server_variables or {}
         self._queue = asyncio.Queue()
 
         asyncio.run_coroutine_threadsafe(self._mcp_server_loop(), MCPToolCallSession._EVENT_LOOP)
 
     async def _mcp_server_loop(self) -> None:
         url = self._mcp_server.url
-        headers = self._mcp_server.headers
+        raw_headers: dict[str, str] = self._mcp_server.headers or {}
+        headers: dict[str, str] = {}
+
+        for h, v in raw_headers.items():
+            nh = Template(h).safe_substitute(self._server_variables)
+            nv = Template(v).safe_substitute(self._server_variables)
+            headers[nh] = nv
 
         _streams_source: Any
 

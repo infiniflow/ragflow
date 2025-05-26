@@ -12,12 +12,27 @@ export const useFetchMcpServerList = (): ResponseGetType<IMcpServerInfo[]> => {
     gcTime: 0,
     queryFn: async () => {
       const { data } = await mcpServerService.get_list();
-      return data?.data ?? {};
+      return data?.data ?? [];
     },
   });
 
   return { data, loading };
 };
+
+export const useFetchMultipleMcpServers = (idList: string[]): ResponseGetType<IMcpServerInfo[]> => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['mcpServerMultiple', ...idList],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await mcpServerService.get_multiple({ id_list: idList});
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
 
 export const useFetchMcpServerInfo = (id?: string): ResponseGetType<IMcpServerInfo | null> => {
   if (!id) {
@@ -25,7 +40,7 @@ export const useFetchMcpServerInfo = (id?: string): ResponseGetType<IMcpServerIn
   }
 
   const { data, isFetching: loading } = useQuery({
-    queryKey: ['mcpServerInfo'],
+    queryKey: ['mcpServerInfo', id],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {

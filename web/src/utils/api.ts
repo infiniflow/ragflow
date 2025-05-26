@@ -146,6 +146,7 @@ export default {
 
   // mcp server
   getMcpServerList: `${api_host}/mcp_server/list`,
+  getMultipleMcpServers: `${api_host}/mcp_server/get_multiple`,
   getMcpServer: (serverId: string) => `${api_host}/mcp_server/get/${serverId}`,
   createMcpServer: `${api_host}/mcp_server/create`,
   updateMcpServer: `${api_host}/mcp_server/update`,
