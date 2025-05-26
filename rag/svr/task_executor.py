@@ -550,6 +550,7 @@ async def do_handle_task(task):
         with_community = graphrag_conf.get("community", False)
         await run_graphrag(task, task_language, with_resolution, with_community, chat_model, embedding_model, progress_callback)
         progress_callback(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
+        task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
         return
     else:
         # Standard chunking methods
