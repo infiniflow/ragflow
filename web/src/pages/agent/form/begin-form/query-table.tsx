@@ -40,7 +40,7 @@ interface IProps {
   showModal(index: number, record: BeginQuery): void;
 }
 
-export function QueryTable({ data, deleteRecord, showModal }: IProps) {
+export function QueryTable({ data = [], deleteRecord, showModal }: IProps) {
   const { t } = useTranslation();
 
   const [sorting, setSorting] = React.useState<SortingState>([]);

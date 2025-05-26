@@ -170,6 +170,15 @@ export function useFormConfigMap() {
         ),
       }),
     },
+    [Operator.WaitingDialogue]: {
+      component: CodeForm,
+      defaultValues: {},
+      schema: z.object({
+        arguments: z.array(
+          z.object({ name: z.string(), component_id: z.string() }),
+        ),
+      }),
+    },
     [Operator.Baidu]: {
       component: BaiduForm,
       defaultValues: { top_n: 10 },
