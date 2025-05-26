@@ -34,6 +34,7 @@ from api import settings
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.settings import PAGERANK_FLD
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
@@ -226,6 +227,8 @@ def rm():
         for kb in kbs:
             settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
             settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
+            if hasattr(STORAGE_IMPL, 'remove_bucket'):
+                STORAGE_IMPL.remove_bucket(kb.id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

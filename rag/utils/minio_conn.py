@@ -118,3 +118,13 @@ class RAGFlowMinio:
                 time.sleep(1)
         return
 
+    def remove_bucket(self, bucket):
+        try:
+            if self.conn.bucket_exists(bucket):
+                objects_to_delete = self.conn.list_objects(bucket, recursive=True)
+                for obj in objects_to_delete:
+                    self.conn.remove_object(bucket, obj.object_name)
+                self.conn.remove_bucket(bucket)
+        except Exception:
+            logging.exception(f"Fail to remove bucket {bucket}")
+
