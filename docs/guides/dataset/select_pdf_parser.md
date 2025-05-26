@@ -33,7 +33,7 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 
 2. Select the option that works best with your scenario:
 
-  - DeepDoc: (Default) The default visual model for OCR, TSR, and DLR tasks, which is time-consuming.
+  - DeepDoc: (Default) The default visual model performing OCR, TSR, and DLR tasks on PDFs, which can be time-consuming.
   - Naive: Skip OCR, TSR, and DLR tasks if *all* your PDFs are plain text.
   - A third-party visual model provided by a specific model provider.
 

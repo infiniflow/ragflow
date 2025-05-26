@@ -25,4 +25,4 @@ Ensure that your metadata is in JSON format; otherwise, your updates will not be
 
 ### Can I set metadata for multiple documents at once?
 
-No, RAGFlow does not support batch metadata setting. If you still consider this feature essential, please [raise an issue](https://github.com/infiniflow/ragflow/issues) explaining your use case and its importance.
+No, you must set metadata *individually* for each document, as RAGFlow does not support batch setting of metadata. If you still consider this feature essential, please [raise an issue](https://github.com/infiniflow/ragflow/issues) explaining your use case and its importance.
