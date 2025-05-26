@@ -41,7 +41,7 @@ sdk/python/ragflow_sdk.egg-info/
 libssl*.deb
 tika-server*.jar*
 cl100k_base.tiktoken
-chrome*.zip
+chrome*
 huggingface.co/
 nltk_data/
 
