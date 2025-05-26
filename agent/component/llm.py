@@ -46,6 +46,7 @@ class LLMParam(ComponentParamBase):
         self.presence_penalty = 0
         self.frequency_penalty = 0
         self.output_structure = None
+        self.cite = True
 
     def check(self):
         self.check_decimal_float(self.temperature, "Temperature")
@@ -121,7 +122,7 @@ class LLM(ComponentBase):
         prompt = self.string_format(prompt, args)
         for m in msg:
             m["content"] = self.string_format(m["content"], args)
-        if references["chunks"]:
+        if references["chunks"] and self._param.cite:
             prompt += citation_prompt()
             self._canvas.retrival = references
         error = ""

@@ -74,7 +74,7 @@ class TavilySearchParam(ToolParamBase):
         self.max_results = 5
         self.days = 7
         self.include_answer = False
-        self.include_raw_content = False
+        self.include_raw_content = True
         self.include_images = False
         self.include_image_descriptions = False
         self.include_domains = []

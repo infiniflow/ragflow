@@ -236,8 +236,8 @@ class Canvas:
                                    "elapsed_time": cpn["obj"].output("_elapsed_time"),
                                    "created_at": int(time.time()),
                                 })
-                if cpn["obj"].component_name.lower() in ["categorize"]:
-                    self.path.append(cpn["obj"].output("_next"))
+                if cpn["obj"].component_name.lower() in ["categorize", "switch"]:
+                    self.path.extend(cpn["obj"].output("_next"))
                 else:
                     for c in cpn["downstream"]:
                         if c in self.path:

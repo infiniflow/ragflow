@@ -7,48 +7,31 @@
                       "prologue": "Hi there!"
                     }
                 },
-                "downstream": ["answer:0"],
+                "downstream": ["tavily:0"],
                 "upstream": []
             },
-            "answer:0": {
+            "tavily:0": {
                 "obj": {
-                    "component_name": "Answer",
-                    "params": {}
-                },
-                "downstream": ["baidu:0"],
-                "upstream": ["begin", "message:0","message:1"]
-            },
-            "baidu:0": {
-                "obj": {
-                    "component_name": "Baidu",
-                    "params": {}
+                    "component_name": "TavilySearch",
+                    "params": {
+                      "api_key": "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"
+                    }
                 },
                 "downstream": ["generate:0"],
-                "upstream": ["answer:0"]
+                "upstream": ["begin"]
             },
             "generate:0": {
                 "obj": {
-                    "component_name": "Generate",
+                    "component_name": "LLM",
                     "params": {
                       "llm_id": "deepseek-chat",
-		              "prompt": "You are an intelligent assistant. Please answer the user's question based on what Baidu searched. First, please output the user's question and the content searched by Baidu, and then answer yes, no, or i don't know.Here is the user's question:{user_input}The above is the user's question.Here is what Baidu searched for:{baidu}The above is the content searched by Baidu.",
+                      "cite": false,
+		              "sys_prompt": "You are an intelligent assistant. Please judge if the content from Baidu can answer user's question. \nOutput yes, no, or i don't know corresponding to, the content can answer the question, the content can't answer the question and you're not sure if it's relevant. \nHere is the user's question:{sys.query}\nThe above is the user's question.\nHere is content from Baidu:\n{tavily:0@formalized_content}\nThe above is the content from Baidu.",
                       "temperature": 0.2
-                    },
-                    "parameters": [
-                                      {
-                                          "component_id": "answer:0",
-                                          "id": "69415446-49bf-4d4b-8ec9-ac86066f7709",
-                                          "key": "user_input"
-                                      },
-                                      {
-                                          "component_id": "baidu:0",
-                                          "id": "83363c2a-00a8-402f-a45c-ddc4097d7d8b",
-                                          "key": "baidu"
-                                      }
-                                  ]
-                        },
+                    }
+                },
                 "downstream": ["switch:0"],
-                "upstream": ["baidu:0"]
+                "upstream": ["tavily:0"]
             },
             "switch:0": {
                 "obj": {
@@ -58,72 +41,87 @@
                                         {
                                             "logical_operator" : "or",
                                             "items" : [
-                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "yes"},
-                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "yeah"}
+                                                          {"cpn_id": "generate:0@content", "operator": "contains", "value": "yes"},
+                                                          {"cpn_id": "generate:0@content", "operator": "contains", "value": "yeah"}
                                                       ],
-                                             "to": "message:0"
+                                             "to": ["message:0"]
                                         },
                                         {
                                             "logical_operator" : "and",
                                             "items" : [
-                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "no"},
-                                                          {"cpn_id": "generate:0", "operator": "not contains", "value": "yes"},
-							  {"cpn_id": "generate:0", "operator": "not contains", "value": "know"}
+                                                          {"cpn_id": "generate:0@content", "operator": "contains", "value": "no"},
+                                                          {"cpn_id": "generate:0@content", "operator": "not contains", "value": "yes"},
+							  {"cpn_id": "generate:0@content", "operator": "not contains", "value": "know"}
                                                       ],
-                                            "to": "message:1"
+                                            "to": ["message:1"]
                                         },
                                         {
                                             "logical_operator" : "",
                                             "items" : [
-                                                          {"cpn_id": "generate:0", "operator": "contains", "value": "know"}
+                                                          {"cpn_id": "generate:0@content", "operator": "contains", "value": "know"}
                                                       ],
-                                             "to": "message:2"
+                                             "to": ["message:2"]
                                         }
                                     ],
-                      "end_cpn_id": "answer:0"
+                      "end_cpn_ids": ["message:3"]
 
                     }
                 },
-                "downstream": ["message:0","message:1"],
+                "downstream": [],
                 "upstream": ["generate:0"]
             },
             "message:0": {
                 "obj": {
                     "component_name": "Message",
                     "params": {
-                        "messages": ["YES YES YES YES YES YES YES YES YES YES YES YES"]
+                        "content": ["YES YES YES YES YES YES YES YES YES YES YES YES"]
                     }
                 },
 
                 "upstream": ["switch:0"],
-                "downstream": ["answer:0"]
+                "downstream": []
             },
             "message:1": {
                 "obj": {
                     "component_name": "Message",
                     "params": {
-                        "messages": ["NO NO NO NO NO NO NO NO NO NO NO NO NO NO"]
+                        "content": ["NO NO NO NO NO NO NO NO NO NO NO NO NO NO"]
                     }
                 },
 
                 "upstream": ["switch:0"],
-                "downstream": ["answer:0"]
+                "downstream": []
             },
             "message:2": {
                 "obj": {
                     "component_name": "Message",
                     "params": {
-                        "messages": ["I DON'T KNOW---------------------------"]
+                        "content": ["I DON'T KNOW---------------------------"]
                     }
                 },
 
                 "upstream": ["switch:0"],
-                "downstream": ["answer:0"]
+                "downstream": []
+            },
+            "message:3": {
+                "obj": {
+                    "component_name": "Message",
+                    "params": {
+                        "content": ["ELSE: ---------------------------"]
+                    }
+                },
+
+                "upstream": ["switch:0"],
+                "downstream": []
             }
   },
   "history": [],
-  "messages": [],
-  "reference": {},
   "path": [],
-  "answer": []
+  "retrival": {"chunks": [], "doc_aggs": []},
+  "globals": {
+    "sys.query": "",
+    "sys.user_id": "",
+    "sys.convsation_turns": 0,
+    "sys.files": []
+  }
 }

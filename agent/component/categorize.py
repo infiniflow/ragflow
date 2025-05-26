@@ -87,13 +87,13 @@ class Categorize(LLM, ABC):
             count = ans.lower().count(c.lower())
             category_counts[c] = count
 
-        cpn_id = list(self._param.category_description.items())[-1][1]["to"]
+        cpn_ids = list(self._param.category_description.items())[-1][1]["to"]
         if any(category_counts.values()):
             max_category = max(category_counts.items(), key=lambda x: x[1])
-            cpn_id = self._param.category_description[max_category[0]]["to"]
+            cpn_ids = self._param.category_description[max_category[0]]["to"]
 
-        self.set_output("next", self._canvas.get_component_name(cpn_id))
-        self.set_output("_next", cpn_id)
+        self.set_output("next", [self._canvas.get_component_name(cid) for cid in cpn_ids])
+        self.set_output("_next", cpn_ids)
 
     def debug(self, **kwargs):
         df = self._run([], **kwargs)

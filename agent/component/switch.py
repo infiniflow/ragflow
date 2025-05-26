@@ -34,7 +34,7 @@ class SwitchParam(ComponentParamBase):
         }
         """
         self.conditions = []
-        self.end_cpn_id = "answer:0"
+        self.end_cpn_ids = []
         self.operators = ['contains', 'not contains', 'start with', 'end with', 'empty', 'not empty', '=', '≠', '>',
                           '<', '≥', '≤']
 
@@ -43,6 +43,7 @@ class SwitchParam(ComponentParamBase):
         for cond in self.conditions:
             if not cond["to"]:
                 raise ValueError("[Switch] 'To' can not be empty!")
+        self.check_empty(self.end_cpn_ids, "[Switch] the ELSE/Other destination can not be empty.")
 
 
 class Switch(ComponentBase, ABC):
@@ -67,25 +68,19 @@ class Switch(ComponentBase, ABC):
             for item in cond["items"]:
                 if not item["cpn_id"]:
                     continue
-                cid = item["cpn_id"].split("@")[0]
-                if item["cpn_id"].find("@") > 0:
-                    cpn_id, key = item["cpn_id"].split("@")
-                    for p in self._canvas.get_component(cid)["obj"]._param.query:
-                        if p["key"] == key:
-                            res.append(self.process_operator(p.get("value",""), item["operator"], item.get("value", "")))
-                            break
-                else:
-                    out = self._canvas.get_component(cid)["obj"].output(allow_partial=False)[1]
-                    cpn_input = "" if "content" not in out.columns else " ".join([str(s) for s in out["content"]])
-                    res.append(self.process_operator(cpn_input, item["operator"], item.get("value", "")))
-
+                res.append(self.process_operator(self._canvas.get_variable_value(item["cpn_id"]), item["operator"], item.get("value", "")))
                 if cond["logical_operator"] != "and" and any(res):
-                    return Switch.be_output(cond["to"])
+                    self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in cond["to"]])
+                    self.set_output("_next", cond["to"])
+                    return
 
             if all(res):
-                self._param.outputs["to"]["value"] = cond["to"]
+                self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in cond["to"]])
+                self.set_output("_next", cond["to"])
+                return
 
-        assert False, "No matching condition"
+        self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in self.end_cpn_ids])
+        self.set_output("_next", self.end_cpn_ids)
 
     def process_operator(self, input: str, operator: str, value: str) -> bool:
         if not isinstance(input, str) or not isinstance(value, str):
