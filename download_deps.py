@@ -11,12 +11,13 @@
 # ///
 
 from huggingface_hub import snapshot_download
+from typing import Union
 import nltk
 import os
 import urllib.request
 import argparse
 
-def get_urls(use_china_mirrors=False):
+def get_urls(use_china_mirrors=False) -> Union[str, list[str]]:
     if use_china_mirrors:
         return [
             "http://mirrors.tuna.tsinghua.edu.cn/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb",
@@ -34,8 +35,8 @@ def get_urls(use_china_mirrors=False):
             "https://repo1.maven.org/maven2/org/apache/tika/tika-server-standard/3.0.0/tika-server-standard-3.0.0.jar",
             "https://repo1.maven.org/maven2/org/apache/tika/tika-server-standard/3.0.0/tika-server-standard-3.0.0.jar.md5",
             "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
-            "https://bit.ly/chrome-linux64-121-0-6167-85",
-            "https://bit.ly/chromedriver-linux64-121-0-6167-85",
+            ["https://bit.ly/chrome-linux64-121-0-6167-85", "chrome-linux64.zip"],
+            ["https://bit.ly/chromedriver-linux64-121-0-6167-85", "chromedriver-linux64.zip"],
         ]
 
 repos = [
@@ -60,10 +61,11 @@ if __name__ == "__main__":
     urls = get_urls(args.china_mirrors)
     
     for url in urls:
-        filename = url.split("/")[-1]
-        print(f"Downloading {url}...")
+        download_url = url[0] if isinstance(url, list) else url
+        filename = url[1] if isinstance(url, list) else url.split("/")[-1]
+        print(f"Downloading {filename} from {download_url}...")
         if not os.path.exists(filename):
-            urllib.request.urlretrieve(url, filename)
+            urllib.request.urlretrieve(download_url, filename)
 
     local_dir = os.path.abspath('nltk_data')
     for data in ['wordnet', 'punkt', 'punkt_tab']:
