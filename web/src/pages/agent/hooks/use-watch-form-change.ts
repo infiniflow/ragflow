@@ -39,8 +39,6 @@ export const useHandleFormValuesChange = (
 
   useEffect(() => {
     const subscription = form?.watch((value, { name, type, values }) => {
-      console.log('🚀 ~ subscription ~ value:', value);
-
       if (id && name) {
         console.log(
           '🚀 ~ useEffect ~ value:',
