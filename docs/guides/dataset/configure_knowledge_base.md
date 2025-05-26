@@ -68,7 +68,7 @@ The following embedding models can be deployed locally:
 - maidalun1020/bce-embedding-base_v1
 
 :::danger IMPORTANT
-Please note these two embedding models support both English and Chinese. If your knowledge base contains other languages, the performance may be COMPROMISED.
+These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
 ### Upload file
