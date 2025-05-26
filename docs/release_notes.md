@@ -9,9 +9,35 @@ Key features, improvements and bug fixes in the latest releases.
 
 :::info
 Each RAGFlow release is available in two editions:
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.18.0-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.18.0`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.19.0-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.19.0`
 :::
+
+:::danger IMPORTANT
+:collision: The embedding models included in a full edition are:
+
+- BAAI/bge-large-zh-v1.5
+- maidalun1020/bce-embedding-base_v1
+
+Please note these two embedding models support both English and Chinese. If your knowledge base contains other languages, the performance may be COMPROMISED.
+:::
+
+## v0.19.0
+
+Released on May 26, 2025.
+
+### New features
+
+- Cross-language search is supported in the Knowledge and Chat modules, enhancing search accuracy and user experience in multilingual environments, such as in Chinese-English knowledge bases.
+- Agent component: A new Code component supports Python and JavaScript scripts, enabling developers to handle more complex tasks like dynamic data processing.
+- Enhanced image display: Images in Chat and Search now render directly within responses, rather than as external references. Knowledge retrieval testing can retrieve images directly, instead of texts extracted from images.
+- Claude 4 and ChatGPT o3: Developers can now use the newly released, most advanced Claude model alongside OpenAI’s latest ChatGPT o3 inference model.
+
+> The following features are contributed by our community contributors:
+
+- Agent component: Enables tool calling within the Generate Component. Thanks to [notsyncing](https://github.com/notsyncing).
+- Markdown rendering: Image references in a markdown file can be displayed after chunking. Thanks to [Woody-Hu](https://github.com/Woody-Hu).
+- Document engine support: OpenSearch can now be used as RAGFlow's document engine. Thanks to [pyyuhao](https://github.com/pyyuhao).
 
 ## v0.18.0
 

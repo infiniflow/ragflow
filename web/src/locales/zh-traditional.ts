@@ -761,7 +761,8 @@ export default {
       examples: '範例',
       to: '下一步',
       msg: '訊息',
-      messagePlaceholder: '訊息',
+      msgTip: '輸出上游組件的變數內容或自行輸入的文字。',
+      messagePlaceholder: '請輸入您的訊息內容，使用‘/’快速插入變數。',
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
       addMessage: '新增訊息',
@@ -786,7 +787,7 @@ export default {
       relevantDescription: `此元件用來判斷upstream的輸出是否與使用者最新的問題相關，『是』代表相關，『否』代表不相關。`,
       rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。`,
       messageDescription:
-        '此元件用於向使用者發送靜態訊息。您可以準備幾條訊息，這些訊息將隨機選擇。',
+        '此元件用來傳回工作流程最後產生的資料內容和原先設定的文字內容。',
       keywordDescription: `該組件用於從用戶的問題中提取關鍵字。 Top N指定需要提取的關鍵字數量。`,
       switchDescription: `該組件用於根據前面組件的輸出評估條件，並相應地引導執行流程。通過定義各種情況並指定操作，或在不滿足條件時採取默認操作，實現複雜的分支邏輯。`,
       wikipediaDescription: `此元件用於從 https://www.wikipedia.org/ 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。`,
