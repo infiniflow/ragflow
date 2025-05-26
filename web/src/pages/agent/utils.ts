@@ -438,3 +438,19 @@ export const buildCategorizeObjectFromList = (list: Array<ICategorizeItem>) => {
     return pre;
   }, {});
 };
+
+export function convertToStringArray(
+  list: Array<{ value: string | number | boolean }>,
+) {
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  return list.map((x) => x.value);
+}
+
+export function convertToObjectArray(list: Array<string | number | boolean>) {
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  return list.map((x) => ({ value: x }));
+}
