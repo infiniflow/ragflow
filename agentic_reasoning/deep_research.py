@@ -36,17 +36,20 @@ class DeepResearcher:
         self._kb_retrieve = kb_retrieve
         self._kg_retrieve = kg_retrieve
 
-    @staticmethod
-    def _remove_query_tags(text):
-        """Remove query tags from text"""
-        pattern = re.escape(BEGIN_SEARCH_QUERY) + r"(.*?)" + re.escape(END_SEARCH_QUERY)
+    def _remove_tags(text: str, start_tag: str, end_tag: str) -> str:
+        """General Tag Removal Method"""
+        pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)
         return re.sub(pattern, "", text)
 
     @staticmethod
-    def _remove_result_tags(text):
-        """Remove result tags from text"""
-        pattern = re.escape(BEGIN_SEARCH_RESULT) + r"(.*?)" + re.escape(END_SEARCH_RESULT)
-        return re.sub(pattern, "", text)
+    def _remove_query_tags(text: str) -> str:
+        """Remove Query Tags"""
+        return DeepResearcher._remove_tags(text, BEGIN_SEARCH_QUERY, END_SEARCH_QUERY)
+
+    @staticmethod
+    def _remove_result_tags(text: str) -> str:
+        """Remove Result Tags"""
+        return DeepResearcher._remove_tags(text, BEGIN_SEARCH_RESULT, END_SEARCH_RESULT)
 
     def _generate_reasoning(self, msg_history):
         """Generate reasoning steps"""
