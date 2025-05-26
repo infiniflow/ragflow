@@ -5,7 +5,7 @@ import { useCallback, useEffect } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { Operator } from '../constant';
 import useGraphStore from '../store';
-import { buildCategorizeObjectFromList } from '../utils';
+import { buildCategorizeObjectFromList, convertToStringArray } from '../utils';
 
 export const useHandleFormValuesChange = (
   operatorName: Operator,
@@ -87,6 +87,10 @@ export const useHandleFormValuesChange = (
         }
 
         if (operatorName === Operator.Message) {
+          nextValues = {
+            ...value,
+            content: convertToStringArray(value.content),
+          };
         }
 
         // Manually triggered form updates are synchronized to the canvas
