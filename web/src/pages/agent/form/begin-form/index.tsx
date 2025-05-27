@@ -12,7 +12,7 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
-import { buildSelectOptions } from '@/utils/common-util';
+import { buildSelectOptions } from '@/utils/component-util';
 import { Plus } from 'lucide-react';
 import { useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
