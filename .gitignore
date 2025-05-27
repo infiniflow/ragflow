@@ -36,6 +36,12 @@ sdk/python/ragflow.egg-info/
 sdk/python/build/
 sdk/python/dist/
 sdk/python/ragflow_sdk.egg-info/
+
+# Exclude dep files
+libssl*.deb
+tika-server*.jar*
+cl100k_base.tiktoken
+chrome*
 huggingface.co/
 nltk_data/
 
