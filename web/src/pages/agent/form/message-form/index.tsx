@@ -25,7 +25,7 @@ const MessageForm = ({ form }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <form
-        className="space-y-5 px-5"
+        className="space-y-5 px-5 "
         autoComplete="off"
         onSubmit={(e) => {
           e.preventDefault();
@@ -43,7 +43,7 @@ const MessageForm = ({ form }: INextOperatorForm) => {
                     render={({ field }) => (
                       <FormItem className="flex-1">
                         <FormControl>
-                          {/* <Input {...field}></Input> */}
+                          {/* <Textarea {...field}> </Textarea> */}
                           <PromptEditor
                             {...field}
                             placeholder={t('flow.messagePlaceholder')}
