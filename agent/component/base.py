@@ -381,6 +381,7 @@ class ComponentParamBase(ABC):
 class ComponentBase(ABC):
     component_name: str
     thread_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
+    variable_ref_patt = r"\{([a-z:0-9]+@[a-z0-9_.-]+|sys\.[a-z_]+)\}"
 
     def __str__(self):
         """
@@ -462,7 +463,7 @@ class ComponentBase(ABC):
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
-        for r in re.finditer(r"\{([a-z:0-9]+@[a-z0-9_.-]+|sys\.[a-z_]+)\}", txt, flags=re.IGNORECASE):
+        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE):
             exp = r.group(1)
             cpn_id, var_nm = exp.split("@") if exp.find("@")>0 else ("", exp)
             res[exp] = {
@@ -484,6 +485,10 @@ class ComponentBase(ABC):
 
     def get_component_name(self, cpn_id) -> str:
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()
+
+    def get_param(self, name):
+        if hasattr(self._param, name):
+            return getattr(self._param, name)
 
     def debug(self, **kwargs):
         return self._invoke(**kwargs)

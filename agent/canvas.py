@@ -17,7 +17,7 @@ import json
 import time
 from copy import deepcopy
 from functools import partial
-from typing import Any
+from typing import Any, Union
 
 import trio
 from agent.component import component_class
@@ -202,9 +202,13 @@ class Canvas:
                 for i in range(f, t):
                     cpn = self.get_component_obj(self.path[i])
                     for var, o in cpn.get_input_elements().items():
-                        if not o.get("ref"):
+                        v = cpn.get_param(var)
+                        if not v:
                             continue
-                        cpn.set_input_value(var, self.get_variable_value(o["ref"]))
+                        if self.is_reff(v):
+                            cpn.set_input_value(var, self.get_variable_value(v))
+                        else:
+                            cpn.set_input_value(var, v)
                     nursery.start_soon(lambda: cpn.invoke(**cpn.get_input()))
 
         error = ""
@@ -258,11 +262,22 @@ class Canvas:
                        })
             self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
 
-    def get_component(self, cpn_id) -> dict[str, Any]:
+    def get_component(self, cpn_id) -> Union[None, dict[str, Any]]:
         return self.components.get(cpn_id)
 
     def get_component_obj(self, cpn_id) -> object:
         return self.components.get(cpn_id)["obj"]
+
+    def is_reff(self, exp):
+        exp = exp.strip("{").strip("}")
+        if exp.find("@") < 0:
+            return exp in self.globals
+        arr = exp.split("@")
+        if len(arr) != 2:
+            return False
+        if self.get_component(arr[0]) is None:
+            return False
+        return True
 
     def get_variable_value(self, nm: str) -> Any:
         if nm.find("@") < 0:

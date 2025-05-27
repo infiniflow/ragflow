@@ -26,6 +26,7 @@ from typing import Any, Protocol
 
 import openai
 import requests
+import trio
 from dashscope import Generation
 from ollama import Client
 from openai import OpenAI
@@ -140,7 +141,7 @@ class Base(ABC):
                     name = tool_call.function.name
                     try:
                         args = json.loads(tool_call.function.arguments)
-                        tool_response = self.toolcall_session.tool_call(name, args)
+                        tool_response = trio.run(self.toolcall_session.tool_call, name, args)
                         history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
                         ans += "<tool>"+json.dumps({"name": name, "request": args, "response": tool_response}, ensure_ascii=False)+"</tool>"
                     except Exception as e:
@@ -280,7 +281,7 @@ class Base(ABC):
                             name = tool_call.function.name
                             try:
                                 args = json.loads(tool_call.function.arguments)
-                                tool_response = self.toolcall_session.tool_call(name, args)
+                                tool_response = trio.run(self.toolcall_session.tool_call, name, args)
                                 history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
                                 yield "<tool>"+json.dumps({"name": name, "request": args, "response": tool_response}, ensure_ascii=False)+"</tool>"
                             except Exception as e:

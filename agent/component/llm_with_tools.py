@@ -72,7 +72,7 @@ class Agent(LLM):
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
             error = ""
             async with self.thread_limiter:
-                ans = await trio.to_thread.run_sync(chat_mdl.chat, msg[0]["content"], msg[1:], self._param.gen_conf(), self._param.max_rounds)
+                ans = await trio.to_thread.run_sync(lambda : chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), max_rounds=self._param.max_rounds))
             msg.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"Extractor._chat got error. response: {ans}")
@@ -87,7 +87,7 @@ class Agent(LLM):
     def stream_output_with_tools(self, chat_mdl, prompt, msg):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
         answer = ""
-        for ans in chat_mdl.chat_streamly_with_tools(msg[0]["content"], msg[1:], self._param.gen_conf(), self._param.max_rounds):
+        for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), max_rounds=self._param.max_rounds):
             yield ans[len(answer):]
             answer = ans
         self.set_output("content", answer)

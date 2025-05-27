@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import re
 from abc import ABC
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
@@ -39,7 +40,14 @@ class CategorizeParam(LLMParam):
             if not v.get("to"):
                 raise ValueError(f"[Categorize] 'To' of category {k} can not be empty!")
 
-    def update_prompt(self, chat_hist):
+    def update_prompt(self):
+        cate_lines = []
+        for c, desc in self.category_description.items():
+            for line in desc.get("examples", []):
+                if not line:
+                    continue
+                cate_lines.append(f"USER: \"{re.sub(r"\n", "    ", line, flags=re.DOTALL)}\" → {c}")
+
         descriptions = []
         for c, desc in self.category_description.items():
             if desc.get("description"):
@@ -53,18 +61,31 @@ You are an advanced classification system that categorizes user questions into s
 Here's description of each category:
  - {}
 
-Instructions:
+---- Instructions ----
  - Consider both explicit mentions and implied context
  - Prioritize the most specific applicable category
  - Return only the category name without explanations
  - Use "Other" only when no other category fits
+ 
+ """.format(
+            "\n - ".join(list(self.category_description.keys())),
+            "\n".join(descriptions)
+        )
 
----- Real Data ----
-{}\n
-        """.format(
+        if cate_lines:
+            self.sys_prompt += """
+---- Examples ----
+{}
+""".format("\n".join(cate_lines))
+
+
+
+
+    format(
             "\n - ".join(list(self.category_description.keys())),
             "\n".join(descriptions),
-            "\n".join(["{}: {}".format(c["role"].upper(), c["content"]) for c in chat_hist])
+            "\n".join(cate_lines),
+
         )
 
 
@@ -73,13 +94,16 @@ class Categorize(LLM, ABC):
 
     async def _invoke(self, **kwargs):
         msg = self._canvas.get_history(self._param.message_history_window_size)
-        self._param.update_prompt(msg)
+        self._param.update_prompt()
         args = self.get_input_elements()
         prompt = self.string_format(self._param.sys_prompt, args)
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
 
-        ans = chat_mdl.chat(prompt, [{"role": "user", "content": "\nCategory: "}],
-                            self._param.gen_conf())
+        user_prompt = """
+---- Real Data ----
+{} → 
+""".format(" | ".join(["{}: \"{}\"".format(c["role"].upper(), re.sub(r"\n", "", c["content"], flags=re.DOTALL)) for c in msg]))
+        ans = chat_mdl.chat(prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
         logging.debug(f"input: {input}, answer: {str(ans)}")    
         # Count the number of times each category appears in the answer.
         category_counts = {}

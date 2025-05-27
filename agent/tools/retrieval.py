@@ -42,7 +42,7 @@ class RetrievalParam(ToolParamBase):
             "description": "This tool can be utilized for relevant content searching in the datasets.",
             "parameters": {
                 "query": {
-                    "type": "str",
+                    "type": "string",
                     "description": "Query to search the dataset.",
                     "required": True
                 }
@@ -58,7 +58,6 @@ class RetrievalParam(ToolParamBase):
         self.rerank_id = ""
         self.empty_response = ""
         self.use_kg = False
-        self.inputs["query"]["ref"] = "sys.query"
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")

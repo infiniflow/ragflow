@@ -18,10 +18,12 @@
                       "category_description": {
                         "product_related": {
                           "description": "The question is about the product usage, appearance and how it works.",
+                          "examples": [],
                           "to": ["retrieval:0"]
                         },
                         "others": {
                           "description": "The question is not about the product usage, appearance and how it works.",
+                          "examples": [],
                           "to": ["message:0"]
                         }
                       }

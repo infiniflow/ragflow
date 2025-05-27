@@ -66,11 +66,11 @@
                 "obj": {
                     "component_name": "Message",
                     "params": {
-                      "content": ["{generate:0@content}"]
+                      "content": ["{agent:0@content}"]
                     }
                 },
                 "downstream": [],
-                "upstream": ["generate:0"]
+                "upstream": ["agent:0"]
             }
   },
   "history": [],

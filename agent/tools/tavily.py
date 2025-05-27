@@ -45,24 +45,28 @@ class TavilySearchParam(ToolParamBase):
             "description": "Tavily is a search engine optimized for LLMs, aimed at efficient, quick and persistent search results. Unlike other search APIs such as Serp or Google, Tavily focuses on optimizing search for AI developers and autonomous AI agents. We take care of all the burden of searching, scraping, filtering and extracting the most relevant information from online sources. All in a single API call!",
             "parameters": {
                 "query": {
-                    "type": "str",
+                    "type": "string",
                     "description": "The search query to execute with Tavily.",
+                    "default": "{sys.query}",
                     "required": True
                 },
                 "topic": {
-                    "type": "enum",
+                    "type": "string",
                     "description": "default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.",
+                    "enum": ["general", "news"],
+                    "default": "general",
                     "required": False,
-                    "enum": ["general", "news"]
                 },
                 "include_domains": {
-                    "type": "List[str]",
+                    "type": "array",
                     "description": "default:[]. A list of domains to specifically include in the search results.",
+                    "default": [],
                     "required": False
                 },
                 "exclude_domains": {
-                    "type": "List[str]",
+                    "type": "array",
                     "description": "default:[]. A list of domains to specifically exclude from the search results.",
+                    "default": [],
                     "required": False
                 },
             }
@@ -70,16 +74,12 @@ class TavilySearchParam(ToolParamBase):
         super().__init__()
         self.api_key = ""
         self.search_depth = "basic" # basic/advanced
-        self.topic = "general"
         self.max_results = 5
         self.days = 7
         self.include_answer = False
         self.include_raw_content = True
         self.include_images = False
         self.include_image_descriptions = False
-        self.include_domains = []
-        self.exclude_domains = []
-        self.inputs["query"]["ref"] = "sys.query"
 
     def check(self):
         self.check_valid_value(self.topic, "Tavily topic: should be in 'general/news'", ["general", "news"])

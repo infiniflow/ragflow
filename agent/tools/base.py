@@ -40,9 +40,9 @@ class LLMToolPluginCallSession(ToolCallSession):
     def __init__(self, tools_map: dict[str, object]):
         self.tools_map = tools_map
 
-    def tool_call(self, name: str, arguments: dict[str, Any]) -> str:
+    async def tool_call(self, name: str, arguments: dict[str, Any]) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
-        return self.tools_map[name].invoke(**arguments)
+        return await self.tools_map[name].invoke(**arguments)
 
 
 class ToolParamBase(ComponentParamBase):
@@ -50,6 +50,7 @@ class ToolParamBase(ComponentParamBase):
         #self.meta:ToolMeta = None
         super().__init__()
         self._init_inputs()
+        self._init_attr_by_meta()
 
     def _init_inputs(self):
         self.inputs = {}
@@ -57,7 +58,21 @@ class ToolParamBase(ComponentParamBase):
             self.inputs[k] = deepcopy(p)
             self.inputs[k]["ref"] = None
 
+    def _init_attr_by_meta(self):
+        for k,p in self.meta["parameters"].items():
+            if not hasattr(self, p["name"]):
+                setattr(self, p["name"], p.get("default"))
+
     def get_meta(self):
+        params = {}
+        for k, p in self.meta["parameters"].items():
+            params[k] = {
+                "type": p["type"],
+                "description": p["description"]
+            }
+            if "enum" in p:
+                params[k]["enum"] = p["enum"]
+
         return {
             "type": "function",
             "function": {
@@ -65,13 +80,7 @@ class ToolParamBase(ComponentParamBase):
                 "description": self.meta["description"],
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        k: {
-                            "type": p["type"],
-                            "description": p["description"]
-                        }
-                        for k, p in self.meta["parameters"].items()
-                    },
+                    "properties": params,
                     "required": [k for k, p in self.meta["parameters"].items() if p["required"]]
                 }
             }

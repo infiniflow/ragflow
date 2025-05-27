@@ -49,19 +49,6 @@ class SwitchParam(ComponentParamBase):
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
-    def get_dependent_components(self):
-        res = []
-        for cond in self._param.conditions:
-            for item in cond["items"]:
-                if not item["cpn_id"]:
-                    continue
-                if item["cpn_id"].lower().find("begin") >= 0 or item["cpn_id"].lower().find("answer") >= 0:
-                    continue
-                cid = item["cpn_id"].split("@")[0]
-                res.append(cid)
-
-        return list(set(res))
-
     async def _invoke(self, **kwargs):
         for cond in self._param.conditions:
             res = []
