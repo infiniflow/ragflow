@@ -81,7 +81,7 @@ class LLM(ComponentBase):
             res.update(d)
         return res
 
-    async def _invoke(self, **kwargs):
+    def _prepare_prompt_variables(self):
         def replace_ids(cnt, start_idx, prefix):
             patt = []
             for r in re.finditer(r"ID: %s_([0-9]+)\n"%prefix, cnt, flags=re.DOTALL):
@@ -92,19 +92,13 @@ class LLM(ComponentBase):
                 cnt = re.sub(r, p, cnt, flags=re.DOTALL)
             return cnt
 
-        def clean_formated_answer(ans: str) -> str:
-            ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-            ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
-            return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
-
-        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
-        vars = self.get_input_elements()
         args = {}
+        vars = self.get_input_elements()
         references = {"chunks": [], "doc_aggs": []}
         prompt = self._param.sys_prompt
         for k, o in vars.items():
-            ref = o["_retrival"]
-            if o["_retrival"]:
+            if o.get("_retrival"):
+                ref = o["_retrival"]
                 prompt = replace_ids(prompt, len(references["chunks"]), o["_cpn_id"])
                 references["chunks"].extend(ref["chunks"])
                 references["doc_aggs"].extend(ref["doc_aggs"])
@@ -116,7 +110,6 @@ class LLM(ComponentBase):
                     args[k] = str(args[k])
             self.set_input_value(k, args[k])
 
-        prompt = self._param.sys_prompt
         msg = self._canvas.get_history(self._param.message_history_window_size)[:-1]
         msg.extend(deepcopy(self._param.prompts))
         prompt = self.string_format(prompt, args)
@@ -125,7 +118,19 @@ class LLM(ComponentBase):
         if references["chunks"] and self._param.cite:
             prompt += citation_prompt()
             self._canvas.retrival = references
+
+        return prompt, msg
+
+    async def _invoke(self, **kwargs):
+
+        def clean_formated_answer(ans: str) -> str:
+            ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+            ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
+            return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
+
+        prompt, msg = self._prepare_prompt_variables()
         error = ""
+        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
 
         if self._param.output_structure:
             prompt += "\nThe output MUST follow this JSON format:\n"+json.dumps(self._param.output_structure, ensure_ascii=False, indent=2)
@@ -152,25 +157,26 @@ class LLM(ComponentBase):
         print(prompt, "\n####################################")
         downstreams = self._canvas.get_component(self._id)["downstream"]
         if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure:
-            self.set_output("content", partial(self._stream_output, chat_mdl, prompt, msg, references))
+            self.set_output("content", partial(self._stream_output, chat_mdl, prompt, msg))
             return
 
         for _ in range(self._param.retry_times+1):
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
             error = ""
             async with self.thread_limiter:
-                ans = await trio.to_thread.run_sync(chat_mdl.chat, msg[0]["content"], msg[1:], self._param.gen_conf())
+                ans = await trio.to_thread.run_sync(chat_mdl.chat_with_tools, msg[0]["content"], msg[1:], self._param.gen_conf())
             msg.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"Extractor._chat got error. response: {ans}")
                 error = ans
                 continue
             self.set_output("content", ans)
+            break
 
         if error:
             self.set_output("_ERROR", error)
 
-    def _stream_output(self, chat_mdl, prompt, msg, ref):
+    def _stream_output(self, chat_mdl, prompt, msg):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
         answer = ""
         for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):

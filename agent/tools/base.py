@@ -15,8 +15,9 @@
 #
 
 from copy import deepcopy
-from typing import TypedDict, List
+from typing import TypedDict, List, Any
 from agent.component.base import ComponentParamBase, ComponentBase
+from rag.llm.chat_model import ToolCallSession
 
 
 class ToolParameter(TypedDict):
@@ -33,6 +34,15 @@ class ToolMeta(TypedDict):
     description: str
     displayDescription: str
     parameters: dict[str, ToolParameter]
+
+
+class LLMToolPluginCallSession(ToolCallSession):
+    def __init__(self, tools_map: dict[str, object]):
+        self.tools_map = tools_map
+
+    def tool_call(self, name: str, arguments: dict[str, Any]) -> str:
+        assert name in self.tools_map, f"LLM tool {name} does not exist"
+        return self.tools_map[name].invoke(**arguments)
 
 
 class ToolParamBase(ComponentParamBase):
@@ -76,6 +86,9 @@ class ToolBase(ComponentBase):
         self._id = id
         self._param = param
         self._param.check()
+
+    def get_meta(self) -> dict[str, Any]:
+        return self._param.get_meta()
 
     async def invoke(self, **kwargs):
         self._param.debug_inputs = []

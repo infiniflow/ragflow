@@ -40,6 +40,7 @@ class ComponentParamBase(ABC):
         self.outputs = {}
         self.description = ""
         self.retry_times = 0
+        self.delay_after_error = 5
         self.debug_inputs = {}
 
     def set_name(self, name: str):
