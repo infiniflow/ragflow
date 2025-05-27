@@ -343,7 +343,7 @@ def remove_contents_table(sections, eng=False):
                                               type("")) else sections[i][0]).strip()
 
         if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$",
-                        re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], re.IGNORECASE)):
+                        re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], flags=re.IGNORECASE)):
             i += 1
             continue
         sections.pop(i)
@@ -524,7 +524,7 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num  
-        if tk_nums[-1] > chunk_token_num:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num:
 
             if t.find(pos) < 0:
                 t += pos
@@ -560,7 +560,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if tk_nums[-1] > chunk_token_num:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num:
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
@@ -627,7 +627,7 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
         tnum = num_tokens_from_string(t)
         if tnum < 8:
             pos = ""
-        if tk_nums[-1] > chunk_token_num:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num:
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)

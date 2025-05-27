@@ -29,7 +29,10 @@ import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
 import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 
-// 邮件功能
+export enum AgentDialogueMode {
+  Conversational = 'Conversational',
+  Task = 'Task',
+}
 
 import {
   ChatVariableEnabledField,
@@ -60,6 +63,7 @@ import {
   CodeXml,
   IterationCcw,
   ListOrdered,
+  MessageSquareMore,
   OptionIcon,
   TextCursorInput,
   ToggleLeft,
@@ -106,6 +110,7 @@ export enum Operator {
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
   Code = 'Code',
+  WaitingDialogue = 'WaitingDialogue',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -124,6 +129,7 @@ export const AgentOperatorList = [
   Operator.Concentrator,
   Operator.Template,
   Operator.Iteration,
+  Operator.WaitingDialogue,
   Operator.Note,
 ];
 
@@ -165,6 +171,7 @@ export const operatorIconMap = {
   [Operator.Iteration]: IterationCcw,
   [Operator.IterationStart]: CirclePower,
   [Operator.Code]: CodeXml,
+  [Operator.WaitingDialogue]: MessageSquareMore,
 };
 
 export const operatorMap: Record<
@@ -304,6 +311,7 @@ export const operatorMap: Record<
   [Operator.Iteration]: { backgroundColor: '#e6f7ff' },
   [Operator.IterationStart]: { backgroundColor: '#e6f7ff' },
   [Operator.Code]: { backgroundColor: '#4c5458' },
+  [Operator.WaitingDialogue]: { backgroundColor: '#a5d65c' },
 };
 
 export const componentMenuList = [
@@ -343,6 +351,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.Code,
+  },
+  {
+    name: Operator.WaitingDialogue,
   },
   {
     name: Operator.Note,
@@ -424,6 +435,7 @@ export const initialRetrievalValues = {
 };
 
 export const initialBeginValues = {
+  mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant, what can I do for you?`,
 };
 
@@ -666,6 +678,8 @@ export const initialCodeValues = {
   ],
 };
 
+export const initialWaitingDialogueValues = {};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -748,6 +762,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Iteration]: [Operator.Begin],
   [Operator.IterationStart]: [Operator.Begin],
   [Operator.Code]: [Operator.Begin],
+  [Operator.WaitingDialogue]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -788,6 +803,7 @@ export const NodeMap = {
   [Operator.Iteration]: 'group',
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
+  [Operator.WaitingDialogue]: 'ragNode',
 };
 
 export const LanguageOptions = [
