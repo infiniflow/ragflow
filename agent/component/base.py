@@ -455,10 +455,15 @@ class ComponentBase(ABC):
             return self._param.inputs.get(key, {}).get("value")
 
         res = {}
-        for k, o in self._param.inputs.items():
-            if o.get("ref") or k.find("@") > 0:
-                res[k] = self._canvas.get_variable_value(k if not o.get("ref") else o["ref"])
-                self.set_input_value(k, res[k])
+        for var, o in self.get_input_elements().items():
+            v = self.get_param(var)
+            if not v:
+                continue
+            if self._canvas.is_reff(v):
+                self.set_input_value(var, self._canvas.get_variable_value(v))
+            else:
+                self.set_input_value(var, v)
+            res[var] = self.get_input_value(var)
         return res
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
@@ -468,7 +473,6 @@ class ComponentBase(ABC):
             cpn_id, var_nm = exp.split("@") if exp.find("@")>0 else ("", exp)
             res[exp] = {
                 "name": (self._canvas.get_component_name(cpn_id) +f"@{var_nm}") if cpn_id else exp,
-                "ref": exp,
                 "value": self._canvas.get_variable_value(exp),
                 "_retrival": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
                 "_cpn_id": cpn_id
@@ -478,10 +482,15 @@ class ComponentBase(ABC):
     def get_input_elements(self) -> dict[str, Any]:
         return self._param.inputs
 
-    def set_input_value(self, key: str, value: Any):
+    def set_input_value(self, key: str, value: Any) -> None:
         if key not in self._param.inputs:
             self._param.inputs[key] = {"value": None}
         self._param.inputs[key]["value"] = value
+
+    def get_input_value(self, key: str) -> Any:
+        if key not in self._param.inputs:
+            return None
+        return self._param.inputs[key].get("value")
 
     def get_component_name(self, cpn_id) -> str:
         return self._canvas.get_component(cpn_id)["obj"].component_name.lower()

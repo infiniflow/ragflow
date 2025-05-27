@@ -201,14 +201,6 @@ class Canvas:
             async with trio.open_nursery() as nursery:
                 for i in range(f, t):
                     cpn = self.get_component_obj(self.path[i])
-                    for var, o in cpn.get_input_elements().items():
-                        v = cpn.get_param(var)
-                        if not v:
-                            continue
-                        if self.is_reff(v):
-                            cpn.set_input_value(var, self.get_variable_value(v))
-                        else:
-                            cpn.set_input_value(var, v)
                     nursery.start_soon(lambda: cpn.invoke(**cpn.get_input()))
 
         error = ""
@@ -279,10 +271,11 @@ class Canvas:
             return False
         return True
 
-    def get_variable_value(self, nm: str) -> Any:
-        if nm.find("@") < 0:
-            return self.globals[nm]
-        cpn_id, var_nm = nm.split("@")
+    def get_variable_value(self, exp: str) -> Any:
+        exp = exp.strip("{").strip("}")
+        if exp.find("@") < 0:
+            return self.globals[exp]
+        cpn_id, var_nm = exp.split("@")
         cpn = self.get_component(cpn_id)
         if not cpn:
             raise Exception(f"Can't find variable: '{var_nm}'")

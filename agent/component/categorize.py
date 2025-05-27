@@ -46,7 +46,7 @@ class CategorizeParam(LLMParam):
             for line in desc.get("examples", []):
                 if not line:
                     continue
-                cate_lines.append(f"USER: \"{re.sub(r"\n", "    ", line, flags=re.DOTALL)}\" → {c}")
+                cate_lines.append(f"USER: \"" + re.sub(r"\n", "    ", line, flags=re.DOTALL) + "\" → "+c)
 
         descriptions = []
         for c, desc in self.category_description.items():
@@ -77,16 +77,6 @@ Here's description of each category:
 ---- Examples ----
 {}
 """.format("\n".join(cate_lines))
-
-
-
-
-    format(
-            "\n - ".join(list(self.category_description.keys())),
-            "\n".join(descriptions),
-            "\n".join(cate_lines),
-
-        )
 
 
 class Categorize(LLM, ABC):

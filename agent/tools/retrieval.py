@@ -44,6 +44,7 @@ class RetrievalParam(ToolParamBase):
                 "query": {
                     "type": "string",
                     "description": "Query to search the dataset.",
+                    "default": "{sys.query}",
                     "required": True
                 }
             }

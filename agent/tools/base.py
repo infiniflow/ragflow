@@ -56,12 +56,11 @@ class ToolParamBase(ComponentParamBase):
         self.inputs = {}
         for k,p in self.meta["parameters"].items():
             self.inputs[k] = deepcopy(p)
-            self.inputs[k]["ref"] = None
 
     def _init_attr_by_meta(self):
         for k,p in self.meta["parameters"].items():
-            if not hasattr(self, p["name"]):
-                setattr(self, p["name"], p.get("default"))
+            if not hasattr(self, k):
+                setattr(self, k, p.get("default"))
 
     def get_meta(self):
         params = {}
@@ -101,10 +100,6 @@ class ToolBase(ComponentBase):
 
     async def invoke(self, **kwargs):
         self._param.debug_inputs = []
-        for k,p in self._param.inputs.items():
-            if not p.get("ref"):
-                continue
-            kwargs[k] = self._canvas.get_variable_value(p.get("ref"))
         try:
             await self._invoke(**kwargs)
         except Exception as e:
