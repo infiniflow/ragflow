@@ -47,7 +47,7 @@ The RAPTOR feature is disabled by default. To enable it, manually switch on the 
 
 ### Prompt
 
-The following prompt will be applied recursively for cluster summarization, with `{cluster_content}` serving as an internal parameter. We recommend that you keep it as-is for now. The design will be updated in due course.
+The following prompt will be applied *recursively* for cluster summarization, with `{cluster_content}` serving as an internal parameter. We recommend that you keep it as-is for now. The design will be updated in due course.
 
 ```
 Please summarize the following paragraphs... Paragraphs as following:
