@@ -215,7 +215,7 @@ export default {
       manual: `<p>対応するのは<b>PDF</b>のみです。</p><p>
       マニュアルは階層的なセクション構造を持つと仮定され、最下位のセクションタイトルを基にチャンク分割を行います。そのため、同じセクション内の図表は分割されませんが、大きなチャンクサイズになる可能性があります。
       </p>`,
-      naive: `<p>対応ファイル形式は<b>DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>です。</p>
+      naive: `<p>対応ファイル形式は<b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>です。</p>
       <p>この方法では、'ナイーブ'な方法でファイルを分割します：</p>
       <p>
       <li>視覚認識モデルを使用してテキストを小さなセグメントに分割します。</li>
