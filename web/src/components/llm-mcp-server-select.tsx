@@ -4,7 +4,7 @@ import { truncate } from 'lodash';
 
 interface IProps {
   value?: string;
-  onChange?: (value: string) => void;
+  onChange?: (value: string, option: any) => void;
   disabled?: boolean;
 }
 

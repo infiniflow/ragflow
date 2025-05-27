@@ -13,14 +13,33 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const { t } = useTranslate('flow');
 
   const [isCurrentLlmSupportTools, setCurrentLlmSupportTools] = useState(false);
+  const [newMcpServerVariableMap, setNewMcpServerVariableMap] = useState<any[]>(node!!.data.form.mcp_server_variable_map);
 
   const onLlmSelectChanged = (_: string, option: any) => {
-    setCurrentLlmSupportTools(option.is_tools);
+    setTimeout(() => {
+      setCurrentLlmSupportTools(option.is_tools);
+    }, 0);
 
     if (!option.is_tools) {
       node!!.data.form.llm_enabled_tools = [];
       node!!.data.form.llm_enabled_mcp_servers = [];
+      node!!.data.form.mcp_server_variable_map = [];
     }
+  };
+
+  const onMcpServerSelectChanged = (_: string, option: any[]) => {
+    const existing_servers = new Set(option.map((o: any) => o.value));
+    const new_map = [];
+
+    for (const m of node?.data.form.mcp_server_variable_map || []) {
+      const server_id = m.target.split('@')[1];
+
+      if (existing_servers.has(server_id)) {
+        new_map.push(m);
+      }
+    }
+
+    setNewMcpServerVariableMap(new_map);
   };
 
   return (
@@ -65,9 +84,14 @@ const GenerateForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         label={t('modelEnabledMcpServers', { keyPrefix: 'chat' })}
         tooltip={t('modelEnabledMcpServersTip', { keyPrefix: 'chat' })}
       >
-        <LLMMcpServerSelect disabled={!isCurrentLlmSupportTools}></LLMMcpServerSelect>
+        <LLMMcpServerSelect disabled={!isCurrentLlmSupportTools} onChange={onMcpServerSelectChanged}></LLMMcpServerSelect>
       </Form.Item>
-      <McpInputVariable name="mcp_server_variable_map" node={node!!} />
+      <McpInputVariable
+        name="mcp_server_variable_map"
+        node={node!!}
+        disabled={!isCurrentLlmSupportTools}
+        newMap={newMcpServerVariableMap}
+      />
       <Form.Item
         name={['cite']}
         label={t('cite')}

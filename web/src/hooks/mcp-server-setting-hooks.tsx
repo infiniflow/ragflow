@@ -25,7 +25,11 @@ export const useFetchMultipleMcpServers = (idList: string[]): ResponseGetType<IM
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await mcpServerService.get_multiple({ id_list: idList});
+      if (!idList) {
+        return [];
+      }
+      
+      const { data } = await mcpServerService.get_multiple({ id_list: idList });
       return data?.data ?? [];
     },
   });

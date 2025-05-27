@@ -1,7 +1,7 @@
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Collapse, Flex, Form, Input, Select } from 'antd';
-import { PropsWithChildren, useCallback } from 'react';
+import { PropsWithChildren, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
 
@@ -9,8 +9,10 @@ import styles from './index.less';
 import { useBuildMcpServerVariableOptions } from './hooks';
 
 interface IProps {
-  name?: string;
+  name: string;
   node: RAGFlowNodeType;
+  disabled?: boolean;
+  newMap?: any[];
 }
 
 enum VariableType {
@@ -21,8 +23,7 @@ enum VariableType {
 const getVariableName = (type: string) =>
   type === VariableType.Reference ? 'component_id' : 'value';
 
-const McpVariableForm = ({ name: formName, node }: IProps) => {
-  const nextFormName = formName || 'query';
+const McpVariableForm = ({ name: formName, node, disabled }: IProps) => {
   const { t } = useTranslation();
 
   const targetOptions = useBuildMcpServerVariableOptions(node.id);
@@ -42,15 +43,15 @@ const McpVariableForm = ({ name: formName, node }: IProps) => {
   const handleTypeChange = useCallback(
     (name: number) => () => {
       setTimeout(() => {
-        form.setFieldValue([nextFormName, name, 'component_id'], undefined);
-        form.setFieldValue([nextFormName, name, 'value'], undefined);
+        form.setFieldValue([formName, name, 'component_id'], undefined);
+        form.setFieldValue([formName, name, 'value'], undefined);
       }, 0);
     },
-    [form, nextFormName],
+    [form, formName],
   );
 
   return (
-    <Form.List name={nextFormName}>
+    <Form.List name={formName}>
       {(fields, { add, remove }) => (
         <>
           {fields.map(({ key, name, ...restField }) => (
@@ -79,7 +80,7 @@ const McpVariableForm = ({ name: formName, node }: IProps) => {
               </Form.Item>
               <Form.Item noStyle dependencies={[name, 'type']}>
                 {({ getFieldValue }) => {
-                  const type = getFieldValue([nextFormName, name, 'type']);
+                  const type = getFieldValue([formName, name, 'type']);
                   return (
                     <Form.Item
                       {...restField}
@@ -108,6 +109,7 @@ const McpVariableForm = ({ name: formName, node }: IProps) => {
               block
               icon={<PlusOutlined />}
               className={styles.addButton}
+              disabled={disabled}
             >
               {t('flow.addVariable')}
             </Button>
@@ -137,11 +139,20 @@ export function FormCollapse({
   );
 }
 
-const McpInputVariable = ({ name, node }: IProps) => {
+const McpInputVariable = ({ name, node, disabled, newMap }: IProps) => {
   const { t } = useTranslation();
+
+  useEffect(() => {
+    node!!.data.form.mcp_server_variable_map = newMap;
+  }, [newMap]);
+
   return (
     <FormCollapse title={t('flow.mcpInputVariable')}>
-      <McpVariableForm name={name} node={node}></McpVariableForm>
+      <McpVariableForm
+        name={name}
+        node={node}
+        disabled={disabled}
+      ></McpVariableForm>
     </FormCollapse>
   );
 };

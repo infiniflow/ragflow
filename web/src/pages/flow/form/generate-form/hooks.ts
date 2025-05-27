@@ -74,12 +74,7 @@ export const useBuildMcpServerVariableOptions = (nodeId: string) => {
   const { getNode } = useGraphStore((state) => state);
   const node = getNode(nodeId);
   const selectedMcpServerIdList = node?.data.form.llm_enabled_mcp_servers;
-
-  if (!selectedMcpServerIdList) {
-    return [];
-  }
-
-  const { data: selectedMcpServers } = useFetchMultipleMcpServers(selectedMcpServerIdList);
+  const { data: selectedMcpServers } = useFetchMultipleMcpServers(selectedMcpServerIdList || []);
 
   return selectedMcpServers.map(s => ({
     label: s.name,
