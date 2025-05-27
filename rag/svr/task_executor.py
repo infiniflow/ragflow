@@ -540,7 +540,7 @@ async def do_handle_task(task):
     # Either using graphrag or Standard chunking methods
     elif task.get("task_type", "") == "graphrag":
         global task_limiter
-        task_limiter = trio.CapacityLimiter(2)
+        task_limiter.total_tokens = 2
         if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
             return
         graphrag_conf = task["kb_parser_config"].get("graphrag", {})
@@ -550,7 +550,7 @@ async def do_handle_task(task):
         with_community = graphrag_conf.get("community", False)
         await run_graphrag(task, task_language, with_resolution, with_community, chat_model, embedding_model, progress_callback)
         progress_callback(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
-        task_limiter = trio.CapacityLimiter(MAX_CONCURRENT_TASKS)
+        task_limiter.total_tokens = MAX_CONCURRENT_TASKS
         return
     else:
         # Standard chunking methods
