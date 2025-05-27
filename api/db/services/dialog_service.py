@@ -92,8 +92,8 @@ class DialogService(CommonService):
             chats = chats.order_by(cls.model.getter_by(orderby).asc())
 
         chats = chats.paginate(page_number, items_per_page)
-
-        return list(chats.dicts())
+        total = chats.count()
+        return list(chats.dicts()), total
 
 
 def chat_solo(dialog, messages, stream=True):

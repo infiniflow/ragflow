@@ -559,7 +559,12 @@ def list_docs(dataset_id, tenant_id):
             if key == "run":
                 renamed_doc["run"] = run_mapping.get(value)
         renamed_doc_list.append(renamed_doc)
-    return get_result(data={"total": tol, "docs": renamed_doc_list})
+    return get_result(data={
+        "total": tol,
+        "page": page,
+        "page_size": page_size,
+        "docs": renamed_doc_list
+    })
 
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
@@ -943,7 +948,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         if key == "run":
             renamed_doc["run"] = run_mapping.get(str(value))
 
-    res = {"total": 0, "chunks": [], "doc": renamed_doc}
+    res = {"total": 0, "page": page, "page_size": size, "chunks": [], "doc": renamed_doc}
     if req.get("id"):
         chunk = settings.docStoreConn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
         if not chunk:

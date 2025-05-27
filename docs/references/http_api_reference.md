@@ -727,41 +727,46 @@ Success:
 ```json
 {
     "code": 0,
-    "data": [
-        {
-            "avatar": "",
-            "chunk_count": 59,
-            "create_date": "Sat, 14 Sep 2024 01:12:37 GMT",
-            "create_time": 1726276357324,
-            "created_by": "69736c5e723611efb51b0242ac120007",
-            "description": null,
-            "document_count": 1,
-            "embedding_model": "BAAI/bge-large-zh-v1.5",
-            "id": "6e211ee0723611efa10a0242ac120007",
-            "language": "English",
-            "name": "mysql",
-            "chunk_method": "naive",
-            "parser_config": {
-                "chunk_token_num": 8192,
-                "delimiter": "\\n",
-                "entity_types": [
-                    "organization",
-                    "person",
-                    "location",
-                    "event",
-                    "time"
-                ]
-            },
-            "permission": "me",
-            "similarity_threshold": 0.2,
-            "status": "1",
-            "tenant_id": "69736c5e723611efb51b0242ac120007",
-            "token_num": 12744,
-            "update_date": "Thu, 10 Oct 2024 04:07:23 GMT",
-            "update_time": 1728533243536,
-            "vector_similarity_weight": 0.3
-        }
-    ]
+    "data": {
+        "total": 1,
+        "page": 1,
+        "page_size": 30,
+        "datasets": [
+            {
+                "avatar": "",
+                "chunk_count": 59,
+                "create_date": "Sat, 14 Sep 2024 01:12:37 GMT",
+                "create_time": 1726276357324,
+                "created_by": "69736c5e723611efb51b0242ac120007",
+                "description": null,
+                "document_count": 1,
+                "embedding_model": "BAAI/bge-large-zh-v1.5",
+                "id": "6e211ee0723611efa10a0242ac120007",
+                "language": "English",
+                "name": "mysql",
+                "chunk_method": "naive",
+                "parser_config": {
+                    "chunk_token_num": 8192,
+                    "delimiter": "\\n",
+                    "entity_types": [
+                        "organization",
+                        "person",
+                        "location",
+                        "event",
+                        "time"
+                    ]
+                },
+                "permission": "me",
+                "similarity_threshold": 0.2,
+                "status": "1",
+                "tenant_id": "69736c5e723611efb51b0242ac120007",
+                "token_num": 12744,
+                "update_date": "Thu, 10 Oct 2024 04:07:23 GMT",
+                "update_time": 1728533243536,
+                "vector_similarity_weight": 0.3
+            }
+        ]
+    }
 }
 ```
 
@@ -1047,6 +1052,9 @@ Success:
 {
     "code": 0,
     "data": {
+        "total": 1,
+        "page": 1,
+        "page_size": 30,
         "docs": [
             {
                 "chunk_count": 0,
@@ -1078,8 +1086,7 @@ Success:
                 "update_date": "Mon, 14 Oct 2024 09:11:01 GMT",
                 "update_time": 1728897061948
             }
-        ],
-        "total": 1
+        ]
     }
 }
 ```
@@ -1390,6 +1397,9 @@ Success:
 {
     "code": 0,
     "data": {
+        "total": 1,
+        "page": 1,
+        "page_size": 1024,
         "chunks": [
             {
                 "available": true,
@@ -1436,8 +1446,7 @@ Success:
             "type": "doc",
             "update_date": "Thu, 24 Oct 2024 11:03:15 GMT",
             "update_time": 1729767795721
-        },
-        "total": 1
+        }
     }
 }
 ```
@@ -1756,11 +1765,11 @@ curl --request POST \
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
-    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
+    Also known as "nucleus sampling", this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
   - `"presence_penalty"`: `float`  
     This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.4`.
   - `"frequency penalty"`: `float`  
-    Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
+    Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt"`: (*Body parameter*), `object`  
   Instructions for the LLM to follow. If it is not explicitly set, a JSON object with the following values will be generated as the default. A `prompt` JSON object contains the following attributes:  
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
@@ -1889,11 +1898,11 @@ curl --request PUT \
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
-    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
+    Also known as "nucleus sampling", this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
   - `"presence_penalty"`: `float`  
     This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
   - `"frequency penalty"`: `float`  
-    Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
+    Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt"`: (*Body parameter*), `object`  
   Instructions for the LLM to follow.  A `prompt` object contains the following attributes:  
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
@@ -2030,47 +2039,52 @@ Success:
 ```json
 {
     "code": 0,
-    "data": [
-        {
-            "avatar": "",
-            "create_date": "Fri, 18 Oct 2024 06:20:06 GMT",
-            "create_time": 1729232406637,
-            "description": "A helpful Assistant",
-            "do_refer": "1",
-            "id": "04d0d8e28d1911efa3630242ac120006",
-            "dataset_ids": ["527fa74891e811ef9c650242ac120006"],
-            "language": "English",
-            "llm": {
-                "frequency_penalty": 0.7,
-                "model_name": "qwen-plus@Tongyi-Qianwen",
-                "presence_penalty": 0.4,
-                "temperature": 0.1,
-                "top_p": 0.3
-            },
-            "name": "13243",
-            "prompt": {
-                "empty_response": "Sorry! No relevant content was found in the knowledge base!",
-                "keywords_similarity_weight": 0.3,
-                "opener": "Hi! I'm your assistant, what can I do for you?",
-                "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n",
-                "rerank_model": "",
-                "similarity_threshold": 0.2,
-                "top_n": 6,
-                "variables": [
-                    {
-                        "key": "knowledge",
-                        "optional": false
-                    }
-                ]
-            },
-            "prompt_type": "simple",
-            "status": "1",
-            "tenant_id": "69736c5e723611efb51b0242ac120007",
-            "top_k": 1024,
-            "update_date": "Fri, 18 Oct 2024 06:20:06 GMT",
-            "update_time": 1729232406638
-        }
-    ]
+    "data": {
+        "total": 1,
+        "page": 1,
+        "page_size": 30,
+        "chats": [
+            {
+                "avatar": "",
+                "create_date": "Fri, 18 Oct 2024 06:20:06 GMT",
+                "create_time": 1729232406637,
+                "description": "A helpful Assistant",
+                "do_refer": "1",
+                "id": "04d0d8e28d1911efa3630242ac120006",
+                "dataset_ids": ["527fa74891e811ef9c650242ac120006"],
+                "language": "English",
+                "llm": {
+                    "frequency_penalty": 0.7,
+                    "model_name": "qwen-plus@Tongyi-Qianwen",
+                    "presence_penalty": 0.4,
+                    "temperature": 0.1,
+                    "top_p": 0.3
+                },
+                "name": "13243",
+                "prompt": {
+                    "empty_response": "Sorry! No relevant content was found in the knowledge base!",
+                    "keywords_similarity_weight": 0.3,
+                    "opener": "Hi! I'm your assistant, what can I do for you?",
+                    "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n",
+                    "rerank_model": "",
+                    "similarity_threshold": 0.2,
+                    "top_n": 6,
+                    "variables": [
+                        {
+                            "key": "knowledge",
+                            "optional": false
+                        }
+                    ]
+                },
+                "prompt_type": "simple",
+                "status": "1",
+                "tenant_id": "69736c5e723611efb51b0242ac120007",
+                "top_k": 1024,
+                "update_date": "Fri, 18 Oct 2024 06:20:06 GMT",
+                "update_time": 1729232406638
+            }
+        ]
+    }
 }
 ```
 
@@ -2275,23 +2289,28 @@ Success:
 ```json
 {
     "code": 0,
-    "data": [
-        {
-            "chat": "2ca4b22e878011ef88fe0242ac120005",
-            "create_date": "Fri, 11 Oct 2024 08:46:43 GMT",
-            "create_time": 1728636403974,
-            "id": "578d541e87ad11ef96b90242ac120006",
-            "messages": [
-                {
-                    "content": "Hi! I am your assistant，can I help you?",
-                    "role": "assistant"
-                }
-            ],
-            "name": "new session",
-            "update_date": "Fri, 11 Oct 2024 08:46:43 GMT",
-            "update_time": 1728636403974
-        }
-    ]
+    "data": {
+        "total": 1,
+        "page": 1,
+        "page_size": 30,
+        "sessions": [
+            {
+                "chat_id": "2ca4b22e878011ef88fe0242ac120005",
+                "create_date": "Fri, 11 Oct 2024 08:46:43 GMT",
+                "create_time": 1728636403974,
+                "id": "578d541e87ad11ef96b90242ac120006",
+                "messages": [
+                    {
+                        "content": "Hi! I am your assistant，can I help you?",
+                        "role": "assistant"
+                    }
+                ],
+                "name": "new session",
+                "update_date": "Fri, 11 Oct 2024 08:46:43 GMT",
+                "update_time": 1728636403974
+            }
+        ]
+    }
 }
 ```
 
@@ -3025,137 +3044,139 @@ Success:
 ```json
 {
     "code": 0,
-    "data": [{
-        "agent_id": "e9e2b9c2b2f911ef801d0242ac120006",
-        "dsl": {
-            "answer": [],
-            "components": {
-                "Answer:OrangeTermsBurn": {
-                    "downstream": [],
-                    "obj": {
-                        "component_name": "Answer",
-                        "params": {}
-                    },
-                    "upstream": []
-                },
-                "Generate:SocialYearsRemain": {
-                    "downstream": [],
-                    "obj": {
-                        "component_name": "Generate",
-                        "params": {
-                            "cite": true,
-                            "frequency_penalty": 0.7,
-                            "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
-                            "message_history_window_size": 12,
-                            "parameters": [],
-                            "presence_penalty": 0.4,
-                            "prompt": "Please summarize the following paragraph. Pay attention to the numbers and do not make things up. The paragraph is as follows:\n{input}\nThis is what you need to summarize.",
-                            "temperature": 0.1,
-                            "top_p": 0.3
-                        }
-                    },
-                    "upstream": []
-                },
-                "begin": {
-                    "downstream": [],
-                    "obj": {
-                        "component_name": "Begin",
-                        "params": {}
-                    },
-                    "upstream": []
-                }
-            },
-            "graph": {
-                "edges": [],
-                "nodes": [
-                    {
-                        "data": {
-                            "label": "Begin",
-                            "name": "begin"
-                        },
-                        "height": 44,
-                        "id": "begin",
-                        "position": {
-                            "x": 50,
-                            "y": 200
-                        },
-                        "sourcePosition": "left",
-                        "targetPosition": "right",
-                        "type": "beginNode",
-                        "width": 200
-                    },
-                    {
-                        "data": {
-                            "form": {
-                                "cite": true,
-                                "frequencyPenaltyEnabled": true,
-                                "frequency_penalty": 0.7,
-                                "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
-                                "maxTokensEnabled": true,
-                                "message_history_window_size": 12,
-                                "parameters": [],
-                                "presencePenaltyEnabled": true,
-                                "presence_penalty": 0.4,
-                                "prompt": "Please summarize the following paragraph. Pay attention to the numbers and do not make things up. The paragraph is as follows:\n{input}\nThis is what you need to summarize.",
-                                "temperature": 0.1,
-                                "temperatureEnabled": true,
-                                "topPEnabled": true,
-                                "top_p": 0.3
-                            },
-                            "label": "Generate",
-                            "name": "Generate Answer_0"
-                        },
-                        "dragging": false,
-                        "height": 105,
-                        "id": "Generate:SocialYearsRemain",
-                        "position": {
-                            "x": 561.3457829707513,
-                            "y": 178.7211182312641
-                        },
-                        "positionAbsolute": {
-                            "x": 561.3457829707513,
-                            "y": 178.7211182312641
-                        },
-                        "selected": true,
-                        "sourcePosition": "right",
-                        "targetPosition": "left",
-                        "type": "generateNode",
-                        "width": 200
-                    },
-                    {
-                        "data": {
-                            "form": {},
-                            "label": "Answer",
-                            "name": "Dialogue_0"
-                        },
-                        "height": 44,
-                        "id": "Answer:OrangeTermsBurn",
-                        "position": {
-                            "x": 317.2368194777658,
-                            "y": 218.30635555445093
-                        },
-                        "sourcePosition": "right",
-                        "targetPosition": "left",
-                        "type": "logicNode",
-                        "width": 200
-                    }
-                ]
-            },
-            "history": [],
-            "messages": [],
-            "path": [],
-            "reference": []
-        },
-        "id": "792dde22b2fa11ef97550242ac120006",
-        "message": [
+    "data": {
+        "total": 1,
+        "page": 1,
+        "page_size": 30,
+        "sessions": [
             {
-                "content": "Hi! I'm your smart assistant. What can I do for you?",
-                "role": "assistant"
+                "agent_id": "e9e2b9c2b2f911ef801d0242ac120006",
+              "dsl": {
+                "answer": [],
+                "components": {
+                  "Answer:OrangeTermsBurn": {
+                    "downstream": [],
+                    "obj": {
+                      "component_name": "Answer",
+                      "params": {}
+                    },
+                    "upstream": []
+                  },
+                  "Generate:SocialYearsRemain": {
+                    "downstream": [],
+                    "obj": {
+                      "component_name": "Generate",
+                      "params": {
+                        "cite": true,
+                        "frequency_penalty": 0.7,
+                        "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
+                        "message_history_window_size": 12,
+                        "parameters": [],
+                        "presence_penalty": 0.4,
+                        "prompt": "Please summarize the following paragraph. Pay attention to the numbers and do not make things up. The paragraph is as follows:\n{input}\nThis is what you need to summarize.",
+                        "temperature": 0.1,
+                        "top_p": 0.3
+                      }
+                    },
+                    "upstream": []
+                  },
+                  "begin": {
+                    "downstream": [],
+                    "obj": {
+                      "component_name": "Begin",
+                      "params": {}
+                    },
+                    "upstream": []
+                  }
+                },
+                "graph": {
+                  "edges": [],
+                  "nodes": [
+                    {
+                      "data": {
+                        "label": "Begin",
+                        "name": "begin"
+                      },
+                      "height": 44,
+                      "id": "begin",
+                      "position": {
+                        "x": 50,
+                        "y": 200
+                      },
+                      "sourcePosition": "left",
+                      "targetPosition": "right",
+                      "type": "beginNode",
+                      "width": 200
+                    },
+                    {
+                      "data": {
+                        "form": {
+                          "cite": true,
+                          "frequencyPenaltyEnabled": true,
+                          "frequency_penalty": 0.7,
+                          "llm_id": "gpt-4o___OpenAI-API@OpenAI-API-Compatible",
+                          "maxTokensEnabled": true,
+                          "message_history_window_size": 12,
+                          "parameters": [],
+                          "presencePenaltyEnabled": true,
+                          "presence_penalty": 0.4,
+                          "prompt": "Please summarize the following paragraph. Pay attention to the numbers and do not make things up. The paragraph is as follows:\n{input}\nThis is what you need to summarize.",
+                          "temperature": 0.1,
+                          "temperatureEnabled": true,
+                          "topPEnabled": true,
+                          "top_p": 0.3
+                        },
+                        "label": "Generate",
+                        "name": "Generate Answer_0"
+                      },
+                      "dragging": false,
+                      "height": 105,
+                      "id": "Generate:SocialYearsRemain",
+                      "position": {
+                        "x": 561.3457829707513,
+                        "y": 178.7211182312641
+                      },
+                      "positionAbsolute": {
+                        "x": 561.3457829707513,
+                        "y": 178.7211182312641
+                      },
+                      "selected": true,
+                      "sourcePosition": "right",
+                      "targetPosition": "left",
+                      "type": "generateNode",
+                      "width": 200
+                    },
+                    {
+                      "data": {
+                        "form": {},
+                        "label": "Answer",
+                        "name": "Dialogue_0"
+                      },
+                      "height": 44,
+                      "id": "Answer:OrangeTermsBurn",
+                      "position": {
+                        "x": 317.2368194777658,
+                        "y": 218.30635555445093
+                      },
+                      "sourcePosition": "right",
+                      "targetPosition": "left",
+                      "type": "logicNode",
+                      "width": 200
+                    }
+                  ]
+                },
+                "id": "792dde22b2fa11ef97550242ac120006",
+                "message": [
+                    {
+                        "content": "Hi! I'm your smart assistant. What can I do for you?",
+                        "role": "assistant"
+                    }
+                ],
+                "source": "agent",
+                "user_id": ""
             }
-        ],
-        "source": "agent",
-        "user_id": ""
-    }]
+        ]
+    }
 }
 ```
 
@@ -3350,58 +3371,63 @@ Success:
 ```json
 {
     "code": 0,
-    "data": [
-        {
-            "avatar": null,
-            "canvas_type": null,
-            "create_date": "Thu, 05 Dec 2024 19:10:36 GMT",
-            "create_time": 1733397036424,
-            "description": null,
-            "dsl": {
-                "answer": [],
-                "components": {
-                    "begin": {
-                        "downstream": [],
-                        "obj": {
-                            "component_name": "Begin",
-                            "params": {}
-                        },
-                        "upstream": []
-                    }
-                },
-                "graph": {
-                    "edges": [],
-                    "nodes": [
-                        {
-                            "data": {
-                                "label": "Begin",
-                                "name": "begin"
+    "data": {
+        "total": 1,
+        "page": 1,
+        "page_size": 30,
+        "agents": [
+            {
+                "avatar": null,
+                "canvas_type": null,
+                "create_date": "Thu, 05 Dec 2024 19:10:36 GMT",
+                "create_time": 1733397036424,
+                "description": null,
+                "dsl": {
+                    "answer": [],
+                    "components": {
+                        "begin": {
+                            "downstream": [],
+                            "obj": {
+                                "component_name": "Begin",
+                                "params": {}
                             },
-                            "height": 44,
-                            "id": "begin",
-                            "position": {
-                                "x": 50,
-                                "y": 200
-                            },
-                            "sourcePosition": "left",
-                            "targetPosition": "right",
-                            "type": "beginNode",
-                            "width": 200
+                            "upstream": []
                         }
-                    ]
+                    },
+                    "graph": {
+                        "edges": [],
+                        "nodes": [
+                            {
+                                "data": {
+                                    "label": "Begin",
+                                    "name": "begin"
+                                },
+                                "height": 44,
+                                "id": "begin",
+                                "position": {
+                                    "x": 50,
+                                    "y": 200
+                                },
+                                "sourcePosition": "left",
+                                "targetPosition": "right",
+                                "type": "beginNode",
+                                "width": 200
+                            }
+                        ]
+                    },
+                    "history": [],
+                    "messages": [],
+                    "path": [],
+                    "reference": []
                 },
-                "history": [],
-                "messages": [],
-                "path": [],
-                "reference": []
-            },
-            "id": "8d9ca0e2b2f911ef9ca20242ac120006",
-            "title": "123465",
-            "update_date": "Thu, 05 Dec 2024 19:10:56 GMT",
-            "update_time": 1733397056801,
-            "user_id": "69736c5e723611efb51b0242ac120007"
-        }
-    ]
+                "id": "8d9ca0e2b2f911ef9ca20242ac120006",
+                "title": "123465",
+                "update_date": "Thu, 05 Dec 2024 19:10:56 GMT",
+                "update_time": 1733397056801,
+                "user_id": "69736c5e723611efb51b0242ac120007"
+            }
+        ]
+    }
 }
 ```
 

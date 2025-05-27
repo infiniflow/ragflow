@@ -442,9 +442,7 @@ def list_datasets(tenant_id):
       200:
         description: Successful operation.
         schema:
-          type: array
-          items:
-            type: object
+          type: object
     """
     args, err = validate_and_parse_request_args(request, ListDatasetReq)
     if err is not None:
@@ -471,7 +469,7 @@ def list_datasets(tenant_id):
 
     try:
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
-        kbs = KnowledgebaseService.get_list(
+        kbs, total = KnowledgebaseService.get_list(
             [m["tenant_id"] for m in tenants],
             tenant_id,
             args["page"],
@@ -488,4 +486,9 @@ def list_datasets(tenant_id):
     response_data_list = []
     for kb in kbs:
         response_data_list.append(remap_dictionary_keys(kb))
-    return get_result(data=response_data_list)
+    return get_result(data={
+        "total": total,
+        "page": args["page"],
+        "page_size": args["page_size"],
+        "datasets": response_data_list
+    })

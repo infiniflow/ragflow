@@ -351,9 +351,9 @@ class KnowledgebaseService(CommonService):
         else:
             kbs = kbs.order_by(cls.model.getter_by(orderby).asc())
 
+        total = kbs.count()
         kbs = kbs.paginate(page_number, items_per_page)
-
-        return list(kbs.dicts())
+        return list(kbs.dicts()), total
 
     @classmethod
     @DB.connection_context()

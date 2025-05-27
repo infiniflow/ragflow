@@ -451,9 +451,9 @@ def list_session(tenant_id, chat_id):
         desc = False
     else:
         desc = True
-    convs = ConversationService.get_list(chat_id, page_number, items_per_page, orderby, desc, id, name, user_id)
+    convs, total = ConversationService.get_list(chat_id, page_number, items_per_page, orderby, desc, id, name, user_id)
     if not convs:
-        return get_result(data=[])
+        return get_result(data={"total": 0, "page": page_number, "page_size": items_per_page, "sessions": []})
     for conv in convs:
         conv["messages"] = conv.pop("message")
         infos = conv["messages"]
@@ -484,7 +484,7 @@ def list_session(tenant_id, chat_id):
                     messages[message_num]["reference"] = chunk_list
                 message_num += 1
         del conv["reference"]
-    return get_result(data=convs)
+    return get_result(data={"total": total, "page": page_number, "page_size": items_per_page, "sessions": convs})
 
 
 @manager.route("/agents/<agent_id>/sessions", methods=["GET"])  # noqa: F821
@@ -501,11 +501,10 @@ def list_agent_session(tenant_id, agent_id):
         desc = False
     else:
         desc = True
-    # dsl defaults to True in all cases except for False and false
     include_dsl = request.args.get("dsl") != "False" and request.args.get("dsl") != "false"
-    convs = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id, include_dsl)
+    convs, total = API4ConversationService.get_list(agent_id, tenant_id, page_number, items_per_page, orderby, desc, id, user_id, include_dsl)
     if not convs:
-        return get_result(data=[])
+        return get_result(data={"total": 0, "page": page_number, "page_size": items_per_page, "sessions": []})
     for conv in convs:
         conv["messages"] = conv.pop("message")
         infos = conv["messages"]
@@ -537,7 +536,7 @@ def list_agent_session(tenant_id, agent_id):
                     messages[message_num]["reference"] = chunk_list
                 message_num += 1
         del conv["reference"]
-    return get_result(data=convs)
+    return get_result(data={"total": total, "page": page_number, "page_size": items_per_page, "sessions": convs})
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["DELETE"])  # noqa: F821
