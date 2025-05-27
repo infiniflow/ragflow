@@ -537,7 +537,8 @@ async def do_handle_task(task):
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
         # run RAPTOR
-        chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
+        async with kg_limiter:
+            chunks, token_count = await run_raptor(task, chat_model, embedding_model, vector_size, progress_callback)
     # Either using graphrag or Standard chunking methods
     elif task.get("task_type", "") == "graphrag":
         if not task_parser_config.get("graphrag", {}).get("use_graphrag", False):
