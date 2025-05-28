@@ -5,13 +5,13 @@
 </div>
 
 <p align="center">
-  <a href="./README.md">English</a> |
-  <a href="./README_zh.md">简体中文</a> |
-  <a href="./README_tzh.md">繁体中文</a> |
-  <a href="./README_ja.md">日本語</a> |
-  <a href="./README_ko.md">한국어</a> |
-  <a href="./README_id.md">Bahasa Indonesia</a> |
-  <a href="/README_pt_br.md">Português (Brasil)</a>
+  <a href="./README.md"><img alt="README in English" src="https://img.shields.io/badge/English-DFE0E5"></a>
+  <a href="./README_tzh.md"><img alt="繁體中文文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
+  <a href="./README_zh.md"><img alt="简体中文版自述文件" src="https://img.shields.io/badge/简体中文-DBEDFA"></a>
+  <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
+  <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
+  <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
+  <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
 </p>
 
 <p align="center">
@@ -58,11 +58,11 @@
 
 ## 🔥 近期更新
 
-- 2025-03-19 PDF和DOCX中的图支持用多模态大模型去解析得到描述.
+- 2025-05-23 Agent 新增 Python/JS 代码执行器组件。
+- 2025-05-05 支持跨语言查询。
+- 2025-03-19 PDF 和 DOCX 中的图支持用多模态大模型去解析得到描述.
 - 2025-02-28 结合互联网搜索（Tavily），对于任意大模型实现类似 Deep Research 的推理功能.
-- 2025-01-26 优化知识图谱的提取和应用，提供了多种配置选择。
 - 2024-12-18 升级了 DeepDoc 的文档布局分析模型。
-- 2024-11-01 对解析后的 chunk 加入关键词抽取和相关问题生成以提高召回的准确度。
 - 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
 
 ## 🎉 关注项目
