@@ -37,6 +37,7 @@ from rag.nlp import rag_tokenizer, search
 from rag.settings import get_svr_queue_name
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
+from rag.utils.doc_store_conn import OrderByExpr
 
 
 class DocumentService(CommonService):
@@ -70,7 +71,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_kb_id(cls, kb_id, page_number, items_per_page,
-                     orderby, desc, keywords):
+                     orderby, desc, keywords, run_status, types):
         if keywords:
             docs = cls.model.select().where(
                 (cls.model.kb_id == kb_id),
@@ -78,15 +79,59 @@ class DocumentService(CommonService):
             )
         else:
             docs = cls.model.select().where(cls.model.kb_id == kb_id)
+
+        if run_status:
+            docs = docs.where(cls.model.run.in_(run_status))
+        if types:
+            docs = docs.where(cls.model.type.in_(types))
+
         count = docs.count()
         if desc:
             docs = docs.order_by(cls.model.getter_by(orderby).desc())
         else:
             docs = docs.order_by(cls.model.getter_by(orderby).asc())
 
-        docs = docs.paginate(page_number, items_per_page)
+
+        if page_number and items_per_page:
+            docs = docs.paginate(page_number, items_per_page)
 
         return list(docs.dicts()), count
+
+    @classmethod
+    @DB.connection_context()
+    def count_by_kb_id(cls, kb_id, keywords, run_status, types):
+        if keywords:
+            docs = cls.model.select().where(
+                (cls.model.kb_id == kb_id),
+                (fn.LOWER(cls.model.name).contains(keywords.lower()))
+            )
+        else:
+            docs = cls.model.select().where(cls.model.kb_id == kb_id)
+
+        if run_status:
+            docs = docs.where(cls.model.run.in_(run_status))
+        if types:
+            docs = docs.where(cls.model.type.in_(types))
+
+        count = docs.count()
+
+        return count
+
+    @classmethod
+    @DB.connection_context()
+    def get_total_size_by_kb_id(cls, kb_id, keywords="", run_status=[], types=[]):
+        query = cls.model.select(fn.COALESCE(fn.SUM(cls.model.size), 0)).where(
+            cls.model.kb_id == kb_id
+        )
+
+        if keywords:
+            query = query.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
+        if run_status:
+            query = query.where(cls.model.run.in_(run_status))
+        if types:
+            query = query.where(cls.model.type.in_(types))
+
+        return int(query.scalar()) or 0
 
     @classmethod
     @DB.connection_context()
@@ -103,14 +148,18 @@ class DocumentService(CommonService):
         cls.clear_chunk_num(doc.id)
         try:
             settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
-            settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
-                                         {"remove": {"source_id": doc.id}},
-                                         search.index_name(tenant_id), doc.kb_id)
-            settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
-                                         {"removed_kwd": "Y"},
-                                         search.index_name(tenant_id), doc.kb_id)
-            settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
-                                         search.index_name(tenant_id), doc.kb_id)
+            graph_source = settings.docStoreConn.getFields(
+                settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
+            )
+            if len(graph_source) > 0 and doc.id in list(graph_source.values())[0]["source_id"]:
+                settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
+                                            {"remove": {"source_id": doc.id}},
+                                            search.index_name(tenant_id), doc.kb_id)
+                settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
+                                            {"removed_kwd": "Y"},
+                                            search.index_name(tenant_id), doc.kb_id)
+                settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
+                                            search.index_name(tenant_id), doc.kb_id)
         except Exception:
             pass
         return cls.delete_by_id(doc.id)
@@ -327,6 +376,15 @@ class DocumentService(CommonService):
         if not doc_id:
             return
         return doc_id[0]["id"]
+    
+    @classmethod
+    @DB.connection_context()
+    def get_doc_ids_by_doc_names(cls, doc_names):
+        if not doc_names:
+            return []
+
+        query = cls.model.select(cls.model.id).where(cls.model.name.in_(doc_names))
+        return list(query.scalars().iterator())
 
     @classmethod
     @DB.connection_context()

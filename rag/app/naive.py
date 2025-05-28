@@ -22,7 +22,7 @@ from timeit import default_timer as timer
 
 from docx import Document
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
-from markdown import markdown
+from markdown import markdown 
 from PIL import Image
 from tika import parser
 
@@ -31,7 +31,7 @@ from api.db.services.llm_service import LLMBundle
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wraper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
-from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_docx, tokenize_table
+from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
 from rag.utils import num_tokens_from_string
 
 
@@ -58,6 +58,9 @@ class Docx(DocxParser):
             logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
             return None
         except InvalidImageStreamError:
+            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+            return None
+        except UnicodeDecodeError:
             logging.info("The recognized image stream appears to be corrupted. Skipping image.")
             return None
         try:
@@ -287,6 +290,40 @@ class Pdf(PdfParser):
 
 
 class Markdown(MarkdownParser):
+    def get_picture_urls(self, sections):
+        if not sections:
+            return []
+        if isinstance(sections, type("")):
+            text = sections
+        elif isinstance(sections[0], type("")):
+            text = sections[0]
+        else:
+            return []
+        
+        from bs4 import BeautifulSoup
+        html_content = markdown(text)
+        soup = BeautifulSoup(html_content, 'html.parser')
+        html_images = [img.get('src') for img in soup.find_all('img') if img.get('src')]
+        return html_images
+    
+    def get_pictures(self, text):
+        """Download and open all images from markdown text."""
+        import requests
+        image_urls = self.get_picture_urls(text)
+        images = []
+        # Find all image URLs in text
+        for url in image_urls:
+            try:
+                response = requests.get(url, stream=True, timeout=30)
+                if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
+                    img = Image.open(BytesIO(response.content)).convert('RGB')
+                    images.append(img)
+            except Exception as e:
+                logging.error(f"Failed to download/open image from {url}: {e}")
+                continue
+                    
+        return images if images else None
+
     def __call__(self, filename, binary=None):
         if binary:
             encoding = find_codec(binary)
@@ -309,7 +346,6 @@ class Markdown(MarkdownParser):
                     sections.append((sec_ + "\n" + sec, ""))
                 else:
                     sections.append((sec, ""))
-
         for table in tables:
             tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
         return sections, tbls
@@ -335,6 +371,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     pdf_parser = None
+    section_images = None
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
 
@@ -368,7 +405,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         if kwargs.get("section_only", False):
             return chunks
 
-        res.extend(tokenize_chunks_docx(chunks, doc, is_english, images))
+        res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         return res
 
@@ -432,7 +469,20 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections, tables = Markdown(int(parser_config.get("chunk_token_num", 128)))(filename, binary)
+        markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
+        sections, tables = markdown_parser(filename, binary)
+        
+        # Process images for each section
+        section_images = []
+        for section_text, _ in sections:
+            images = markdown_parser.get_pictures(section_text) if section_text else None
+            if images:
+                # If multiple images found, combine them using concat_img
+                combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
+                section_images.append(combined_image)
+            else:
+                section_images.append(None)
+                
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
 
@@ -467,14 +517,30 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
     st = timer()
-    chunks = naive_merge(
-        sections, int(parser_config.get(
-            "chunk_token_num", 128)), parser_config.get(
-            "delimiter", "\n!?。；！？"))
-    if kwargs.get("section_only", False):
-        return chunks
+    if section_images:
+        # if all images are None, set section_images to None
+        if all(image is None for image in section_images):
+            section_images = None
 
-    res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
+    if section_images:
+        chunks, images = naive_merge_with_images(sections, section_images,
+                                        int(parser_config.get(
+                                            "chunk_token_num", 128)), parser_config.get(
+                                            "delimiter", "\n!?。；！？"))
+        if kwargs.get("section_only", False):
+            return chunks
+        
+        res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
+    else:
+        chunks = naive_merge(
+            sections, int(parser_config.get(
+                "chunk_token_num", 128)), parser_config.get(
+                "delimiter", "\n!?。；！？"))
+        if kwargs.get("section_only", False):
+            return chunks
+
+        res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
+    
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
     return res
 

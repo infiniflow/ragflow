@@ -7,7 +7,7 @@ import {
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import chatService from '@/services/chat-service';
-import kbService from '@/services/knowledge-service';
+import kbService, { listDocument } from '@/services/knowledge-service';
 import api, { api_host } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { post } from '@/utils/request';
@@ -73,7 +73,7 @@ export const useFetchNextDocumentList = () => {
     refetchInterval: 15000,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
-      const ret = await kbService.get_document_list({
+      const ret = await listDocument({
         kb_id: knowledgeId || id,
         keywords: searchString,
         page_size: pagination.pageSize,
@@ -325,6 +325,10 @@ export const useRunNextDocument = () => {
       run: number;
       shouldDelete: boolean;
     }) => {
+      queryClient.invalidateQueries({
+        queryKey: ['fetchDocumentList'],
+      });
+
       const ret = await kbService.document_run({
         doc_ids: documentIds,
         run,

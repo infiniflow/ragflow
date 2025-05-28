@@ -95,6 +95,8 @@ export default {
       disabled: 'Deshabilitar',
       action: 'Acción',
       parsingStatus: 'Estado de análisis',
+      parsingStatusTip:
+        'El tiempo de procesamiento de documentos varía según varios factores. Activar funciones como Knowledge Graph, RAPTOR, extracción automática de preguntas o de palabras clave aumentará significativamente el tiempo de procesamiento. Si la barra de progreso se detiene, consulte estas dos preguntas frecuentes: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Proceso iniciado en',
       processDuration: 'Duración del proceso',
       progressMsg: 'Mensaje de progreso',
@@ -131,7 +133,7 @@ export default {
       toMessage: 'Falta el número de página final (excluido)',
       layoutRecognize: 'Reconocimiento de disposición',
       layoutRecognizeTip:
-        'Usa modelos visuales para el análisis de disposición y así identificar mejor la estructura del documento, encontrar dónde están los títulos, bloques de texto, imágenes y tablas. Sin esta función, solo se obtendrá el texto plano del PDF.',
+        'Usa modelos visuales para el análisis de disposición y así identificar mejor la estructura del documento, encontrar dónde están los títulos, bloques de texto, imágenes y tablas. Sin esta función, solo se obtendrá el texto plano del PDF. Para más información, consulte https://ragflow.io/docs/dev/select_pdf_parser.',
       taskPageSize: 'Tamaño de la tarea por página',
       taskPageSizeMessage:
         '¡Por favor ingresa el tamaño de la tarea por página!',
@@ -151,10 +153,10 @@ export default {
       rerankPlaceholder: 'Por favor selecciona',
       rerankTip: `Si está vacío, se utilizan los embeddings de la consulta y los fragmentos para calcular la similitud coseno del vector. De lo contrario, se usa la puntuación de reordenamiento en lugar de la similitud coseno del vector.`,
       topK: 'Top-K',
-      topKTip: `K fragmentos serán alimentados a los modelos de reordenamiento.`,
+      topKTip: `Utilizado junto con el Rerank model, esta configuración define el número de fragmentos de texto que se enviarán al modelo reranking especificado.`,
       delimiter: `Delimitadores para segmentación de texto`,
       html4excel: 'Excel a HTML',
-      html4excelTip: `Usar junto con el método de fragmentación General. Cuando está desactivado, los archivos de hoja de cálculo (XLSX, XLS (Excel97~2003)) se analizan línea por línea como pares clave-valor. Cuando está activado, los archivos de hoja de cálculo se convierten en tablas HTML. Si la tabla original tiene más de 12 filas, el sistema la dividirá automáticamente en varias tablas HTML cada 12 filas.`,
+      html4excelTip: `Usar junto con el método de fragmentación General. Cuando está desactivado, los archivos de hoja de cálculo (XLSX, XLS (Excel 97-2003)) se analizan línea por línea como pares clave-valor. Cuando está activado, los archivos de hoja de cálculo se convierten en tablas HTML. Si la tabla original tiene más de 12 filas, el sistema la dividirá automáticamente en varias tablas HTML cada 12 filas. Para más información, consulte https://ragflow.io/docs/dev/enable_excel2html.`,
     },
 
     // Otros bloques de traducción
@@ -171,7 +173,7 @@ export default {
       sendPlaceholder: 'Enviar mensaje al Asistente...',
       chatConfiguration: 'Configuración del Chat',
       chatConfigurationDescription:
-        'Aquí, personaliza un asistente dedicado para tus bases de conocimiento especiales 💕',
+        'Configura un asistente de chat para los conjuntos de datos seleccionados (bases de conocimiento) aquí. 💕',
       assistantName: 'Nombre del asistente',
       assistantNameMessage: 'El nombre del asistente es obligatorio',
       namePlaceholder: 'p.ej. Resume Jarvis',
@@ -184,7 +186,8 @@ export default {
       setAnOpenerTip: '¿Cómo quieres dar la bienvenida a tus clientes?',
       knowledgeBases: 'Bases de conocimiento',
       knowledgeBasesMessage: 'Por favor selecciona',
-      knowledgeBasesTip: 'Selecciona las bases de conocimiento asociadas.',
+      knowledgeBasesTip:
+        'Selecciona las bases de conocimiento asociadas. Una base de conocimientos vacía no aparecerá en la lista desplegable.',
       system: 'prompt del sistema',
       systemInitialValue: `Eres un asistente inteligente. Por favor resume el contenido de la base de conocimiento para responder la pregunta. Enumera los datos en la base de conocimiento y responde con detalle. Cuando todo el contenido de la base de conocimiento sea irrelevante para la pregunta, tu respuesta debe incluir la frase "¡La respuesta que buscas no se encuentra en la base de conocimiento!". Las respuestas necesitan considerar el historial de chat.
         Aquí está la base de conocimiento:
@@ -192,14 +195,11 @@ export default {
         Esa es la base de conocimiento.`,
       systemMessage: '¡Por favor ingresa!',
       systemTip:
-        'Instrucciones que necesitas que el LLM siga cuando responda preguntas, como el diseño de carácter, la longitud de la respuesta y el idioma de la respuesta.',
+        'Instrucciones que necesitas que el LLM siga cuando responda preguntas, como el diseño de carácter, la longitud de la respuesta y el idioma de la respuesta. Si su modelo tiene soporte nativo para razonamiento, puede agregar //no_thinking al prompt para detener el razonamiento.',
       topN: 'Top N',
       topNTip: `No todos los fragmentos cuya puntuación de similitud esté por encima del "umbral de similitud" serán enviados a los LLMs. Los LLMs solo pueden ver estos "Top N" fragmentos.`,
       variable: 'Variable',
-      variableTip: `Si usas APIs de diálogo, las variables pueden ayudarte a chatear con tus clientes usando diferentes estrategias.
-        Las variables se utilizan para completar la parte "prompt del sistema" del prompt para darle una pista al LLM.
-        La "base de conocimiento" es una variable muy especial que se completará con los fragmentos recuperados.
-        Todas las variables en "prompt del sistema" deben estar entre llaves.`,
+      variableTip: `Usados junto con las API de gestión de asistentes de chat de RAGFlow, las variables pueden ayudar a desarrollar estrategias de prompt del sistema más flexibles. Las variables definidas serán utilizadas por el 'Prompt del sistema' como parte de los prompts para el LLM. {knowledge} es una variable especial reservada que representa partes recuperadas de base(s) de conocimiento especificada(s), y todas las variables deben estar rodeadas por llaves {} en el 'Prompt del sistema'. Consulte https://ragflow.io/docs/dev/set_chat_variables para obtener más detalles.`,
       add: 'Agregar',
       key: 'Clave',
       optional: 'Opcional',
@@ -577,7 +577,7 @@ export default {
       messageHistoryWindowSize:
         'Tamaño de la ventana del historial de mensajes',
       messageHistoryWindowSizeTip:
-        'El tamaño de ventana del historial de conversación que necesita ser visto por el LLM. Cuanto más grande mejor, pero ten cuidado con la longitud máxima de contenido que puede manejar el LLM.',
+        'El tamaño de la ventana del historial de conversación visible para el LLM. Cuanto más grande, mejor, pero tenga en cuenta el límite máximo de tokens del LLM.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       email: 'Correo electrónico',
@@ -856,6 +856,7 @@ export default {
       note: 'Nota',
       noteDescription: 'Nota',
       notePlaceholder: 'Por favor ingresa una nota',
+      runningHintText: 'está corriendo...🕞',
     },
     footer: {
       profile: 'Todos los derechos reservados @ React',

@@ -18,13 +18,10 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from common import INVALID_API_TOKEN, delete_datasets, list_chat_assistants
 from libs.auth import RAGFlowHttpApiAuth
+from libs.utils import is_sorted
 
 
-def is_sorted(data, field, descending=True):
-    timestamps = [ds[field] for ds in data]
-    return all(a >= b for a, b in zip(timestamps, timestamps[1:])) if descending else all(a <= b for a, b in zip(timestamps, timestamps[1:]))
-
-
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -45,11 +42,13 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_chat_assistants")
 class TestChatAssistantsList:
+    @pytest.mark.p1
     def test_default(self, get_http_api_auth):
         res = list_chat_assistants(get_http_api_auth)
         assert res["code"] == 0
         assert len(res["data"]) == 5
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -82,6 +81,7 @@ class TestChatAssistantsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -121,31 +121,17 @@ class TestChatAssistantsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            (
-                {"orderby": None},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"orderby": "create_time"},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"orderby": "update_time"},
-                0,
-                lambda r: (is_sorted(r["data"], "update_time", True)),
-                "",
-            ),
+            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"], "update_time", True)), ""),
             pytest.param(
                 {"orderby": "name", "desc": "False"},
                 0,
-                lambda r: (is_sorted(r["data"]["docs"], "name", False)),
+                lambda r: (is_sorted(r["data"], "name", False)),
                 "",
                 marks=pytest.mark.skip(reason="issues/5851"),
             ),
@@ -174,57 +160,18 @@ class TestChatAssistantsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            (
-                {"desc": None},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "true"},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "True"},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": True},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "false"},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": "False"},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": False},
-                0,
-                lambda r: (is_sorted(r["data"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": "False", "orderby": "update_time"},
-                0,
-                lambda r: (is_sorted(r["data"], "update_time", False)),
-                "",
-            ),
+            ({"desc": None}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"desc": True}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
+            ({"desc": "false"}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
+            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
+            ({"desc": False}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"], "update_time", False)), ""),
             pytest.param(
                 {"desc": "unknown"},
                 102,
@@ -250,6 +197,7 @@ class TestChatAssistantsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_num, expected_message",
         [
@@ -270,6 +218,7 @@ class TestChatAssistantsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "chat_assistant_id, expected_code, expected_num, expected_message",
         [
@@ -288,7 +237,7 @@ class TestChatAssistantsList:
         expected_num,
         expected_message,
     ):
-        _, _, _, chat_assistant_ids = add_chat_assistants
+        _, _, chat_assistant_ids = add_chat_assistants
         if callable(chat_assistant_id):
             params = {"id": chat_assistant_id(chat_assistant_ids)}
         else:
@@ -304,6 +253,7 @@ class TestChatAssistantsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "chat_assistant_id, name, expected_code, expected_num, expected_message",
         [
@@ -323,7 +273,7 @@ class TestChatAssistantsList:
         expected_num,
         expected_message,
     ):
-        _, _, _, chat_assistant_ids = add_chat_assistants
+        _, _, chat_assistant_ids = add_chat_assistants
         if callable(chat_assistant_id):
             params = {"id": chat_assistant_id(chat_assistant_ids), "name": name}
         else:
@@ -336,20 +286,23 @@ class TestChatAssistantsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     def test_concurrent_list(self, get_http_api_auth):
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(list_chat_assistants, get_http_api_auth) for i in range(100)]
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
+    @pytest.mark.p3
     def test_invalid_params(self, get_http_api_auth):
         params = {"a": "b"}
         res = list_chat_assistants(get_http_api_auth, params=params)
         assert res["code"] == 0
         assert len(res["data"]) == 5
 
+    @pytest.mark.p2
     def test_list_chats_after_deleting_associated_dataset(self, get_http_api_auth, add_chat_assistants):
-        dataset_id, _, _, _ = add_chat_assistants
+        dataset_id, _, _ = add_chat_assistants
         res = delete_datasets(get_http_api_auth, {"ids": [dataset_id]})
         assert res["code"] == 0
 

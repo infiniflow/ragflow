@@ -23,8 +23,14 @@ export interface IKnowledge {
   update_time: number;
   vector_similarity_weight: number;
   embd_id: string;
-  nickname?: string;
+  nickname: string;
   operator_permission: number;
+  size: number;
+}
+
+export interface IKnowledgeResult {
+  kbs: IKnowledge[];
+  total: number;
 }
 
 export interface Raptor {
@@ -43,6 +49,7 @@ export interface ParserConfig {
   raptor?: Raptor;
   tag_kb_ids?: string[];
   topn_tags?: number;
+  graphrag?: { use_graphrag?: boolean };
 }
 
 export interface IKnowledgeFileParserConfig {
@@ -97,7 +104,7 @@ export interface IChunk {
   content_with_weight: string;
   doc_id: string;
   doc_name: string;
-  img_id: string;
+  image_id: string;
   important_kwd?: string[];
   question_kwd?: string[]; // keywords
   tag_kwd?: string[];
@@ -122,6 +129,7 @@ export interface ITestingChunk {
   highlight: string;
   positions: number[][];
   docnm_kwd: string;
+  doc_type_kwd: string;
 }
 
 export interface ITestingDocument {
@@ -133,6 +141,13 @@ export interface ITestingDocument {
 export interface ITestingResult {
   chunks: ITestingChunk[];
   documents: ITestingDocument[];
+  total: number;
+  labels?: Record<string, number>;
+}
+
+export interface INextTestingResult {
+  chunks: ITestingChunk[];
+  doc_aggs: ITestingDocument[];
   total: number;
   labels?: Record<string, number>;
 }

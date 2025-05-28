@@ -13,9 +13,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 
 import pytest
-from common import add_chunk, batch_create_datasets, bulk_upload_documents, delete_chat_assistants, delete_datasets, list_documnets, parse_documnets
+from common import (
+    add_chunk,
+    batch_create_datasets,
+    bulk_upload_documents,
+    create_chat_assistant,
+    delete_chat_assistants,
+    delete_datasets,
+    delete_session_with_chat_assistants,
+    list_documnets,
+    parse_documnets,
+)
+from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import wait_for
 from libs.utils.file_utils import (
     create_docx_file,
@@ -30,6 +42,30 @@ from libs.utils.file_utils import (
     create_txt_file,
 )
 
+MARKER_EXPRESSIONS = {
+    "p1": "p1",
+    "p2": "p1 or p2",
+    "p3": "p1 or p2 or p3",
+}
+HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--level",
+        action="store",
+        default="p2",
+        choices=list(MARKER_EXPRESSIONS.keys()),
+        help=f"Test level ({'/'.join(MARKER_EXPRESSIONS)}): p1=smoke, p2=core, p3=full",
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    level = config.getoption("--level")
+    config.option.markexpr = MARKER_EXPRESSIONS[level]
+    if config.option.verbose > 0:
+        print(f"\n[CONFIG] Active test level: {level}")
+
 
 @wait_for(30, 1, "Document parsing timeout")
 def condition(_auth, _dataset_id):
@@ -40,16 +76,36 @@ def condition(_auth, _dataset_id):
     return True
 
 
-@pytest.fixture(scope="function")
-def clear_datasets(get_http_api_auth):
-    yield
-    delete_datasets(get_http_api_auth)
+@pytest.fixture(scope="session")
+def get_http_api_auth(get_api_key_fixture):
+    return RAGFlowHttpApiAuth(get_api_key_fixture)
 
 
 @pytest.fixture(scope="function")
-def clear_chat_assistants(get_http_api_auth):
-    yield
-    delete_chat_assistants(get_http_api_auth)
+def clear_datasets(request, get_http_api_auth):
+    def cleanup():
+        delete_datasets(get_http_api_auth, {"ids": None})
+
+    request.addfinalizer(cleanup)
+
+
+@pytest.fixture(scope="function")
+def clear_chat_assistants(request, get_http_api_auth):
+    def cleanup():
+        delete_chat_assistants(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+
+@pytest.fixture(scope="function")
+def clear_session_with_chat_assistants(request, get_http_api_auth, add_chat_assistants):
+    _, _, chat_assistant_ids = add_chat_assistants
+
+    def cleanup():
+        for chat_assistant_id in chat_assistant_ids:
+            delete_session_with_chat_assistants(get_http_api_auth, chat_assistant_id)
+
+    request.addfinalizer(cleanup)
 
 
 @pytest.fixture
@@ -84,7 +140,7 @@ def ragflow_tmp_dir(request, tmp_path_factory):
 @pytest.fixture(scope="class")
 def add_dataset(request, get_http_api_auth):
     def cleanup():
-        delete_datasets(get_http_api_auth)
+        delete_datasets(get_http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
@@ -95,12 +151,11 @@ def add_dataset(request, get_http_api_auth):
 @pytest.fixture(scope="function")
 def add_dataset_func(request, get_http_api_auth):
     def cleanup():
-        delete_datasets(get_http_api_auth)
+        delete_datasets(get_http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
-    dataset_ids = batch_create_datasets(get_http_api_auth, 1)
-    return dataset_ids[0]
+    return batch_create_datasets(get_http_api_auth, 1)[0]
 
 
 @pytest.fixture(scope="class")
@@ -126,3 +181,22 @@ def add_chunks(get_http_api_auth, add_document):
 
     sleep(1)
     return dataset_id, document_id, chunk_ids
+
+
+@pytest.fixture(scope="class")
+def add_chat_assistants(request, get_http_api_auth, add_document):
+    def cleanup():
+        delete_chat_assistants(get_http_api_auth)
+
+    request.addfinalizer(cleanup)
+
+    dataset_id, document_id = add_document
+    parse_documnets(get_http_api_auth, dataset_id, {"document_ids": [document_id]})
+    condition(get_http_api_auth, dataset_id)
+
+    chat_assistant_ids = []
+    for i in range(5):
+        res = create_chat_assistant(get_http_api_auth, {"name": f"test_chat_assistant_{i}", "dataset_ids": [dataset_id]})
+        chat_assistant_ids.append(res["data"]["id"])
+
+    return dataset_id, document_id, chat_assistant_ids

@@ -51,13 +51,19 @@ class KeywordExtract(Generate, ABC):
 
     def _run(self, history, **kwargs):
         query = self.get_input()
-        query = str(query["content"][0]) if "content" in query else ""
+        if hasattr(query, "to_dict") and "content" in query:
+            query = ", ".join(map(str, query["content"].dropna()))
+        else:
+            query = str(query)
+
 
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
+        self._canvas.set_component_infor(self._id, {"prompt":self._param.get_prompt(),"messages":  [{"role": "user", "content": query}],"conf": self._param.gen_conf()})
+
         ans = chat_mdl.chat(self._param.get_prompt(), [{"role": "user", "content": query}],
                             self._param.gen_conf())
 
-        ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
+        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
         ans = re.sub(r".*keyword:", "", ans).strip()
         logging.debug(f"ans: {ans}")
         return KeywordExtract.be_output(ans)

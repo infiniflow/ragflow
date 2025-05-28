@@ -24,6 +24,7 @@ from libs.utils import compare_by_hash
 from requests import codes
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -45,6 +46,7 @@ class TestAuthorization:
         assert response_json["message"] == expected_message
 
 
+@pytest.mark.p1
 @pytest.mark.parametrize(
     "generate_test_files",
     [
@@ -81,6 +83,7 @@ def test_file_type_validation(get_http_api_auth, add_dataset, generate_test_file
 
 
 class TestDocumentDownload:
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
@@ -105,6 +108,7 @@ class TestDocumentDownload:
         assert response_json["code"] == expected_code
         assert response_json["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -130,6 +134,7 @@ class TestDocumentDownload:
         assert response_json["code"] == expected_code
         assert response_json["message"] == expected_message
 
+    @pytest.mark.p3
     def test_same_file_repeat(self, get_http_api_auth, add_documents, tmp_path, ragflow_tmp_dir):
         num = 5
         dataset_id, document_ids = add_documents
@@ -147,6 +152,7 @@ class TestDocumentDownload:
             )
 
 
+@pytest.mark.p3
 def test_concurrent_download(get_http_api_auth, add_dataset, tmp_path):
     document_count = 20
     dataset_id = add_dataset

@@ -500,8 +500,7 @@ class OllamaCV(Base):
             response = self.client.chat(
                 model=self.model_name,
                 messages=history,
-                options=options,
-                keep_alive=-1
+                options=options
             )
 
             ans = response["message"]["content"].strip()
@@ -531,8 +530,7 @@ class OllamaCV(Base):
                 model=self.model_name,
                 messages=history,
                 stream=True,
-                options=options,
-                keep_alive=-1
+                options=options
             )
             for resp in response:
                 if resp["done"]:

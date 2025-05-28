@@ -31,6 +31,7 @@ def validate_chunk_details(dataset_id, document_id, payload, res):
         assert chunk["questions"] == [str(q).strip() for q in payload.get("questions", []) if str(q).strip()]
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -50,6 +51,7 @@ class TestAuthorization:
 
 
 class TestAddChunk:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
@@ -83,6 +85,7 @@ class TestAddChunk:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
@@ -115,6 +118,7 @@ class TestAddChunk:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
@@ -143,6 +147,7 @@ class TestAddChunk:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -167,6 +172,7 @@ class TestAddChunk:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
@@ -184,6 +190,7 @@ class TestAddChunk:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p3
     def test_repeated_add_chunk(self, get_http_api_auth, add_document):
         payload = {"content": "chunk test"}
         dataset_id, document_id = add_document
@@ -207,6 +214,7 @@ class TestAddChunk:
             assert False, res
         assert res["data"]["doc"]["chunk_count"] == chunks_count + 2
 
+    @pytest.mark.p2
     def test_add_chunk_to_deleted_document(self, get_http_api_auth, add_document):
         dataset_id, document_id = add_document
         delete_documnets(get_http_api_auth, dataset_id, {"ids": [document_id]})

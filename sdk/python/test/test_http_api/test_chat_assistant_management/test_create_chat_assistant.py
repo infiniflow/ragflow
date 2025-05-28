@@ -15,13 +15,13 @@
 #
 
 import pytest
-from common import CHAT_ASSISTANT_LIMIT, INVALID_API_TOKEN, create_chat_assistant
+from common import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN, create_chat_assistant
 from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import encode_avatar
 from libs.utils.file_utils import create_image_file
 
 
-@pytest.mark.usefixtures("clear_chat_assistants")
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -42,11 +42,12 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("clear_chat_assistants")
 class TestChatAssistantCreate:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
             ({"name": "valid_name"}, 0, ""),
-            pytest.param({"name": "a" * (CHAT_ASSISTANT_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
+            pytest.param({"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
             ({"name": ""}, 102, "`name` is required."),
             ({"name": "duplicated_name"}, 102, "Duplicated chat name in creating chat."),
@@ -67,6 +68,7 @@ class TestChatAssistantCreate:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "dataset_ids, expected_code, expected_message",
         [
@@ -91,12 +93,14 @@ class TestChatAssistantCreate:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     def test_avatar(self, get_http_api_auth, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {"name": "avatar_test", "avatar": encode_avatar(fn), "dataset_ids": []}
         res = create_chat_assistant(get_http_api_auth, payload)
         assert res["code"] == 0
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "llm, expected_code, expected_message",
         [
@@ -150,6 +154,7 @@ class TestChatAssistantCreate:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "prompt, expected_code, expected_message",
         [
@@ -226,8 +231,8 @@ class TestChatAssistantCreate:
             assert res["message"] == expected_message
 
 
-@pytest.mark.usefixtures("clear_chat_assistants")
 class TestChatAssistantCreate2:
+    @pytest.mark.p2
     def test_unparsed_document(self, get_http_api_auth, add_document):
         dataset_id, _ = add_document
         payload = {"name": "prompt_test", "dataset_ids": [dataset_id]}

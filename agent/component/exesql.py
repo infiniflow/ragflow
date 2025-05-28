@@ -61,7 +61,7 @@ class ExeSQL(Generate, ABC):
     component_name = "ExeSQL"
 
     def _refactor(self, ans):
-        ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
+        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
         match = re.search(r"```sql\s*(.*?)\s*```", ans, re.DOTALL)
         if match:
             ans = match.group(1)  # Query content
@@ -105,6 +105,7 @@ class ExeSQL(Generate, ABC):
         sql_res = []
         for i in range(len(input_list)):
             single_sql = input_list[i]
+            single_sql = single_sql.replace('```','')
             while self._loop <= self._param.loop:
                 self._loop += 1
                 if not single_sql:

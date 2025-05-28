@@ -7,8 +7,8 @@ mysql:
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
   port: 3306
-  max_connections: 100
-  stale_timeout: 30
+  max_connections: 900
+  stale_timeout: 300
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
@@ -17,6 +17,10 @@ es:
   hosts: 'http://${ES_HOST:-es01}:9200'
   username: '${ES_USER:-elastic}'
   password: '${ELASTIC_PASSWORD:-infini_rag_flow}'
+os:
+  hosts: 'http://${OS_HOST:-opensearch01}:9201'
+  username: '${OS_USER:-admin}'
+  password: '${OPENSEARCHH_PASSWORD:-infini_rag_flow_OS_01}'
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   db_name: 'default_db'
@@ -71,16 +75,28 @@ redis:
 #     asr_model: ''
 #     image2text_model: ''
 # oauth:
+#   oauth2:
+#     display_name: "OAuth2"
+#     client_id: "your_client_id"
+#     client_secret: "your_client_secret"
+#     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
+#     token_url: "https://your-oauth-provider.com/oauth/token"
+#     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
+#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+#   oidc:
+#     display_name: "OIDC"
+#     client_id: "your_client_id"
+#     client_secret: "your_client_secret"
+#     issuer: "https://your-oauth-provider.com/oidc"
+#     scope: "openid email profile"
+#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oidc"
 #   github:
-#     client_id: xxxxxxxxxxxxxxxxxxxxxxxxx
-#     secret_key: xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-#     url: https://github.com/login/oauth/access_token
-#   feishu:
-#     app_id: cli_xxxxxxxxxxxxxxxxxxx
-#     app_secret: xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-#     app_access_token_url: https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal
-#     user_access_token_url: https://open.feishu.cn/open-apis/authen/v1/oidc/access_token
-#     grant_type: 'authorization_code'
+#     type: "github"
+#     icon: "github"
+#     display_name: "Github"
+#     client_id: "your_client_id"
+#     client_secret: "your_client_secret"
+#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
 # authentication:
 #   client:
 #     switch: false

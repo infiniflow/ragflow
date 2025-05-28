@@ -31,22 +31,29 @@ def chunks_format(reference):
     def get_value(d, k1, k2):
         return d.get(k1, d.get(k2))
 
-    return [{
-        "id": get_value(chunk, "chunk_id", "id"),
-        "content": get_value(chunk, "content", "content_with_weight"),
-        "document_id": get_value(chunk, "doc_id", "document_id"),
-        "document_name": get_value(chunk, "docnm_kwd", "document_name"),
-        "dataset_id": get_value(chunk, "kb_id", "dataset_id"),
-        "image_id": get_value(chunk, "image_id", "img_id"),
-        "positions": get_value(chunk, "positions", "position_int"),
-        "url": chunk.get("url")
-    } for chunk in reference.get("chunks", [])]
+    return [
+        {
+            "id": get_value(chunk, "chunk_id", "id"),
+            "content": get_value(chunk, "content", "content_with_weight"),
+            "document_id": get_value(chunk, "doc_id", "document_id"),
+            "document_name": get_value(chunk, "docnm_kwd", "document_name"),
+            "dataset_id": get_value(chunk, "kb_id", "dataset_id"),
+            "image_id": get_value(chunk, "image_id", "img_id"),
+            "positions": get_value(chunk, "positions", "position_int"),
+            "url": chunk.get("url"),
+            "similarity": chunk.get("similarity"),
+            "vector_similarity": chunk.get("vector_similarity"),
+            "term_similarity": chunk.get("term_similarity"),
+            "doc_type": chunk.get("doc_type_kwd"),
+        }
+        for chunk in reference.get("chunks", [])
+    ]
 
 
 def llm_id2llm_type(llm_id):
     from api.db.services.llm_service import TenantLLMService
 
-    llm_id, _ = TenantLLMService.split_model_name_and_factory(llm_id)
+    llm_id, *_ = TenantLLMService.split_model_name_and_factory(llm_id)
 
     llm_factories = settings.FACTORY_LLM_INFOS
     for llm_factory in llm_factories:
@@ -60,8 +67,7 @@ def message_fit_in(msg, max_length=4000):
         nonlocal msg
         tks_cnts = []
         for m in msg:
-            tks_cnts.append(
-                {"role": m["role"], "count": num_tokens_from_string(m["content"])})
+            tks_cnts.append({"role": m["role"], "count": num_tokens_from_string(m["content"])})
         total = 0
         for m in tks_cnts:
             total += m["count"]
@@ -83,12 +89,12 @@ def message_fit_in(msg, max_length=4000):
     ll2 = num_tokens_from_string(msg_[-1]["content"])
     if ll / (ll + ll2) > 0.8:
         m = msg_[0]["content"]
-        m = encoder.decode(encoder.encode(m)[:max_length - ll2])
+        m = encoder.decode(encoder.encode(m)[: max_length - ll2])
         msg[0]["content"] = m
         return max_length, msg
 
     m = msg_[-1]["content"]
-    m = encoder.decode(encoder.encode(m)[:max_length - ll2])
+    m = encoder.decode(encoder.encode(m)[: max_length - ll2])
     msg[-1]["content"] = m
     return max_length, msg
 
@@ -104,7 +110,7 @@ def kb_prompt(kbinfos, max_tokens):
         chunks_num += 1
         if max_tokens * 0.97 < used_token_count:
             knowledges = knowledges[:i]
-            logging.warning(f"Not all the retrieval into prompt: {i+1}/{len(knowledges)}")
+            logging.warning(f"Not all the retrieval into prompt: {i + 1}/{len(knowledges)}")
             break
 
     docs = DocumentService.get_by_ids([ck["doc_id"] for ck in kbinfos["chunks"][:chunks_num]])
@@ -112,7 +118,9 @@ def kb_prompt(kbinfos, max_tokens):
 
     doc2chunks = defaultdict(lambda: {"chunks": [], "meta": []})
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
-        doc2chunks[ck["docnm_kwd"]]["chunks"].append((f"URL: {ck['url']}\n" if "url" in ck else "") + f"ID: {i}\n" + ck["content_with_weight"])
+        cnt = f"---\nID: {i}\n" + (f"URL: {ck['url']}\n" if "url" in ck else "")
+        cnt += ck["content_with_weight"]
+        doc2chunks[ck["docnm_kwd"]]["chunks"].append(cnt)
         doc2chunks[ck["docnm_kwd"]]["meta"] = docs.get(ck["doc_id"], {})
 
     knowledges = []
@@ -134,6 +142,10 @@ def citation_prompt():
 - Inserts CITATIONS in format '##i$$ ##j$$' where i,j are the ID of the content you are citing and encapsulated with '##' and '$$'.
 - Inserts the CITATION symbols at the end of a sentence, AND NO MORE than 4 citations.
 - DO NOT insert CITATION in the answer if the content is not from retrieved chunks.
+- DO NOT use standalone Document IDs (e.g., '#ID#').
+- Under NO circumstances any other citation styles or formats (e.g., '~~i==', '[i]', '(i)', etc.) be used.
+- Citations ALWAYS the '##i$$' format.
+- Any failure to adhere to the above rules, including but not limited to incorrect formatting, use of prohibited styles, or unsupported citations, will be considered a error, should skip adding Citation for this sentence.
 
 --- Example START ---
 <SYSTEM>: Here is the knowledge base:
@@ -182,15 +194,12 @@ Requirements:
 {content}
 
 """
-    msg = [
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": "Output: "}
-    ]
+    msg = [{"role": "system", "content": prompt}, {"role": "user", "content": "Output: "}]
     _, msg = message_fit_in(msg, chat_mdl.max_length)
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
@@ -212,15 +221,12 @@ Requirements:
 {content}
 
 """
-    msg = [
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": "Output: "}
-    ]
+    msg = [{"role": "system", "content": prompt}, {"role": "user", "content": "Output: "}]
     _, msg = message_fit_in(msg, chat_mdl.max_length)
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.2})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         return ""
     return kwd
@@ -300,8 +306,62 @@ Output: What's the weather in Rochester on {tomorrow}?
 ###############
     """
     ans = chat_mdl.chat(prompt, [{"role": "user", "content": "Output: "}], {"temperature": 0.2})
-    ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
+    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
+
+def cross_languages(tenant_id, llm_id, query, languages=[]):
+    from api.db.services.llm_service import LLMBundle
+
+    if llm_id and llm_id2llm_type(llm_id) == "image2text":
+        chat_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+    else:
+        chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_id)
+
+    sys_prompt = """
+Act as a streamlined multilingual translator. Strictly output translations separated by ### without any explanations or formatting. Follow these rules:
+
+1. Accept batch translation requests in format:
+[source text]
+=== 
+[target languages separated by commas]
+
+2. Always maintain:
+- Original formatting (tables/lists/spacing)
+- Technical terminology accuracy
+- Cultural context appropriateness
+
+3. Output format:
+[language1 translation] 
+### 
+[language1 translation]
+
+**Examples:**
+Input:
+Hello World! Let's discuss AI safety.
+===
+Chinese, French, Jappanese
+
+Output:
+你好世界！让我们讨论人工智能安全问题。
+###
+Bonjour le monde ! Parlons de la sécurité de l'IA.
+###
+こんにちは世界！AIの安全性について話し合いましょう。
+"""
+    user_prompt=f"""
+Input:
+{query}
+===
+{', '.join(languages)}
+
+Output:
+"""
+
+    ans = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.2})
+    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+    if ans.find("**ERROR**") >= 0:
+        return query
+    return "\n".join([a for a in re.sub(r"(^Output:|\n+)", "", ans, flags=re.DOTALL).split("===") if a.strip()])
 
 
 def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
@@ -342,28 +402,32 @@ Output:
 {content}
 
 """
-    msg = [
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": "Output: "}
-    ]
+    msg = [{"role": "system", "content": prompt}, {"role": "user", "content": "Output: "}]
     _, msg = message_fit_in(msg, chat_mdl.max_length)
     kwd = chat_mdl.chat(prompt, msg[1:], {"temperature": 0.5})
     if isinstance(kwd, tuple):
         kwd = kwd[0]
-    kwd = re.sub(r"<think>.*</think>", "", kwd, flags=re.DOTALL)
+    kwd = re.sub(r"^.*</think>", "", kwd, flags=re.DOTALL)
     if kwd.find("**ERROR**") >= 0:
         raise Exception(kwd)
 
     try:
-        return json_repair.loads(kwd)
+        obj = json_repair.loads(kwd)
     except json_repair.JSONDecodeError:
         try:
-            result = kwd.replace(prompt[:-1], '').replace('user', '').replace('model', '').strip()
-            result = '{' + result.split('{')[1].split('}')[0] + '}'
-            return json_repair.loads(result)
+            result = kwd.replace(prompt[:-1], "").replace("user", "").replace("model", "").strip()
+            result = "{" + result.split("{")[1].split("}")[0] + "}"
+            obj = json_repair.loads(result)
         except Exception as e:
             logging.exception(f"JSON parsing error: {result} -> {e}")
             raise e
+    res = {}
+    for k, v in obj.items():
+        try:
+            res[str(k)] = int(v)
+        except Exception:
+            pass
+    return res
 
 
 def vision_llm_describe_prompt(page=None) -> str:

@@ -20,6 +20,7 @@ from common import INVALID_API_TOKEN, bulk_upload_documents, delete_documnets, l
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -39,6 +40,7 @@ class TestAuthorization:
 
 
 class TestDocumentsDeletion:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
         [
@@ -82,6 +84,7 @@ class TestDocumentsDeletion:
         assert len(res["data"]["docs"]) == remaining
         assert res["data"]["total"] == remaining
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -99,6 +102,7 @@ class TestDocumentsDeletion:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload",
         [
@@ -119,6 +123,7 @@ class TestDocumentsDeletion:
         assert len(res["data"]["docs"]) == 0
         assert res["data"]["total"] == 0
 
+    @pytest.mark.p2
     def test_repeated_deletion(self, get_http_api_auth, add_documents_func):
         dataset_id, document_ids = add_documents_func
         res = delete_documnets(get_http_api_auth, dataset_id, {"ids": document_ids})
@@ -128,6 +133,7 @@ class TestDocumentsDeletion:
         assert res["code"] == 102
         assert "Documents not found" in res["message"]
 
+    @pytest.mark.p2
     def test_duplicate_deletion(self, get_http_api_auth, add_documents_func):
         dataset_id, document_ids = add_documents_func
         res = delete_documnets(get_http_api_auth, dataset_id, {"ids": document_ids + document_ids})
@@ -140,6 +146,7 @@ class TestDocumentsDeletion:
         assert res["data"]["total"] == 0
 
 
+@pytest.mark.p3
 def test_concurrent_deletion(get_http_api_auth, add_dataset, tmp_path):
     documnets_num = 100
     dataset_id = add_dataset
@@ -159,7 +166,7 @@ def test_concurrent_deletion(get_http_api_auth, add_dataset, tmp_path):
     assert all(r["code"] == 0 for r in responses)
 
 
-@pytest.mark.slow
+@pytest.mark.p3
 def test_delete_1k(get_http_api_auth, add_dataset, tmp_path):
     documnets_num = 1_000
     dataset_id = add_dataset

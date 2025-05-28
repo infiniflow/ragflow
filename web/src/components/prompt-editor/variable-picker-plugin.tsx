@@ -20,7 +20,7 @@ import {
   $isRangeSelection,
   TextNode,
 } from 'lexical';
-import {
+import React, {
   ReactElement,
   useCallback,
   useContext,
@@ -114,11 +114,26 @@ export default function VariablePickerMenuPlugin({
     minLength: 0,
   });
 
-  const setQueryString = useCallback(() => {}, []);
+  const [queryString, setQueryString] = React.useState<string | null>('');
 
   const options = useBuildComponentIdSelectOptions(node?.id, node?.parentId);
 
-  const nextOptions: VariableOption[] = options.map(
+  const filteredOptions = React.useMemo(() => {
+    if (!queryString) return options;
+    const lowerQuery = queryString.toLowerCase();
+    return options
+      .map((x) => ({
+        ...x,
+        options: x.options.filter(
+          (y) =>
+            y.label.toLowerCase().includes(lowerQuery) ||
+            y.value.toLowerCase().includes(lowerQuery),
+        ),
+      }))
+      .filter((x) => x.options.length > 0);
+  }, [options, queryString]);
+
+  const nextOptions: VariableOption[] = filteredOptions.map(
     (x) =>
       new VariableOption(
         x.label,

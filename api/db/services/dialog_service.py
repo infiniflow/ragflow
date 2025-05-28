@@ -18,6 +18,7 @@ import logging
 import re
 import time
 from copy import deepcopy
+from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
 
@@ -31,16 +32,50 @@ from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle, TenantLLMService
+from api.utils import current_timestamp, datetime_format
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
-from rag.prompts import chunks_format, citation_prompt, full_question, kb_prompt, keyword_extraction, llm_id2llm_type, message_fit_in
+from rag.prompts import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, llm_id2llm_type, message_fit_in
 from rag.utils import num_tokens_from_string, rmSpace
 from rag.utils.tavily_conn import Tavily
 
 
 class DialogService(CommonService):
     model = Dialog
+
+    @classmethod
+    def save(cls, **kwargs):
+        """Save a new record to database.
+
+        This method creates a new record in the database with the provided field values,
+        forcing an insert operation rather than an update.
+
+        Args:
+            **kwargs: Record field values as keyword arguments.
+
+        Returns:
+            Model instance: The created record object.
+        """
+        sample_obj = cls.model(**kwargs).save(force_insert=True)
+        return sample_obj
+
+    @classmethod
+    def update_many_by_id(cls, data_list):
+        """Update multiple records by their IDs.
+
+        This method updates multiple records in the database, identified by their IDs.
+        It automatically updates the update_time and update_date fields for each record.
+
+        Args:
+            data_list (list): List of dictionaries containing record data to update.
+                             Each dictionary must include an 'id' field.
+        """
+        with DB.atomic():
+            for data in data_list:
+                data["update_time"] = current_timestamp()
+                data["update_date"] = datetime_format(datetime.now())
+                cls.model.update(data).where(cls.model.id == data["id"]).execute()
 
     @classmethod
     @DB.connection_context()
@@ -74,6 +109,7 @@ def chat_solo(dialog, messages, stream=True):
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
     if stream:
         last_ans = ""
+        delta_ans = ""
         for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
             answer = ans
             delta_ans = ans[len(last_ans) :]
@@ -81,6 +117,7 @@ def chat_solo(dialog, messages, stream=True):
                 continue
             last_ans = answer
             yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
+            delta_ans = ""
         if delta_ans:
             yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
     else:
@@ -145,6 +182,9 @@ def chat(dialog, messages, stream=True, **kwargs):
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        toolcall_session, tools = kwargs.get("toolcall_session"), kwargs.get("tools")
+        if toolcall_session and tools:
+            chat_mdl.bind_tools(toolcall_session, tools)
 
     bind_llm_ts = timer()
 
@@ -173,6 +213,9 @@ def chat(dialog, messages, stream=True, **kwargs):
         questions = [full_question(dialog.tenant_id, dialog.llm_id, messages)]
     else:
         questions = questions[-1:]
+
+    if prompt_config.get("cross_languages"):
+        questions = [cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
     refine_question_ts = timer()
 
@@ -259,6 +302,39 @@ def chat(dialog, messages, stream=True, **kwargs):
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
 
+    def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
+        max_index = len(kbinfos["chunks"])
+
+        def safe_add(i):
+            if 0 <= i < max_index:
+                idx.add(i)
+                return True
+            return False
+
+        def find_and_replace(pattern, group_index=1, repl=lambda i: f"##{i}$$", flags=0):
+            nonlocal answer
+            for match in re.finditer(pattern, answer, flags=flags):
+                try:
+                    i = int(match.group(group_index))
+                    if safe_add(i):
+                        answer = answer.replace(match.group(0), repl(i))
+                except Exception:
+                    continue
+
+        find_and_replace(r"\(\s*ID:\s*(\d+)\s*\)")  # (ID: 12)
+        find_and_replace(r"ID[: ]+(\d+)")  # ID: 12, ID 12
+        find_and_replace(r"\$\$(\d+)\$\$")  # $$12$$
+        find_and_replace(r"\$\[(\d+)\]\$")  # $[12]$
+        find_and_replace(r"\$\$(\d+)\${2,}")  # $$12$$$$
+        find_and_replace(r"\$(\d+)\$")  # $12$
+        find_and_replace(r"(#{2,})(\d+)(\${2,})", group_index=2)  # 2+ # and 2+ $
+        find_and_replace(r"(#{2,})(\d+)(#{1,})", group_index=2)  # 2+ # and 1+ #
+        find_and_replace(r"##(\d+)#{2,}")  # ##12###
+        find_and_replace(r"【(\d+)】")  # 【12】
+        find_and_replace(r"ref\s*(\d+)", flags=re.IGNORECASE)  # ref12, ref 12, REF 12
+
+        return answer, idx
+
     def decorate_answer(answer):
         nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
 
@@ -268,8 +344,10 @@ def chat(dialog, messages, stream=True, **kwargs):
         if len(ans) == 2:
             think = ans[0] + "</think>"
             answer = ans[1]
+
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
             answer = re.sub(r"##[ij]\$\$", "", answer, flags=re.DOTALL)
+            idx = set([])
             if not re.search(r"##[0-9]+\$\$", answer):
                 answer, idx = retriever.insert_citations(
                     answer,
@@ -280,11 +358,12 @@ def chat(dialog, messages, stream=True, **kwargs):
                     vtweight=dialog.vector_similarity_weight,
                 )
             else:
-                idx = set([])
-                for r in re.finditer(r"##([0-9]+)\$\$", answer):
-                    i = int(r.group(1))
+                for match in re.finditer(r"##([0-9]+)\$\$", answer):
+                    i = int(match.group(1))
                     if i < len(kbinfos["chunks"]):
                         idx.add(i)
+
+            answer, idx = repair_bad_citation_formats(answer, kbinfos, idx)
 
             idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
             recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
@@ -338,7 +417,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         langfuse_output = {"time_elapsed:": re.sub(r"\n", "  \n", langfuse_output), "created_at": time.time()}
 
         # Add a condition check to call the end method only if langfuse_tracer exists
-        if langfuse_tracer and 'langfuse_generation' in locals():
+        if langfuse_tracer and "langfuse_generation" in locals():
             langfuse_generation.end(output=langfuse_output)
 
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
@@ -351,7 +430,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         answer = ""
         for ans in chat_mdl.chat_streamly(prompt + prompt4citation, msg[1:], gen_conf):
             if thought:
-                ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
+                ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             answer = ans
             delta_ans = ans[len(last_ans) :]
             if num_tokens_from_string(delta_ans) < 16:
@@ -387,7 +466,7 @@ Please write the SQL, only SQL, without any other explanations or text.
     def get_table():
         nonlocal sys_prompt, user_prompt, question, tried_times
         sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
-        sql = re.sub(r"<think>.*</think>", "", sql, flags=re.DOTALL)
+        sql = re.sub(r"^.*</think>", "", sql, flags=re.DOTALL)
         logging.debug(f"{question} ==> {user_prompt} get SQL: {sql}")
         sql = re.sub(r"[\r\n]+", " ", sql.lower())
         sql = re.sub(r".*select ", "select ", sql.lower())
@@ -420,11 +499,11 @@ Please write the SQL, only SQL, without any other explanations or text.
         Table name: {};
         Table of database fields are as follows:
         {}
-        
+
         Question are as follows:
         {}
         Please write the SQL, only SQL, without any other explanations or text.
-        
+
 
         The SQL error you provided last time is as follows:
         {}

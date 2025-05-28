@@ -26,6 +26,36 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 ---
 
+### Differences between RAGFlow full edition and RAGFlow slim edition?
+
+Each RAGFlow release is available in two editions:
+
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.19.0-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.19.0`
+
+---
+
+### Which embedding models can be deployed locally?
+
+RAGFlow offers two Docker image editions, `v0.19.0-slim` and `v0.19.0`:  
+  
+- `infiniflow/ragflow:v0.19.0-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.19.0`: The RAGFlow Docker image with embedding models including:
+  - Built-in embedding models:
+    - `BAAI/bge-large-zh-v1.5`
+    - `maidalun1020/bce-embedding-base_v1`
+  - Embedding models that will be downloaded once you select them in the RAGFlow UI:
+    - `BAAI/bge-base-en-v1.5`
+    - `BAAI/bge-large-en-v1.5`
+    - `BAAI/bge-small-en-v1.5`
+    - `BAAI/bge-small-zh-v1.5`
+    - `jinaai/jina-embeddings-v2-base-en`
+    - `jinaai/jina-embeddings-v2-small-en`
+    - `nomic-ai/nomic-embed-text-v1.5`
+    - `sentence-transformers/all-MiniLM-L6-v2`
+
+---
+
 ### Where to find the version of RAGFlow? How to interpret it?
 
 You can find the RAGFlow version number on the **System** page of the UI:
@@ -55,6 +85,22 @@ Where:
 
 ---
 
+### Why not use other open-source vector databases as the document engine?
+
+Currently, only Elasticsearch and [Infinity](https://github.com/infiniflow/infinity) meet the hybrid search requirements of RAGFlow. Most open-source vector databases have limited support for full-text search, and sparse embedding is not an alternative to full-text search. Additionally, these vector databases lack critical features essential to RAGFlow, such as phrase search and advanced ranking capabilities.
+
+These limitations led us to develop [Infinity](https://github.com/infiniflow/infinity), the AI-native database, from the ground up.
+
+---
+
+### Differences between demo.ragflow.io and a locally deployed open-source RAGFlow service?
+
+demo.ragflow.io demonstrates the capabilities of RAGFlow Enterprise. Its DeepDoc models are pre-trained using proprietary data and it offers much more sophisticated team permission controls. Essentially, demo.ragflow.io serves as a preview of RAGFlow's forthcoming SaaS (Software as a Service) offering.
+
+You can deploy an open-source RAGFlow service and call it from a Python client or through RESTful APIs. However, this is not supported on demo.ragflow.io.
+
+---
+
 ### Why does it take longer for RAGFlow to parse a document than LangChain?
 
 We put painstaking effort into document pre-processing tasks like layout analysis, table structure recognition, and OCR (Optical Character Recognition) using our vision models. This contributes to the additional time required.
@@ -70,29 +116,6 @@ RAGFlow has a number of built-in models for document structure parsing, which ac
 ### Which architectures or devices does RAGFlow support?
 
 We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](./develop/build_docker_image.mdx) to build a RAGFlow Docker image.
-
----
-
-### Which embedding models can be deployed locally?
-
-RAGFlow offers two Docker image editions, `v0.17.2-slim` and `v0.17.2`:  
-  
-- `infiniflow/ragflow:v0.17.2-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.17.2`: The RAGFlow Docker image with embedding models including:
-  - Built-in embedding models:
-    - `BAAI/bge-large-zh-v1.5`
-    - `BAAI/bge-reranker-v2-m3`
-    - `maidalun1020/bce-embedding-base_v1`
-    - `maidalun1020/bce-reranker-base_v1`
-  - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-    - `BAAI/bge-base-en-v1.5`
-    - `BAAI/bge-large-en-v1.5`
-    - `BAAI/bge-small-en-v1.5`
-    - `BAAI/bge-small-zh-v1.5`
-    - `jinaai/jina-embeddings-v2-base-en`
-    - `jinaai/jina-embeddings-v2-small-en`
-    - `nomic-ai/nomic-embed-text-v1.5`
-    - `sentence-transformers/all-MiniLM-L6-v2`
 
 ---
 
@@ -119,7 +142,7 @@ No, this feature is not supported.
 Yes, we support enhancing user queries based on existing context of an ongoing conversation:
 
 1. On the **Chat** page, hover over the desired assistant and select **Edit**.
-2. In the **Chat Configuration** popup, click the **Prompt Engine** tab.
+2. In the **Chat Configuration** popup, click the **Prompt engine** tab.
 3. Switch on **Multi-turn optimization** to enable this feature.
 
 ---
@@ -419,7 +442,7 @@ It is not recommended to manually change the 32-file batch upload limit. However
 This error occurs because there are too many chunks matching your search criteria. Try reducing the **TopN** and increasing **Similarity threshold** to fix this issue:
 
 1. Click **Chat** in the middle top of the page.
-2. Right-click the desired conversation > **Edit** > **Prompt Engine**
+2. Right-click the desired conversation > **Edit** > **Prompt engine**
 3. Reduce the **TopN** and/or raise **Similarity threshold**.
 4. Click **OK** to confirm your changes.
 
@@ -443,13 +466,26 @@ See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
 
 To switch your document engine from Elasticsearch to [Infinity](https://github.com/infiniflow/infinity):
 
-1. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
-2. Restart your Docker image: 
+1. Stop all running containers:  
 
-```bash
-$ docker compose -f docker-compose.yml up -d
-```
+   ```bash
+   $ docker compose -f docker/docker-compose.yml down -v
+   ```
+:::caution WARNING
+`-v` will delete all Docker container volumes, and the existing data will be cleared.
+:::
+
+2. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
+3. Restart your Docker image: 
+
+   ```bash
+   $ docker compose -f docker-compose.yml up -d
+   ```
+
+---
 
 ### Where are my uploaded files stored in RAGFlow's image?
 
 All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
+
+---

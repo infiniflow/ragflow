@@ -18,13 +18,10 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from common import INVALID_API_TOKEN, list_documnets
 from libs.auth import RAGFlowHttpApiAuth
+from libs.utils import is_sorted
 
 
-def is_sorted(data, field, descending=True):
-    timestamps = [ds[field] for ds in data]
-    return all(a >= b for a, b in zip(timestamps, timestamps[1:])) if descending else all(a <= b for a, b in zip(timestamps, timestamps[1:]))
-
-
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -44,6 +41,7 @@ class TestAuthorization:
 
 
 class TestDocumentsList:
+    @pytest.mark.p1
     def test_default(self, get_http_api_auth, add_documents):
         dataset_id, _ = add_documents
         res = list_documnets(get_http_api_auth, dataset_id)
@@ -51,6 +49,7 @@ class TestDocumentsList:
         assert len(res["data"]["docs"]) == 5
         assert res["data"]["total"] == 5
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
@@ -67,6 +66,7 @@ class TestDocumentsList:
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -109,6 +109,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
@@ -150,41 +151,15 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            (
-                {"orderby": None},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"orderby": "create_time"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"orderby": "update_time"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "update_time", True)),
-                "",
-            ),
-            pytest.param(
-                {"orderby": "name", "desc": "False"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "name", False)),
-                "",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
-            pytest.param(
-                {"orderby": "unknown"},
-                102,
-                0,
-                "orderby should be create_time or update_time",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
+            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", True)), ""),
+            pytest.param({"orderby": "name", "desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "name", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
+            pytest.param({"orderby": "unknown"}, 102, 0, "orderby should be create_time or update_time", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
     def test_orderby(
@@ -205,65 +180,19 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            (
-                {"desc": None},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "true"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": "True"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            (
-                {"desc": True},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", True)),
-                "",
-            ),
-            pytest.param(
-                {"desc": "false"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
-                "",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
-            (
-                {"desc": "False"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": False},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "create_time", False)),
-                "",
-            ),
-            (
-                {"desc": "False", "orderby": "update_time"},
-                0,
-                lambda r: (is_sorted(r["data"]["docs"], "update_time", False)),
-                "",
-            ),
-            pytest.param(
-                {"desc": "unknown"},
-                102,
-                0,
-                "desc should be true or false",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
+            ({"desc": None}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            ({"desc": True}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", True)), ""),
+            pytest.param({"desc": "false"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), "", marks=pytest.mark.skip(reason="issues/5851")),
+            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
+            ({"desc": False}, 0, lambda r: (is_sorted(r["data"]["docs"], "create_time", False)), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["docs"], "update_time", False)), ""),
+            pytest.param({"desc": "unknown"}, 102, 0, "desc should be true or false", marks=pytest.mark.skip(reason="issues/5851")),
         ],
     )
     def test_desc(
@@ -284,6 +213,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "params, expected_num",
         [
@@ -301,6 +231,7 @@ class TestDocumentsList:
         assert len(res["data"]["docs"]) == expected_num
         assert res["data"]["total"] == expected_num
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_num, expected_message",
         [
@@ -335,6 +266,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_num, expected_message",
         [
@@ -369,6 +301,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, name, expected_code, expected_num, expected_message",
         [
@@ -406,6 +339,7 @@ class TestDocumentsList:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     def test_concurrent_list(self, get_http_api_auth, add_documents):
         dataset_id, _ = add_documents
 
@@ -414,6 +348,7 @@ class TestDocumentsList:
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
+    @pytest.mark.p3
     def test_invalid_params(self, get_http_api_auth, add_documents):
         dataset_id, _ = add_documents
         params = {"a": "b"}

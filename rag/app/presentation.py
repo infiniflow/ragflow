@@ -36,11 +36,14 @@ class Ppt(PptParser):
         imgs = []
         with slides.Presentation(BytesIO(fnm)) as presentation:
             for i, slide in enumerate(presentation.slides[from_page: to_page]):
-                buffered = BytesIO()
-                slide.get_thumbnail(
-                    0.5, 0.5).save(
-                    buffered, drawing.imaging.ImageFormat.jpeg)
-                imgs.append(Image.open(buffered))
+                try:
+                    buffered = BytesIO()
+                    slide.get_thumbnail(
+                        0.5, 0.5).save(
+                        buffered, drawing.imaging.ImageFormat.jpeg)
+                    imgs.append(Image.open(buffered))
+                except RuntimeError as e:
+                    raise RuntimeError(f'ppt parse error at page {i+1}, original error: {str(e)}') from e
         assert len(imgs) == len(
             txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
         callback(0.9, "Image extraction finished")
@@ -112,6 +115,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             d = copy.deepcopy(doc)
             pn += from_page
             d["image"] = img
+            d["doc_type_kwd"] = "image"
             d["page_num_int"] = [pn + 1]
             d["top_int"] = [0]
             d["position_int"] = [(pn + 1, 0, img.size[0], 0, img.size[1])]

@@ -100,6 +100,8 @@ export default {
       disabled: '無効',
       action: 'アクション',
       parsingStatus: 'パースステータス',
+      parsingStatusTip:
+        'ドキュメントの解析時間はさまざまな要因によって異なります。Knowledge Graph、RAPTOR、自動質問抽出、自動キーワード抽出などの機能を有効にすると、処理時間が大幅に増加します。進行バーが止まった場合は、次の2つのFAQをご参照ください: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'プロセス開始時刻',
       processDuration: '処理時間',
       progressMsg: '進行状況メッセージ',
@@ -136,7 +138,7 @@ export default {
       toMessage: '終了ページ番号が不足しています（除外）',
       layoutRecognize: 'レイアウト認識',
       layoutRecognizeTip:
-        'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。',
+        'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。詳細については、https://ragflow.io/docs/dev/select_pdf_parser をご覧ください。',
       taskPageSize: 'タスクページサイズ',
       taskPageSizeMessage: 'タスクページサイズを入力してください',
       taskPageSizeTip: `レイアウト認識中、PDFファイルはチャンクに分割され、処理速度を向上させるために並列処理されます。`,
@@ -156,12 +158,12 @@ export default {
       rerankPlaceholder: '選択してください',
       rerankTip: `オプション：Rerankモデルを選択しない場合、システムはデフォルトでキーワードの類似度とベクトルのコサイン類似度を組み合わせたハイブリッド検索方式を採用します。Rerankモデルを設定した場合、ハイブリッド検索のベクトル類似度部分はrerankのスコアに置き換えられます。`,
       topK: 'トップK',
-      topKTip: `Kチャンクがリランキングモデルに供給されます。`,
+      topKTip: `Rerank modelと一緒に使用する場合、この設定は指定されたreranking modelに送信するテキストのチャンク数を定義します。`,
       delimiter: `テキストセグメンテーションの区切り文字`,
       delimiterTip:
         'デリミタやセパレータは、一つまたは複数の特殊文字で構成できます。複数の文字の場合、バッククォート(``)で囲むようにしてください。たとえば、デリミタを次のように設定した場合: \\n ## ;、テキストは行末、ダブルハッシュ記号(##)、およびセミコロンで分割されます。デリミタを設定する前に、テキストのセグメンテーションとチャンキングのメカニズムを理解していることを確認してください。',
       html4excel: 'ExcelをHTMLに変換',
-      html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel97~2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。`,
+      html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dev/enable_excel2html をご覧ください。`,
       autoKeywords: '自動キーワード',
       autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。`,
       autoQuestions: '自動質問',
@@ -181,7 +183,7 @@ export default {
       chunkTokenNumber: '推奨チャンクサイズ',
       chunkTokenNumberMessage: 'チャンクトークン数は必須です',
       embeddingModelTip:
-        'チャンクを埋め込みに変換するモデルです。一度チャンクが作成されると変更できません。',
+        'ナレッジベースのデフォルトの埋め込みモデルです。ナレッジベースにチャンクが存在する場合、変更することはできません。別のデフォルト埋め込みモデルに切り替えるには、ナレッジベース内のすべての既存チャンクを削除する必要があります。',
       permissionsTip:
         '「チーム」に設定すると、全てのチームメンバーがナレッジベースを管理できます。',
       chunkTokenNumberTip:
@@ -213,7 +215,7 @@ export default {
       manual: `<p>対応するのは<b>PDF</b>のみです。</p><p>
       マニュアルは階層的なセクション構造を持つと仮定され、最下位のセクションタイトルを基にチャンク分割を行います。そのため、同じセクション内の図表は分割されませんが、大きなチャンクサイズになる可能性があります。
       </p>`,
-      naive: `<p>対応ファイル形式は<b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>です。</p>
+      naive: `<p>対応ファイル形式は<b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>です。</p>
       <p>この方法では、'ナイーブ'な方法でファイルを分割します：</p>
       <p>
       <li>視覚認識モデルを使用してテキストを小さなセグメントに分割します。</li>
@@ -284,7 +286,7 @@ export default {
 <p><b>エンティティタイプ</b>を設定することを忘れないでください。</p>`,
       useRaptor: 'RAPTORを使用して検索を強化',
       useRaptorTip:
-        'ツリー構造化検索のための再帰的抽象処理（RAPTOR）については、詳細はhttps://huggingface.co/papers/2401.18059をご覧ください',
+        'マルチホップ質問応答タスクでRAPTORを有効にしてください。詳細は https://ragflow.io/docs/dev/enable_raptor をご覧ください。',
       prompt: 'プロンプト',
       promptTip:
         'LLMのタスクを説明し、どのように応答すべきかを指定し、他のさまざまな要件を概説するためにシステムプロンプトを使用します。システムプロンプトは、LLMのさまざまなデータ入力として機能するキー（変数）と共に使用されることがよくあります。使用するキーを表示するには、スラッシュ `/` または (x) ボタンを使用します。',
@@ -293,13 +295,14 @@ export default {
       {cluster_content}
 上記が要約する内容です。`,
       maxToken: '最大トークン数',
-      maxTokenTip: '要約のための最大トークン数。',
+      maxTokenTip: '生成された要約チャンクごとの最大トークン数。',
       maxTokenMessage: '最大トークン数は必須です',
       threshold: 'しきい値',
-      thresholdTip: 'しきい値が大きいほどクラスターは少なくなります。',
+      thresholdTip:
+        'RAPTORでは、チャンクは意味的な類似性によってクラスタリングされます。しきい値パラメータは、チャンクをまとめるために必要な最小限の類似度を設定します。しきい値が高いほど各クラスタ内のチャンク数は少なくなり、しきい値が低いほど多くのチャンクが1つのクラスタに含まれます。',
       thresholdMessage: 'しきい値は必須です',
       maxCluster: '最大クラスター数',
-      maxClusterTip: '最大クラスター数。',
+      maxClusterTip: '作成するクラスタの最大数。',
       maxClusterMessage: '最大クラスター数は必須です',
       randomSeed: 'ランダムシード',
       randomSeedMessage: 'ランダムシードは必須です',
@@ -340,7 +343,7 @@ export default {
       sendPlaceholder: 'アシスタントにメッセージを送信...',
       chatConfiguration: 'チャット設定',
       chatConfigurationDescription:
-        '特別なナレッジベースのために専用アシスタントを作成しましょう！ 💕',
+        '選択したデータセット（知識ベース）にチャットアシスタントを設定してください！ 💕',
       assistantName: 'アシスタント名',
       assistantNameMessage: 'アシスタント名は必須です',
       namePlaceholder: '例: 履歴書アシスタント',
@@ -353,21 +356,20 @@ export default {
       setAnOpenerTip: 'お客様をどのように歓迎しますか？',
       knowledgeBases: 'ナレッジベース',
       knowledgeBasesMessage: '選択してください',
-      knowledgeBasesTip: '関連付けるナレッジベースを選択してください。',
+      knowledgeBasesTip:
+        '関連付けるナレッジベースを選択してください。空のナレッジベースはドロップダウンリストに表示されません。',
       system: 'システムプロンプト',
       systemInitialValue: `あなたはインテリジェントなアシスタントです。質問に答えるためにナレッジベースの内容を要約してください。ナレッジベースのデータをリストし、詳細に答えてください。すべてのナレッジベースの内容が質問に関連しない場合、回答には「ナレッジベースにはお探しの回答が見つかりません！」という文を含める必要があります。回答はチャット履歴を考慮する必要があります。
       こちらがナレッジベースです：
       {knowledge}
       上記がナレッジベースです。`,
       systemMessage: '入力してください！',
-      systemTip: 'LLMが質問に答える際に従う指示を設定します。',
+      systemTip:
+        'LLMが質問に答える際に従う指示を設定します。モデルがネイティブで推論をサポートしている場合、推論を停止するためにプロンプトに //no_thinking を追加できます。',
       topN: 'トップN',
       topNTip: `類似度スコアがしきい値を超えるチャンクのうち、上位N件のみがLLMに供給されます。`,
       variable: '変数',
-      variableTip: `ダイアログAPIを使用する場合、変数は異なる戦略でクライアントとチャットするのに役立ちます。
-      変数はプロンプトの'システムプロンプト'部分を埋めるために使用され、LLMにヒントを与えます。
-      'ナレッジ'は取得されたチャンクで埋められる非常に特別な変数です。
-      'システムプロンプト'のすべての変数は中括弧で囲む必要があります。`,
+      variableTip: `RAGFlowのチャットアシスタント管理APIと組み合わせて使用することで、変数はより柔軟なシステムプロンプト戦略を開発するのに役立ちます。定義された変数は、LLMのプロンプトの一部として「システムプロンプト」で使用されます。{knowledge}は、指定された知識ベースから取得された部分を表す特別な予約変数であり、「システムプロンプト」ではすべての変数を波括弧{}で囲む必要があります。詳細はhttps://ragflow.io/docs/dev/set_chat_variablesを参照してください。`,
       add: '追加',
       key: 'キー',
       optional: 'オプション',
@@ -739,7 +741,7 @@ export default {
       news: 'ニュース',
       messageHistoryWindowSize: 'メッセージウィンドウサイズ',
       messageHistoryWindowSizeTip:
-        'LLMが参照する会話履歴のウィンドウサイズ。大きいほど良いですが、LLMの最大コンテンツ長に注意してください。',
+        'LLMに表示される会話履歴のウィンドウサイズ。大きいほど良いですが、LLMの最大トークン制限に注意してください。',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
@@ -1081,6 +1083,11 @@ export default {
       contentTip: 'content: メールの内容（オプション）',
       jsonUploadTypeErrorMessage: 'jsonファイルをアップロードしてください',
       jsonUploadContentErrorMessage: 'jsonファイルエラー',
+      prompt: 'プロンプト',
+      promptTip:
+        'LLMのタスクを説明し、どのように応答すべきかを指定し、他のさまざまな要件を概説するためにシステムプロンプトを使用します。システムプロンプトは、LLMのさまざまなデータ入力として機能するキー（変数）と共に使用されることがよくあります。使用するキーを表示するには、スラッシュ `/` または (x) ボタンを使用します。',
+      promptMessage: 'プロンプトは必須です',
+      runningHintText: '動作中です...🕞 ',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -276,8 +276,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
         res.append(d)
     return res
 
-
-def tokenize_chunks_docx(chunks, doc, eng, images):
+def tokenize_chunks_with_images(chunks, doc, eng, images):
     res = []
     # wrap up as es documents
     for ck, image in zip(chunks, images):
@@ -289,7 +288,6 @@ def tokenize_chunks_docx(chunks, doc, eng, images):
         tokenize(d, ck, eng)
         res.append(d)
     return res
-
 
 def tokenize_table(tbls, doc, eng, batch_size=10):
     res = []
@@ -303,6 +301,7 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             d["content_with_weight"] = rows
             if img:
                 d["image"] = img
+                d["doc_type_kwd"] = "image"
             if poss:
                 add_positions(d, poss)
             res.append(d)
@@ -312,7 +311,9 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             d = copy.deepcopy(doc)
             r = de.join(rows[i:i + batch_size])
             tokenize(d, r, eng)
-            d["image"] = img
+            if img:
+                d["image"] = img
+                d["doc_type_kwd"] = "image"
             add_positions(d, poss)
             res.append(d)
     return res
@@ -342,7 +343,7 @@ def remove_contents_table(sections, eng=False):
                                               type("")) else sections[i][0]).strip()
 
         if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$",
-                        re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], re.IGNORECASE)):
+                        re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], flags=re.IGNORECASE)):
             i += 1
             continue
         sections.pop(i)
@@ -523,7 +524,7 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num  
-        if tk_nums[-1] > chunk_token_num:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num:
 
             if t.find(pos) < 0:
                 t += pos
@@ -539,7 +540,46 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
         add_chunk(sec, pos)
 
     return cks
+    
 
+def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？"):
+    if not texts or len(texts) != len(images):
+        return [], []
+    # Enuser texts is str not tuple, if it is tuple, convert to str (get the first item)
+    if isinstance(texts[0], tuple):
+        texts = [t[0] for t in texts]
+    cks = [""]
+    result_images = [None]
+    tk_nums = [0]
+
+    def add_chunk(t, image, pos=""):
+        nonlocal cks, result_images, tk_nums, delimiter
+        tnum = num_tokens_from_string(t)
+        if not pos:
+            pos = ""
+        if tnum < 8:
+            pos = ""
+        # Ensure that the length of the merged chunk does not exceed chunk_token_num
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num:
+            if t.find(pos) < 0:
+                t += pos
+            cks.append(t)
+            result_images.append(image)
+            tk_nums.append(tnum)
+        else:
+            if cks[-1].find(pos) < 0:
+                t += pos
+            cks[-1] += t
+            if result_images[-1] is None:
+                result_images[-1] = image
+            else:
+                result_images[-1] = concat_img(result_images[-1], image)
+            tk_nums[-1] += tnum
+
+    for text, image in zip(texts, images):
+        add_chunk(text, image)
+
+    return cks, result_images
 
 def docx_question_level(p, bull=-1):
     txt = re.sub(r"\u3000", " ", p.text).strip()
@@ -587,7 +627,7 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
         tnum = num_tokens_from_string(t)
         if tnum < 8:
             pos = ""
-        if tk_nums[-1] > chunk_token_num:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num:
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)

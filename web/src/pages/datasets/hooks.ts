@@ -1,8 +1,7 @@
-import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useCreateKnowledge } from '@/hooks/knowledge-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useCreateKnowledge } from '@/hooks/use-knowledge-request';
 import { useCallback, useState } from 'react';
-import { useNavigate } from 'umi';
 
 export const useSearchKnowledge = () => {
   const [searchString, setSearchString] = useState<string>('');
@@ -19,7 +18,7 @@ export const useSearchKnowledge = () => {
 export const useSaveKnowledge = () => {
   const { visible: visible, hideModal, showModal } = useSetModalState();
   const { loading, createKnowledge } = useCreateKnowledge();
-  const navigate = useNavigate();
+  const { navigateToDataset } = useNavigatePage();
 
   const onCreateOk = useCallback(
     async (name: string) => {
@@ -29,12 +28,10 @@ export const useSaveKnowledge = () => {
 
       if (ret?.code === 0) {
         hideModal();
-        navigate(
-          `/knowledge/${KnowledgeRouteKey.Configuration}?id=${ret.data.kb_id}`,
-        );
+        navigateToDataset(ret.data.kb_id)();
       }
     },
-    [createKnowledge, hideModal, navigate],
+    [createKnowledge, hideModal, navigateToDataset],
   );
 
   return {

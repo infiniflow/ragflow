@@ -100,6 +100,8 @@ export default {
       disabled: 'Nonaktifkan',
       action: 'Aksi',
       parsingStatus: 'Status Parsing',
+      parsingStatusTip:
+        'Waktu pemrosesan dokumen bervariasi tergantung beberapa faktor. Mengaktifkan fitur seperti Knowledge Graph, RAPTOR, Ekstraksi Pertanyaan Otomatis, atau Ekstraksi Kata Kunci Otomatis akan secara signifikan menambah waktu pemrosesan. Jika bilah kemajuan macet, silakan lihat dua FAQ berikut: https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.',
       processBeginAt: 'Proses Dimulai Pada',
       processDuration: 'Durasi Proses',
       progressMsg: 'Pesan Kemajuan',
@@ -136,7 +138,7 @@ export default {
       toMessage: 'Nomor halaman akhir hilang (tidak termasuk)',
       layoutRecognize: 'Pengenalan tata letak',
       layoutRecognizeTip:
-        'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, dan tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh.',
+        'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, dan tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/select_pdf_parser.',
       taskPageSize: 'Ukuran halaman tugas',
       taskPageSizeMessage: 'Silakan masukkan ukuran halaman tugas Anda!',
       taskPageSizeTip: `Jika menggunakan pengenalan tata letak, file PDF akan dibagi menjadi kelompok berturut-turut. Analisis tata letak akan dilakukan secara paralel antar kelompok untuk meningkatkan kecepatan pemrosesan. 'Ukuran halaman tugas' menentukan ukuran kelompok. Semakin besar ukuran halaman, semakin kecil kemungkinan teks berkelanjutan antara halaman dibagi menjadi potongan yang berbeda.`,
@@ -155,10 +157,10 @@ export default {
       rerankPlaceholder: 'Silakan pilih',
       rerankTip: `Jika kosong. Ini menggunakan embedding dari kueri dan potongan untuk menghitung kesamaan kosinus vektor. Jika tidak, ini menggunakan skor rerank sebagai pengganti kesamaan kosinus vektor.`,
       topK: 'Top-K',
-      topKTip: `K potongan akan dimasukkan ke dalam model rerank.`,
+      topKTip: `Digunakan bersama dengan Rerank model, pengaturan ini menentukan jumlah potongan teks yang akan dikirim ke model reranking yang ditentukan.`,
       delimiter: `Pemisah untuk segmentasi teks`,
       html4excel: 'Excel ke HTML',
-      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel97~2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris.`,
+      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/enable_excel2html.`,
     },
     knowledgeConfiguration: {
       titleDescription:
@@ -174,7 +176,7 @@ export default {
       chunkTokenNumber: 'Ukuran potongan yang disarankan',
       chunkTokenNumberMessage: 'Jumlah token potongan diperlukan',
       embeddingModelTip:
-        'Model embedding yang digunakan untuk embedding potongan. Tidak dapat diubah setelah basis pengetahuan memiliki potongan. Anda perlu menghapus semua potongan jika ingin mengubahnya.',
+        'Model embedding default dari basis pengetahuan. Tidak dapat diubah setelah basis pengetahuan memiliki potongan data (chunks). Untuk beralih ke model embedding default yang berbeda, Anda harus menghapus semua potongan data yang ada di basis pengetahuan.',
       permissionsTip:
         "Jika izinnya 'Tim', semua anggota tim dapat memanipulasi basis pengetahuan.",
       chunkTokenNumberTip:
@@ -209,7 +211,7 @@ export default {
           Kami mengasumsikan manual memiliki struktur bagian hierarkis. Kami menggunakan judul bagian terendah sebagai poros untuk memotong dokumen.
           Jadi, gambar dan tabel dalam bagian yang sama tidak akan dipisahkan, dan ukuran potongan mungkin besar.
           </p>`,
-      naive: `<p>Format file yang didukung adalah <b>DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      naive: `<p>Format file yang didukung adalah <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
           <p>Metode ini menerapkan cara naif untuk memotong file: </p>
           <p>
           <li>Teks berturut-turut akan dipotong menjadi potongan menggunakan model deteksi visual.</li>
@@ -289,7 +291,7 @@ export default {
     Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
-        'Pemrosesan Abstraktif Rekursif untuk Pengambilan Terorganisasi Pohon, silakan merujuk ke https://huggingface.co/papers/2401.18059',
+        'Aktifkan RAPTOR untuk tugas tanya jawab multi-langkah. Lihat https://ragflow.io/docs/dev/enable_raptor untuk informasi lebih lanjut.',
       prompt: 'Prompt',
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
@@ -298,14 +300,15 @@ export default {
           {cluster_content}
     Di atas adalah konten yang perlu Anda rangkum.`,
       maxToken: 'Token maksimum',
-      maxTokenTip: 'Jumlah token maksimum untuk peringkasan.',
+      maxTokenTip:
+        'Jumlah maksimum token per potongan ringkasan yang dihasilkan.',
       maxTokenMessage: 'Token maksimum diperlukan',
       threshold: 'Ambang batas',
       thresholdTip:
-        'Semakin besar ambang batas, semakin sedikit kluster yang akan ada.',
+        'Dalam RAPTOR, potongan-potongan dikelompokkan berdasarkan kemiripan semantiknya. Parameter Ambang menetapkan tingkat kemiripan minimum yang diperlukan agar potongan-potongan dapat dikelompokkan bersama. Ambang yang lebih tinggi berarti lebih sedikit potongan dalam setiap kelompok, sedangkan ambang yang lebih rendah berarti lebih banyak potongan dalam satu kelompok.',
       thresholdMessage: 'Ambang batas diperlukan',
       maxCluster: 'Kluster maksimum',
-      maxClusterTip: 'Jumlah kluster maksimum.',
+      maxClusterTip: 'Jumlah maksimum klaster yang akan dibuat.',
       maxClusterMessage: 'Kluster maksimum diperlukan',
       randomSeed: 'Benih acak',
       randomSeedMessage: 'Benih acak diperlukan',
@@ -342,7 +345,7 @@ export default {
       sendPlaceholder: 'Pesan ke Asisten...',
       chatConfiguration: 'Konfigurasi Obrolan',
       chatConfigurationDescription:
-        'Di sini, dandani asisten khusus untuk basis pengetahuan khusus Anda! 💕',
+        'Atur asisten obrolan untuk dataset yang dipilih (basis pengetahuan) di sini. 💕',
       assistantName: 'Nama Asisten',
       assistantNameMessage: 'Nama asisten diperlukan',
       namePlaceholder: 'mis. Resume Jarvis',
@@ -355,7 +358,8 @@ export default {
       setAnOpenerTip: 'Bagaimana Anda ingin menyambut klien Anda?',
       knowledgeBases: 'Basis Pengetahuan',
       knowledgeBasesMessage: 'Silakan pilih',
-      knowledgeBasesTip: 'Pilih basis pengetahuan yang terkait.',
+      knowledgeBasesTip:
+        'Pilih basis pengetahuan yang terkait. Basis pengetahuan yang kosong tidak akan muncul di daftar dropdown.',
       system: 'Prompt Sistem',
       systemInitialValue: `Anda adalah asisten cerdas. Silakan rangkum konten basis pengetahuan untuk menjawab pertanyaan. Silakan daftar data di basis pengetahuan dan jawab secara detail. Ketika semua konten basis pengetahuan tidak relevan dengan pertanyaan, jawaban Anda harus menyertakan kalimat "Jawaban yang Anda cari tidak ditemukan di basis pengetahuan!" Jawaban perlu mempertimbangkan riwayat obrolan.
           Berikut adalah basis pengetahuan:
@@ -363,14 +367,11 @@ export default {
           Di atas adalah basis pengetahuan.`,
       systemMessage: 'Silakan masukkan!',
       systemTip:
-        'Instruksi yang perlu diikuti LLM saat menjawab pertanyaan, seperti desain karakter, panjang jawaban, dan bahasa jawaban, dll.',
+        'Instruksi yang perlu diikuti LLM saat menjawab pertanyaan, seperti desain karakter, panjang jawaban, dan bahasa jawaban, dll. Jika model Anda memiliki dukungan bawaan untuk penalaran, Anda dapat menambahkan //no_thinking ke prompt untuk menghentikan penalaran.',
       topN: 'Top N',
       topNTip: `Tidak semua potongan yang skor kesamaannya di atas 'ambang kesamaan' akan diberikan ke LLM. LLM hanya dapat melihat potongan 'Top N' ini.`,
       variable: 'Variabel',
-      variableTip: `Jika Anda menggunakan API dialog, variabel mungkin membantu Anda berbicara dengan klien Anda dengan strategi yang berbeda. 
-          Variabel digunakan untuk mengisi bagian 'Prompt Sistem' dalam prompt untuk memberikan petunjuk kepada LLM.
-          'knowledge' adalah variabel yang sangat khusus yang akan diisi dengan potongan yang diambil.
-          Semua variabel dalam 'Prompt Sistem' harus diberi kurung kurawal.`,
+      variableTip: `Digunakan bersama dengan API manajemen asisten obrolan RAGFlow, variabel dapat membantu mengembangkan strategi prompt sistem yang lebih fleksibel. Variabel yang didefinisikan akan digunakan oleh 'Prompt Sistem' sebagai bagian dari prompt untuk LLM. {knowledge} adalah variabel khusus yang dicadangkan, mewakili bagian-bagian yang diperoleh dari basis pengetahuan yang ditentukan, dan semua variabel harus dikelilingi oleh kurung kurawal {} dalam 'Prompt Sistem'. Lihat https://ragflow.io/docs/dev/set_chat_variables untuk detail lebih lanjut.`,
       add: 'Tambah',
       key: 'Kunci',
       optional: 'Opsional',
@@ -734,7 +735,7 @@ export default {
       news: 'Berita',
       messageHistoryWindowSize: 'Ukuran jendela pesan',
       messageHistoryWindowSizeTip:
-        'Ukuran jendela riwayat percakapan yang perlu dilihat oleh LLM. Semakin besar semakin baik. Tetapi berhati-hatilah dengan panjang konten maksimum dari LLM.',
+        'Ukuran jendela riwayat percakapan yang terlihat oleh LLM. Semakin besar semakin baik, tetapi perhatikan batas maksimum token LLM.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       email: 'Email',
@@ -1013,6 +1014,11 @@ export default {
       note: 'Catatan',
       noteDescription: 'Catatan',
       notePlaceholder: 'Silakan masukkan catatan',
+      prompt: 'Prompt',
+      promptTip:
+        'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
+      promptMessage: 'Prompt diperlukan',
+      runningHintText: 'sedang berjalan...🕞',
     },
     footer: {
       profile: 'Semua hak dilindungi @ React',

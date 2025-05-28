@@ -14,6 +14,7 @@ import BaiduForm from '../form/baidu-form';
 import BeginForm from '../form/begin-form';
 import BingForm from '../form/bing-form';
 import CategorizeForm from '../form/categorize-form';
+import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
 import DeepLForm from '../form/deepl-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
@@ -99,6 +100,7 @@ const FormMap = {
   [Operator.Iteration]: IterationForm,
   [Operator.IterationStart]: () => <></>,
   [Operator.VariablesExtract]: VariablesForm,
+  [Operator.Code]: CodeForm,
 };
 
 const EmptyContent = () => <div></div>;
