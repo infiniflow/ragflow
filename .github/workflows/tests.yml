@@ -50,9 +50,9 @@ jobs:
 
       # https://github.com/astral-sh/ruff-action
       - name: Static check with Ruff
-        uses: astral-sh/ruff-action@v2
+        uses: astral-sh/ruff-action@v3
         with:
-          version: ">=0.8.2"
+          version: ">=0.11.x"
           args: "check"
 
       - name: Build ragflow:nightly-slim

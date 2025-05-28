@@ -144,7 +144,7 @@ export default {
       toMessage: 'Thiếu số trang kết thúc (được loại trừ)',
       layoutRecognize: 'Nhận dạng bố cục',
       layoutRecognizeTip:
-        'Sử dụng các mô hình trực quan để phân tích bố cục nhằm xác định tốt hơn cấu trúc tài liệu, tìm vị trí của tiêu đề, khối văn bản, hình ảnh và bảng. Nếu không có tính năng này, chỉ có thể lấy được văn bản thuần của PDF.',
+        'Sử dụng các mô hình trực quan để phân tích bố cục nhằm xác định tốt hơn cấu trúc tài liệu, tìm vị trí của tiêu đề, khối văn bản, hình ảnh và bảng. Nếu không có tính năng này, chỉ có thể lấy được văn bản thuần của PDF. Để biết thêm thông tin, hãy xem https://ragflow.io/docs/dev/select_pdf_parser.',
       taskPageSize: 'Kích thước trang tác vụ',
       taskPageSizeMessage: 'Vui lòng nhập kích thước trang tác vụ của bạn!',
       taskPageSizeTip: `Nếu sử dụng nhận dạng bố cục, tệp PDF sẽ được chia thành các nhóm trang liên tiếp. Phân tích bố cục sẽ được thực hiện song song giữa các nhóm để tăng tốc độ xử lý. 'Kích thước trang tác vụ' xác định kích thước của các nhóm. Kích thước trang càng lớn, khả năng chia tách văn bản liên tục giữa các trang thành các khối khác nhau càng thấp.`,
@@ -231,7 +231,7 @@ export default {
       <p>
       <li>Sử dụng mô hình nhận dạng thị giác để chia các văn bản thành các phân đoạn nhỏ hơn.</li>
       <li>Sau đó, kết hợp các phân đoạn liền kề cho đến khi số lượng token vượt quá ngưỡng được chỉ định bởi 'Số token khối', tại thời điểm đó, một khối được tạo.</li></p>
-      <p>Các định dạng tệp được hỗ trợ là <b>DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>`,
+      <p>Các định dạng tệp được hỗ trợ là <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>`,
       paper: `<p>Chỉ hỗ trợ tệp <b>PDF</b>.</p><p>
       Bài báo sẽ được chia theo các phần, chẳng hạn như <i>tóm tắt, 1.1, 1.2</i>. </p><p>
       Cách tiếp cận này cho phép LLM tóm tắt bài báo hiệu quả hơn và cung cấp các phản hồi toàn diện, dễ hiểu hơn. 

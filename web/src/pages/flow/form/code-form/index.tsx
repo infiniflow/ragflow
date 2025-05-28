@@ -5,7 +5,8 @@ import { DynamicInputVariable } from './dynamic-input-variable';
 
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 import { ICodeForm } from '@/interfaces/database/flow';
-import { useEffect } from 'react';
+import { useCallback } from 'react';
+import useGraphStore from '../../store';
 import styles from './index.less';
 
 loader.config({ paths: { vs: '/vs' } });
@@ -17,16 +18,20 @@ const options = [
 
 const CodeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
   const formData = node?.data.form as ICodeForm;
+  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
 
-  useEffect(() => {
-    setTimeout(() => {
-      // TODO: Direct operation zustand is more elegant
-      form?.setFieldValue(
-        'script',
-        CodeTemplateStrMap[formData.lang as ProgrammingLanguage],
-      );
-    }, 0);
-  }, [form, formData.lang]);
+  const handleChange = useCallback(
+    (value: ProgrammingLanguage) => {
+      if (node?.id) {
+        updateNodeForm(
+          node?.id,
+          CodeTemplateStrMap[value as ProgrammingLanguage],
+          ['script'],
+        );
+      }
+    },
+    [node?.id, updateNodeForm],
+  );
 
   return (
     <Form
@@ -42,16 +47,17 @@ const CodeForm = ({ onValuesChange, form, node }: IOperatorForm) => {
         label={
           <Form.Item name={'lang'} className={styles.languageItem}>
             <Select
-              defaultValue={'python'}
+              defaultValue={ProgrammingLanguage.Python}
               popupMatchSelectWidth={false}
               options={options}
+              onChange={handleChange}
             />
           </Form.Item>
         }
         className="bg-gray-100 rounded dark:bg-gray-800"
       >
         <Editor
-          height={200}
+          height={600}
           theme="vs-dark"
           language={formData.lang}
           options={{

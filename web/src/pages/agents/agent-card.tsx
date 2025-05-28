@@ -1,56 +1,47 @@
+import { MoreButton } from '@/components/more-button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IFlow } from '@/interfaces/database/flow';
-import { formatPureDate } from '@/utils/date';
-import { ChevronRight, Trash2 } from 'lucide-react';
+import { formatDate } from '@/utils/date';
+import { AgentDropdown } from './agent-dropdown';
+import { useRenameAgent } from './use-rename-agent';
 
-interface IProps {
+export type DatasetCardProps = {
   data: IFlow;
-}
+} & Pick<ReturnType<typeof useRenameAgent>, 'showAgentRenameModal'>;
 
-export function AgentCard({ data }: IProps) {
+export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
   const { navigateToAgent } = useNavigatePage();
 
   return (
-    <Card className="bg-colors-background-inverse-weak  border-colors-outline-neutral-standard">
-      <CardContent className="p-4">
-        <div className="flex justify-between mb-4">
-          {data.avatar ? (
-            <div
-              className="w-[70px] h-[70px] rounded-xl bg-cover"
-              style={{ backgroundImage: `url(${data.avatar})` }}
-            />
-          ) : (
-            <Avatar className="w-[70px] h-[70px]">
-              <AvatarImage src="https://github.com/shadcn.png" />
-              <AvatarFallback>CN</AvatarFallback>
+    <Card key={data.id} className="w-40" onClick={navigateToAgent(data.id)}>
+      <CardContent className="p-2.5 pt-2 group">
+        <section className="flex justify-between mb-2">
+          <div className="flex gap-2 items-center">
+            <Avatar className="size-6 rounded-lg">
+              <AvatarImage src={data.avatar} />
+              <AvatarFallback className="rounded-lg ">CN</AvatarFallback>
             </Avatar>
-          )}
-        </div>
-        <h3 className="text-xl font-bold mb-2">{data.title}</h3>
-        <p>An app that does things An app that does things</p>
-        <section className="flex justify-between pt-3">
-          <div>
-            Search app
-            <p className="text-sm opacity-80">
-              {formatPureDate(data.update_time)}
+          </div>
+          <AgentDropdown
+            showAgentRenameModal={showAgentRenameModal}
+            agent={data}
+          >
+            <MoreButton></MoreButton>
+          </AgentDropdown>
+        </section>
+        <div className="flex justify-between items-end">
+          <div className="w-full">
+            <h3 className="text-lg font-semibold mb-2 line-clamp-1">
+              {data.title}
+            </h3>
+            <p className="text-xs text-text-sub-title">{data.description}</p>
+            <p className="text-xs text-text-sub-title">
+              {formatDate(data.update_time)}
             </p>
           </div>
-          <div className="space-x-2">
-            <Button
-              variant="icon"
-              size="icon"
-              onClick={navigateToAgent(data.id)}
-            >
-              <ChevronRight className="h-6 w-6" />
-            </Button>
-            <Button variant="icon" size="icon">
-              <Trash2 />
-            </Button>
-          </div>
-        </section>
+        </div>
       </CardContent>
     </Card>
   );

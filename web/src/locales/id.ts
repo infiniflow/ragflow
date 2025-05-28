@@ -138,7 +138,7 @@ export default {
       toMessage: 'Nomor halaman akhir hilang (tidak termasuk)',
       layoutRecognize: 'Pengenalan tata letak',
       layoutRecognizeTip:
-        'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, dan tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh.',
+        'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, dan tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/select_pdf_parser.',
       taskPageSize: 'Ukuran halaman tugas',
       taskPageSizeMessage: 'Silakan masukkan ukuran halaman tugas Anda!',
       taskPageSizeTip: `Jika menggunakan pengenalan tata letak, file PDF akan dibagi menjadi kelompok berturut-turut. Analisis tata letak akan dilakukan secara paralel antar kelompok untuk meningkatkan kecepatan pemrosesan. 'Ukuran halaman tugas' menentukan ukuran kelompok. Semakin besar ukuran halaman, semakin kecil kemungkinan teks berkelanjutan antara halaman dibagi menjadi potongan yang berbeda.`,
@@ -211,7 +211,7 @@ export default {
           Kami mengasumsikan manual memiliki struktur bagian hierarkis. Kami menggunakan judul bagian terendah sebagai poros untuk memotong dokumen.
           Jadi, gambar dan tabel dalam bagian yang sama tidak akan dipisahkan, dan ukuran potongan mungkin besar.
           </p>`,
-      naive: `<p>Format file yang didukung adalah <b>DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      naive: `<p>Format file yang didukung adalah <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
           <p>Metode ini menerapkan cara naif untuk memotong file: </p>
           <p>
           <li>Teks berturut-turut akan dipotong menjadi potongan menggunakan model deteksi visual.</li>

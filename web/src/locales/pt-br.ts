@@ -141,7 +141,7 @@ export default {
       toMessage: 'Página final ausente (excluída)',
       layoutRecognize: 'Reconhecimento de layout',
       layoutRecognizeTip:
-        'Use modelos visuais para análise de layout para entender melhor a estrutura do documento e localizar efetivamente títulos, blocos de texto, imagens e tabelas. Se desativado, apenas o texto simples no PDF será recuperado.',
+        'Use modelos visuais para análise de layout para entender melhor a estrutura do documento e localizar efetivamente títulos, blocos de texto, imagens e tabelas. Se desativado, apenas o texto simples no PDF será recuperado. Para mais informações, acesse https://ragflow.io/docs/dev/select_pdf_parser.',
       taskPageSize: 'Tamanho da página da tarefa',
       taskPageSizeMessage: 'Por favor, insira o tamanho da página da tarefa!',
       taskPageSizeTip:
@@ -246,7 +246,7 @@ export default {
       Os fragmentos terão granularidade compatível com 'ARTIGO', garantindo que todo o texto de nível superior seja incluído no fragmento.</p>`,
       manual: `<p>Apenas <b>PDF</b> é suportado.</p><p>
       Assumimos que o manual tem uma estrutura hierárquica de seções, usando os títulos das seções inferiores como unidade básica para fragmentação. Assim, figuras e tabelas na mesma seção não serão separadas, o que pode resultar em fragmentos maiores.</p>`,
-      naive: `<p>Os formatos de arquivo suportados são <b>DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      naive: `<p>Os formatos de arquivo suportados são <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
       <p>Este método fragmenta arquivos de maneira 'simples':</p>
       <p>
       <li>Usa um modelo de detecção visual para dividir os textos em segmentos menores.</li>
