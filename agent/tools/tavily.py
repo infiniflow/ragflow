@@ -61,12 +61,20 @@ class TavilySearchParam(ToolParamBase):
                     "type": "array",
                     "description": "default:[]. A list of domains to specifically include in the search results.",
                     "default": [],
+                    "items": {
+                        "type": "string",
+                        "description": "Domain name that must be included, e.g. www.yahoo.com"
+                    },
                     "required": False
                 },
                 "exclude_domains": {
                     "type": "array",
                     "description": "default:[]. A list of domains to specifically exclude from the search results.",
                     "default": [],
+                    "items": {
+                        "type": "string",
+                        "description": "Domain name that must be excluded, e.g. www.yahoo.com"
+                    },
                     "required": False
                 },
             }
