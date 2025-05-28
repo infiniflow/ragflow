@@ -83,13 +83,24 @@ class ScheduleAgentService(CommonService):
             result = cls.save(**kwargs)
             
             if result:
-                logging.info(f"[SCHEDULE_SERVICE] ✅ Successfully created schedule - ID:{result.id}, {schedule_info}")
-                logging.debug(f"[SCHEDULE_SERVICE] Schedule details - Enabled:{result.enabled}, Next run:{result.next_run_time}")
+                # Get the created schedule object
+                schedule_id = kwargs.get('id')
+                if schedule_id:
+                    e, schedule_obj = cls.get_by_id(schedule_id)
+                    if e and schedule_obj:
+                        logging.info(f"[SCHEDULE_SERVICE] ✅ Successfully created schedule - ID:{schedule_obj.id}, {schedule_info}")
+                        logging.debug(f"[SCHEDULE_SERVICE] Schedule details - Enabled:{schedule_obj.enabled}, Next run:{schedule_obj.next_run_time}")
+                        return schedule_obj
+                    else:
+                        logging.error(f"[SCHEDULE_SERVICE] ❌ Failed to retrieve created schedule with ID: {schedule_id}")
+                        raise Exception(f"Failed to retrieve created schedule with ID: {schedule_id}")
+                else:
+                    logging.error(f"[SCHEDULE_SERVICE] ❌ No schedule ID provided for creation")
+                    raise Exception("No schedule ID provided for creation")
             else:
                 logging.error(f"[SCHEDULE_SERVICE] ❌ Failed to save schedule to database: {schedule_info}")
+                raise Exception(f"Failed to save schedule to database: {schedule_info}")
                 
-            return result
-            
         except Exception as e:
             logging.error(f"[SCHEDULE_SERVICE] ❌ Error creating schedule: {schedule_info}")
             logging.error(f"[SCHEDULE_SERVICE] Error type: {type(e).__name__}")
