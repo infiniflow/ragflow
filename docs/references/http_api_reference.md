@@ -3229,7 +3229,7 @@ Failure:
 
 ### Related Questions
 
-**POST** `/v1/conversation/related_questions`
+**POST** `/v1/sessions/related_questions`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
@@ -3242,7 +3242,7 @@ The chat model dynamically determines the number of questions to generate based 
 #### Request
 
 - Method: POST
-- URL: `/v1/conversation/related_questions`
+- URL: `/v1/sessions/related_questions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -3253,7 +3253,7 @@ The chat model dynamically determines the number of questions to generate based 
 
 ```bash
 curl --request POST \
-     --url http://{address}/v1/conversation/related_questions \
+     --url http://{address}/v1/sessions/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '
