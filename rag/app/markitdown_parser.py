@@ -1,70 +1,52 @@
 import re
 import tempfile
 import os
+from unittest.mock import MagicMock # Added for __main__ block
 from markitdown import MarkItDown # Assuming this is the correct import
 # We might need to import LLM utilities later
 # from some_ragflow_llm_utility import RAGFlowLLMClient # Hypothetical placeholder for actual client
 
 class MarkitdownParser:
-    def __init__(self, llm_api_key=None, llm_base_url=None, llm_model_name=None): # Added model_name
-        self.md_converter = MarkItDown(enable_plugins=False) # As per issue spec
-        # self.llm_client = RAGFlowLLMClient(api_key=llm_api_key, base_url=llm_base_url, model=llm_model_name) # Hypothetical
-        # For now, if no actual client, simulate:
-        self.llm_client = self._get_mock_llm_client(api_key=llm_api_key, base_url=llm_base_url, model=llm_model_name)
+    def __init__(self, llm_api_key=None, llm_base_url=None, llm_model_name=None):
+        self.md_converter = MarkItDown(enable_plugins=False)
+        self.llm_api_key = llm_api_key
+        self.llm_base_url = llm_base_url
+        self.llm_model_name = llm_model_name
+        # Ensure llm_client is initialized, preferably here.
+        self.llm_client = self._get_mock_llm_client(api_key=self.llm_api_key, base_url=self.llm_base_url, model=self.llm_model_name)
 
-    def _get_mock_llm_client(self, api_key, base_url, model): # Mock LLM client for development
+    def _get_mock_llm_client(self, api_key=None, base_url=None, model=None): # Added defaults for fallback
         class MockLLMClient:
-            def __init__(self, api_key, base_url, model):
-                self.api_key = api_key
-                self.base_url = base_url
-                self.model = model
-                print(f"MockLLMClient initialized (key: {'set' if api_key else 'not set'}, base_url: {base_url}, model: {model})")
+            def __init__(self, inner_api_key, inner_base_url, inner_model): # Renamed params to avoid clash
+                # This print can be removed once real client is integrated
+                print(f"MockLLMClient initialized for new prompt logic (key: {'set' if inner_api_key else 'not set'}, base_url: {inner_base_url}, model: {inner_model})")
+                self.api_key = inner_api_key
+                self.base_url = inner_base_url
+                self.model = inner_model
 
             def generate(self, prompt):
-                print(f"MockLLMClient received prompt:\n{prompt[:400]}...") # Print start of prompt
-                # Simulate LLM response based on the prompt's content for testing
-                # This mock response should align with the format expected by _classify_headings_with_llm
-                if "项目背景" in prompt and "用户登录" in prompt and "数据导出" in prompt and "整体方案概述" in prompt:
-                    return """
-需求背景相关：
-# 项目背景
-# 业务场景
-
-需求目标相关：
-# 项目目标
-
-需求方案相关：
-# 整体方案概述
-
-功能点1相关：
-## 用户登录
-### 功能说明
-### 实现细节
-#### 安全考虑
-
-功能点2相关：
-## 数据导出
-### 导出格式说明
-
-功能点3相关：
-## 管理员面板
-### 用户管理
-
-测试要点相关：
-# 测试要点
-"""
-                elif "唯一的标题" in prompt and "子标题" in prompt : # For simple test
-                    return """
-需求背景相关：
-# 唯一的标题
-## 子标题
-"""
-                else: # Generic fallback
-                    return """
-需求背景相关：
-# Fallback Heading Title
-"""
-        return MockLLMClient(api_key=api_key, base_url=base_url, model=model)
+                # This print can be removed once real client is integrated
+                print(f"MockLLMClient received prompt (first 400 chars):\n{prompt[:400]}...")
+                # Simulate LLM response based on the new prompt's expectation from the subtask description
+                if "背景" in prompt and "功能点1" in prompt and "功能点2" in prompt: # Based on example in subtask
+                     return "# 背景|# 调研|# 名词解释|# 方案|## 概述|## 功能点1|## 功能点2"
+                elif "My Doc Title" in prompt and "Section 1" in prompt and "Section 2" in prompt: # For a different test case
+                     return "# My Doc Title|## Section 1|### Detail 1.1|## Section 2"
+                elif "# Fallback Title 1" in prompt and "# Fallback Title 2" in prompt: # Specific test for this
+                     return "# Fallback Title 1|# Fallback Title 2" # Ensure mock returns what's expected in a test
+                else: # Generic fallback for other cases
+                     # Extract some headings from the prompt to make mock more dynamic for basic tests (from subtask description)
+                     headings_list_str = prompt.split("下面是文档标题列表：\n")[-1] if "下面是文档标题列表：\n" in prompt else ""
+                     headings_in_prompt = [line for line in headings_list_str.splitlines() if line.strip().startswith("#")]
+                     if len(headings_in_prompt) >= 2:
+                         return f"{headings_in_prompt[0].strip()}|{headings_in_prompt[-1].strip()}"
+                     elif headings_in_prompt:
+                         return headings_in_prompt[0].strip()
+                     return "# Default Mocked Title" # Absolute fallback
+        
+        # This method is responsible for returning an instance of MockLLMClient
+        # The check for self.llm_client's existence is done in _classify_headings_with_llm
+        return MockLLMClient(api_key, base_url, model) # Pass the arguments received by _get_mock_llm_client
 
     def _parse_filename(self, filename_with_ext):
         # Filename format: {发布日期}发布_{jira-key}_{文档名}.docx
@@ -122,187 +104,123 @@ class MarkitdownParser:
                 headings.append(line.strip())
         return headings
 
-    def _classify_headings_with_llm(self, headings): # llm_client removed from params, uses self.llm_client
-        # This function will interact with an LLM.
-        # Construct the prompt as specified in the issue.
-        # Send the list of headings to the LLM and get back the classified structure.
+    def _extract_headings_with_lineno(self, markdown_content: str) -> list[tuple[str, int]]:
+        headings_with_lineno = []
+        lines = markdown_content.splitlines()
+        for i, line in enumerate(lines):
+            stripped_line = line.strip()
+            if stripped_line.startswith("#"):
+                headings_with_lineno.append((stripped_line, i)) # i is the 0-indexed line number
+                
+        return headings_with_lineno
+
+    def _classify_headings_with_llm(self, headings: list[str]) -> list[str]:
         if not headings:
-            return {}
+            return []
 
-        headings_list_str = "\n".join(headings)
-        # The prompt from the issue:
+        # Ensure llm_client is available. This is a fallback if __init__ somehow failed or was bypassed.
+        if not hasattr(self, 'llm_client') or self.llm_client is None:
+             print("Warning: llm_client not initialized by __init__. Initializing mock client in _classify_headings_with_llm.")
+             # Use instance attributes stored during __init__ for fallback
+             self.llm_client = self._get_mock_llm_client(
+                 api_key=self.llm_api_key, 
+                 base_url=self.llm_base_url, 
+                 model=self.llm_model_name
+            )
+
+        headings_list_str = "\n".join(headings) # Original headings sent to LLM
+
+        # New prompt template from the user
         prompt = f"""
-请对下列 Markdown 文档标题，按照如下结构归类输出：
-- 需求背景
-- 需求目标
-- 需求方案
-- 功能点1、功能点2（依次类推，功能点是指相对独立的最小功能单元）
-- 测试要点
+请对下列 Markdown 文档标题，按照其在文档中的原始顺序，提取所有“相对独立、完整的内容块”。
+- 每个内容块以其标题开头，包含该标题下的全部内容，直到下一个同级或更高级标题为止。
+- 标题可以是需求背景、需求目标、需求方案、功能点、测试建议，也可以是其他文档实际存在的独立部分。
+- 如果文档结构不规范（如层级混乱、标题名非标准），也请按你理解将每个具有独立意义的内容拆分出来。
+- 返回结果格式如下：所有标题顺序排列，标题之间用“|”分隔。例如：
+# 背景|# 调研|# 名词解释|# 方案|## 概述|## 功能点1|## 功能点2
 
-要求：
-1. 标题顺序必须与原文一致，不能跳行或遗漏。
-2. 标题内容全部包含在某一类下，且不能交叉分类。
-3. 每一类下可包含多个标题，必须连续。
-4. 输出格式如下示例：
-
-需求背景相关：
-# 项目背景
-# 现状分析
-
-需求目标相关：
-# 项目目标
-
-功能点1相关：
-## 用户登录
-### 功能描述
-
-功能点2相关：
-## 数据导出
-### 设计说明
-
-测试要点相关：
-## 测试用例设计
-
----
-
-下面是待分类的文档标题列表：
+下面是文档标题列表：
 {headings_list_str}
 """
         try:
-            # response_text = self.llm_client.generate(prompt) # Use actual client when available
-            response_text = self.llm_client.generate(prompt) # Using the mock client for now
+            response_text = self.llm_client.generate(prompt)
+            
+            # Parse the | separated string into a flat list of heading strings
+            # Strip whitespace from each heading and filter out empty strings
+            classified_block_start_headings = [h.strip() for h in response_text.strip().split('|') if h.strip()]
+            
+            return classified_block_start_headings
         except Exception as e:
-            print(f"LLM API call failed: {e}") # Or use proper logging
-            return {} # Return empty on error
+            print(f"LLM API call failed in _classify_headings_with_llm: {e}") 
+            return [] 
 
-        # Parse response_text
-        classified_headings = {}
-        current_category_key = None # This will be like "需求背景", "功能点1" etc.
-        
-        # print(f"LLM Raw Response:\n{response_text}") # For debugging LLM output
-        for line in response_text.splitlines():
-            line = line.strip()
-            if not line: # Skip empty lines
-                continue
-            
-            # Check if the line defines a category
-            # Categories end with "相关：" or "相关:" or just ":"
-            match_category = re.match(r"(.+?)(?:相关：|相关:|：|:)$", line)
-            if match_category:
-                category_name_from_llm = match_category.group(1).strip()
-                # Normalize category name for use as key, e.g. "需求背景"
-                current_category_key = category_name_from_llm
-                if current_category_key not in classified_headings:
-                    classified_headings[current_category_key] = []
-            elif line.startswith("#") and current_category_key:
-                # This line is a heading, add it to the current category
-                if current_category_key in classified_headings: # Ensure category was properly initialized
-                     classified_headings[current_category_key].append(line)
-                else:
-                    # This case should ideally not be reached if LLM output is well-formed
-                    print(f"Warning: Line '{line}' looks like a heading, but current category key '{current_category_key}' is not initialized. Skipping.")
-            # else:
-                # Line is neither a category definition nor a heading under the current category.
-                # Could be descriptive text from LLM, or malformed. For now, we ignore such lines.
-                # print(f"Info: Skipping unclassified line from LLM response: '{line}'")
-
-        # Filter out categories that might have been initialized but received no valid headings
-        final_classified_headings = {}
-        for category_key, hs in classified_headings.items():
-            valid_headings = [h for h in hs if h.startswith("#")]
-            if valid_headings:
-                final_classified_headings[category_key] = valid_headings
-        
-        return final_classified_headings
-
-
-    def _split_markdown_by_classified_headings(self, markdown_content, classified_headings):
-        if not classified_headings:
+    # Renamed method and updated signature parameter name for clarity
+    def _split_markdown_by_llm_selected_headings(self, markdown_content: str, llm_selected_start_headings: list[str]) -> list[tuple[str, str]]:
+        if not llm_selected_start_headings or not markdown_content.strip():
+            # If llm_selected_start_headings is empty, or markdown_content is empty/whitespace
+            if not markdown_content.strip(): # Specifically if markdown is empty
+                 return []
+            # If markdown has content but no headings were selected by LLM, treat all as one chunk
             return [("全部内容", markdown_content)]
 
-        chunks = []
+
+        original_headings_with_lineno = self._extract_headings_with_lineno(markdown_content)
+        if not original_headings_with_lineno:
+            # No headings in the original document.
+            # If llm_selected_start_headings is somehow not empty, they won't be found.
+            # Treat all content as one chunk if LLM didn't provide specific splits,
+            # or if it did but they can't be mapped to original headings.
+            return [("全部内容", markdown_content)]
+
+
         lines = markdown_content.splitlines()
+        result_chunks = []
 
-        # Defined order of categories (keys should match those from _classify_headings_with_llm)
-        category_order_main = ["需求背景", "需求目标", "需求方案"]
-        functional_point_keys = sorted([k for k in classified_headings.keys() if k.startswith("功能点")])
-        category_order_test = ["测试要点"]
-        
-        # Full ordered list of category keys as they should be processed
-        ordered_category_keys_for_splitting = category_order_main + functional_point_keys + category_order_test
+        # Create a quick lookup for original heading line numbers
+        original_heading_to_lineno_map = {text: lineno for text, lineno in original_headings_with_lineno}
 
-        # Create a list of (marker_heading_text, category_key_for_chunk)
-        # These are the first headings of each category that will define the start of a chunk.
-        category_start_markers = []
-        
-        # print(f"Debug classified_headings for splitting: {classified_headings}")
-        # print(f"Debug ordered_category_keys_for_splitting: {ordered_category_keys_for_splitting}")
+        for i, current_block_start_heading in enumerate(llm_selected_start_headings):
+            start_line_num = original_heading_to_lineno_map.get(current_block_start_heading, -1)
 
-        for key_in_order in ordered_category_keys_for_splitting:
-            if key_in_order in classified_headings and classified_headings[key_in_order]:
-                # classified_headings[key_in_order] is a list of headings for this category
-                # The first one is the primary marker for this category section
-                first_heading_of_this_category = classified_headings[key_in_order][0].strip()
-                category_start_markers.append((first_heading_of_this_category, key_in_order))
-            # else:
-                # print(f"Debug: Category key '{key_in_order}' not found in classified_headings or has no headings.")
-
-
-        if not category_start_markers:
-            # This can happen if LLM output was empty, malformed, or no standard categories found
-            # print("Warning: No category start markers identified. Returning content as a single chunk.")
-            return [("全部内容", markdown_content)]
-
-        # Split content based on these category_start_markers
-        for i, (marker_heading_text, category_key_for_chunk) in enumerate(category_start_markers):
-            start_line_idx = -1
-            # Find the line number of the current marker_heading_text in the original markdown lines
-            for line_idx, line_content in enumerate(lines):
-                if line_content.strip() == marker_heading_text:
-                    start_line_idx = line_idx
-                    break
-            
-            if start_line_idx == -1:
-                # This means a heading classified by LLM was not found in the original document.
-                # This could indicate an LLM hallucination or a bug.
-                print(f"Warning: Category marker heading '{marker_heading_text}' for category '{category_key_for_chunk}' not found in document. Skipping this category.")
+            if start_line_num == -1:
+                print(f"Warning: LLM selected heading '{current_block_start_heading}' not found in original document. Skipping.")
                 continue
 
-            # Determine the end_line_idx for this chunk.
-            # It's the line *before* the marker_heading_text of the *next* category in category_start_markers.
-            # Or, if this is the last category, it's the end of the document.
-            end_line_idx = len(lines) # Default to end of document for the last chunk
-            if i + 1 < len(category_start_markers):
-                next_marker_heading_text, _ = category_start_markers[i+1]
-                # Find the line of the next_marker_heading_text.
-                # Search must start *after* the current chunk's start_line_idx to avoid issues
-                # if headings are duplicated or if a heading is a substring of another.
-                for next_marker_line_search_idx, line_content in enumerate(lines): # Search from beginning
-                    if line_content.strip() == next_marker_heading_text:
-                        # Ensure this found marker is truly after the current one,
-                        # relevant if headings could be non-unique and appear earlier.
-                        # However, our markers are unique and ordered by appearance due to `category_start_markers` construction.
-                        if line_idx > start_line_idx : # Check if the found line_idx is after current start_line_idx
-                             end_line_idx = line_idx # line_idx here is the line of next_marker_heading_text
-                             break
-                        # If we find the next marker but it's not after current, it means something is wrong or
-                        # the same heading is used for different categories (which shouldn't happen with this logic)
-                        # For now, we assume markers are distinct and appear in order.
-                        # The critical part is that `next_marker_heading_text` is found in `lines`.
+            end_line_num = len(lines) # Default to end of document
+
+            if i + 1 < len(llm_selected_start_headings):
+                next_block_start_heading = llm_selected_start_headings[i+1]
+                next_heading_original_lineno = original_heading_to_lineno_map.get(next_block_start_heading, -1)
                 
-                # Refined search for end_line_idx:
-                temp_end_idx = -1
-                for line_num_for_next_marker in range(start_line_idx + 1, len(lines)):
-                    if lines[line_num_for_next_marker].strip() == next_marker_heading_text:
-                        temp_end_idx = line_num_for_next_marker
-                        break
-                if temp_end_idx != -1:
-                    end_line_idx = temp_end_idx
+                if next_heading_original_lineno != -1:
+                    # Ensure the next heading is actually after the current one,
+                    # in case LLM returns headings out of original document order or duplicates.
+                    if next_heading_original_lineno > start_line_num:
+                        end_line_num = next_heading_original_lineno
+                    else:
+                        print(f"Warning: LLM selected 'next' heading '{next_block_start_heading}' appears before or at the same line as current block '{current_block_start_heading}'. Current block will extend to EOF or next valid heading.")
+                        # This block will extend to the next valid LLM-selected heading that is correctly ordered, or EOF.
+                        # We need to find the *actual* next heading in document order from the remaining llm_selected_start_headings
+                        # that appears after start_line_num.
+                        found_next_valid_heading = False
+                        for j in range(i + 1, len(llm_selected_start_headings)):
+                            potential_next_heading = llm_selected_start_headings[j]
+                            potential_next_lineno = original_heading_to_lineno_map.get(potential_next_heading, -1)
+                            if potential_next_lineno > start_line_num:
+                                end_line_num = potential_next_lineno
+                                found_next_valid_heading = True
+                                break
+                        if not found_next_valid_heading:
+                            end_line_num = len(lines) # Extends to EOF if no subsequent valid heading
+                else:
+                    # This case implies LLM returned a "next" heading that isn't in the document.
+                    # The current block will extend to the end of the document.
+                    print(f"Warning: LLM selected 'next' heading '{next_block_start_heading}' not found in original document. Current block '{current_block_start_heading}' will extend to EOF.")
+
+            chunk_text = "\n".join(lines[start_line_num:end_line_num])
+            result_chunks.append((current_block_start_heading, chunk_text)) # Category name is the heading itself
             
-            current_chunk_lines = lines[start_line_idx:end_line_idx]
-            chunks.append((category_key_for_chunk, "\n".join(current_chunk_lines)))
-            
-        return chunks
+        return result_chunks
 
     def parse_file(self, file_path_or_bytes, filename):
         # Main public method for the parser.
@@ -325,164 +243,173 @@ class MarkitdownParser:
 
         headings = self._extract_markdown_headings(markdown_content)
         if not headings:
-            # Handle case with no headings - return markdown_content as a single chunk under a generic category
-            formatted_chunk = f"文档名：{metadata['doc_name']}\n上线时间：{metadata['publish_date']}\n分类名：通用内容\n内容：{markdown_content}"
+            # Fallback for when no headings are extracted from the document.
+            # Use the new formatting style.
+            doc_name = metadata.get('doc_name', 'N/A')
+            publish_date = metadata.get('publish_date', 'N/A')
+            # Use document name as title, or a generic placeholder if doc_name is also missing.
+            chunk_title = metadata.get('doc_name', '原始文档') 
+            formatted_chunk = f"文档名：{doc_name}\n上线时间：{publish_date}\n标题：{chunk_title}\n内容：{markdown_content}"
             return [formatted_chunk]
 
-        # For LLM client: This might be passed in or accessed via a global/singleton
-        classified_headings = self._classify_headings_with_llm(headings) 
+        # LLM call returns a flat list of selected start headings for blocks
+        llm_selected_headings = self._classify_headings_with_llm(headings) 
         
-        split_chunks_with_categories = self._split_markdown_by_classified_headings(markdown_content, classified_headings)
+        # Pass this flat list to the splitting method
+        split_content_tuples = self._split_markdown_by_llm_selected_headings(markdown_content, llm_selected_headings)
         
         final_formatted_chunks = []
-        for category_name, chunk_content in split_chunks_with_categories:
-            formatted_chunk = f"文档名：{metadata['doc_name']}\n上线时间：{metadata['publish_date']}\n分类名：{category_name}\n内容：{chunk_content}"
+        # Handle case where no chunks were generated by _split_markdown_by_llm_selected_headings
+        # (e.g., if LLM returns empty list, or if markdown_content was empty and handled inside split method)
+        if not split_content_tuples:
+            # If headings were present but splitting resulted in no chunks (e.g. LLM issues, or all selected headings not found)
+            # Return a single chunk with the full content, similar to the "no headings" case, or decide on error handling.
+            # For now, let's be consistent with the "no headings" fallback.
+            print("Warning: Headings were extracted, but no chunks were generated after LLM classification and splitting. Returning full content as one chunk.")
+            doc_name = metadata.get('doc_name', 'N/A')
+            publish_date = metadata.get('publish_date', 'N/A')
+            chunk_title = metadata.get('doc_name', '原始内容') # Title indicating it's un-split content
+            formatted_chunk = f"文档名：{doc_name}\n上线时间：{publish_date}\n标题：{chunk_title}\n内容：{markdown_content}"
+            return [formatted_chunk]
+
+        for block_start_heading, chunk_text in split_content_tuples:
+            doc_name = metadata.get('doc_name', 'N/A') # Ensure these are fresh for each chunk, though they are doc-level
+            publish_date = metadata.get('publish_date', 'N/A')
+            
+            chunk_title = block_start_heading # The block_start_heading is the title for this chunk
+            
+            formatted_chunk = f"文档名：{doc_name}\n上线时间：{publish_date}\n标题：{chunk_title}\n内容：{chunk_text}"
             final_formatted_chunks.append(formatted_chunk)
             
         return final_formatted_chunks
 
 # Example Usage (for testing purposes, remove or comment out in final version):
 if __name__ == '__main__':
-    # Initialize parser with mock LLM parameters
-    parser = MarkitdownParser(llm_api_key="test_key", llm_base_url="http://localhost:8000", llm_model_name="test_model")
-    
-    # 1. Test filename parsing (remains the same)
-    fn_test = "20250105发布_JK005-54748_【需求确认】XQSQ2024122500167 关于新增放开满期退保阻断的需求V1.0.docx"
+    parser = MarkitdownParser(llm_api_key="test_key_main", llm_base_url="http://localhost:8001", llm_model_name="test_model_main") 
+
+    # 1. Test filename parsing (likely unchanged, but verify)
+    fn_test = "20250105发布_JK005-54748_【需求确认】文档A_V1.0.docx"
     meta = parser._parse_filename(fn_test)
-    print(f"Parsed Filename Metadata: {meta}\n")
+    print(f"Parsed Filename Metadata: {meta}")
+    # Expected: {'publish_date': '20250105', 'jira_key': 'JK005-54748', 'doc_name': '【需求确认】文档A_V1.0'}
+    assert meta['doc_name'] == '【需求确认】文档A_V1.0'
 
-    fn_test_no_match = "mydocument.docx"
-    meta_no_match = parser._parse_filename(fn_test_no_match)
-    print(f"Parsed Filename (no match): {meta_no_match}\n")
 
-    # More complex mock Markdown content
-    mock_md_content_complex = """
-# 项目背景
-这是项目的起源和原因。
-包含一些历史数据。
+    # 2. Mock Markdown Content
+    mock_md_content_complex = """# 文档总标题
+这是文档的简介部分。
+也可能有一些初步的描述。
 
-# 业务场景
-描述当前业务如何运作。
-以及面临的痛点。
+# 背景故事
+这里是背景故事的详细内容。
+应该有很多行。
 
-# 项目目标
-我们希望达成以下目标：
-1. 提高效率
-2. 降低成本
+## 次级背景点
+更细致的背景。
 
-# 整体方案概述
-我们将采用微服务架构。
-结合事件驱动模式。
+# 需求方案
+整体方案描述。
 
-## 用户登录
-这是用户登录功能的详细描述。
-支持多种登录方式。
-### 功能说明
-- 用户名密码登录
-- OAuth 2.0
-### 实现细节
-后端采用Python Django。
-前端Vue.js。
-#### 安全考虑
-密码加密存储。
+## 功能点1：用户登录
+描述用户登录功能。
+### 细节A
+登录细节A。
+### 细节B
+登录细节B。
 
-## 数据导出
-用户可以将数据导出为多种格式。
-### 导出格式说明
-- CSV
-- Excel
-- PDF (未来支持)
-
-## 管理员面板
-管理员有专属面板。
-### 用户管理
-- 查看用户
-- 禁用用户
+## 功能点2：数据导出
+描述数据导出功能。
 
 # 测试要点
-对以下方面进行重点测试：
-- 登录安全性
-- 数据导出准确性
-- 管理员操作权限
+需要测试的关键点。
 """
+
+    # 3. Test _extract_headings_with_lineno
+    headings_with_lineno = parser._extract_headings_with_lineno(mock_md_content_complex)
+    print(f"\nExtracted Headings with Line Numbers: {headings_with_lineno}")
+    expected_headings_with_lineno = [
+        ('# 文档总标题', 0), 
+        ('# 背景故事', 4), 
+        ('## 次级背景点', 7), 
+        ('# 需求方案', 10), 
+        ('## 功能点1：用户登录', 13), 
+        ('### 细节A', 15), 
+        ('### 细节B', 17), 
+        ('## 功能点2：数据导出', 20), 
+        ('# 测试要点', 23)
+    ]
+    assert headings_with_lineno == expected_headings_with_lineno
+
+
+    # 4. Test _classify_headings_with_llm (mocked LLM response)
+    # Define the expected LLM output for this specific complex content
+    expected_llm_output_for_complex_content = "# 文档总标题|# 背景故事|# 需求方案|## 功能点1：用户登录|## 功能点2：数据导出|# 测试要点"
     
-    # 2. Test DOCX to Markdown conversion (mocked)
-    def mock_complex_converter(file_path_or_bytes):
+    # Patch the generate method of the llm_client instance for this test run
+    # The parser's __init__ already creates self.llm_client (which is a MockLLMClient instance)
+    original_generate_method = parser.llm_client.generate 
+    parser.llm_client.generate = MagicMock(return_value=expected_llm_output_for_complex_content)
+
+    original_headings_for_llm = [h_text for h_text, lineno in headings_with_lineno]
+    llm_selected_block_start_headings = parser._classify_headings_with_llm(original_headings_for_llm)
+    print(f"\nLLM Selected Block Start Headings (mocked): {llm_selected_block_start_headings}")
+    
+    assert llm_selected_block_start_headings == expected_llm_output_for_complex_content.split('|')
+    parser.llm_client.generate.assert_called_once() # Check that our mock was called
+    
+    # Restore original generate method if other tests for _classify_headings_with_llm depend on the default mock behavior
+    parser.llm_client.generate = original_generate_method
+
+
+    # 5. Test _split_markdown_by_llm_selected_headings
+    split_chunks_tuples = parser._split_markdown_by_llm_selected_headings(mock_md_content_complex, llm_selected_block_start_headings)
+    print("\nSplit Content Tuples (Title, Text):")
+    for i, (title, content) in enumerate(split_chunks_tuples):
+        print(f"--- Chunk Tuple {i+1} ---")
+        print(f"Original Title: {title}")
+        print(f"Content Preview: {content[:100].replace(chr(10), ' ')}...") # Replace newline for print
+    
+    assert len(split_chunks_tuples) == 6
+    assert split_chunks_tuples[0][0] == "# 文档总标题"
+    assert "这是文档的简介部分" in split_chunks_tuples[0][1]
+    assert split_chunks_tuples[1][0] == "# 背景故事"
+    assert "## 次级背景点" in split_chunks_tuples[1][1] 
+    assert split_chunks_tuples[3][0] == "## 功能点1：用户登录"
+    assert "### 细节B" in split_chunks_tuples[3][1]
+
+
+    # 6. Test full parse_file method (end-to-end test for the module)
+    # Mock the _convert_docx_to_markdown method
+    def mock_converter_func(file_path_or_bytes):
         return mock_md_content_complex
+    parser._convert_docx_to_markdown = mock_converter_func
     
-    parser._convert_docx_to_markdown = mock_complex_converter # Monkey patch
+    # The llm_client.generate needs to be patched again for the call within parse_file
+    parser.llm_client.generate = MagicMock(return_value=expected_llm_output_for_complex_content)
 
-    # 3. Test heading extraction
-    headings_extracted = parser._extract_markdown_headings(mock_md_content_complex)
-    print(f"Extracted Headings: {headings_extracted}\n")
-    # Expected: All lines starting with #, ##, ###, #### from mock_md_content_complex
-
-    # 4. Test LLM classification (uses MockLLMClient)
-    # MockLLMClient's response is triggered by keywords in `headings_extracted`.
-    classified = parser._classify_headings_with_llm(headings_extracted)
-    print(f"Classified Headings (from Mock LLM): {classified}\n")
-    # Expected output depends on MockLLMClient's logic. 
-    # Keys in `classified` should NOT have "相关" suffix.
-    # e.g. {'需求背景': ['# 项目背景', '# 业务场景'], '功能点1': ['## 用户登录', ...], ...}
-
-    # 5. Test Markdown splitting with refined logic
-    split_content = parser._split_markdown_by_classified_headings(mock_md_content_complex, classified)
-    print("Split Content (refined logic):")
-    for cat, content in split_content:
-        print(f"--- Category: {cat} ---") # Category name should be like "需求背景", "功能点1"
-        print(content)
-        print("--- End Category ---\n")
+    print("\nTesting full parse_file method:")
+    final_formatted_chunks = parser.parse_file("dummy_path.docx", fn_test) # fn_test provides metadata
     
-    # 6. Test full parse_file method
-    print("Testing full parse_file method (COMPLEX CONTENT):")
-    # Uses patched _convert_docx_to_markdown and mock LLM.
-    final_chunks_complex = parser.parse_file("dummy_complex.docx", fn_test) 
+    print("\nFinal Formatted Chunks (New Format):")
+    for chunk_idx, chunk_data in enumerate(final_formatted_chunks):
+        print(f"--- Chunk {chunk_idx+1} ---")
+        print(chunk_data)
     
-    print("\nFinal Formatted Chunks (COMPLEX CONTENT from parse_file):")
-    if final_chunks_complex:
-        for chunk_idx, chunk_data in enumerate(final_chunks_complex):
-            print(f"--- Chunk {chunk_idx+1} ---")
-            print(chunk_data)
-            print("--- End Chunk ---\n")
-    else:
-        print("No chunks returned from parse_file for complex content.")
-
-    # Test with simpler markdown to check LLM fallback and splitting
-    print("\nTesting with simpler content (forcing different LLM path):")
-    mock_md_simple = """
-# 唯一的标题
-这是唯一的内容。
-## 子标题
-更多内容。
-"""
-    def mock_simple_converter(file_path_or_bytes):
-        return mock_md_simple
-    parser._convert_docx_to_markdown = mock_simple_converter # Patch again for simple content
-
-    headings_simple = parser._extract_markdown_headings(mock_md_simple)
-    print(f"Simple Extracted Headings: {headings_simple}")
-    
-    # MockLLMClient will provide a specific response for this type of input
-    classified_simple = parser._classify_headings_with_llm(headings_simple)
-    print(f"Classified Simple Headings (Mock LLM): {classified_simple}\n")
-
-    split_simple = parser._split_markdown_by_classified_headings(mock_md_simple, classified_simple)
-    print("\nSplit Simple Content:")
-    for cat, content in split_simple:
-        print(f"--- Category: {cat} ---")
-        print(content)
-        print("--- End Category ---\n")
+    if final_formatted_chunks:
+        assert f"文档名：{meta['doc_name']}" in final_formatted_chunks[0]
+        assert f"上线时间：{meta['publish_date']}" in final_formatted_chunks[0]
+        if llm_selected_block_start_headings: 
+             assert f"标题：{llm_selected_block_start_headings[0]}" in final_formatted_chunks[0]
+        assert "这是文档的简介部分" in final_formatted_chunks[0] 
         
-    final_chunks_simple = parser.parse_file("dummy_simple.docx", "simple_doc_name_20230101.docx")
-    print("\nFinal Formatted Chunks (SIMPLE CONTENT from parse_file):")
-    if final_chunks_simple:
-        for chunk_idx, chunk_data in enumerate(final_chunks_simple):
-            print(f"--- Chunk {chunk_idx+1} ---")
-            print(chunk_data)
-            print("--- End Chunk ---\n")
+        # Check title of a later chunk
+        if len(final_formatted_chunks) > 3 and len(llm_selected_block_start_headings) > 3:
+            assert f"标题：{llm_selected_block_start_headings[3]}" in final_formatted_chunks[3] #功能点1
+            assert "描述用户登录功能" in final_formatted_chunks[3]
+    
+    parser.llm_client.generate = original_generate_method # Restore for any other potential tests not shown
 
-    else:
-        print("No chunks returned from simple parse_file.")
+    print("\n__main__ tests completed.")
 
 # Module-level chunk function to align with RAGFlow's parser interface
 def chunk(name, binary, from_page, to_page, lang, callback, kb_id, parser_config, tenant_id, **kwargs):
