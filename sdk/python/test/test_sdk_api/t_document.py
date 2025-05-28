@@ -62,7 +62,15 @@ def test_list_documents_in_dataset_with_success(get_api_key_fixture):
     blob = b"Sample document content for test."
     document_infos = [{"display_name": "test.txt", "blob": blob}]
     ds.upload_documents(document_infos)
-    ds.list_documents(keywords="test", page=1, page_size=12)
+    res = ds.list_documents(keywords="test", page=1, page_size=12)
+    assert "total" in res
+    assert "page" in res
+    assert "page_size" in res
+    assert "docs" in res
+    assert isinstance(res["total"], int)
+    assert isinstance(res["page"], int)
+    assert isinstance(res["page_size"], int)
+    assert isinstance(res["docs"], list)
 
 
 def test_delete_documents_in_dataset_with_success(get_api_key_fixture):

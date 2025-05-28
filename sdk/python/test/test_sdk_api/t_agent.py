@@ -23,7 +23,15 @@ import pytest
 def test_list_agents_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
-    rag.list_agents()
+    res = rag.list_agents()
+    assert "total" in res
+    assert "page" in res
+    assert "page_size" in res
+    assert "agents" in res
+    assert isinstance(res["total"], int)
+    assert isinstance(res["page"], int)
+    assert isinstance(res["page_size"], int)
+    assert isinstance(res["agents"], list)
 
 
 @pytest.mark.skip(reason="")

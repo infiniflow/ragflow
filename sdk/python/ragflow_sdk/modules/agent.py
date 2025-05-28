@@ -75,16 +75,18 @@ class Agent(Base):
 
     
     def list_sessions(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
-                      id: str = None) -> list[Session]:
+                      id: str = None):
         res = self.get(f"/agents/{self.id}/sessions",
                        {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id})
         res = res.json()
         if res.get("code") == 0:
-            result_list = []
-            for data in res.get("data"):
-                temp_agent = Session(self.rag, data)
-                result_list.append(temp_agent)
-            return result_list
+            sessions = [Session(self.rag, data) for data in res["data"].get("sessions", res["data"]) if isinstance(data, dict)]
+            return {
+                "total": res["data"]["total"],
+                "page": res["data"]["page"],
+                "page_size": res["data"]["page_size"],
+                "sessions": sessions
+            }
         raise Exception(res.get("message"))
     
     def delete_sessions(self, ids: list[str] | None = None):

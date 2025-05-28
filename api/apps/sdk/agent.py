@@ -41,11 +41,7 @@ def list_agents(tenant_id):
         desc = False
     else:
         desc = True
-    agents, total = UserCanvasService.get_list(tenant_id,page_number,items_per_page,orderby,desc,id,title), 0
-    if isinstance(agents, tuple):
-        agents, total = agents
-    else:
-        total = len(agents)
+    agents, total = UserCanvasService.get_list(tenant_id,page_number,items_per_page,orderby,desc,id,title)
     return get_result(data={
         "total": total,
         "page": page_number,

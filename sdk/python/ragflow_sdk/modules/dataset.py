@@ -68,11 +68,14 @@ class DataSet(Base):
                        params={"id": id, "keywords": keywords, "page": page, "page_size": page_size, "orderby": orderby,
                                "desc": desc})
         res = res.json()
-        documents = []
         if res.get("code") == 0:
-            for document in res["data"].get("docs"):
-                documents.append(Document(self.rag, document))
-            return documents
+            docs = [Document(self.rag, document) for document in res["data"].get("docs", res["data"]) if isinstance(document, dict)]
+            return {
+                "total": res["data"]["total"],
+                "page": res["data"]["page"],
+                "page_size": res["data"]["page_size"],
+                "docs": docs
+            }
         raise Exception(res["message"])
 
     def delete_documents(self, ids: list[str] | None = None):

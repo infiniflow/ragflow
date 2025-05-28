@@ -74,4 +74,12 @@ def test_list_datasets_with_success(get_api_key_fixture):
     API_KEY = get_api_key_fixture
     rag = RAGFlow(API_KEY, HOST_ADDRESS)
     rag.create_dataset("test_list_datasets")
-    rag.list_datasets()
+    res = rag.list_datasets()
+    assert "total" in res
+    assert "page" in res
+    assert "page_size" in res
+    assert "datasets" in res
+    assert isinstance(res["total"], int)
+    assert isinstance(res["page"], int)
+    assert isinstance(res["page_size"], int)
+    assert isinstance(res["datasets"], list)

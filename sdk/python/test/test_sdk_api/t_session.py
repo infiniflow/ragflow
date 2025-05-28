@@ -110,7 +110,15 @@ def test_list_sessions_with_success(get_api_key_fixture):
     assistant = rag.create_chat("test_list_session", dataset_ids=[kb.id])
     assistant.create_session("test_1")
     assistant.create_session("test_2")
-    assistant.list_sessions()
+    res = assistant.list_sessions()
+    assert "total" in res
+    assert "page" in res
+    assert "page_size" in res
+    assert "sessions" in res
+    assert isinstance(res["total"], int)
+    assert isinstance(res["page"], int)
+    assert isinstance(res["page_size"], int)
+    assert isinstance(res["sessions"], list)
 
 
 @pytest.mark.skip(reason="")

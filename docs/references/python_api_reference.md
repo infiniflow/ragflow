@@ -18,6 +18,26 @@ pip install ragflow-sdk
 
 ---
 
+> **Migration Note (2025-06):**
+> All list-related Python SDK methods now return a dictionary with the following top-level fields:
+> - `total` (int): Total number of items matching the query
+> - `page` (int): Current page number
+> - `page_size` (int): Page size used in the query
+> - The list of objects (e.g., `datasets`, `docs`, `chunks`, `chats`, `agents`, `sessions`)
+> 
+> Example return value:
+> ```python
+> {
+>     "total": 123,
+>     "page": 1,
+>     "page_size": 30,
+>     "datasets": [DataSet(...), ...]
+> }
+> ```
+> Please update your code to access the list via the appropriate key (e.g., `res["datasets"]`), and use the new pagination fields as needed.
+
+---
+
 ## ERROR CODES
 
 ---
@@ -237,7 +257,7 @@ RAGFlow.list_datasets(
     desc: bool = True,
     id: str = None,
     name: str = None
-) -> list[DataSet]
+) -> dict  # returns {"total", "page", "page_size", "datasets"}
 ```
 
 Lists datasets.
@@ -273,7 +293,7 @@ The name of the dataset to retrieve. Defaults to `None`.
 
 #### Returns
 
-- Success: A list of `DataSet` objects.
+- Success: A dict with keys `total`, `page`, `page_size`, and `datasets` (list of `DataSet` objects).
 - Failure: `Exception`.
 
 #### Examples
@@ -281,15 +301,18 @@ The name of the dataset to retrieve. Defaults to `None`.
 ##### List all datasets
 
 ```python
-for dataset in rag_object.list_datasets():
+res = rag_object.list_datasets()
+for dataset in res["datasets"]:
     print(dataset)
+print("Total datasets:", res["total"])
 ```
 
 ##### Retrieve a dataset by ID
 
 ```python
-dataset = rag_object.list_datasets(id = "id_1")
-print(dataset[0])
+res = rag_object.list_datasets(id = "id_1")
+dataset = res["datasets"][0]
+print(dataset)
 ```
 
 ---
@@ -502,7 +525,7 @@ print(doc)
 ### List documents
 
 ```python
-Dataset.list_documents(id:str =None, keywords: str=None, page: int=1, page_size:int = 30, order_by:str = "create_time", desc: bool = True) -> list[Document]
+Dataset.list_documents(id:str =None, keywords: str=None, page: int=1, page_size:int = 30, order_by:str = "create_time", desc: bool = True) -> dict  # returns {"total", "page", "page_size", "docs"}
 ```
 
 Lists documents in the current dataset.
@@ -538,7 +561,7 @@ Indicates whether the retrieved documents should be sorted in descending order. 
 
 #### Returns
 
-- Success: A list of `Document` objects.
+- Success: A dict with keys `total`, `page`, `page_size`, and `docs` (list of `Document` objects).
 - Failure: `Exception`.
 
 A `Document` object contains the following attributes:
@@ -600,8 +623,10 @@ dataset = rag_object.create_dataset(name="kb_1")
 filename1 = "~/ragflow.txt"
 blob = open(filename1 , "rb").read()
 dataset.upload_documents([{"name":filename1,"blob":blob}])
-for doc in dataset.list_documents(keywords="rag", page=0, page_size=12):
+res = dataset.list_documents(keywords="rag", page=1, page_size=12)
+for doc in res["docs"]:
     print(doc)
+print("Total docs:", res["total"])
 ```
 
 ---
@@ -779,7 +804,7 @@ chunk = doc.add_chunk(content="xxxxxxx")
 ### List chunks
 
 ```python
-Document.list_chunks(keywords: str = None, page: int = 1, page_size: int = 30, id : str = None) -> list[Chunk]
+Document.list_chunks(keywords: str = None, page: int = 1, page_size: int = 30, id : str = None) -> dict  # returns {"total", "page", "page_size", "chunks"}
 ```
 
 Lists chunks in the current document.
@@ -804,7 +829,7 @@ The ID of the chunk to retrieve. Default: `None`
 
 #### Returns
 
-- Success: A list of `Chunk` objects.
+- Success: A dict with keys `total`, `page`, `page_size`, and `chunks` (list of `Chunk` objects).
 - Failure: `Exception`.
 
 #### Examples
@@ -816,8 +841,10 @@ rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:
 dataset = rag_object.list_datasets("123")
 dataset = dataset[0]
 docs = dataset.list_documents(keywords="test", page=1, page_size=12)
-for chunk in docs[0].list_chunks(keywords="rag", page=0, page_size=12):
+res = docs.list_chunks(keywords="rag", page=1, page_size=12)
+for chunk in res["chunks"]:
     print(chunk)
+print("Total chunks:", res["total"])
 ```
 
 ---
@@ -1024,11 +1051,11 @@ The LLM settings for the chat assistant to create. Defaults to `None`. When the 
 - `temperature`: `float`  
   Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
 - `top_p`: `float`  
-  Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
+  Also known as "nucleus sampling", this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`  
 - `presence_penalty`: `float`  
   This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.2`.
 - `frequency penalty`: `float`  
-  Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
+  Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
 
 ##### prompt: `Chat.Prompt`
 
@@ -1088,9 +1115,9 @@ A dictionary representing the attributes to update, with the following keys:
 - `"llm"`: `dict` The LLM settings:
   - `"model_name"`, `str` The chat model name.
   - `"temperature"`, `float` Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses.  
-  - `"top_p"`, `float` Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from.  
+  - `"top_p"`, `float` Also known as "nucleus sampling", this parameter sets a threshold to select a smaller set of words to sample from.  
   - `"presence_penalty"`, `float` This discourages the model from repeating the same information by penalizing words that have appeared in the conversation.
-  - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model’s tendency to repeat the same words.
+  - `"frequency penalty"`, `float` Similar to presence penalty, this reduces the model's tendency to repeat the same words.
 - `"prompt"` : Instructions for the LLM to follow.
   - `"similarity_threshold"`: `float` RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted rerank score during retrieval. This argument sets the threshold for similarities between the user query and chunks. If a similarity score falls below this threshold, the corresponding chunk will be excluded from the results. The default value is `0.2`.
   - `"keywords_similarity_weight"`: `float` This argument sets the weight of keyword similarity in the hybrid similarity score with vector cosine similarity or reranking model similarity. By adjusting this weight, you can control the influence of keyword similarity in relation to other similarity measures. The default value is `0.7`.
@@ -1164,7 +1191,7 @@ RAGFlow.list_chats(
     desc: bool = True,
     id: str = None,
     name: str = None
-) -> list[Chat]
+) -> dict  # returns {"total", "page", "page_size", "chats"}
 ```
 
 Lists chat assistants.
@@ -1200,7 +1227,7 @@ The name of the chat assistant to retrieve. Defaults to `None`.
 
 #### Returns
 
-- Success: A list of `Chat` objects.
+- Success: A dict with keys `total`, `page`, `page_size`, and `chats` (list of `Chat` objects).
 - Failure: `Exception`.
 
 #### Examples
@@ -1209,8 +1236,10 @@ The name of the chat assistant to retrieve. Defaults to `None`.
 from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-for assistant in rag_object.list_chats():
+res = rag_object.list_chats()
+for assistant in res["chats"]:
     print(assistant)
+print("Total assistants:", res["total"])
 ```
 
 ---
@@ -1300,7 +1329,7 @@ Chat.list_sessions(
     desc: bool = True,
     id: str = None,
     name: str = None
-) -> list[Session]
+) -> dict  # returns {"total", "page", "page_size", "sessions"}
 ```
 
 Lists sessions associated with the current chat assistant.
@@ -1336,7 +1365,7 @@ The name of the chat session to retrieve. Defaults to `None`.
 
 #### Returns
 
-- Success: A list of `Session` objects associated with the current chat assistant.
+- Success: A dict with keys `total`, `page`, `page_size`, and `sessions` (list of `Session` objects).
 - Failure: `Exception`.
 
 #### Examples
@@ -1346,9 +1375,10 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
-assistant = assistant[0]
-for session in assistant.list_sessions():
+res = assistant.list_sessions()
+for session in res["sessions"]:
     print(session)
+print("Total sessions:", res["total"])
 ```
 
 ---
@@ -1613,7 +1643,7 @@ Agent.list_sessions(
     orderby: str = "update_time", 
     desc: bool = True,
     id: str = None
-) -> List[Session]
+) -> dict  # returns {"total", "page", "page_size", "sessions"}
 ```
 
 Lists sessions associated with the current agent.
@@ -1645,7 +1675,7 @@ The ID of the agent session to retrieve. Defaults to `None`.
 
 #### Returns
 
-- Success: A list of `Session` objects associated with the current agent.
+- Success: A dict with keys `total`, `page`, `page_size`, and `sessions` (list of `Session` objects).
 - Failure: `Exception`.
 
 #### Examples
@@ -1656,9 +1686,10 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
 agent = rag_object.list_agents(id = AGENT_id)[0]
-sessons = agent.list_sessions()
-for session in sessions:
+res = agent.list_sessions()
+for session in res["sessions"]:
     print(session)
+print("Total sessions:", res["total"])
 ```
 ---
 ### Delete agent's sessions
@@ -1707,7 +1738,7 @@ RAGFlow.list_agents(
     desc: bool = True,
     id: str = None,
     title: str = None
-) -> List[Agent]
+) -> dict  # returns {"total", "page", "page_size", "agents"}
 ```
 
 Lists agents.
@@ -1743,7 +1774,7 @@ The name of the agent to retrieve. Defaults to `None`.
 
 #### Returns
 
-- Success: A list of `Agent` objects.
+- Success: A dict with keys `total`, `page`, `page_size`, and `agents` (list of `Agent` objects).
 - Failure: `Exception`.
 
 #### Examples
@@ -1751,8 +1782,10 @@ The name of the agent to retrieve. Defaults to `None`.
 ```python
 from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-for agent in rag_object.list_agents():
+res = rag_object.list_agents()
+for agent in res["agents"]:
     print(agent)
+print("Total agents:", res["total"])
 ```
 
 ---

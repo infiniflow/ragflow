@@ -282,11 +282,7 @@ def list_chat(tenant_id):
         desc = False
     else:
         desc = True
-    chats, total = DialogService.get_list(tenant_id, page_number, items_per_page, orderby, desc, id, name), 0
-    if isinstance(chats, tuple):
-        chats, total = chats
-    else:
-        total = len(chats)
+    chats, total = DialogService.get_list(tenant_id, page_number, items_per_page, orderby, desc, id, name)
     list_assts = []
     key_mapping = {
         "parameters": "variables",

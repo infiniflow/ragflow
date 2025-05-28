@@ -79,7 +79,13 @@ class TestDatasetsList:
     def test_page(self, get_http_api_auth, params, expected_page_size):
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == expected_page_size, res
+        assert "total" in res["data"]
+        assert "page" in res["data"]
+        assert "page_size" in res["data"]
+        assert isinstance(res["data"]["total"], int)
+        assert isinstance(res["data"]["page"], int)
+        assert isinstance(res["data"]["page_size"], int)
+        assert len(res["data"]["datasets"]) == expected_page_size, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -117,7 +123,13 @@ class TestDatasetsList:
     def test_page_size(self, get_http_api_auth, params, expected_page_size):
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == expected_page_size, res
+        assert "total" in res["data"]
+        assert "page" in res["data"]
+        assert "page_size" in res["data"]
+        assert isinstance(res["data"]["total"], int)
+        assert isinstance(res["data"]["page"], int)
+        assert isinstance(res["data"]["page_size"], int)
+        assert len(res["data"]["datasets"]) == expected_page_size, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
