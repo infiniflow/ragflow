@@ -4,6 +4,7 @@ import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
 import { camelCase } from 'lodash';
 import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { z } from 'zod';
 import {
   FormControl,
   FormField,
@@ -11,7 +12,6 @@ import {
   FormLabel,
   FormMessage,
 } from '../ui/form';
-import { Input } from '../ui/input';
 import {
   Select,
   SelectContent,
@@ -21,85 +21,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
-import { FormSlider } from '../ui/slider';
-import { Switch } from '../ui/switch';
-
-interface SliderWithInputNumberFormFieldProps {
-  name: string;
-  label: string;
-  checkName: string;
-  max: number;
-  min?: number;
-  step?: number;
-}
-
-function SliderWithInputNumberFormField({
-  name,
-  label,
-  checkName,
-  max,
-  min = 0,
-  step = 1,
-}: SliderWithInputNumberFormFieldProps) {
-  const { control, watch } = useFormContext();
-  const { t } = useTranslate('chat');
-  const disabled = !watch(checkName);
-
-  return (
-    <FormField
-      control={control}
-      name={name}
-      render={({ field }) => (
-        <FormItem>
-          <div className="flex items-center justify-between">
-            <FormLabel>{t(label)}</FormLabel>
-            <FormField
-              control={control}
-              name={checkName}
-              render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <Switch
-                      {...field}
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    ></Switch>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-          <FormControl>
-            <div className="flex w-full  items-center space-x-2">
-              <FormSlider
-                {...field}
-                disabled={disabled}
-                max={max}
-                min={min}
-                step={step}
-              ></FormSlider>
-              <Input
-                type={'number'}
-                className="w-2/5"
-                {...field}
-                disabled={disabled}
-                max={max}
-                min={min}
-                step={step}
-              />
-            </div>
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-  );
-}
+import { SliderInputSwitchFormField } from './slider';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
 }
+
+export const LlmSettingSchema = {
+  llm_id: z.string(),
+  temperature: z.coerce.number(),
+  top_p: z.string(),
+  presence_penalty: z.coerce.number(),
+  frequency_penalty: z.coerce.number(),
+};
 
 export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
   const form = useFormContext();
@@ -122,7 +56,7 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
   );
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       <FormField
         control={form.control}
         name={'llm_id'}
@@ -180,40 +114,40 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
           </FormItem>
         )}
       />
-      <SliderWithInputNumberFormField
+      <SliderInputSwitchFormField
         name={getFieldWithPrefix('temperature')}
         checkName="temperatureEnabled"
         label="temperature"
         max={1}
         step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
+      ></SliderInputSwitchFormField>
+      <SliderInputSwitchFormField
         name={getFieldWithPrefix('top_p')}
         checkName="topPEnabled"
         label="topP"
         max={1}
         step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
+      ></SliderInputSwitchFormField>
+      <SliderInputSwitchFormField
         name={getFieldWithPrefix('presence_penalty')}
         checkName="presencePenaltyEnabled"
         label="presencePenalty"
         max={1}
         step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
+      ></SliderInputSwitchFormField>
+      <SliderInputSwitchFormField
         name={getFieldWithPrefix('frequency_penalty')}
         checkName="frequencyPenaltyEnabled"
         label="frequencyPenalty"
         max={1}
         step={0.01}
-      ></SliderWithInputNumberFormField>
-      <SliderWithInputNumberFormField
+      ></SliderInputSwitchFormField>
+      <SliderInputSwitchFormField
         name={getFieldWithPrefix('max_tokens')}
         checkName="maxTokensEnabled"
         label="maxTokens"
         max={128000}
-      ></SliderWithInputNumberFormField>
+      ></SliderInputSwitchFormField>
     </div>
   );
 }

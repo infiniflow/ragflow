@@ -158,3 +158,26 @@ export const downloadJsonFile = async (
   const blob = new Blob([JSON.stringify(data)], { type: FileMimeType.Json });
   downloadFileFromBlob(blob, fileName);
 };
+
+export function transformBase64ToFileWithPreview(
+  dataUrl: string,
+  filename: string = 'file',
+) {
+  const file = transformBase64ToFile(dataUrl, filename);
+
+  (file as any).preview = dataUrl;
+
+  return file;
+}
+
+export const getBase64FromFileList = async (fileList?: File[]) => {
+  if (Array.isArray(fileList) && fileList.length > 0) {
+    const file = fileList[0];
+    if (file) {
+      const base64 = await transformFile2Base64(file);
+      return base64;
+    }
+  }
+
+  return '';
+};

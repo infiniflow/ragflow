@@ -1,4 +1,4 @@
-import { NextLLMSelect } from '@/components/llm-select';
+import { NextLLMSelect } from '@/components/llm-select/next';
 import { TopNFormField } from '@/components/top-n-item';
 import {
   Form,
