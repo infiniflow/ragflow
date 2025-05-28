@@ -49,6 +49,25 @@
 <a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
 
+<details open>
+<summary><b>📕 目录</b></summary>
+
+- 💡 [RAGFlow 是什么？](#-RAGFlow-是什么)
+- 🎮 [Demo](#-demo)
+- 📌 [近期更新](#-近期更新)
+- 🌟 [主要功能](#-主要功能)
+- 🔎 [系统架构](#-系统架构)
+- 🎬 [快速开始](#-快速开始)
+- 🔧 [系统配置](#-系统配置)
+- 🔨 [以源代码启动服务](#-以源代码启动服务)
+- 📚 [技术文档](#-技术文档)
+- 📜 [路线图](#-路线图)
+- 🏄 [贡献指南](#-贡献指南)
+- 🙌 [加入社区](#-加入社区)
+- 🤝 [商务合作](#-商务合作)
+
+</details>
+
 ## 💡 RAGFlow 是什么？
 
 [RAGFlow](https://ragflow.io/) 是一款基于深度文档理解构建的开源 RAG（Retrieval-Augmented Generation）引擎。RAGFlow 可以为各种规模的企业及个人提供一套精简的 RAG 工作流程，结合大语言模型（LLM）针对用户各类不同的复杂格式数据提供可靠的问答以及有理有据的引用。
