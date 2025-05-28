@@ -34,6 +34,7 @@ const ConfigurationComponentMap = {
   [DocumentParserType.Email]: EmailConfiguration,
   [DocumentParserType.Tag]: TagConfiguration,
   [DocumentParserType.KnowledgeGraph]: KnowledgeGraphConfiguration,
+  [DocumentParserType.Markitdown]: NaiveConfiguration,
 };
 
 function EmptyComponent() {

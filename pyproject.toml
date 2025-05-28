@@ -51,6 +51,7 @@ dependencies = [
     "json-repair==0.35.0",
     "markdown==3.6",
     "markdown-to-json==2.1.1",
+    "markitdown[docx]",
     "minio==7.2.4",
     "mistralai==0.4.2",
     "nltk==3.9.1",

@@ -1250,5 +1250,23 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         },
       },
     },
+    parsers: { // Adding this structure as per prompt's example
+      naive: '自动分段', // Example, actual value might differ, following pattern
+      qa: '问答',
+      resume: '简历',
+      manual: '手册',
+      table: '表格',
+      paper: '论文',
+      book: '书籍',
+      laws: '法规',
+      presentation: '演示文稿',
+      picture: '图片',
+      one: '整个文档',
+      audio: '音频',
+      email: '邮件',
+      tag: '标签',
+      knowledge_graph: '知识图谱',
+      markitdown: 'Markitdown专用Word解析',
+    },
   },
 };

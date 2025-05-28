@@ -55,7 +55,7 @@ from api import settings
 from api.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
-    email, tag
+    email, tag, markitdown_parser
 from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from rag.settings import DOC_MAXIMUM_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
@@ -82,7 +82,8 @@ FACTORY = {
     ParserType.AUDIO.value: audio,
     ParserType.EMAIL.value: email,
     ParserType.KG.value: naive,
-    ParserType.TAG.value: tag
+    ParserType.TAG.value: tag,
+    ParserType.MARKITDOWN.value: markitdown_parser
 }
 
 UNACKED_ITERATOR = None
