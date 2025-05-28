@@ -50,7 +50,7 @@ export default function Dataset() {
     showCreateModal,
   } = useCreateEmptyDocument();
 
-  const { rowSelection, rowSelectionIsEmpty, setRowSelection } =
+  const { rowSelection, rowSelectionIsEmpty, setRowSelection, selectedCount } =
     useRowSelection();
 
   const { list } = useBulkOperateDataset({
@@ -68,6 +68,15 @@ export default function Dataset() {
         value={filterValue}
         onChange={handleFilterSubmit}
         filters={filters}
+        leftPanel={
+          <div className="items-start">
+            <div className="pb-1">Dataset</div>
+            <div className="text-text-sub-title-invert text-sm">
+              Please wait for your files to finish parsing before starting an
+              AI-powered chat.
+            </div>
+          </div>
+        }
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -87,7 +96,9 @@ export default function Dataset() {
           </DropdownMenuContent>
         </DropdownMenu>
       </ListFilterBar>
-      {rowSelectionIsEmpty || <BulkOperateBar list={list}></BulkOperateBar>}
+      {rowSelectionIsEmpty || (
+        <BulkOperateBar list={list} count={selectedCount}></BulkOperateBar>
+      )}
       <DatasetTable
         documents={documents}
         pagination={pagination}

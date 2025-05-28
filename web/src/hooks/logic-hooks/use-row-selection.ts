@@ -9,11 +9,16 @@ export function useRowSelection() {
     setRowSelection({});
   }, []);
 
+  const selectedCount = useMemo(() => {
+    return Object.keys(rowSelection).length;
+  }, [rowSelection]);
+
   return {
     rowSelection,
     setRowSelection,
     rowSelectionIsEmpty: isEmpty(rowSelection),
     clearRowSelection,
+    selectedCount,
   };
 }
 

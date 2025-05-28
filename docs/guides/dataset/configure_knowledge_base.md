@@ -1,5 +1,5 @@
 ---
-sidebar_position: 0
+sidebar_position: -1
 slug: /configure_knowledge_base
 ---
 
@@ -41,17 +41,17 @@ RAGFlow offers multiple chunking template to facilitate chunking files of differ
 
 | **Template** | Description                                                           | File format                                                                                   |
 |--------------|-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
-| General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, XLSX, XLS (Excel97~2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
-| Q&A          |                                                                       | XLSX, XLS (Excel97~2003), CSV/TXT                                                             |
+| General      | Files are consecutively chunked based on a preset chunk token number. | MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
+| Q&A          |                                                                       | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
 | Resume       | Enterprise edition only. You can also try it out on demo.ragflow.io.  | DOCX, PDF, TXT                                                                                |
 | Manual       |                                                                       | PDF                                                                                           |
-| Table        |                                                                       | XLSX, XLS (Excel97~2003), CSV/TXT                                                             |
+| Table        |                                                                       | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
 | Paper        |                                                                       | PDF                                                                                           |
 | Book         |                                                                       | DOCX, PDF, TXT                                                                                |
 | Laws         |                                                                       | DOCX, PDF, TXT                                                                                |
 | Presentation |                                                                       | PDF, PPTX                                                                                     |
 | Picture      |                                                                       | JPEG, JPG, PNG, TIF, GIF                                                                      |
-| One          | Each document is chunked in its entirety (as one).                    | DOCX, XLSX, XLS (Excel97~2003), PDF, TXT                                                      |
+| One          | Each document is chunked in its entirety (as one).                    | DOCX, XLSX, XLS (Excel 97-2003), PDF, TXT                                                      |
 | Tag          | The knowledge base functions as a tag set for the others.             | XLSX, CSV/TXT                                                                                 |
 
 You can also change a file's chunking method on the **Datasets** page.
@@ -66,6 +66,10 @@ The following embedding models can be deployed locally:
 
 - BAAI/bge-large-zh-v1.5
 - maidalun1020/bce-embedding-base_v1
+
+:::danger IMPORTANT
+These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
+:::
 
 ### Upload file
 
@@ -124,7 +128,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for knowledge base
 
-As of RAGFlow v0.18.0, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
+As of RAGFlow v0.19.0, the search feature is still in a rudimentary form, supporting only knowledge base search by name.
 
 ![search knowledge base](https://github.com/infiniflow/ragflow/assets/93570324/836ae94c-2438-42be-879e-c7ad2a59693e)
 

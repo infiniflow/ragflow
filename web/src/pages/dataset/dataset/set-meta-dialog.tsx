@@ -5,7 +5,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { LoadingButton } from '@/components/ui/loading-button';
 import { IModalProps } from '@/interfaces/common';
 import { TagRenameId } from '@/pages/add-knowledge/constant';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +13,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import { ButtonLoading } from '@/components/ui/button';
 import {
   Form,
   FormControl,
@@ -118,9 +118,9 @@ export function SetMetaDialog({
           </form>
         </Form>
         <DialogFooter>
-          <LoadingButton type="submit" form={TagRenameId} loading={loading}>
+          <ButtonLoading type="submit" form={TagRenameId} loading={loading}>
             {t('common.save')}
-          </LoadingButton>
+          </ButtonLoading>
         </DialogFooter>
       </DialogContent>
     </Dialog>

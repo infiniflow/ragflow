@@ -34,6 +34,7 @@ from api import settings
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.settings import PAGERANK_FLD
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
@@ -58,6 +59,7 @@ def create():
         status=StatusEnum.VALID.value)
     try:
         req["id"] = get_uuid()
+        req["name"] = dataset_name
         req["tenant_id"] = current_user.id
         req["created_by"] = current_user.id
         e, t = TenantService.get_by_id(current_user.id)
@@ -152,6 +154,7 @@ def detail():
         if not kb:
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
+        kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
         return get_json_result(data=kb)
     except Exception as e:
         return server_error_response(e)
@@ -224,6 +227,8 @@ def rm():
         for kb in kbs:
             settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
             settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
+            if hasattr(STORAGE_IMPL, 'remove_bucket'):
+                STORAGE_IMPL.remove_bucket(kb.id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

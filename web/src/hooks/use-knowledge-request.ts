@@ -10,13 +10,12 @@ import kbService, { listDataset } from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { useSetPaginationParams } from './route-hook';
 
 export const enum KnowledgeApiAction {
   TestRetrieval = 'testRetrieval',
@@ -35,8 +34,17 @@ export const useKnowledgeBaseId = () => {
 
 export const useTestRetrieval = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
-  const { page, size: pageSize } = useSetPaginationParams();
   const [values, setValues] = useState<ITestRetrievalRequestBody>();
+  const mountedRef = useRef(false);
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const onPaginationChange = useCallback((page: number, pageSize: number) => {
+    setPage(page);
+    setPageSize(pageSize);
+  }, []);
 
   const queryParams = useMemo(() => {
     return {
@@ -44,15 +52,16 @@ export const useTestRetrieval = () => {
       kb_id: values?.kb_id || knowledgeBaseId,
       page,
       size: pageSize,
+      doc_ids: filterValue.doc_ids,
     };
-  }, [knowledgeBaseId, page, pageSize, values]);
+  }, [filterValue, knowledgeBaseId, page, pageSize, values]);
 
   const {
     data,
     isFetching: loading,
     refetch,
   } = useQuery<INextTestingResult>({
-    queryKey: [KnowledgeApiAction.TestRetrieval, queryParams],
+    queryKey: [KnowledgeApiAction.TestRetrieval, queryParams, page, pageSize],
     initialData: {
       chunks: [],
       doc_aggs: [],
@@ -62,12 +71,28 @@ export const useTestRetrieval = () => {
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.retrieval_test(queryParams);
-      console.log('🚀 ~ queryFn: ~ data:', data);
       return data?.data ?? {};
     },
   });
 
-  return { data, loading, setValues, refetch };
+  useEffect(() => {
+    if (mountedRef.current) {
+      refetch();
+    }
+    mountedRef.current = true;
+  }, [page, pageSize, refetch, filterValue]);
+
+  return {
+    data,
+    loading,
+    setValues,
+    refetch,
+    onPaginationChange,
+    page,
+    pageSize,
+    handleFilterSubmit,
+    filterValue,
+  };
 };
 
 export const useFetchNextKnowledgeListByPage = () => {
