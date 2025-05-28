@@ -18,6 +18,12 @@ const {
   debug,
   listCanvasTeam,
   settingCanvas,
+  createSchedule,
+  listSchedules,
+  updateSchedule,
+  toggleSchedule,
+  deleteSchedule,
+  getFrequencyOptions,
 } = api;
 
 const methods = {
@@ -80,6 +86,30 @@ const methods = {
   settingCanvas: {
     url: settingCanvas,
     method: 'post',
+  },
+  createSchedule: {
+    url: createSchedule,
+    method: 'post',
+  },
+  listSchedules: {
+    url: listSchedules,
+    method: 'get',
+  },
+  updateSchedule: {
+    url: updateSchedule,
+    method: 'put',
+  },
+  toggleSchedule: {
+    url: toggleSchedule,
+    method: 'post',
+  },
+  deleteSchedule: {
+    url: deleteSchedule,
+    method: 'delete',
+  },
+  getFrequencyOptions: {
+    url: getFrequencyOptions,
+    method: 'get',
   },
 } as const;
 

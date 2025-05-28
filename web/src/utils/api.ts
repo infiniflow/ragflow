@@ -143,4 +143,12 @@ export default {
   testDbConnect: `${api_host}/canvas/test_db_connect`,
   getInputElements: `${api_host}/canvas/input_elements`,
   debug: `${api_host}/canvas/debug`,
+
+  // Schedule endpoints
+  createSchedule: `${api_host}/canvas/schedule/create`,
+  listSchedules: `${api_host}/canvas/schedule/list`,
+  updateSchedule: `${api_host}/canvas/schedule/update`,
+  toggleSchedule: `${api_host}/canvas/schedule/toggle`,
+  deleteSchedule: `${api_host}/canvas/schedule/delete`,
+  getFrequencyOptions: `${api_host}/canvas/schedule/frequency-options`,
 };

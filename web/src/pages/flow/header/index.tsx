@@ -25,6 +25,7 @@ import {
   HistoryVersionModal,
   useHistoryVersionModal,
 } from '../history-version-modal';
+import { ScheduleModal, useScheduleModal } from '../schedule-modal';
 import styles from './index.less';
 
 interface IProps {
@@ -49,6 +50,12 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const isBeginNodeDataQuerySafe = useGetBeginNodeDataQueryIsSafe();
   const { setVisibleHistoryVersionModal, visibleHistoryVersionModal } =
     useHistoryVersionModal();
+  const {
+    visible: scheduleVisible,
+    showModal: showScheduleModal,
+    hideModal: hideScheduleModal,
+  } = useScheduleModal();
+
   const handleShowEmbedModal = useCallback(() => {
     showEmbedModal();
   }, [showEmbedModal]);
@@ -69,6 +76,11 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
   const showListVersion = useCallback(() => {
     setVisibleHistoryVersionModal(true);
   }, [setVisibleHistoryVersionModal]);
+
+  const showSchedule = useCallback(() => {
+    showScheduleModal();
+  }, [showScheduleModal]);
+
   return (
     <>
       <Flex
@@ -127,6 +139,13 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
           >
             <b>{t('setting')}</b>
           </Button>
+          <Button
+            disabled={userInfo.nickname !== data.nickname}
+            type="primary"
+            onClick={showSchedule}
+          >
+            <b>{t('schedule.title')}</b>
+          </Button>
           <Button type="primary" onClick={showListVersion}>
             <b>{t('historyversion')}</b>
           </Button>
@@ -155,6 +174,14 @@ const FlowHeader = ({ showChatDrawer, chatDrawerVisible }: IProps) => {
           visible={visibleHistoryVersionModal}
           hideModal={() => setVisibleHistoryVersionModal(false)}
         ></HistoryVersionModal>
+      )}
+      {scheduleVisible && (
+        <ScheduleModal
+          visible={scheduleVisible}
+          hideModal={hideScheduleModal}
+          canvasId={id!}
+          canvasTitle={data.title || ''}
+        />
       )}
     </>
   );

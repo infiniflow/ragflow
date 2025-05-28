@@ -20,6 +20,7 @@ from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
+from api.db.services.schedule_agent_service import ScheduleAgentService
 from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
@@ -349,3 +350,235 @@ def setting():
             code=RetCode.OPERATING_ERROR)
     num= UserCanvasService.update_by_id(req["id"], flow)
     return get_json_result(data=num)
+
+@manager.route('/schedule/create', methods=['POST'])  # noqa: F821
+@validate_request("canvas_id", "name", "frequency_type")
+@login_required
+def create_schedule():
+    req = request.json
+    req["tenant_id"] = current_user.id  # Using user_id as tenant_id for simplicity
+    req["created_by"] = current_user.id
+    req["id"] = get_uuid()
+    
+    try:
+        # Validate schedule data
+        ScheduleAgentService.validate_schedule_data(**req)
+        
+        # Check if canvas exists and user has permission
+        e, canvas = UserCanvasService.get_by_id(req["canvas_id"])
+        if not e:
+            return get_data_error_result(message="Canvas not found")
+            
+        if not UserCanvasService.query(user_id=current_user.id, id=req["canvas_id"]):
+            return get_json_result(
+                data=False, message='Only owner of canvas authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+        
+        # Handle execute_date conversion if it's a string
+        if req.get('execute_date') and isinstance(req['execute_date'], str):
+            from datetime import datetime
+            req['execute_date'] = datetime.fromisoformat(req['execute_date'].replace('Z', '+00:00'))
+        
+        schedule = ScheduleAgentService.create_schedule(**req)
+        return get_json_result(data=schedule.to_dict() if hasattr(schedule, 'to_dict') else schedule)
+        
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/schedule/update/<schedule_id>', methods=['PUT'])  # noqa: F821
+@validate_request("frequency_type")
+@login_required
+def update_schedule(schedule_id):
+    req = request.json
+    
+    try:
+        e, schedule = ScheduleAgentService.get_by_id(schedule_id)
+        if not e:
+            return get_data_error_result(message="Schedule not found")
+            
+        if schedule.created_by != current_user.id:
+            return get_json_result(
+                data=False, message='Only owner of schedule authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+        
+        # Validate schedule data
+        ScheduleAgentService.validate_schedule_data(**req)
+        
+        # Handle execute_date conversion if it's a string
+        if req.get('execute_date') and isinstance(req['execute_date'], str):
+            from datetime import datetime
+            req['execute_date'] = datetime.fromisoformat(req['execute_date'].replace('Z', '+00:00'))
+        
+        # Generate new cron expression if frequency settings changed
+        if any(key in req for key in ['frequency_type', 'execute_time', 'days_of_week', 'day_of_month']):
+            # Merge current schedule data with updates
+            current_data = {
+                'frequency_type': schedule.frequency_type,
+                'execute_time': schedule.execute_time,
+                'days_of_week': schedule.days_of_week,
+                'day_of_month': schedule.day_of_month
+            }
+            current_data.update(req)
+            
+            cron_expr = ScheduleAgentService.generate_cron_expression(**current_data)
+            if cron_expr:
+                req['cron_expression'] = cron_expr
+                req['next_run_time'] = ScheduleAgentService.calculate_next_run_time(cron_expr)
+            elif current_data.get('frequency_type') == 'once' and req.get('execute_date'):
+                execute_datetime = req['execute_date']
+                if req.get('execute_time'):
+                    time_parts = req['execute_time'].split(':')
+                    execute_datetime = execute_datetime.replace(
+                        hour=int(time_parts[0]),
+                        minute=int(time_parts[1]),
+                        second=int(time_parts[2]) if len(time_parts) > 2 else 0
+                    )
+                req['next_run_time'] = int(execute_datetime.timestamp())
+            if current_data.get('frequency_type') == 'once':
+                req['run_count'] = 0
+        ScheduleAgentService.update_by_id(schedule_id, req)
+        return get_json_result(data=True)
+        
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/schedule/frequency-options', methods=['GET'])  # noqa: F821
+@login_required
+def get_frequency_options():
+    """Get available frequency options and their configurations"""
+    options = {
+        "frequency_types": [
+            {
+                "value": "once",
+                "label": "One Time",
+                "description": "Execute once at a specific date and time",
+                "required_fields": ["execute_date", "execute_time"]
+            },
+            {
+                "value": "daily",
+                "label": "Daily",
+                "description": "Execute every day at a specific time",
+                "required_fields": ["execute_time"]
+            },
+            {
+                "value": "weekly",
+                "label": "Weekly", 
+                "description": "Execute on specific days of the week",
+                "required_fields": ["days_of_week", "execute_time"]
+            },
+            {
+                "value": "monthly",
+                "label": "Monthly",
+                "description": "Execute on a specific day of each month",
+                "required_fields": ["day_of_month", "execute_time"]
+            }
+        ],
+        "days_of_week": [
+            {"value": 1, "label": "Monday"},
+            {"value": 2, "label": "Tuesday"},
+            {"value": 3, "label": "Wednesday"},
+            {"value": 4, "label": "Thursday"},
+            {"value": 5, "label": "Friday"},
+            {"value": 6, "label": "Saturday"},
+            {"value": 7, "label": "Sunday"}
+        ],
+        "time_format": "HH:MM:SS",
+        "date_format": "ISO 8601 (YYYY-MM-DDTHH:MM:SS.sssZ)"
+    }
+    
+    return get_json_result(data=options)
+
+@manager.route('/schedule/list', methods=['GET'])  # noqa: F821
+@login_required
+def list_schedules():
+    """Get schedules list with pagination and search"""
+    try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 20))
+        keywords = request.args.get('keywords', '')
+        canvas_id = request.args.get('canvas_id', '')
+        
+        # Get schedules created by current user
+        schedules, total = ScheduleAgentService.get_schedules_paginated(
+            created_by=current_user.id,
+            canvas_id=canvas_id,
+            keywords=keywords,
+            page=page,
+            page_size=page_size
+        )
+        
+        # Convert to dict and add canvas info
+        schedule_list = []
+        for schedule in schedules:
+            schedule_dict = schedule.to_dict() if hasattr(schedule, 'to_dict') else schedule.__dict__['__data__']
+            
+            # Get canvas title for display
+            try:
+                e, canvas = UserCanvasService.get_by_id(schedule_dict['canvas_id'])
+                if e:
+                    schedule_dict['canvas_title'] = canvas.title
+                else:
+                    schedule_dict['canvas_title'] = 'Unknown Canvas'
+            except:
+                schedule_dict['canvas_title'] = 'Unknown Canvas'
+            
+            schedule_list.append(schedule_dict)
+        
+        return get_json_result(data={
+            "schedules": schedule_list,
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        })
+        
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/schedule/toggle/<schedule_id>', methods=['POST'])  # noqa: F821
+@login_required
+def toggle_schedule(schedule_id):
+    """Toggle schedule enabled status"""
+    try:
+        e, schedule = ScheduleAgentService.get_by_id(schedule_id)
+        if not e:
+            return get_data_error_result(message="Schedule not found")
+            
+        if schedule.created_by != current_user.id:
+            return get_json_result(
+                data=False, message='Only owner of schedule authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+        
+        # Toggle enabled status
+        new_enabled = not schedule.enabled
+        ScheduleAgentService.update_by_id(schedule_id, {'enabled': new_enabled})
+        
+        return get_json_result(data={'enabled': new_enabled})
+        
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/schedule/delete/<schedule_id>', methods=['DELETE'])  # noqa: F821
+@login_required
+def delete_schedule(schedule_id):
+    """Delete a schedule"""
+    try:
+        e, schedule = ScheduleAgentService.get_by_id(schedule_id)
+        if not e:
+            return get_data_error_result(message="Schedule not found")
+            
+        if schedule.created_by != current_user.id:
+            return get_json_result(
+                data=False, message='Only owner of schedule authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+        
+        # Delete the schedule
+        ScheduleAgentService.delete_by_id(schedule_id)
+        
+        return get_json_result(data=True)
+        
+    except Exception as e:
+        return server_error_response(e)
