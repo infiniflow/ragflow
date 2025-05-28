@@ -112,8 +112,9 @@ def getsse(canvas_id):
 @login_required
 def run():
     req = request.json
-    stream = req.get("stream", True)
     query = req.get("query", "")
+    files = req.get("files", [])
+    inputs = req.get("inputs", {})
     e, cvs = UserCanvasService.get_by_id(req["id"])
     if not e:
         return get_data_error_result(message="canvas not found.")
@@ -125,68 +126,24 @@ def run():
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
-    final_ans = {"reference": [], "content": ""}
-    message_id = req.get("message_id", get_uuid())
     try:
-        canvas = Canvas(cvs.dsl, current_user.id)
-        if "message" in req:
-            canvas.messages.append({"role": "user", "content": req["message"], "id": message_id})
-            canvas.add_user_input(req["message"])
+        canvas = Canvas(cvs.dsl, current_user.id, req["id"])
     except Exception as e:
         return server_error_response(e)
 
-    if stream:
-        def sse():
-            nonlocal answer, cvs
-            try:
-                for ans in canvas.run(running_hint_text = running_hint_text, stream=True):
-                    if ans.get("running_status"):
-                        yield "data:" + json.dumps({"code": 0, "message": "",
-                                                    "data": {"answer": ans["content"],
-                                                             "running_status": True}},
-                                                   ensure_ascii=False) + "\n\n"
-                        continue
-                    for k in ans.keys():
-                        final_ans[k] = ans[k]
-                    ans = {"answer": ans["content"], "reference": ans.get("reference", [])}
-                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+    def sse():
+        nonlocal answer, cvs
+        for ans in canvas.run(query=query, files=files, user_id=req.get("user_id"), inputs=inputs):
+            yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
-                canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
-                canvas.history.append(("assistant", final_ans["content"]))
-                if not canvas.path[-1]:
-                    canvas.path.pop(-1)
-                if final_ans.get("reference"):
-                    canvas.reference.append(final_ans["reference"])
-                cvs.dsl = json.loads(str(canvas))
-                UserCanvasService.update_by_id(req["id"], cvs.to_dict())
-            except Exception as e:
-                cvs.dsl = json.loads(str(canvas))
-                if not canvas.path[-1]:
-                    canvas.path.pop(-1)
-                UserCanvasService.update_by_id(req["id"], cvs.to_dict())
-                traceback.print_exc()
-                yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                            "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                                           ensure_ascii=False) + "\n\n"
-            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
-
-        resp = Response(sse(), mimetype="text/event-stream")
-        resp.headers.add_header("Cache-control", "no-cache")
-        resp.headers.add_header("Connection", "keep-alive")
-        resp.headers.add_header("X-Accel-Buffering", "no")
-        resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-        return resp
-
-    for answer in canvas.run(running_hint_text = running_hint_text, stream=False):
-        if answer.get("running_status"):
-            continue
-        final_ans["content"] = "\n".join(answer["content"]) if "content" in answer else ""
-        canvas.messages.append({"role": "assistant", "content": final_ans["content"], "id": message_id})
-        if final_ans.get("reference"):
-            canvas.reference.append(final_ans["reference"])
-        cvs.dsl = json.loads(str(canvas))
         UserCanvasService.update_by_id(req["id"], cvs.to_dict())
-        return get_json_result(data={"answer": final_ans["content"], "reference": final_ans.get("reference", [])})
+
+    resp = Response(sse(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp
 
 
 @manager.route('/reset', methods=['POST'])  # noqa: F821

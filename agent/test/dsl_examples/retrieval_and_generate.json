@@ -55,7 +55,7 @@
   "globals": {
     "sys.query": "",
     "sys.user_id": "",
-    "sys.convsation_turns": 0,
+    "sys.conversation_turns": 0,
     "sys.files": []
   }
 }

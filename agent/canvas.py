@@ -59,7 +59,7 @@ class Canvas:
         "globals": {
             "sys.query": "",
             "sys.user_id": tenant_id,
-            "sys.convsation_turns": 0,
+            "sys.conversation_turns": 0,
             "sys.files": []
         }
     }
@@ -72,7 +72,7 @@ class Canvas:
         self.globals = {
             "sys.query": "",
             "sys.user_id": tenant_id,
-            "sys.convsation_turns": 0,
+            "sys.conversation_turns": 0,
             "sys.files": []
         }
         self.dsl = json.loads(dsl) if dsl else {
@@ -95,7 +95,7 @@ class Canvas:
             "globals": {
                 "sys.query": "",
                 "sys.user_id": "",
-                "sys.convsation_turns": 0,
+                "sys.conversation_turns": 0,
                 "sys.files": []
             }
         }
@@ -174,6 +174,11 @@ class Canvas:
         created_at = int(time.time())
         self.add_user_input(kwargs.get("query"))
 
+        for k in kwargs.keys():
+            if k in ["query", "user_id", "files"] and kwargs[k]:
+                self.globals[f"sys.{k}"] = kwargs[k]
+        self.globals["sys.conversation_turns"] += 1
+
         def decorate(event, dt):
             nonlocal message_id, created_at
             return {
@@ -186,26 +191,21 @@ class Canvas:
             }
 
         if not self.path:
-            self.path.append("begin")
-            self.globals = {
-                "sys.query": kwargs.get("query"),
-                "sys.user_id": kwargs.get("user_id"),
-                "sys.convsation_turns": 1,
-                "sys.files": kwargs.get("files", [])
-            }
-            inputs = self.get_component_obj("begin").get_input()
-            inputs.update(self.globals)
-            yield decorate("workflow_started", {"inputs": inputs})
+            self.path = ["begin"]
+
+        yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
 
         async def _run_batch(f, t):
             async with trio.open_nursery() as nursery:
                 for i in range(f, t):
                     cpn = self.get_component_obj(self.path[i])
-                    nursery.start_soon(lambda: cpn.invoke(**cpn.get_input()))
+                    if cpn.compnent_name.lower() in ["begin", "userfillup"]:
+                        nursery.start_soon(lambda: cpn.invoke(inputs=kwargs.get("inputs", {})))
+                    else:
+                        nursery.start_soon(lambda: cpn.invoke(**cpn.get_input()))
 
         error = ""
-        idx = len(self.path) - 1
-        st_idx = idx
+        idx = 0
         while idx < len(self.path):
             to = len(self.path)
             for i in range(idx, to):
@@ -242,12 +242,22 @@ class Canvas:
             if error:
                 break
             idx = to
+            if any([self.get_component(c)["obj"].component_name.lower() == "userfillup" for c in self.path[idx:]]):
+                path = [c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() == "userfillup"]
+                path.extend([c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() != "userfillup"])
+                another_inputs = {}
+                for c in path:
+                    if self.get_component(c)["obj"].component_name.lower() == "userfillup":
+                        another_inputs.update(self.get_component(c)["obj"].get_input_elements())
+                self.path = path
+                yield decorate("user_inputs", another_inputs)
+                return
 
         self.path = self.path[:idx]
         if not error:
             yield decorate("workflow_finished",
                        {
-                           "inputs": self.get_component_obj(self.path[st_idx]).get_input(),
+                           "inputs": kwargs.get("inputs"),
                            "outputs": self.get_component_obj(self.path[-1]).output(),
                            "elapsed_time": time.perf_counter() - st,
                            "created_at": int(time.time()),
