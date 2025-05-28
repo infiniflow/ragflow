@@ -158,6 +158,29 @@ function start_mcp_server() {
 # Start components based on flags
 # -----------------------------------------------------------------------------
 
+if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
+    start_mcp_server
+fi
+
+if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
+    if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then
+        echo "Starting task executors on host '${HOST_ID}' for IDs in [${CONSUMER_NO_BEG}, ${CONSUMER_NO_END})..."
+        for (( i=CONSUMER_NO_BEG; i<CONSUMER_NO_END; i++ ))
+        do
+          task_exe "${i}" "${HOST_ID}" &
+        done
+    else
+        # Otherwise, start a fixed number of workers
+        echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
+        for (( i=0; i<WORKERS; i++ ))
+        do
+          task_exe "${i}" "${HOST_ID}" &
+        done
+    fi
+fi
+
+
+# Should be the final step
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
@@ -191,28 +214,6 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
                        --error-logfile - \
                        --log-level info \
                        'api.wsgi:application'
-    fi
-fi
-
-
-if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
-    start_mcp_server
-fi
-
-if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
-    if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then
-        echo "Starting task executors on host '${HOST_ID}' for IDs in [${CONSUMER_NO_BEG}, ${CONSUMER_NO_END})..."
-        for (( i=CONSUMER_NO_BEG; i<CONSUMER_NO_END; i++ ))
-        do
-          task_exe "${i}" "${HOST_ID}" &
-        done
-    else
-        # Otherwise, start a fixed number of workers
-        echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
-        for (( i=0; i<WORKERS; i++ ))
-        do
-          task_exe "${i}" "${HOST_ID}" &
-        done
     fi
 fi
 
