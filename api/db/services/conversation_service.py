@@ -123,6 +123,8 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
     message_id = msg[-1].get("id")
     e, dia = DialogService.get_by_id(conv.dialog_id)
 
+    kb_ids = kwargs.get("kb_ids",[])
+    dia.kb_ids = list(set(dia.kb_ids + kb_ids))
     if not conv.reference:
         conv.reference = []
     conv.message.append({"role": "assistant", "content": "", "id": message_id})
