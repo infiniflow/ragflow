@@ -113,7 +113,7 @@ def getsse(canvas_id):
 def run():
     req = request.json
     stream = req.get("stream", True)
-    running_hint_text = req.get("running_hint_text", "")
+    query = req.get("query", "")
     e, cvs = UserCanvasService.get_by_id(req["id"])
     if not e:
         return get_data_error_result(message="canvas not found.")
