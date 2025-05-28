@@ -32,6 +32,7 @@ from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
 from rag.utils.storage_factory import STORAGE_IMPL
+from api.db.services.knowledgebase_service import KnowledgebaseService
 
 
 @manager.route('/upload', methods=['POST'])  # noqa: F821
@@ -112,6 +113,34 @@ def upload():
             file = FileService.insert(file)
             STORAGE_IMPL.put(last_folder.id, location, blob)
             file_res.append(file.to_json())
+            
+            # 检查父文件夹是否有关联的知识库，如果有则自动关联上传的文件
+            parent_kbs_info = FileService.get_kb_id_by_file_id(last_folder.id)
+            if parent_kbs_info:
+                for kb_info in parent_kbs_info:
+                    kb_id = kb_info["kb_id"]
+                    e, kb = KnowledgebaseService.get_by_id(kb_id)
+                    if not e:
+                        continue
+                        
+                    # 创建文档并关联
+                    doc = DocumentService.insert({
+                        "id": get_uuid(),
+                        "kb_id": kb.id,
+                        "parser_id": FileService.get_parser(filetype, filename, kb.parser_id),
+                        "parser_config": kb.parser_config,
+                        "created_by": current_user.id,
+                        "type": filetype,
+                        "name": filename,
+                        "location": location,
+                        "size": len(blob)
+                    })
+                    File2DocumentService.insert({
+                        "id": get_uuid(),
+                        "file_id": file.id,
+                        "document_id": doc.id,
+                    })
+                
         return get_json_result(data=file_res)
     except Exception as e:
         return server_error_response(e)

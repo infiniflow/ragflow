@@ -66,7 +66,7 @@ class FileService(CommonService):
         for file in res_files:
             if file["type"] == FileType.FOLDER.value:
                 file["size"] = cls.get_folder_size(file["id"])
-                file["kbs_info"] = []
+                file["kbs_info"] = cls.get_kb_id_by_file_id(file["id"])
                 children = list(
                     cls.model.select()
                     .where(
