@@ -119,7 +119,10 @@ class Template(ComponentBase):
                     v = json.dumps(v, ensure_ascii=False)
                 except Exception:
                     pass
-            content = re.sub(r"\{%s\}" % re.escape(n), v, content)
+            # Process backslashes in strings, Use Lambda function to avoid escape issues
+            if isinstance(v, str):
+                v = v.replace("\\", "\\\\")
+            content = re.sub(r"\{%s\}" % re.escape(n), lambda match: v, content)
             content = re.sub(r"(#+)", r" \1 ", content)
 
         return Template.be_output(content)
