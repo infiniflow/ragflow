@@ -306,27 +306,27 @@ def update_doc(tenant_id, dataset_id, document_id):
             return get_error_data_result(
                 f"`chunk_method` {req['chunk_method']} doesn't exist"
             )
-        if doc.parser_id.lower() == req["chunk_method"].lower():
-            return get_result()
 
         if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
             return get_error_data_result(message="Not supported yet!")
 
-        e = DocumentService.update_by_id(
-            doc.id,
-            {
-                "parser_id": req["chunk_method"],
-                "progress": 0,
-                "progress_msg": "",
-                "run": TaskStatus.UNSTART.value,
-            },
-        )
-        if not e:
-            return get_error_data_result(message="Document not found!")
-        req["parser_config"] = get_parser_config(
-            req["chunk_method"], req.get("parser_config")
-        )
-        DocumentService.update_parser_config(doc.id, req["parser_config"])
+        if doc.parser_id.lower() != req["chunk_method"].lower():
+            e = DocumentService.update_by_id(
+                doc.id,
+                {
+                    "parser_id": req["chunk_method"],
+                    "progress": 0,
+                    "progress_msg": "",
+                    "run": TaskStatus.UNSTART.value,
+                },
+            )
+            if not e:
+                return get_error_data_result(message="Document not found!")
+        if not req.get("parser_config"):
+            req["parser_config"] = get_parser_config(
+                req["chunk_method"], req.get("parser_config")
+            )
+            DocumentService.update_parser_config(doc.id, req["parser_config"])
         if doc.token_num > 0:
             e = DocumentService.increment_chunk_num(
                 doc.id,
