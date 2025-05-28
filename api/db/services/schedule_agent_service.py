@@ -17,6 +17,7 @@
 import logging
 import re
 import time
+from typing import List
 from croniter import croniter
 from datetime import datetime, timedelta
 from api.db.db_models import ScheduleAgent
@@ -153,101 +154,177 @@ class ScheduleAgentService(CommonService):
 
     @classmethod
     def get_pending_schedules(cls, tolerance_minutes=5):
-        """Get schedules that are ready to run with detailed logging and delay tolerance"""
+        """Get schedules that are ready to run with detailed logging and specific logic for each frequency type"""
         logging.debug(f"[SCHEDULE_SERVICE] 🔍 Checking for pending schedules (tolerance: {tolerance_minutes} minutes)")
         
         try:
             current_time = current_timestamp()
             current_datetime = datetime.now()
             
-            # Add tolerance buffer for delayed executions
-            tolerance_seconds = tolerance_minutes * 60
-            tolerance_time = current_time + tolerance_seconds
-            
             logging.debug(f"[SCHEDULE_SERVICE] Current timestamp: {current_time} ({current_datetime.isoformat()})")
-            logging.debug(f"[SCHEDULE_SERVICE] Tolerance buffer: {tolerance_minutes} minutes ({tolerance_seconds} seconds)")
-            logging.debug(f"[SCHEDULE_SERVICE] Looking for schedules with next_run_time <= {tolerance_time}")
             
-            schedules = cls.query(
+            # Get all enabled schedules
+            all_schedules: List[ScheduleAgent] = cls.query(
                 enabled=True,
-                next_run_time=[0, tolerance_time],  # Use tolerance time instead of current_time
                 status="1"
             )
             
-            logging.debug(f"[SCHEDULE_SERVICE] Found {len(schedules)} potentially pending schedules (with tolerance)")
+            logging.debug(f"[SCHEDULE_SERVICE] Found {len(all_schedules)} enabled schedules to check")
             
-            # Filter out one-time schedules that have already run
             valid_schedules = []
             disabled_count = 0
-            delayed_count = 0
-            corrupted_count = 0
             
-            for schedule in schedules:
+            for schedule in all_schedules:
                 schedule_info = f"ID:{schedule.id}, Name:{schedule.name}, Type:{schedule.frequency_type}"
                 
-                # Validate timestamps before processing
                 try:
-                    # Check if timestamps are valid (not too large, not negative)
+                    # Validate timestamps
                     if schedule.next_run_time and (schedule.next_run_time < 0 or schedule.next_run_time > 2147483647):
                         logging.warning(f"[SCHEDULE_SERVICE] ⚠️  Invalid next_run_time for {schedule_info}: {schedule.next_run_time}")
-                        # Reset invalid timestamp
                         cls.update_by_id(schedule.id, {'next_run_time': None})
-                        corrupted_count += 1
                         continue
                     
-                    if schedule.last_run_time and (schedule.last_run_time < 0 or schedule.last_run_time > 2147483647):
-                        logging.warning(f"[SCHEDULE_SERVICE] ⚠️  Invalid last_run_time for {schedule_info}: {schedule.last_run_time}")
-                        # Reset invalid timestamp but continue processing
-                        cls.update_by_id(schedule.id, {'last_run_time': None})
-                        schedule.last_run_time = None
+                    should_run = False
+                    
+                    # Check each frequency type with specific conditions
+                    if schedule.frequency_type == 'once':
+                        # Once: current time > execute_date + execute_time AND run_count = 0
+                        if schedule.run_count == 0 and schedule.execute_date and schedule.execute_time:
+                            execute_datetime = schedule.execute_date
+                            time_parts = schedule.execute_time.split(':')
+                            execute_datetime = execute_datetime.replace(
+                                hour=int(time_parts[0]),
+                                minute=int(time_parts[1]),
+                                second=int(time_parts[2]) if len(time_parts) > 2 else 0,
+                                microsecond=0
+                            )
+                            
+                            if current_datetime >= execute_datetime:
+                                should_run = True
+                                logging.debug(f"[SCHEDULE_SERVICE] ✅ Once schedule ready: {schedule_info}")
+                            else:
+                                logging.debug(f"[SCHEDULE_SERVICE] Once schedule not ready: {schedule_info} - Execute at: {execute_datetime.isoformat()}")
                         
-                except Exception as timestamp_error:
-                    logging.error(f"[SCHEDULE_SERVICE] ❌ Error validating timestamps for {schedule_info}: {timestamp_error}")
-                    corrupted_count += 1
+                        elif schedule.run_count > 0:
+                            # Disable completed one-time schedules
+                            logging.info(f"[SCHEDULE_SERVICE] 🔒 Disabling completed one-time schedule: {schedule_info}")
+                            cls.update_by_id(schedule.id, {'enabled': False})
+                            disabled_count += 1
+                            continue
+                    
+                    elif schedule.frequency_type == 'daily':
+                        # Daily: current time > execute_time today
+                        if schedule.execute_time:
+                            time_parts = schedule.execute_time.split(':')
+                            today_execute_time = current_datetime.replace(
+                                hour=int(time_parts[0]),
+                                minute=int(time_parts[1]),
+                                second=int(time_parts[2]) if len(time_parts) > 2 else 0,
+                                microsecond=0
+                            )
+                            
+                            # Check if we've passed today's execution time
+                            if current_datetime >= today_execute_time:
+                                # Check if we haven't run today yet
+                                if schedule.last_run_time:
+                                    last_run_date = datetime.fromtimestamp(schedule.last_run_time).date()
+                                    if last_run_date < current_datetime.date():
+                                        should_run = True
+                                        logging.debug(f"[SCHEDULE_SERVICE] ✅ Daily schedule ready: {schedule_info}")
+                                    else:
+                                        logging.debug(f"[SCHEDULE_SERVICE] Daily schedule already ran today: {schedule_info}")
+                                else:
+                                    # Never run before
+                                    should_run = True
+                                    logging.debug(f"[SCHEDULE_SERVICE] ✅ Daily schedule ready (first run): {schedule_info}")
+                            else:
+                                logging.debug(f"[SCHEDULE_SERVICE] Daily schedule not ready: {schedule_info} - Execute at: {today_execute_time.strftime('%H:%M:%S')}")
+                    
+                    elif schedule.frequency_type == 'weekly':
+                        # Weekly: current time > execute_time AND current day in days_of_week
+                        if schedule.execute_time and schedule.days_of_week:
+                            current_weekday = current_datetime.weekday() + 1  # Convert to 1=Monday format
+                            
+                            if current_weekday in schedule.days_of_week:
+                                time_parts = schedule.execute_time.split(':')
+                                today_execute_time = current_datetime.replace(
+                                    hour=int(time_parts[0]),
+                                    minute=int(time_parts[1]),
+                                    second=int(time_parts[2]) if len(time_parts) > 2 else 0,
+                                    microsecond=0
+                                )
+                                
+                                if current_datetime >= today_execute_time:
+                                    # Check if we haven't run today yet
+                                    if schedule.last_run_time:
+                                        last_run_date = datetime.fromtimestamp(schedule.last_run_time).date()
+                                        if last_run_date < current_datetime.date():
+                                            should_run = True
+                                            logging.debug(f"[SCHEDULE_SERVICE] ✅ Weekly schedule ready: {schedule_info}")
+                                        else:
+                                            logging.debug(f"[SCHEDULE_SERVICE] Weekly schedule already ran today: {schedule_info}")
+                                    else:
+                                        # Never run before
+                                        should_run = True
+                                        logging.debug(f"[SCHEDULE_SERVICE] ✅ Weekly schedule ready (first run): {schedule_info}")
+                                else:
+                                    logging.debug(f"[SCHEDULE_SERVICE] Weekly schedule not ready: {schedule_info} - Execute at: {today_execute_time.strftime('%H:%M:%S')}")
+                            else:
+                                logging.debug(f"[SCHEDULE_SERVICE] Weekly schedule not for today: {schedule_info} - Current day: {current_weekday}, Target days: {schedule.days_of_week}")
+                    
+                    elif schedule.frequency_type == 'monthly':
+                        # Monthly: current time > execute_time AND current day = day_of_month
+                        if schedule.execute_time and schedule.day_of_month:
+                            current_day = current_datetime.day
+                            
+                            if current_day == schedule.day_of_month:
+                                time_parts = schedule.execute_time.split(':')
+                                today_execute_time = current_datetime.replace(
+                                    hour=int(time_parts[0]),
+                                    minute=int(time_parts[1]),
+                                    second=int(time_parts[2]) if len(time_parts) > 2 else 0,
+                                    microsecond=0
+                                )
+                                
+                                if current_datetime >= today_execute_time:
+                                    # Check if we haven't run this month yet
+                                    if schedule.last_run_time:
+                                        last_run_datetime = datetime.fromtimestamp(schedule.last_run_time)
+                                        if (last_run_datetime.year < current_datetime.year or 
+                                            last_run_datetime.month < current_datetime.month):
+                                            should_run = True
+                                            logging.debug(f"[SCHEDULE_SERVICE] ✅ Monthly schedule ready: {schedule_info}")
+                                        else:
+                                            logging.debug(f"[SCHEDULE_SERVICE] Monthly schedule already ran this month: {schedule_info}")
+                                    else:
+                                        # Never run before
+                                        should_run = True
+                                        logging.debug(f"[SCHEDULE_SERVICE] ✅ Monthly schedule ready (first run): {schedule_info}")
+                                else:
+                                    logging.debug(f"[SCHEDULE_SERVICE] Monthly schedule not ready: {schedule_info} - Execute at: {today_execute_time.strftime('%H:%M:%S')}")
+                            else:
+                                logging.debug(f"[SCHEDULE_SERVICE] Monthly schedule not for today: {schedule_info} - Current day: {current_day}, Target day: {schedule.day_of_month}")
+                    
+                    if should_run:
+                        # Log schedule details
+                        try:
+                            last_run_str = datetime.fromtimestamp(schedule.last_run_time).isoformat() if schedule.last_run_time else "Never"
+                        except (ValueError, OSError):
+                            last_run_str = "Invalid"
+                        
+                        logging.debug(f"[SCHEDULE_SERVICE] ✅ Valid pending schedule: {schedule_info}")
+                        logging.debug(f"[SCHEDULE_SERVICE]   Last run: {last_run_str}, Run count: {schedule.run_count}")
+                        
+                        valid_schedules.append(schedule)
+                    
+                except Exception as schedule_error:
+                    logging.error(f"[SCHEDULE_SERVICE] ❌ Error processing schedule {schedule_info}: {schedule_error}")
                     continue
-                
-                if schedule.frequency_type == 'once' and schedule.run_count > 0:
-                    # Disable one-time schedules after they run
-                    logging.info(f"[SCHEDULE_SERVICE] 🔒 Disabling completed one-time schedule: {schedule_info}")
-                    cls.update_by_id(schedule.id, {'enabled': False})
-                    disabled_count += 1
-                    continue
-                
-                # Check if this is a delayed execution
-                if schedule.next_run_time and schedule.next_run_time < current_time:
-                    delay_seconds = current_time - schedule.next_run_time
-                    delay_minutes = delay_seconds / 60
-                    logging.warning(f"[SCHEDULE_SERVICE] ⚠️  Delayed execution detected for {schedule_info} - Delay: {delay_minutes:.1f} minutes")
-                    delayed_count += 1
-                
-                # Log schedule details with safe timestamp conversion
-                try:
-                    next_run_str = datetime.fromtimestamp(schedule.next_run_time).isoformat() if schedule.next_run_time else "None"
-                except (ValueError, OSError) as e:
-                    next_run_str = f"Invalid({schedule.next_run_time})"
-                    logging.warning(f"[SCHEDULE_SERVICE] ⚠️  Invalid next_run_time timestamp for {schedule_info}: {schedule.next_run_time}")
-                
-                try:
-                    last_run_str = datetime.fromtimestamp(schedule.last_run_time).isoformat() if schedule.last_run_time else "Never"
-                except (ValueError, OSError) as e:
-                    last_run_str = f"Invalid({schedule.last_run_time})"
-                    logging.warning(f"[SCHEDULE_SERVICE] ⚠️  Invalid last_run_time timestamp for {schedule_info}: {schedule.last_run_time}")
-                
-                logging.debug(f"[SCHEDULE_SERVICE] ✅ Valid pending schedule: {schedule_info}")
-                logging.debug(f"[SCHEDULE_SERVICE]   Next run: {next_run_str}, Last run: {last_run_str}, Run count: {schedule.run_count}")
-                
-                valid_schedules.append(schedule)
             
             if disabled_count > 0:
                 logging.info(f"[SCHEDULE_SERVICE] Disabled {disabled_count} completed one-time schedules")
             
-            if delayed_count > 0:
-                logging.warning(f"[SCHEDULE_SERVICE] ⚠️  Found {delayed_count} delayed executions within tolerance")
-            
-            if corrupted_count > 0:
-                logging.warning(f"[SCHEDULE_SERVICE] ⚠️  Found and handled {corrupted_count} schedules with corrupted timestamps")
-            
-            logging.info(f"[SCHEDULE_SERVICE] ✅ Found {len(valid_schedules)} valid pending schedules (including {delayed_count} delayed)")
+            logging.info(f"[SCHEDULE_SERVICE] ✅ Found {len(valid_schedules)} valid pending schedules")
             
             return valid_schedules
             
