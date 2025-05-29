@@ -56,13 +56,13 @@ class TestDatasetsList:
     def test_params_unset(self, get_http_api_auth):
         res = list_datasets(get_http_api_auth, None)
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["datasets"]) == 5, res
 
     @pytest.mark.p2
     def test_params_empty(self, get_http_api_auth):
         res = list_datasets(get_http_api_auth, {})
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["datasets"]) == 5, res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -106,7 +106,7 @@ class TestDatasetsList:
         params = {"page": None}
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["datasets"]) == 5, res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -149,17 +149,17 @@ class TestDatasetsList:
         params = {"page_size": None}
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["datasets"]) == 5, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "params, assertions",
         [
-            ({"orderby": "create_time"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"orderby": "update_time"}, lambda r: (is_sorted(r["data"], "update_time", True))),
-            ({"orderby": "CREATE_TIME"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"orderby": "UPDATE_TIME"}, lambda r: (is_sorted(r["data"], "update_time", True))),
-            ({"orderby": " create_time "}, lambda r: (is_sorted(r["data"], "update_time", True))),
+            ({"orderby": "create_time"}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", True))),
+            ({"orderby": "update_time"}, lambda r: (is_sorted(r["data"]["datasets"], "update_time", True))),
+            ({"orderby": "CREATE_TIME"}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", True))),
+            ({"orderby": "UPDATE_TIME"}, lambda r: (is_sorted(r["data"]["datasets"], "update_time", True))),
+            ({"orderby": " create_time "}, lambda r: (is_sorted(r["data"]["datasets"], "update_time", True))),
         ],
         ids=["orderby_create_time", "orderby_update_time", "orderby_create_time_upper", "orderby_update_time_upper", "whitespace"],
     )
@@ -188,22 +188,22 @@ class TestDatasetsList:
         params = {"order_by": None}
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert is_sorted(res["data"], "create_time", True), res
+        assert is_sorted(res["data"]["datasets"], "create_time", True), res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "params, assertions",
         [
-            ({"desc": True}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": False}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": "true"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": "false"}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": 1}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": 0}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": "yes"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": "no"}, lambda r: (is_sorted(r["data"], "create_time", False))),
-            ({"desc": "y"}, lambda r: (is_sorted(r["data"], "create_time", True))),
-            ({"desc": "n"}, lambda r: (is_sorted(r["data"], "create_time", False))),
+            ({"desc": True}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", True))),
+            ({"desc": False}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", False))),
+            ({"desc": "true"}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", True))),
+            ({"desc": "false"}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", False))),
+            ({"desc": 1}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", True))),
+            ({"desc": 0}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", False))),
+            ({"desc": "yes"}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", True))),
+            ({"desc": "no"}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", False))),
+            ({"desc": "y"}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", True))),
+            ({"desc": "n"}, lambda r: (is_sorted(r["data"]["datasets"], "create_time", False))),
         ],
         ids=["desc=True", "desc=False", "desc=true", "desc=false", "desc=1", "desc=0", "desc=yes", "desc=no", "desc=y", "desc=n"],
     )
@@ -232,15 +232,15 @@ class TestDatasetsList:
         params = {"desc": None}
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert is_sorted(res["data"], "create_time", True), res
+        assert is_sorted(res["data"]["datasets"], "create_time", True), res
 
     @pytest.mark.p1
     def test_name(self, get_http_api_auth):
         params = {"name": "dataset_1"}
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == 1, res
-        assert res["data"][0]["name"] == "dataset_1", res
+        assert len(res["data"]["datasets"]) == 1, res
+        assert res["data"]["datasets"][0]["name"] == "dataset_1", res
 
     @pytest.mark.p2
     def test_name_wrong(self, get_http_api_auth):
@@ -254,14 +254,14 @@ class TestDatasetsList:
         params = {"name": ""}
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["datasets"]) == 5, res
 
     @pytest.mark.p2
     def test_name_none(self, get_http_api_auth):
         params = {"name": None}
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["datasets"]) == 5, res
 
     @pytest.mark.p1
     def test_id(self, get_http_api_auth, add_datasets):
@@ -269,8 +269,8 @@ class TestDatasetsList:
         params = {"id": dataset_ids[0]}
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0
-        assert len(res["data"]) == 1
-        assert res["data"][0]["id"] == dataset_ids[0]
+        assert len(res["data"]["datasets"]) == 1
+        assert res["data"]["datasets"][0]["id"] == dataset_ids[0]
 
     @pytest.mark.p2
     def test_id_not_uuid(self, get_http_api_auth):
@@ -305,7 +305,7 @@ class TestDatasetsList:
         params = {"id": None}
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == 5, res
+        assert len(res["data"]["datasets"]) == 5, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -322,7 +322,7 @@ class TestDatasetsList:
             params = {"id": func(dataset_ids), "name": name}
         res = list_datasets(get_http_api_auth, params)
         assert res["code"] == 0, res
-        assert len(res["data"]) == expected_num, res
+        assert len(res["data"]["datasets"]) == expected_num, res
 
     @pytest.mark.p3
     @pytest.mark.parametrize(

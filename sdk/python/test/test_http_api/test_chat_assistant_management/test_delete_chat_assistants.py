@@ -62,7 +62,7 @@ class TestChatAssistantsDelete:
             assert res["message"] == expected_message
 
         res = list_chat_assistants(get_http_api_auth)
-        assert len(res["data"]) == remaining
+        assert len(res["data"]["chats"]) == remaining
 
     @pytest.mark.parametrize(
         "payload",
@@ -82,7 +82,7 @@ class TestChatAssistantsDelete:
         assert res["data"]["success_count"] == 5
 
         res = list_chat_assistants(get_http_api_auth)
-        assert len(res["data"]) == 0
+        assert len(res["data"]["chats"]) == 0
 
     @pytest.mark.p3
     def test_repeated_deletion(self, get_http_api_auth, add_chat_assistants_func):
@@ -104,6 +104,7 @@ class TestChatAssistantsDelete:
 
         res = list_chat_assistants(get_http_api_auth)
         assert res["code"] == 0
+        assert len(res["data"]["chats"]) == 0
 
     @pytest.mark.p3
     def test_concurrent_deletion(self, get_http_api_auth):
@@ -121,4 +122,4 @@ class TestChatAssistantsDelete:
         assert res["code"] == 0
 
         res = list_chat_assistants(get_http_api_auth)
-        assert len(res["data"]) == 0
+        assert len(res["data"]["chats"]) == 0

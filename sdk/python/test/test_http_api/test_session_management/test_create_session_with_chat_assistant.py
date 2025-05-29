@@ -88,7 +88,7 @@ class TestSessionWithChatAssistantCreate:
         res = list_session_with_chat_assistants(get_http_api_auth, chat_assistant_ids[0])
         if res["code"] != 0:
             assert False, res
-        chunks_count = len(res["data"])
+        chunks_count = len(res["data"]["sessions"])
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
@@ -105,7 +105,7 @@ class TestSessionWithChatAssistantCreate:
         res = list_session_with_chat_assistants(get_http_api_auth, chat_assistant_ids[0], {"page_size": chunk_num})
         if res["code"] != 0:
             assert False, res
-        assert len(res["data"]) == chunks_count + chunk_num
+        assert len(res["data"]["sessions"]) == chunks_count + chunk_num
 
     @pytest.mark.p3
     def test_add_session_to_deleted_chat_assistant(self, get_http_api_auth, add_chat_assistants):
