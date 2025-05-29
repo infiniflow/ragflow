@@ -16,7 +16,6 @@
 from abc import ABC
 from agent.component.base import ComponentBase, ComponentParamBase
 
-
 class SwitchParam(ComponentParamBase):
     """
     Define the Switch component parameters.

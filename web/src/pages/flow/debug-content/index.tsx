@@ -24,8 +24,8 @@ import { BeginQueryType } from '../constant';
 import { BeginQuery } from '../interface';
 import { PopoverForm } from './popover-form';
 
-import styles from './index.less';
 import KnowledgeBaseItem from '@/components/knowledge-base-item';
+import styles from './index.less';
 
 interface IProps {
   parameters: BeginQuery[];
@@ -171,7 +171,7 @@ const DebugContent = ({
             label={q.name || q.key}
             required={!q.optional}
           ></KnowledgeBaseItem>
-        )
+        ),
       };
 
       return (
@@ -191,7 +191,7 @@ const DebugContent = ({
         nextValue = ``;
 
         if (item.type === 'kb') {
-          nextValue = value.join(',')
+          nextValue = value.join(',');
         } else {
           value.forEach((x) => {
             nextValue +=

@@ -1,11 +1,11 @@
 import LLMSelect from '@/components/llm-select';
+import LLMToolsSelect from '@/components/llm-tools-select';
 import MessageHistoryWindowSizeItem from '@/components/message-history-window-size-item';
 import { PromptEditor } from '@/components/prompt-editor';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Switch } from 'antd';
-import { IOperatorForm } from '../../interface';
-import LLMToolsSelect from '@/components/llm-tools-select';
 import { useState } from 'react';
+import { IOperatorForm } from '../../interface';
 
 const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
   const { t } = useTranslate('flow');
@@ -29,7 +29,10 @@ const GenerateForm = ({ onValuesChange, form }: IOperatorForm) => {
         label={t('model', { keyPrefix: 'chat' })}
         tooltip={t('modelTip', { keyPrefix: 'chat' })}
       >
-        <LLMSelect onInitialValue={onLlmSelectChanged} onChange={onLlmSelectChanged}></LLMSelect>
+        <LLMSelect
+          onInitialValue={onLlmSelectChanged}
+          onChange={onLlmSelectChanged}
+        ></LLMSelect>
       </Form.Item>
       <Form.Item
         name={['prompt']}

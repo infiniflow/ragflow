@@ -94,7 +94,6 @@ class Invoke(ComponentBase, ABC):
                 return Invoke.be_output("\n".join(sections))
 
             return Invoke.be_output(response.text)
-
         if method == 'put':
             if self._param.datatype.lower() == 'json':
                 response = requests.put(url=url,
