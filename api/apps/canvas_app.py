@@ -523,7 +523,7 @@ def list_schedules():
                     schedule_dict['canvas_title'] = canvas.title
                 else:
                     schedule_dict['canvas_title'] = 'Unknown Canvas'
-            except:
+            except Exception:
                 schedule_dict['canvas_title'] = 'Unknown Canvas'
             
             schedule_list.append(schedule_dict)
