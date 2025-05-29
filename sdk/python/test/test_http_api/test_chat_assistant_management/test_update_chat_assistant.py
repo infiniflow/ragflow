@@ -58,7 +58,7 @@ class TestChatAssistantUpdate:
         assert res["code"] == expected_code, res
         if expected_code == 0:
             res = list_chat_assistants(get_http_api_auth, {"id": chat_assistant_ids[0]})
-            assert res["data"][0]["name"] == payload.get("name")
+            assert res["data"]["chats"][0]["name"] == payload.get("name")
         else:
             assert res["message"] == expected_message
 
@@ -83,7 +83,7 @@ class TestChatAssistantUpdate:
         assert res["code"] == expected_code, res
         if expected_code == 0:
             res = list_chat_assistants(get_http_api_auth, {"id": chat_assistant_ids[0]})
-            assert res["data"][0]["name"] == payload.get("name")
+            assert res["data"]["chats"][0]["name"] == payload.get("name")
         else:
             assert res["message"] == expected_message
 
@@ -139,14 +139,14 @@ class TestChatAssistantUpdate:
             res = list_chat_assistants(get_http_api_auth, {"id": chat_assistant_ids[0]})
             if llm:
                 for k, v in llm.items():
-                    assert res["data"][0]["llm"][k] == v
+                    assert res["data"]["chats"][0]["llm"][k] == v
             else:
-                assert res["data"][0]["llm"]["model_name"] == "glm-4-flash@ZHIPU-AI"
-                assert res["data"][0]["llm"]["temperature"] == 0.1
-                assert res["data"][0]["llm"]["top_p"] == 0.3
-                assert res["data"][0]["llm"]["presence_penalty"] == 0.4
-                assert res["data"][0]["llm"]["frequency_penalty"] == 0.7
-                assert res["data"][0]["llm"]["max_tokens"] == 512
+                assert res["data"]["chats"][0]["llm"]["model_name"] == "glm-4-flash@ZHIPU-AI"
+                assert res["data"]["chats"][0]["llm"]["temperature"] == 0.1
+                assert res["data"]["chats"][0]["llm"]["top_p"] == 0.3
+                assert res["data"]["chats"][0]["llm"]["presence_penalty"] == 0.4
+                assert res["data"]["chats"][0]["llm"]["frequency_penalty"] == 0.7
+                assert res["data"]["chats"][0]["llm"]["max_tokens"] == 512
         else:
             assert expected_message in res["message"]
 
@@ -208,20 +208,20 @@ class TestChatAssistantUpdate:
             if prompt:
                 for k, v in prompt.items():
                     if k == "keywords_similarity_weight":
-                        assert res["data"][0]["prompt"][k] == 1 - v
+                        assert res["data"]["chats"][0]["prompt"][k] == 1 - v
                     else:
-                        assert res["data"][0]["prompt"][k] == v
+                        assert res["data"]["chats"][0]["prompt"][k] == v
             else:
-                assert res["data"]["prompt"][0]["similarity_threshold"] == 0.2
-                assert res["data"]["prompt"][0]["keywords_similarity_weight"] == 0.7
-                assert res["data"]["prompt"][0]["top_n"] == 6
-                assert res["data"]["prompt"][0]["variables"] == [{"key": "knowledge", "optional": False}]
-                assert res["data"]["prompt"][0]["rerank_model"] == ""
-                assert res["data"]["prompt"][0]["empty_response"] == "Sorry! No relevant content was found in the knowledge base!"
-                assert res["data"]["prompt"][0]["opener"] == "Hi! I'm your assistant, what can I do for you?"
-                assert res["data"]["prompt"][0]["show_quote"] is True
+                assert res["data"]["chats"][0]["prompt"][0]["similarity_threshold"] == 0.2
+                assert res["data"]["chats"][0]["prompt"][0]["keywords_similarity_weight"] == 0.7
+                assert res["data"]["chats"][0]["prompt"][0]["top_n"] == 6
+                assert res["data"]["chats"][0]["prompt"][0]["variables"] == [{"key": "knowledge", "optional": False}]
+                assert res["data"]["chats"][0]["prompt"][0]["rerank_model"] == ""
+                assert res["data"]["chats"][0]["prompt"][0]["empty_response"] == "Sorry! No relevant content was found in the knowledge base!"
+                assert res["data"]["chats"][0]["prompt"][0]["opener"] == "Hi! I'm your assistant, what can I do for you?"
+                assert res["data"]["chats"][0]["prompt"][0]["show_quote"] is True
                 assert (
-                    res["data"]["prompt"][0]["prompt"]
+                    res["data"]["chats"][0]["prompt"][0]["prompt"]
                     == 'You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.'
                 )
         else:

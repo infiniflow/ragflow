@@ -130,7 +130,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["name"] == name, res
+        assert res["data"]["datasets"][0]["name"] == name, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -181,7 +181,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["avatar"] == f"data:image/png;base64,{encode_avatar(fn)}", res
+        assert res["data"]["datasets"][0]["avatar"] == f"data:image/png;base64,{encode_avatar(fn)}", res
 
     @pytest.mark.p2
     def test_avatar_exceeds_limit_length(self, get_http_api_auth, add_dataset_func):
@@ -219,7 +219,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["avatar"] is None, res
+        assert res["data"]["datasets"][0]["avatar"] is None, res
 
     @pytest.mark.p2
     def test_description(self, get_http_api_auth, add_dataset_func):
@@ -230,7 +230,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth, {"id": dataset_id})
         assert res["code"] == 0, res
-        assert res["data"][0]["description"] == "description"
+        assert res["data"]["datasets"][0]["description"] == "description"
 
     @pytest.mark.p2
     def test_description_exceeds_limit_length(self, get_http_api_auth, add_dataset_func):
@@ -249,7 +249,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth, {"id": dataset_id})
         assert res["code"] == 0, res
-        assert res["data"][0]["description"] is None
+        assert res["data"]["datasets"][0]["description"] is None
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -269,7 +269,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["embedding_model"] == embedding_model, res
+        assert res["data"]["datasets"][0]["embedding_model"] == embedding_model, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -342,7 +342,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["permission"] == permission.lower().strip(), res
+        assert res["data"]["datasets"][0]["permission"] == permission.lower().strip(), res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -396,7 +396,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["chunk_method"] == chunk_method, res
+        assert res["data"]["datasets"][0]["chunk_method"] == chunk_method, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -433,7 +433,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth, {"id": dataset_id})
         assert res["code"] == 0, res
-        assert res["data"][0]["pagerank"] == pagerank
+        assert res["data"]["datasets"][0]["pagerank"] == pagerank
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -574,9 +574,9 @@ class TestDatasetUpdate:
         for k, v in parser_config.items():
             if isinstance(v, dict):
                 for kk, vv in v.items():
-                    assert res["data"][0]["parser_config"][k][kk] == vv, res
+                    assert res["data"]["datasets"][0]["parser_config"][k][kk] == vv, res
             else:
-                assert res["data"][0]["parser_config"][k] == v, res
+                assert res["data"]["datasets"][0]["parser_config"][k] == v, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -710,7 +710,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {
+        assert res["data"]["datasets"][0]["parser_config"] == {
             "chunk_token_num": 128,
             "delimiter": r"\n",
             "html4excel": False,
@@ -727,7 +727,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth, {"id": dataset_id})
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {
+        assert res["data"]["datasets"][0]["parser_config"] == {
             "chunk_token_num": 128,
             "delimiter": r"\n",
             "html4excel": False,
@@ -744,7 +744,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        assert res["data"]["datasets"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
 
     @pytest.mark.p3
     def test_parser_config_unset_with_chunk_method_change(self, get_http_api_auth, add_dataset_func):
@@ -755,7 +755,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        assert res["data"]["datasets"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
 
     @pytest.mark.p3
     def test_parser_config_none_with_chunk_method_change(self, get_http_api_auth, add_dataset_func):
@@ -766,7 +766,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth, {"id": dataset_id})
         assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        assert res["data"]["datasets"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -797,7 +797,7 @@ class TestDatasetUpdate:
         dataset_id = add_dataset_func
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        original_data = res["data"][0]
+        original_data = res["data"]["datasets"][0]
 
         payload = {"name": "default_unset"}
         res = update_dataset(get_http_api_auth, dataset_id, payload)
@@ -805,13 +805,13 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["avatar"] == original_data["avatar"], res
-        assert res["data"][0]["description"] == original_data["description"], res
-        assert res["data"][0]["embedding_model"] == original_data["embedding_model"], res
-        assert res["data"][0]["permission"] == original_data["permission"], res
-        assert res["data"][0]["chunk_method"] == original_data["chunk_method"], res
-        assert res["data"][0]["pagerank"] == original_data["pagerank"], res
-        assert res["data"][0]["parser_config"] == {
+        assert res["data"]["datasets"][0]["avatar"] == original_data["avatar"], res
+        assert res["data"]["datasets"][0]["description"] == original_data["description"], res
+        assert res["data"]["datasets"][0]["embedding_model"] == original_data["embedding_model"], res
+        assert res["data"]["datasets"][0]["permission"] == original_data["permission"], res
+        assert res["data"]["datasets"][0]["chunk_method"] == original_data["chunk_method"], res
+        assert res["data"]["datasets"][0]["pagerank"] == original_data["pagerank"], res
+        assert res["data"]["datasets"][0]["parser_config"] == {
             "chunk_token_num": 128,
             "delimiter": r"\n",
             "html4excel": False,
