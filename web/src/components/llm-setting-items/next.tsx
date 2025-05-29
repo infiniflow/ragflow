@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '../ui/select';
 import { SliderInputSwitchFormField } from './slider';
+import { useHandleFreedomChange } from './use-watch-change';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
@@ -33,6 +34,11 @@ export const LlmSettingSchema = {
   top_p: z.string(),
   presence_penalty: z.coerce.number(),
   frequency_penalty: z.coerce.number(),
+  temperatureEnabled: z.boolean(),
+  topPEnabled: z.boolean(),
+  presencePenaltyEnabled: z.boolean(),
+  frequencyPenaltyEnabled: z.boolean(),
+  maxTokensEnabled: z.boolean(),
 };
 
 export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
@@ -43,6 +49,10 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
     LlmModelType.Image2text,
   ]);
 
+  // useWatchFreedomChange();
+
+  const handleChange = useHandleFreedomChange();
+
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
     label: t(camelCase(x)),
     value: x,
@@ -50,7 +60,7 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
 
   const getFieldWithPrefix = useCallback(
     (name: string) => {
-      return `${prefix}.${name}`;
+      return prefix ? `${prefix}.${name}` : name;
     },
     [prefix],
   );
@@ -97,7 +107,13 @@ export function LlmSettingFieldItems({ prefix }: LlmSettingFieldItemsProps) {
           <FormItem>
             <FormLabel>{t('freedom')}</FormLabel>
             <FormControl>
-              <Select {...field} onValueChange={field.onChange}>
+              <Select
+                {...field}
+                onValueChange={(val) => {
+                  handleChange(val);
+                  field.onChange(val);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
