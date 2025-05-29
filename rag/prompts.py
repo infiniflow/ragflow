@@ -136,16 +136,18 @@ def kb_prompt(kbinfos, max_tokens):
 
 
 def citation_prompt():
+    print("USE PROMPT", flush=True)
     return """
 
 # Citation requirements:
-- Inserts CITATIONS in format '##i$$ ##j$$' where i,j are the ID of the content you are citing and encapsulated with '##' and '$$'.
-- Inserts the CITATION symbols at the end of a sentence, AND NO MORE than 4 citations.
+
+- Use a uniform citation format of like [ID:i] [ID:j], where "i" and "j" are the document ID enclosed in square brackets. Separate multiple IDs with spaces (e.g., [ID:0] [ID:1]).
+- Citation markers must be placed at the end of a sentence, separated by a space from the final punctuation (e.g., period, question mark). A maximum of 4 citations are allowed per sentence.
 - DO NOT insert CITATION in the answer if the content is not from retrieved chunks.
 - DO NOT use standalone Document IDs (e.g., '#ID#').
-- Under NO circumstances any other citation styles or formats (e.g., '~~i==', '[i]', '(i)', etc.) be used.
-- Citations ALWAYS the '##i$$' format.
-- Any failure to adhere to the above rules, including but not limited to incorrect formatting, use of prohibited styles, or unsupported citations, will be considered a error, should skip adding Citation for this sentence.
+- Citations ALWAYS in the "[ID:i]" format.
+- STRICTLY prohibit the use of strikethrough symbols (e.g., ~~) or any other non-standard formatting syntax.
+- Any failure to adhere to the above rules, including but not limited to incorrect formatting, use of prohibited styles, or unsupported citations, will be considered an error, and no citation will be added for that sentence.
 
 --- Example START ---
 <SYSTEM>: Here is the knowledge base:
@@ -171,8 +173,8 @@ The market is heating up after Elon Musk's announcement about Dogecoin. Is this 
 
 <USER>: What's the Elon's view on dogecoin?
 
-<ASSISTANT>: Musk has consistently expressed his fondness for Dogecoin, often citing its humor and the inclusion of dogs in its branding. He has referred to it as his favorite cryptocurrency ##0$$ ##1$$.
-Recently, Musk has hinted at potential future roles for Dogecoin. His tweets have sparked speculation about Dogecoin's potential integration into public services ##3$$.
+<ASSISTANT>: Musk has consistently expressed his fondness for Dogecoin, often citing its humor and the inclusion of dogs in its branding. He has referred to it as his favorite cryptocurrency [ID:0] [ID:1].
+Recently, Musk has hinted at potential future roles for Dogecoin. His tweets have sparked speculation about Dogecoin's potential integration into public services [ID:3].
 Overall, while Musk enjoys Dogecoin and often promotes it, he also warns against over-investing in it, reflecting both his personal amusement and caution regarding its speculative nature.
 
 --- Example END ---
@@ -309,6 +311,7 @@ Output: What's the weather in Rochester on {tomorrow}?
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     return ans if ans.find("**ERROR**") < 0 else messages[-1]["content"]
 
+
 def cross_languages(tenant_id, llm_id, query, languages=[]):
     from api.db.services.llm_service import LLMBundle
 
@@ -348,11 +351,11 @@ Bonjour le monde ! Parlons de la sécurité de l'IA.
 ###
 こんにちは世界！AIの安全性について話し合いましょう。
 """
-    user_prompt=f"""
+    user_prompt = f"""
 Input:
 {query}
 ===
-{', '.join(languages)}
+{", ".join(languages)}
 
 Output:
 """
