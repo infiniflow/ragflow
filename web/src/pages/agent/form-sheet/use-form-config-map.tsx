@@ -1,5 +1,6 @@
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
+import { ModelVariableType } from '@/constants/knowledge';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { AgentDialogueMode, Operator } from '../constant';
@@ -115,14 +116,34 @@ export function useFormConfigMap() {
     },
     [Operator.Categorize]: {
       component: CategorizeForm,
-      defaultValues: { message_history_window_size: 1 },
+      defaultValues: {
+        parameter: ModelVariableType.Precise,
+        message_history_window_size: 1,
+        temperatureEnabled: true,
+        topPEnabled: true,
+        presencePenaltyEnabled: true,
+        frequencyPenaltyEnabled: true,
+        maxTokensEnabled: true,
+        items: [],
+      },
       schema: z.object({
+        parameter: z.string().optional(),
         ...LlmSettingSchema,
-        message_history_window_size: z.number(),
+        message_history_window_size: z.coerce.number(),
         items: z.array(
-          z.object({
-            name: z.string().min(1, t('flow.nameMessage')).trim(),
-          }),
+          z
+            .object({
+              name: z.string().min(1, t('flow.nameMessage')).trim(),
+              description: z.string().optional(),
+              // examples: z
+              //   .array(
+              //     z.object({
+              //       value: z.string(),
+              //     }),
+              //   )
+              //   .optional(),
+            })
+            .optional(),
         ),
       }),
     },
@@ -170,6 +191,12 @@ export function useFormConfigMap() {
         arguments: z.array(
           z.object({ name: z.string(), component_id: z.string() }),
         ),
+        return: z.union([
+          z
+            .array(z.object({ name: z.string(), component_id: z.string() }))
+            .optional(),
+          z.object({ name: z.string(), component_id: z.string() }),
+        ]),
       }),
     },
     [Operator.WaitingDialogue]: {

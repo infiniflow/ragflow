@@ -38,6 +38,7 @@ import {
   ChatVariableEnabledField,
   variableEnabledFieldMap,
 } from '@/constants/chat';
+import { ModelVariableType } from '@/constants/knowledge';
 import i18n from '@/locales/config';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 
@@ -477,6 +478,7 @@ export const initialRelevantValues = {
 
 export const initialCategorizeValues = {
   ...initialLlmBaseValues,
+  parameter: ModelVariableType.Precise,
   message_history_window_size: 1,
   category_description: {},
   ...initialQueryBaseValues,
