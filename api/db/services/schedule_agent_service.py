@@ -19,7 +19,7 @@ from typing import List
 from datetime import datetime, timedelta
 from api.db.db_models import ScheduleAgent, ScheduleAgentRun
 from api.db.services.common_service import CommonService
-from api.utils import current_timestamp, get_uuid
+from api.utils import datetime_format, get_uuid
 
 
 class ScheduleAgentService(CommonService):
@@ -29,25 +29,25 @@ class ScheduleAgentService(CommonService):
     def create_schedule(cls, **kwargs):
         """Create a new schedule"""
         logging.info(f"Creating schedule: {kwargs.get('name', 'Unknown')}")
-        
+
         try:
             cls.validate_schedule_data(**kwargs)
             result = cls.save(**kwargs)
-            
+
             if not result:
                 raise Exception("Failed to save schedule")
-                
+
             schedule_id = kwargs.get("id")
             if not schedule_id:
                 raise Exception("No schedule ID provided")
-                
+
             e, schedule_obj = cls.get_by_id(schedule_id)
             if not (e and schedule_obj):
                 raise Exception(f"Failed to retrieve created schedule: {schedule_id}")
-                
+
             logging.info(f"Successfully created schedule: {schedule_obj.id}")
             return schedule_obj
-            
+
         except Exception as e:
             logging.error(f"Error creating schedule: {e}")
             raise
@@ -57,7 +57,7 @@ class ScheduleAgentService(CommonService):
         """Get schedules with pagination and filtering"""
         try:
             conditions = [cls.model.status == "1"]
-            
+
             if created_by:
                 conditions.append(cls.model.created_by == created_by)
             if canvas_id:
@@ -67,7 +67,7 @@ class ScheduleAgentService(CommonService):
 
             query = cls.model.select().where(*conditions)
             total = query.count()
-            
+
             schedules = query.order_by(cls.model.create_time.desc()).paginate(page, page_size)
             return list(schedules), total
 
@@ -81,7 +81,7 @@ class ScheduleAgentService(CommonService):
         try:
             current_datetime = datetime.now()
             all_schedules = cls.query(enabled=True, status="1")
-            
+
             if not all_schedules:
                 return []
 
@@ -94,7 +94,7 @@ class ScheduleAgentService(CommonService):
                         continue
 
                     should_run = cls._should_schedule_run(schedule, current_datetime)
-                    
+
                     if should_run:
                         valid_schedules.append(schedule)
                     elif schedule.frequency_type == "once" and cls._has_successful_run(schedule.id):
@@ -118,13 +118,8 @@ class ScheduleAgentService(CommonService):
     @classmethod
     def _should_schedule_run(cls, schedule, current_datetime):
         """Check if schedule should run based on type"""
-        schedule_checks = {
-            "once": cls._should_run_once,
-            "daily": lambda s, dt: cls._should_run_recurring(s, dt, cls._has_run_today),
-            "weekly": cls._should_run_weekly,
-            "monthly": cls._should_run_monthly
-        }
-        
+        schedule_checks = {"once": cls._should_run_once, "daily": lambda s, dt: cls._should_run_recurring(s, dt, cls._has_run_today), "weekly": cls._should_run_weekly, "monthly": cls._should_run_monthly}
+
         try:
             check_func = schedule_checks.get(schedule.frequency_type)
             if check_func:
@@ -139,7 +134,7 @@ class ScheduleAgentService(CommonService):
         """Check if one-time schedule should run"""
         if not schedule.execute_date or not schedule.execute_time:
             return False
-            
+
         execute_datetime = cls._get_execute_datetime(schedule.execute_date, schedule.execute_time)
         return current_datetime >= execute_datetime and not cls._has_any_run(schedule.id)
 
@@ -148,7 +143,7 @@ class ScheduleAgentService(CommonService):
         """Generic check for recurring schedules"""
         if not schedule.execute_time:
             return False
-            
+
         today_execute_time = cls._get_today_execute_time(current_datetime, schedule.execute_time)
         return current_datetime >= today_execute_time and not check_already_run_func(schedule.id)
 
@@ -157,11 +152,11 @@ class ScheduleAgentService(CommonService):
         """Check if weekly schedule should run"""
         if not schedule.execute_time or not schedule.days_of_week:
             return False
-            
+
         current_weekday = current_datetime.weekday() + 1
         if current_weekday not in schedule.days_of_week:
             return False
-            
+
         return cls._should_run_recurring(schedule, current_datetime, cls._has_run_today)
 
     @classmethod
@@ -169,21 +164,17 @@ class ScheduleAgentService(CommonService):
         """Check if monthly schedule should run"""
         if not schedule.execute_time or not schedule.day_of_month:
             return False
-            
+
         if current_datetime.day != schedule.day_of_month:
             return False
-            
+
         return cls._should_run_recurring(schedule, current_datetime, cls._has_run_this_month)
 
     @classmethod
     def start_execution(cls, schedule_id):
         """Start execution tracking"""
         run_id = get_uuid()
-        ScheduleAgentRun.create(
-            id=run_id,
-            schedule_id=schedule_id,
-            started_at=datetime.now()
-        )
+        ScheduleAgentRun.create(id=run_id, schedule_id=schedule_id, started_at=datetime_format(datetime.now()))
         return run_id
 
     @classmethod
@@ -191,21 +182,16 @@ class ScheduleAgentService(CommonService):
         """Finish execution tracking"""
         try:
             run = ScheduleAgentRun.get_by_id(run_id)
-            finish_time = datetime.now()
-            
-            ScheduleAgentRun.update(
-                finished_at=finish_time,
-                success=success,
-                error_message=error_message,
-                conversation_id=conversation_id
-            ).where(ScheduleAgentRun.id == run_id).execute()
-            
+            finish_time = datetime_format(datetime.now())
+
+            ScheduleAgentRun.update(finished_at=finish_time, success=success, error_message=error_message, conversation_id=conversation_id).where(ScheduleAgentRun.id == run_id).execute()
+
             # Disable one-time schedules after successful execution
             if success:
                 schedule = ScheduleAgent.get_by_id(run.schedule_id)
                 if schedule.frequency_type == "once":
                     cls.update_by_id(run.schedule_id, {"enabled": False})
-                    
+
             return True
         except Exception as e:
             logging.error(f"Error finishing execution {run_id}: {e}")
@@ -216,17 +202,14 @@ class ScheduleAgentService(CommonService):
         """Generic method to check if runs exist with optional filters"""
         try:
             query = ScheduleAgentRun.select().where(ScheduleAgentRun.schedule_id == schedule_id)
-            
+
             if success_filter is not None:
                 query = query.where(ScheduleAgentRun.success == success_filter)
-                
+
             if time_range:
                 start_dt, end_dt = time_range
-                query = query.where(
-                    (ScheduleAgentRun.started_at >= start_dt) &
-                    (ScheduleAgentRun.started_at <= end_dt)
-                )
-                
+                query = query.where((ScheduleAgentRun.started_at >= start_dt) & (ScheduleAgentRun.started_at <= end_dt))
+
             return query.exists()
         except Exception:
             return False
@@ -235,10 +218,7 @@ class ScheduleAgentService(CommonService):
     def _is_currently_running(cls, schedule_id):
         """Check if schedule is currently running"""
         try:
-            return ScheduleAgentRun.select().where(
-                (ScheduleAgentRun.schedule_id == schedule_id) & 
-                (ScheduleAgentRun.finished_at.is_null(True))
-            ).exists()
+            return ScheduleAgentRun.select().where((ScheduleAgentRun.schedule_id == schedule_id) & (ScheduleAgentRun.finished_at.is_null(True))).exists()
         except Exception:
             return False
 
@@ -265,13 +245,13 @@ class ScheduleAgentService(CommonService):
         """Check if schedule ran successfully this month"""
         current_date = datetime.now()
         month_start = current_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        
+
         if current_date.month == 12:
             next_month = current_date.replace(year=current_date.year + 1, month=1, day=1)
         else:
             next_month = current_date.replace(month=current_date.month + 1, day=1)
         month_end = next_month - timedelta(microseconds=1)
-        
+
         time_range = (month_start, month_end)
         return cls._run_exists(schedule_id, success_filter=True, time_range=time_range)
 
@@ -279,10 +259,7 @@ class ScheduleAgentService(CommonService):
     def _get_last_successful_run(cls, schedule_id):
         """Get the last successful run for a schedule"""
         try:
-            return ScheduleAgentRun.select().where(
-                (ScheduleAgentRun.schedule_id == schedule_id) & 
-                (ScheduleAgentRun.success == True)
-            ).order_by(ScheduleAgentRun.started_at.desc()).first()
+            return ScheduleAgentRun.select().where((ScheduleAgentRun.schedule_id == schedule_id) & (ScheduleAgentRun.success == True)).order_by(ScheduleAgentRun.started_at.desc()).first()
         except Exception:
             return None
 
@@ -301,9 +278,7 @@ class ScheduleAgentService(CommonService):
     def get_schedule_execution_history(cls, schedule_id, limit=10):
         """Get execution history for a schedule"""
         try:
-            return list(ScheduleAgentRun.select().where(
-                ScheduleAgentRun.schedule_id == schedule_id
-            ).order_by(ScheduleAgentRun.started_at.desc()).limit(limit))
+            return list(ScheduleAgentRun.select().where(ScheduleAgentRun.schedule_id == schedule_id).order_by(ScheduleAgentRun.started_at.desc()).limit(limit))
         except Exception:
             return []
 
@@ -311,11 +286,7 @@ class ScheduleAgentService(CommonService):
     def validate_schedule_data(cls, **kwargs):
         """Validate schedule data"""
         frequency_type = kwargs.get("frequency_type", "once")
-        validation_rules = {
-            "once": lambda k: k.get("execute_date"),
-            "weekly": lambda k: k.get("days_of_week") and all(1 <= day <= 7 for day in k.get("days_of_week", [])),
-            "monthly": lambda k: k.get("day_of_month") and 1 <= k.get("day_of_month", 0) <= 31
-        }
+        validation_rules = {"once": lambda k: k.get("execute_date"), "weekly": lambda k: k.get("days_of_week") and all(1 <= day <= 7 for day in k.get("days_of_week", [])), "monthly": lambda k: k.get("day_of_month") and 1 <= k.get("day_of_month", 0) <= 31}
 
         try:
             # Validate frequency-specific requirements
@@ -354,7 +325,7 @@ class ScheduleAgentService(CommonService):
             date_obj = datetime.strptime(execute_date, "%Y-%m-%d").date()
         else:
             date_obj = execute_date
-            
+
         if isinstance(execute_time, str):
             time_parts = execute_time.split(":")
             hour, minute = int(time_parts[0]), int(time_parts[1])
@@ -362,7 +333,7 @@ class ScheduleAgentService(CommonService):
             time_obj = datetime.min.time().replace(hour=hour, minute=minute, second=second)
         else:
             time_obj = execute_time
-            
+
         return datetime.combine(date_obj, time_obj)
 
     @classmethod
@@ -374,5 +345,5 @@ class ScheduleAgentService(CommonService):
             second = int(time_parts[2]) if len(time_parts) > 2 else 0
         else:
             hour, minute, second = execute_time.hour, execute_time.minute, execute_time.second
-            
+
         return current_datetime.replace(hour=hour, minute=minute, second=second, microsecond=0)

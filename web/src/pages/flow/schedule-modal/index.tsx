@@ -406,33 +406,31 @@ function ScheduleRunDrawer({
     refetch: refetchHistory,
   } = useFetchScheduleHistory(schedule?.id || '');
 
-  const formatDateTime = useCallback((dateTime: string) => {
+  const formatDateTime = useCallback((dateTime: Date) => {
+    //example dateTime: "Thu, 29 May 2025 12:55:41 GMT"
     try {
-      return dayjs(dateTime).format('YYYY-MM-DD HH:mm:ss');
+      return dayjs(dateTime).tz(dayjs.tz.guess()).format('YYYY-MM-DD HH:mm:ss');
     } catch (error) {
       return '-';
     }
   }, []);
 
-  const calculateDuration = useCallback(
-    (startTime: string, endTime: string | null) => {
-      if (!endTime) return null;
+  const calculateDuration = useCallback((startTime?: Date, endTime?: Date) => {
+    if (!endTime) return null;
 
-      try {
-        let start: dayjs.Dayjs;
-        let end: dayjs.Dayjs;
+    try {
+      let start: dayjs.Dayjs;
+      let end: dayjs.Dayjs;
 
-        start = dayjs(startTime);
+      start = dayjs(startTime);
 
-        end = dayjs(endTime);
+      end = dayjs(endTime);
 
-        return end.diff(start, 'seconds');
-      } catch (error) {
-        return null;
-      }
-    },
-    [],
-  );
+      return end.diff(start, 'seconds');
+    } catch (error) {
+      return null;
+    }
+  }, []);
 
   const formatDuration = useCallback((duration: number | null) => {
     if (!duration || duration <= 0) return '-';
@@ -483,7 +481,7 @@ function ScheduleRunDrawer({
       title: t('schedule.startTime'),
       dataIndex: 'started_at',
       key: 'started_at',
-      render: (time: string | number) => formatDateTime(time),
+      render: (time: Date) => formatDateTime(time),
       sorter: (a: IScheduleRun, b: IScheduleRun) => {
         const aTime =
           typeof a.started_at === 'number'
@@ -501,7 +499,7 @@ function ScheduleRunDrawer({
       title: t('schedule.endTime'),
       dataIndex: 'finished_at',
       key: 'finished_at',
-      render: (time: string | number | null) =>
+      render: (time: Date) =>
         time ? formatDateTime(time) : t('schedule.running'),
     },
     {

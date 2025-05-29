@@ -21,12 +21,11 @@ export interface ISchedule {
 export interface IScheduleRun {
   id: string;
   schedule_id: string;
-  started_at: number;
-  finished_at?: number;
+  started_at: Date;
+  finished_at?: Date;
   success?: boolean;
   error_message?: string;
   conversation_id?: string;
-  execution_duration?: number;
 }
 
 export interface IScheduleStats {
