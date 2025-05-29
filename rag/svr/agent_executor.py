@@ -20,7 +20,6 @@ import signal
 import sys
 import threading
 import time
-import traceback
 from datetime import datetime
 
 import trio

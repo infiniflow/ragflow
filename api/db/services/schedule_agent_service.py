@@ -259,7 +259,7 @@ class ScheduleAgentService(CommonService):
     def _get_last_successful_run(cls, schedule_id):
         """Get the last successful run for a schedule"""
         try:
-            return ScheduleAgentRun.select().where((ScheduleAgentRun.schedule_id == schedule_id) & (ScheduleAgentRun.success == True)).order_by(ScheduleAgentRun.started_at.desc()).first()
+            return ScheduleAgentRun.select().where((ScheduleAgentRun.schedule_id == schedule_id) & (ScheduleAgentRun.success)).order_by(ScheduleAgentRun.started_at.desc()).first()
         except Exception:
             return None
 
@@ -269,7 +269,7 @@ class ScheduleAgentService(CommonService):
         try:
             query = ScheduleAgentRun.select().where(ScheduleAgentRun.schedule_id == schedule_id)
             if success_only:
-                query = query.where(ScheduleAgentRun.success == True)
+                query = query.where(ScheduleAgentRun.success)
             return query.count()
         except Exception:
             return 0
