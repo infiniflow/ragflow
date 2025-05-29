@@ -1,3 +1,4 @@
+import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -116,6 +117,7 @@ export function useFormConfigMap() {
       component: CategorizeForm,
       defaultValues: { message_history_window_size: 1 },
       schema: z.object({
+        ...LlmSettingSchema,
         message_history_window_size: z.number(),
         items: z.array(
           z.object({
@@ -165,6 +167,15 @@ export function useFormConfigMap() {
       schema: z.object({
         lang: z.string(),
         script: z.string(),
+        arguments: z.array(
+          z.object({ name: z.string(), component_id: z.string() }),
+        ),
+      }),
+    },
+    [Operator.WaitingDialogue]: {
+      component: CodeForm,
+      defaultValues: {},
+      schema: z.object({
         arguments: z.array(
           z.object({ name: z.string(), component_id: z.string() }),
         ),

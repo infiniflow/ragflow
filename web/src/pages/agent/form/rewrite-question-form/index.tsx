@@ -1,4 +1,4 @@
-import { NextLLMSelect } from '@/components/llm-select';
+import { NextLLMSelect } from '@/components/llm-select/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import {
   Form,

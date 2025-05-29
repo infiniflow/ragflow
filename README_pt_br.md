@@ -5,13 +5,13 @@
 </div>
 
 <p align="center">
-  <a href="./README.md">English</a> |
-  <a href="./README_zh.md">简体中文</a> |
-  <a href="./README_tzh.md">繁体中文</a> |
-  <a href="./README_ja.md">日本語</a> |
-  <a href="./README_ko.md">한국어</a> |
-  <a href="./README_id.md">Bahasa Indonesia</a> |
-  <a href="/README_pt_br.md">Português (Brasil)</a>
+  <a href="./README.md"><img alt="README in English" src="https://img.shields.io/badge/English-DFE0E5"></a>
+  <a href="./README_tzh.md"><img alt="繁體中文文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
+  <a href="./README_zh.md"><img alt="简体中文版自述文件" src="https://img.shields.io/badge/简体中文-DFE0E5"></a>
+  <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
+  <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
+  <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
+  <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DBEDFA"></a>
 </p>
 
 <p align="center">
@@ -22,13 +22,16 @@
         <img alt="Badge Estático" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.19.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.19.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.19.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Última%20Relese" alt="Última Versão">
     </a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="licença">
+    </a>
+    <a href="https://deepwiki.com/infiniflow/ragflow">
+        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
     </a>
 </p>
 
@@ -39,6 +42,8 @@
   <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
+
+#
 
 <details open>
 <summary><b>📕 Índice</b></summary>
@@ -75,11 +80,11 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Últimas Atualizações
 
+- 23-05-2025 Adicione o componente executor de código Python/JS ao Agente.
+- 05-05-2025 Suporte a consultas entre idiomas.
 - 19-03-2025 Suporta o uso de um modelo multi-modal para entender imagens dentro de arquivos PDF ou DOCX.
 - 28-02-2025 combinado com a pesquisa na Internet (T AVI LY), suporta pesquisas profundas para qualquer LLM.
-- 26-01-2025 Otimize a extração e aplicação de gráficos de conhecimento e forneça uma variedade de opções de configuração.
 - 18-12-2024 Atualiza o modelo de Análise de Layout de Documentos no DeepDoc.
-- 01-11-2024 Adiciona extração de palavras-chave e geração de perguntas relacionadas aos blocos analisados para melhorar a precisão da recuperação.
 - 22-08-2024 Suporta conversão de texto para comandos SQL via RAG.
 
 ## 🎉 Fique Ligado
