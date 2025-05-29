@@ -40,105 +40,107 @@ def convert():
     try:
         files = FileService.get_by_ids(file_ids)
         files_set = dict({file.id: file for file in files})
-        for file_id in file_ids:
-            file = files_set[file_id]
-            if not file:
-                return get_data_error_result(message="File not found!")
-                
-            # 首先处理文件自身（包括文件夹）的关联
-            # 删除现有关联
+        
+        # 递归处理文件和文件夹的关联知识库
+        def process_file(file_id, file_obj, parent_kb_ids=None):
+            nonlocal file2documents
+            
+            # 如果传入了父文件夹的知识库IDs，使用它们；否则使用请求中的kb_ids
+            current_kb_ids = parent_kb_ids if parent_kb_ids is not None else kb_ids
+            
+            # 获取文件的现有关联
             informs = File2DocumentService.get_by_file_id(file_id)
+            
+            # 处理文档删除
             for inform in informs:
                 doc_id = inform.document_id
-                e, doc = DocumentService.get_by_id(doc_id)
-                if not e:
-                    return get_data_error_result(message="Document not found!")
-                tenant_id = DocumentService.get_tenant_id(doc_id)
-                if not tenant_id:
-                    return get_data_error_result(message="Tenant not found!")
-                if not DocumentService.remove_document(doc, tenant_id):
-                    return get_data_error_result(
-                        message="Database error (Document removal)!")
+                # 如果有文档ID，删除对应的文档
+                if doc_id is not None:
+                    e, doc = DocumentService.get_by_id(doc_id)
+                    if not e:
+                        return get_data_error_result(message="Document not found!")
+                    
+                    # 获取文档所属租户ID
+                    tenant_id = DocumentService.get_tenant_id(doc_id)
+                    if not tenant_id:
+                        return get_data_error_result(message="Tenant not found!")
+                    
+                    # 删除旧知识库中的文档
+                    if not DocumentService.remove_document(doc, tenant_id):
+                        return get_data_error_result(message="Database error (Document removal)!")
+            
+            # 删除所有现有关联
             File2DocumentService.delete_by_file_id(file_id)
             
-            # 为文件本身（包括文件夹）创建关联
-            for kb_id in kb_ids:
+            # 如果是文件夹，处理自身关联并递归处理子文件
+            if file_obj.type == FileType.FOLDER.value:
+                # 为文件夹建立新的关联关系
+                folder_file2documents = []
+                for kb_id in current_kb_ids:
+                    e, kb = KnowledgebaseService.get_by_id(kb_id)
+                    if not e:
+                        return get_data_error_result(message="Knowledgebase not found!")
+                    # 只记录文件夹和知识库的关联关系
+                    file2doc = {
+                        "id": get_uuid(),
+                        "file_id": file_id,
+                        "kb_id": kb_id,
+                        "document_id": None  # 文件夹不创建文档记录
+                    }
+                    File2DocumentService.insert(file2doc)
+                    folder_file2documents.append(file2doc)
+                
+                # 递归处理子文件和子文件夹
+                query = FileService.model.select().where(FileService.model.parent_id == file_id)
+                for child_file in query:
+                    # 递归处理子文件/子文件夹，传递当前文件夹的知识库ID列表
+                    process_file(child_file.id, child_file, current_kb_ids)
+                
+                file2documents.extend(folder_file2documents)
+                return None
+            
+            # 处理普通文件的关联
+            file_file2documents = []
+            for kb_id in current_kb_ids:
                 e, kb = KnowledgebaseService.get_by_id(kb_id)
                 if not e:
-                    return get_data_error_result(
-                        message="Can't find this knowledgebase!")
-                
-                doc = DocumentService.insert({
+                    return get_data_error_result(message="Knowledgebase not found!")
+
+                doc = {
                     "id": get_uuid(),
                     "kb_id": kb.id,
-                    "parser_id": FileService.get_parser(file.type, file.name, kb.parser_id),
+                    "parser_id": kb.parser_id,
                     "parser_config": kb.parser_config,
                     "created_by": current_user.id,
-                    "type": file.type,
-                    "name": file.name,
-                    "location": file.location,
-                    "size": file.size
-                })
-                file2document = File2DocumentService.insert({
+                    "type": file_obj.type,
+                    "name": file_obj.name,
+                    "location": file_obj.location,
+                    "size": file_obj.size,
+                    "thumbnail": getattr(file_obj, 'thumbnail', None),
+                }
+                doc = DocumentService.insert(doc)
+                file2document = {
                     "id": get_uuid(),
                     "file_id": file_id,
-                    "document_id": doc.id,
-                })
-                file2documents.append(file2document.to_json())
+                    "kb_id": kb_id,
+                    "document_id": doc.id
+                }
+                File2DocumentService.insert(file2document)
+                file_file2documents.append(file2document)
             
-            # 如果是文件夹，递归处理内部文件
-            if file.type == FileType.FOLDER.value:
-                file_ids_list = FileService.get_all_innermost_file_ids(file_id, [])
-                # 排除当前文件夹自身
-                if file_id in file_ids_list:
-                    file_ids_list.remove(file_id)
-                    
-                for inner_file_id in file_ids_list:
-                    # 删除现有关联
-                    informs = File2DocumentService.get_by_file_id(inner_file_id)
-                    for inform in informs:
-                        doc_id = inform.document_id
-                        e, doc = DocumentService.get_by_id(doc_id)
-                        if not e:
-                            return get_data_error_result(message="Document not found!")
-                        tenant_id = DocumentService.get_tenant_id(doc_id)
-                        if not tenant_id:
-                            return get_data_error_result(message="Tenant not found!")
-                        if not DocumentService.remove_document(doc, tenant_id):
-                            return get_data_error_result(
-                                message="Database error (Document removal)!")
-                    File2DocumentService.delete_by_file_id(inner_file_id)
+            file2documents.extend(file_file2documents)
+            return None
+        
+        # 处理每个顶级文件/文件夹
+        for file_id in file_ids:
+            file_obj = files_set[file_id]
+            if not file_obj:
+                return get_data_error_result(message="File not found!")
+            
+            result = process_file(file_id, file_obj)
+            if result is not None:  # 如果返回了错误结果
+                return result
 
-                    # 为内部文件创建新关联
-                    e, inner_file = FileService.get_by_id(inner_file_id)
-                    if not e:
-                        return get_data_error_result(
-                            message="Can't find this file!")
-                            
-                    for kb_id in kb_ids:
-                        e, kb = KnowledgebaseService.get_by_id(kb_id)
-                        if not e:
-                            return get_data_error_result(
-                                message="Can't find this knowledgebase!")
-                                
-                        doc = DocumentService.insert({
-                            "id": get_uuid(),
-                            "kb_id": kb.id,
-                            "parser_id": FileService.get_parser(inner_file.type, inner_file.name, kb.parser_id),
-                            "parser_config": kb.parser_config,
-                            "created_by": current_user.id,
-                            "type": inner_file.type,
-                            "name": inner_file.name,
-                            "location": inner_file.location,
-                            "size": inner_file.size
-                        })
-                        file2document = File2DocumentService.insert({
-                            "id": get_uuid(),
-                            "file_id": inner_file_id,
-                            "document_id": doc.id,
-                        })
-                        file2documents.append(file2document.to_json())
-                        
         return get_json_result(data=file2documents)
     except Exception as e:
         return server_error_response(e)
@@ -166,6 +168,10 @@ def rm():
                 
                 # 删除文件的文档关联
                 doc_id = inform.document_id
+                # 文件夹关联知识库时document_id为null，跳过文档删除
+                if doc_id is None:
+                    continue
+                    
                 e, doc = DocumentService.get_by_id(doc_id)
                 if not e:
                     return get_data_error_result(message="Document not found!")
@@ -203,6 +209,10 @@ def rm():
                             
                         # 删除内部文件的文档关联
                         inner_doc_id = inner_inform.document_id
+                        # 文件夹关联知识库时document_id为null，跳过文档删除
+                        if inner_doc_id is None:
+                            continue
+                            
                         e, inner_doc = DocumentService.get_by_id(inner_doc_id)
                         if not e:
                             return get_data_error_result(message="Document not found!")

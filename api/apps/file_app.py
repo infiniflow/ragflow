@@ -23,16 +23,16 @@ from flask_login import login_required, current_user
 
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
+from api.db.services.file_service import FileService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from api.utils import get_uuid
 from api.db import FileType, FileSource
 from api.db.services import duplicate_name
-from api.db.services.file_service import FileService
 from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
 from rag.utils.storage_factory import STORAGE_IMPL
-from api.db.services.knowledgebase_service import KnowledgebaseService
 
 
 @manager.route('/upload', methods=['POST'])  # noqa: F821
@@ -112,13 +112,14 @@ def upload():
             }
             file = FileService.insert(file)
             STORAGE_IMPL.put(last_folder.id, location, blob)
-            file_res.append(file.to_json())
+            file_json = file.to_json()
             
             # 检查父文件夹是否有关联的知识库，如果有则自动关联上传的文件
             parent_kbs_info = FileService.get_kb_id_by_file_id(last_folder.id)
             if parent_kbs_info:
-                for kb_info in parent_kbs_info:
-                    kb_id = kb_info["kb_id"]
+                kb_info = []
+                for kb_info_item in parent_kbs_info:
+                    kb_id = kb_info_item["kb_id"]
                     e, kb = KnowledgebaseService.get_by_id(kb_id)
                     if not e:
                         continue
@@ -140,7 +141,15 @@ def upload():
                         "file_id": file.id,
                         "document_id": doc.id,
                     })
+                    kb_info.append({
+                        "kb_id": kb.id,
+                        "kb_name": kb.name,
+                        "doc_id": doc.id
+                    })
+                file_json["kb_info"] = kb_info
                 
+            file_res.append(file_json)
+            
         return get_json_result(data=file_res)
     except Exception as e:
         return server_error_response(e)
@@ -180,6 +189,35 @@ def create():
             "size": 0,
             "type": file_type
         })
+        
+        # 检查父文件夹是否有关联的知识库，如果有则自动为新文件夹建立关联
+        if file_type == FileType.FOLDER.value:
+            parent_kbs_info = FileService.get_kb_id_by_file_id(pf_id)
+            if parent_kbs_info:
+                kb_info = []
+                for kb_info_item in parent_kbs_info:
+                    kb_id = kb_info_item["kb_id"]
+                    e, kb = KnowledgebaseService.get_by_id(kb_id)
+                    if not e:
+                        continue
+                        
+                    # 为新文件夹创建关联记录，无需文档ID
+                    File2DocumentService.insert({
+                        "id": get_uuid(),
+                        "file_id": file.id,
+                        "kb_id": kb.id,
+                        "document_id": None  # 文件夹不需要文档ID
+                    })
+                    kb_info.append({
+                        "kb_id": kb.id,
+                        "kb_name": kb.name,
+                        "doc_id": None
+                    })
+                
+                # 将知识库信息添加到返回结果中
+                file_json = file.to_json()
+                file_json["kb_info"] = kb_info
+                return get_json_result(data=file_json)
 
         return get_json_result(data=file.to_json())
     except Exception as e:
@@ -278,12 +316,58 @@ def rm():
                 continue
 
             if file.type == FileType.FOLDER.value:
-                file_id_list = FileService.get_all_innermost_file_ids(file_id, [])
+                # 递归获取所有子文件和子文件夹
+                file_id_list = []
+                # 首先把当前文件夹ID添加到列表中
+                file_id_list.append(file_id)
+                
+                # 获取所有内部文件ID（包括子文件夹下的文件）
+                query = FileService.model.select().where(FileService.model.parent_id == file_id)
+                for inner_file in query:
+                    if inner_file.type == FileType.FOLDER.value:
+                        # 递归获取子文件夹下的所有文件ID
+                        inner_ids = FileService.get_all_innermost_file_ids(inner_file.id, [])
+                        file_id_list.extend(inner_ids)
+                    else:
+                        # 直接添加文件ID
+                        file_id_list.append(inner_file.id)
+                
+                # 处理所有文件
                 for inner_file_id in file_id_list:
-                    e, file = FileService.get_by_id(inner_file_id)
+                    e, inner_file = FileService.get_by_id(inner_file_id)
                     if not e:
                         return get_data_error_result(message="File not found!")
-                    STORAGE_IMPL.rm(file.parent_id, file.location)
+                    
+                    # 删除文件的文档关联
+                    inner_informs = File2DocumentService.get_by_file_id(inner_file_id)
+                    for inner_inform in inner_informs:
+                        if not inner_inform:
+                            continue
+                            
+                        inner_doc_id = inner_inform.document_id
+                        # 文件夹关联知识库时document_id为null，跳过文档删除
+                        if inner_doc_id is None:
+                            continue
+                            
+                        e, inner_doc = DocumentService.get_by_id(inner_doc_id)
+                        if not e:
+                            return get_data_error_result(message="Document not found!")
+                            
+                        inner_tenant_id = DocumentService.get_tenant_id(inner_doc_id)
+                        if not inner_tenant_id:
+                            return get_data_error_result(message="Tenant not found!")
+                            
+                        if not DocumentService.remove_document(inner_doc, inner_tenant_id):
+                            return get_data_error_result(
+                                message="Database error (Document removal)!")
+                                
+                    File2DocumentService.delete_by_file_id(inner_file_id)
+                    
+                    # 删除文件本身（只针对非文件夹）
+                    if inner_file.type != FileType.FOLDER.value and inner_file_id != file_id:
+                        STORAGE_IMPL.rm(inner_file.parent_id, inner_file.location)
+                
+                # 删除文件夹结构
                 FileService.delete_folder_by_pf_id(current_user.id, file_id)
             else:
                 STORAGE_IMPL.rm(file.parent_id, file.location)
@@ -295,6 +379,10 @@ def rm():
             informs = File2DocumentService.get_by_file_id(file_id)
             for inform in informs:
                 doc_id = inform.document_id
+                # 文件夹关联知识库时document_id为null，跳过文档删除
+                if doc_id is None:
+                    continue
+                    
                 e, doc = DocumentService.get_by_id(doc_id)
                 if not e:
                     return get_data_error_result(message="Document not found!")

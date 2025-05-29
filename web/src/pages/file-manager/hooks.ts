@@ -9,9 +9,11 @@ import {
   useUploadFile,
 } from '@/hooks/file-manager-hooks';
 import { IFile } from '@/interfaces/database/file-manager';
+import kbService from '@/services/knowledge-service';
 import { TableRowSelection } from 'antd/es/table/interface';
-import { UploadFile } from 'antd/lib';
+import { UploadFile, message } from 'antd/lib';
 import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'umi';
 
 export const useGetFolderId = () => {
@@ -161,18 +163,99 @@ export const useHandleUploadFile = () => {
   } = useSetModalState();
   const { uploadFile, loading } = useUploadFile();
   const id = useGetFolderId();
+  const { t } = useTranslation();
 
   const onFileUploadOk = useCallback(
-    async (fileList: UploadFile[]): Promise<number | undefined> => {
-      if (fileList.length > 0) {
-        const ret: number = await uploadFile({ fileList, parentId: id });
-        if (ret === 0) {
-          hideFileUploadModal();
-        }
-        return ret;
+    async (
+      fileUploadData:
+        | { parseOnCreation: boolean; directoryFileList: UploadFile[] }
+        | UploadFile[],
+    ): Promise<number | undefined> => {
+      let fileList: UploadFile[] = [];
+      let parseOnCreation = false;
+
+      if (Array.isArray(fileUploadData)) {
+        fileList = fileUploadData;
+      } else {
+        fileList = fileUploadData.directoryFileList || [];
+        parseOnCreation = fileUploadData.parseOnCreation;
       }
+
+      if (fileList.length > 0) {
+        try {
+          const result = await uploadFile({ fileList, parentId: id });
+
+          // 如果上传成功且需要解析文件
+          if (
+            result.code === 0 &&
+            parseOnCreation &&
+            result.files &&
+            result.files.length > 0
+          ) {
+            try {
+              // 收集所有文件中的doc_id（来自kb_info）
+              const docIds: string[] = [];
+
+              result.files.forEach((file: any) => {
+                // 检查kb_info是否存在且非空
+                if (file.kb_info && file.kb_info.length > 0) {
+                  // 从kb_info中获取doc_id
+                  file.kb_info.forEach((info: any) => {
+                    if (info.doc_id) {
+                      docIds.push(info.doc_id);
+                    }
+                  });
+                }
+              });
+
+              // 如果有doc_id，则调用document/run接口解析文档
+              if (docIds.length > 0) {
+                message.info(t('message.parsing'));
+
+                // 使用kbService替代直接fetch调用
+                const runResult = await kbService.document_run({
+                  doc_ids: docIds,
+                  run: 1,
+                  delete: false,
+                });
+
+                if (runResult.data.code === 0) {
+                  message.success(t('message.parseSuccess'));
+                } else {
+                  message.error(t('message.parseFailed'));
+                }
+              } else if (parseOnCreation) {
+                message.info(t('message.noFilesToParse'));
+              }
+            } catch (error) {
+              console.error('解析文档失败:', error);
+              message.error(t('message.parseFailed'));
+            }
+          }
+
+          // 无论是否解析成功，只要上传成功就关闭弹窗
+          if (result.code === 0) {
+            message.success(t('message.uploaded'));
+            hideFileUploadModal();
+          } else {
+            message.error(t('message.uploadFailed'));
+          }
+
+          return result.code;
+        } catch (error) {
+          console.error('文件上传错误:', error);
+          message.error(t('message.uploadFailed'));
+          // 发生错误时也关闭弹窗
+          hideFileUploadModal();
+          return 500;
+        }
+      }
+
+      // 如果没有文件，也关闭弹窗
+      hideFileUploadModal();
+      return 0;
     },
-    [uploadFile, hideFileUploadModal, id],
+    [uploadFile, hideFileUploadModal, id, t],
   );
 
   return {

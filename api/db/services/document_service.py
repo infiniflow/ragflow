@@ -70,32 +70,55 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_kb_id(cls, kb_id, page_number, items_per_page,
-                     orderby, desc, keywords, run_status, types):
+    def get_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types):
+        from api.db.services.file2document_service import File2DocumentService
+        from api.db.services.file_service import FileService
+        
+        # 基本查询条件
+        conditions = [
+            (cls.model.kb_id == kb_id),
+            (cls.model.status == StatusEnum.VALID.value)
+        ]
+        
+        # 添加关键词搜索条件
         if keywords:
-            docs = cls.model.select().where(
-                (cls.model.kb_id == kb_id),
-                (fn.LOWER(cls.model.name).contains(keywords.lower()))
-            )
-        else:
-            docs = cls.model.select().where(cls.model.kb_id == kb_id)
-
+            conditions.append(fn.LOWER(cls.model.name).contains(keywords.lower()))
+            
+        # 添加运行状态过滤条件
         if run_status:
-            docs = docs.where(cls.model.run.in_(run_status))
+            conditions.append(cls.model.run.in_(run_status))
+            
+        # 添加文件类型过滤条件
         if types:
-            docs = docs.where(cls.model.type.in_(types))
-
-        count = docs.count()
+            conditions.append(cls.model.type.in_(types))
+            
+        # 获取文档列表
+        docs = cls.model.select().where(*conditions)
+        
+        # 排序
         if desc:
             docs = docs.order_by(cls.model.getter_by(orderby).desc())
         else:
             docs = docs.order_by(cls.model.getter_by(orderby).asc())
-
-
+            
+        # 获取总数
+        total = docs.count()
+        
+        # 分页
         if page_number and items_per_page:
             docs = docs.paginate(page_number, items_per_page)
-
-        return list(docs.dicts()), count
+            
+        # 转换为字典列表
+        docs = list(docs.dicts())
+        
+        # 获取每个文档的任务状态
+        from api.db.services.task_service import TaskService
+        for doc in docs:
+            tasks = TaskService.query(document_id=doc["id"])
+            if tasks:
+                doc["task_id"] = tasks[0].id
+                
+        return docs, total
 
     @classmethod
     @DB.connection_context()

@@ -86,24 +86,38 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_kb_id_by_file_id(cls, file_id):
-        # Get knowledge base IDs associated with a file
-        # Args:
-        #     file_id: File ID
-        # Returns:
-        #     List of dictionaries containing knowledge base IDs and names
-        kbs = (
-            cls.model.select(*[Knowledgebase.id, Knowledgebase.name])
-            .join(File2Document, on=(File2Document.file_id == file_id))
-            .join(Document, on=(File2Document.document_id == Document.id))
-            .join(Knowledgebase, on=(Knowledgebase.id == Document.kb_id))
-            .where(cls.model.id == file_id)
-        )
-        if not kbs:
-            return []
-        kbs_info_list = []
-        for kb in list(kbs.dicts()):
-            kbs_info_list.append({"kb_id": kb["id"], "kb_name": kb["name"]})
-        return kbs_info_list
+        from api.db.services.file2document_service import File2DocumentService
+        from api.db.services.document_service import DocumentService
+        from api.db.services.knowledgebase_service import KnowledgebaseService
+        
+        kbs_info = []
+        # 获取文件的关联信息
+        file2docs = File2DocumentService.get_by_file_id(file_id)
+        
+        for file2doc in file2docs:
+            # 如果是文件夹（document_id为None）
+            if not file2doc.document_id:
+                # 从file2doc中获取关联的知识库ID
+                kb_id = file2doc.kb_id
+                e, kb = KnowledgebaseService.get_by_id(kb_id)
+                if e:
+                    kbs_info.append({
+                        "kb_id": kb.id,
+                        "kb_name": kb.name,
+                        "doc_id": None  # 文件夹没有对应的文档ID
+                    })
+            else:
+                # 普通文件的处理逻辑
+                doc = Document.get_by_id(file2doc.document_id)
+                if doc:
+                    kb = Knowledgebase.get_by_id(doc.kb_id)
+                    kbs_info.append({
+                        "kb_id": doc.kb_id,
+                        "kb_name": kb.name,
+                        "doc_id": doc.id
+                    })
+        
+        return kbs_info
 
     @classmethod
     @DB.connection_context()

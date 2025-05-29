@@ -113,7 +113,10 @@ const FileUploadModal = ({
     const ret = await onFileUploadOk?.(
       fileList
         ? { parseOnCreation, directoryFileList }
-        : [...currentFileList, ...directoryFileList],
+        : {
+            parseOnCreation,
+            directoryFileList: [...currentFileList, ...directoryFileList],
+          },
     );
     return ret;
   };

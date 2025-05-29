@@ -403,12 +403,19 @@ class KnowledgebaseService(CommonService):
     @classmethod
     @DB.connection_context()
     def atomic_increase_doc_num_by_id(cls, kb_id):
+        from api.db.services.document_service import DocumentService
+        
+        # 获取知识库中的实际文档数量（不包括文件夹）
+        docs = DocumentService.query(kb_id=kb_id)
+        doc_count = len(docs)
+        
+        # 更新知识库的文档数量
         data = {}
+        data["doc_num"] = doc_count
         data["update_time"] = current_timestamp()
-        data["update_date"] = datetime_format(datetime.now())
-        data["doc_num"] = cls.model.doc_num + 1
-        num = cls.model.update(data).where(cls.model.id == kb_id).execute()
-        return num
+        
+        cls.model.update(**data).where(cls.model.id == kb_id).execute()
+        return True
 
     @classmethod
     @DB.connection_context()
