@@ -12,8 +12,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { BlurTextarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
 import { PlusOutlined } from '@ant-design/icons';
 import { useUpdateNodeInternals } from '@xyflow/react';
@@ -23,6 +22,7 @@ import { ChevronsUpDown, X } from 'lucide-react';
 import {
   ChangeEventHandler,
   FocusEventHandler,
+  memo,
   useCallback,
   useEffect,
   useState,
@@ -104,7 +104,7 @@ const NameInput = ({
   );
 };
 
-const FormSet = ({ nodeId, index }: IProps & { index: number }) => {
+const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
   const form = useFormContext();
   const { t } = useTranslate('flow');
   const buildCategorizeToOptions = useBuildFormSelectOptions(
@@ -152,13 +152,13 @@ const FormSet = ({ nodeId, index }: IProps & { index: number }) => {
           <FormItem>
             <FormLabel>{t('description')}</FormLabel>
             <FormControl>
-              <Textarea {...field} rows={3} />
+              <BlurTextarea {...field} rows={3} />
             </FormControl>
             <FormMessage />
           </FormItem>
         )}
       />
-      <FormField
+      {/* <FormField
         control={form.control}
         name={buildFieldName('examples')}
         render={({ field }) => (
@@ -170,8 +170,8 @@ const FormSet = ({ nodeId, index }: IProps & { index: number }) => {
             <FormMessage />
           </FormItem>
         )}
-      />
-      <FormField
+      /> */}
+      {/* <FormField
         control={form.control}
         name={buildFieldName('to')}
         render={({ field }) => (
@@ -202,10 +202,12 @@ const FormSet = ({ nodeId, index }: IProps & { index: number }) => {
             <FormMessage />
           </FormItem>
         )}
-      />
+      /> */}
     </section>
   );
 };
+
+const FormSet = memo(InnerFormSet);
 
 const DynamicCategorize = ({ nodeId }: IProps) => {
   const updateNodeInternals = useUpdateNodeInternals();
@@ -219,6 +221,8 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
   const handleAdd = () => {
     append({
       name: humanId(),
+      description: '',
+      // examples: [],
     });
     if (nodeId) updateNodeInternals(nodeId);
   };
@@ -226,7 +230,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
   return (
     <div className="flex flex-col gap-4 ">
       {fields.map((field, index) => (
-        <Collapsible key={field.id}>
+        <Collapsible key={field.id} defaultOpen>
           <div className="flex items-center justify-between space-x-4">
             <h4 className="font-bold">
               {form.getValues(`items.${index}.name`)}
@@ -262,4 +266,4 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
   );
 };
 
-export default DynamicCategorize;
+export default memo(DynamicCategorize);

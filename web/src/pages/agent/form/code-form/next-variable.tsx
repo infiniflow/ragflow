@@ -8,7 +8,7 @@ import {
   FormItem,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
+import { BlurInput } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
@@ -58,10 +58,10 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
               render={({ field }) => (
                 <FormItem className="w-2/5">
                   <FormControl>
-                    <Input
+                    <BlurInput
                       {...field}
                       placeholder={t('common.pleaseInput')}
-                    ></Input>
+                    ></BlurInput>
                   </FormControl>
                   <FormMessage />
                 </FormItem>

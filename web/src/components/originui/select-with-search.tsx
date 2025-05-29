@@ -1,7 +1,14 @@
 'use client';
 
 import { CheckIcon, ChevronDownIcon } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useId, useState } from 'react';
+import {
+  Fragment,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+} from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -72,11 +79,10 @@ export type SelectWithSearchFlagProps = {
   onChange?(value: string): void;
 };
 
-export function SelectWithSearch({
-  value: val = '',
-  onChange,
-  options = countries,
-}: SelectWithSearchFlagProps) {
+export const SelectWithSearch = forwardRef<
+  React.ElementRef<typeof Button>,
+  SelectWithSearchFlagProps
+>(({ value: val = '', onChange, options = countries }, ref) => {
   const id = useId();
   const [open, setOpen] = useState<boolean>(false);
   const [value, setValue] = useState<string>('');
@@ -102,6 +108,7 @@ export function SelectWithSearch({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          ref={ref}
           className="bg-background hover:bg-background border-input w-full justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px]"
         >
           {value ? (
@@ -160,4 +167,4 @@ export function SelectWithSearch({
       </PopoverContent>
     </Popover>
   );
-}
+});
