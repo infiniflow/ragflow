@@ -124,15 +124,26 @@ export function useFormConfigMap() {
         presencePenaltyEnabled: true,
         frequencyPenaltyEnabled: true,
         maxTokensEnabled: true,
+        items: [],
       },
       schema: z.object({
         parameter: z.string().optional(),
         ...LlmSettingSchema,
-        message_history_window_size: z.number(),
+        message_history_window_size: z.coerce.number(),
         items: z.array(
-          z.object({
-            name: z.string().min(1, t('flow.nameMessage')).trim(),
-          }),
+          z
+            .object({
+              name: z.string().min(1, t('flow.nameMessage')).trim(),
+              description: z.string().optional(),
+              // examples: z
+              //   .array(
+              //     z.object({
+              //       value: z.string(),
+              //     }),
+              //   )
+              //   .optional(),
+            })
+            .optional(),
         ),
       }),
     },
@@ -180,6 +191,12 @@ export function useFormConfigMap() {
         arguments: z.array(
           z.object({ name: z.string(), component_id: z.string() }),
         ),
+        return: z.union([
+          z
+            .array(z.object({ name: z.string(), component_id: z.string() }))
+            .optional(),
+          z.object({ name: z.string(), component_id: z.string() }),
+        ]),
       }),
     },
     [Operator.WaitingDialogue]: {
