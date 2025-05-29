@@ -7,6 +7,7 @@ import { needsSingleStepDebugging } from '../../utils';
 import NodeDropdown from './dropdown';
 import { NextNodePopover } from './popover';
 
+import { memo } from 'react';
 import { RunTooltip } from '../../flow-tooltip';
 interface IProps {
   id: string;
@@ -37,7 +38,7 @@ export function RunStatus({ id, name, label }: IProps) {
   );
 }
 
-const NodeHeader = ({
+const InnerNodeHeader = ({
   label,
   id,
   name,
@@ -69,5 +70,7 @@ const NodeHeader = ({
     </section>
   );
 };
+
+const NodeHeader = memo(InnerNodeHeader);
 
 export default NodeHeader;
