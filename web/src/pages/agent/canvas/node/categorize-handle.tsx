@@ -1,6 +1,6 @@
 import { Handle, Position } from '@xyflow/react';
 
-import React from 'react';
+import React, { memo } from 'react';
 import styles from './index.less';
 
 const DEFAULT_HANDLE_STYLE = {
@@ -37,4 +37,4 @@ const CategorizeHandle = ({ top, right, id, children }: IProps) => {
   );
 };
 
-export default CategorizeHandle;
+export default memo(CategorizeHandle);
