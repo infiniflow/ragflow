@@ -11,6 +11,7 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get, isPlainObject, lowerFirst } from 'lodash';
+import omit from 'lodash/omit';
 import { Play, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
@@ -22,6 +23,7 @@ import { useHandleFormValuesChange } from '../hooks/use-watch-form-change';
 import OperatorIcon from '../operator-icon';
 import {
   buildCategorizeListFromObject,
+  convertToObjectArray,
   needsSingleStepDebugging,
 } from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
@@ -53,7 +55,7 @@ const FormSheet = ({
   const OperatorForm = currentFormMap.component ?? EmptyContent;
 
   const form = useForm({
-    defaultValues: currentFormMap.defaultValues,
+    values: currentFormMap.defaultValues,
     resolver: zodResolver(currentFormMap.schema),
   });
 
@@ -73,22 +75,35 @@ const FormSheet = ({
   );
 
   useEffect(() => {
-    if (visible && !form.formState.isDirty) {
+    if (visible) {
       if (node?.id !== previousId.current) {
         form.reset();
         form.clearErrors();
       }
 
+      const formData = node?.data?.form;
+
       if (operatorName === Operator.Categorize) {
         const items = buildCategorizeListFromObject(
           get(node, 'data.form.category_description', {}),
         );
-        const formData = node?.data?.form;
         if (isPlainObject(formData)) {
           //   form.setFieldsValue({ ...formData, items });
           console.info('xxx');
-          form.reset({ ...formData, items });
+          const nextValues = {
+            ...omit(formData, 'category_description'),
+            items,
+          };
+          // Object.entries(nextValues).forEach(([key, value]) => {
+          //   form.setValue(key, value, { shouldDirty: false });
+          // });
+          form.reset(nextValues);
         }
+      } else if (operatorName === Operator.Message) {
+        form.reset({
+          ...formData,
+          content: convertToObjectArray(formData.content),
+        });
       } else {
         // form.setFieldsValue(node?.data?.form);
         form.reset(node?.data?.form);
@@ -134,7 +149,7 @@ const FormSheet = ({
             <span>{t(`${lowerFirst(operatorName)}Description`)}</span>
           </section>
         </SheetHeader>
-        <section className="pt-4">
+        <section className="pt-4 overflow-auto max-h-[85vh]">
           {visible && (
             <FlowFormContext.Provider value={node}>
               <OperatorForm

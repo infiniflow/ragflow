@@ -41,7 +41,7 @@ RAGFlow offers multiple chunking template to facilitate chunking files of differ
 
 | **Template** | Description                                                           | File format                                                                                   |
 |--------------|-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
-| General      | Files are consecutively chunked based on a preset chunk token number. | DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
+| General      | Files are consecutively chunked based on a preset chunk token number. | MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
 | Q&A          |                                                                       | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
 | Resume       | Enterprise edition only. You can also try it out on demo.ragflow.io.  | DOCX, PDF, TXT                                                                                |
 | Manual       |                                                                       | PDF                                                                                           |
@@ -68,7 +68,7 @@ The following embedding models can be deployed locally:
 - maidalun1020/bce-embedding-base_v1
 
 :::danger IMPORTANT
-Please note these two embedding models support both English and Chinese. If your knowledge base contains other languages, the performance may be COMPROMISED.
+These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
 ### Upload file

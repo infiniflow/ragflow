@@ -5,7 +5,7 @@ slug: /use_tag_sets
 
 # Use tag set
 
-Use a tag set to tag chunks in your datasets.
+Use a tag set to auto-tag chunks in your datasets.
 
 ---
 
