@@ -74,7 +74,7 @@ const FormSheet = ({
   );
 
   useEffect(() => {
-    if (visible && !form.formState.isDirty) {
+    if (visible) {
       if (node?.id !== previousId.current) {
         form.reset();
         form.clearErrors();
