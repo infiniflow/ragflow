@@ -23,7 +23,6 @@ from .switch import Switch, SwitchParam
 from .message import Message, MessageParam
 from .iteration import Iteration, IterationParam
 from .iterationitem import IterationItem, IterationItemParam
-from .code import Code, CodeParam
 from .fillup import UserFillUp, UserFillUpParam
 
 

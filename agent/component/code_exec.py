@@ -18,8 +18,8 @@ from abc import ABC
 from enum import Enum
 from typing import Optional
 
+import json_repair
 from pydantic import BaseModel, Field, field_validator
-
 from agent.component.base import ComponentBase, ComponentParamBase
 from api import settings
 
@@ -55,7 +55,7 @@ class CodeExecutionRequest(BaseModel):
         raise ValueError(f"Unsupported language: {v}")
 
 
-class CodeParam(ComponentParamBase):
+class CodeExecParam(ComponentParamBase):
     """
     Define the code sandbox component parameters.
     """
@@ -63,68 +63,58 @@ class CodeParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.lang = "python"
-        self.script = ""
-        self.arguments = []
-        self.address = f"http://{settings.SANDBOX_HOST}:9385/run"
-        self.enable_network = True
+        self.script = "def main(arg1: str, arg2: str) -> dict: return {\"result\": arg1 + arg2}"
+        self.arguments = {"arg1": None, "arg2": None}
+        self.outputs = {"result": {"value": "", "type": "string"}}
 
     def check(self):
         self.check_valid_value(self.lang, "Support languages", ["python", "python3", "nodejs", "javascript"])
         self.check_defined_type(self.enable_network, "Enable network", ["bool"])
 
 
-class Code(ComponentBase, ABC):
-    component_name = "Code"
+class CodeExec(ComponentBase, ABC):
+    component_name = "CodeExec"
 
-    def _run(self, history, **kwargs):
+    async def _invoke(self, **kwargs):
         arguments = {}
-        for input in self._param.arguments:
-            assert "@" in input["component_id"], "Each code argument should bind to a specific compontent"
-            component_id = input["component_id"].split("@")[0]
-            refered_component_key = input["component_id"].split("@")[1]
-            refered_component = self._canvas.get_component(component_id)["obj"]
+        for k, v in self._param.arguments.items():
+            arguments[k] = self._canvas.get_variable_value(v) if v else None
 
-            for param in refered_component._param.query:
-                if param["key"] == refered_component_key:
-                    if "value" in param:
-                        arguments[input["name"]] = param["value"]
-
-        return self._execute_code(
+        self._execute_code(
             language=self._param.lang,
             code=self._param.script,
-            arguments=arguments,
-            address=self._param.address,
-            enable_network=self._param.enable_network,
+            arguments=arguments
         )
 
-    def _execute_code(self, language: str, code: str, arguments: dict, address: str, enable_network: bool):
+    def _execute_code(self, language: str, code: str, arguments: dict):
         import requests
 
         try:
             code_b64 = self._encode_code(code)
             code_req = CodeExecutionRequest(code_b64=code_b64, language=language, arguments=arguments).model_dump()
         except Exception as e:
-            return Code.be_output("**Error**: construct code request error: " + str(e))
+            self.set_output("_ERROR", "construct code request error: " + str(e))
 
         try:
-            resp = requests.post(url=address, json=code_req, timeout=10)
+            resp = requests.post(url=f"http://{settings.SANDBOX_HOST}:9385/run", json=code_req, timeout=10)
             body = resp.json()
             if body:
-                stdout = body.get("stdout")
                 stderr = body.get("stderr")
-                return Code.be_output(stdout or stderr)
+                if stderr:
+                    self.set_output("_ERROR", stderr)
+                    return
+
+                for k,v in json_repair.loads(body.get("stdout")).items():
+                    if k not in self._param.outputs:
+                        continue
+                    self.set_output(k ,v)
             else:
-                return Code.be_output("**Error**: There is no response from sanbox")
+                self.set_output("_ERROR", "There is no response from sanbox")
 
         except Exception as e:
-            return Code.be_output("**Error**: Internal error in sanbox: " + str(e))
+            self.set_output("_ERROR", "construct code request error: " + str(e))
 
     def _encode_code(self, code: str) -> str:
         return base64.b64encode(code.encode("utf-8")).decode("utf-8")
 
-    def get_input_elements(self):
-        elements = []
-        for input in self._param.arguments:
-            cpn_id = input["component_id"]
-            elements.append({"key": cpn_id, "name": input["name"]})
-        return elements
+
