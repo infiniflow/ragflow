@@ -993,17 +993,7 @@ wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/af/03/4d69b8d64b39096a721808a349199ca5d7989acf2177e270d15e6f82c356/Crawl4AI-0.3.8-py3-none-any.whl", hash = "sha256:aa19165440c32b667b7325c166d68b00a99375b09e3a7db929d3873064d5ef4f" },
 ]
 
-[[package]]
-name = "croniter"
-version = "1.4.1"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-dependencies = [
-    { name = "python-dateutil" },
-]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/96/56/f8500161d9ab57ea5ad29c203b85989f87af13a367b3178ade0cd34d8d3a/croniter-1.4.1.tar.gz", hash = "sha256:1a6df60eacec3b7a0aa52a8f2ef251ae3dd2a7c7c8b9874e73e791636d55a361" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/f2/91/e5ae454da8200c6eb6cf94ca05d799b51e2cb2cc458a7737aebc0c5a21bb/croniter-1.4.1-py2.py3-none-any.whl", hash = "sha256:9595da48af37ea06ec3a9f899738f1b2c1c13da3c38cea606ef7cd03ea421128" },
-]
+
 
 [[package]]
 name = "cryptography"
@@ -4845,7 +4835,6 @@ dependencies = [
     { name = "cn2an" },
     { name = "cohere" },
     { name = "crawl4ai" },
-    { name = "croniter" },
     { name = "dashscope" },
     { name = "datrie" },
     { name = "debugpy" },
@@ -4981,7 +4970,6 @@ requires-dist = [
     { name = "cn2an", specifier = "==0.5.22" },
     { name = "cohere", specifier = "==5.6.2" },
     { name = "crawl4ai", specifier = "==0.3.8" },
-    { name = "croniter", specifier = "==1.4.1" },
     { name = "dashscope", specifier = "==1.20.11" },
     { name = "datrie", specifier = "==0.8.2" },
     { name = "debugpy", specifier = ">=1.8.13" },

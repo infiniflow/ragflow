@@ -151,4 +151,6 @@ export default {
   toggleSchedule: `${api_host}/canvas/schedule/toggle`,
   deleteSchedule: `${api_host}/canvas/schedule/delete`,
   getFrequencyOptions: `${api_host}/canvas/schedule/frequency-options`,
+  getScheduleHistory: `${api_host}/canvas/schedule/history`,
+  getScheduleStats: `${api_host}/canvas/schedule/stats`,
 };

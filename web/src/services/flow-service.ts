@@ -24,6 +24,8 @@ const {
   toggleSchedule,
   deleteSchedule,
   getFrequencyOptions,
+  getScheduleHistory,
+  getScheduleStats,
 } = api;
 
 const methods = {
@@ -109,6 +111,14 @@ const methods = {
   },
   getFrequencyOptions: {
     url: getFrequencyOptions,
+    method: 'get',
+  },
+  getScheduleHistory: {
+    url: getScheduleHistory,
+    method: 'get',
+  },
+  getScheduleStats: {
+    url: getScheduleStats,
     method: 'get',
   },
 } as const;

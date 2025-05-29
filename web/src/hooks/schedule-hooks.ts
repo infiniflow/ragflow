@@ -136,3 +136,43 @@ export const useDeleteSchedule = () => {
 
   return { deleteSchedule: mutateAsync, loading: isPending };
 };
+
+export const useFetchScheduleHistory = (scheduleId: string, limit = 20) => {
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['scheduleHistory', scheduleId, limit],
+    queryFn: async () => {
+      const { data } = await flowService.getScheduleHistory(
+        {
+          limit,
+        },
+        scheduleId,
+      );
+      return data?.data ?? [];
+    },
+    enabled: !!scheduleId,
+  });
+
+  return {
+    history: data ?? [],
+    loading: isLoading,
+    refetch,
+  };
+};
+
+export const useFetchScheduleStats = (scheduleId: string) => {
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['scheduleStats', scheduleId],
+    queryFn: async () => {
+      const { data } = await flowService.getScheduleStats({}, scheduleId);
+      return data?.data ?? {};
+    },
+    enabled: !!scheduleId,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  return {
+    stats: data ?? {},
+    loading: isLoading,
+    refetch,
+  };
+};
