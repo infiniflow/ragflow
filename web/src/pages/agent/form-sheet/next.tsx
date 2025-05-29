@@ -11,6 +11,7 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get, isPlainObject, lowerFirst } from 'lodash';
+import omit from 'lodash/omit';
 import { Play, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
@@ -54,7 +55,7 @@ const FormSheet = ({
   const OperatorForm = currentFormMap.component ?? EmptyContent;
 
   const form = useForm({
-    defaultValues: currentFormMap.defaultValues,
+    values: currentFormMap.defaultValues,
     resolver: zodResolver(currentFormMap.schema),
   });
 
@@ -89,10 +90,16 @@ const FormSheet = ({
         if (isPlainObject(formData)) {
           //   form.setFieldsValue({ ...formData, items });
           console.info('xxx');
-          form.reset({ ...formData, items });
+          const nextValues = {
+            ...omit(formData, 'category_description'),
+            items,
+          };
+          // Object.entries(nextValues).forEach(([key, value]) => {
+          //   form.setValue(key, value, { shouldDirty: false });
+          // });
+          form.reset(nextValues);
         }
-      }
-      if (operatorName === Operator.Message) {
+      } else if (operatorName === Operator.Message) {
         form.reset({
           ...formData,
           content: convertToObjectArray(formData.content),
