@@ -1,5 +1,6 @@
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
+import { ModelVariableType } from '@/constants/knowledge';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { AgentDialogueMode, Operator } from '../constant';
@@ -115,8 +116,17 @@ export function useFormConfigMap() {
     },
     [Operator.Categorize]: {
       component: CategorizeForm,
-      defaultValues: { message_history_window_size: 1 },
+      defaultValues: {
+        parameter: ModelVariableType.Precise,
+        message_history_window_size: 1,
+        temperatureEnabled: true,
+        topPEnabled: true,
+        presencePenaltyEnabled: true,
+        frequencyPenaltyEnabled: true,
+        maxTokensEnabled: true,
+      },
       schema: z.object({
+        parameter: z.string().optional(),
         ...LlmSettingSchema,
         message_history_window_size: z.number(),
         items: z.array(
