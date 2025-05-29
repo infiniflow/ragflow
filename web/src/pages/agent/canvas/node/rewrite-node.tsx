@@ -4,11 +4,12 @@ import { IRewriteNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
 import { get } from 'lodash';
+import { memo } from 'react';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-export function RewriteNode({
+function InnerRewriteNode({
   id,
   data,
   isConnectable = true,
@@ -55,3 +56,5 @@ export function RewriteNode({
     </section>
   );
 }
+
+export const RewriteNode = memo(InnerRewriteNode);

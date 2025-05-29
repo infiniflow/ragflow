@@ -14,7 +14,7 @@ import {
   SidebarHeader,
   SidebarMenu,
 } from '@/components/ui/sidebar';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import {
   AgentOperatorList,
   Operator,
@@ -77,7 +77,7 @@ function OperatorCollapsible({
   );
 }
 
-export function AgentSidebar() {
+function InnerAgentSidebar() {
   const agentOperatorList = useMemo(() => {
     return componentMenuList.filter((x) =>
       AgentOperatorList.some((y) => y === x.name),
@@ -108,3 +108,5 @@ export function AgentSidebar() {
     </Sidebar>
   );
 }
+
+export const AgentSidebar = memo(InnerAgentSidebar);

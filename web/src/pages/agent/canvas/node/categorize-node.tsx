@@ -5,12 +5,13 @@ import { Handle, NodeProps, Position } from '@xyflow/react';
 import { Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
+import { memo } from 'react';
 import { RightHandleStyle } from './handle-icon';
 import { useBuildCategorizeHandlePositions } from './hooks';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-export function CategorizeNode({
+export function InnerCategorizeNode({
   id,
   data,
   selected,
@@ -66,3 +67,5 @@ export function CategorizeNode({
     </section>
   );
 }
+
+export const CategorizeNode = memo(InnerCategorizeNode);

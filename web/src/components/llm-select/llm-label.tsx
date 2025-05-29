@@ -1,4 +1,5 @@
 import { getLLMIconName, getLlmNameAndFIdByLlmId } from '@/utils/llm-util';
+import { memo } from 'react';
 import { LlmIcon } from '../svg-icon';
 
 interface IProps {
@@ -24,4 +25,4 @@ const LLMLabel = ({ value }: IProps) => {
   );
 };
 
-export default LLMLabel;
+export default memo(LLMLabel);

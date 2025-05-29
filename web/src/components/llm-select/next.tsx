@@ -1,7 +1,7 @@
 import { LlmModelType } from '@/constants/knowledge';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { forwardRef, useState } from 'react';
+import { forwardRef, memo, useState } from 'react';
 import { LlmSettingFieldItems } from '../llm-setting-items/next';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectTrigger, SelectValue } from '../ui/select';
@@ -14,7 +14,7 @@ interface IProps {
   disabled?: boolean;
 }
 
-export const NextLLMSelect = forwardRef<
+const NextInnerLLMSelect = forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   IProps
 >(({ value, disabled }, ref) => {
@@ -52,4 +52,6 @@ export const NextLLMSelect = forwardRef<
   );
 });
 
-NextLLMSelect.displayName = 'LLMSelect';
+NextInnerLLMSelect.displayName = 'LLMSelect';
+
+export const NextLLMSelect = memo(NextInnerLLMSelect);

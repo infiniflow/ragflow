@@ -18,7 +18,7 @@ import { RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 
 // TODO: do not allow other nodes to connect to this node
-function Node({ selected, data }: NodeProps<IBeginNode>) {
+function InnerBeginNode({ selected, data }: NodeProps<IBeginNode>) {
   const { t } = useTranslation();
   const query: BeginQuery[] = get(data, 'form.query', []);
   const { theme } = useTheme();
@@ -72,4 +72,4 @@ function Node({ selected, data }: NodeProps<IBeginNode>) {
   );
 }
 
-export const BeginNode = memo(Node);
+export const BeginNode = memo(InnerBeginNode);
