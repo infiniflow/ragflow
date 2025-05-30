@@ -42,6 +42,7 @@ def set_conversation():
     conv_id = req.get("conversation_id")
     is_new = req.get("is_new")
     name = req.get("name", "New conversation")
+    req["user_id"] = current_user.id
 
     if len(name) > 255:
         name = name[0:255]
@@ -64,7 +65,7 @@ def set_conversation():
         e, dia = DialogService.get_by_id(req["dialog_id"])
         if not e:
             return get_data_error_result(message="Dialog not found")
-        conv = {"id": conv_id, "dialog_id": req["dialog_id"], "name": name, "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]}
+        conv = {"id": conv_id, "dialog_id": req["dialog_id"], "name": name, "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}],"user_id": current_user.id}
         ConversationService.save(**conv)
         return get_json_result(data=conv)
     except Exception as e:
