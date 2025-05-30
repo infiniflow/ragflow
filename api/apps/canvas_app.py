@@ -20,6 +20,7 @@ from flask_login import login_required, current_user
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
+from api.db.services.schedule_agent_service import ScheduleAgentService
 from api.settings import RetCode
 from api.utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
@@ -27,14 +28,14 @@ from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken
 import time
-
-@manager.route('/templates', methods=['GET'])  # noqa: F821
+import logging
+@manager.route('/templates', methods=['GET'])  # type: ignore # noqa: F821
 @login_required
 def templates():
     return get_json_result(data=[c.to_dict() for c in CanvasTemplateService.get_all()])
 
 
-@manager.route('/list', methods=['GET'])  # noqa: F821
+@manager.route('/list', methods=['GET'])  # type: ignore # noqa: F821
 @login_required
 def canvas_list():
     return get_json_result(data=sorted([c.to_dict() for c in \
@@ -42,7 +43,7 @@ def canvas_list():
                            )
 
 
-@manager.route('/rm', methods=['POST'])  # noqa: F821
+@manager.route('/rm', methods=['POST'])  # type: ignore # noqa: F821
 @validate_request("canvas_ids")
 @login_required
 def rm():
@@ -55,7 +56,7 @@ def rm():
     return get_json_result(data=True)
 
 
-@manager.route('/set', methods=['POST'])  # noqa: F821
+@manager.route('/set', methods=['POST'])  # type: ignore # noqa: F821
 @validate_request("dsl", "title")
 @login_required
 def save():
@@ -84,7 +85,7 @@ def save():
  
 
 
-@manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821
+@manager.route('/get/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
 @login_required
 def get(canvas_id):
     e, c = UserCanvasService.get_by_tenant_id(canvas_id)
@@ -92,7 +93,7 @@ def get(canvas_id):
         return get_data_error_result(message="canvas not found.")
     return get_json_result(data=c)
 
-@manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
+@manager.route('/getsse/<canvas_id>', methods=['GET'])  # type: ignore # type: ignore # noqa: F821
 def getsse(canvas_id):
     token = request.headers.get('Authorization').split()
     if len(token) != 2:
@@ -107,7 +108,7 @@ def getsse(canvas_id):
     return get_json_result(data=c.to_dict())
 
 
-@manager.route('/completion', methods=['POST'])  # noqa: F821
+@manager.route('/completion', methods=['POST'])  # type: ignore # noqa: F821
 @validate_request("id")
 @login_required
 def run():
@@ -189,7 +190,7 @@ def run():
         return get_json_result(data={"answer": final_ans["content"], "reference": final_ans.get("reference", [])})
 
 
-@manager.route('/reset', methods=['POST'])  # noqa: F821
+@manager.route('/reset', methods=['POST'])  # type: ignore # noqa: F821
 @validate_request("id")
 @login_required
 def reset():
@@ -212,7 +213,7 @@ def reset():
         return server_error_response(e)
 
 
-@manager.route('/input_elements', methods=['GET'])  # noqa: F821
+@manager.route('/input_elements', methods=['GET'])  # type: ignore # noqa: F821
 @login_required
 def input_elements():
     cvs_id = request.args.get("id")
@@ -232,7 +233,7 @@ def input_elements():
         return server_error_response(e)
 
 
-@manager.route('/debug', methods=['POST'])  # noqa: F821
+@manager.route('/debug', methods=['POST'])  # type: ignore # noqa: F821
 @validate_request("id", "component_id", "params")
 @login_required
 def debug():
@@ -256,7 +257,7 @@ def debug():
         return server_error_response(e)
 
 
-@manager.route('/test_db_connect', methods=['POST'])  # noqa: F821
+@manager.route('/test_db_connect', methods=['POST'])  # type: ignore # noqa: F821
 @validate_request("db_type", "database", "username", "host", "port", "password")
 @login_required
 def test_db_connect():
@@ -291,7 +292,7 @@ def test_db_connect():
     except Exception as e:
         return server_error_response(e)
 #api get list version dsl of canvas
-@manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
+@manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # type: ignore # noqa: F821
 @login_required
 def getlistversion(canvas_id):
     try:
@@ -300,7 +301,7 @@ def getlistversion(canvas_id):
     except Exception as e:
         return get_data_error_result(message=f"Error getting history files: {e}")
 #api get version dsl of canvas
-@manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
+@manager.route('/getversion/<version_id>', methods=['GET'])  # type: ignore # noqa: F821
 @login_required
 def getversion( version_id):
     try:
@@ -310,7 +311,7 @@ def getversion( version_id):
             return get_json_result(data=version.to_dict())
     except Exception as e:
         return get_json_result(data=f"Error getting history file: {e}")
-@manager.route('/listteam', methods=['GET'])  # noqa: F821
+@manager.route('/listteam', methods=['GET']) # type: ignore # noqa: F821
 @login_required
 def list_kbs():
     keywords = request.args.get("keywords", "")
@@ -326,7 +327,7 @@ def list_kbs():
         return get_json_result(data={"kbs": kbs, "total": total})
     except Exception as e:
         return server_error_response(e)
-@manager.route('/setting', methods=['POST'])  # noqa: F821
+@manager.route('/setting', methods=['POST'])  # type: ignore # noqa: F821
 @validate_request("id", "title", "permission")
 @login_required
 def setting():
@@ -349,3 +350,272 @@ def setting():
             code=RetCode.OPERATING_ERROR)
     num= UserCanvasService.update_by_id(req["id"], flow)
     return get_json_result(data=num)
+
+@manager.route('/schedule/create', methods=['POST'])  # type: ignore # noqa: F821
+@validate_request("canvas_id", "name", "frequency_type")
+@login_required
+def create_schedule():
+    req = request.json
+    req["tenant_id"] = current_user.id  # Using user_id as tenant_id for simplicity
+    req["created_by"] = current_user.id
+    req["id"] = get_uuid()
+    
+    try:
+        # Validate schedule data
+        ScheduleAgentService.validate_schedule_data(**req)
+        
+        # Check if canvas exists and user has permission
+        e, canvas = UserCanvasService.get_by_id(req["canvas_id"])
+        if not e:
+            return get_data_error_result(message="Canvas not found")
+            
+        if not UserCanvasService.query(user_id=current_user.id, id=req["canvas_id"]):
+            return get_json_result(
+                data=False, message='Only owner of canvas authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+        
+        # Handle execute_date conversion - only date part
+        if req.get('execute_date') and isinstance(req['execute_date'], str):
+            from datetime import datetime
+            # Parse date string (YYYY-MM-DD format) and convert to datetime with midnight time
+            date_str = req['execute_date'].split('T')[0] # Remove time part if present
+            req['execute_date'] = datetime.strptime(date_str, '%Y-%m-%d').date()
+        
+        schedule = ScheduleAgentService.create_schedule(**req)
+        return get_json_result(data=schedule.to_dict() if hasattr(schedule, 'to_dict') else schedule)
+        
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/schedule/update/<schedule_id>', methods=['PUT'])  # type: ignore # noqa: F821
+@validate_request("frequency_type")
+@login_required
+def update_schedule(schedule_id):
+    req = request.json
+    
+    try:
+        ScheduleAgentService.validate_schedule_data(**req)
+
+        e, schedule = ScheduleAgentService.get_by_id(schedule_id)
+        if not e:
+            return get_data_error_result(message="Schedule not found")
+            
+        if schedule.created_by != current_user.id:
+            return get_json_result(
+                data=False, message='Only owner of schedule authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+        ScheduleAgentService.validate_schedule_data(**req)
+        result = ScheduleAgentService.update_by_id(schedule_id, req)
+        
+        if result:
+            logging.info(f"[CANVAS_APP] Successfully updated schedule {schedule_id}")
+        else:
+            logging.error(f"[CANVAS_APP] Failed to update schedule {schedule_id}")
+            
+        return get_json_result(data=True)
+        
+    except ValueError as e:
+        return get_data_error_result(message=str(e))
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/schedule/frequency-options', methods=['GET'])  # type: ignore # noqa: F821
+@login_required
+def get_frequency_options():
+    """Get available frequency options and their configurations"""
+    options = {
+        "frequency_types": [
+            {
+                "value": "once",
+                "label": "One Time",
+                "description": "Execute once at a specific date and time",
+                "required_fields": ["execute_date", "execute_time"]
+            },
+            {
+                "value": "daily",
+                "label": "Daily",
+                "description": "Execute every day at a specific time",
+                "required_fields": ["execute_time"]
+            },
+            {
+                "value": "weekly",
+                "label": "Weekly", 
+                "description": "Execute on specific days of the week",
+                "required_fields": ["days_of_week", "execute_time"]
+            },
+            {
+                "value": "monthly",
+                "label": "Monthly",
+                "description": "Execute on a specific day of each month",
+                "required_fields": ["day_of_month", "execute_time"]
+            }
+        ],
+        "days_of_week": [
+            {"value": 1, "label": "Monday"},
+            {"value": 2, "label": "Tuesday"},
+            {"value": 3, "label": "Wednesday"},
+            {"value": 4, "label": "Thursday"},
+            {"value": 5, "label": "Friday"},
+            {"value": 6, "label": "Saturday"},
+            {"value": 7, "label": "Sunday"}
+        ],
+        "time_format": "HH:MM:SS",
+        "date_format": "ISO 8601 (YYYY-MM-DDTHH:MM:SS.sssZ)"
+    }
+    
+    return get_json_result(data=options)
+
+@manager.route('/schedule/list', methods=['GET'])  # type: ignore # noqa: F821
+@login_required
+def list_schedules():
+    """Get schedules list with pagination and search"""
+    try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 20))
+        keywords = request.args.get('keywords', '')
+        canvas_id = request.args.get('canvas_id', '')
+        
+        # Get schedules created by current user
+        schedules, total = ScheduleAgentService.get_schedules_paginated(
+            created_by=current_user.id,
+            canvas_id=canvas_id,
+            keywords=keywords,
+            page=page,
+            page_size=page_size
+        )
+        
+        # Convert to dict and add canvas info
+        schedule_list = []
+        for schedule in schedules:
+            schedule_dict = schedule.to_dict() if hasattr(schedule, 'to_dict') else schedule.__dict__['__data__']
+            
+            # Get canvas title for display
+            try:
+                e, canvas = UserCanvasService.get_by_id(schedule_dict['canvas_id'])
+                if e:
+                    schedule_dict['canvas_title'] = canvas.title
+                else:
+                    schedule_dict['canvas_title'] = 'Unknown Canvas'
+            except Exception:
+                schedule_dict['canvas_title'] = 'Unknown Canvas'
+            
+            schedule_list.append(schedule_dict)
+        
+        return get_json_result(data={
+            "schedules": schedule_list,
+            "total": total,
+            "page": page,
+            "page_size": page_size
+        })
+        
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/schedule/toggle/<schedule_id>', methods=['POST'])  # type: ignore # noqa: F821
+@login_required
+def toggle_schedule(schedule_id):
+    """Toggle schedule enabled status"""
+    try:
+        e, schedule = ScheduleAgentService.get_by_id(schedule_id)
+        if not e:
+            return get_data_error_result(message="Schedule not found")
+            
+        if schedule.created_by != current_user.id:
+            return get_json_result(
+                data=False, message='Only owner of schedule authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+        
+        # Toggle enabled status
+        new_enabled = not schedule.enabled
+        ScheduleAgentService.update_by_id(schedule_id, {'enabled': new_enabled})
+        
+        return get_json_result(data={'enabled': new_enabled})
+        
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/schedule/delete/<schedule_id>', methods=['DELETE'])  # type: ignore # noqa: F821
+@login_required
+def delete_schedule(schedule_id):
+    """Delete a schedule"""
+    try:
+        e, schedule = ScheduleAgentService.get_by_id(schedule_id)
+        if not e:
+            return get_data_error_result(message="Schedule not found")
+            
+        if schedule.created_by != current_user.id:
+            return get_json_result(
+                data=False, message='Only owner of schedule authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+        
+        # Delete the schedule
+        ScheduleAgentService.delete_by_id(schedule_id)
+        
+        return get_json_result(data=True)
+        
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/schedule/history/<schedule_id>', methods=['GET'])  # type: ignore # noqa: F821
+@login_required
+def get_schedule_history(schedule_id):
+    """Get execution history for a schedule"""
+    try:
+        e, schedule = ScheduleAgentService.get_by_id(schedule_id)
+        if not e:
+            return get_data_error_result(message="Schedule not found")
+            
+        if schedule.created_by != current_user.id:
+            return get_json_result(
+                data=False, message='Only owner of schedule authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+        
+        limit = int(request.args.get('limit', 20))
+        history = ScheduleAgentService.get_schedule_execution_history(schedule_id, limit)
+        
+        # Convert to dict
+        history_list = []
+        for run in history:
+            run_dict = run.to_dict() if hasattr(run, 'to_dict') else run.__dict__['__data__']
+            
+       
+            
+            history_list.append(run_dict)
+        
+        return get_json_result(data=history_list)
+        
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route('/schedule/stats/<schedule_id>', methods=['GET'])  # type: ignore # noqa: F821
+@login_required
+def get_schedule_stats(schedule_id):
+    """Get execution statistics for a schedule"""
+    try:
+        e, schedule = ScheduleAgentService.get_by_id(schedule_id)
+        if not e:
+            return get_data_error_result(message="Schedule not found")
+            
+        if schedule.created_by != current_user.id:
+            return get_json_result(
+                data=False, message='Only owner of schedule authorized for this operation.',
+                code=RetCode.OPERATING_ERROR)
+        
+        stats = {
+            'total_runs': ScheduleAgentService._get_run_count(schedule_id, success_only=False),
+            'successful_runs': ScheduleAgentService._get_run_count(schedule_id, success_only=True),
+            'failed_runs': ScheduleAgentService._get_run_count(schedule_id, success_only=False) - ScheduleAgentService._get_run_count(schedule_id, success_only=True),
+            'last_successful_run': None,
+            'is_currently_running': ScheduleAgentService._is_currently_running(schedule_id)
+        }
+        
+        last_run = ScheduleAgentService._get_last_successful_run(schedule_id)
+        if last_run:
+            stats['last_successful_run'] = last_run.to_dict() if hasattr(last_run, 'to_dict') else last_run.__dict__['__data__']
+        
+        return get_json_result(data=stats)
+        
+    except Exception as e:
+        return server_error_response(e)
