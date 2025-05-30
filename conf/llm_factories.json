@@ -3196,6 +3196,12 @@
             "status": "1",
             "llm": [
                 {
+                    "llm_name": "voyage-multimodal-3",
+                    "tags": "TEXT EMBEDDING,Chat,IMAGE2TEXT,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
                     "llm_name": "voyage-large-2-instruct",
                     "tags": "TEXT EMBEDDING,16000",
                     "max_tokens": 16000,
