@@ -32,7 +32,6 @@ from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, Mark
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wraper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
-from rag.utils import num_tokens_from_string
 
 
 class Docx(DocxParser):
