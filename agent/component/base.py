@@ -381,7 +381,7 @@ class ComponentParamBase(ABC):
 class ComponentBase(ABC):
     component_name: str
     thread_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
-    variable_ref_patt = r"\{([a-z:0-9]+@[a-z0-9_.-]+|sys\.[a-z_]+)\}"
+    variable_ref_patt = r"\{([a-z:0-9]+@[a-z:0-9_.-]+|sys\.[a-z_]+)\}"
 
     def __str__(self):
         """
@@ -502,8 +502,10 @@ class ComponentBase(ABC):
     def debug(self, **kwargs):
         return self._invoke(**kwargs)
 
-    def get_parent(self) -> object:
-        pid = self._canvas.get_component(self._id)["parent_id"]
+    def get_parent(self) -> Union[object, None]:
+        pid = self._canvas.get_component(self._id).get("parent_id")
+        if not pid:
+            return
         return self._canvas.get_component(pid)["obj"]
 
     def get_upstream(self) -> List[str]:
@@ -514,7 +516,7 @@ class ComponentBase(ABC):
     def string_format(content: str, kv: dict[str, str]) -> str:
         for n, v in kv.items():
             content = re.sub(
-                r"\{%s\}" % re.escape(n), v, content
+                r"\{%s\}" % re.escape(n), re.escape(v), content
             )
         return content
 

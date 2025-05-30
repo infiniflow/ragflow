@@ -21,6 +21,7 @@ from typing import Any, Union
 
 import trio
 from agent.component import component_class
+from agent.component.base import ComponentBase
 from api.utils import get_uuid
 
 
@@ -199,7 +200,7 @@ class Canvas:
             async with trio.open_nursery() as nursery:
                 for i in range(f, t):
                     cpn = self.get_component_obj(self.path[i])
-                    if cpn.compnent_name.lower() in ["begin", "userfillup"]:
+                    if cpn.component_name.lower() in ["begin", "userfillup"]:
                         nursery.start_soon(lambda: cpn.invoke(inputs=kwargs.get("inputs", {})))
                     else:
                         nursery.start_soon(lambda: cpn.invoke(**cpn.get_input()))
@@ -223,7 +224,8 @@ class Canvas:
                         yield decorate("message", {"content": cpn["obj"].output("content")})
                     yield decorate("message_end", {})
 
-                yield decorate("node_finished",
+                if cpn["obj"].component_name.lower() != "iteration" or error:
+                    yield decorate("node_finished",
                                {
                                    "inputs": cpn["obj"].get_input(),
                                    "outputs": cpn["obj"].output(),
@@ -232,16 +234,29 @@ class Canvas:
                                    "elapsed_time": cpn["obj"].output("_elapsed_time"),
                                    "created_at": int(time.time()),
                                 })
-                if cpn["obj"].component_name.lower() in ["categorize", "switch"]:
+
+                if cpn["obj"].component_name.lower() == "iterationitem" and cpn["obj"].end():
+                    iter = cpn["obj"].get_parent()
+                    yield decorate("node_finished",
+                                   {
+                                       "inputs": iter.get_input(),
+                                       "outputs": iter.output(),
+                                       "component_id": iter._id,
+                                       "error": iter.error(),
+                                       "elapsed_time": iter.output("_elapsed_time"),
+                                       "created_at": int(time.time()),
+                                   })
+                    self.path.extend(self.get_component(cpn["parent_id"])["downstream"])
+                elif cpn["obj"].component_name.lower() in ["categorize", "switch"]:
                     self.path.extend(cpn["obj"].output("_next"))
+                elif cpn["obj"].component_name.lower() == "iteration":
+                    self.path.append(cpn["obj"].get_start())
                 else:
-                    for c in cpn["downstream"]:
-                        if c in self.path:
-                            continue
-                        self.path.append(c)
+                    self.path.extend(cpn["downstream"])
             if error:
                 break
             idx = to
+
             if any([self.get_component(c)["obj"].component_name.lower() == "userfillup" for c in self.path[idx:]]):
                 path = [c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() == "userfillup"]
                 path.extend([c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() != "userfillup"])
@@ -267,7 +282,7 @@ class Canvas:
     def get_component(self, cpn_id) -> Union[None, dict[str, Any]]:
         return self.components.get(cpn_id)
 
-    def get_component_obj(self, cpn_id) -> object:
+    def get_component_obj(self, cpn_id) -> ComponentBase:
         return self.components.get(cpn_id)["obj"]
 
     def is_reff(self, exp):

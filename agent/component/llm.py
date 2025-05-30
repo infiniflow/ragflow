@@ -134,6 +134,7 @@ class LLM(ComponentBase):
 
         if self._param.output_structure:
             prompt += "\nThe output MUST follow this JSON format:\n"+json.dumps(self._param.output_structure, ensure_ascii=False, indent=2)
+            prompt += "\nRedundant information is FORBIDDEN."
             for _ in range(self._param.retry_times+1):
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
                 error = ""
@@ -141,7 +142,7 @@ class LLM(ComponentBase):
                     ans = await trio.to_thread.run_sync(chat_mdl.chat, msg[0]["content"], msg[1:], self._param.gen_conf())
                 msg.pop(0)
                 if ans.find("**ERROR**") >= 0:
-                    logging.error(f"Extractor._chat got error. response: {ans}")
+                    logging.error(f"LLM response error: {ans}")
                     error = ans
                     continue
                 try:
@@ -164,10 +165,10 @@ class LLM(ComponentBase):
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
             error = ""
             async with self.thread_limiter:
-                ans = await trio.to_thread.run_sync(chat_mdl.chat_with_tools, msg[0]["content"], msg[1:], self._param.gen_conf())
+                ans = await trio.to_thread.run_sync(chat_mdl.chat, msg[0]["content"], msg[1:], self._param.gen_conf())
             msg.pop(0)
             if ans.find("**ERROR**") >= 0:
-                logging.error(f"Extractor._chat got error. response: {ans}")
+                logging.error(f"LLM response error: {ans}")
                 error = ans
                 continue
             self.set_output("content", ans)

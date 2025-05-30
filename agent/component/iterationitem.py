@@ -33,20 +33,39 @@ class IterationItem(ComponentBase, ABC):
         super().__init__(canvas, id, param)
         self._idx = 0
 
-    def _run(self, history, **kwargs):
+    async def _invoke(self, **kwargs):
         parent = self.get_parent()
-        ans = parent.get_input()
-        ans = parent._param.delimiter.join(ans["content"]) if "content" in ans else ""
-        ans = [a.strip() for a in ans.split(parent._param.delimiter)]
-        if not ans:
+        arr = self._canvas.get_variable_value(parent._param.items_ref)
+        if not isinstance(arr, list):
             self._idx = -1
-            return pd.DataFrame()
+            raise Exception(parent._param.items_ref + " must be an array, but its type is "+str(type(arr)))
 
-        df = pd.DataFrame([{"content": ans[self._idx]}])
+        self.set_output("result", arr[self._idx])
+        if self._idx > 0:
+            self.output_collation()
+
         self._idx += 1
-        if self._idx >= len(ans):
+        if self._idx >= len(arr):
             self._idx = -1
-        return df
+
+    def output_collation(self):
+        pid = self.get_parent()._id
+        for cid in self._canvas.components.keys():
+            obj = self._canvas.get_component_obj(cid)
+            p = obj.get_parent()
+            if not p:
+                continue
+            if p._id != pid:
+                continue
+
+            if p.component_name.lower() in ["categorize", "message", "switch", "userfillup", "interationitem"]:
+                continue
+
+            res = p.output(cid)
+            if not res:
+                res = []
+            res.append(obj.output())
+            p.set_output(cid, res)
 
     def end(self):
         return self._idx == -1

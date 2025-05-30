@@ -66,7 +66,7 @@ class Message(ComponentBase):
         s = 0
         rand_cnt = random.choice(self._param.content)
         all_content = ""
-        for r in re.finditer(r"\{([a-z:0-9]+@[a-z0-9_.-]+|sys\.[a-z_]+)\}", rand_cnt, flags=re.DOTALL):
+        for r in re.finditer(self.variable_ref_patt, rand_cnt, flags=re.DOTALL):
             all_content += rand_cnt[s: r.start()]
             yield rand_cnt[s: r.start()]
             s = r.end()
