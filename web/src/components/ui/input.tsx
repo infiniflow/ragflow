@@ -67,4 +67,46 @@ const SearchInput = (props: InputProps) => {
   );
 };
 
+type Value = string | readonly string[] | number | undefined;
+
+export const InnerBlurInput = React.forwardRef<
+  HTMLInputElement,
+  InputProps & { value: Value; onChange(value: Value): void }
+>(({ value, onChange, ...props }, ref) => {
+  const [val, setVal] = React.useState<Value>();
+
+  const handleChange: React.ChangeEventHandler<HTMLInputElement> =
+    React.useCallback((e) => {
+      setVal(e.target.value);
+    }, []);
+
+  const handleBlur: React.FocusEventHandler<HTMLInputElement> =
+    React.useCallback(
+      (e) => {
+        onChange?.(e.target.value);
+      },
+      [onChange],
+    );
+
+  React.useEffect(() => {
+    setVal(value);
+  }, [value]);
+
+  return (
+    <Input
+      {...props}
+      value={val}
+      onBlur={handleBlur}
+      onChange={handleChange}
+      ref={ref}
+    ></Input>
+  );
+});
+
+if (process.env.NODE_ENV !== 'production') {
+  InnerBlurInput.whyDidYouRender = true;
+}
+
+export const BlurInput = React.memo(InnerBlurInput);
+
 export { ExpandedInput, Input, SearchInput };
