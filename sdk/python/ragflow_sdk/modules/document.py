@@ -71,11 +71,13 @@ class Document(Base):
         res = self.get(f'/datasets/{self.dataset_id}/documents/{self.id}/chunks', data)
         res = res.json()
         if res.get("code") == 0:
-            chunks = []
-            for data in res["data"].get("chunks"):
-                chunk = Chunk(self.rag, data)
-                chunks.append(chunk)
-            return chunks
+            chunks = [Chunk(self.rag, data) for data in res["data"].get("chunks", res["data"]) if isinstance(data, dict)]
+            return {
+                "total": res["data"]["total"],
+                "page": res["data"]["page"],
+                "page_size": res["data"]["page_size"],
+                "chunks": chunks
+            }
         raise Exception(res.get("message"))
 
     def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = []):

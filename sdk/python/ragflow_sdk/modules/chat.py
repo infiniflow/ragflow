@@ -73,15 +73,18 @@ class Chat(Base):
         raise Exception(res["message"])
 
     def list_sessions(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
-                      id: str = None, name: str = None) -> list[Session]:
+                      id: str = None, name: str = None):
         res = self.get(f'/chats/{self.id}/sessions',
                        {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
         res = res.json()
         if res.get("code") == 0:
-            result_list = []
-            for data in res["data"]:
-                result_list.append(Session(self.rag, data))
-            return result_list
+            sessions = [Session(self.rag, data) for data in res["data"].get("sessions", res["data"]) if isinstance(data, dict)]
+            return {
+                "total": res["data"]["total"],
+                "page": res["data"]["page"],
+                "page_size": res["data"]["page_size"],
+                "sessions": sessions
+            }
         raise Exception(res["message"])
 
     def delete_sessions(self, ids: list[str] | None = None):

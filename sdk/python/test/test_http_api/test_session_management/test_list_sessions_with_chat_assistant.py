@@ -59,7 +59,13 @@ class TestSessionsWithChatAssistantList:
         res = list_session_with_chat_assistants(get_http_api_auth, chat_assistant_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
-            assert len(res["data"]) == expected_page_size
+            assert "total" in res["data"]
+            assert "page" in res["data"]
+            assert "page_size" in res["data"]
+            assert isinstance(res["data"]["total"], int)
+            assert isinstance(res["data"]["page"], int)
+            assert isinstance(res["data"]["page_size"], int)
+            assert len(res["data"]["sessions"]) == expected_page_size
         else:
             assert res["message"] == expected_message
 
@@ -81,7 +87,13 @@ class TestSessionsWithChatAssistantList:
         res = list_session_with_chat_assistants(get_http_api_auth, chat_assistant_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
-            assert len(res["data"]) == expected_page_size
+            assert "total" in res["data"]
+            assert "page" in res["data"]
+            assert "page_size" in res["data"]
+            assert isinstance(res["data"]["total"], int)
+            assert isinstance(res["data"]["page"], int)
+            assert isinstance(res["data"]["page_size"], int)
+            assert len(res["data"]["sessions"]) == expected_page_size
         else:
             assert res["message"] == expected_message
 
@@ -89,10 +101,10 @@ class TestSessionsWithChatAssistantList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"], "update_time", True)), ""),
-            ({"orderby": "name", "desc": "False"}, 0, lambda r: (is_sorted(r["data"], "name", False)), ""),
+            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"]["sessions"], "create_time", True)), ""),
+            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"]["sessions"], "create_time", True)), ""),
+            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["sessions"], "update_time", True)), ""),
+            ({"orderby": "name", "desc": "False"}, 0, lambda r: (is_sorted(r["data"]["sessions"], "name", False)), ""),
             pytest.param({"orderby": "unknown"}, 102, 0, "orderby should be create_time or update_time", marks=pytest.mark.skip(reason="issues/")),
         ],
     )
@@ -118,14 +130,14 @@ class TestSessionsWithChatAssistantList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"desc": None}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": True}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": "false"}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
-            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
-            ({"desc": False}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
-            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"], "update_time", False)), ""),
+            ({"desc": None}, 0, lambda r: (is_sorted(r["data"]["sessions"], "create_time", True)), ""),
+            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"]["sessions"], "create_time", True)), ""),
+            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"]["sessions"], "create_time", True)), ""),
+            ({"desc": True}, 0, lambda r: (is_sorted(r["data"]["sessions"], "create_time", True)), ""),
+            ({"desc": "false"}, 0, lambda r: (is_sorted(r["data"]["sessions"], "create_time", False)), ""),
+            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"]["sessions"], "create_time", False)), ""),
+            ({"desc": False}, 0, lambda r: (is_sorted(r["data"]["sessions"], "create_time", False)), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"]["sessions"], "update_time", False)), ""),
             pytest.param({"desc": "unknown"}, 102, 0, "desc should be true or false", marks=pytest.mark.skip(reason="issues/")),
         ],
     )
@@ -163,9 +175,9 @@ class TestSessionsWithChatAssistantList:
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["name"] != "session_with_chat_assistant_1":
-                assert len(res["data"]) == expected_num
+                assert len(res["data"]["sessions"]) == expected_num
             else:
-                assert res["data"][0]["name"] == params["name"]
+                assert res["data"]["sessions"][0]["name"] == params["name"]
         else:
             assert res["message"] == expected_message
 
@@ -190,9 +202,9 @@ class TestSessionsWithChatAssistantList:
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["id"] != session_ids[0]:
-                assert len(res["data"]) == expected_num
+                assert len(res["data"]["sessions"]) == expected_num
             else:
-                assert res["data"][0]["id"] == params["id"]
+                assert res["data"]["sessions"][0]["id"] == params["id"]
         else:
             assert res["message"] == expected_message
 
@@ -216,7 +228,7 @@ class TestSessionsWithChatAssistantList:
         res = list_session_with_chat_assistants(get_http_api_auth, chat_assistant_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
-            assert len(res["data"]) == expected_num
+            assert len(res["data"]["sessions"]) == expected_num
         else:
             assert res["message"] == expected_message
 
@@ -234,7 +246,7 @@ class TestSessionsWithChatAssistantList:
         params = {"a": "b"}
         res = list_session_with_chat_assistants(get_http_api_auth, chat_assistant_id, params=params)
         assert res["code"] == 0
-        assert len(res["data"]) == 5
+        assert len(res["data"]["sessions"]) == 5
 
     @pytest.mark.p3
     def test_list_chats_after_deleting_associated_chat_assistant(self, get_http_api_auth, add_sessions_with_chat_assistant):
