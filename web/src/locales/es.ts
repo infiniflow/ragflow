@@ -151,7 +151,7 @@ export default {
       cancel: 'Cancelar',
       rerankModel: 'Modelo de reordenamiento',
       rerankPlaceholder: 'Por favor selecciona',
-      rerankTip: `Si está vacío, se utilizan los embeddings de la consulta y los fragmentos para calcular la similitud coseno del vector. De lo contrario, se usa la puntuación de reordenamiento en lugar de la similitud coseno del vector.`,
+      rerankTip: `Opcional. Si se deja vacío, RAGFlow utilizará una combinación de similitud ponderada de palabras clave y similitud ponderada del coseno vectorial; si se selecciona un modelo de reordenamiento, una puntuación ponderada de reordenamiento reemplazará la similitud ponderada del coseno vectorial. Tenga en cuenta que usar un modelo de reordenamiento aumentará significativamente el tiempo de respuesta del sistema. Si desea usar un modelo de reordenamiento, asegúrese de usar un reranker SaaS; si prefiere un modelo de reordenamiento desplegado localmente, asegúrese de iniciar RAGFlow con docker-compose-gpu.yml.`,
       topK: 'Top-K',
       topKTip: `Utilizado junto con el Rerank model, esta configuración define el número de fragmentos de texto que se enviarán al modelo reranking especificado.`,
       delimiter: `Delimitadores para segmentación de texto`,
