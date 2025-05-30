@@ -11,7 +11,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
+import { BlurInput, Input } from '@/components/ui/input';
 import { BlurTextarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
 import { PlusOutlined } from '@ant-design/icons';
@@ -55,7 +55,7 @@ const getOtherFieldValues = (
         x !== form.getValues(`${formListName}.${index}.${latestField}`),
     );
 
-const NameInput = ({
+const InnerNameInput = ({
   value,
   onChange,
   otherNames,
@@ -104,6 +104,8 @@ const NameInput = ({
   );
 };
 
+const NameInput = memo(InnerNameInput);
+
 const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
   const form = useFormContext();
   const { t } = useTranslate('flow');
@@ -128,7 +130,8 @@ const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
           <FormItem>
             <FormLabel>{t('categoryName')}</FormLabel>
             <FormControl>
-              <NameInput
+              <BlurInput {...field}></BlurInput>
+              {/* <NameInput
                 {...field}
                 otherNames={getOtherFieldValues(form, 'items', index, 'name')}
                 validate={(error?: string) => {
@@ -139,7 +142,7 @@ const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
                     form.clearErrors(fieldName);
                   }
                 }}
-              ></NameInput>
+              ></NameInput> */}
             </FormControl>
             <FormMessage />
           </FormItem>
