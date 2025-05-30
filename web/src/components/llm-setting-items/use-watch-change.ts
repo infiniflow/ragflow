@@ -23,17 +23,13 @@ export function useHandleFreedomChange() {
         updateNodeForm(node?.id, nextValues);
       }
 
-      console.info('xx:', node);
+      for (const key in values) {
+        if (Object.prototype.hasOwnProperty.call(values, key)) {
+          const element = values[key];
 
-      // form.reset({ ...currentValues, ...values });
-
-      // for (const key in values) {
-      //   if (Object.prototype.hasOwnProperty.call(values, key)) {
-      //     const element = values[key];
-
-      //     form.setValue(key, element);
-      //   }
-      // }
+          form.setValue(key, element);
+        }
+      }
     },
     [form, node, updateNodeForm],
   );

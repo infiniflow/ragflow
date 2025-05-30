@@ -9,13 +9,36 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
-import { useFieldArray } from 'react-hook-form';
+import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { z } from 'zod';
 import { INextOperatorForm } from '../../interface';
+import { useValues } from './use-values';
+import { useWatchFormChange } from './use-watch-change';
 
-const MessageForm = ({ form }: INextOperatorForm) => {
+const MessageForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
+
+  const values = useValues(node);
+
+  const FormSchema = z.object({
+    content: z
+      .array(
+        z.object({
+          value: z.string(),
+        }),
+      )
+      .optional(),
+  });
+
+  const form = useForm({
+    defaultValues: values,
+    resolver: zodResolver(FormSchema),
+  });
+
+  useWatchFormChange(node?.id, form);
 
   const { fields, append, remove } = useFieldArray({
     name: 'content',
