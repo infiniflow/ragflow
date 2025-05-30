@@ -1,3 +1,4 @@
+import { FormContainer } from '@/components/form-container';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
@@ -25,6 +26,7 @@ const CategorizeForm = ({ node }: INextOperatorForm) => {
   const values = useValues(node);
 
   const FormSchema = z.object({
+    input: z.string().optional(),
     parameter: z.string().optional(),
     ...LlmSettingSchema,
     message_history_window_size: z.coerce.number(),
@@ -33,13 +35,13 @@ const CategorizeForm = ({ node }: INextOperatorForm) => {
         .object({
           name: z.string().min(1, t('flow.nameMessage')).trim(),
           description: z.string().optional(),
-          // examples: z
-          //   .array(
-          //     z.object({
-          //       value: z.string(),
-          //     }),
-          //   )
-          //   .optional(),
+          examples: z
+            .array(
+              z.object({
+                value: z.string(),
+              }),
+            )
+            .optional(),
         })
         .optional(),
     ),
@@ -60,23 +62,25 @@ const CategorizeForm = ({ node }: INextOperatorForm) => {
           e.preventDefault();
         }}
       >
-        <FormField
-          control={form.control}
-          name="input"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t('chat.modelTip')}>
-                {t('chat.input')}
-              </FormLabel>
-              <FormControl>
-                <SelectWithSearch {...field}></SelectWithSearch>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <FormContainer>
+          <FormField
+            control={form.control}
+            name="input"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel tooltip={t('chat.modelTip')}>
+                  {t('chat.input')}
+                </FormLabel>
+                <FormControl>
+                  <SelectWithSearch {...field}></SelectWithSearch>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-        <LargeModelFormField></LargeModelFormField>
+          <LargeModelFormField></LargeModelFormField>
+        </FormContainer>
         <MessageHistoryWindowSizeFormField
           useBlurInput
         ></MessageHistoryWindowSizeFormField>
