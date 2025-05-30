@@ -6,6 +6,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Handle, NodeProps, NodeResizeControl, Position } from '@xyflow/react';
 import { ListRestart } from 'lucide-react';
+import { memo } from 'react';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -43,7 +44,7 @@ const controlStyle = {
   cursor: 'nwse-resize',
 };
 
-export function IterationNode({
+export function InnerIterationNode({
   id,
   data,
   isConnectable = true,
@@ -98,7 +99,7 @@ export function IterationNode({
   );
 }
 
-export function IterationStartNode({
+function InnerIterationStartNode({
   isConnectable = true,
   selected,
 }: NodeProps<IIterationStartNode>) {
@@ -125,3 +126,7 @@ export function IterationStartNode({
     </section>
   );
 }
+
+export const IterationStartNode = memo(InnerIterationStartNode);
+
+export const IterationNode = memo(InnerIterationNode);

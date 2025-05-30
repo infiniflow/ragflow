@@ -37,18 +37,49 @@ export const useHandleFormValuesChange = (
     [updateNodeForm, id],
   );
 
-  const value = useWatch({ control: form?.control });
+  let values = useWatch({ control: form?.control });
 
-  console.log('🚀 ~ x:', value);
+  // console.log('🚀 ~ x:', values);
 
   useEffect(() => {
     // Manually triggered form updates are synchronized to the canvas
     if (id && form?.formState.isDirty) {
-      console.log('🚀 ~ useEffect ~ value:', value, operatorName);
+      values = form?.getValues();
+      let nextValues: any = values;
       // run(id, nextValues);
-      updateNodeForm(id, value);
+
+      const categoryDescriptionRegex = /items\.\d+\.name/g;
+
+      if (operatorName === Operator.Categorize) {
+        console.log('🚀 ~ useEffect ~ values:', values);
+        const categoryDescription = Array.isArray(values.items)
+          ? buildCategorizeObjectFromList(values.items)
+          : {};
+        if (categoryDescription) {
+          nextValues = {
+            ...omit(values, 'items'),
+            category_description: categoryDescription,
+          };
+        }
+      } else if (operatorName === Operator.Message) {
+        nextValues = {
+          ...values,
+          content: convertToStringArray(values.content),
+        };
+      }
+
+      updateNodeForm(id, nextValues);
     }
-  }, [form?.formState.isDirty, id, operatorName, updateNodeForm, value]);
+  }, [form?.formState.isDirty, id, operatorName, updateNodeForm, values]);
+
+  // useEffect(() => {
+  //   form?.subscribe({
+  //     formState: { values: true },
+  //     callback: ({ values }) => {
+  //       // console.info('subscribe', values);
+  //     },
+  //   });
+  // }, [form]);
 
   return { handleValuesChange };
 
