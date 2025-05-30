@@ -158,8 +158,8 @@ services:
       - ragflow
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-uroot", "-p${MYSQL_PASSWORD}"]
-      interval: 10s
-      timeout: 10s
+      interval: 20s
+      timeout: 20s
       retries: 3
     restart: on-failure
 
