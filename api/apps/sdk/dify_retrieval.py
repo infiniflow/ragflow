@@ -16,6 +16,7 @@
 from flask import request, jsonify
 
 from api.db import LLMType
+from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
@@ -70,12 +71,13 @@ def retrieval(tenant_id):
 
         records = []
         for c in ranks["chunks"]:
+            e, doc = DocumentService.get_by_id( c["doc_id"])
             c.pop("vector", None)
             records.append({
                 "content": c["content_with_weight"],
                 "score": c["similarity"],
                 "title": c["docnm_kwd"],
-                "metadata": {}
+                "metadata": doc.meta_fields
             })
 
         return jsonify({"records": records})
