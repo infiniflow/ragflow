@@ -123,6 +123,7 @@
     "@types/webpack-env": "^1.18.4",
     "@umijs/lint": "^4.1.1",
     "@umijs/plugins": "^4.1.0",
+    "@welldone-software/why-did-you-render": "^8.0.3",
     "cross-env": "^7.0.3",
     "html-loader": "^5.1.0",
     "husky": "^9.0.11",

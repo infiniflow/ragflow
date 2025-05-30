@@ -39,6 +39,15 @@ const AntLanguageMap = {
   de: deDE,
 };
 
+if (process.env.NODE_ENV === 'development') {
+  const whyDidYouRender = require('@welldone-software/why-did-you-render');
+  whyDidYouRender(React, {
+    trackAllPureComponents: true,
+    trackExtraHooks: [],
+    logOnDifferentValues: true,
+  });
+}
+
 const queryClient = new QueryClient();
 
 type Locale = ConfigProviderProps['locale'];
