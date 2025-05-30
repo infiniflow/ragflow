@@ -261,6 +261,51 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
   };
 };
 
+export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
+  testChunkAll: (...params: any[]) => void;
+} => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const { page, size: pageSize } = useSetPaginationParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['testChunkAll'], // This method is invalid
+    gcTime: 0,
+    mutationFn: async (values: any) => {
+      const { data } = await kbService.retrieval_test({
+        ...values,
+        kb_id: values.kb_id ?? knowledgeBaseId,
+        doc_ids: [],
+        page,
+        size: pageSize,
+      });
+      if (data.code === 0) {
+        const res = data.data;
+        return {
+          ...res,
+          documents: res.doc_aggs,
+        };
+      }
+      return (
+        data?.data ?? {
+          chunks: [],
+          documents: [],
+          total: 0,
+        }
+      );
+    },
+  });
+
+  return {
+    data: data ?? { chunks: [], documents: [], total: 0 },
+    loading,
+    testChunkAll: mutateAsync,
+  };
+};
+
 export const useChunkIsTesting = () => {
   return useIsMutating({ mutationKey: ['testChunk'] }) > 0;
 };
@@ -287,6 +332,30 @@ export const useSelectIsTestingSuccess = () => {
     },
   });
   return status.at(-1) === 'success';
+};
+
+export const useAllTestingSuccess = () => {
+  const status = useMutationState({
+    filters: { mutationKey: ['testChunkAll'] },
+    select: (mutation) => {
+      return mutation.state.status;
+    },
+  });
+  return status.at(-1) === 'success';
+};
+
+export const useAllTestingResult = (): ITestingResult => {
+  const data = useMutationState({
+    filters: { mutationKey: ['testChunkAll'] },
+    select: (mutation) => {
+      return mutation.state.data;
+    },
+  });
+  return (data.at(-1) ?? {
+    chunks: [],
+    documents: [],
+    total: 0,
+  }) as ITestingResult;
 };
 //#endregion
 
