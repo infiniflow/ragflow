@@ -11,7 +11,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { BlurInput, Input } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
 import { BlurTextarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
 import { PlusOutlined } from '@ant-design/icons';
@@ -30,6 +30,7 @@ import {
 import { UseFormReturn, useFieldArray, useFormContext } from 'react-hook-form';
 import { Operator } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
+import DynamicExample from './dynamic-example';
 
 interface IProps {
   nodeId?: string;
@@ -130,8 +131,7 @@ const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
           <FormItem>
             <FormLabel>{t('categoryName')}</FormLabel>
             <FormControl>
-              <BlurInput {...field}></BlurInput>
-              {/* <NameInput
+              <NameInput
                 {...field}
                 otherNames={getOtherFieldValues(form, 'items', index, 'name')}
                 validate={(error?: string) => {
@@ -142,7 +142,7 @@ const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
                     form.clearErrors(fieldName);
                   }
                 }}
-              ></NameInput> */}
+              ></NameInput>
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -161,51 +161,7 @@ const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
           </FormItem>
         )}
       />
-      {/* <FormField
-        control={form.control}
-        name={buildFieldName('examples')}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('examples')}</FormLabel>
-            <FormControl>
-              <Textarea {...field} rows={3} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      /> */}
-      {/* <FormField
-        control={form.control}
-        name={buildFieldName('to')}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('nextStep')}</FormLabel>
-            <FormControl>
-              <RAGFlowSelect
-                {...field}
-                allowClear
-                options={buildCategorizeToOptions(
-                  getOtherFieldValues(form, 'items', index, 'to'),
-                )}
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="index"
-        render={({ field }) => (
-          <FormItem className="hidden">
-            <FormLabel>{t('examples')}</FormLabel>
-            <FormControl>
-              <Input {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      /> */}
+      <DynamicExample name={buildFieldName('examples')}></DynamicExample>
     </section>
   );
 };
@@ -225,7 +181,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
     append({
       name: humanId(),
       description: '',
-      // examples: [],
+      examples: [{ value: '' }],
     });
     if (nodeId) updateNodeInternals(nodeId);
   };
