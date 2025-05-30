@@ -279,12 +279,13 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
 def tokenize_chunks_with_images(chunks, doc, eng, images):
     res = []
     # wrap up as es documents
-    for ck, image in zip(chunks, images):
+    for ii, (ck, image) in enumerate(zip(chunks, images)):
         if len(ck.strip()) == 0:
             continue
         logging.debug("-- {}".format(ck))
         d = copy.deepcopy(doc)
         d["image"] = image
+        add_positions(d, [[ii]*5])
         tokenize(d, ck, eng)
         res.append(d)
     return res
@@ -545,7 +546,7 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
             add_chunk(sub_sec, pos)
 
     return cks
-    
+
 
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？"):
     if not texts or len(texts) != len(images):
@@ -676,6 +677,8 @@ def get_delimiters(delimiters: str):
         s = t
     if s < len(delimiters):
         dels.extend(list(delimiters[s:]))
+
+    dels.sort(key=lambda x: -len(x))
     dels = [re.escape(d) for d in dels if d]
     dels = [d for d in dels if d]
     dels_pattern = "|".join(dels)
