@@ -545,7 +545,7 @@ def naive_merge(sections, chunk_token_num=128, delimiter="\n。；！？"):
             add_chunk(sub_sec, pos)
 
     return cks
-    
+
 
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？"):
     if not texts or len(texts) != len(images):
@@ -676,6 +676,8 @@ def get_delimiters(delimiters: str):
         s = t
     if s < len(delimiters):
         dels.extend(list(delimiters[s:]))
+
+    dels.sort(key=lambda x: -len(x))
     dels = [re.escape(d) for d in dels if d]
     dels = [d for d in dels if d]
     dels_pattern = "|".join(dels)
