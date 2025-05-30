@@ -47,7 +47,7 @@ def create():
         return get_data_error_result(message="Dataset name must be string.")
     if dataset_name == "":
         return get_data_error_result(message="Dataset name can't be empty.")
-    if len(dataset_name) >= DATASET_NAME_LIMIT:
+    if len(dataset_name.encode("utf-8")) >= DATASET_NAME_LIMIT:
         return get_data_error_result(
             message=f"Dataset name length is {len(dataset_name)} which is large than {DATASET_NAME_LIMIT}")
 
