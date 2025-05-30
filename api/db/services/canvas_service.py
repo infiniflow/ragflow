@@ -149,6 +149,7 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
         conv = {
             "id": session_id,
             "dialog_id": cvs.id,
+            "name": kwargs.get("name", "New conversation"),
             "user_id": kwargs.get("user_id", "") if isinstance(kwargs, dict) else "",
             "message": [{"role": "assistant", "content": canvas.get_prologue(), "created_at": time.time()}],
             "source": "agent",
@@ -285,6 +286,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
         conv = {
             "id": session_id,
             "dialog_id": cvs.id,
+            "name": kwargs.get("name", "New conversation"),
             "user_id": kwargs.get("user_id", "") if isinstance(kwargs, dict) else "",
             "message": [{"role": "assistant", "content": canvas.get_prologue(), "created_at": time.time()}],
             "source": "agent",
