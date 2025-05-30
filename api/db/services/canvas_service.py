@@ -173,6 +173,15 @@ def completion(tenant_id, agent_id, question, session_id=None, stream=True, **kw
             conv.reference = []
         conv.reference.append({"chunks": [], "doc_aggs": []})
 
+        query = canvas.get_preset_param()
+        if query:
+            for ele in query:
+                if kwargs.get(ele["key"]):
+                    ele["value"] = kwargs[ele["key"]]
+
+        conv.dsl = json.loads(str(canvas))
+        API4ConversationService.update_by_id(session_id, {"dsl": conv.dsl})
+
     final_ans = {"reference": [], "content": ""}
     if stream:
         try:
