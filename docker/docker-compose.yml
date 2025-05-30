@@ -1,3 +1,5 @@
+name: ragflow
+
 include:
   - ./docker-compose-base.yml
 
