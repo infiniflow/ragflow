@@ -28,7 +28,6 @@ import signal
 import sys
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 import threading
 import uuid
 
