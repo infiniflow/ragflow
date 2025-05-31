@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 import re
 from functools import partial
 from typing import Any
@@ -23,6 +24,8 @@ from api.db.services.conversation_service import structure_answer
 from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.db.services.mcp_server_service import MCPServerService
+from mcp_client import MCPToolCallSession, close_multiple_mcp_toolcall_sessions, mcp_tool_metadata_to_openai_tool
 from plugin import GlobalPluginManager
 from plugin.llm_tool_plugin import llm_tool_metadata_to_openai_tool
 from rag.llm.chat_model import ToolCallSession
@@ -56,6 +59,8 @@ class GenerateParam(ComponentParamBase):
         self.cite = True
         self.parameters = []
         self.llm_enabled_tools = []
+        self.llm_enabled_mcp_servers = []
+        self.mcp_server_variable_map = []
 
     def check(self):
         self.check_decimal_float(self.temperature, "[Generate] Temperature")
@@ -87,6 +92,16 @@ class Generate(ComponentBase):
     def get_dependent_components(self):
         inputs = self.get_input_elements()
         cpnts = set([i["key"] for i in inputs[1:] if i["key"].lower().find("answer") < 0 and i["key"].lower().find("begin") < 0])
+
+        mcp_server_inputs = [
+            m["component_id"]
+            for m in self._param.mcp_server_variable_map
+            if m.get("component_id") is not None and m["component_id"].lower().find("answer") < 0 and m["component_id"].lower().find("begin") < 0
+        ]
+
+        for cpn_id in mcp_server_inputs:
+            cpnts.add(cpn_id)
+
         return list(cpnts)
 
     def set_cite(self, retrieval_res, answer):
@@ -144,6 +159,30 @@ class Generate(ComponentBase):
                 continue
             res.append({"key": cpn_id, "name": cpn_nm})
             key_set.add(cpn_id)
+
+        for m in self._param.mcp_server_variable_map or []:
+            cpn_id = m.get("component_id")
+
+            if cpn_id is None:
+                continue
+
+            if cpn_id in key_set:
+                continue
+
+            if cpn_id.lower().find("begin@") == 0:
+                real_cpn_id, key = cpn_id.split("@")
+                for p in self._canvas.get_component(real_cpn_id)["obj"]._param.query:
+                    if p["key"] != key:
+                        continue
+                    res.append({"key": cpn_id, "name": p["name"]})
+                    key_set.add(cpn_id)
+            else:
+                cpn_nm = self._canvas.get_component_name(cpn_id)
+                if not cpn_nm:
+                    continue
+                res.append({"key": cpn_id, "name": cpn_nm})
+                key_set.add(cpn_id)
+
         return res
 
     def _run(self, history, **kwargs):
@@ -193,6 +232,49 @@ class Generate(ComponentBase):
                 kwargs[para["key"]] = "  - " + "\n - ".join([o if isinstance(o, str) else str(o) for o in out["content"]])
             self._param.inputs.append({"component_id": para["key"], "content": kwargs[para["key"]]})
 
+        mcp_toolcall_sessions: list[MCPToolCallSession] = []
+
+        if len(self._param.llm_enabled_mcp_servers) > 0:
+            for mcp_server_id in self._param.llm_enabled_mcp_servers:
+                found, mcp_server = MCPServerService.get_by_id(mcp_server_id)
+
+                if not found or mcp_server is None:
+                    logging.warning(f"MCP server {mcp_server_id} in component {self.component_name} does not exist, it will be skipped!")
+                    continue
+
+                mcp_server_variables = {}
+
+                for server_var in mcp_server.variables:
+                    target_key = f"{server_var['key']}@{mcp_server_id}"
+                    input_server_var = next(filter(lambda v: v["target"] == target_key, self._param.mcp_server_variable_map), None)
+
+                    if input_server_var is None:
+                        continue
+
+                    target_value: str
+
+                    if input_server_var["type"] == "reference":
+                        source_key = input_server_var["component_id"]
+                        target_value = kwargs.get(source_key, "")
+                    elif input_server_var["type"] == "input":
+                        target_value = input_server_var["value"]
+                    else:
+                        logging.warning(f"MCP server variable {target_key} has invalid type {input_server_var['type']}, will ignore this variable!")
+                        target_value = ""
+
+                    mcp_server_variables[server_var["key"]] = target_value
+
+                toolcall_session = MCPToolCallSession(mcp_server, mcp_server_variables)
+                tools = [mcp_tool_metadata_to_openai_tool(t) for t in toolcall_session.get_tools()]
+
+                if len(tools) > 0:
+                    chat_mdl.bind_tools(toolcall_session, tools)
+                else:
+                    logging.warning(f"MCP server {mcp_server_id} in component {self.component_name} does not have any tools, it will take no effect!")
+                    toolcall_session.close_sync()
+                
+                mcp_toolcall_sessions.append(toolcall_session)
+
         if retrieval_res:
             retrieval_res = pd.concat(retrieval_res, ignore_index=True)
         else:
@@ -223,7 +305,12 @@ class Generate(ComponentBase):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
         if len(msg) < 2:
             msg.append({"role": "user", "content": "Output: "})
-        ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
+
+        try:
+            ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
+        finally:
+            close_multiple_mcp_toolcall_sessions(mcp_toolcall_sessions)
+
         ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
         self._canvas.set_component_infor(self._id, {"prompt":msg[0]["content"],"messages":  msg[1:],"conf":  self._param.gen_conf()})
         if self._param.cite and "chunks" in retrieval_res.columns:
@@ -232,7 +319,7 @@ class Generate(ComponentBase):
 
         return Generate.be_output(ans)
 
-    def stream_output(self, chat_mdl, prompt, retrieval_res):
+    def stream_output(self, chat_mdl, prompt, retrieval_res, mcp_toolcall_sessions: list[MCPToolCallSession] = []):
         res = None
         if "empty_response" in retrieval_res.columns and not "".join(retrieval_res["content"]):
             empty_res = "\n- ".join([str(t) for t in retrieval_res["empty_response"] if str(t)])
@@ -250,10 +337,14 @@ class Generate(ComponentBase):
         if len(msg) < 2:
             msg.append({"role": "user", "content": "Output: "})
         answer = ""
-        for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
-            res = {"content": ans, "reference": []}
-            answer = ans
-            yield res
+
+        try:
+            for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
+                res = {"content": ans, "reference": []}
+                answer = ans
+                yield res
+        finally:
+            close_multiple_mcp_toolcall_sessions(mcp_toolcall_sessions)
 
         if self._param.cite and "chunks" in retrieval_res.columns:
             res = self.set_cite(retrieval_res, answer)
