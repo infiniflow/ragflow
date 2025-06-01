@@ -5,7 +5,7 @@ Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
 """
 import re
-from typing import Any, Callable
+from typing import Any
 from dataclasses import dataclass
 from graphrag.general.extractor import Extractor, ENTITY_EXTRACTION_MAX_GLEANINGS
 from graphrag.light.graph_prompt import PROMPTS
@@ -33,14 +33,10 @@ class GraphExtractor(Extractor):
         llm_invoker: CompletionLLM,
         language: str | None = "English",
         entity_types: list[str] | None = None,
-        get_entity: Callable | None = None,
-        set_entity: Callable | None = None,
-        get_relation: Callable | None = None,
-        set_relation: Callable | None = None,
         example_number: int = 2,
         max_gleanings: int | None = None,
     ):
-        super().__init__(llm_invoker, language, entity_types, get_entity, set_entity, get_relation, set_relation)
+        super().__init__(llm_invoker, language, entity_types)
         """Init method definition."""
         self._max_gleanings = (
             max_gleanings

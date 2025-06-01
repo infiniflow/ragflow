@@ -15,6 +15,8 @@
 #
 import logging
 import re
+import math
+from collections import OrderedDict
 from dataclasses import dataclass
 
 from rag.settings import TAG_FLD, PAGERANK_FLD
@@ -81,7 +83,7 @@ class Dealer:
         src = req.get("fields",
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
-                       "question_kwd", "question_tks",
+                       "question_kwd", "question_tks", "doc_type_kwd",
                        "available_int", "content_with_weight", PAGERANK_FLD, TAG_FLD])
         kwds = set([])
 
@@ -119,13 +121,17 @@ class Dealer:
 
                 # If result is empty, try again with lower min_match
                 if total == 0:
-                    matchText, _ = self.qryr.question(qst, min_match=0.1)
-                    filters.pop("doc_ids", None)
-                    matchDense.extra_options["similarity"] = 0.17
-                    res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
-                                                orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
-                    total = self.dataStore.getTotal(res)
-                    logging.debug("Dealer.search 2 TOTAL: {}".format(total))
+                    if filters.get("doc_id"):
+                        res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
+                        total = self.dataStore.getTotal(res)
+                    else:
+                        matchText, _ = self.qryr.question(qst, min_match=0.1)
+                        filters.pop("doc_id", None)
+                        matchDense.extra_options["similarity"] = 0.17
+                        res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
+                                                    orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
+                        total = self.dataStore.getTotal(res)
+                        logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:
                 kwds.add(k)
@@ -239,7 +245,7 @@ class Dealer:
             for c in cites[i]:
                 if c in seted:
                     continue
-                res += f" ##{c}$$"
+                res += f" [ID:{c}]"
                 seted.add(c)
 
         return res, seted
@@ -293,7 +299,7 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
-            content_ltks = sres.field[i][cfield].split()
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
@@ -348,17 +354,20 @@ class Dealer:
             return ranks
 
         RERANK_LIMIT = 64
-        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": page, "size": RERANK_LIMIT,
+        RERANK_LIMIT = int(RERANK_LIMIT//page_size + ((RERANK_LIMIT%page_size)/(page_size*1.) + 0.5)) * page_size if page_size>1 else 1
+        if RERANK_LIMIT < 1: ## when page_size is very large the RERANK_LIMIT will be 0.
+            RERANK_LIMIT = 1
+        req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": math.ceil(page_size*page/RERANK_LIMIT), "size": RERANK_LIMIT,
                "question": question, "vector": True, "topk": top,
                "similarity": similarity_threshold,
                "available_int": 1}
+
 
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
 
         sres = self.search(req, [index_name(tid) for tid in tenant_ids],
                            kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
-        ranks["total"] = sres.total
 
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
@@ -369,12 +378,19 @@ class Dealer:
             sim, tsim, vsim = self.rerank(
                 sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
                 rank_feature=rank_feature)
+        # Already paginated in search function
         idx = np.argsort(sim * -1)[(page - 1) * page_size:page * page_size]
 
 
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
+        if doc_ids:
+            similarity_threshold = 0
+            page_size = 30
+        sim_np = np.array(sim)
+        filtered_count = (sim_np >= similarity_threshold).sum()    
+        ranks["total"] = int(filtered_count) # Convert from np.int64 to Python int otherwise JSON serializable error
         for i in idx:
             if sim[i] < similarity_threshold:
                 break
@@ -401,6 +417,7 @@ class Dealer:
                 "term_similarity": tsim[i],
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": position_int,
+                "doc_type_kwd": chunk.get("doc_type_kwd", "")
             }
             if highlight and sres.highlight:
                 if id in sres.highlight:

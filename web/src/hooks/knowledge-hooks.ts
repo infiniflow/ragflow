@@ -7,7 +7,9 @@ import {
 } from '@/interfaces/database/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
+  deleteKnowledgeGraph,
   getKnowledgeGraph,
+  listDataset,
   listTag,
   removeTag,
   renameTag,
@@ -63,7 +65,7 @@ export const useFetchKnowledgeList = (
     initialData: [],
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
-      const { data } = await kbService.getList();
+      const { data } = await listDataset();
       const list = data?.data?.kbs ?? [];
       return shouldFilterListWithoutDocument
         ? list.filter((x: IKnowledge) => x.chunk_num > 0)
@@ -90,6 +92,7 @@ export const useInfiniteFetchKnowledgeList = () => {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const PageSize = 30;
+
   const {
     data,
     error,
@@ -101,7 +104,7 @@ export const useInfiniteFetchKnowledgeList = () => {
   } = useInfiniteQuery({
     queryKey: ['infiniteFetchKnowledgeList', debouncedSearchString],
     queryFn: async ({ pageParam }) => {
-      const { data } = await kbService.getList({
+      const { data } = await listDataset({
         page: pageParam,
         page_size: PageSize,
         keywords: debouncedSearchString,
@@ -138,7 +141,7 @@ export const useCreateKnowledge = () => {
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['createKnowledge'],
+    mutationKey: ['infiniteFetchKnowledgeList'],
     mutationFn: async (params: { id?: string; name: string }) => {
       const { data = {} } = await kbService.createKb(params);
       if (data.code === 0) {
@@ -179,7 +182,7 @@ export const useDeleteKnowledge = () => {
 
 //#region knowledge configuration
 
-export const useUpdateKnowledge = () => {
+export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const queryClient = useQueryClient();
   const {
@@ -190,12 +193,18 @@ export const useUpdateKnowledge = () => {
     mutationKey: ['saveKnowledge'],
     mutationFn: async (params: Record<string, any>) => {
       const { data = {} } = await kbService.updateKb({
-        kb_id: knowledgeBaseId,
+        kb_id: params?.kb_id ? params?.kb_id : knowledgeBaseId,
         ...params,
       });
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
-        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeDetail'] });
+        if (shouldFetchList) {
+          queryClient.invalidateQueries({
+            queryKey: ['fetchKnowledgeListByPage'],
+          });
+        } else {
+          queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeDetail'] });
+        }
       }
       return data;
     },
@@ -252,6 +261,51 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
   };
 };
 
+export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
+  testChunkAll: (...params: any[]) => void;
+} => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const { page, size: pageSize } = useSetPaginationParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['testChunkAll'], // This method is invalid
+    gcTime: 0,
+    mutationFn: async (values: any) => {
+      const { data } = await kbService.retrieval_test({
+        ...values,
+        kb_id: values.kb_id ?? knowledgeBaseId,
+        doc_ids: [],
+        page,
+        size: pageSize,
+      });
+      if (data.code === 0) {
+        const res = data.data;
+        return {
+          ...res,
+          documents: res.doc_aggs,
+        };
+      }
+      return (
+        data?.data ?? {
+          chunks: [],
+          documents: [],
+          total: 0,
+        }
+      );
+    },
+  });
+
+  return {
+    data: data ?? { chunks: [], documents: [], total: 0 },
+    loading,
+    testChunkAll: mutateAsync,
+  };
+};
+
 export const useChunkIsTesting = () => {
   return useIsMutating({ mutationKey: ['testChunk'] }) > 0;
 };
@@ -278,6 +332,30 @@ export const useSelectIsTestingSuccess = () => {
     },
   });
   return status.at(-1) === 'success';
+};
+
+export const useAllTestingSuccess = () => {
+  const status = useMutationState({
+    filters: { mutationKey: ['testChunkAll'] },
+    select: (mutation) => {
+      return mutation.state.status;
+    },
+  });
+  return status.at(-1) === 'success';
+};
+
+export const useAllTestingResult = (): ITestingResult => {
+  const data = useMutationState({
+    filters: { mutationKey: ['testChunkAll'] },
+    select: (mutation) => {
+      return mutation.state.data;
+    },
+  });
+  return (data.at(-1) ?? {
+    chunks: [],
+    documents: [],
+    total: 0,
+  }) as ITestingResult;
 };
 //#endregion
 
@@ -392,3 +470,28 @@ export function useFetchKnowledgeGraph() {
 
   return { data, loading };
 }
+
+export const useRemoveKnowledgeGraph = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['removeKnowledgeGraph'],
+    mutationFn: async () => {
+      const { data } = await deleteKnowledgeGraph(knowledgeBaseId);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchKnowledgeGraph'],
+        });
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, removeKnowledgeGraph: mutateAsync };
+};

@@ -42,6 +42,11 @@ from rag.utils.doc_store_conn import (
 
 logger = logging.getLogger('ragflow.infinity_conn')
 
+def field_keyword(field_name: str):
+        # The "docnm_kwd" field is always a string, not list.
+        if field_name == "source_id" or (field_name.endswith("_kwd") and field_name != "docnm_kwd" and field_name != "knowledge_graph_kwd"):
+            return True
+        return False
 
 def equivalent_condition_to_str(condition: dict, table_instance=None) -> str | None:
     assert "_id" not in condition
@@ -64,10 +69,24 @@ def equivalent_condition_to_str(condition: dict, table_instance=None) -> str | N
     for k, v in condition.items():
         if not isinstance(k, str) or k in ["kb_id"] or not v:
             continue
-        if isinstance(v, list):
+        if field_keyword(k):
+            if isinstance(v, list):
+                inCond = list()
+                for item in v:
+                    if isinstance(item, str):
+                        item = item.replace("'","''")
+                    inCond.append(f"filter_fulltext('{k}', '{item}')")
+                if inCond:
+                    strInCond = " or ".join(inCond)
+                    strInCond = f"({strInCond})"
+                    cond.append(strInCond)
+            else:
+                cond.append(f"filter_fulltext('{k}', '{v}')")
+        elif isinstance(v, list):
             inCond = list()
             for item in v:
                 if isinstance(item, str):
+                    item = item.replace("'","''")
                     inCond.append(f"'{item}'")
                 else:
                     inCond.append(str(item))
@@ -117,7 +136,7 @@ class InfinityConnection(DocStoreConnection):
         logger.info(f"Use Infinity {infinity_uri} as the doc engine.")
         for _ in range(24):
             try:
-                connPool = ConnectionPool(infinity_uri)
+                connPool = ConnectionPool(infinity_uri, max_size=32)
                 inf_conn = connPool.get_conn()
                 res = inf_conn.show_current_node()
                 if res.error_code == ErrorCode.OK and res.server_status in ["started", "alive"]:
@@ -480,9 +499,11 @@ class InfinityConnection(DocStoreConnection):
             assert "_id" not in d
             assert "id" in d
             for k, v in d.items():
-                if k in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd", "source_id"]:
-                    assert isinstance(v, list)
-                    d[k] = "###".join(v)
+                if field_keyword(k):
+                    if isinstance(v, list):
+                        d[k] = "###".join(v)
+                    else:
+                        d[k] = v
                 elif re.search(r"_feas$", k):
                     d[k] = json.dumps(v)
                 elif k == 'kb_id':
@@ -495,6 +516,8 @@ class InfinityConnection(DocStoreConnection):
                 elif k in ["page_num_int", "top_int"]:
                     assert isinstance(v, list)
                     d[k] = "_".join(f"{num:08x}" for num in v)
+                else:
+                    d[k] = v
 
             for n, vs in embedding_clmns:
                 if n in d:
@@ -523,15 +546,21 @@ class InfinityConnection(DocStoreConnection):
         table_instance = db_instance.get_table(table_name)
         #if "exists" in condition:
         #    del condition["exists"]
+        
+        clmns = {}
+        if table_instance:
+            for n, ty, de, _ in table_instance.show_columns().rows():
+                clmns[n] = (ty, de)
         filter = equivalent_condition_to_str(condition, table_instance)
+        removeValue = {}
         for k, v in list(newValue.items()):
-            if k in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd", "source_id"]:
-                assert isinstance(v, list)
-                newValue[k] = "###".join(v)
+            if field_keyword(k):
+                if isinstance(v, list):
+                    newValue[k] = "###".join(v)
+                else:
+                    newValue[k] = v
             elif re.search(r"_feas$", k):
                 newValue[k] = json.dumps(v)
-            elif k.endswith("_kwd") and isinstance(v, list):
-                newValue[k] = " ".join(v)
             elif k == 'kb_id':
                 if isinstance(newValue[k], list):
                     newValue[k] = newValue[k][0]  # since d[k] is a list, but we need a str
@@ -543,11 +572,42 @@ class InfinityConnection(DocStoreConnection):
                 assert isinstance(v, list)
                 newValue[k] = "_".join(f"{num:08x}" for num in v)
             elif k == "remove":
-                del newValue[k]
-                if v in [PAGERANK_FLD]:
-                    newValue[v] = 0
+                if isinstance(v, str):
+                    assert v in clmns, f"'{v}' should be in '{clmns}'."
+                    ty, de = clmns[v]
+                    if ty.lower().find("cha"):
+                        if not de:
+                            de = ""
+                    newValue[v] = de
+                else:
+                    for kk, vv in v.items():
+                        removeValue[kk] = vv
+                    del newValue[k]
+            else:
+                newValue[k] = v
+                
+        remove_opt = {}     # "[k,new_value]": [id_to_update, ...]
+        if removeValue:
+            col_to_remove = list(removeValue.keys())
+            row_to_opt = table_instance.output(col_to_remove + ['id']).filter(filter).to_df()
+            logger.debug(f"INFINITY search table {str(table_name)}, filter {filter}, result: {str(row_to_opt[0])}")
+            row_to_opt = self.getFields(row_to_opt, col_to_remove)
+            for id, old_v in row_to_opt.items():
+                for k, remove_v in removeValue.items():
+                    if remove_v in old_v[k]:
+                        new_v = old_v[k].copy()
+                        new_v.remove(remove_v)
+                        kv_key = json.dumps([k, new_v])
+                        if kv_key not in remove_opt:
+                            remove_opt[kv_key] = [id]
+                        else:
+                            remove_opt[kv_key].append(id)
 
         logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {newValue}.")
+        for update_kv, ids in remove_opt.items():
+            k, v = json.loads(update_kv)
+            table_instance.update(filter + " AND id in ({0})".format(",".join([f"'{id}'" for id in ids])), {k:"###".join(v)})
+                
         table_instance.update(filter, newValue)
         self.connPool.release_conn(inf_conn)
         return True
@@ -600,7 +660,7 @@ class InfinityConnection(DocStoreConnection):
 
         for column in res2.columns:
             k = column.lower()
-            if k in ["important_kwd", "question_kwd", "entities_kwd", "tag_kwd", "source_id"]:
+            if field_keyword(k):
                 res2[column] = res2[column].apply(lambda v:[kwd for kwd in v.split("###") if kwd])
             elif k == "position_int":
                 def to_position_int(v):

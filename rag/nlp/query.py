@@ -17,8 +17,9 @@
 import logging
 import json
 import re
-from rag.utils.doc_store_conn import MatchTextExpr
+from collections import defaultdict
 
+from rag.utils.doc_store_conn import MatchTextExpr
 from rag.nlp import rag_tokenizer, term_weight, synonym
 
 
@@ -70,12 +71,25 @@ class FulltextQueryer:
             txt = otxt
         return txt
 
+    @staticmethod
+    def add_space_between_eng_zh(txt):
+        # (ENG/ENG+NUM) + ZH
+        txt = re.sub(r'([A-Za-z]+[0-9]+)([\u4e00-\u9fa5]+)', r'\1 \2', txt)
+        # ENG + ZH
+        txt = re.sub(r'([A-Za-z])([\u4e00-\u9fa5]+)', r'\1 \2', txt)
+        # ZH + (ENG/ENG+NUM)
+        txt = re.sub(r'([\u4e00-\u9fa5]+)([A-Za-z]+[0-9]+)', r'\1 \2', txt)
+        txt = re.sub(r'([\u4e00-\u9fa5]+)([A-Za-z])', r'\1 \2', txt)
+        return txt
+
     def question(self, txt, tbl="qa", min_match: float = 0.6):
+        txt = FulltextQueryer.add_space_between_eng_zh(txt)
         txt = re.sub(
             r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
             " ",
             rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
         ).strip()
+        otxt = txt
         txt = FulltextQueryer.rmWWW(txt)
 
         if not self.isChinese(txt):
@@ -195,6 +209,8 @@ class FulltextQueryer:
 
         if qs:
             query = " OR ".join([f"({t})" for t in qs if t])
+            if not query:
+                query = otxt
             return MatchTextExpr(
                 self.query_fields, query, 100, {"minimum_should_match": min_match}
             ), keywords
@@ -212,12 +228,11 @@ class FulltextQueryer:
 
     def token_similarity(self, atks, btkss):
         def toDict(tks):
-            d = {}
             if isinstance(tks, str):
                 tks = tks.split()
-            for t, c in self.tw.weights(tks, preprocess=False):
-                if t not in d:
-                    d[t] = 0
+            d = defaultdict(int)
+            wts = self.tw.weights(tks, preprocess=False)
+            for i, (t, c) in enumerate(wts):
                 d[t] += c
             return d
 
@@ -233,11 +248,11 @@ class FulltextQueryer:
         s = 1e-9
         for k, v in qtwt.items():
             if k in dtwt:
-                s += v  # * dtwt[k]
+                s += v #* dtwt[k]
         q = 1e-9
         for k, v in qtwt.items():
-            q += v
-        return s / q
+            q += v #* v
+        return s/q #math.sqrt(3. * (s / q / math.log10( len(dtwt.keys()) + 512 )))
 
     def paragraph(self, content_tks: str, keywords: list = [], keywords_topn=30):
         if isinstance(content_tks, str):

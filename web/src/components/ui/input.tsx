@@ -12,7 +12,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       <input
         type={type}
         className={cn(
-          'flex h-10 w-full rounded-md border border-input bg-colors-background-inverse-weak px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+          'flex h-8 w-full rounded-md border border-input bg-colors-background-inverse-weak px-2 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}
         ref={ref}
@@ -28,7 +28,12 @@ export interface ExpandedInputProps extends Omit<InputProps, 'prefix'> {
   suffix?: React.ReactNode;
 }
 
-const ExpandedInput = ({ suffix, prefix, ...props }: ExpandedInputProps) => {
+const ExpandedInput = ({
+  suffix,
+  prefix,
+  className,
+  ...props
+}: ExpandedInputProps) => {
   return (
     <div className="relative">
       <span
@@ -39,7 +44,7 @@ const ExpandedInput = ({ suffix, prefix, ...props }: ExpandedInputProps) => {
         {prefix}
       </span>
       <Input
-        className={cn({ 'pr-10': suffix, 'pl-10': prefix })}
+        className={cn({ 'pr-8': !!suffix, 'pl-8': !!prefix }, className)}
         {...props}
       ></Input>
       <span
@@ -54,7 +59,54 @@ const ExpandedInput = ({ suffix, prefix, ...props }: ExpandedInputProps) => {
 };
 
 const SearchInput = (props: InputProps) => {
-  return <ExpandedInput suffix={<Search />} {...props}></ExpandedInput>;
+  return (
+    <ExpandedInput
+      prefix={<Search className="size-3.5" />}
+      {...props}
+    ></ExpandedInput>
+  );
 };
+
+type Value = string | readonly string[] | number | undefined;
+
+export const InnerBlurInput = React.forwardRef<
+  HTMLInputElement,
+  InputProps & { value: Value; onChange(value: Value): void }
+>(({ value, onChange, ...props }, ref) => {
+  const [val, setVal] = React.useState<Value>();
+
+  const handleChange: React.ChangeEventHandler<HTMLInputElement> =
+    React.useCallback((e) => {
+      setVal(e.target.value);
+    }, []);
+
+  const handleBlur: React.FocusEventHandler<HTMLInputElement> =
+    React.useCallback(
+      (e) => {
+        onChange?.(e.target.value);
+      },
+      [onChange],
+    );
+
+  React.useEffect(() => {
+    setVal(value);
+  }, [value]);
+
+  return (
+    <Input
+      {...props}
+      value={val}
+      onBlur={handleBlur}
+      onChange={handleChange}
+      ref={ref}
+    ></Input>
+  );
+});
+
+if (process.env.NODE_ENV !== 'production') {
+  InnerBlurInput.whyDidYouRender = true;
+}
+
+export const BlurInput = React.memo(InnerBlurInput);
 
 export { ExpandedInput, Input, SearchInput };

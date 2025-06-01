@@ -222,6 +222,9 @@ def update_doc(tenant_id, dataset_id, document_id):
             chunk_method:
               type: string
               description: Chunking method.
+            enabled:
+              type: boolean
+              description: Document status.
     responses:
       200:
         description: Document updated successfully.
@@ -231,6 +234,10 @@ def update_doc(tenant_id, dataset_id, document_id):
     req = request.json
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
+    e, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not e:
+        return get_error_data_result(
+            message="Can't find this knowledgebase!")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message="The dataset doesn't own the document.")
@@ -299,27 +306,27 @@ def update_doc(tenant_id, dataset_id, document_id):
             return get_error_data_result(
                 f"`chunk_method` {req['chunk_method']} doesn't exist"
             )
-        if doc.parser_id.lower() == req["chunk_method"].lower():
-            return get_result()
 
         if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
             return get_error_data_result(message="Not supported yet!")
 
-        e = DocumentService.update_by_id(
-            doc.id,
-            {
-                "parser_id": req["chunk_method"],
-                "progress": 0,
-                "progress_msg": "",
-                "run": TaskStatus.UNSTART.value,
-            },
-        )
-        if not e:
-            return get_error_data_result(message="Document not found!")
-        req["parser_config"] = get_parser_config(
-            req["chunk_method"], req.get("parser_config")
-        )
-        DocumentService.update_parser_config(doc.id, req["parser_config"])
+        if doc.parser_id.lower() != req["chunk_method"].lower():
+            e = DocumentService.update_by_id(
+                doc.id,
+                {
+                    "parser_id": req["chunk_method"],
+                    "progress": 0,
+                    "progress_msg": "",
+                    "run": TaskStatus.UNSTART.value,
+                },
+            )
+            if not e:
+                return get_error_data_result(message="Document not found!")
+        if not req.get("parser_config"):
+            req["parser_config"] = get_parser_config(
+                req["chunk_method"], req.get("parser_config")
+            )
+            DocumentService.update_parser_config(doc.id, req["parser_config"])
         if doc.token_num > 0:
             e = DocumentService.increment_chunk_num(
                 doc.id,
@@ -332,7 +339,23 @@ def update_doc(tenant_id, dataset_id, document_id):
                 return get_error_data_result(message="Document not found!")
             settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
 
+    if "enabled" in req:
+        status = int(req["enabled"])
+        if doc.status != req["enabled"]:
+            try:
+                if not DocumentService.update_by_id(
+                        doc.id, {"status": str(status)}):
+                    return get_error_data_result(
+                        message="Database error (Document update)!")
+
+                settings.docStoreConn.update({"doc_id": doc.id}, {"available_int": status},
+                                             search.index_name(kb.tenant_id), doc.kb_id)
+                return get_result(data=True)
+            except Exception as e:
+                return server_error_response(e)
+
     return get_result()
+
 
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
@@ -833,6 +856,12 @@ def list_chunks(tenant_id, dataset_id, document_id):
         required: false
         default: 30
         description: Number of items per page.
+      - in: query
+        name: id
+        type: string
+        required: false
+        default: ""
+        description: Chunk Id.
       - in: header
         name: Authorization
         type: string
@@ -961,7 +990,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
                 "questions": sres.field[id].get("question_kwd", []),
                 "dataset_id": sres.field[id].get("kb_id", sres.field[id].get("dataset_id")),
                 "image_id": sres.field[id].get("img_id", ""),
-                "available": bool(sres.field[id].get("available_int", 1)),
+                "available": bool(int(sres.field[id].get("available_int", "1"))),
                 "positions": sres.field[id].get("position_int",[]),
             }
             res["chunks"].append(d)
@@ -1158,6 +1187,9 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    docs = DocumentService.get_by_ids([document_id])
+    if not docs:
+        raise LookupError(f"Can't find the document with ID {document_id}!")
     req = request.json
     condition = {"doc_id": document_id}
     if "chunk_ids" in req:
@@ -1167,6 +1199,8 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     if chunk_number != 0:
         DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
     if "chunk_ids" in req and chunk_number != len(unique_chunk_ids):
+        if len(unique_chunk_ids) == 0:
+            return get_result(message=f"deleted {chunk_number} chunks")
         return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}")
     if duplicate_messages:
         return get_result(message=f"Partially deleted {chunk_number} chunks with {len(duplicate_messages)} errors", data={"success_count": chunk_number, "errors": duplicate_messages},)
@@ -1257,7 +1291,7 @@ def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     if "questions" in req:
         if not isinstance(req["questions"], list):
             return get_error_data_result("`questions` should be a list")
-        d["question_kwd"] = req.get("questions")
+        d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
     if "available" in req:
         d["available_int"] = int(req["available"])
@@ -1402,6 +1436,7 @@ def retrieval_test(tenant_id):
     else:
         highlight = True
     try:
+        tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(message="Dataset not found!")
@@ -1418,7 +1453,7 @@ def retrieval_test(tenant_id):
         ranks = settings.retrievaler.retrieval(
             question,
             embd_mdl,
-            kb.tenant_id,
+            tenant_ids,
             kb_ids,
             page,
             size,

@@ -18,10 +18,10 @@ import os
 import re
 from datetime import datetime, timedelta
 from flask import request, Response
-from api.db.services.llm_service import TenantLLMService
+from api.db.services.llm_service import LLMBundle
 from flask_login import login_required, current_user
 
-from api.db import FileType, LLMType, ParserType, FileSource
+from api.db import VALID_FILE_TYPES, VALID_TASK_STATUS, FileType, LLMType, ParserType, FileSource
 from api.db.db_models import APIToken, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
@@ -345,7 +345,7 @@ def completion():
 
 @manager.route('/conversation/<conversation_id>', methods=['GET'])  # noqa: F821
 # @login_required
-def get(conversation_id):
+def get_conversation(conversation_id):
     token = request.headers.get('Authorization').split()[1]
     objs = APIToken.query(token=token)
     if not objs:
@@ -548,6 +548,31 @@ def list_chunks():
 
     return get_json_result(data=res)
 
+@manager.route('/get_chunk/<chunk_id>', methods=['GET'])  # noqa: F821
+# @login_required
+def get_chunk(chunk_id):
+    from rag.nlp import search
+    token = request.headers.get('Authorization').split()[1]
+    objs = APIToken.query(token=token)
+    if not objs:
+        return get_json_result(
+            data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+    try:
+        tenant_id = objs[0].tenant_id
+        kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
+        chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
+        if chunk is None:
+            return server_error_response(Exception("Chunk not found"))
+        k = []
+        for n in chunk.keys():
+            if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
+                k.append(n)
+        for n in k:
+            del chunk[n]
+
+        return get_json_result(data=chunk)
+    except Exception as e:
+        return server_error_response(e)
 
 @manager.route('/list_kb_docs', methods=['POST'])  # noqa: F821
 # @login_required
@@ -577,10 +602,23 @@ def list_kb_docs():
     orderby = req.get("orderby", "create_time")
     desc = req.get("desc", True)
     keywords = req.get("keywords", "")
-
+    status = req.get("status", [])
+    if status:
+        invalid_status = {s for s in status if s not in VALID_TASK_STATUS}
+        if invalid_status:
+            return get_data_error_result(
+                message=f"Invalid filter status conditions: {', '.join(invalid_status)}"
+            )
+    types = req.get("types", [])
+    if types:
+        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
+        if invalid_types:
+            return get_data_error_result(
+                message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
+            )
     try:
         docs, tol = DocumentService.get_by_kb_id(
-            kb_id, page_number, items_per_page, orderby, desc, keywords)
+            kb_id, page_number, items_per_page, orderby, desc, keywords, status, types)
         docs = [{"doc_id": doc['id'], "doc_name": doc['name']} for doc in docs]
 
         return get_json_result(data={"total": tol, "docs": docs})
@@ -615,7 +653,7 @@ def document_rm():
     tenant_id = objs[0].tenant_id
     req = request.json
     try:
-        doc_ids = [DocumentService.get_doc_id_by_doc_name(doc_name) for doc_name in req.get("doc_names", [])]
+        doc_ids = DocumentService.get_doc_ids_by_doc_names(req.get("doc_names", []))
         for doc_id in req.get("doc_ids", []):
             if doc_id not in doc_ids:
                 doc_ids.append(doc_id)
@@ -633,11 +671,16 @@ def document_rm():
     FileService.init_knowledgebase_docs(pf_id, tenant_id)
 
     errors = ""
+    docs = DocumentService.get_by_ids(doc_ids)
+    doc_dic = {}
+    for doc in docs:
+        doc_dic[doc.id] = doc
+
     for doc_id in doc_ids:
         try:
-            e, doc = DocumentService.get_by_id(doc_id)
-            if not e:
+            if doc_id not in doc_dic:
                 return get_data_error_result(message="Document not found!")
+            doc = doc_dic[doc_id]
             tenant_id = DocumentService.get_tenant_id(doc_id)
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
@@ -818,10 +861,11 @@ def retrieval():
     doc_ids = req.get("doc_ids", [])
     question = req.get("question")
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size", 30))
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
+    highlight = bool(req.get("highlight", False)) 
 
     try:
         kbs = KnowledgebaseService.get_by_ids(kb_ids)
@@ -831,18 +875,16 @@ def retrieval():
                 data=False, message='Knowledge bases use different embedding models or does not exist."',
                 code=settings.RetCode.AUTHENTICATION_ERROR)
 
-        embd_mdl = TenantLLMService.model_instance(
-            kbs[0].tenant_id, LLMType.EMBEDDING.value, llm_name=kbs[0].embd_id)
+        embd_mdl = LLMBundle(kbs[0].tenant_id, LLMType.EMBEDDING, llm_name=kbs[0].embd_id)
         rerank_mdl = None
         if req.get("rerank_id"):
-            rerank_mdl = TenantLLMService.model_instance(
-                kbs[0].tenant_id, LLMType.RERANK.value, llm_name=req["rerank_id"])
+            rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
         if req.get("keyword", False):
-            chat_mdl = TenantLLMService.model_instance(kbs[0].tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(kbs[0].tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
         ranks = settings.retrievaler.retrieval(question, embd_mdl, kbs[0].tenant_id, kb_ids, page, size,
                                                similarity_threshold, vector_similarity_weight, top,
-                                               doc_ids, rerank_mdl=rerank_mdl,
+                                               doc_ids, rerank_mdl=rerank_mdl, highlight= highlight,
                                                rank_feature=label_question(question, kbs))
         for c in ranks["chunks"]:
             c.pop("vector", None)

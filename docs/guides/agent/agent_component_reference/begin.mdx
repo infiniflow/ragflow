@@ -31,10 +31,6 @@ An opening greeting is the agent's first message to the user. It can be a welcom
 
 You can set global variables within the **Begin** component, which can be either required or optional. Once established, users will need to provide values for these variables when interacting or chatting with the agent. Click **+ Add variable** to add a global variable, each with the following attributes:
 
-:::caution WARNING
-If your agent's **Begin** component takes a variable, you *cannot* embed it into a webpage.
-:::
-
 - **Key**: *Required*  
   The unique variable name.
 - **Name**: *Required*  
@@ -50,8 +46,15 @@ If your agent's **Begin** component takes a variable, you *cannot* embed it into
   - **boolean**: Requires the user to toggle between on and off.
 - **Optional**: A toggle indicating whether the variable is optional. 
 
-:::danger IMPORTAN
-If you set the key type as **file**, ensure the token count of the uploaded file does not exceed your model provider's maximum token limit; otherwise, the plain text in your file will be truncated and incomplete.
+:::tip NOTE
+To pass in parameters from a client, call:
+- HTTP method [Converse with agent](../../../references/http_api_reference.md#converse-with-agent), or
+- Python method [Converse with agent](../../../references/python_api_reference.md#converse-with-agent).
+:::
+
+:::danger IMPORTANT
+- If you set the key type as **file**, ensure the token count of the uploaded file does not exceed your model provider's maximum token limit; otherwise, the plain text in your file will be truncated and incomplete.
+- If your agent's **Begin** component takes a variable, you *cannot* embed it into a webpage.
 :::
 
 ## Examples
@@ -68,7 +71,7 @@ As mentioned earlier, the **Begin** component is indispensable for an agent. Sti
 
 ### Is the uploaded file in a knowledge base?
 
-No. Files uploaded to an agent as input are not stored in a knowledge base and hence will not be processed using RAGFlow's built-in OCR, DLR or TSR models, or chunked using RAGFlow's built-in chunk methods. 
+No. Files uploaded to an agent as input are not stored in a knowledge base and hence will not be processed using RAGFlow's built-in OCR, DLR or TSR models, or chunked using RAGFlow's built-in chunking methods. 
 
 ### How to upload a webpage or file from a URL?
 

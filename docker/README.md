@@ -78,22 +78,12 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:v0.17.2-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.17.2`: The RAGFlow Docker image with embedding models including:
+  - `infiniflow/ragflow:v0.19.0-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.19.0`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
-      - `BAAI/bge-reranker-v2-m3`
       - `maidalun1020/bce-embedding-base_v1`
-      - `maidalun1020/bce-reranker-base_v1`
-    - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-      - `BAAI/bge-base-en-v1.5`
-      - `BAAI/bge-large-en-v1.5`
-      - `BAAI/bge-small-en-v1.5`
-      - `BAAI/bge-small-zh-v1.5`
-      - `jinaai/jina-embeddings-v2-base-en`
-      - `jinaai/jina-embeddings-v2-small-en`
-      - `nomic-ai/nomic-embed-text-v1.5`
-      - `sentence-transformers/all-MiniLM-L6-v2`
+
   
 > [!TIP]  
 > If you cannot download the RAGFlow Docker image, try the following mirrors.  
@@ -146,9 +136,38 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `password`: The password for MinIO.
   - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
-- `oauth`  
-  The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
-  - `github`: The GitHub authentication settings for your application. Visit the [Github Developer Settings page](https://github.com/settings/developers) to obtain your client_id and secret_key.
+- `oss`
+  - `access_key`: The access key ID used to authenticate requests to the OSS service.
+  - `secret_key`: The secret access key used to authenticate requests to the OSS service.
+  - `endpoint_url`: The URL of the OSS service endpoint.
+  - `region`: The OSS region where the bucket is located.
+  - `bucket`: The name of the OSS bucket where files will be stored. When you want to store all files in a specified bucket, you need this configuration item.
+  - `prefix_path`: Optional. A prefix path to prepend to file names in the OSS bucket, which can help organize files within the bucket.
+
+- `s3`:
+  - `access_key`: The access key ID used to authenticate requests to the S3 service.
+  - `secret_key`: The secret access key used to authenticate requests to the S3 service.
+  - `endpoint_url`: The URL of the S3-compatible service endpoint. This is necessary when using an S3-compatible protocol instead of the default AWS S3 endpoint.
+  - `bucket`: The name of the S3 bucket where files will be stored. When you want to store all files in a specified bucket, you need this configuration item.
+  - `region`: The AWS region where the S3 bucket is located. This is important for directing requests to the correct data center.
+  - `signature_version`: Optional. The version of the signature to use for authenticating requests. Common versions include `v4`.
+  - `addressing_style`: Optional. The style of addressing to use for the S3 endpoint. This can be `path` or `virtual`.
+  - `prefix_path`: Optional. A prefix path to prepend to file names in the S3 bucket, which can help organize files within the bucket.
+
+- `oauth`
+  The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.
+  - `<channel>`: Custom channel ID.
+    - `type`: Authentication type, options include `oauth2`, `oidc`, `github`. Default is `oauth2`, when `issuer` parameter is provided, defaults to `oidc`.
+    - `icon`: Icon ID, options include `github`, `sso`, default is `sso`.
+    - `display_name`: Channel name, defaults to the Title Case format of the channel ID.
+    - `client_id`: Required, unique identifier assigned to the client application.
+    - `client_secret`: Required, secret key for the client application, used for communication with the authentication server.
+    - `authorization_url`: Base URL for obtaining user authorization.
+    - `token_url`: URL for exchanging authorization code and obtaining access token.
+    - `userinfo_url`: URL for obtaining user information (username, email, etc.).
+    - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
+    - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
+    - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/v1/user/oauth/callback/<channel>`. For local configuration, you can directly use `http://127.0.0.1:80/v1/user/oauth/callback/<channel>`.
 
 - `user_default_llm`  
   The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.  

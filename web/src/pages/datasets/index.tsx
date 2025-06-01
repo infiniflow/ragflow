@@ -1,18 +1,20 @@
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { useInfiniteFetchKnowledgeList } from '@/hooks/knowledge-hooks';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { IKnowledge } from '@/interfaces/database/knowledge';
-import { formatDate } from '@/utils/date';
-import { ChevronRight, Plus, Trash2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
+import { pick } from 'lodash';
+import { Plus } from 'lucide-react';
+import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { DatasetCard } from './dataset-card';
 import { DatasetCreatingDialog } from './dataset-creating-dialog';
 import { useSaveKnowledge } from './hooks';
+import { useRenameDataset } from './use-rename-dataset';
+import { useSelectOwners } from './use-select-owners';
 
 export default function Datasets() {
+  const { t } = useTranslation();
   const {
     visible,
     hideModal,
@@ -20,70 +22,70 @@ export default function Datasets() {
     onCreateOk,
     loading: creatingLoading,
   } = useSaveKnowledge();
-  const { navigateToDataset } = useNavigatePage();
 
   const {
-    fetchNextPage,
-    data,
-    hasNextPage,
-    searchString,
+    kbs,
+    total,
+    pagination,
+    setPagination,
     handleInputChange,
-    loading,
-  } = useInfiniteFetchKnowledgeList();
+    searchString,
+    filterValue,
+    handleFilterSubmit,
+  } = useFetchNextKnowledgeListByPage();
 
-  const nextList: IKnowledge[] = useMemo(() => {
-    const list =
-      data?.pages?.flatMap((x) => (Array.isArray(x.kbs) ? x.kbs : [])) ?? [];
-    return list;
-  }, [data?.pages]);
+  const owners = useSelectOwners();
 
-  const total = useMemo(() => {
-    return data?.pages.at(-1).total ?? 0;
-  }, [data?.pages]);
+  const {
+    datasetRenameLoading,
+    initialDatasetName,
+    onDatasetRenameOk,
+    datasetRenameVisible,
+    hideDatasetRenameModal,
+    showDatasetRenameModal,
+  } = useRenameDataset();
+
+  const handlePageChange = useCallback(
+    (page: number, pageSize?: number) => {
+      setPagination({ page, pageSize });
+    },
+    [setPagination],
+  );
 
   return (
-    <section className="p-8 text-foreground">
-      <ListFilterBar title="Datasets" showDialog={showModal}>
-        <Plus className="mr-2 h-4 w-4" />
-        Create dataset
+    <section className="py-4 text-foreground">
+      <ListFilterBar
+        title={t('header.knowledgeBase')}
+        searchString={searchString}
+        onSearchChange={handleInputChange}
+        value={filterValue}
+        filters={owners}
+        onChange={handleFilterSubmit}
+        className="px-8"
+        icon={'data'}
+      >
+        <Button onClick={showModal}>
+          <Plus className=" size-2.5" />
+          {t('knowledgeList.createKnowledgeBase')}
+        </Button>
       </ListFilterBar>
-      <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
-        {nextList.map((dataset) => (
-          <Card
-            key={dataset.id}
-            className="bg-colors-background-inverse-weak flex-1"
-          >
-            <CardContent className="p-4">
-              <div className="flex justify-between mb-4">
-                <Avatar className="w-[70px] h-[70px] rounded-lg">
-                  <AvatarImage src={dataset.avatar} />
-                  <AvatarFallback className="rounded-lg">CN</AvatarFallback>
-                </Avatar>
-                <ConfirmDeleteDialog>
-                  <Button variant="ghost" size="icon">
-                    <Trash2 />
-                  </Button>
-                </ConfirmDeleteDialog>
-              </div>
-              <div className="flex justify-between items-end">
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">{dataset.name}</h3>
-                  <p className="text-sm opacity-80">{dataset.doc_num} files</p>
-                  <p className="text-sm opacity-80">
-                    Created {formatDate(dataset.update_time)}
-                  </p>
-                </div>
-                <Button
-                  variant="icon"
-                  size="icon"
-                  onClick={navigateToDataset(dataset.id)}
-                >
-                  <ChevronRight className="h-6 w-6" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="flex flex-wrap gap-4 max-h-[78vh] overflow-auto px-8">
+        {kbs.map((dataset) => {
+          return (
+            <DatasetCard
+              dataset={dataset}
+              key={dataset.id}
+              showDatasetRenameModal={showDatasetRenameModal}
+            ></DatasetCard>
+          );
+        })}
+      </div>
+      <div className="mt-8 px-8">
+        <RAGFlowPagination
+          {...pick(pagination, 'current', 'pageSize')}
+          total={total}
+          onChange={handlePageChange}
+        ></RAGFlowPagination>
       </div>
       {visible && (
         <DatasetCreatingDialog
@@ -91,6 +93,14 @@ export default function Datasets() {
           onOk={onCreateOk}
           loading={creatingLoading}
         ></DatasetCreatingDialog>
+      )}
+      {datasetRenameVisible && (
+        <RenameDialog
+          hideModal={hideDatasetRenameModal}
+          onOk={onDatasetRenameOk}
+          initialName={initialDatasetName}
+          loading={datasetRenameLoading}
+        ></RenameDialog>
       )}
     </section>
   );

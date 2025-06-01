@@ -23,8 +23,13 @@ const KnowledgeCreatingModal = ({
 
   const handleOk = async () => {
     const ret = await form.validateFields();
-
     onOk(ret.name);
+  };
+
+  const handleKeyDown = async (e) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
   };
 
   return (
@@ -48,7 +53,7 @@ const KnowledgeCreatingModal = ({
           name="name"
           rules={[{ required: true, message: t('namePlaceholder') }]}
         >
-          <Input placeholder={t('namePlaceholder')} />
+          <Input placeholder={t('namePlaceholder')} onKeyDown={handleKeyDown} />
         </Form.Item>
       </Form>
     </Modal>

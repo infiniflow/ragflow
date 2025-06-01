@@ -24,6 +24,7 @@ const FlowChatBox = () => {
     ref,
     derivedMessages,
     reference,
+    stopOutputMessage,
   } = useSendNextMessage();
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -75,6 +76,7 @@ const FlowChatBox = () => {
           conversationId=""
           onPressEnter={handlePressEnter}
           onInputChange={handleInputChange}
+          stopOutputMessage={stopOutputMessage}
         />
       </Flex>
       <PdfDrawer

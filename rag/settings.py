@@ -31,10 +31,13 @@ AZURE = {}
 S3 = {}
 MINIO = {}
 OSS = {}
+OS = {}
 
 # Initialize the selected configuration data based on environment variables to solve the problem of initialization errors due to lack of configuration
 if DOC_ENGINE == 'elasticsearch':
     ES = get_base_config("es", {})
+elif DOC_ENGINE == 'opensearch':
+    OS = get_base_config("os", {})
 elif DOC_ENGINE == 'infinity':
     INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
 
@@ -59,7 +62,7 @@ SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
 PAGERANK_FLD = "pagerank_fea"
 TAG_FLD = "tag_feas"
 
-PARALLEL_DEVICES = None
+PARALLEL_DEVICES = 0
 try:
     import torch.cuda
     PARALLEL_DEVICES = torch.cuda.device_count()

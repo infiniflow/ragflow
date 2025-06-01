@@ -40,13 +40,9 @@ class CommunityReportsExtractor(Extractor):
     def __init__(
             self,
             llm_invoker: CompletionLLM,
-            get_entity: Callable | None = None,
-            set_entity: Callable | None = None,
-            get_relation: Callable | None = None,
-            set_relation: Callable | None = None,
             max_report_length: int | None = None,
     ):
-        super().__init__(llm_invoker, get_entity=get_entity, set_entity=set_entity, get_relation=get_relation, set_relation=set_relation)
+        super().__init__(llm_invoker)
         """Init method definition."""
         self._llm = llm_invoker
         self._extraction_prompt = COMMUNITY_REPORT_PROMPT
@@ -63,21 +59,28 @@ class CommunityReportsExtractor(Extractor):
         over, token_count = 0, 0
         async def extract_community_report(community):
             nonlocal res_str, res_dict, over, token_count
-            cm_id, ents = community
-            weight = ents["weight"]
-            ents = ents["nodes"]
-            ent_df = pd.DataFrame(self._get_entity_(ents)).dropna()
-            if ent_df.empty or "entity_name" not in ent_df.columns:
+            cm_id, cm = community
+            weight = cm["weight"]
+            ents = cm["nodes"]
+            if len(ents) < 2:
                 return
-            ent_df["entity"] = ent_df["entity_name"]
-            del ent_df["entity_name"]
-            rela_df = pd.DataFrame(self._get_relation_(list(ent_df["entity"]), list(ent_df["entity"]), 10000))
-            if rela_df.empty:
-                return
-            rela_df["source"] = rela_df["src_id"]
-            rela_df["target"] = rela_df["tgt_id"]
-            del rela_df["src_id"]
-            del rela_df["tgt_id"]
+            ent_list = [{"entity": ent, "description": graph.nodes[ent]["description"]} for ent in ents]
+            ent_df = pd.DataFrame(ent_list)
+
+            rela_list = []
+            k = 0
+            for i in range(0, len(ents)):
+                if k >= 10000:
+                    break
+                for j in range(i + 1, len(ents)):
+                    if k >= 10000:
+                        break
+                    edge = graph.get_edge_data(ents[i], ents[j])
+                    if edge is None:
+                        continue
+                    rela_list.append({"source": ents[i], "target": ents[j], "description": edge["description"]})
+                    k += 1
+            rela_df = pd.DataFrame(rela_list)
 
             prompt_variables = {
                 "entity_df": ent_df.to_csv(index_label="id"),
@@ -121,7 +124,7 @@ class CommunityReportsExtractor(Extractor):
             for level, comm in communities.items():
                 logging.info(f"Level {level}: Community: {len(comm.keys())}")
                 for community in comm.items():
-                    nursery.start_soon(lambda: extract_community_report(community))
+                    nursery.start_soon(extract_community_report, community)
         if callback:
             callback(msg=f"Community reports done in {trio.current_time() - st:.2f}s, used tokens: {token_count}")
 
