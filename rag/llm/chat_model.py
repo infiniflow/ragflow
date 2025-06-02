@@ -30,6 +30,8 @@ from ollama import Client
 from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
+from azure.identity import EnvironmentCredential
+from dotenv import load_dotenv
 
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
@@ -50,6 +52,13 @@ ERROR_GENERIC = "GENERIC_ERROR"
 
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
+
+
+def get_access_token():
+    load_dotenv()
+    credential = EnvironmentCredential()
+    access_token = credential.get_token("https://cognitiveservices.azure.com/.default")
+    return access_token.token
 
 
 class ToolCallSession(Protocol):
@@ -482,6 +491,20 @@ class AzureChat(Base):
         api_version = json.loads(key).get("api_version", "2024-02-01")
         super().__init__(key, model_name, kwargs["base_url"])
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        self.model_name = model_name
+
+
+class AutodeskChat(Base):
+    def __init__(self, key, model_name, **kwargs):
+        api_version = json.loads(key).get("api_version", "2024-02-01")
+        token_provider = get_access_token
+        super().__init__(key, model_name, kwargs["base_url"])
+        self.client = AzureOpenAI(
+            azure_endpoint=kwargs["base_url"],
+            api_version=api_version,
+            azure_ad_token_provider=token_provider,
+            azure_deployment=model_name
+        )
         self.model_name = model_name
 
 

@@ -66,6 +66,7 @@
     "dayjs": "^1.11.10",
     "dompurify": "^3.1.6",
     "eventsource-parser": "^1.1.2",
+    "github-markdown-css": "^5.8.1",
     "human-id": "^4.1.1",
     "i18next": "^23.7.16",
     "i18next-browser-languagedetector": "^8.0.0",

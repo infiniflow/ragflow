@@ -19,7 +19,11 @@ type FieldType = {
   group_id?: string;
 };
 
-const modelsWithBaseUrl = [LLMFactory.OpenAI, LLMFactory.AzureOpenAI];
+const modelsWithBaseUrl = [
+  LLMFactory.OpenAI,
+  LLMFactory.AzureOpenAI,
+  LLMFactory.AutodeskOpenAI,
+];
 
 const ApiKeyModal = ({
   visible,
@@ -38,7 +42,7 @@ const ApiKeyModal = ({
     return onOk(ret);
   };
 
-  const handleKeyDown = async (e) => {
+  const handleKeyDown = async (e: any) => {
     if (e.key === 'Enter') {
       await handleOk();
     }

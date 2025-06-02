@@ -380,6 +380,33 @@ export const useSubmitAzure = () => {
   };
 };
 
+export const useSubmitAutodesk = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: AutodeskAddingVisible,
+    hideModal: hideAutodeskAddingModal,
+    showModal: showAutodeskAddingModal,
+  } = useSetModalState();
+
+  const onAutodeskAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideAutodeskAddingModal();
+      }
+    },
+    [hideAutodeskAddingModal, addLlm],
+  );
+
+  return {
+    AutodeskAddingLoading: loading,
+    onAutodeskAddingOk,
+    AutodeskAddingVisible,
+    hideAutodeskAddingModal,
+    showAutodeskAddingModal,
+  };
+};
+
 export const useHandleDeleteLlm = (llmFactory: string) => {
   const { deleteLlm } = useDeleteLlm();
   const showDeleteConfirm = useShowDeleteConfirm();

@@ -21,6 +21,8 @@ import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
 
+import 'github-markdown-css';
+
 const { Text } = Typography;
 
 interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
@@ -144,13 +146,14 @@ const MessageItem = ({
               {/* <b>{isAssistant ? '' : nickname}</b> */}
             </Space>
             <div
-              className={
-                isAssistant
-                  ? theme === 'dark'
-                    ? styles.messageTextDark
-                    : styles.messageText
-                  : styles.messageUserText
-              }
+              // className={
+              //   isAssistant
+              //     ? theme === 'dark'
+              //       ? styles.messageTextDark
+              //       : styles.messageText
+              //     : styles.messageUserText
+              // }
+              className="markdown-body"
             >
               <MarkdownContent
                 loading={loading}

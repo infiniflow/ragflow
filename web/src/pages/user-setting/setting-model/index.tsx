@@ -28,6 +28,7 @@ import SettingTitle from '../components/setting-title';
 import { isLocalLlmFactory } from '../utils';
 import TencentCloudModal from './Tencent-modal';
 import ApiKeyModal from './api-key-modal';
+import AutodeskModal from './autodesk-modal';
 import AzureOpenAIModal from './azure-openai-modal';
 import BedrockModal from './bedrock-modal';
 import FishAudioModal from './fish-audio-modal';
@@ -36,6 +37,7 @@ import {
   useHandleDeleteFactory,
   useHandleDeleteLlm,
   useSubmitApiKey,
+  useSubmitAutodesk,
   useSubmitAzure,
   useSubmitBedrock,
   useSubmitFishAudio,
@@ -104,7 +106,8 @@ const ModelCard = ({ item, clickApiKey }: IModelCardProps) => {
                   item.name === LLMFactory.FishAudio ||
                   item.name === LLMFactory.TencentCloud ||
                   item.name === LLMFactory.GoogleCloud ||
-                  item.name === LLMFactory.AzureOpenAI
+                  item.name === LLMFactory.AzureOpenAI ||
+                  item.name === LLMFactory.AutodeskOpenAI
                     ? t('addTheModel')
                     : 'API-Key'}
                   <SettingOutlined />
@@ -250,6 +253,14 @@ const UserSettingModel = () => {
     AzureAddingLoading,
   } = useSubmitAzure();
 
+  const {
+    AutodeskAddingVisible,
+    hideAutodeskAddingModal,
+    showAutodeskAddingModal,
+    onAutodeskAddingOk,
+    AutodeskAddingLoading,
+  } = useSubmitAutodesk();
+
   const ModalMap = useMemo(
     () => ({
       [LLMFactory.Bedrock]: showBedrockAddingModal,
@@ -261,6 +272,7 @@ const UserSettingModel = () => {
       [LLMFactory.TencentCloud]: showTencentCloudAddingModal,
       [LLMFactory.GoogleCloud]: showGoogleAddingModal,
       [LLMFactory.AzureOpenAI]: showAzureAddingModal,
+      [LLMFactory.AutodeskOpenAI]: showAutodeskAddingModal,
     }),
     [
       showBedrockAddingModal,
@@ -272,6 +284,7 @@ const UserSettingModel = () => {
       showFishAudioAddingModal,
       showGoogleAddingModal,
       showAzureAddingModal,
+      showAutodeskAddingModal,
     ],
   );
 
@@ -465,6 +478,13 @@ const UserSettingModel = () => {
         loading={AzureAddingLoading}
         llmFactory={LLMFactory.AzureOpenAI}
       ></AzureOpenAIModal>
+      <AutodeskModal
+        visible={AutodeskAddingVisible}
+        hideModal={hideAutodeskAddingModal}
+        onOk={onAutodeskAddingOk}
+        loading={AutodeskAddingLoading}
+        llmFactory={LLMFactory.AutodeskOpenAI}
+      ></AutodeskModal>
     </section>
   );
 };

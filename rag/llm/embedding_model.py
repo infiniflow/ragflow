@@ -26,12 +26,21 @@ import dashscope
 from openai import OpenAI
 import numpy as np
 import asyncio
+from azure.identity import EnvironmentCredential
+from dotenv import load_dotenv
 
 from api import settings
 from api.utils.file_utils import get_home_cache_dir
 from rag.utils import num_tokens_from_string, truncate
 import google.generativeai as genai
 import json
+
+
+def get_access_token():
+    load_dotenv()
+    credential = EnvironmentCredential()
+    access_token = credential.get_token("https://cognitiveservices.azure.com/.default")
+    return access_token.token
 
 
 class Base(ABC):
@@ -166,6 +175,20 @@ class AzureEmbed(OpenAIEmbed):
         api_key = json.loads(key).get('api_key', '')
         api_version = json.loads(key).get('api_version', '2024-02-01')
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        self.model_name = model_name
+
+
+class AutodeskEmbed(OpenAIEmbed):
+    def __init__(self, key, model_name, **kwargs):
+        from openai.lib.azure import AzureOpenAI
+        api_version = json.loads(key).get('api_version', '2024-02-01')
+        token_provider = get_access_token
+        self.client = AzureOpenAI(
+            azure_endpoint=kwargs["base_url"],
+            api_version=api_version,
+            azure_ad_token_provider=token_provider,
+            azure_deployment=model_name
+        )
         self.model_name = model_name
 
 

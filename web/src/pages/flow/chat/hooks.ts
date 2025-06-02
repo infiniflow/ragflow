@@ -68,7 +68,7 @@ export const useSendNextMessage = () => {
         id: flowId,
       };
       params.running_hint_text = i18n.t('flow.runningHintText', {
-        defaultValue: 'is running...🕞',
+        defaultValue: 'is running...',
       });
       if (message.content) {
         params.message = message.content;

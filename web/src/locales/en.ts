@@ -1270,7 +1270,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       code: 'Code',
       codeDescription: 'It allows developers to write custom Python logic.',
       inputVariables: 'Input variables',
-      runningHintText: 'is running...🕞',
+      runningHintText: 'is running...',
       openingSwitch: 'Opening switch',
       openingCopy: 'Opening copy',
       openingSwitchTip:
