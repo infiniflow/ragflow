@@ -1229,7 +1229,7 @@ export default {
       promptTip:
         'Verwenden Sie den Systemprompt, um die Aufgabe für das LLM zu beschreiben, festzulegen, wie es antworten soll, und andere verschiedene Anforderungen zu skizzieren. Der Systemprompt wird oft in Verbindung mit Schlüsseln (Variablen) verwendet, die als verschiedene Dateninputs für das LLM dienen. Verwenden Sie einen Schrägstrich `/` oder die (x)-Schaltfläche, um die zu verwendenden Schlüssel anzuzeigen.',
       promptMessage: 'Prompt ist erforderlich',
-      runningHintText: 'läuft...🕞',
+      runningHintText: 'läuft...',
     },
     footer: {
       profile: 'Alle Rechte vorbehalten @ React',

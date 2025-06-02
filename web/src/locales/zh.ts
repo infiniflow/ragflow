@@ -1225,7 +1225,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       codeDescription: '它允许开发人员编写自定义 Python 逻辑。',
       inputVariables: '输入变量',
       addVariable: '新增变量',
-      runningHintText: '正在运行中...🕞',
+      runningHintText: '正在运行中...',
       openingSwitch: '开场白开关',
       openingCopy: '开场白文案',
       openingSwitchTip: '您的用户将在开始时看到此欢迎消息。',

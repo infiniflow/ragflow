@@ -1162,7 +1162,7 @@ export default {
       code: '程式碼',
       codeDescription: '它允許開發人員編寫自訂 Python 邏輯。',
       inputVariables: '輸入變數',
-      runningHintText: '正在運行...🕞',
+      runningHintText: '正在運行...',
       openingSwitchTip: '您的用戶將在開始時看到此歡迎訊息。',
       modeTip: '模式定義工作流程如何啟動。 ',
       beginInputTip: `透過定義輸入參數，這些內容可以在後續流程中被其他元件存取。`,

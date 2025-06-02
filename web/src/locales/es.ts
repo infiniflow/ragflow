@@ -856,7 +856,7 @@ export default {
       note: 'Nota',
       noteDescription: 'Nota',
       notePlaceholder: 'Por favor ingresa una nota',
-      runningHintText: 'está corriendo...🕞',
+      runningHintText: 'está corriendo...',
     },
     footer: {
       profile: 'Todos los derechos reservados @ React',
