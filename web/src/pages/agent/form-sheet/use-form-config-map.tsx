@@ -1,9 +1,8 @@
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
-import { ModelVariableType } from '@/constants/knowledge';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { AgentDialogueMode, Operator } from '../constant';
+import { Operator } from '../constant';
 import AkShareForm from '../form/akshare-form';
 import AnswerForm from '../form/answer-form';
 import ArXivForm from '../form/arxiv-form';
@@ -45,11 +44,7 @@ export function useFormConfigMap() {
   const FormConfigMap = {
     [Operator.Begin]: {
       component: BeginForm,
-      defaultValues: {
-        enablePrologue: true,
-        prologue: t('chat.setAnOpenerInitial'),
-        mode: AgentDialogueMode.Conversational,
-      },
+      defaultValues: {},
       schema: z.object({
         enablePrologue: z.boolean().optional(),
         prologue: z
@@ -116,16 +111,7 @@ export function useFormConfigMap() {
     },
     [Operator.Categorize]: {
       component: CategorizeForm,
-      defaultValues: {
-        parameter: ModelVariableType.Precise,
-        message_history_window_size: 1,
-        temperatureEnabled: true,
-        topPEnabled: true,
-        presencePenaltyEnabled: true,
-        frequencyPenaltyEnabled: true,
-        maxTokensEnabled: true,
-        items: [],
-      },
+      defaultValues: {},
       schema: z.object({
         parameter: z.string().optional(),
         ...LlmSettingSchema,
@@ -149,9 +135,7 @@ export function useFormConfigMap() {
     },
     [Operator.Message]: {
       component: MessageForm,
-      defaultValues: {
-        content: [],
-      },
+      defaultValues: {},
       schema: z.object({
         content: z
           .array(
