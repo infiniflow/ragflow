@@ -1231,6 +1231,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       openingSwitchTip: '您的用户将在开始时看到此欢迎消息。',
       modeTip: '模式定义了工作流的启动方式。',
       beginInputTip: '通过定义输入参数，此内容可以被后续流程中的其他组件访问。',
+      query: '查询变量',
     },
     footer: {
       profile: 'All rights reserved @ React',
