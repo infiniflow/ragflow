@@ -195,6 +195,7 @@ def completion():
         e, dia = DialogService.get_by_id(conv.dialog_id)
         if not e:
             return get_data_error_result(message="Dialog not found!")
+        req_conversation_id = req.get("conversation_id", "")
         del req["conversation_id"]
         del req["messages"]
 
@@ -249,7 +250,7 @@ def completion():
         else:
             answer = None
             for ans in chat(dia, msg, **req):
-                answer = structure_answer(conv, ans, message_id, req["conversation_id"])
+                answer = structure_answer(conv, ans, message_id, req_conversation_id)
                 ConversationService.update_by_id(conv.id, conv.to_dict())
                 break
             return get_json_result(data=answer)
