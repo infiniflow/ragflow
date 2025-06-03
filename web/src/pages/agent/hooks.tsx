@@ -146,7 +146,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.IterationStart]: initialIterationValues,
       [Operator.Code]: initialCodeValues,
       [Operator.WaitingDialogue]: initialWaitingDialogueValues,
-      [Operator.Agent]: initialAgentValues,
+      [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
     };
   }, [llmId]);
 

@@ -20,12 +20,12 @@ import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { AgentDialogueMode } from '../../constant';
+import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
 import { useEditQueryRecord } from './use-edit-query';
 import { useValues } from './use-values';
-import { useWatchFormChange } from './use-watch-change';
 
 const ModeOptions = buildSelectOptions([
   AgentDialogueMode.Conversational,
