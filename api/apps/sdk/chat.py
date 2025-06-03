@@ -173,8 +173,10 @@ def update(tenant_id, chat_id):
     if llm:
         if "model_name" in llm:
             req["llm_id"] = llm.pop("model_name")
-            if not TenantLLMService.query(tenant_id=tenant_id, llm_name=req["llm_id"], model_type="chat"):
-                return get_error_data_result(f"`model_name` {req.get('llm_id')} doesn't exist")
+            if req.get("llm_id") is not None:
+                llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(req["llm_id"])
+                if not TenantLLMService.query(tenant_id=tenant_id, llm_name=llm_name, llm_factory=llm_factory, model_type="chat"):
+                    return get_error_data_result(f"`model_name` {req.get('llm_id')} doesn't exist")
         req["llm_setting"] = req.pop("llm")
     e, tenant = TenantService.get_by_id(tenant_id)
     if not e:
