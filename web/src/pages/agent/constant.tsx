@@ -58,6 +58,7 @@ import {
 } from '@ant-design/icons';
 import upperFirst from 'lodash/upperFirst';
 import {
+  Box,
   CirclePower,
   CloudUpload,
   CodeXml,
@@ -111,6 +112,7 @@ export enum Operator {
   IterationStart = 'IterationItem',
   Code = 'Code',
   WaitingDialogue = 'WaitingDialogue',
+  Agent = 'Agent',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -131,6 +133,7 @@ export const AgentOperatorList = [
   Operator.Iteration,
   Operator.WaitingDialogue,
   Operator.Note,
+  Operator.Agent,
 ];
 
 export const operatorIconMap = {
@@ -172,6 +175,7 @@ export const operatorIconMap = {
   [Operator.IterationStart]: CirclePower,
   [Operator.Code]: CodeXml,
   [Operator.WaitingDialogue]: MessageSquareMore,
+  [Operator.Agent]: Box,
 };
 
 export const operatorMap: Record<
@@ -312,6 +316,7 @@ export const operatorMap: Record<
   [Operator.IterationStart]: { backgroundColor: '#e6f7ff' },
   [Operator.Code]: { backgroundColor: '#4c5458' },
   [Operator.WaitingDialogue]: { backgroundColor: '#a5d65c' },
+  [Operator.Agent]: { backgroundColor: '#a5d65c' },
 };
 
 export const componentMenuList = [
@@ -354,6 +359,9 @@ export const componentMenuList = [
   },
   {
     name: Operator.WaitingDialogue,
+  },
+  {
+    name: Operator.Agent,
   },
   {
     name: Operator.Note,
@@ -680,6 +688,14 @@ export const initialCodeValues = {
 
 export const initialWaitingDialogueValues = {};
 
+export const initialAgentValues = {
+  ...initialLlmBaseValues,
+  sys_prompt: ``,
+  prompts: [],
+  message_history_window_size: 12,
+  tools: [],
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -804,6 +820,7 @@ export const NodeMap = {
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
   [Operator.WaitingDialogue]: 'ragNode',
+  [Operator.Agent]: 'agentNode',
 };
 
 export const LanguageOptions = [

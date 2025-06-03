@@ -72,7 +72,6 @@ dependencies = [
     "pyclipper==1.3.0.post5",
     "pycryptodomex==3.20.0",
     "pypdf>=5.0.0,<6.0.0",
-    "pytest>=8.3.0,<9.0.0",
     "python-dotenv==1.0.1",
     "python-dateutil==2.8.2",
     "python-pptx>=1.0.2,<2.0.0",
@@ -137,6 +136,19 @@ full = [
     "flagembedding==1.2.10",
     "torch>=2.5.0,<3.0.0",
     "transformers>=4.35.0,<5.0.0"
+]
+
+[dependency-groups]
+test = [
+    "hypothesis>=6.132.0",
+    "openpyxl>=3.1.5",
+    "pillow>=10.4.0",
+    "pytest>=8.3.5",
+    "python-docx>=1.1.2",
+    "python-pptx>=1.0.2",
+    "reportlab>=4.4.1",
+    "requests>=2.32.2",
+    "requests-toolbelt>=1.0.0",
 ]
 
 [tool.setuptools]

@@ -152,6 +152,7 @@ export type IIterationNode = BaseNode;
 export type IIterationStartNode = BaseNode;
 export type IKeywordNode = BaseNode;
 export type ICodeNode = BaseNode<ICodeForm>;
+export type IAgentNode = BaseNode;
 
 export type RAGFlowNodeType =
   | IBeginNode

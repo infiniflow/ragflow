@@ -2330,6 +2330,20 @@ wheels = [
 ]
 
 [[package]]
+name = "hypothesis"
+version = "6.132.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
+    { name = "sortedcontainers" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/35/ff/8a67f7217f86d0bc597a2d8c958b273729592d5b2cb40430506b8fb4acbd/hypothesis-6.132.0.tar.gz", hash = "sha256:55868060add41baa6176ed9c3456655678d140c74e3514bdf03381dae6391403" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/36/16/92696e0da87d9799e22742afdd44978440c7a5738191929def39fc8115ac/hypothesis-6.132.0-py3-none-any.whl", hash = "sha256:9d11f81664c0688d27d37c871cee8baf4349383cf9ef9938ef6b3ae836962595" },
+]
+
+[[package]]
 name = "hyppo"
 version = "0.4.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -4894,7 +4908,6 @@ dependencies = [
     { name = "pyodbc" },
     { name = "pypdf" },
     { name = "pypdf2" },
-    { name = "pytest" },
     { name = "python-dateutil" },
     { name = "python-docx" },
     { name = "python-dotenv" },
@@ -4946,6 +4959,19 @@ full = [
     { name = "flagembedding" },
     { name = "torch" },
     { name = "transformers" },
+]
+
+[package.dev-dependencies]
+test = [
+    { name = "hypothesis" },
+    { name = "openpyxl" },
+    { name = "pillow" },
+    { name = "pytest" },
+    { name = "python-docx" },
+    { name = "python-pptx" },
+    { name = "reportlab" },
+    { name = "requests" },
+    { name = "requests-toolbelt" },
 ]
 
 [package.metadata]
@@ -5032,7 +5058,6 @@ requires-dist = [
     { name = "pyodbc", specifier = ">=5.2.0,<6.0.0" },
     { name = "pypdf", specifier = ">=5.0.0,<6.0.0" },
     { name = "pypdf2", specifier = ">=3.0.1,<4.0.0" },
-    { name = "pytest", specifier = ">=8.3.0,<9.0.0" },
     { name = "python-dateutil", specifier = "==2.8.2" },
     { name = "python-docx", specifier = ">=1.1.2,<2.0.0" },
     { name = "python-dotenv", specifier = "==1.0.1" },
@@ -5078,6 +5103,19 @@ requires-dist = [
     { name = "zhipuai", specifier = "==2.0.1" },
 ]
 provides-extras = ["full"]
+
+[package.metadata.requires-dev]
+test = [
+    { name = "hypothesis", specifier = ">=6.132.0" },
+    { name = "openpyxl", specifier = ">=3.1.5" },
+    { name = "pillow", specifier = ">=10.4.0" },
+    { name = "pytest", specifier = ">=8.3.5" },
+    { name = "python-docx", specifier = ">=1.1.2" },
+    { name = "python-pptx", specifier = ">=1.0.2" },
+    { name = "reportlab", specifier = ">=4.4.1" },
+    { name = "requests", specifier = ">=2.32.2" },
+    { name = "requests-toolbelt", specifier = ">=1.0.0" },
+]
 
 [[package]]
 name = "ranx"
@@ -5213,6 +5251,19 @@ wheels = [
 ]
 
 [[package]]
+name = "reportlab"
+version = "4.4.1"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "chardet" },
+    { name = "pillow" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/7b/d8/c3366bf10a5a5fcc3467eefa9504f6aa24fcda5817b5b147eabd37a385e1/reportlab-4.4.1.tar.gz", hash = "sha256:5f9b9fc0b7a48e8912c25ccf69d26b82980ab0da718e4f583fa720e8f8f5073f" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/a1/2e/7994a139150abf11c8dd258feb091ad654823a83cfd9720bfdded27185c3/reportlab-4.4.1-py3-none-any.whl", hash = "sha256:9217a1c8c1917217f819718b24972a96ad0c485a1c494749562d097b58d974b7" },
+]
+
+[[package]]
 name = "requests"
 version = "2.32.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -5230,6 +5281,18 @@ wheels = [
 [package.optional-dependencies]
 socks = [
     { name = "pysocks" },
+]
+
+[[package]]
+name = "requests-toolbelt"
+version = "1.0.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/f3/61/d7545dafb7ac2230c70d38d31cbfe4cc64f7144dc41f6e4e4b78ecd9f5bb/requests-toolbelt-1.0.0.tar.gz", hash = "sha256:7681a0a3d047012b5bdc0ee37d7f8f07ebe76ab08caeccfc3921ce23c88d5bc6" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06" },
 ]
 
 [[package]]

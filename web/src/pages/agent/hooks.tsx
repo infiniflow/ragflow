@@ -33,6 +33,7 @@ import {
   Operator,
   RestrictedUpstreamMap,
   SwitchElseTo,
+  initialAgentValues,
   initialAkShareValues,
   initialArXivValues,
   initialBaiduFanyiValues,
@@ -65,6 +66,7 @@ import {
   initialSwitchValues,
   initialTemplateValues,
   initialTuShareValues,
+  initialWaitingDialogueValues,
   initialWenCaiValues,
   initialWikipediaValues,
   initialYahooFinanceValues,
@@ -143,6 +145,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.Iteration]: initialIterationValues,
       [Operator.IterationStart]: initialIterationValues,
       [Operator.Code]: initialCodeValues,
+      [Operator.WaitingDialogue]: initialWaitingDialogueValues,
+      [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
     };
   }, [llmId]);
 
