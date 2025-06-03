@@ -3,6 +3,7 @@ import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { Operator } from '../constant';
+import AgentForm from '../form/agent-form';
 import AkShareForm from '../form/akshare-form';
 import AnswerForm from '../form/answer-form';
 import ArXivForm from '../form/arxiv-form';
@@ -191,6 +192,11 @@ export function useFormConfigMap() {
           z.object({ name: z.string(), component_id: z.string() }),
         ),
       }),
+    },
+    [Operator.Agent]: {
+      component: AgentForm,
+      defaultValues: {},
+      schema: z.object({}),
     },
     [Operator.Baidu]: {
       component: BaiduForm,

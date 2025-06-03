@@ -1,6 +1,5 @@
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
-import { LargeModelFormField } from '@/components/large-model-form-field';
 import { RerankFormFields } from '@/components/rerank';
 import {
   initialKeywordsSimilarityWeightValue,
@@ -64,7 +63,7 @@ const RetrievalForm = ({ node }: INextOperatorForm) => {
       >
         <FormContainer>
           <QueryVariable></QueryVariable>
-          <LargeModelFormField></LargeModelFormField>
+          <KnowledgeBaseFormField></KnowledgeBaseFormField>
         </FormContainer>
         <FormContainer>
           <SimilaritySliderFormField
@@ -73,7 +72,7 @@ const RetrievalForm = ({ node }: INextOperatorForm) => {
           ></SimilaritySliderFormField>
           <TopNFormField></TopNFormField>
           <RerankFormFields></RerankFormFields>
-          <KnowledgeBaseFormField></KnowledgeBaseFormField>
+
           <FormField
             control={form.control}
             name="empty_response"
