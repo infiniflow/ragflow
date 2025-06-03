@@ -141,7 +141,7 @@ def citation_prompt():
 
 # Citation requirements:
 
-- Use a uniform citation format of like [ID:i] [ID:j], where "i" and "j" are the document ID enclosed in square brackets. Separate multiple IDs with spaces (e.g., [ID:0] [ID:1]).
+- Use a uniform citation format such as [ID:i] [ID:j], where "i" and "j" are document IDs enclosed in square brackets. Separate multiple IDs with spaces (e.g., [ID:0] [ID:1]).
 - Citation markers must be placed at the end of a sentence, separated by a space from the final punctuation (e.g., period, question mark). A maximum of 4 citations are allowed per sentence.
 - DO NOT insert CITATION in the answer if the content is not from retrieved chunks.
 - DO NOT use standalone Document IDs (e.g., '#ID#').
@@ -184,13 +184,13 @@ Overall, while Musk enjoys Dogecoin and often promotes it, he also warns against
 
 def keyword_extraction(chat_mdl, content, topn=3):
     prompt = f"""
-Role: You're a text analyzer.
-Task: extract the most important keywords/phrases of a given piece of text content.
+Role: You are a text analyzer.
+Task: Extract the most important keywords/phrases of a given piece of text content.
 Requirements:
-  - Summarize the text content, and give top {topn} important keywords/phrases.
-  - The keywords MUST be in language of the given piece of text content.
+  - Summarize the text content, and give the top {topn} important keywords/phrases.
+  - The keywords MUST be in the same language as the given piece of text content.
   - The keywords are delimited by ENGLISH COMMA.
-  - Keywords ONLY in output.
+  - Output keywords ONLY.
 
 ### Text Content
 {content}
@@ -209,15 +209,15 @@ Requirements:
 
 def question_proposal(chat_mdl, content, topn=3):
     prompt = f"""
-Role: You're a text analyzer.
-Task:  propose {topn} questions about a given piece of text content.
+Role: You are a text analyzer.
+Task: Propose {topn} questions about a given piece of text content.
 Requirements:
-  - Understand and summarize the text content, and propose top {topn} important questions.
+  - Understand and summarize the text content, and propose the top {topn} important questions.
   - The questions SHOULD NOT have overlapping meanings.
   - The questions SHOULD cover the main content of the text as much as possible.
-  - The questions MUST be in language of the given piece of text content.
+  - The questions MUST be in the same language as the given piece of text content.
   - One question per line.
-  - Question ONLY in output.
+  - Output questions ONLY.
 
 ### Text Content
 {content}
@@ -258,14 +258,14 @@ Task and steps:
     2. If the user's question involves relative date, you need to convert it into absolute date based on the current date, which is {today}. For example: 'yesterday' would be converted to {yesterday}.
 
 Requirements & Restrictions:
-  - If the user's latest question is completely, don't do anything, just return the original question.
+  - If the user's latest question is already complete, don't do anything, just return the original question.
   - DON'T generate anything except a refined question."""
     if language:
         prompt += f"""
   - Text generated MUST be in {language}."""
     else:
         prompt += """
-  - Text generated MUST be in the same language of the original user's question.
+  - Text generated MUST be in the same language as the original user's question.
 """
     prompt += f"""
 
@@ -342,7 +342,7 @@ Act as a streamlined multilingual translator. Strictly output translations separ
 Input:
 Hello World! Let's discuss AI safety.
 ===
-Chinese, French, Jappanese
+Chinese, French, Japanese
 
 Output:
 你好世界！让我们讨论人工智能安全问题。
@@ -369,20 +369,20 @@ Output:
 
 def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
     prompt = f"""
-Role: You're a text analyzer.
+Role: You are a text analyzer.
 
-Task: Tag (put on some labels) to a given piece of text content based on the examples and the entire tag set.
+Task: Add tags (labels) to a given piece of text content based on the examples and the entire tag set.
 
-Steps::
-  - Comprehend the tag/label set.
-  - Comprehend examples which all consist of both text content and assigned tags with relevance score in format of JSON.
-  - Summarize the text content, and tag it with top {topn} most relevant tags from the set of tag/label and the corresponding relevance score.
+Steps:
+  - Review the tag/label set.
+  - Review examples which all consist of both text content and assigned tags with relevance score in JSON format.
+  - Summarize the text content, and tag it with the top {topn} most relevant tags from the set of tags/labels and the corresponding relevance score.
 
-Requirements
+Requirements:
   - The tags MUST be from the tag set.
   - The output MUST be in JSON format only, the key is tag and the value is its relevance score.
-  - The relevance score must be range from 1 to 10.
-  - Keywords ONLY in output.
+  - The relevance score must range from 1 to 10.
+  - Output keywords ONLY.
 
 # TAG SET
 {", ".join(all_tags)}
@@ -482,6 +482,6 @@ Output format (include only sections relevant to the image content):
 - Trends / Insights: [Analysis and interpretation]
 - Captions / Annotations: [Text and relevance, if available]
 
-Ensure high accuracy, clarity, and completeness in your analysis, and includes only the information present in the image. Avoid unnecessary statements about missing elements.
+Ensure high accuracy, clarity, and completeness in your analysis, and include only the information present in the image. Avoid unnecessary statements about missing elements.
 """
     return prompt
