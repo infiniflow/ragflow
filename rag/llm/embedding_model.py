@@ -16,6 +16,8 @@
 import logging
 import re
 import threading
+from urllib.parse import urljoin
+
 import requests
 from huggingface_hub import snapshot_download
 from zhipuai import ZhipuAI
@@ -141,8 +143,7 @@ class LocalAIEmbed(Base):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local embedding model url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
@@ -322,8 +323,7 @@ class FastEmbed(DefaultEmbedding):
 
 class XinferenceEmbed(Base):
     def __init__(self, key, model_name="", base_url=""):
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
@@ -598,8 +598,7 @@ class LmStudioEmbed(LocalAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key="lm-studio", base_url=base_url)
         self.model_name = model_name
 
@@ -608,8 +607,7 @@ class OpenAI_APIEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
@@ -833,8 +831,7 @@ class GPUStackEmbed(OpenAIEmbed):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
 
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
