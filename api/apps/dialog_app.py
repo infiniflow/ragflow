@@ -28,7 +28,7 @@ from api.utils.api_utils import get_json_result
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
-@validate_request("dialog_id", "prompt_config")
+@validate_request("prompt_config")
 @login_required
 def set_dialog():
     req = request.json
