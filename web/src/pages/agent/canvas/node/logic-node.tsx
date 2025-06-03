@@ -2,11 +2,12 @@ import { useTheme } from '@/components/theme-provider';
 import { ILogicNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
+import { memo } from 'react';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-export function LogicNode({
+export function InnerLogicNode({
   id,
   data,
   isConnectable = true,
@@ -43,3 +44,5 @@ export function LogicNode({
     </section>
   );
 }
+
+export const LogicNode = memo(InnerLogicNode);
