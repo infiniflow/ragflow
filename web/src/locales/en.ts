@@ -1278,6 +1278,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       modeTip: 'The mode defines how the workflow is initiated.',
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
+      query: 'Query variables',
     },
     llmTools: {
       bad_calculator: {

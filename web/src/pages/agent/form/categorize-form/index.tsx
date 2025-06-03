@@ -2,20 +2,13 @@ import { FormContainer } from '@/components/form-container';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { INextOperatorForm } from '../../interface';
+import { QueryVariable } from '../components/query-variable';
 import DynamicCategorize from './dynamic-categorize';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
@@ -26,7 +19,7 @@ const CategorizeForm = ({ node }: INextOperatorForm) => {
   const values = useValues(node);
 
   const FormSchema = z.object({
-    input: z.string().optional(),
+    query: z.string().optional(),
     parameter: z.string().optional(),
     ...LlmSettingSchema,
     message_history_window_size: z.coerce.number(),
@@ -63,22 +56,7 @@ const CategorizeForm = ({ node }: INextOperatorForm) => {
         }}
       >
         <FormContainer>
-          <FormField
-            control={form.control}
-            name="input"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel tooltip={t('chat.modelTip')}>
-                  {t('chat.input')}
-                </FormLabel>
-                <FormControl>
-                  <SelectWithSearch {...field}></SelectWithSearch>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
+          <QueryVariable></QueryVariable>
           <LargeModelFormField></LargeModelFormField>
         </FormContainer>
         <MessageHistoryWindowSizeFormField
