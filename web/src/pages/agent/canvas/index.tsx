@@ -19,6 +19,7 @@ import { useShowDrawer } from '../hooks/use-show-drawer';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
 import { RagNode } from './node';
+import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
 import { EmailNode } from './node/email-node';
@@ -53,6 +54,7 @@ const nodeTypes: NodeTypes = {
   emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,
+  agentNode: AgentNode,
 };
 
 const edgeTypes = {
