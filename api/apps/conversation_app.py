@@ -249,7 +249,7 @@ def completion():
         else:
             answer = None
             for ans in chat(dia, msg, **req):
-                answer = structure_answer(conv, ans, message_id, req["conversation_id"])
+                answer = structure_answer(conv, ans, message_id, conv.id)
                 ConversationService.update_by_id(conv.id, conv.to_dict())
                 break
             return get_json_result(data=answer)
