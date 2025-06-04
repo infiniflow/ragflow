@@ -235,7 +235,7 @@ export default {
       methodTitle: 'Descrição do método de fragmentação',
       methodExamples: 'Exemplos',
       methodExamplesDescription:
-        'As capturas de tela a seguir são fornecidas para maior clareza.',
+        'Para ajudá-lo(a) a entender melhor, disponibilizamos capturas de tela relevantes para referência.',
       dialogueExamplesTitle: 'Exemplos de diálogos',
       methodEmpty:
         'Aqui será exibida uma explicação visual das categorias da base de conhecimento',
