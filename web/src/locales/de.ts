@@ -241,7 +241,7 @@ export default {
       methodTitle: 'Beschreibung der Chunk-Methode',
       methodExamples: 'Beispiele',
       methodExamplesDescription:
-        'Die folgenden Screenshots dienen zur Verdeutlichung.',
+        'Um Ihnen das Verständnis zu erleichtern, haben wir relevante Screenshots als Referenz bereitgestellt.',
       dialogueExamplesTitle: 'Dialogbeispiele',
       methodEmpty:
         'Hier wird eine visuelle Erklärung der Wissensdatenbank-Kategorien angezeigt',

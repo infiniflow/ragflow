@@ -232,7 +232,7 @@ export default {
       cancel: '取消',
       methodTitle: '分块方法说明',
       methodExamples: '示例',
-      methodExamplesDescription: '提出以下屏幕截图以促进理解。',
+      methodExamplesDescription: '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
       book: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>

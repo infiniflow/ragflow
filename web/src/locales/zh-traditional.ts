@@ -231,7 +231,7 @@ export default {
       cancel: '取消',
       methodTitle: '分塊方法說明',
       methodExamples: '示例',
-      methodExamplesDescription: '提出以下屏幕截圖以促進理解。',
+      methodExamplesDescription: '為方便您理解，我們附上相關截圖供您參考。',
       dialogueExamplesTitle: '對話示例',
       methodEmpty: '這將顯示知識庫類別的可視化解釋',
       book: `<p>支持的文件格式為<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
