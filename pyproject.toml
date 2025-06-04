@@ -135,7 +135,7 @@ full = [
     "fastembed-gpu>=0.3.6,<0.4.0; sys_platform != 'darwin' and platform_machine == 'x86_64'",
     "flagembedding==1.2.10",
     "torch>=2.5.0,<3.0.0",
-    "transformers>=4.35.0,<5.0.0"
+    "transformers>=4.35.0,<5.0.0",
 ]
 
 [dependency-groups]
@@ -152,18 +152,32 @@ test = [
 ]
 
 [tool.setuptools]
-packages = ['agent', 'agentic_reasoning', 'api', 'deepdoc', 'graphrag', 'intergrations.chatgpt-on-wechat.plugins', 'mcp.server', 'rag', 'sdk.python.ragflow_sdk']
+packages = [
+    'agent',
+    'agentic_reasoning',
+    'api',
+    'deepdoc',
+    'graphrag',
+    'intergrations.chatgpt-on-wechat.plugins',
+    'mcp.server',
+    'rag',
+    'sdk.python.ragflow_sdk',
+]
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
 
 [tool.ruff]
 line-length = 200
-exclude = [
-    ".venv",
-    "rag/svr/discord_svr.py",
-]
+exclude = [".venv", "rag/svr/discord_svr.py"]
 
 [tool.ruff.lint]
 extend-select = ["ASYNC", "ASYNC1"]
 ignore = ["E402"]
+
+[tool.pytest.ini_options]
+markers = [
+    "p1: high priority test cases",
+    "p2: medium priority test cases",
+    "p3: low priority test cases",
+]
