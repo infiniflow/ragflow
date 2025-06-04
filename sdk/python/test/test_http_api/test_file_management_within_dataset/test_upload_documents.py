@@ -197,7 +197,7 @@ class TestDocumentsUpload:
         assert res["code"] == 0
 
         res = list_datasets(get_http_api_auth, {"id": dataset_id})
-        assert res["data"][0]["document_count"] == expected_document_count
+        assert res["data"]["datasets"][0]["document_count"] == expected_document_count
 
     @pytest.mark.p3
     def test_concurrent_upload(self, get_http_api_auth, add_dataset_func, tmp_path):
@@ -215,4 +215,4 @@ class TestDocumentsUpload:
         assert all(r["code"] == 0 for r in responses)
 
         res = list_datasets(get_http_api_auth, {"id": dataset_id})
-        assert res["data"][0]["document_count"] == expected_document_count
+        assert res["data"]["datasets"][0]["document_count"] == expected_document_count

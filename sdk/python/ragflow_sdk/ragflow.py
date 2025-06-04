@@ -89,7 +89,7 @@ class RAGFlow:
             return _list[0]
         raise Exception("Dataset %s not found" % name)
 
-    def list_datasets(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None) -> list[DataSet]:
+    def list_datasets(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
         res = self.get(
             "/datasets",
             {
@@ -102,11 +102,14 @@ class RAGFlow:
             },
         )
         res = res.json()
-        result_list = []
         if res.get("code") == 0:
-            for data in res["data"]:
-                result_list.append(DataSet(self, data))
-            return result_list
+            datasets = [DataSet(self, data) for data in res["data"].get("datasets", res["data"]) if isinstance(data, dict)]
+            return {
+                "total": res["data"]["total"],
+                "page": res["data"]["page"],
+                "page_size": res["data"]["page_size"],
+                "datasets": datasets
+            }
         raise Exception(res["message"])
 
     def create_chat(self, name: str, avatar: str = "", dataset_ids=None, llm: Chat.LLM | None = None, prompt: Chat.Prompt | None = None) -> Chat:
@@ -167,7 +170,7 @@ class RAGFlow:
         if res.get("code") != 0:
             raise Exception(res["message"])
 
-    def list_chats(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None) -> list[Chat]:
+    def list_chats(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
         res = self.get(
             "/chats",
             {
@@ -180,11 +183,14 @@ class RAGFlow:
             },
         )
         res = res.json()
-        result_list = []
         if res.get("code") == 0:
-            for data in res["data"]:
-                result_list.append(Chat(self, data))
-            return result_list
+            chats = [Chat(self, data) for data in res["data"].get("chats", res["data"]) if isinstance(data, dict)]
+            return {
+                "total": res["data"]["total"],
+                "page": res["data"]["page"],
+                "page_size": res["data"]["page_size"],
+                "chats": chats
+            }
         raise Exception(res["message"])
 
     def retrieve(
@@ -225,7 +231,7 @@ class RAGFlow:
             return chunks
         raise Exception(res.get("message"))
 
-    def list_agents(self, page: int = 1, page_size: int = 30, orderby: str = "update_time", desc: bool = True, id: str | None = None, title: str | None = None) -> list[Agent]:
+    def list_agents(self, page: int = 1, page_size: int = 30, orderby: str = "update_time", desc: bool = True, id: str | None = None, title: str | None = None):
         res = self.get(
             "/agents",
             {
@@ -238,11 +244,14 @@ class RAGFlow:
             },
         )
         res = res.json()
-        result_list = []
         if res.get("code") == 0:
-            for data in res["data"]:
-                result_list.append(Agent(self, data))
-            return result_list
+            agents = [Agent(self, data) for data in res["data"].get("agents", res["data"]) if isinstance(data, dict)]
+            return {
+                "total": res["data"]["total"],
+                "page": res["data"]["page"],
+                "page_size": res["data"]["page_size"],
+                "agents": agents
+            }
         raise Exception(res["message"])
 
     def create_agent(self, title: str, dsl: dict, description: str | None = None) -> None:

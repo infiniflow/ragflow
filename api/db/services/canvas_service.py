@@ -49,9 +49,9 @@ class UserCanvasService(CommonService):
         else:
             agents = agents.order_by(cls.model.getter_by(orderby).asc())
 
+        total = agents.count()
         agents = agents.paginate(page_number, items_per_page)
-
-        return list(agents.dicts())
+        return list(agents.dicts()), total
    
     @classmethod
     @DB.connection_context()

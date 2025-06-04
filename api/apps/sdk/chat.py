@@ -284,9 +284,7 @@ def list_chat(tenant_id):
         desc = False
     else:
         desc = True
-    chats = DialogService.get_list(tenant_id, page_number, items_per_page, orderby, desc, id, name)
-    if not chats:
-        return get_result(data=[])
+    chats, total = DialogService.get_list(tenant_id, page_number, items_per_page, orderby, desc, id, name)
     list_assts = []
     key_mapping = {
         "parameters": "variables",
@@ -322,4 +320,9 @@ def list_chat(tenant_id):
         res["datasets"] = kb_list
         res["avatar"] = res.pop("icon")
         list_assts.append(res)
-    return get_result(data=list_assts)
+    return get_result(data={
+        "total": total,
+        "page": page_number,
+        "page_size": items_per_page,
+        "chats": list_assts
+    })
