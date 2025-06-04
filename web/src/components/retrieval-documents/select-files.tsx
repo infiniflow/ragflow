@@ -1,6 +1,9 @@
 import NewDocumentLink from '@/components/new-document-link';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
+import {
+  useAllTestingResult,
+  useSelectTestingResult,
+} from '@/hooks/knowledge-hooks';
 import { ITestingDocument } from '@/interfaces/database/knowledge';
 import { EyeOutlined } from '@ant-design/icons';
 import { Button, Table, TableProps, Tooltip } from 'antd';
@@ -12,6 +15,9 @@ interface IProps {
 
 const SelectFiles = ({ setSelectedDocumentIds, handleTesting }: IProps) => {
   const { documents } = useSelectTestingResult();
+  const { documents: documentsAll } = useAllTestingResult();
+  const useDocuments =
+    documentsAll?.length > documents?.length ? documentsAll : documents;
   const { t } = useTranslate('fileManager');
 
   const columns: TableProps<ITestingDocument>['columns'] = [
@@ -62,7 +68,7 @@ const SelectFiles = ({ setSelectedDocumentIds, handleTesting }: IProps) => {
   return (
     <Table
       columns={columns}
-      dataSource={documents}
+      dataSource={useDocuments}
       showHeader={false}
       rowSelection={rowSelection}
       rowKey={'doc_id'}

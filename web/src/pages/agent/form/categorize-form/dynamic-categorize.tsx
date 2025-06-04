@@ -30,6 +30,7 @@ import {
 import { UseFormReturn, useFieldArray, useFormContext } from 'react-hook-form';
 import { Operator } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
+import DynamicExample from './dynamic-example';
 
 interface IProps {
   nodeId?: string;
@@ -55,7 +56,7 @@ const getOtherFieldValues = (
         x !== form.getValues(`${formListName}.${index}.${latestField}`),
     );
 
-const NameInput = ({
+const InnerNameInput = ({
   value,
   onChange,
   otherNames,
@@ -103,6 +104,8 @@ const NameInput = ({
     ></Input>
   );
 };
+
+const NameInput = memo(InnerNameInput);
 
 const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
   const form = useFormContext();
@@ -158,51 +161,7 @@ const InnerFormSet = ({ nodeId, index }: IProps & { index: number }) => {
           </FormItem>
         )}
       />
-      {/* <FormField
-        control={form.control}
-        name={buildFieldName('examples')}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('examples')}</FormLabel>
-            <FormControl>
-              <Textarea {...field} rows={3} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      /> */}
-      {/* <FormField
-        control={form.control}
-        name={buildFieldName('to')}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('nextStep')}</FormLabel>
-            <FormControl>
-              <RAGFlowSelect
-                {...field}
-                allowClear
-                options={buildCategorizeToOptions(
-                  getOtherFieldValues(form, 'items', index, 'to'),
-                )}
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="index"
-        render={({ field }) => (
-          <FormItem className="hidden">
-            <FormLabel>{t('examples')}</FormLabel>
-            <FormControl>
-              <Input {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      /> */}
+      <DynamicExample name={buildFieldName('examples')}></DynamicExample>
     </section>
   );
 };
@@ -222,7 +181,7 @@ const DynamicCategorize = ({ nodeId }: IProps) => {
     append({
       name: humanId(),
       description: '',
-      // examples: [],
+      examples: [{ value: '' }],
     });
     if (nodeId) updateNodeInternals(nodeId);
   };

@@ -296,12 +296,11 @@ class NvidiaRerank(Base):
         self.model_name = model_name
 
         if self.model_name == "nvidia/nv-rerankqa-mistral-4b-v3":
-            self.base_url = os.path.join(
-                base_url, "nv-rerankqa-mistral-4b-v3", "reranking"
+            self.base_url = urljoin(base_url, "nv-rerankqa-mistral-4b-v3/reranking"
             )
 
         if self.model_name == "nvidia/rerank-qa-mistral-4b":
-            self.base_url = os.path.join(base_url, "reranking")
+            self.base_url = urljoin(base_url, "reranking")
             self.model_name = "nv-rerank-qa-mistral-4b:1"
 
         self.headers = {

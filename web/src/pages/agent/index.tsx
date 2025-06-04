@@ -1,5 +1,5 @@
 import { PageHeader } from '@/components/page-header';
-import { Button } from '@/components/ui/button';
+import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,13 +12,19 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { ReactFlowProvider } from '@xyflow/react';
 import { CodeXml, EllipsisVertical, Forward, Import, Key } from 'lucide-react';
-import { ComponentPropsWithoutRef } from 'react';
+import { ComponentPropsWithoutRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentSidebar } from './agent-sidebar';
-import FlowCanvas from './canvas';
+import AgentCanvas from './canvas';
 import { useHandleExportOrImportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
+import { useGetBeginNodeDataQuery } from './hooks/use-get-begin-query';
 import { useOpenDocument } from './hooks/use-open-document';
+import {
+  useSaveGraph,
+  useSaveGraphBeforeOpeningDebugDrawer,
+} from './hooks/use-save-graph';
+import { BeginQuery } from './interface';
 import { UploadAgentDialog } from './upload-agent-dialog';
 
 function AgentDropdownMenuItem({
@@ -48,13 +54,38 @@ export default function Agent() {
     onFileUploadOk,
     hideFileUploadModal,
   } = useHandleExportOrImportJsonFile();
+  const { saveGraph, loading } = useSaveGraph();
 
   const { flowDetail } = useFetchDataOnMount();
+  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+
+  const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
+
+  const handleRunAgent = useCallback(() => {
+    const query: BeginQuery[] = getBeginNodeDataQuery();
+    if (query.length > 0) {
+      showChatDrawer();
+    } else {
+      handleRun();
+    }
+  }, [getBeginNodeDataQuery, handleRun, showChatDrawer]);
 
   return (
     <section>
       <PageHeader back={navigateToAgentList} title={flowDetail.title}>
         <div className="flex items-center gap-2">
+          <ButtonLoading
+            variant={'outline'}
+            onClick={() => saveGraph()}
+            loading={loading}
+          >
+            Save
+          </ButtonLoading>
+          <Button variant={'outline'} onClick={handleRunAgent}>
+            Run app
+          </Button>
+          <Button variant={'outline'}>Publish</Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant={'icon'} size={'icon'}>
@@ -83,17 +114,6 @@ export default function Agent() {
               </AgentDropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          <Button variant={'outline'} size={'sm'}>
-            Save
-          </Button>
-          <Button variant={'outline'} size={'sm'}>
-            Run app
-          </Button>
-
-          <Button variant={'tertiary'} size={'sm'}>
-            Publish
-          </Button>
         </div>
       </PageHeader>
       <ReactFlowProvider>
@@ -103,10 +123,10 @@ export default function Agent() {
             <div className="w-full">
               <SidebarTrigger />
               <div className="w-full h-full">
-                <FlowCanvas
+                <AgentCanvas
                   drawerVisible={chatDrawerVisible}
                   hideDrawer={hideChatDrawer}
-                ></FlowCanvas>
+                ></AgentCanvas>
               </div>
             </div>
           </SidebarProvider>
