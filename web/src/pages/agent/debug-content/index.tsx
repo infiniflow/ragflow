@@ -23,6 +23,21 @@ import { z } from 'zod';
 import { BeginQueryType } from '../constant';
 import { BeginQuery } from '../interface';
 
+export const BeginQueryComponentMap = {
+  [BeginQueryType.Line]: 'string',
+  [BeginQueryType.Paragraph]: 'string',
+  [BeginQueryType.Options]: 'string',
+  [BeginQueryType.File]: 'file',
+  [BeginQueryType.Integer]: 'number',
+  [BeginQueryType.Boolean]: 'boolean',
+};
+
+const StringFields = [
+  BeginQueryType.Line,
+  BeginQueryType.Paragraph,
+  BeginQueryType.Options,
+];
+
 interface IProps {
   parameters: BeginQuery[];
   ok(parameters: any[]): void;
@@ -44,9 +59,27 @@ const DebugContent = ({
 
   const FormSchema = useMemo(() => {
     const obj = parameters.reduce((pre, cur, idx) => {
-      pre[idx] = z.string().optional();
+      const type = cur.type;
+      let fieldSchema;
+      if (StringFields.some((x) => x === type)) {
+        fieldSchema = z.string();
+      } else if (type === BeginQueryType.Boolean) {
+        fieldSchema = z.boolean();
+      } else if (type === BeginQueryType.Integer) {
+        fieldSchema = z.coerce.number();
+      } else {
+        fieldSchema = z.instanceof(File);
+      }
+
+      if (cur.optional) {
+        fieldSchema.optional();
+      }
+
+      pre[idx.toString()] = fieldSchema;
+
       return pre;
     }, {});
+
     return z.object(obj);
   }, [parameters]);
 
@@ -61,6 +94,7 @@ const DebugContent = ({
     switchVisible,
     showModal: showPopover,
   } = useSetModalState();
+
   const { setRecord, currentRecord } = useSetSelectedRecord<number>();
   // const { submittable } = useHandleSubmittable(form);
   const submittable = true;
@@ -226,29 +260,10 @@ const DebugContent = ({
     [form, t],
   );
 
-  const onOk = useCallback(async () => {
-    // const values = await form.validateFields();
-    const nextValues = Object.entries(values).map(([key, value]) => {
-      const item = parameters[Number(key)];
-      let nextValue = value;
-      if (Array.isArray(value)) {
-        nextValue = ``;
-
-        value.forEach((x) => {
-          nextValue +=
-            x?.originFileObj instanceof File
-              ? `${x.name}\n${x.response?.data}\n----\n`
-              : `${x.url}\n${x.result}\n----\n`;
-        });
-      }
-      return { ...item, value: nextValue };
-    });
-
-    ok(nextValues);
-  }, [ok, parameters]);
-
   const onSubmit = useCallback(
     (values: z.infer<typeof FormSchema>) => {
+      console.log('🚀 ~ values:', values);
+      return values;
       const nextValues = Object.entries(values).map(([key, value]) => {
         const item = parameters[Number(key)];
         let nextValue = value;
@@ -274,20 +289,21 @@ const DebugContent = ({
     <>
       <section>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             {parameters.map((x, idx) => {
               return <div key={idx}>{renderWidget(x, idx.toString())}</div>;
             })}
+            <ButtonLoading
+              type="submit"
+              loading={loading}
+              disabled={!submittable || isUploading || submitButtonDisabled}
+              className="w-full"
+            >
+              {t(isNext ? 'common.next' : 'flow.run')}
+            </ButtonLoading>
           </form>
         </Form>
       </section>
-      <ButtonLoading
-        onClick={onOk}
-        loading={loading}
-        disabled={!submittable || isUploading || submitButtonDisabled}
-      >
-        {t(isNext ? 'common.next' : 'flow.run')}
-      </ButtonLoading>
     </>
   );
 };
