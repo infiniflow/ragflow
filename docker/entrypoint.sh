@@ -190,9 +190,12 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     RAGFLOW_HOST=${RAGFLOW_HOST_IP:-0.0.0.0}
     RAGFLOW_PORT=${RAGFLOW_HOST_PORT:-9380}
     GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
-    GUNICORN_TIMEOUT=${GUNICORN_WORKERS:120}
+    GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
 
-    echo "Gunicorn config: Workers=${GUNICORN_WORKERS}, Host=${RAGFLOW_HOST}, Port=${RAGFLOW_PORT}"
+    # Set environment variable for gevent worker class
+    export GUNICORN_WORKER_CLASS=gevent
+
+    echo "Gunicorn config: Workers=${GUNICORN_WORKERS}, Host=${RAGFLOW_HOST}, Port=${RAGFLOW_PORT}, Worker Class=gevent"
 
     # Check if gunicorn config file exists and use it, otherwise use command line options
     if [[ -f "/ragflow/conf/gunicorn.conf.py" ]]; then
@@ -202,7 +205,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
         echo "Using Gunicorn command line configuration..."
         # Start gunicorn with our WSGI application
         exec gunicorn --workers ${GUNICORN_WORKERS} \
-                       --worker-class sync \
+                       --worker-class gevent \
                        --worker-connections 1000 \
                        --max-requests 1000 \
                        --max-requests-jitter 100 \

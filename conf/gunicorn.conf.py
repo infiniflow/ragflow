@@ -1,6 +1,10 @@
 # Gunicorn configuration file for RAGFlow production deployment
 import multiprocessing
 import os
+from api import settings
+from rag.utils.infinity_conn import InfinityConnection
+from graphrag import search as kg_search
+from rag.nlp import search
 
 # Server socket
 bind = f"{os.environ.get('RAGFLOW_HOST_IP', '0.0.0.0')}:{os.environ.get('RAGFLOW_HOST_PORT', '9380')}"
@@ -8,15 +12,16 @@ backlog = 2048
 
 # Worker processes
 workers = int(os.environ.get('GUNICORN_WORKERS', min(multiprocessing.cpu_count() * 2 + 1, 8)))
-worker_class = 'sync'
-worker_connections = 1000
-timeout = 120
-keepalive = 2
-max_requests = 1000
-max_requests_jitter = 100
+worker_class = 'gevent'
 
-# Restart workers after this many requests, to help prevent memory leaks
-preload_app = True
+# Gevent-specific settings
+worker_connections = 1000
+timeout = 300
+keepalive = 10
+max_requests = 2000
+max_requests_jitter = 200
+
+preload_app = False
 
 # Logging
 accesslog = '-'
@@ -64,6 +69,10 @@ def pre_fork(server, worker):
 def post_fork(server, worker):
     """Called just after a worker has been forked."""
     server.log.info("RAGFlow worker spawned (pid: %s)", worker.pid)
+    if os.environ.get("DOC_ENGINE") == "infinity":
+        settings.docStoreConn = InfinityConnection()
+        settings.retrievaler = search.Dealer(settings.docStoreConn)
+        settings.kg_retrievaler = kg_search.KGSearch(settings.docStoreConn)
 
 def worker_abort(worker):
     """Called when a worker received the SIGABRT signal."""
