@@ -27,6 +27,7 @@ import xxhash
 from peewee import fn
 
 from api import settings
+from api.constants import IMG_BASE64_PREFIX
 from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant
 from api.db.db_utils import bulk_insert_into_db
@@ -147,7 +148,26 @@ class DocumentService(CommonService):
     def remove_document(cls, doc, tenant_id):
         cls.clear_chunk_num(doc.id)
         try:
+            page = 0
+            page_size = 1000
+            all_chunk_ids = []
+            while True:
+                chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
+                                                      page * page_size, page_size, search.index_name(tenant_id),
+                                                      [doc.kb_id])
+                chunk_ids = settings.docStoreConn.getChunkIds(chunks)
+                if not chunk_ids:
+                    break
+                all_chunk_ids.extend(chunk_ids)
+                page += 1
+            for cid in all_chunk_ids:
+                if STORAGE_IMPL.obj_exist(doc.kb_id, cid):
+                    STORAGE_IMPL.rm(doc.kb_id, cid)
+            if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
+                if STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
+                    STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
             settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+
             graph_source = settings.docStoreConn.getFields(
                 settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
             )

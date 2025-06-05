@@ -79,15 +79,33 @@ class Code(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         arguments = {}
         for input in self._param.arguments:
-            assert "@" in input["component_id"], "Each code argument should bind to a specific compontent"
-            component_id = input["component_id"].split("@")[0]
-            refered_component_key = input["component_id"].split("@")[1]
-            refered_component = self._canvas.get_component(component_id)["obj"]
+            if "@" in input["component_id"]:
+                component_id = input["component_id"].split("@")[0]
+                refered_component_key = input["component_id"].split("@")[1]
+                refered_component = self._canvas.get_component(component_id)["obj"]
 
-            for param in refered_component._param.query:
-                if param["key"] == refered_component_key:
-                    if "value" in param:
-                        arguments[input["name"]] = param["value"]
+                for param in refered_component._param.query:
+                    if param["key"] == refered_component_key:
+                        if "value" in param:
+                            arguments[input["name"]] = param["value"]
+            else:
+                refered_component = self._canvas.get_component(input["component_id"])["obj"]
+                refered_component_name = refered_component.component_name
+                refered_component_id = refered_component._id
+                if refered_component_name.lower() == "answer":
+                    arguments[input["name"]] = self._canvas.get_history(1)[0]["content"]
+                    continue
+
+                debug_inputs = self._param.debug_inputs
+                if debug_inputs:
+                    for param in debug_inputs:
+                        if param["key"] == refered_component_id:
+                            if "value" in param and param["name"] == input["name"]:
+                                arguments[input["name"]] = param["value"]
+                else:
+                    _, out = refered_component.output(allow_partial=False)
+                    if not out.empty:
+                        arguments[input["name"]] = "\n".join(out["content"])
 
         return self._execute_code(
             language=self._param.lang,

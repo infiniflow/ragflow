@@ -1,4 +1,5 @@
-import { BlockButton } from '@/components/ui/button';
+import { Collapse } from '@/components/collapse';
+import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
@@ -10,24 +11,66 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { buildSelectOptions } from '@/utils/common-util';
+import { FormTooltip } from '@/components/ui/tooltip';
+import { buildSelectOptions } from '@/utils/component-util';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Plus } from 'lucide-react';
 import { useCallback } from 'react';
-import { useWatch } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { z } from 'zod';
 import { AgentDialogueMode } from '../../constant';
-import { BeginQuery, INextOperatorForm } from '../../interface';
-import { useEditQueryRecord } from './hooks';
-import { ParameterDialog } from './paramater-dialog';
-import QueryTable from './query-table';
+import { useWatchFormChange } from '../../hooks/use-watch-form-change';
+import { INextOperatorForm } from '../../interface';
+import { ParameterDialog } from './parameter-dialog';
+import { QueryTable } from './query-table';
+import { useEditQueryRecord } from './use-edit-query';
+import { useValues } from './use-values';
 
 const ModeOptions = buildSelectOptions([
-  (AgentDialogueMode.Conversational, AgentDialogueMode.Task),
+  AgentDialogueMode.Conversational,
+  AgentDialogueMode.Task,
 ]);
 
-const BeginForm = ({ form }: INextOperatorForm) => {
+const BeginForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
 
+  const values = useValues(node);
+
+  const FormSchema = z.object({
+    enablePrologue: z.boolean().optional(),
+    prologue: z
+      .string()
+      .min(1, {
+        message: t('common.namePlaceholder'),
+      })
+      .trim()
+      .optional(),
+    mode: z.string(),
+    query: z
+      .array(
+        z.object({
+          key: z.string(),
+          type: z.string(),
+          value: z.string(),
+          optional: z.boolean(),
+          name: z.string(),
+          options: z.array(z.union([z.number(), z.string(), z.boolean()])),
+        }),
+      )
+      .optional(),
+  });
+
+  const form = useForm({
+    defaultValues: values,
+    resolver: zodResolver(FormSchema),
+  });
+
+  useWatchFormChange(node?.id, form);
+
   const query = useWatch({ control: form.control, name: 'query' });
+  const mode = useWatch({ control: form.control, name: 'mode' });
+
   const enablePrologue = useWatch({
     control: form.control,
     name: 'enablePrologue',
@@ -40,22 +83,17 @@ const BeginForm = ({ form }: INextOperatorForm) => {
     hideModal,
     showModal,
     otherThanCurrentQuery,
+    handleDeleteRecord,
   } = useEditQueryRecord({
     form,
+    node,
   });
 
-  const handleDeleteRecord = useCallback(
-    (idx: number) => {
-      const query = form?.getValues('query') || [];
-      const nextQuery = query.filter(
-        (item: BeginQuery, index: number) => index !== idx,
-      );
-      // onValuesChange?.(
-      //   { query: nextQuery },
-      //   { query: nextQuery, prologue: form?.getFieldValue('prologue') },
-      // );
+  const handleParameterDialogSubmit = useCallback(
+    (values: any) => {
+      ok(values);
     },
-    [form],
+    [ok],
   );
 
   return (
@@ -66,7 +104,7 @@ const BeginForm = ({ form }: INextOperatorForm) => {
           name={'mode'}
           render={({ field }) => (
             <FormItem>
-              <FormLabel tooltip={t('chat.setAnOpenerTip')}>Mode</FormLabel>
+              <FormLabel tooltip={t('flow.modeTip')}>Mode</FormLabel>
               <FormControl>
                 <RAGFlowSelect
                   placeholder={t('common.pleaseSelect')}
@@ -78,24 +116,26 @@ const BeginForm = ({ form }: INextOperatorForm) => {
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name={'enablePrologue'}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t('chat.setAnOpenerTip')}>
-                Welcome Message
-              </FormLabel>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        {mode === AgentDialogueMode.Conversational && (
+          <FormField
+            control={form.control}
+            name={'enablePrologue'}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel tooltip={t('flow.openingSwitchTip')}>
+                  {t('flow.openingSwitch')}
+                </FormLabel>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
         {enablePrologue && (
           <FormField
             control={form.control}
@@ -103,7 +143,7 @@ const BeginForm = ({ form }: INextOperatorForm) => {
             render={({ field }) => (
               <FormItem>
                 <FormLabel tooltip={t('chat.setAnOpenerTip')}>
-                  {t('chat.setAnOpener')}
+                  {t('flow.openingCopy')}
                 </FormLabel>
                 <FormControl>
                   <Textarea
@@ -118,19 +158,37 @@ const BeginForm = ({ form }: INextOperatorForm) => {
           />
         )}
         {/* Create a hidden field to make Form instance record this */}
-        {/* <FormField
+        <FormField
           control={form.control}
           name={'query'}
           render={() => <div></div>}
-        /> */}
-        <QueryTable
-          data={query}
-          showModal={showModal}
-          deleteRecord={handleDeleteRecord}
-        ></QueryTable>
-        <BlockButton onClick={() => showModal()}>
-          {t('flow.addItem')}
-        </BlockButton>
+        />
+        <Collapse
+          title={
+            <div>
+              {t('flow.input')}
+              <FormTooltip tooltip={t('flow.beginInputTip')}></FormTooltip>
+            </div>
+          }
+          rightContent={
+            <Button
+              variant={'ghost'}
+              onClick={(e) => {
+                e.preventDefault();
+                showModal();
+              }}
+            >
+              <Plus />
+            </Button>
+          }
+        >
+          <QueryTable
+            data={query}
+            showModal={showModal}
+            deleteRecord={handleDeleteRecord}
+          ></QueryTable>
+        </Collapse>
+
         {visible && (
           <ParameterDialog
             visible={visible}
@@ -138,6 +196,7 @@ const BeginForm = ({ form }: INextOperatorForm) => {
             initialValue={currentRecord}
             onOk={ok}
             otherThanCurrentQuery={otherThanCurrentQuery}
+            submit={handleParameterDialogSubmit}
           ></ParameterDialog>
         )}
       </Form>

@@ -1,18 +1,18 @@
 'use client';
 
 import { FormContainer } from '@/components/form-container';
-import { Button } from '@/components/ui/button';
+import { BlockButton, Button } from '@/components/ui/button';
 import {
   FormControl,
   FormField,
   FormItem,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
+import { BlurInput } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { Plus, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -58,10 +58,10 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
               render={({ field }) => (
                 <FormItem className="w-2/5">
                   <FormControl>
-                    <Input
+                    <BlurInput
                       {...field}
                       placeholder={t('common.pleaseInput')}
-                    ></Input>
+                    ></BlurInput>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -92,14 +92,11 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
           </div>
         );
       })}
-      <Button
+      <BlockButton
         onClick={() => append({ name: '', component_id: undefined })}
-        className="mt-4 border-dashed w-full"
-        variant={'outline'}
       >
-        <Plus />
         {t('flow.addVariable')}
-      </Button>
+      </BlockButton>
     </div>
   );
 }

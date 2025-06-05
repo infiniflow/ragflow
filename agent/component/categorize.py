@@ -99,9 +99,13 @@ class Categorize(Generate, ABC):
         # If a category is found, return the category with the highest count.
         if any(category_counts.values()):
             max_category = max(category_counts.items(), key=lambda x: x[1])
-            return Categorize.be_output(self._param.category_description[max_category[0]]["to"])
+            res = Categorize.be_output(self._param.category_description[max_category[0]]["to"])
+            self.set_output(res)
+            return res
 
-        return Categorize.be_output(list(self._param.category_description.items())[-1][1]["to"])
+        res = Categorize.be_output(list(self._param.category_description.items())[-1][1]["to"])
+        self.set_output(res)
+        return res
 
     def debug(self, **kwargs):
         df = self._run([], **kwargs)

@@ -160,7 +160,7 @@ export default {
       cancel: '取消',
       rerankModel: 'Rerank模型',
       rerankPlaceholder: '请选择',
-      rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。`,
+      rerankTip: `非必选项：若不选择 rerank 模型，系统将默认采用关键词相似度与向量余弦相似度相结合的混合查询方式；如果设置了 rerank 模型，则混合查询中的向量相似度部分将被 rerank 打分替代。请注意：采用 rerank 模型会非常耗时。如需选用 rerank 模型，建议使用 SaaS 的 rerank 模型服务；如果你倾向使用本地部署的 rerank 模型，请务必确保你使用 docker-compose-gpu.yml 启动 RAGFlow。`,
       topK: 'Top-K',
       topKTip: `与 Rerank 模型配合使用，用于设置传给 Rerank 模型的文本块数量。`,
       delimiter: `文本分段标识符`,
@@ -232,7 +232,7 @@ export default {
       cancel: '取消',
       methodTitle: '分块方法说明',
       methodExamples: '示例',
-      methodExamplesDescription: '提出以下屏幕截图以促进理解。',
+      methodExamplesDescription: '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
       book: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
@@ -247,7 +247,7 @@ export default {
       我们假设手册具有分层部分结构。 我们使用最低的部分标题作为对文档进行切片的枢轴。
       因此，同一部分中的图和表不会被分割，并且块大小可能会很大。
       </p>`,
-      naive: `<p>支持的文件格式为<b>DOCX、XLSX、XLS (Excel 97-2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
+      naive: `<p>支持的文件格式为<b>MD、MDX、DOCX、XLSX、XLS (Excel 97-2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
       <p>此方法将简单的方法应用于块文件：</p>
       <p>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
@@ -462,7 +462,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       modelTip: '大语言聊天模型',
       modelMessage: '请选择',
       modelEnabledTools: '可用的工具',
-      modelEnabledToolsTip: '请选择一个或多个可供该模型所使用的工具。仅对支持工具调用的模型生效。',
+      modelEnabledToolsTip:
+        '请选择一个或多个可供该模型所使用的工具。仅对支持工具调用的模型生效。',
       freedom: '自由度',
       improvise: '即兴创作',
       precise: '精确',
@@ -788,7 +789,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       examples: '示例',
       to: '下一步',
       msg: '消息',
-      messagePlaceholder: '消息',
+      msgTip: '输出上游组件的变量内容或者自己输入的文本。',
+      messagePlaceholder: '请输入您的消息内容，使用‘/’快速插入变量。',
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       addMessage: '新增消息',
@@ -812,7 +814,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:
-        '此组件用于向用户发送静态信息。您可以准备几条消息，这些消息将被随机选择。',
+        '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N指定需要提取的关键词数量。`,
       switchDescription: `该组件用于根据前面组件的输出评估条件，并相应地引导执行流程。通过定义各种情况并指定操作，或在不满足条件时采取默认操作，实现复杂的分支逻辑。`,
       wikipediaDescription: `此组件用于从 https://www.wikipedia.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。`,
@@ -1224,6 +1226,14 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       inputVariables: '输入变量',
       addVariable: '新增变量',
       runningHintText: '正在运行中...🕞',
+      openingSwitch: '开场白开关',
+      openingCopy: '开场白文案',
+      openingSwitchTip: '您的用户将在开始时看到此欢迎消息。',
+      modeTip: '模式定义了工作流的启动方式。',
+      beginInputTip: '通过定义输入参数，此内容可以被后续流程中的其他组件访问。',
+      query: '查询变量',
+      agent: 'Agent',
+      agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1235,11 +1245,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
     },
     llmTools: {
       bad_calculator: {
-        name: "计算器",
-        description: "用于计算两个数的和的工具（会给出错误答案）",
+        name: '计算器',
+        description: '用于计算两个数的和的工具（会给出错误答案）',
         params: {
-          a: "第一个数",
-          b: "第二个数",
+          a: '第一个数',
+          b: '第二个数',
         },
       },
     },
