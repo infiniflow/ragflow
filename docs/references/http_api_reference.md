@@ -2753,6 +2753,7 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
+  - `"name`: `string`
   - `"question"`: `string`
   - `"stream"`: `boolean`
   - `"session_id"`: `string`
