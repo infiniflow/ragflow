@@ -16,6 +16,7 @@
 import json
 import logging
 import re
+import secrets
 from datetime import datetime
 
 from flask import redirect, request, session
@@ -465,7 +466,7 @@ def log_out():
         schema:
           type: object
     """
-    current_user.access_token = ""
+    current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
     current_user.save()
     logout_user()
     return get_json_result(data=True)
