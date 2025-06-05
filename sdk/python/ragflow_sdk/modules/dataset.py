@@ -63,8 +63,8 @@ class DataSet(Base):
             return doc_list
         raise Exception(res.get("message"))
 
-    def list_documents(self, id: str | None = None, keywords: str | None = None, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True):
-        res = self.get(f"/datasets/{self.id}/documents", params={"id": id, "keywords": keywords, "page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
+    def list_documents(self, id: str | None = None, name: str | None = None, keywords: str | None = None, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True):
+        res = self.get(f"/datasets/{self.id}/documents", params={"id": id, "name": name, "keywords": keywords, "page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
         res = res.json()
         documents = []
         if res.get("code") == 0:
