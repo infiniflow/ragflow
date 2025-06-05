@@ -118,7 +118,7 @@ def create_agent_session(tenant_id, agent_id):
         pass
 
     cvs.dsl = json.loads(str(canvas))
-    conv = {"id": get_uuid(), "dialog_id": cvs.id, "user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
+    conv = {"id": get_uuid(), "dialog_id": cvs.id, "name":request.args.get("name", "New conversation"),"user_id": user_id, "message": [{"role": "assistant", "content": canvas.get_prologue()}], "source": "agent", "dsl": cvs.dsl}
     API4ConversationService.save(**conv)
     conv["agent_id"] = conv.pop("dialog_id")
     return get_result(data=conv)
