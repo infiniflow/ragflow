@@ -93,6 +93,7 @@ class TestCapability:
             futures = [executor.submit(delete_datasets, api_key, {"ids": ids[i : i + 1]}) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
+        assert all(futures.result()["code"] == 0 for futures in futures)
 
 
 class TestDatasetsDelete:
