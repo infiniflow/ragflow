@@ -191,7 +191,6 @@ const BeginForm = ({ node }: INextOperatorForm) => {
 
         {visible && (
           <ParameterDialog
-            visible={visible}
             hideModal={hideModal}
             initialValue={currentRecord}
             onOk={ok}
