@@ -13,125 +13,51 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from operator import attrgetter
 
 import pytest
-from common import DATASET_NAME_LIMIT, INVALID_API_TOKEN, list_datasets, update_dataset
+from configs import DATASET_NAME_LIMIT
 from hypothesis import HealthCheck, example, given, settings
-from libs.auth import RAGFlowHttpApiAuth
+from ragflow_sdk import DataSet
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 
-# TODO: Missing scenario for updating embedding_model with chunk_count != 0
-
-
-class TestAuthorization:
-    @pytest.mark.p1
-    @pytest.mark.parametrize(
-        "invalid_auth, expected_code, expected_message",
-        [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
-        ],
-        ids=["empty_auth", "invalid_api_token"],
-    )
-    def test_auth_invalid(self, invalid_auth, expected_code, expected_message):
-        res = update_dataset(invalid_auth, "dataset_id")
-        assert res["code"] == expected_code, res
-        assert res["message"] == expected_message, res
-
 
 class TestRquest:
-    @pytest.mark.p3
-    def test_bad_content_type(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        BAD_CONTENT_TYPE = "text/xml"
-        res = update_dataset(api_key, dataset_id, {"name": "bad_content_type"}, headers={"Content-Type": BAD_CONTENT_TYPE})
-        assert res["code"] == 101, res
-        assert res["message"] == f"Unsupported content type: Expected application/json, got {BAD_CONTENT_TYPE}", res
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "payload, expected_message",
-        [
-            ("a", "Malformed JSON syntax: Missing commas/brackets or invalid encoding"),
-            ('"a"', "Invalid request payload: expected object, got str"),
-        ],
-        ids=["malformed_json_syntax", "invalid_request_payload_type"],
-    )
-    def test_payload_bad(self, api_key, add_dataset_func, payload, expected_message):
-        dataset_id = add_dataset_func
-        res = update_dataset(api_key, dataset_id, data=payload)
-        assert res["code"] == 101, res
-        assert res["message"] == expected_message, res
-
     @pytest.mark.p2
-    def test_payload_empty(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        res = update_dataset(api_key, dataset_id, {})
-        assert res["code"] == 101, res
-        assert res["message"] == "No properties were modified", res
-
-    @pytest.mark.p3
-    def test_payload_unset(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        res = update_dataset(api_key, dataset_id, None)
-        assert res["code"] == 101, res
-        assert res["message"] == "Malformed JSON syntax: Missing commas/brackets or invalid encoding", res
+    def test_payload_empty(self, add_dataset_func):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({})
+        assert "No properties were modified" in str(excinfo.value), str(excinfo.value)
 
 
 class TestCapability:
     @pytest.mark.p3
-    def test_update_dateset_concurrent(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
+    def test_update_dateset_concurrent(self, add_dataset_func):
+        dataset = add_dataset_func
         count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(update_dataset, api_key, dataset_id, {"name": f"dataset_{i}"}) for i in range(count)]
+            futures = [executor.submit(dataset.update, {"name": f"dataset_{i}"}) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
 
 
 class TestDatasetUpdate:
-    @pytest.mark.p3
-    def test_dataset_id_not_uuid(self, api_key):
-        payload = {"name": "not uuid"}
-        res = update_dataset(api_key, "not_uuid", payload)
-        assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
-
-    @pytest.mark.p3
-    def test_dataset_id_not_uuid1(self, api_key):
-        payload = {"name": "not uuid1"}
-        res = update_dataset(api_key, uuid.uuid4().hex, payload)
-        assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
-
-    @pytest.mark.p3
-    def test_dataset_id_wrong_uuid(self, api_key):
-        payload = {"name": "wrong uuid"}
-        res = update_dataset(api_key, "d94a8dc02c9711f0930f7fbc369eab6d", payload)
-        assert res["code"] == 108, res
-        assert "lacks permission for dataset" in res["message"], res
-
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
     @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
-    def test_name(self, api_key, add_dataset_func, name):
-        dataset_id = add_dataset_func
+    def test_name(self, client, add_dataset_func, name):
+        dataset = add_dataset_func
         payload = {"name": name}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+        dataset.update(payload)
+        assert dataset.name == name, str(dataset)
 
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        assert res["data"][0]["name"] == name, res
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.name == name, str(retrieved_dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -145,52 +71,45 @@ class TestDatasetUpdate:
         ],
         ids=["empty_name", "space_name", "too_long_name", "invalid_name", "None_name"],
     )
-    def test_name_invalid(self, api_key, add_dataset_func, name, expected_message):
-        dataset_id = add_dataset_func
-        payload = {"name": name}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert expected_message in res["message"], res
+    def test_name_invalid(self, add_dataset_func, name, expected_message):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"name": name})
+        assert expected_message in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p3
-    def test_name_duplicated(self, api_key, add_datasets_func):
-        dataset_ids = add_datasets_func[0]
+    def test_name_duplicated(self, add_datasets_func):
+        datasets = add_datasets_func
         name = "dataset_1"
-        payload = {"name": name}
-        res = update_dataset(api_key, dataset_ids, payload)
-        assert res["code"] == 102, res
-        assert res["message"] == f"Dataset name '{name}' already exists", res
+        with pytest.raises(Exception) as excinfo:
+            datasets[0].update({"name": name})
+        assert f"Dataset name '{name}' already exists" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p3
-    def test_name_case_insensitive(self, api_key, add_datasets_func):
-        dataset_id = add_datasets_func[0]
+    def test_name_case_insensitive(self, add_datasets_func):
+        dataset = add_datasets_func[0]
         name = "DATASET_1"
-        payload = {"name": name}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 102, res
-        assert res["message"] == f"Dataset name '{name}' already exists", res
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"name": name})
+        assert f"Dataset name '{name}' already exists" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p2
-    def test_avatar(self, api_key, add_dataset_func, tmp_path):
-        dataset_id = add_dataset_func
+    def test_avatar(self, client, add_dataset_func, tmp_path):
+        dataset = add_dataset_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
-        payload = {
-            "avatar": f"data:image/png;base64,{encode_avatar(fn)}",
-        }
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+        avatar_data = f"data:image/png;base64,{encode_avatar(fn)}"
+        dataset.update({"avatar": avatar_data})
+        assert dataset.avatar == avatar_data, str(dataset)
 
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        assert res["data"][0]["avatar"] == f"data:image/png;base64,{encode_avatar(fn)}", res
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.avatar == avatar_data, str(retrieved_dataset)
 
     @pytest.mark.p2
-    def test_avatar_exceeds_limit_length(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"avatar": "a" * 65536}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert "String should have at most 65535 characters" in res["message"], res
+    def test_avatar_exceeds_limit_length(self, add_dataset_func):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"avatar": "a" * 65536})
+        assert "String should have at most 65535 characters" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -203,54 +122,46 @@ class TestDatasetUpdate:
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
     )
-    def test_avatar_invalid_prefix(self, api_key, add_dataset_func, tmp_path, avatar_prefix, expected_message):
-        dataset_id = add_dataset_func
+    def test_avatar_invalid_prefix(self, add_dataset_func, tmp_path, avatar_prefix, expected_message):
+        dataset = add_dataset_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
-        payload = {"avatar": f"{avatar_prefix}{encode_avatar(fn)}"}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert expected_message in res["message"], res
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"avatar": f"{avatar_prefix}{encode_avatar(fn)}"})
+        assert expected_message in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p3
-    def test_avatar_none(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"avatar": None}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+    def test_avatar_none(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        dataset.update({"avatar": None})
+        assert dataset.avatar is None, str(dataset)
 
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        assert res["data"][0]["avatar"] is None, res
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.avatar is None, str(retrieved_dataset)
 
     @pytest.mark.p2
-    def test_description(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"description": "description"}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0
+    def test_description(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        dataset.update({"description": "description"})
+        assert dataset.description == "description", str(dataset)
 
-        res = list_datasets(api_key, {"id": dataset_id})
-        assert res["code"] == 0, res
-        assert res["data"][0]["description"] == "description"
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.description == "description", str(retrieved_dataset)
 
     @pytest.mark.p2
-    def test_description_exceeds_limit_length(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"description": "a" * 65536}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert "String should have at most 65535 characters" in res["message"], res
+    def test_description_exceeds_limit_length(self, add_dataset_func):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"description": "a" * 65536})
+        assert "String should have at most 65535 characters" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p3
-    def test_description_none(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"description": None}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+    def test_description_none(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        dataset.update({"description": None})
+        assert dataset.description is None, str(dataset)
 
-        res = list_datasets(api_key, {"id": dataset_id})
-        assert res["code"] == 0, res
-        assert res["data"][0]["description"] is None
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.description is None, str(retrieved_dataset)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -262,15 +173,13 @@ class TestDatasetUpdate:
         ],
         ids=["builtin_baai", "builtin_youdao", "tenant_zhipu"],
     )
-    def test_embedding_model(self, api_key, add_dataset_func, embedding_model):
-        dataset_id = add_dataset_func
-        payload = {"embedding_model": embedding_model}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+    def test_embedding_model(self, client, add_dataset_func, embedding_model):
+        dataset = add_dataset_func
+        dataset.update({"embedding_model": embedding_model})
+        assert dataset.embedding_model == embedding_model, str(dataset)
 
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        assert res["data"][0]["embedding_model"] == embedding_model, res
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.embedding_model == embedding_model, str(retrieved_dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -283,15 +192,15 @@ class TestDatasetUpdate:
         ],
         ids=["unknown_llm_name", "unknown_llm_factory", "tenant_no_auth_default_tenant_llm", "tenant_no_auth"],
     )
-    def test_embedding_model_invalid(self, api_key, add_dataset_func, name, embedding_model):
-        dataset_id = add_dataset_func
-        payload = {"name": name, "embedding_model": embedding_model}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
+    def test_embedding_model_invalid(self, add_dataset_func, name, embedding_model):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"name": name, "embedding_model": embedding_model})
+        error_msg = str(excinfo.value)
         if "tenant_no_auth" in name:
-            assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
+            assert error_msg == f"Unauthorized model: <{embedding_model}>", error_msg
         else:
-            assert res["message"] == f"Unsupported model: <{embedding_model}>", res
+            assert error_msg == f"Unsupported model: <{embedding_model}>", error_msg
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -305,23 +214,22 @@ class TestDatasetUpdate:
         ],
         ids=["missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
-    def test_embedding_model_format(self, api_key, add_dataset_func, name, embedding_model):
-        dataset_id = add_dataset_func
-        payload = {"name": name, "embedding_model": embedding_model}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
+    def test_embedding_model_format(self, add_dataset_func, name, embedding_model):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"name": name, "embedding_model": embedding_model})
+        error_msg = str(excinfo.value)
         if name == "missing_at":
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
+            assert "Embedding model identifier must follow <model_name>@<provider> format" in error_msg, error_msg
         else:
-            assert "Both model_name and provider must be non-empty strings" in res["message"], res
+            assert "Both model_name and provider must be non-empty strings" in error_msg, error_msg
 
     @pytest.mark.p2
-    def test_embedding_model_none(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"embedding_model": None}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert "Input should be a valid string" in res["message"], res
+    def test_embedding_model_none(self, add_dataset_func):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"embedding_model": None})
+        assert "Input should be a valid string" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -335,15 +243,13 @@ class TestDatasetUpdate:
         ],
         ids=["me", "team", "me_upercase", "team_upercase", "whitespace"],
     )
-    def test_permission(self, api_key, add_dataset_func, permission):
-        dataset_id = add_dataset_func
-        payload = {"permission": permission}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+    def test_permission(self, client, add_dataset_func, permission):
+        dataset = add_dataset_func
+        dataset.update({"permission": permission})
+        assert dataset.permission == permission.lower().strip(), str(dataset)
 
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        assert res["data"][0]["permission"] == permission.lower().strip(), res
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.permission == permission.lower().strip(), str(retrieved_dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -355,20 +261,18 @@ class TestDatasetUpdate:
         ],
         ids=["empty", "unknown", "type_error"],
     )
-    def test_permission_invalid(self, api_key, add_dataset_func, permission):
-        dataset_id = add_dataset_func
-        payload = {"permission": permission}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101
-        assert "Input should be 'me' or 'team'" in res["message"]
+    def test_permission_invalid(self, add_dataset_func, permission):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"permission": permission})
+        assert "Input should be 'me' or 'team'" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p3
-    def test_permission_none(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"permission": None}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert "Input should be 'me' or 'team'" in res["message"], res
+    def test_permission_none(self, add_dataset_func):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"permission": None})
+        assert "Input should be 'me' or 'team'" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -389,15 +293,13 @@ class TestDatasetUpdate:
         ],
         ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
     )
-    def test_chunk_method(self, api_key, add_dataset_func, chunk_method):
-        dataset_id = add_dataset_func
-        payload = {"chunk_method": chunk_method}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+    def test_chunk_method(self, client, add_dataset_func, chunk_method):
+        dataset = add_dataset_func
+        dataset.update({"chunk_method": chunk_method})
+        assert dataset.chunk_method == chunk_method, str(dataset)
 
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        assert res["data"][0]["chunk_method"] == chunk_method, res
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.chunk_method == chunk_method, str(retrieved_dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -409,32 +311,28 @@ class TestDatasetUpdate:
         ],
         ids=["empty", "unknown", "type_error"],
     )
-    def test_chunk_method_invalid(self, api_key, add_dataset_func, chunk_method):
-        dataset_id = add_dataset_func
-        payload = {"chunk_method": chunk_method}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+    def test_chunk_method_invalid(self, add_dataset_func, chunk_method):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"chunk_method": chunk_method})
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p3
-    def test_chunk_method_none(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"chunk_method": None}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+    def test_chunk_method_none(self, add_dataset_func):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"chunk_method": None})
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
-    def test_pagerank(self, api_key, add_dataset_func, pagerank):
-        dataset_id = add_dataset_func
-        payload = {"pagerank": pagerank}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0
+    def test_pagerank(self, client, add_dataset_func, pagerank):
+        dataset = add_dataset_func
+        dataset.update({"pagerank": pagerank})
+        assert dataset.pagerank == pagerank, str(dataset)
 
-        res = list_datasets(api_key, {"id": dataset_id})
-        assert res["code"] == 0, res
-        assert res["data"][0]["pagerank"] == pagerank
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.pagerank == pagerank, str(retrieved_dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -445,20 +343,18 @@ class TestDatasetUpdate:
         ],
         ids=["min_limit", "max_limit"],
     )
-    def test_pagerank_invalid(self, api_key, add_dataset_func, pagerank, expected_message):
-        dataset_id = add_dataset_func
-        payload = {"pagerank": pagerank}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert expected_message in res["message"], res
+    def test_pagerank_invalid(self, add_dataset_func, pagerank, expected_message):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"pagerank": pagerank})
+        assert expected_message in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p3
-    def test_pagerank_none(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"pagerank": None}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert "Input should be a valid integer" in res["message"], res
+    def test_pagerank_none(self, add_dataset_func):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"pagerank": None})
+        assert "Input should be a valid integer" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -564,20 +460,23 @@ class TestDatasetUpdate:
             "raptor_random_seed_min",
         ],
     )
-    def test_parser_config(self, api_key, add_dataset_func, parser_config):
-        dataset_id = add_dataset_func
-        payload = {"parser_config": parser_config}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
-
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
+    def test_parser_config(self, client, add_dataset_func, parser_config):
+        dataset = add_dataset_func
+        dataset.update({"parser_config": parser_config})
         for k, v in parser_config.items():
             if isinstance(v, dict):
                 for kk, vv in v.items():
-                    assert res["data"][0]["parser_config"][k][kk] == vv, res
+                    assert attrgetter(f"{k}.{kk}")(dataset.parser_config) == vv, str(dataset)
             else:
-                assert res["data"][0]["parser_config"][k] == v, res
+                assert attrgetter(k)(dataset.parser_config) == v, str(dataset)
+
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        for k, v in parser_config.items():
+            if isinstance(v, dict):
+                for kk, vv in v.items():
+                    assert attrgetter(f"{k}.{kk}")(retrieved_dataset.parser_config) == vv, str(retrieved_dataset)
+            else:
+                assert attrgetter(k)(retrieved_dataset.parser_config) == v, str(retrieved_dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -695,79 +594,94 @@ class TestDatasetUpdate:
             "parser_config_type_invalid",
         ],
     )
-    def test_parser_config_invalid(self, api_key, add_dataset_func, parser_config, expected_message):
-        dataset_id = add_dataset_func
-        payload = {"parser_config": parser_config}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert expected_message in res["message"], res
+    def test_parser_config_invalid(self, add_dataset_func, parser_config, expected_message):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"parser_config": parser_config})
+        assert expected_message in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p2
-    def test_parser_config_empty(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"parser_config": {}}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+    def test_parser_config_empty(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        expected_config = DataSet.ParserConfig(
+            client,
+            {
+                "chunk_token_num": 128,
+                "delimiter": r"\n",
+                "html4excel": False,
+                "layout_recognize": "DeepDOC",
+                "raptor": {"use_raptor": False},
+            },
+        )
+        dataset.update({"parser_config": {}})
+        assert str(dataset.parser_config) == str(expected_config), str(dataset)
 
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {
-            "chunk_token_num": 128,
-            "delimiter": r"\n",
-            "html4excel": False,
-            "layout_recognize": "DeepDOC",
-            "raptor": {"use_raptor": False},
-        }, res
-
-    @pytest.mark.p3
-    def test_parser_config_none(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"parser_config": None}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
-
-        res = list_datasets(api_key, {"id": dataset_id})
-        assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {
-            "chunk_token_num": 128,
-            "delimiter": r"\n",
-            "html4excel": False,
-            "layout_recognize": "DeepDOC",
-            "raptor": {"use_raptor": False},
-        }, res
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert str(retrieved_dataset.parser_config) == str(expected_config), str(retrieved_dataset)
 
     @pytest.mark.p3
-    def test_parser_config_empty_with_chunk_method_change(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"chunk_method": "qa", "parser_config": {}}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+    def test_parser_config_none(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        expected_config = DataSet.ParserConfig(
+            client,
+            {
+                "chunk_token_num": 128,
+                "delimiter": r"\n",
+                "html4excel": False,
+                "layout_recognize": "DeepDOC",
+                "raptor": {"use_raptor": False},
+            },
+        )
+        dataset.update({"parser_config": None})
+        assert str(dataset.parser_config) == str(expected_config), str(dataset)
 
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
-
-    @pytest.mark.p3
-    def test_parser_config_unset_with_chunk_method_change(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"chunk_method": "qa"}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
-
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert str(retrieved_dataset.parser_config) == str(expected_config), str(retrieved_dataset)
 
     @pytest.mark.p3
-    def test_parser_config_none_with_chunk_method_change(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        payload = {"chunk_method": "qa", "parser_config": None}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+    def test_parser_config_empty_with_chunk_method_change(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        expected_config = DataSet.ParserConfig(
+            client,
+            {
+                "raptor": {"use_raptor": False},
+            },
+        )
+        dataset.update({"chunk_method": "qa", "parser_config": {}})
+        assert str(dataset.parser_config) == str(expected_config), str(dataset)
 
-        res = list_datasets(api_key, {"id": dataset_id})
-        assert res["code"] == 0, res
-        assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert str(retrieved_dataset.parser_config) == str(expected_config), str(retrieved_dataset)
+
+    @pytest.mark.p3
+    def test_parser_config_unset_with_chunk_method_change(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        expected_config = DataSet.ParserConfig(
+            client,
+            {
+                "raptor": {"use_raptor": False},
+            },
+        )
+        dataset.update({"chunk_method": "qa"})
+        assert str(dataset.parser_config) == str(expected_config), str(dataset)
+
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert str(retrieved_dataset.parser_config) == str(expected_config), str(retrieved_dataset)
+
+    @pytest.mark.p3
+    def test_parser_config_none_with_chunk_method_change(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        expected_config = DataSet.ParserConfig(
+            client,
+            {
+                "raptor": {"use_raptor": False},
+            },
+        )
+        dataset.update({"chunk_method": "qa", "parser_config": None})
+        assert str(dataset.parser_config) == str(expected_config), str(dataset)
+
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert str(retrieved_dataset.parser_config) == str(expected_config), str(retrieved_dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -787,29 +701,24 @@ class TestDatasetUpdate:
             {"unknown_field": "unknown_field"},
         ],
     )
-    def test_field_unsupported(self, api_key, add_dataset_func, payload):
-        dataset_id = add_dataset_func
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 101, res
-        assert "Extra inputs are not permitted" in res["message"], res
+    def test_field_unsupported(self, add_dataset_func, payload):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update(payload)
+        assert "Extra inputs are not permitted" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p2
-    def test_field_unset(self, api_key, add_dataset_func):
-        dataset_id = add_dataset_func
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        original_data = res["data"][0]
+    def test_field_unset(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        original_dataset = client.get_dataset(name=dataset.name)
 
-        payload = {"name": "default_unset"}
-        res = update_dataset(api_key, dataset_id, payload)
-        assert res["code"] == 0, res
+        dataset.update({"name": "default_unset"})
 
-        res = list_datasets(api_key)
-        assert res["code"] == 0, res
-        assert res["data"][0]["avatar"] == original_data["avatar"], res
-        assert res["data"][0]["description"] == original_data["description"], res
-        assert res["data"][0]["embedding_model"] == original_data["embedding_model"], res
-        assert res["data"][0]["permission"] == original_data["permission"], res
-        assert res["data"][0]["chunk_method"] == original_data["chunk_method"], res
-        assert res["data"][0]["pagerank"] == original_data["pagerank"], res
-        assert res["data"][0]["parser_config"] == original_data["parser_config"], res
+        updated_dataset = client.get_dataset(name="default_unset")
+        assert updated_dataset.avatar == original_dataset.avatar, str(updated_dataset)
+        assert updated_dataset.description == original_dataset.description, str(updated_dataset)
+        assert updated_dataset.embedding_model == original_dataset.embedding_model, str(updated_dataset)
+        assert updated_dataset.permission == original_dataset.permission, str(updated_dataset)
+        assert updated_dataset.chunk_method == original_dataset.chunk_method, str(updated_dataset)
+        assert updated_dataset.pagerank == original_dataset.pagerank, str(updated_dataset)
+        assert str(updated_dataset.parser_config) == str(original_dataset.parser_config), str(updated_dataset)
