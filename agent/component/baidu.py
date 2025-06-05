@@ -63,7 +63,7 @@ class Baidu(ComponentBase, ABC):
                     # extract title
                     title_res.append(item.select_one('h3 a').get_text(strip=True))
                     url_res.append(item.select_one('h3 a')['href'])
-                    body_res.append(" ".join([span.get_text(strip=True) for span in item.find_all('span')[:-2]]))
+                    body_res.append(" ".join([span.get_text(strip=True) for span in item.find_all('span')]))
                 baidu_res = [{"content": re.sub('<em>|</em>', '', '<a href="' + url + '">' + title + '</a>    ' + body)} for
                              url, title, body in zip(url_res, title_res, body_res)]
                 del body_res, url_res, title_res
