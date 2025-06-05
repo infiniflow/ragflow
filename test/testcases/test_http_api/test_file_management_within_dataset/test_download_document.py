@@ -15,10 +15,10 @@
 #
 
 import json
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import INVALID_API_TOKEN, bulk_upload_documents, download_document, upload_documnets
+from common import INVALID_API_TOKEN, bulk_upload_documents, download_document, upload_documents
 from libs.auth import RAGFlowHttpApiAuth
 from requests import codes
 from utils import compare_by_hash
@@ -66,7 +66,7 @@ class TestAuthorization:
 def test_file_type_validation(api_key, add_dataset, generate_test_files, request):
     dataset_id = add_dataset
     fp = generate_test_files[request.node.callspec.params["generate_test_files"]]
-    res = upload_documnets(api_key, dataset_id, [fp])
+    res = upload_documents(api_key, dataset_id, [fp])
     document_id = res["data"][0]["id"]
 
     res = download_document(
@@ -154,9 +154,9 @@ class TestDocumentDownload:
 
 @pytest.mark.p3
 def test_concurrent_download(api_key, add_dataset, tmp_path):
-    document_count = 20
+    count = 20
     dataset_id = add_dataset
-    document_ids = bulk_upload_documents(api_key, dataset_id, document_count, tmp_path)
+    document_ids = bulk_upload_documents(api_key, dataset_id, count, tmp_path)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [
@@ -167,11 +167,11 @@ def test_concurrent_download(api_key, add_dataset, tmp_path):
                 document_ids[i],
                 tmp_path / f"ragflow_test_download_{i}.txt",
             )
-            for i in range(document_count)
+            for i in range(count)
         ]
-    responses = [f.result() for f in futures]
-    assert all(r.status_code == codes.ok for r in responses)
-    for i in range(document_count):
+    responses = list(as_completed(futures))
+    assert len(responses) == count, responses
+    for i in range(count):
         assert compare_by_hash(
             tmp_path / f"ragflow_test_upload_{i}.txt",
             tmp_path / f"ragflow_test_download_{i}.txt",

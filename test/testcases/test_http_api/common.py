@@ -68,7 +68,7 @@ def batch_create_datasets(auth, num):
 
 
 # FILE MANAGEMENT WITHIN DATASET
-def upload_documnets(auth, dataset_id, files_path=None):
+def upload_documents(auth, dataset_id, files_path=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
 
     if files_path is None:
@@ -110,31 +110,31 @@ def download_document(auth, dataset_id, document_id, save_path):
     return res
 
 
-def list_documnets(auth, dataset_id, params=None):
+def list_documents(auth, dataset_id, params=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
     res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
-def update_documnet(auth, dataset_id, document_id, payload=None):
+def update_document(auth, dataset_id, document_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
     res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def delete_documnets(auth, dataset_id, payload=None):
+def delete_documents(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def parse_documnets(auth, dataset_id, payload=None):
+def parse_documents(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def stop_parse_documnets(auth, dataset_id, payload=None):
+def stop_parse_documents(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
@@ -145,7 +145,7 @@ def bulk_upload_documents(auth, dataset_id, num, tmp_path):
     for i in range(num):
         fp = create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt")
         fps.append(fp)
-    res = upload_documnets(auth, dataset_id, fps)
+    res = upload_documents(auth, dataset_id, fps)
     document_ids = []
     for document in res["data"]:
         document_ids.append(document["id"])

@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import INVALID_API_TOKEN, add_chunk, delete_documnets, list_chunks
+from common import INVALID_API_TOKEN, add_chunk, delete_documents, list_chunks
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -217,7 +217,7 @@ class TestAddChunk:
     @pytest.mark.p2
     def test_add_chunk_to_deleted_document(self, api_key, add_document):
         dataset_id, document_id = add_document
-        delete_documnets(api_key, dataset_id, {"ids": [document_id]})
+        delete_documents(api_key, dataset_id, {"ids": [document_id]})
         res = add_chunk(api_key, dataset_id, document_id, {"content": "chunk test"})
         assert res["code"] == 102
         assert res["message"] == f"You don't own the document {document_id}."

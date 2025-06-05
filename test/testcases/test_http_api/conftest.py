@@ -23,8 +23,8 @@ from common import (
     delete_chat_assistants,
     delete_datasets,
     delete_session_with_chat_assistants,
-    list_documnets,
-    parse_documnets,
+    list_documents,
+    parse_documents,
 )
 from libs.auth import RAGFlowHttpApiAuth
 from utils import wait_for
@@ -44,11 +44,40 @@ from utils.file_utils import (
 
 @wait_for(30, 1, "Document parsing timeout")
 def condition(_auth, _dataset_id):
-    res = list_documnets(_auth, _dataset_id)
+    res = list_documents(_auth, _dataset_id)
     for doc in res["data"]["docs"]:
         if doc["run"] != "DONE":
             return False
     return True
+
+
+@pytest.fixture
+def generate_test_files(request, tmp_path):
+    file_creators = {
+        "docx": (tmp_path / "ragflow_test.docx", create_docx_file),
+        "excel": (tmp_path / "ragflow_test.xlsx", create_excel_file),
+        "ppt": (tmp_path / "ragflow_test.pptx", create_ppt_file),
+        "image": (tmp_path / "ragflow_test.png", create_image_file),
+        "pdf": (tmp_path / "ragflow_test.pdf", create_pdf_file),
+        "txt": (tmp_path / "ragflow_test.txt", create_txt_file),
+        "md": (tmp_path / "ragflow_test.md", create_md_file),
+        "json": (tmp_path / "ragflow_test.json", create_json_file),
+        "eml": (tmp_path / "ragflow_test.eml", create_eml_file),
+        "html": (tmp_path / "ragflow_test.html", create_html_file),
+    }
+
+    files = {}
+    for file_type, (file_path, creator_func) in file_creators.items():
+        if request.param in ["", file_type]:
+            creator_func(file_path)
+            files[file_type] = file_path
+    return files
+
+
+@pytest.fixture(scope="class")
+def ragflow_tmp_dir(request, tmp_path_factory):
+    class_name = request.cls.__name__
+    return tmp_path_factory.mktemp(class_name)
 
 
 @pytest.fixture(scope="session")
@@ -83,35 +112,6 @@ def clear_session_with_chat_assistants(request, api_key, add_chat_assistants):
     request.addfinalizer(cleanup)
 
 
-@pytest.fixture
-def generate_test_files(request, tmp_path):
-    file_creators = {
-        "docx": (tmp_path / "ragflow_test.docx", create_docx_file),
-        "excel": (tmp_path / "ragflow_test.xlsx", create_excel_file),
-        "ppt": (tmp_path / "ragflow_test.pptx", create_ppt_file),
-        "image": (tmp_path / "ragflow_test.png", create_image_file),
-        "pdf": (tmp_path / "ragflow_test.pdf", create_pdf_file),
-        "txt": (tmp_path / "ragflow_test.txt", create_txt_file),
-        "md": (tmp_path / "ragflow_test.md", create_md_file),
-        "json": (tmp_path / "ragflow_test.json", create_json_file),
-        "eml": (tmp_path / "ragflow_test.eml", create_eml_file),
-        "html": (tmp_path / "ragflow_test.html", create_html_file),
-    }
-
-    files = {}
-    for file_type, (file_path, creator_func) in file_creators.items():
-        if request.param in ["", file_type]:
-            creator_func(file_path)
-            files[file_type] = file_path
-    return files
-
-
-@pytest.fixture(scope="class")
-def ragflow_tmp_dir(request, tmp_path_factory):
-    class_name = request.cls.__name__
-    return tmp_path_factory.mktemp(class_name)
-
-
 @pytest.fixture(scope="class")
 def add_dataset(request, api_key):
     def cleanup():
@@ -143,7 +143,7 @@ def add_document(api_key, add_dataset, ragflow_tmp_dir):
 @pytest.fixture(scope="class")
 def add_chunks(api_key, add_document):
     dataset_id, document_id = add_document
-    parse_documnets(api_key, dataset_id, {"document_ids": [document_id]})
+    parse_documents(api_key, dataset_id, {"document_ids": [document_id]})
     condition(api_key, dataset_id)
 
     chunk_ids = []
@@ -166,7 +166,7 @@ def add_chat_assistants(request, api_key, add_document):
     request.addfinalizer(cleanup)
 
     dataset_id, document_id = add_document
-    parse_documnets(api_key, dataset_id, {"document_ids": [document_id]})
+    parse_documents(api_key, dataset_id, {"document_ids": [document_id]})
     condition(api_key, dataset_id)
 
     chat_assistant_ids = []
