@@ -63,9 +63,14 @@ class Document(Base):
 
     def download(self):
         res = self.get(f"/datasets/{self.dataset_id}/documents/{self.id}")
+        error_keys = set(["code", "message"])
         try:
-            res = res.json()
-            raise Exception(res.get("message"))
+            response = res.json()
+            actual_keys = set(response.keys())
+            if actual_keys == error_keys:
+                raise Exception(res.get("message"))
+            else:
+                return res.content
         except json.JSONDecodeError:
             return res.content
 
