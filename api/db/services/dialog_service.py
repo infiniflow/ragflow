@@ -152,6 +152,14 @@ def get_models(dialog):
     return kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl
 
 
+BAD_CITATION_PATTERNS = [
+    re.compile(r"\(\s*ID\s*[: ]*\s*(\d+)\s*\)"),  # (ID: 12)
+    re.compile(r"\[\s*ID\s*[: ]*\s*(\d+)\s*\]"),  # [ID: 12]
+    re.compile(r"【\s*ID\s*[: ]*\s*(\d+)\s*】"),  # 【ID: 12】
+    re.compile(r"ref\s*(\d+)", flags=re.IGNORECASE),  # ref12、REF 12
+]
+
+
 def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
@@ -294,7 +302,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
 
-    def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: dict):
+    def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
         max_index = len(kbinfos["chunks"])
 
         def safe_add(i):
@@ -303,32 +311,27 @@ def chat(dialog, messages, stream=True, **kwargs):
                 return True
             return False
 
-        def find_and_replace(pattern, group_index=1, repl=lambda i: f"##{i}$$", flags=0):
+        def find_and_replace(pattern, group_index=1, repl=lambda i: f"ID:{i}", flags=0):
             nonlocal answer
-            for match in re.finditer(pattern, answer, flags=flags):
+
+            def replacement(match):
                 try:
                     i = int(match.group(group_index))
                     if safe_add(i):
-                        answer = answer.replace(match.group(0), repl(i))
+                        return f"[{repl(i)}]"
                 except Exception:
-                    continue
+                    pass
+                return match.group(0)
 
-        find_and_replace(r"\(\s*ID:\s*(\d+)\s*\)")  # (ID: 12)
-        find_and_replace(r"ID[: ]+(\d+)")  # ID: 12, ID 12
-        find_and_replace(r"\$\$(\d+)\$\$")  # $$12$$
-        find_and_replace(r"\$\[(\d+)\]\$")  # $[12]$
-        find_and_replace(r"\$\$(\d+)\${2,}")  # $$12$$$$
-        find_and_replace(r"\$(\d+)\$")  # $12$
-        find_and_replace(r"#(\d+)\$\$")  # #12$$
-        find_and_replace(r"##(\d+)\$")  # ##12$
-        find_and_replace(r"##(\d+)#{2,}")  # ##12###
-        find_and_replace(r"【(\d+)】")  # 【12】
-        find_and_replace(r"ref\s*(\d+)", flags=re.IGNORECASE)  # ref12, ref 12, REF 12
+            answer = re.sub(pattern, replacement, answer, flags=flags)
+
+        for pattern in BAD_CITATION_PATTERNS:
+            find_and_replace(pattern)
 
         return answer, idx
 
     def decorate_answer(answer):
-        nonlocal prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
+        nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
 
         refs = []
         ans = answer.split("</think>")
@@ -338,9 +341,8 @@ def chat(dialog, messages, stream=True, **kwargs):
             answer = ans[1]
 
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
-            answer = re.sub(r"##[ij]\$\$", "", answer, flags=re.DOTALL)
             idx = set([])
-            if not re.search(r"##[0-9]+\$\$", answer):
+            if embd_mdl and not re.search(r"\[ID:([0-9]+)\]", answer):
                 answer, idx = retriever.insert_citations(
                     answer,
                     [ck["content_ltks"] for ck in kbinfos["chunks"]],
@@ -350,7 +352,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                     vtweight=dialog.vector_similarity_weight,
                 )
             else:
-                for match in re.finditer(r"##([0-9]+)\$\$", answer):
+                for match in re.finditer(r"\[ID:([0-9]+)\]", answer):
                     i = int(match.group(1))
                     if i < len(kbinfos["chunks"]):
                         idx.add(i)
@@ -607,4 +609,3 @@ def ask(question, kb_ids, tenant_id):
         answer = ans
         yield {"answer": answer, "reference": {}}
     yield decorate_answer(answer)
-
