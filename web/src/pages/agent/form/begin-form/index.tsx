@@ -39,15 +39,9 @@ const BeginForm = ({ node }: INextOperatorForm) => {
 
   const FormSchema = z.object({
     enablePrologue: z.boolean().optional(),
-    prologue: z
-      .string()
-      .min(1, {
-        message: t('common.namePlaceholder'),
-      })
-      .trim()
-      .optional(),
+    prologue: z.string().trim().optional(),
     mode: z.string(),
-    query: z
+    inputs: z
       .array(
         z.object({
           key: z.string(),
@@ -68,7 +62,7 @@ const BeginForm = ({ node }: INextOperatorForm) => {
 
   useWatchFormChange(node?.id, form);
 
-  const query = useWatch({ control: form.control, name: 'query' });
+  const inputs = useWatch({ control: form.control, name: 'inputs' });
   const mode = useWatch({ control: form.control, name: 'mode' });
 
   const enablePrologue = useWatch({
@@ -160,7 +154,7 @@ const BeginForm = ({ node }: INextOperatorForm) => {
         {/* Create a hidden field to make Form instance record this */}
         <FormField
           control={form.control}
-          name={'query'}
+          name={'inputs'}
           render={() => <div></div>}
         />
         <Collapse
@@ -183,7 +177,7 @@ const BeginForm = ({ node }: INextOperatorForm) => {
           }
         >
           <QueryTable
-            data={query}
+            data={inputs}
             showModal={showModal}
             deleteRecord={handleDeleteRecord}
           ></QueryTable>

@@ -12,6 +12,7 @@ export function useValues(node?: RAGFlowNodeType) {
       enablePrologue: true,
       prologue: t('chat.setAnOpenerInitial'),
       mode: AgentDialogueMode.Conversational,
+      inputs: [],
     }),
     [t],
   );

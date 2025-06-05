@@ -8,9 +8,9 @@ export function useUpdateQueryToNodeForm({ form, node }: INextOperatorForm) {
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
 
   const update = useCallback(
-    (query: BeginQuery[]) => {
+    (inputs: BeginQuery[]) => {
       const values = form.getValues();
-      const nextValues = { ...values, query };
+      const nextValues = { ...values, inputs };
       if (node?.id) {
         updateNodeForm(node.id, nextValues);
       }
@@ -28,19 +28,19 @@ export const useEditQueryRecord = ({ form, node }: INextOperatorForm) => {
   const { update } = useUpdateQueryToNodeForm({ form, node });
 
   const otherThanCurrentQuery = useMemo(() => {
-    const query: BeginQuery[] = form?.getValues('query') || [];
-    return query.filter((item, idx) => idx !== index);
+    const inputs: BeginQuery[] = form?.getValues('inputs') || [];
+    return inputs.filter((item, idx) => idx !== index);
   }, [form, index]);
 
   const handleEditRecord = useCallback(
     (record: BeginQuery) => {
-      const query: BeginQuery[] = form?.getValues('query') || [];
-      console.log('🚀 ~ useEditQueryRecord ~ query:', query);
+      const inputs: BeginQuery[] = form?.getValues('inputs') || [];
+      console.log('🚀 ~ useEditQueryRecord ~ inputs:', inputs);
 
       const nextQuery: BeginQuery[] =
-        index > -1 ? query.toSpliced(index, 1, record) : [...query, record];
+        index > -1 ? inputs.toSpliced(index, 1, record) : [...inputs, record];
 
-      form.setValue('query', nextQuery, {
+      form.setValue('inputs', nextQuery, {
         shouldDirty: true,
         shouldTouch: true,
       });
@@ -63,12 +63,12 @@ export const useEditQueryRecord = ({ form, node }: INextOperatorForm) => {
 
   const handleDeleteRecord = useCallback(
     (idx: number) => {
-      const query = form?.getValues('query') || [];
-      const nextQuery = query.filter(
+      const inputs = form?.getValues('inputs') || [];
+      const nextQuery = inputs.filter(
         (item: BeginQuery, index: number) => index !== idx,
       );
 
-      form.setValue('query', nextQuery, { shouldDirty: true });
+      form.setValue('inputs', nextQuery, { shouldDirty: true });
 
       update(nextQuery);
     },
