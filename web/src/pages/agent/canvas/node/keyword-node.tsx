@@ -4,11 +4,12 @@ import { IKeywordNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
 import { get } from 'lodash';
+import { memo } from 'react';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
 
-export function KeywordNode({
+export function InnerKeywordNode({
   id,
   data,
   isConnectable = true,
@@ -55,3 +56,5 @@ export function KeywordNode({
     </section>
   );
 }
+
+export const KeywordNode = memo(InnerKeywordNode);

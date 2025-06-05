@@ -1,6 +1,6 @@
 import NewDocumentLink from '@/components/new-document-link';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
+import { useAllTestingResult } from '@/hooks/knowledge-hooks';
 import { ITestingDocument } from '@/interfaces/database/knowledge';
 import { EyeOutlined } from '@ant-design/icons';
 import { Button, Table, TableProps, Tooltip } from 'antd';
@@ -11,7 +11,7 @@ interface IProps {
 }
 
 const SelectFiles = ({ setSelectedDocumentIds, handleTesting }: IProps) => {
-  const { documents } = useSelectTestingResult();
+  const { documents } = useAllTestingResult();
   const { t } = useTranslate('fileManager');
 
   const columns: TableProps<ITestingDocument>['columns'] = [
@@ -50,8 +50,8 @@ const SelectFiles = ({ setSelectedDocumentIds, handleTesting }: IProps) => {
 
   const rowSelection = {
     onChange: (selectedRowKeys: React.Key[]) => {
-      handleTesting(selectedRowKeys as string[]);
       setSelectedDocumentIds(selectedRowKeys as string[]);
+      handleTesting(selectedRowKeys as string[]);
     },
     getCheckboxProps: (record: ITestingDocument) => ({
       disabled: record.doc_name === 'Disabled User', // Column configuration not to be checked

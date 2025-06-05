@@ -108,7 +108,7 @@ def test_invalid_name_dataset(get_auth):
 
     long_string = ""
 
-    while len(long_string) <= DATASET_NAME_LIMIT:
+    while len(long_string.encode("utf-8")) <= DATASET_NAME_LIMIT:
         long_string += random.choice(string.ascii_letters + string.digits)
 
     res = create_dataset(get_auth, long_string)

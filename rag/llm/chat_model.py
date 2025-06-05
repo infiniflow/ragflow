@@ -22,6 +22,7 @@ import re
 import time
 from abc import ABC
 from typing import Any, Protocol
+from urllib.parse import urljoin
 
 import openai
 import requests
@@ -445,8 +446,7 @@ class XinferenceChat(Base):
     def __init__(self, key=None, model_name="", base_url=""):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name, base_url)
 
 
@@ -454,8 +454,7 @@ class HuggingFaceChat(Base):
     def __init__(self, key=None, model_name="", base_url=""):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name.split("___")[0], base_url)
 
 
@@ -463,9 +462,7 @@ class ModelScopeChat(Base):
     def __init__(self, key=None, model_name="", base_url=""):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = base_url.rstrip("/")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name.split("___")[0], base_url)
 
 
@@ -983,8 +980,7 @@ class LocalAIChat(Base):
 
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
@@ -1442,8 +1438,7 @@ class LmStudioChat(Base):
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name, base_url)
         self.client = OpenAI(api_key="lm-studio", base_url=base_url)
         self.model_name = model_name
@@ -1542,7 +1537,7 @@ class CoHereChat(Base):
 class LeptonAIChat(Base):
     def __init__(self, key, model_name, base_url=None):
         if not base_url:
-            base_url = os.path.join("https://" + model_name + ".lepton.run", "api", "v1")
+            base_url = urljoin("https://" + model_name + ".lepton.run", "api/v1")
         super().__init__(key, model_name, base_url)
 
 
@@ -2016,6 +2011,5 @@ class GPUStackChat(Base):
     def __init__(self, key=None, model_name="", base_url=""):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
+        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name, base_url)
