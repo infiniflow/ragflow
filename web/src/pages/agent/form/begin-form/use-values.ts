@@ -3,6 +3,7 @@ import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentDialogueMode } from '../../constant';
+import { BeginQuery } from '../../interface';
 
 export function useValues(node?: RAGFlowNodeType) {
   const { t } = useTranslation();
@@ -24,7 +25,16 @@ export function useValues(node?: RAGFlowNodeType) {
       return defaultValues;
     }
 
-    return formData;
+    const inputs = Object.entries(formData?.inputs || {}).reduce<BeginQuery[]>(
+      (pre, [key, value]) => {
+        pre.push({ ...(value || {}), key });
+
+        return pre;
+      },
+      [],
+    );
+
+    return { ...(formData || {}), inputs };
   }, [defaultValues, node?.data?.form]);
 
   return values;
