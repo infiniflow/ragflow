@@ -460,8 +460,7 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, R
     """
     try:
         llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(embd_id)
-        if not LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"):
-            return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
+        in_llm_service = bool(LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"))
 
         # Tongyi-Qianwen is added to TenantLLM by default, but remains unusable with empty api_key
         tenant_llms = TenantLLMService.get_my_llms(tenant_id=tenant_id)
