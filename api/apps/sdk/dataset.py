@@ -385,7 +385,16 @@ def update(tenant_id, dataset_id):
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")
 
-    return get_result()
+    try:
+        ok, k = KnowledgebaseService.get_by_id(kb.id)
+        if not ok:
+            return get_error_data_result(message="Dataset created failed")
+    except OperationalError as e:
+        logging.exception(e)
+        return get_error_data_result(message="Database operation failed")
+
+    response_data = remap_dictionary_keys(k.to_dict())
+    return get_result(data=response_data)
 
 
 @manager.route("/datasets", methods=["GET"])  # noqa: F821
