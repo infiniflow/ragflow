@@ -81,8 +81,6 @@ def save():
     UserCanvasVersionService.delete_all_versions(req["id"])
     return get_json_result(data=req)
 
- 
-
 
 @manager.route('/get/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
@@ -132,7 +130,7 @@ def run():
         return server_error_response(e)
 
     def sse():
-        nonlocal answer, cvs
+        nonlocal cvs
         for ans in canvas.run(query=query, files=files, user_id=req.get("user_id"), inputs=inputs):
             yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 

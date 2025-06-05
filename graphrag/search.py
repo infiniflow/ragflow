@@ -274,7 +274,7 @@ class KGSearch(Dealer):
         return {
                 "chunk_id": get_uuid(),
                 "content_ltks": "",
-                "content_with_weight": ents + relas + self._community_retrival_([n for n, _ in ents_from_query], filters, kb_ids, idxnms,
+                "content_with_weight": ents + relas + self._community_retrieval_([n for n, _ in ents_from_query], filters, kb_ids, idxnms,
                                                         comm_topn, max_token),
                 "doc_id": "",
                 "docnm_kwd": "Related content in Knowledge Graph",
@@ -288,7 +288,7 @@ class KGSearch(Dealer):
                 "positions": [],
             }
 
-    def _community_retrival_(self, entities, condition, kb_ids, idxnms, topn, max_token):
+    def _community_retrieval_(self, entities, condition, kb_ids, idxnms, topn, max_token):
         ## Community retrieval
         fields = ["docnm_kwd", "content_with_weight"]
         odr = OrderByExpr()

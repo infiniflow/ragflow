@@ -97,8 +97,8 @@ class LLM(ComponentBase):
         references = {"chunks": [], "doc_aggs": []}
         prompt = self._param.sys_prompt
         for k, o in vars.items():
-            if o.get("_retrival"):
-                ref = o["_retrival"]
+            if o.get("_retrieval"):
+                ref = o["_retrieval"]
                 prompt = replace_ids(prompt, len(references["chunks"]), o["_cpn_id"])
                 references["chunks"].extend(ref["chunks"])
                 references["doc_aggs"].extend(ref["doc_aggs"])
@@ -117,7 +117,7 @@ class LLM(ComponentBase):
             m["content"] = self.string_format(m["content"], args)
         if references["chunks"] and self._param.cite:
             prompt += citation_prompt()
-            self._canvas.retrival = references
+            self._canvas.retrieval = references
 
         return prompt, msg
 

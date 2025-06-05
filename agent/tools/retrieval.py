@@ -38,7 +38,7 @@ class RetrievalParam(ToolParamBase):
 
     def __init__(self):
         self.meta:ToolMeta = {
-            "name": "dataset_retrival",
+            "name": "dataset_retrieval",
             "description": "This tool can be utilized for relevant content searching in the datasets.",
             "parameters": {
                 "query": {

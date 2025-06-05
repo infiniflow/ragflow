@@ -56,7 +56,7 @@ class Canvas:
         },
         "history": [],
         "path": ["begin"],
-        "retrival": {"chunks": [], "doc_aggs": []},
+        "retrieval": {"chunks": [], "doc_aggs": []},
         "globals": {
             "sys.query": "",
             "sys.user_id": tenant_id,
@@ -92,7 +92,7 @@ class Canvas:
             },
             "history": [],
             "path": [],
-            "retrival": {"chunks": [], "doc_aggs": []},
+            "retrieval": {"chunks": [], "doc_aggs": []},
             "globals": {
                 "sys.query": "",
                 "sys.user_id": "",
@@ -129,14 +129,14 @@ class Canvas:
         self.path = self.dsl["path"]
         self.history = self.dsl["history"]
         self.globals = self.dsl["globals"]
-        self.retrival = self.dsl["retrival"]
+        self.retrieval = self.dsl["retrieval"]
 
     def __str__(self):
         self.dsl["path"] = self.path
         self.dsl["history"] = self.history
         self.dsl["globals"] = self.globals
         self.dsl["task_id"] = self.task_id
-        self.dsl["retrival"] = self.retrival
+        self.dsl["retrieval"] = self.retrieval
         dsl = {
             "components": {}
         }
@@ -157,7 +157,7 @@ class Canvas:
 
     def reset(self, mem=False):
         self.path = []
-        self.retrival = {"chunks": [], "doc_aggs": []}
+        self.retrieval = {"chunks": [], "doc_aggs": []}
         if not mem:
             self.history = []
         for k, cpn in self.components.items():
