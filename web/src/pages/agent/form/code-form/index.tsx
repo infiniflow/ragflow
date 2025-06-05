@@ -12,15 +12,22 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
-import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
+import { ProgrammingLanguage } from '@/constants/agent';
 import { ICodeForm } from '@/interfaces/database/flow';
-import { useEffect } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { z } from 'zod';
 import {
   DynamicInputVariable,
   TypeOptions,
   VariableTitle,
 } from './next-variable';
+import { useValues } from './use-values';
+import {
+  useHandleLanguageChange,
+  useWatchFormChange,
+} from './use-watch-change';
 
 loader.config({ paths: { vs: '/vs' } });
 
@@ -29,17 +36,33 @@ const options = [
   ProgrammingLanguage.Javascript,
 ].map((x) => ({ value: x, label: x }));
 
-const CodeForm = ({ form, node }: INextOperatorForm) => {
+const CodeForm = ({ node }: INextOperatorForm) => {
   const formData = node?.data.form as ICodeForm;
   const { t } = useTranslation();
+  const values = useValues(node);
 
-  useEffect(() => {
-    // TODO: Direct operation zustand is more elegant
-    form?.setValue(
-      'script',
-      CodeTemplateStrMap[formData.lang as ProgrammingLanguage],
-    );
-  }, [form, formData.lang]);
+  const FormSchema = z.object({
+    lang: z.string(),
+    script: z.string(),
+    arguments: z.array(
+      z.object({ name: z.string(), component_id: z.string() }),
+    ),
+    return: z.union([
+      z
+        .array(z.object({ name: z.string(), component_id: z.string() }))
+        .optional(),
+      z.object({ name: z.string(), component_id: z.string() }),
+    ]),
+  });
+
+  const form = useForm({
+    defaultValues: values,
+    resolver: zodResolver(FormSchema),
+  });
+
+  useWatchFormChange(node?.id, form);
+
+  const handleLanguageChange = useHandleLanguageChange(node?.id, form);
 
   return (
     <Form {...form}>
@@ -66,7 +89,14 @@ const CodeForm = ({ form, node }: INextOperatorForm) => {
                   render={({ field }) => (
                     <FormItem>
                       <FormControl>
-                        <RAGFlowSelect {...field} options={options} />
+                        <RAGFlowSelect
+                          {...field}
+                          onChange={(val) => {
+                            field.onChange(val);
+                            handleLanguageChange(val);
+                          }}
+                          options={options}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -13,25 +13,56 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
 import { buildSelectOptions } from '@/utils/component-util';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
 import { useCallback } from 'react';
-import { useWatch } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { z } from 'zod';
 import { AgentDialogueMode } from '../../constant';
+import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
 import { useEditQueryRecord } from './use-edit-query';
+import { useValues } from './use-values';
 
 const ModeOptions = buildSelectOptions([
   AgentDialogueMode.Conversational,
   AgentDialogueMode.Task,
 ]);
 
-const BeginForm = ({ form, node }: INextOperatorForm) => {
+const BeginForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
 
-  const query = useWatch({ control: form.control, name: 'query' });
+  const values = useValues(node);
+
+  const FormSchema = z.object({
+    enablePrologue: z.boolean().optional(),
+    prologue: z.string().trim().optional(),
+    mode: z.string(),
+    inputs: z
+      .array(
+        z.object({
+          key: z.string(),
+          type: z.string(),
+          value: z.string(),
+          optional: z.boolean(),
+          name: z.string(),
+          options: z.array(z.union([z.number(), z.string(), z.boolean()])),
+        }),
+      )
+      .optional(),
+  });
+
+  const form = useForm({
+    defaultValues: values,
+    resolver: zodResolver(FormSchema),
+  });
+
+  useWatchFormChange(node?.id, form);
+
+  const inputs = useWatch({ control: form.control, name: 'inputs' });
   const mode = useWatch({ control: form.control, name: 'mode' });
 
   const enablePrologue = useWatch({
@@ -123,7 +154,7 @@ const BeginForm = ({ form, node }: INextOperatorForm) => {
         {/* Create a hidden field to make Form instance record this */}
         <FormField
           control={form.control}
-          name={'query'}
+          name={'inputs'}
           render={() => <div></div>}
         />
         <Collapse
@@ -146,7 +177,7 @@ const BeginForm = ({ form, node }: INextOperatorForm) => {
           }
         >
           <QueryTable
-            data={query}
+            data={inputs}
             showModal={showModal}
             deleteRecord={handleDeleteRecord}
           ></QueryTable>
@@ -154,7 +185,6 @@ const BeginForm = ({ form, node }: INextOperatorForm) => {
 
         {visible && (
           <ParameterDialog
-            visible={visible}
             hideModal={hideModal}
             initialValue={currentRecord}
             onOk={ok}

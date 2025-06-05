@@ -13,15 +13,7 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
+import { RAGFlowSelect } from './ui/select';
 
 type FieldType = {
   rerank_id?: string;
@@ -117,32 +109,11 @@ function RerankFormField() {
         <FormItem>
           <FormLabel tooltip={t('rerankTip')}>{t('rerankModel')}</FormLabel>
           <FormControl>
-            <Select onValueChange={field.onChange} {...field}>
-              <SelectTrigger
-                value={field.value}
-                onReset={() => {
-                  form.resetField(RerankId);
-                }}
-              >
-                <SelectValue placeholder={t('rerankPlaceholder')} />
-              </SelectTrigger>
-              <SelectContent>
-                {options.map((x) => (
-                  <SelectGroup key={x.label}>
-                    <SelectLabel>{x.label}</SelectLabel>
-                    {x.options.map((y) => (
-                      <SelectItem
-                        value={y.value}
-                        key={y.value}
-                        disabled={y.disabled}
-                      >
-                        {y.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
+            <RAGFlowSelect
+              allowClear
+              {...field}
+              options={options}
+            ></RAGFlowSelect>
           </FormControl>
           <FormMessage />
         </FormItem>

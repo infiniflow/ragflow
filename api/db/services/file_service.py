@@ -30,7 +30,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.utils import get_uuid
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img
 from rag.utils.storage_factory import STORAGE_IMPL
-
+from api.constants import FILE_NAME_LEN_LIMIT
 
 class FileService(CommonService):
     # Service class for managing file operations and storage
@@ -412,7 +412,7 @@ class FileService(CommonService):
                 MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
                 if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
                     raise RuntimeError("Exceed the maximum file number of a free user!")
-                if len(file.filename.encode("utf-8")) >= 128:
+                if len(file.filename.encode("utf-8")) >= FILE_NAME_LEN_LIMIT:
                     raise RuntimeError("Exceed the maximum length of file name!")
 
                 filename = duplicate_name(DocumentService.query, name=file.filename, kb_id=kb.id)

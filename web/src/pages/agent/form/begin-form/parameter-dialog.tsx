@@ -19,6 +19,7 @@ import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -60,11 +61,13 @@ function ParameterForm({
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
     defaultValues: {
       type: BeginQueryType.Line,
       optional: false,
       key: '',
       name: '',
+      options: [],
     },
   });
 
@@ -98,10 +101,12 @@ function ParameterForm({
   });
 
   useEffect(() => {
-    form.reset({
-      ...initialValue,
-      options: initialValue.options?.map((x) => ({ value: x })),
-    });
+    if (!isEmpty(initialValue)) {
+      form.reset({
+        ...initialValue,
+        options: initialValue.options?.map((x) => ({ value: x })),
+      });
+    }
   }, [form, initialValue]);
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
