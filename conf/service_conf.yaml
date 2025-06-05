@@ -4,7 +4,7 @@ ragflow:
 mysql:
   name: 'rag_flow'
   user: 'root'
-  password: 'infini_rag_flow'
+  password: 'tecpie_rag_flow'
   host: 'localhost'
   port: 5455
   max_connections: 900
