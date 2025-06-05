@@ -15,17 +15,16 @@ import { FormTooltip } from '@/components/ui/tooltip';
 import { buildSelectOptions } from '@/utils/component-util';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
-import { useCallback } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { AgentDialogueMode } from '../../constant';
-import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
 import { useEditQueryRecord } from './use-edit-query';
 import { useValues } from './use-values';
+import { useWatchFormChange } from './use-watch-change';
 
 const ModeOptions = buildSelectOptions([
   AgentDialogueMode.Conversational,
@@ -82,13 +81,6 @@ const BeginForm = ({ node }: INextOperatorForm) => {
     form,
     node,
   });
-
-  const handleParameterDialogSubmit = useCallback(
-    (values: any) => {
-      ok(values);
-    },
-    [ok],
-  );
 
   return (
     <section className="px-5 space-y-5">
@@ -187,9 +179,8 @@ const BeginForm = ({ node }: INextOperatorForm) => {
           <ParameterDialog
             hideModal={hideModal}
             initialValue={currentRecord}
-            onOk={ok}
             otherThanCurrentQuery={otherThanCurrentQuery}
-            submit={handleParameterDialogSubmit}
+            submit={ok}
           ></ParameterDialog>
         )}
       </Form>

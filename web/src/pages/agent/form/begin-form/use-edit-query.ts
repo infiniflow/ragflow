@@ -2,30 +2,11 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useSetSelectedRecord } from '@/hooks/logic-hooks';
 import { useCallback, useMemo, useState } from 'react';
 import { BeginQuery, INextOperatorForm } from '../../interface';
-import useGraphStore from '../../store';
-
-export function useUpdateQueryToNodeForm({ form, node }: INextOperatorForm) {
-  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
-
-  const update = useCallback(
-    (inputs: BeginQuery[]) => {
-      const values = form.getValues();
-      const nextValues = { ...values, inputs };
-      if (node?.id) {
-        updateNodeForm(node.id, nextValues);
-      }
-    },
-    [form, node?.id, updateNodeForm],
-  );
-
-  return { update };
-}
 
 export const useEditQueryRecord = ({ form, node }: INextOperatorForm) => {
   const { setRecord, currentRecord } = useSetSelectedRecord<BeginQuery>();
   const { visible, hideModal, showModal } = useSetModalState();
   const [index, setIndex] = useState(-1);
-  const { update } = useUpdateQueryToNodeForm({ form, node });
 
   const otherThanCurrentQuery = useMemo(() => {
     const inputs: BeginQuery[] = form?.getValues('inputs') || [];
@@ -45,11 +26,9 @@ export const useEditQueryRecord = ({ form, node }: INextOperatorForm) => {
         shouldTouch: true,
       });
 
-      update(nextQuery);
-
       hideModal();
     },
-    [form, hideModal, index, update],
+    [form, hideModal, index],
   );
 
   const handleShowModal = useCallback(
@@ -69,10 +48,8 @@ export const useEditQueryRecord = ({ form, node }: INextOperatorForm) => {
       );
 
       form.setValue('inputs', nextQuery, { shouldDirty: true });
-
-      update(nextQuery);
     },
-    [form, update],
+    [form],
   );
 
   return {
