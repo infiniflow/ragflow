@@ -214,7 +214,7 @@ export default {
       methodTitle: 'Mô tả phương thức phân khối',
       methodExamples: 'Ví dụ',
       methodExamplesDescription:
-        'Các ảnh chụp màn hình sau được cung cấp để minh họa.',
+        'Để giúp bạn hiểu rõ hơn, chúng tôi đã cung cấp ảnh chụp màn hình liên quan để tham khảo.',
       dialogueExamplesTitle: 'Ví dụ hội thoại',
       methodEmpty: 'Mô tả bằng hình ảnh các danh mục cơ sở kiến thức',
       book: `<p>Các định dạng tệp được hỗ trợ là <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>

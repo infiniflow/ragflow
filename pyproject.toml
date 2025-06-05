@@ -72,7 +72,6 @@ dependencies = [
     "pyclipper==1.3.0.post5",
     "pycryptodomex==3.20.0",
     "pypdf>=5.0.0,<6.0.0",
-    "pytest>=8.3.0,<9.0.0",
     "python-dotenv==1.0.1",
     "python-dateutil==2.8.2",
     "python-pptx>=1.0.2,<2.0.0",
@@ -136,22 +135,49 @@ full = [
     "fastembed-gpu>=0.3.6,<0.4.0; sys_platform != 'darwin' and platform_machine == 'x86_64'",
     "flagembedding==1.2.10",
     "torch>=2.5.0,<3.0.0",
-    "transformers>=4.35.0,<5.0.0"
+    "transformers>=4.35.0,<5.0.0",
+]
+
+[dependency-groups]
+test = [
+    "hypothesis>=6.132.0",
+    "openpyxl>=3.1.5",
+    "pillow>=10.4.0",
+    "pytest>=8.3.5",
+    "python-docx>=1.1.2",
+    "python-pptx>=1.0.2",
+    "reportlab>=4.4.1",
+    "requests>=2.32.2",
+    "requests-toolbelt>=1.0.0",
 ]
 
 [tool.setuptools]
-packages = ['agent', 'agentic_reasoning', 'api', 'deepdoc', 'graphrag', 'intergrations.chatgpt-on-wechat.plugins', 'mcp.server', 'rag', 'sdk.python.ragflow_sdk']
+packages = [
+    'agent',
+    'agentic_reasoning',
+    'api',
+    'deepdoc',
+    'graphrag',
+    'intergrations.chatgpt-on-wechat.plugins',
+    'mcp.server',
+    'rag',
+    'sdk.python.ragflow_sdk',
+]
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
 
 [tool.ruff]
 line-length = 200
-exclude = [
-    ".venv",
-    "rag/svr/discord_svr.py",
-]
+exclude = [".venv", "rag/svr/discord_svr.py"]
 
 [tool.ruff.lint]
 extend-select = ["ASYNC", "ASYNC1"]
 ignore = ["E402"]
+
+[tool.pytest.ini_options]
+markers = [
+    "p1: high priority test cases",
+    "p2: medium priority test cases",
+    "p3: low priority test cases",
+]

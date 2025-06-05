@@ -232,7 +232,8 @@ export default {
       cancel: '取消',
       methodTitle: '分块方法说明',
       methodExamples: '示例',
-      methodExamplesDescription: '提出以下屏幕截图以促进理解。',
+      methodExamplesDescription:
+        '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
       book: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
@@ -1231,6 +1232,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       openingSwitchTip: '您的用户将在开始时看到此欢迎消息。',
       modeTip: '模式定义了工作流的启动方式。',
       beginInputTip: '通过定义输入参数，此内容可以被后续流程中的其他组件访问。',
+      query: '查询变量',
+      agent: 'Agent',
+      agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
     },
     footer: {
       profile: 'All rights reserved @ React',

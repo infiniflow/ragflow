@@ -1,4 +1,4 @@
-import { BlockButton, Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   FormControl,
   FormField,
@@ -59,13 +59,6 @@ const DynamicExample = ({ name }: DynamicExampleProps) => {
             )}
           </div>
         ))}
-
-        <BlockButton
-          type="button"
-          onClick={() => append({ value: '' })} // "" will cause the inability to add, refer to: https://github.com/orgs/react-hook-form/discussions/8485#discussioncomment-2961861
-        >
-          {t('flow.addMessage')}
-        </BlockButton>
       </div>
       <FormMessage />
     </FormItem>
