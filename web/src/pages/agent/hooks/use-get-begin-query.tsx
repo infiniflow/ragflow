@@ -1,5 +1,7 @@
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { Edge } from '@xyflow/react';
 import { DefaultOptionType } from 'antd/es/select';
+import { isEmpty } from 'lodash';
 import get from 'lodash/get';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BeginId, Operator } from '../constant';
@@ -34,6 +36,61 @@ export const useGetBeginNodeDataQueryIsSafe = () => {
   return isBeginNodeDataQuerySafe;
 };
 
+function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
+  return nodeIds.reduce<string[]>((pre, nodeId) => {
+    const currentEdges = edges.filter((x) => x.target === nodeId);
+
+    const upstreamNodeIds: string[] = currentEdges.map((x) => x.source);
+
+    const ids = upstreamNodeIds.concat(
+      filterAllUpstreamNodeIds(edges, upstreamNodeIds),
+    );
+
+    ids.forEach((x) => {
+      if (pre.every((y) => y !== x)) {
+        pre.push(x);
+      }
+    });
+
+    return pre;
+  }, []);
+}
+
+function buildOutputOptions(outputs: Record<string, any> = {}) {
+  return Object.keys(outputs).map((x) => ({
+    label: x,
+    value: x,
+  }));
+}
+
+export function useBuildNodeOutputOptions(nodeId?: string) {
+  const nodes = useGraphStore((state) => state.nodes);
+  const edges = useGraphStore((state) => state.edges);
+
+  const nodeOutputOptions = useMemo(() => {
+    if (!nodeId) {
+      return [];
+    }
+    const upstreamIds = filterAllUpstreamNodeIds(edges, [nodeId]);
+
+    const nodeWithOutputList = nodes.filter(
+      (x) =>
+        upstreamIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
+    );
+
+    return nodeWithOutputList
+      .filter((x) => x.id !== nodeId)
+      .map((x) => ({
+        label: x.data.name,
+        value: x.id,
+        title: x.data.name,
+        options: buildOutputOptions(x.data.form.outputs),
+      }));
+  }, [edges, nodeId, nodes]);
+
+  return nodeOutputOptions;
+}
+
 // exclude nodes with branches
 const ExcludedNodes = [
   Operator.Categorize,
@@ -48,6 +105,8 @@ export const useBuildComponentIdSelectOptions = (
 ) => {
   const nodes = useGraphStore((state) => state.nodes);
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+
+  const nodeOutputOptions = useBuildNodeOutputOptions(nodeId);
 
   // Limit the nodes inside iteration to only reference peer nodes with the same parentId and other external nodes other than their parent nodes
   const filterChildNodesToSameParentOrExternal = useCallback(
@@ -76,7 +135,7 @@ export const useBuildComponentIdSelectOptions = (
       .map((x) => ({ label: x.data.name, value: x.id }));
   }, [nodes, nodeId, filterChildNodesToSameParentOrExternal]);
 
-  const buildGroupedOptions = useCallback(() => {
+  const options = useMemo(() => {
     const query: BeginQuery[] = getBeginNodeDataQuery();
     return [
       {
@@ -92,21 +151,21 @@ export const useBuildComponentIdSelectOptions = (
           value: `begin@${x.key}`,
         })),
       },
+      ...nodeOutputOptions,
     ];
-  }, [componentIdOptions, getBeginNodeDataQuery]);
+  }, [componentIdOptions, getBeginNodeDataQuery, nodeOutputOptions]);
 
-  return buildGroupedOptions;
+  return options;
 };
 
 export const useGetComponentLabelByValue = (nodeId: string) => {
-  const buildGroupedOptions = useBuildComponentIdSelectOptions(nodeId);
+  const options = useBuildComponentIdSelectOptions(nodeId);
 
   const flattenOptions = useMemo(() => {
-    const options = buildGroupedOptions();
     return options.reduce<DefaultOptionType[]>((pre, cur) => {
       return [...pre, ...cur.options];
     }, []);
-  }, [buildGroupedOptions]);
+  }, [options]);
 
   const getLabel = useCallback(
     (val?: string) => {

@@ -117,13 +117,9 @@ export default function VariablePickerMenuPlugin({
 
   const [queryString, setQueryString] = React.useState<string | null>('');
 
-  const buildGroupedOptions = useBuildComponentIdSelectOptions(
-    node?.id,
-    node?.parentId,
-  );
+  const options = useBuildComponentIdSelectOptions(node?.id, node?.parentId);
 
   const buildNextOptions = useCallback(() => {
-    const options = buildGroupedOptions();
     let filteredOptions = options;
 
     if (queryString) {
@@ -150,11 +146,10 @@ export default function VariablePickerMenuPlugin({
     );
 
     return nextOptions;
-  }, [buildGroupedOptions, queryString]);
+  }, [options, queryString]);
 
   const findLabelByValue = useCallback(
     (value: string) => {
-      const options = buildGroupedOptions();
       const children = options.reduce<Array<{ label: string; value: string }>>(
         (pre, cur) => {
           return pre.concat(cur.options);
@@ -164,7 +159,7 @@ export default function VariablePickerMenuPlugin({
 
       return children.find((x) => x.value === value)?.label;
     },
-    [buildGroupedOptions],
+    [options],
   );
 
   const onSelectOption = useCallback(
