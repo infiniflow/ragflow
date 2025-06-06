@@ -2,7 +2,7 @@
 
 ## 概述
 
-RAGFlow 已从开发模式（FastAPI开发服务器）切换到生产模式（Gunicorn WSGI服务器）。本文档说明如何在生产环境中部署RAGFlow。
+RAGFlow 已从开发模式（Flask开发服务器）切换到生产模式（Gunicorn WSGI服务器）。本文档说明如何在生产环境中部署RAGFlow。
 
 ## 生产模式特性
 

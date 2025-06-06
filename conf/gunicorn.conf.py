@@ -12,14 +12,15 @@ backlog = 2048
 
 # Worker processes
 workers = int(os.environ.get('GUNICORN_WORKERS', min(multiprocessing.cpu_count() * 2 + 1, 8)))
-worker_class = 'gevent'
 
 # Gevent-specific settings
-worker_connections = 1000
-timeout = 300
-keepalive = 10
-max_requests = 2000
-max_requests_jitter = 200
+if os.environ.get('GUNICORN_GEVENT_MODE',0) == 1:
+    worker_class = 'gevent'
+    worker_connections = 1000
+    timeout = 300
+    keepalive = 10
+    max_requests = 2000
+    max_requests_jitter = 200
 
 preload_app = False
 

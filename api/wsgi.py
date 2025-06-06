@@ -16,7 +16,7 @@
 
 # Gevent monkey patching - must be done before importing other modules
 import os
-if os.environ.get('GUNICORN_WORKER_CLASS') == 'gevent':
+if os.environ.get('GUNICORN_GEVENT_MODE',0) == 1:
     from gevent import monkey
     monkey.patch_all()
 
@@ -126,7 +126,6 @@ def initialize_ragflow():
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
-
     """)
     logging.info(f'RAGFlow version: {get_ragflow_version()}')
     logging.info(f'project base: {utils.file_utils.get_project_base_directory()}')

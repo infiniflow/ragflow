@@ -89,7 +89,7 @@ if __name__ == '__main__':
     # Warning about development mode
     logging.warning("=" * 80)
     logging.warning("⚠️  DEVELOPMENT MODE WARNING ⚠️")
-    logging.warning("You are running RAGFlow in development mode using FastAPI development server.")
+    logging.warning("You are running RAGFlow in development mode using Flask development server.")
     logging.warning("This is NOT recommended for production environments!")
     logging.warning("")
     logging.warning("For production deployment, please use:")
