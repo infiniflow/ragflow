@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import INVALID_API_TOKEN, bulk_upload_documents, list_documents, parse_documents
@@ -195,9 +195,9 @@ def test_concurrent_parse(api_key, add_dataset_func, tmp_path):
                 return False
         return True
 
-    document_num = 100
+    count = 100
     dataset_id = add_dataset_func
-    document_ids = bulk_upload_documents(api_key, dataset_id, document_num, tmp_path)
+    document_ids = bulk_upload_documents(api_key, dataset_id, count, tmp_path)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [
@@ -207,11 +207,12 @@ def test_concurrent_parse(api_key, add_dataset_func, tmp_path):
                 dataset_id,
                 {"document_ids": document_ids[i : i + 1]},
             )
-            for i in range(document_num)
+            for i in range(count)
         ]
-    responses = [f.result() for f in futures]
-    assert all(r["code"] == 0 for r in responses)
+    responses = list(as_completed(futures))
+    assert len(responses) == count, responses
+    assert all(futures.result()["code"] == 0 for futures in futures)
 
-    condition(api_key, dataset_id, document_num)
+    condition(api_key, dataset_id, count)
 
     validate_document_details(api_key, dataset_id, document_ids)

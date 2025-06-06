@@ -14,10 +14,28 @@
 #  limitations under the License.
 #
 
+from pathlib import Path
+
+from ragflow_sdk import DataSet, Document, RAGFlow
+from utils.file_utils import create_txt_file
+
+
 # DATASET MANAGEMENT
-def batch_create_datasets(client, num):
+def batch_create_datasets(client: RAGFlow, num: int) -> list[DataSet]:
     datasets = []
     for i in range(num):
         dataset = client.create_dataset(name=f"dataset_{i}")
         datasets.append(dataset)
     return datasets
+
+
+# FILE MANAGEMENT WITHIN DATASET
+def bulk_upload_documents(dataset: DataSet, num: int, tmp_path: Path) -> list[Document]:
+    document_infos = []
+    for i in range(num):
+        fp = create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt")
+        with fp.open("rb") as f:
+            blob = f.read()
+        document_infos.append({"display_name": fp.name, "blob": blob})
+
+    return dataset.upload_documents(document_infos)

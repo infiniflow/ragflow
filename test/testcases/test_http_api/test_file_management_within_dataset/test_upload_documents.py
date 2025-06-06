@@ -213,6 +213,7 @@ class TestDocumentsUpload:
             futures = [executor.submit(upload_documents, api_key, dataset_id, fps[i : i + 1]) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
+        assert all(futures.result()["code"] == 0 for futures in futures)
 
         res = list_datasets(api_key, {"id": dataset_id})
         assert res["data"][0]["document_count"] == count

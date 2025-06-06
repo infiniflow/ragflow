@@ -13,7 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 import pytest
 from common import INVALID_API_TOKEN, bulk_upload_documents, delete_documents, list_documents
@@ -148,9 +149,9 @@ class TestDocumentsDeletion:
 
 @pytest.mark.p3
 def test_concurrent_deletion(api_key, add_dataset, tmp_path):
-    documents_num = 100
+    count = 100
     dataset_id = add_dataset
-    document_ids = bulk_upload_documents(api_key, dataset_id, documents_num, tmp_path)
+    document_ids = bulk_upload_documents(api_key, dataset_id, count, tmp_path)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [
@@ -160,10 +161,11 @@ def test_concurrent_deletion(api_key, add_dataset, tmp_path):
                 dataset_id,
                 {"ids": document_ids[i : i + 1]},
             )
-            for i in range(documents_num)
+            for i in range(count)
         ]
-    responses = [f.result() for f in futures]
-    assert all(r["code"] == 0 for r in responses)
+    responses = list(as_completed(futures))
+    assert len(responses) == count, responses
+    assert all(futures.result()["code"] == 0 for futures in futures)
 
 
 @pytest.mark.p3

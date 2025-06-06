@@ -49,6 +49,7 @@ class TestCapability:
             futures = [executor.submit(list_datasets, api_key) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
+        assert all(futures.result()["code"] == 0 for futures in futures)
 
 
 @pytest.mark.usefixtures("add_datasets")
