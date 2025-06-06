@@ -18,6 +18,7 @@ import copy
 import re
 from io import BytesIO
 
+import fitz
 from PIL import Image
 
 from rag.nlp import tokenize, is_english
@@ -92,6 +93,18 @@ class PlainPdf(PlainParser):
             page_txt.append(page.extract_text())
         callback(0.9, "Parsing finished")
         return [(txt, None) for txt in page_txt]
+
+
+class P2TMetadata(PlainParser):
+    def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+        doc = fitz.open(filename if not binary else stream=binary)
+        page_info = []
+        for page_num in range(from_page, min(to_page, doc.page_count)):
+            page = doc.load_page(page_num)
+            text = page.get_text()
+            metadata = page.metadata
+            page_info.append((text, metadata))
+        return page_info
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
