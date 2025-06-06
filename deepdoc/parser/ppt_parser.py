@@ -63,7 +63,7 @@ class RAGFlowPptParser:
             if shape_type == 6:
                 texts = []
                 for p in sorted(shape.shapes, key=lambda x: (x.top // 10, x.left)):
-                    t = self.__extract_texts(p)
+                    t = self.__extract(p)
                     if t:
                         texts.append(t)
                 return "\n".join(texts)
