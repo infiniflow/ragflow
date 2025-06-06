@@ -2,7 +2,6 @@ import { FormContainer } from '@/components/form-container';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
-import { PromptEditor } from '@/components/prompt-editor';
 import {
   Form,
   FormControl,
@@ -12,6 +11,7 @@ import {
 } from '@/components/ui/form';
 import { useFetchModelId } from '@/hooks/logic-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -19,6 +19,8 @@ import { initialAgentValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
+import { Output } from '../components/output';
+import { PromptEditor } from '../components/prompt-editor';
 import DynamicPrompt from './dynamic-prompt';
 
 const FormSchema = z.object({
@@ -49,6 +51,12 @@ const AgentForm = ({ node }: INextOperatorForm) => {
     { ...initialAgentValues, llm_id: llmId },
     node,
   );
+
+  const outputList = useMemo(() => {
+    return [
+      { title: 'content', type: initialAgentValues.outputs.content.type },
+    ];
+  }, []);
 
   const form = useForm({
     defaultValues: defaultValues,
@@ -88,6 +96,7 @@ const AgentForm = ({ node }: INextOperatorForm) => {
         <FormContainer>
           <DynamicPrompt></DynamicPrompt>
         </FormContainer>
+        <Output list={outputList}></Output>
       </form>
     </Form>
   );

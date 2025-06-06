@@ -9,7 +9,7 @@ import { useSendNextMessage } from './hooks';
 import MessageInput from '@/components/message-input';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
-import { useFetchFlow } from '@/hooks/flow-hooks';
+import { useFetchAgent } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 
@@ -30,7 +30,7 @@ const AgentChatBox = () => {
     useClickDrawer();
   useGetFileIcon();
   const { data: userInfo } = useFetchUserInfo();
-  const { data: canvasInfo } = useFetchFlow();
+  const { data: canvasInfo } = useFetchAgent();
 
   return (
     <>

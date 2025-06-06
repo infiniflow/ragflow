@@ -1,4 +1,3 @@
-import { PromptEditor } from '@/components/prompt-editor';
 import { BlockButton, Button } from '@/components/ui/button';
 import {
   FormControl,
@@ -12,6 +11,7 @@ import { X } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { PromptEditor } from '../components/prompt-editor';
 
 export enum PromptRole {
   User = 'user',

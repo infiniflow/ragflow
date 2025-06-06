@@ -1,9 +1,9 @@
 import { MessageType } from '@/constants/chat';
-import { useFetchFlow } from '@/hooks/flow-hooks';
 import {
   useHandleMessageInputChange,
   useSelectDerivedMessages,
 } from '@/hooks/logic-hooks';
+import { useFetchAgent } from '@/hooks/use-agent-request';
 import {
   IEventList,
   IMessageEvent,
@@ -23,7 +23,7 @@ import { receiveMessageError } from '../utils';
 const antMessage = message;
 
 export const useSelectNextMessages = () => {
-  const { data: flowDetail, loading } = useFetchFlow();
+  const { data: flowDetail, loading } = useFetchAgent();
   const reference = flowDetail.dsl.reference;
   const {
     derivedMessages,
@@ -69,7 +69,7 @@ export const useSendNextMessage = () => {
   } = useSelectNextMessages();
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
-  const { refetch } = useFetchFlow();
+  const { refetch } = useFetchAgent();
 
   const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
     api.runCanvas,

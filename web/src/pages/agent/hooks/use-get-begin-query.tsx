@@ -3,6 +3,7 @@ import { DefaultOptionType } from 'antd/es/select';
 import get from 'lodash/get';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BeginId, Operator } from '../constant';
+import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 
@@ -10,7 +11,9 @@ export const useGetBeginNodeDataQuery = () => {
   const getNode = useGraphStore((state) => state.getNode);
 
   const getBeginNodeDataQuery = useCallback(() => {
-    return get(getNode(BeginId), 'data.form.query', []);
+    return buildBeginInputListFromObject(
+      get(getNode(BeginId), 'data.form.inputs', {}),
+    );
   }, [getNode]);
 
   return getBeginNodeDataQuery;
@@ -45,7 +48,6 @@ export const useBuildComponentIdSelectOptions = (
 ) => {
   const nodes = useGraphStore((state) => state.nodes);
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
-  const query: BeginQuery[] = getBeginNodeDataQuery();
 
   // Limit the nodes inside iteration to only reference peer nodes with the same parentId and other external nodes other than their parent nodes
   const filterChildNodesToSameParentOrExternal = useCallback(
@@ -74,34 +76,37 @@ export const useBuildComponentIdSelectOptions = (
       .map((x) => ({ label: x.data.name, value: x.id }));
   }, [nodes, nodeId, filterChildNodesToSameParentOrExternal]);
 
-  const groupedOptions = [
-    {
-      label: <span>Component Output</span>,
-      title: 'Component Output',
-      options: componentIdOptions,
-    },
-    {
-      label: <span>Begin Input</span>,
-      title: 'Begin Input',
-      options: query.map((x) => ({
-        label: x.name,
-        value: `begin@${x.key}`,
-      })),
-    },
-  ];
+  const buildGroupedOptions = useCallback(() => {
+    const query: BeginQuery[] = getBeginNodeDataQuery();
+    return [
+      {
+        label: <span>Component Output</span>,
+        title: 'Component Output',
+        options: componentIdOptions,
+      },
+      {
+        label: <span>Begin Input</span>,
+        title: 'Begin Input',
+        options: query.map((x) => ({
+          label: x.name,
+          value: `begin@${x.key}`,
+        })),
+      },
+    ];
+  }, [componentIdOptions, getBeginNodeDataQuery]);
 
-  return groupedOptions;
+  return buildGroupedOptions;
 };
 
 export const useGetComponentLabelByValue = (nodeId: string) => {
-  const options = useBuildComponentIdSelectOptions(nodeId);
-  const flattenOptions = useMemo(
-    () =>
-      options.reduce<DefaultOptionType[]>((pre, cur) => {
-        return [...pre, ...cur.options];
-      }, []),
-    [options],
-  );
+  const buildGroupedOptions = useBuildComponentIdSelectOptions(nodeId);
+
+  const flattenOptions = useMemo(() => {
+    const options = buildGroupedOptions();
+    return options.reduce<DefaultOptionType[]>((pre, cur) => {
+      return [...pre, ...cur.options];
+    }, []);
+  }, [buildGroupedOptions]);
 
   const getLabel = useCallback(
     (val?: string) => {
