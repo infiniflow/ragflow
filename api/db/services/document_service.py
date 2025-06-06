@@ -70,6 +70,17 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def check_doc_health(cls, tenant_id: str, filename):
+        import os
+        MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
+        if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(tenant_id) >= MAX_FILE_NUM_PER_USER:
+            raise RuntimeError("Exceed the maximum file number of a free user!")
+        if len(filename.encode("utf-8")) >= 128:
+            raise RuntimeError("Exceed the maximum length of file name!")
+        return True
+
+    @classmethod
+    @DB.connection_context()
     def get_by_kb_id(cls, kb_id, page_number, items_per_page,
                      orderby, desc, keywords, run_status, types):
         if keywords:

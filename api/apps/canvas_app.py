@@ -14,10 +14,17 @@
 #  limitations under the License.
 #
 import json
-import traceback
+import re
+import sys
+
+import trio
 from flask import request, Response
 from flask_login import login_required, current_user
+
+from api import settings
+from api.db import FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
+from api.db.services.document_service import DocumentService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
@@ -27,6 +34,10 @@ from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken
 import time
+
+from api.utils.file_utils import filename_type, read_potential_broken_pdf
+from rag.utils.storage_factory import STORAGE_IMPL
+
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
@@ -134,6 +145,7 @@ def run():
         for ans in canvas.run(query=query, files=files, user_id=req.get("user_id"), inputs=inputs):
             yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
+        cvs.dsl = json.loads(str(canvas))
         UserCanvasService.update_by_id(req["id"], cvs.to_dict())
 
     resp = Response(sse(), mimetype="text/event-stream")
@@ -165,6 +177,76 @@ def reset():
         return get_json_result(data=req["dsl"])
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/upload", methods=["POST"])  # noqa: F821
+@login_required
+def upload():
+    def structured(filename, filetype, blob, content_type):
+        if filetype == FileType.PDF.value:
+            blob = read_potential_broken_pdf(blob)
+
+        location = get_uuid()
+        STORAGE_IMPL.put(current_user.id + "-downloads", location, blob)
+        return {
+            "id": location,
+            "name": filename,
+            "size": sys.getsizeof(blob),
+            "extension": filename.split(".")[-1].lower(),
+            "mime_type": content_type,
+            "created_by": current_user.id,
+            "created_at": time.time(),
+            "preview_url": None
+        }
+
+    if request.json.get("url"):
+        from crawl4ai import (
+            AsyncWebCrawler,
+            BrowserConfig,
+            CrawlerRunConfig,
+            DefaultMarkdownGenerator,
+            PruningContentFilter,
+            CrawlResult
+        )
+        try:
+            url = request.json["url"]
+            filename = re.sub(r"\?.*", "", url.split("/")[-1])
+            async def adownload():
+                nonlocal request
+                browser_config = BrowserConfig(
+                    headless=True,
+                    verbose=False,
+                )
+                async with AsyncWebCrawler(config=browser_config) as crawler:
+                    crawler_config = CrawlerRunConfig(
+                        markdown_generator=DefaultMarkdownGenerator(
+                            content_filter=PruningContentFilter()
+                        ),
+                        pdf=True,
+                        screenshot=False
+                    )
+                    result: CrawlResult = await crawler.arun(
+                        url=url,
+                        config=crawler_config
+                    )
+                    return result
+            page = trio.run(adownload())
+            if page.pdf:
+                if filename.split(".")[-1].lower() != "pdf":
+                    filename += ".pdf"
+                return get_json_result(data=structured(filename, "pdf", page.pdf, page.response_headers["content-type"]))
+
+            return get_json_result(data=structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"]))
+
+        except Exception as e:
+            return  server_error_response(e)
+
+    file = request.files['file']
+    try:
+        DocumentService.check_doc_health(current_user.id, file.filename)
+        return get_json_result(data=structured(file.filename, filename_type(file.filename), file.read(), file.content_type))
+    except Exception as e:
+        return  server_error_response(e)
 
 
 @manager.route('/input_elements', methods=['GET'])  # noqa: F821
@@ -245,6 +327,8 @@ def test_db_connect():
         return get_json_result(data="Database Connection Successful!")
     except Exception as e:
         return server_error_response(e)
+
+
 #api get list version dsl of canvas
 @manager.route('/getlistversion/<canvas_id>', methods=['GET'])  # noqa: F821
 @login_required
@@ -254,6 +338,8 @@ def getlistversion(canvas_id):
         return get_json_result(data=list)
     except Exception as e:
         return get_data_error_result(message=f"Error getting history files: {e}")
+
+
 #api get version dsl of canvas
 @manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
 @login_required
@@ -265,6 +351,8 @@ def getversion( version_id):
             return get_json_result(data=version.to_dict())
     except Exception as e:
         return get_json_result(data=f"Error getting history file: {e}")
+
+
 @manager.route('/listteam', methods=['GET'])  # noqa: F821
 @login_required
 def list_kbs():
@@ -281,6 +369,8 @@ def list_kbs():
         return get_json_result(data={"kbs": kbs, "total": total})
     except Exception as e:
         return server_error_response(e)
+
+
 @manager.route('/setting', methods=['POST'])  # noqa: F821
 @validate_request("id", "title", "permission")
 @login_required

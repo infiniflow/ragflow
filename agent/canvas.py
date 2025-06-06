@@ -224,7 +224,13 @@ class Canvas:
                         yield decorate("message", {"content": cpn["obj"].output("content")})
                     yield decorate("message_end", {})
 
+                if cpn["obj"].output("_references"):
+                    self.retrieval["chunks"].extend(cpn["obj"].output("_references")).get("chunks", [])
+                    self.retrieval["doc_aggs"].extend(cpn["obj"].output("_references")).get("doc_aggs", [])
+
                 if cpn["obj"].component_name.lower() != "iteration" or error:
+                    if isinstance(cpn["obj"].output("content"), partial):
+                        cpn["obj"].set_output("content", None)
                     yield decorate("node_finished",
                                {
                                    "inputs": cpn["obj"].get_input(),

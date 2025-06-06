@@ -409,12 +409,7 @@ class FileService(CommonService):
         err, files = [], []
         for file in file_objs:
             try:
-                MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
-                if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
-                    raise RuntimeError("Exceed the maximum file number of a free user!")
-                if len(file.filename.encode("utf-8")) >= 128:
-                    raise RuntimeError("Exceed the maximum length of file name!")
-
+                DocumentService.check_doc_health(kb.tenant_id, file.filename)
                 filename = duplicate_name(DocumentService.query, name=file.filename, kb_id=kb.id)
                 filetype = filename_type(filename)
                 if filetype == FileType.OTHER.value:
