@@ -211,7 +211,7 @@ def test_concurrent_parse(api_key, add_dataset_func, tmp_path):
         ]
     responses = list(as_completed(futures))
     assert len(responses) == count, responses
-    assert all(futures.result()["code"] == 0 for futures in futures)
+    assert all(future.result()["code"] == 0 for future in futures)
 
     condition(api_key, dataset_id, count)
 

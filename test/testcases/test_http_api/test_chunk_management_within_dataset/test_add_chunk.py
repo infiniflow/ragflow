@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import INVALID_API_TOKEN, add_chunk, delete_documents, list_chunks
@@ -224,7 +224,7 @@ class TestAddChunk:
 
     @pytest.mark.skip(reason="issues/6411")
     def test_concurrent_add_chunk(self, api_key, add_document):
-        chunk_num = 50
+        count = 50
         dataset_id, document_id = add_document
         res = list_chunks(api_key, dataset_id, document_id)
         if res["code"] != 0:
@@ -240,11 +240,12 @@ class TestAddChunk:
                     document_id,
                     {"content": f"chunk test {i}"},
                 )
-                for i in range(chunk_num)
+                for i in range(count)
             ]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses)
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)
         res = list_chunks(api_key, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
-        assert res["data"]["doc"]["chunk_count"] == chunks_count + chunk_num
+        assert res["data"]["doc"]["chunk_count"] == chunks_count + count
