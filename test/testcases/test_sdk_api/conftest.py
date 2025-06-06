@@ -14,32 +14,109 @@
 #  limitations under the License.
 #
 
+from pathlib import Path
+
 import pytest
 from common import (
     batch_create_datasets,
+    bulk_upload_documents,
 )
 from configs import HOST_ADDRESS, VERSION
-from ragflow_sdk import RAGFlow
+from pytest import FixtureRequest
+from ragflow_sdk import DataSet, RAGFlow
+from utils import wait_for
+from utils.file_utils import (
+    create_docx_file,
+    create_eml_file,
+    create_excel_file,
+    create_html_file,
+    create_image_file,
+    create_json_file,
+    create_md_file,
+    create_pdf_file,
+    create_ppt_file,
+    create_txt_file,
+)
+
+
+@wait_for(30, 1, "Document parsing timeout")
+def condition(_dataset: DataSet):
+    documents = DataSet.list_documents(page_size=1000)
+    for document in documents:
+        if document.run != "DONE":
+            return False
+    return True
+
+
+@pytest.fixture
+def generate_test_files(request, tmp_path):
+    file_creators = {
+        "docx": (tmp_path / "ragflow_test.docx", create_docx_file),
+        "excel": (tmp_path / "ragflow_test.xlsx", create_excel_file),
+        "ppt": (tmp_path / "ragflow_test.pptx", create_ppt_file),
+        "image": (tmp_path / "ragflow_test.png", create_image_file),
+        "pdf": (tmp_path / "ragflow_test.pdf", create_pdf_file),
+        "txt": (tmp_path / "ragflow_test.txt", create_txt_file),
+        "md": (tmp_path / "ragflow_test.md", create_md_file),
+        "json": (tmp_path / "ragflow_test.json", create_json_file),
+        "eml": (tmp_path / "ragflow_test.eml", create_eml_file),
+        "html": (tmp_path / "ragflow_test.html", create_html_file),
+    }
+
+    files = {}
+    for file_type, (file_path, creator_func) in file_creators.items():
+        if request.param in ["", file_type]:
+            creator_func(file_path)
+            files[file_type] = file_path
+    return files
+
+
+@pytest.fixture(scope="class")
+def ragflow_tmp_dir(request, tmp_path_factory) -> Path:
+    class_name = request.cls.__name__
+    return tmp_path_factory.mktemp(class_name)
 
 
 @pytest.fixture(scope="session")
-def client(token):
+def client(token) -> RAGFlow:
     return RAGFlow(api_key=token, base_url=HOST_ADDRESS, version=VERSION)
 
 
 @pytest.fixture(scope="function")
-def clear_datasets(request, client):
+def clear_datasets(request: FixtureRequest, client: RAGFlow):
     def cleanup():
         client.delete_datasets(ids=None)
 
     request.addfinalizer(cleanup)
+
+
+@pytest.fixture(scope="class")
+def add_dataset(request: FixtureRequest, client: RAGFlow):
+    def cleanup():
+        client.delete_datasets(ids=None)
+
+    request.addfinalizer(cleanup)
+
+    dataset_ids = batch_create_datasets(client, 1)
+    return dataset_ids[0]
 
 
 @pytest.fixture(scope="function")
-def add_dataset_func(request, client):
+def add_dataset_func(request: FixtureRequest, client: RAGFlow) -> DataSet:
     def cleanup():
         client.delete_datasets(ids=None)
 
     request.addfinalizer(cleanup)
-
     return batch_create_datasets(client, 1)[0]
+
+
+@pytest.fixture(scope="class")
+def add_document(request: FixtureRequest, add_dataset: DataSet, ragflow_tmp_dir):
+    dataset = add_dataset
+    documents = bulk_upload_documents(dataset, 1, ragflow_tmp_dir)
+
+    def cleanup():
+        dataset.delete_documents(ids=None)
+
+    request.addfinalizer(cleanup)
+    return dataset, documents[0]
