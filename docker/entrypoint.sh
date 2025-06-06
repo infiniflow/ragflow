@@ -30,6 +30,7 @@ ENABLE_MCP_SERVER=0
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
+GUNICORN_MODE=${GUNICORN_MODE:-0} # Start RAGFlow in Gunicorn mode, default to 0 for Flask default WSGI server
 GUNICORN_WORKERS=${GUNICORN_WORKERS:-4} # Number of Gunicorn workers for the web server
 GUNICORN_GEVENT_MODE=${GUNICORN_GEVENT_MODE:-0}
 
@@ -186,18 +187,25 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
 
-    echo "Starting ragflow_server with Gunicorn (Production Mode)..."
-    # Get host and port from environment variables or use defaults
-    RAGFLOW_HOST=${RAGFLOW_HOST_IP:-0.0.0.0}
-    RAGFLOW_PORT=${RAGFLOW_HOST_PORT:-9380}
-    GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
-    GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
+  if [[ "${GUNICORN_MODE}" -eq 1 ]]; then
+      echo "Starting ragflow_server with Gunicorn (Production Mode)..."
+      # Get host and port from environment variables or use defaults
+      RAGFLOW_HOST=${RAGFLOW_HOST_IP:-0.0.0.0}
+      RAGFLOW_PORT=${RAGFLOW_HOST_PORT:-9380}
+      GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
+      GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
 
-    echo "Gunicorn config: Workers=${GUNICORN_WORKERS}, Host=${RAGFLOW_HOST}, Port=${RAGFLOW_PORT}, Gevent Mode=${GUNICORN_GEVENT_MODE}"
+      echo "Gunicorn config: Workers=${GUNICORN_WORKERS}, Host=${RAGFLOW_HOST}, Port=${RAGFLOW_PORT}, Gevent Mode=${GUNICORN_GEVENT_MODE}"
 
-    # Check if gunicorn config file exists and use it, otherwise use command line options
-    echo "Using Gunicorn configuration file..."
-    exec gunicorn --config /ragflow/conf/gunicorn.conf.py 'api.wsgi:application'
+      # Check if gunicorn config file exists and use it, otherwise use command line options
+      echo "Using Gunicorn configuration file..."
+      exec gunicorn --config /ragflow/conf/gunicorn.conf.py 'api.wsgi:application'
+    else
+        echo "Starting ragflow_server with Flask (Development Mode)..."
+        while true; do
+          "$PY" api/ragflow_server.py
+        done &
+    fi
    
 fi
 
