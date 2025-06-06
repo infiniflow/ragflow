@@ -348,7 +348,7 @@ class TestDocumentsList:
             futures = [executor.submit(list_documents, api_key, dataset_id) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
-        assert all(futures.result()["code"] == 0 for futures in futures)
+        assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
     def test_invalid_params(self, api_key, add_documents):

@@ -15,7 +15,6 @@
 #
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-
 import pytest
 from common import INVALID_API_TOKEN, bulk_upload_documents, delete_documents, list_documents
 from libs.auth import RAGFlowHttpApiAuth
@@ -165,7 +164,7 @@ def test_concurrent_deletion(api_key, add_dataset, tmp_path):
         ]
     responses = list(as_completed(futures))
     assert len(responses) == count, responses
-    assert all(futures.result()["code"] == 0 for futures in futures)
+    assert all(future.result()["code"] == 0 for future in futures)
 
 
 @pytest.mark.p3
