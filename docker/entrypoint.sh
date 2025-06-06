@@ -31,6 +31,8 @@ CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
 GUNICORN_WORKERS=${GUNICORN_WORKERS:-4} # Number of Gunicorn workers for the web server
+ENABLE_GUNICORN=${ENABLE_GUNICORN:-1}  # Whether to start the web server via Gunicorn
+GUNICORN_MODE=${GUNICORN_MODE:-gevent} # Gunicorn worker class (gevent or sync)
 
 MCP_HOST="127.0.0.1"
 MCP_PORT=9382
@@ -185,38 +187,43 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
 
-    echo "Starting ragflow_server with Gunicorn (Production Mode)..."
-    # Get host and port from environment variables or use defaults
-    RAGFLOW_HOST=${RAGFLOW_HOST_IP:-0.0.0.0}
-    RAGFLOW_PORT=${RAGFLOW_HOST_PORT:-9380}
-    GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
-    GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
+    if [[ "${ENABLE_GUNICORN}" -eq 1 ]]; then
+        echo "Starting ragflow_server with Gunicorn (Production Mode)..."
+        # Get host and port from environment variables or use defaults
+        RAGFLOW_HOST=${RAGFLOW_HOST_IP:-0.0.0.0}
+        RAGFLOW_PORT=${RAGFLOW_HOST_PORT:-9380}
+        GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
+        GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-120}
 
-    # Set environment variable for gevent worker class
-    export GUNICORN_WORKER_CLASS=gevent
+        # Set environment variable for worker class
+        export GUNICORN_WORKER_CLASS=${GUNICORN_MODE}
 
-    echo "Gunicorn config: Workers=${GUNICORN_WORKERS}, Host=${RAGFLOW_HOST}, Port=${RAGFLOW_PORT}, Worker Class=gevent"
+        echo "Gunicorn config: Workers=${GUNICORN_WORKERS}, Host=${RAGFLOW_HOST}, Port=${RAGFLOW_PORT}, Worker Class=${GUNICORN_MODE}"
 
-    # Check if gunicorn config file exists and use it, otherwise use command line options
-    if [[ -f "/ragflow/conf/gunicorn.conf.py" ]]; then
-        echo "Using Gunicorn configuration file..."
-        exec gunicorn --config /ragflow/conf/gunicorn.conf.py 'api.wsgi:application'
+        # Check if gunicorn config file exists and use it, otherwise use command line options
+        if [[ -f "/ragflow/conf/gunicorn.conf.py" ]]; then
+            echo "Using Gunicorn configuration file..."
+            exec gunicorn --config /ragflow/conf/gunicorn.conf.py 'api.wsgi:application'
+        else
+            echo "Using Gunicorn command line configuration..."
+            # Start gunicorn with our WSGI application
+            exec gunicorn --workers ${GUNICORN_WORKERS} \
+                           --worker-class ${GUNICORN_MODE} \
+                           --worker-connections 1000 \
+                           --max-requests 1000 \
+                           --max-requests-jitter 100 \
+                           --timeout ${GUNICORN_TIMEOUT} \
+                           --keep-alive 2 \
+                           --preload \
+                           --bind ${RAGFLOW_HOST}:${RAGFLOW_PORT} \
+                           --access-logfile - \
+                           --error-logfile - \
+                           --log-level info \
+                           'api.wsgi:application'
+        fi
     else
-        echo "Using Gunicorn command line configuration..."
-        # Start gunicorn with our WSGI application
-        exec gunicorn --workers ${GUNICORN_WORKERS} \
-                       --worker-class gevent \
-                       --worker-connections 1000 \
-                       --max-requests 1000 \
-                       --max-requests-jitter 100 \
-                       --timeout ${GUNICORN_TIMEOUT} \
-                       --keep-alive 2 \
-                       --preload \
-                       --bind ${RAGFLOW_HOST}:${RAGFLOW_PORT} \
-                       --access-logfile - \
-                       --error-logfile - \
-                       --log-level info \
-                       'api.wsgi:application'
+        echo "Starting ragflow_server in development mode..."
+        exec "$PY" api/ragflow_server.py
     fi
 fi
 
