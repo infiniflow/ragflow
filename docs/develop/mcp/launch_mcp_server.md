@@ -42,10 +42,10 @@ You can start an MCP server either from source code or via Docker.
 ```bash
 # Launch the MCP server to work in self-host mode, run either of the following
 uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --api_key=ragflow-xxxxx
-# uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 mode=self-host --api_key=ragflow-xxxxx
+# uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --mode=self-host --api_key=ragflow-xxxxx
 
 # To launch the MCP server to work in host mode, run the following instead:
-# uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 mode=host
+# uv run mcp/server/server.py --host=127.0.0.1 --port=9382 --base_url=http://127.0.0.1:9380 --mode=host
 ```
 
 Where: 
