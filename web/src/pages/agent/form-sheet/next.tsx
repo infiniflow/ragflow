@@ -108,9 +108,9 @@ const FormSheet = ({
 
   return (
     <Sheet open={visible} modal={false}>
-      <SheetTitle className="hidden"></SheetTitle>
       <SheetContent className={cn('top-20 p-0')} closeIcon={false}>
         <SheetHeader>
+          <SheetTitle className="hidden"></SheetTitle>
           <section className="flex-col border-b py-2 px-5">
             <div className="flex items-center gap-2 pb-3">
               <OperatorIcon
