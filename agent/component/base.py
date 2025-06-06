@@ -26,6 +26,7 @@ import pandas as pd
 import trio
 
 from agent import settings
+from api.utils.api_utils import timeout
 
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
 _DEPRECATED_PARAMS = "_deprecated_params"
@@ -405,24 +406,19 @@ class ComponentBase(ABC):
         self._param = param
         self._param.check()
 
-    async def invoke(self, **kwargs) -> dict[str, Any]:
+    def invoke(self, **kwargs) -> dict[str, Any]:
         self._param.debug_inputs = []
         st = time.perf_counter()
-        TIMEOUT = os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)
-        with trio.move_on_after(TIMEOUT) as cancel_scope:
-            try:
-                await self._invoke(**kwargs)
-            except Exception as e:
-                self._param.outputs["_ERROR"] = {"value": e}
+        try:
+            self._invoke(**kwargs)
+        except Exception as e:
+            self._param.outputs["_ERROR"] = {"value": e}
 
         self._param.outputs["_elapsed_time"] = {"value": time.perf_counter() - st}
-        if cancel_scope.cancelled_caught:
-            if "_ERROR" not in self._param.outputs:
-                self._param.outputs["_ERROR"] = {"value": ""}
-            self._param.outputs["_ERROR"]["value"] += f"\nExecution timeout: {TIMEOUT}s"
         return self.output()
 
-    async def _invoke(self, **kwargs):
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
         raise NotImplementedError()
 
     def output(self, var_nm: str=None) -> Union[dict[str, Any], Any]:

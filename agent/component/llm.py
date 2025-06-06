@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -27,6 +28,7 @@ import trio
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.utils.api_utils import timeout
 from rag.prompts import message_fit_in, citation_prompt
 
 
@@ -121,7 +123,8 @@ class LLM(ComponentBase):
 
         return prompt, msg
 
-    async def _invoke(self, **kwargs):
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
 
         def clean_formated_answer(ans: str) -> str:
             ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
@@ -138,8 +141,7 @@ class LLM(ComponentBase):
             for _ in range(self._param.retry_times+1):
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
                 error = ""
-                async with self.thread_limiter:
-                    ans = await trio.to_thread.run_sync(chat_mdl.chat, msg[0]["content"], msg[1:], self._param.gen_conf())
+                ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
                 msg.pop(0)
                 if ans.find("**ERROR**") >= 0:
                     logging.error(f"LLM response error: {ans}")
@@ -164,8 +166,7 @@ class LLM(ComponentBase):
         for _ in range(self._param.retry_times+1):
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
             error = ""
-            async with self.thread_limiter:
-                ans = await trio.to_thread.run_sync(chat_mdl.chat, msg[0]["content"], msg[1:], self._param.gen_conf())
+            ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
             msg.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"LLM response error: {ans}")

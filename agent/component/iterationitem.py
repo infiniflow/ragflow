@@ -33,7 +33,7 @@ class IterationItem(ComponentBase, ABC):
         super().__init__(canvas, id, param)
         self._idx = 0
 
-    async def _invoke(self, **kwargs):
+    def _invoke(self, **kwargs):
         parent = self.get_parent()
         arr = self._canvas.get_variable_value(parent._param.items_ref)
         if not isinstance(arr, list):

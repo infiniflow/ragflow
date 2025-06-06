@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import os
 import re
 from abc import ABC
 
@@ -28,6 +29,7 @@ from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils import get_uuid
+from api.utils.api_utils import timeout
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer
 from rag.prompts import kb_prompt
@@ -131,7 +133,8 @@ class TavilySearch(ToolBase, ABC):
         self.set_output("formalized_content", kb_prompt(ref, 200000, prefix=self._id))
         self.set_output("json", response)
 
-    async def _invoke(self, **kwargs):
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
         self.tavily_client = TavilyClient(api_key=self._param.api_key)
         last_e = None
         for fld in ["search_depth", "topic", "max_results", "days", "include_answer", "include_raw_content", "include_images", "include_image_descriptions", "include_domains", "exclude_domains"]:

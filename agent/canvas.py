@@ -15,6 +15,7 @@
 #
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
 from typing import Any, Union
@@ -196,14 +197,17 @@ class Canvas:
 
         yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
 
-        async def _run_batch(f, t):
-            async with trio.open_nursery() as nursery:
+        def _run_batch(f, t):
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                thr = []
                 for i in range(f, t):
                     cpn = self.get_component_obj(self.path[i])
                     if cpn.component_name.lower() in ["begin", "userfillup"]:
-                        nursery.start_soon(lambda: cpn.invoke(inputs=kwargs.get("inputs", {})))
+                        thr.append(executor.submit(cpn.invoke, inputs=kwargs.get("inputs", {})))
                     else:
-                        nursery.start_soon(lambda: cpn.invoke(**cpn.get_input()))
+                        thr.append(executor.submit(cpn.invoke, **cpn.get_input()))
+                for t in thr:
+                    t.join()
 
         error = ""
         idx = 0
@@ -211,7 +215,7 @@ class Canvas:
             to = len(self.path)
             for i in range(idx, to):
                 yield decorate("node_started", {"inputs": None, "created_at": int(time.time()), "component_id": self.path[i]})
-            trio.run(_run_batch, idx, to)
+            _run_batch(idx, to)
 
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])

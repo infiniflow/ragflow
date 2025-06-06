@@ -25,7 +25,10 @@ from hmac import HMAC
 from io import BytesIO
 from urllib.parse import quote, urlencode
 from uuid import uuid1
-
+import threading
+import queue
+from functools import wraps
+import time
 import requests
 from flask import (
     Response,
@@ -558,3 +561,31 @@ def remap_dictionary_keys(source_data: dict, key_aliases: dict = None) -> dict:
         transformed_data[mapped_key] = value
 
     return transformed_data
+
+
+def timeout(seconds):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            result_queue = queue.Queue(maxsize=1)
+            def target():
+                try:
+                    result = func(*args, **kwargs)
+                    result_queue.put(result)
+                except Exception as e:
+                    result_queue.put(e)
+
+            thread = threading.Thread(target=target)
+            thread.daemon = True
+            thread.start()
+
+            try:
+                result = result_queue.get(timeout=seconds)
+                if isinstance(result, Exception):
+                    raise result
+                return result
+            except queue.Empty:
+                # 超时处理
+                raise TimeoutError(f"Function '{func.__name__}' timed out after {seconds} seconds")
+        return wrapper
+    return decorator

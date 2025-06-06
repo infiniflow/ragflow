@@ -98,10 +98,10 @@ class ToolBase(ComponentBase):
     def get_meta(self) -> dict[str, Any]:
         return self._param.get_meta()
 
-    async def invoke(self, **kwargs):
+    def invoke(self, **kwargs):
         self._param.debug_inputs = []
         try:
-            await self._invoke(**kwargs)
+            self._invoke(**kwargs)
         except Exception as e:
             raise e
 

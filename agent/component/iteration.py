@@ -40,7 +40,7 @@ class Iteration(ComponentBase, ABC):
             if self._canvas.get_component(cid)["parent_id"] == self._id:
                 return cid
 
-    async def _invoke(self, **kwargs):
+    def _invoke(self, **kwargs):
         arr = self._canvas.get_variable_value(self._param.items_ref)
         if not isinstance(arr, list):
             self.set_output("_ERROR", self._param.items_ref + " must be an array, but its type is "+str(type(arr)))

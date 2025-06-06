@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import os
 import re
 from abc import ABC
 
@@ -26,6 +27,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.utils.api_utils import timeout
 from rag.app.tag import label_question
 from rag.prompts import kb_prompt
 from rag.utils.tavily_conn import Tavily
@@ -69,7 +71,8 @@ class RetrievalParam(ToolParamBase):
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
 
-    async def _invoke(self, **kwargs):
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
         if not kwargs.get("query"):
             self.set_output("_references", None)
             self.set_output("formalized_content", self._param.empty_response)

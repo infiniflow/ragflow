@@ -13,8 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 from abc import ABC
 from agent.component.base import ComponentBase, ComponentParamBase
+from api.utils.api_utils import timeout
 
 
 class SwitchParam(ComponentParamBase):
@@ -49,7 +51,8 @@ class SwitchParam(ComponentParamBase):
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
-    async def _invoke(self, **kwargs):
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
         for cond in self._param.conditions:
             res = []
             for item in cond["items"]:

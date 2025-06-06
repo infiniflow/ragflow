@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import os
 import re
 from functools import partial
 import pandas as pd
@@ -23,6 +24,7 @@ from agent.component.llm import LLMParam, LLM
 from agent.tools.base import LLMToolPluginCallSession
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
+from api.utils.api_utils import timeout
 from rag.prompts import message_fit_in
 
 
@@ -40,7 +42,8 @@ class AgentParam(LLMParam):
 class Agent(LLM):
     component_name = "Agent"
 
-    async def _invoke(self, **kwargs):
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
         tools = {}
         for cpn in self._param.llm_enabled_tools:
             from agent.component import component_class
@@ -56,7 +59,7 @@ class Agent(LLM):
             tools[cpn.get_meta()["function"]["name"]] = cpn
 
         if not tools:
-            return await super()._invoke(**kwargs)
+            return super()._invoke(**kwargs)
 
         prompt, msg = self._prepare_prompt_variables()
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
@@ -71,8 +74,7 @@ class Agent(LLM):
         for _ in range(self._param.retry_times+1):
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
             error = ""
-            async with self.thread_limiter:
-                ans = await trio.to_thread.run_sync(lambda : chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), max_rounds=self._param.max_rounds))
+            ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), max_rounds=self._param.max_rounds)
             msg.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"Extractor._chat got error. response: {ans}")

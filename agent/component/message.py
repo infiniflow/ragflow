@@ -14,11 +14,14 @@
 #  limitations under the License.
 #
 import json
+import os
 import random
 import re
 from functools import partial
 from agent.component.base import ComponentBase, ComponentParamBase
 from jinja2 import Template as Jinja2Template
+
+from api.utils.api_utils import timeout
 
 
 class MessageParam(ComponentParamBase):
@@ -91,7 +94,8 @@ class Message(ComponentBase):
 
         self.set_output("content", all_content)
 
-    async def _invoke(self):
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self):
         if self._param.stream:
             self.set_output("content", partial(self._stream))
             return

@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import base64
+import os
 from abc import ABC
 from enum import Enum
 from typing import Optional
@@ -22,6 +23,7 @@ import json_repair
 from pydantic import BaseModel, Field, field_validator
 from agent.component.base import ComponentBase, ComponentParamBase
 from api import settings
+from api.utils.api_utils import timeout
 
 
 class Language(str, Enum):
@@ -75,7 +77,8 @@ class CodeExecParam(ComponentParamBase):
 class CodeExec(ComponentBase, ABC):
     component_name = "CodeExec"
 
-    async def _invoke(self, **kwargs):
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
         arguments = {}
         for k, v in self._param.arguments.items():
             arguments[k] = self._canvas.get_variable_value(v) if v else None

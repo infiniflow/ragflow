@@ -28,7 +28,7 @@ class UserFillUpParam(ComponentParamBase):
 class UserFillUp(ComponentBase):
     component_name = "UserFillUp"
 
-    async def _invoke(self, **kwargs):
+    def _invoke(self, **kwargs):
         for k, v in kwargs.get("inputs", {}):
             self.set_output(k, v)
 

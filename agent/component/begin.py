@@ -33,6 +33,6 @@ class BeginParam(UserFillUpParam):
 class Begin(UserFillUp):
     component_name = "Begin"
 
-    async def _invoke(self, **kwargs):
+    def _invoke(self, **kwargs):
         for k, v in kwargs.get("inputs", {}):
             self.set_output(k, v)

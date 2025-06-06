@@ -14,11 +14,13 @@
 #  limitations under the License.
 #
 import logging
+import os
 import re
 from abc import ABC
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component import LLMParam, LLM
+from api.utils.api_utils import timeout
 
 
 class CategorizeParam(LLMParam):
@@ -82,7 +84,8 @@ Here's description of each category:
 class Categorize(LLM, ABC):
     component_name = "Categorize"
 
-    async def _invoke(self, **kwargs):
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
         msg = self._canvas.get_history(self._param.message_history_window_size)
         self._param.update_prompt()
         args = self.get_input_elements()
