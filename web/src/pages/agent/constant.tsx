@@ -27,13 +27,18 @@ import { ReactComponent as TemplateIcon } from '@/assets/svg/template.svg';
 import { ReactComponent as TuShareIcon } from '@/assets/svg/tushare.svg';
 import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
 import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
+import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 
-// 邮件功能
+export enum AgentDialogueMode {
+  Conversational = 'conversational',
+  Task = 'task',
+}
 
 import {
   ChatVariableEnabledField,
   variableEnabledFieldMap,
 } from '@/constants/chat';
+import { ModelVariableType } from '@/constants/knowledge';
 import i18n from '@/locales/config';
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 
@@ -54,10 +59,13 @@ import {
 } from '@ant-design/icons';
 import upperFirst from 'lodash/upperFirst';
 import {
+  Box,
   CirclePower,
   CloudUpload,
+  CodeXml,
   IterationCcw,
   ListOrdered,
+  MessageSquareMore,
   OptionIcon,
   TextCursorInput,
   ToggleLeft,
@@ -103,6 +111,9 @@ export enum Operator {
   Email = 'Email',
   Iteration = 'Iteration',
   IterationStart = 'IterationItem',
+  Code = 'Code',
+  WaitingDialogue = 'WaitingDialogue',
+  Agent = 'Agent',
 }
 
 export const CommonOperatorList = Object.values(Operator).filter(
@@ -121,7 +132,9 @@ export const AgentOperatorList = [
   Operator.Concentrator,
   Operator.Template,
   Operator.Iteration,
+  Operator.WaitingDialogue,
   Operator.Note,
+  Operator.Agent,
 ];
 
 export const operatorIconMap = {
@@ -161,6 +174,9 @@ export const operatorIconMap = {
   [Operator.Email]: EmailIcon,
   [Operator.Iteration]: IterationCcw,
   [Operator.IterationStart]: CirclePower,
+  [Operator.Code]: CodeXml,
+  [Operator.WaitingDialogue]: MessageSquareMore,
+  [Operator.Agent]: Box,
 };
 
 export const operatorMap: Record<
@@ -299,6 +315,9 @@ export const operatorMap: Record<
   [Operator.Email]: { backgroundColor: '#e6f7ff' },
   [Operator.Iteration]: { backgroundColor: '#e6f7ff' },
   [Operator.IterationStart]: { backgroundColor: '#e6f7ff' },
+  [Operator.Code]: { backgroundColor: '#4c5458' },
+  [Operator.WaitingDialogue]: { backgroundColor: '#a5d65c' },
+  [Operator.Agent]: { backgroundColor: '#a5d65c' },
 };
 
 export const componentMenuList = [
@@ -335,6 +354,15 @@ export const componentMenuList = [
   },
   {
     name: Operator.Iteration,
+  },
+  {
+    name: Operator.Code,
+  },
+  {
+    name: Operator.WaitingDialogue,
+  },
+  {
+    name: Operator.Agent,
   },
   {
     name: Operator.Note,
@@ -416,6 +444,7 @@ export const initialRetrievalValues = {
 };
 
 export const initialBeginValues = {
+  mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant, what can I do for you?`,
 };
 
@@ -457,6 +486,7 @@ export const initialRelevantValues = {
 
 export const initialCategorizeValues = {
   ...initialLlmBaseValues,
+  parameter: ModelVariableType.Precise,
   message_history_window_size: 1,
   category_description: {},
   ...initialQueryBaseValues,
@@ -645,6 +675,29 @@ export const initialIterationValues = {
 };
 export const initialIterationStartValues = {};
 
+export const initialCodeValues = {
+  lang: 'python',
+  script: CodeTemplateStrMap[ProgrammingLanguage.Python],
+  arguments: [
+    {
+      name: 'arg1',
+    },
+    {
+      name: 'arg2',
+    },
+  ],
+};
+
+export const initialWaitingDialogueValues = {};
+
+export const initialAgentValues = {
+  ...initialLlmBaseValues,
+  sys_prompt: ``,
+  prompts: [],
+  message_history_window_size: 12,
+  tools: [],
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -726,6 +779,9 @@ export const RestrictedUpstreamMap = {
   [Operator.Email]: [Operator.Begin],
   [Operator.Iteration]: [Operator.Begin],
   [Operator.IterationStart]: [Operator.Begin],
+  [Operator.Code]: [Operator.Begin],
+  [Operator.WaitingDialogue]: [Operator.Begin],
+  [Operator.Agent]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -765,6 +821,9 @@ export const NodeMap = {
   [Operator.Email]: 'emailNode',
   [Operator.Iteration]: 'group',
   [Operator.IterationStart]: 'iterationStartNode',
+  [Operator.Code]: 'ragNode',
+  [Operator.WaitingDialogue]: 'ragNode',
+  [Operator.Agent]: 'agentNode',
 };
 
 export const LanguageOptions = [

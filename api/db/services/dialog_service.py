@@ -159,6 +159,34 @@ BAD_CITATION_PATTERNS = [
     re.compile(r"ref\s*(\d+)", flags=re.IGNORECASE),  # ref12、REF 12
 ]
 
+def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
+    max_index = len(kbinfos["chunks"])
+
+    def safe_add(i):
+        if 0 <= i < max_index:
+            idx.add(i)
+            return True
+        return False
+
+    def find_and_replace(pattern, group_index=1, repl=lambda i: f"ID:{i}", flags=0):
+        nonlocal answer
+
+        def replacement(match):
+            try:
+                i = int(match.group(group_index))
+                if safe_add(i):
+                    return f"[{repl(i)}]"
+            except Exception:
+                pass
+            return match.group(0)
+
+        answer = re.sub(pattern, replacement, answer, flags=flags)
+
+    for pattern in BAD_CITATION_PATTERNS:
+        find_and_replace(pattern)
+
+    return answer, idx
+
 
 def chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
@@ -301,34 +329,6 @@ def chat(dialog, messages, stream=True, **kwargs):
 
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
-
-    def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
-        max_index = len(kbinfos["chunks"])
-
-        def safe_add(i):
-            if 0 <= i < max_index:
-                idx.add(i)
-                return True
-            return False
-
-        def find_and_replace(pattern, group_index=1, repl=lambda i: f"ID:{i}", flags=0):
-            nonlocal answer
-
-            def replacement(match):
-                try:
-                    i = int(match.group(group_index))
-                    if safe_add(i):
-                        return f"[{repl(i)}]"
-                except Exception:
-                    pass
-                return match.group(0)
-
-            answer = re.sub(pattern, replacement, answer, flags=flags)
-
-        for pattern in BAD_CITATION_PATTERNS:
-            find_and_replace(pattern)
-
-        return answer, idx
 
     def decorate_answer(answer):
         nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer

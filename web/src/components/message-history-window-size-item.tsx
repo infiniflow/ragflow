@@ -1,4 +1,5 @@
 import { Form, InputNumber } from 'antd';
+import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
@@ -8,7 +9,7 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { Input } from './ui/input';
+import { BlurInput, Input } from './ui/input';
 
 const MessageHistoryWindowSizeItem = ({
   initialValue,
@@ -31,9 +32,19 @@ const MessageHistoryWindowSizeItem = ({
 
 export default MessageHistoryWindowSizeItem;
 
-export function MessageHistoryWindowSizeFormField() {
+type MessageHistoryWindowSizeFormFieldProps = {
+  useBlurInput?: boolean;
+};
+
+export function MessageHistoryWindowSizeFormField({
+  useBlurInput = false,
+}: MessageHistoryWindowSizeFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
+
+  const NextInput = useMemo(() => {
+    return useBlurInput ? BlurInput : Input;
+  }, [useBlurInput]);
 
   return (
     <FormField
@@ -45,7 +56,7 @@ export function MessageHistoryWindowSizeFormField() {
             {t('flow.messageHistoryWindowSize')}
           </FormLabel>
           <FormControl>
-            <Input {...field} type={'number'}></Input>
+            <NextInput {...field} type={'number'}></NextInput>
           </FormControl>
           <FormMessage />
         </FormItem>

@@ -20,3 +20,42 @@ const Textarea = React.forwardRef<
 Textarea.displayName = 'Textarea';
 
 export { Textarea };
+
+type Value = string | readonly string[] | number | undefined;
+
+export const BlurTextarea = React.forwardRef<
+  HTMLTextAreaElement,
+  React.ComponentProps<'textarea'> & {
+    value: Value;
+    onChange(value: Value): void;
+  }
+>(({ value, onChange, ...props }, ref) => {
+  const [val, setVal] = React.useState<Value>();
+
+  const handleChange: React.ChangeEventHandler<HTMLTextAreaElement> =
+    React.useCallback((e) => {
+      setVal(e.target.value);
+    }, []);
+
+  const handleBlur: React.FocusEventHandler<HTMLTextAreaElement> =
+    React.useCallback(
+      (e) => {
+        onChange?.(e.target.value);
+      },
+      [onChange],
+    );
+
+  React.useEffect(() => {
+    setVal(value);
+  }, [value]);
+
+  return (
+    <Textarea
+      {...props}
+      value={val}
+      onBlur={handleBlur}
+      onChange={handleChange}
+      ref={ref}
+    ></Textarea>
+  );
+});

@@ -90,17 +90,18 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
             "user_id": kwargs.get("user_id", "")
         }
         ConversationService.save(**conv)
-        yield "data:" + json.dumps({"code": 0, "message": "",
-                                    "data": {
-                                        "answer": conv["message"][0]["content"],
-                                        "reference": {},
-                                        "audio_binary": None,
-                                        "id": None,
-                                        "session_id": session_id
-                                    }},
-                                   ensure_ascii=False) + "\n\n"
-        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
-        return
+        if stream:
+            yield "data:" + json.dumps({"code": 0, "message": "",
+                                        "data": {
+                                            "answer": conv["message"][0]["content"],
+                                            "reference": {},
+                                            "audio_binary": None,
+                                            "id": None,
+                                            "session_id": session_id
+                                        }},
+                                    ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+            return
 
     conv = ConversationService.query(id=session_id, dialog_id=chat_id)
     if not conv:
@@ -123,6 +124,8 @@ def completion(tenant_id, chat_id, question, name="New session", session_id=None
     message_id = msg[-1].get("id")
     e, dia = DialogService.get_by_id(conv.dialog_id)
 
+    kb_ids = kwargs.get("kb_ids",[])
+    dia.kb_ids = list(set(dia.kb_ids + kb_ids))
     if not conv.reference:
         conv.reference = []
     conv.message.append({"role": "assistant", "content": "", "id": message_id})

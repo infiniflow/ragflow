@@ -14,13 +14,14 @@ import {
   SidebarHeader,
   SidebarMenu,
 } from '@/components/ui/sidebar';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import {
   AgentOperatorList,
   Operator,
   componentMenuList,
   operatorMap,
 } from './constant';
+import { useHandleDrag } from './hooks';
 import OperatorIcon from './operator-icon';
 
 type OperatorItem = {
@@ -28,8 +29,14 @@ type OperatorItem = {
 };
 
 function OperatorCard({ name }: OperatorItem) {
+  const { handleDragStart } = useHandleDrag();
+
   return (
-    <Card className="bg-colors-background-inverse-weak  border-colors-outline-neutral-standard">
+    <Card
+      draggable
+      onDragStart={handleDragStart(name)}
+      className="bg-colors-background-inverse-weak  border-colors-outline-neutral-standard cursor-pointer"
+    >
       <CardContent className="p-2 flex items-center gap-2">
         <OperatorIcon
           name={name}
@@ -70,7 +77,7 @@ function OperatorCollapsible({
   );
 }
 
-export function AgentSidebar() {
+function InnerAgentSidebar() {
   const agentOperatorList = useMemo(() => {
     return componentMenuList.filter((x) =>
       AgentOperatorList.some((y) => y === x.name),
@@ -101,3 +108,5 @@ export function AgentSidebar() {
     </Sidebar>
   );
 }
+
+export const AgentSidebar = memo(InnerAgentSidebar);

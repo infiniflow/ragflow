@@ -23,7 +23,7 @@ class Session(Base):
     def __init__(self, rag, res_dict):
         self.id = None
         self.name = "New session"
-        self.messages = [{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]
+        self.messages = [{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]
         for key, value in res_dict.items():
             if key == "chat_id" and value is not None:
                 self.chat_id = None
@@ -100,7 +100,7 @@ class Session(Base):
 
 class Message(Base):
     def __init__(self, rag, res_dict):
-        self.content = "Hi! I am your assistant，can I help you?"
+        self.content = "Hi! I am your assistant, can I help you?"
         self.reference = None
         self.role = "assistant"
         self.prompt = None

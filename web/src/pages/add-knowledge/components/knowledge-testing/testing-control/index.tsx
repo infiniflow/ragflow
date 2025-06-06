@@ -18,16 +18,25 @@ type FieldType = {
 
 interface IProps {
   form: FormInstance;
-  handleTesting: () => Promise<any>;
+  handleTesting: (documentIds?: string[]) => Promise<any>;
+  selectedDocumentIds: string[];
 }
 
-const TestingControl = ({ form, handleTesting }: IProps) => {
+const TestingControl = ({
+  form,
+  handleTesting,
+  selectedDocumentIds,
+}: IProps) => {
   const question = Form.useWatch('question', { form, preserve: true });
   const loading = useChunkIsTesting();
   const { t } = useTranslate('knowledgeDetails');
 
   const buttonDisabled =
     !question || (typeof question === 'string' && question.trim() === '');
+
+  const onClick = () => {
+    handleTesting(selectedDocumentIds);
+  };
 
   return (
     <section className={styles.testingControlWrapper}>
@@ -53,7 +62,7 @@ const TestingControl = ({ form, handleTesting }: IProps) => {
               <Button
                 type="primary"
                 size="small"
-                onClick={handleTesting}
+                onClick={onClick}
                 disabled={buttonDisabled}
                 loading={loading}
               >

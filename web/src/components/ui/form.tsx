@@ -14,8 +14,7 @@ import {
 
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { Info } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipTrigger } from './tooltip';
+import { FormTooltip } from './tooltip';
 
 const Form = FormProvider;
 
@@ -74,7 +73,7 @@ const useFormField = () => {
   };
 };
 
-const FormItem = React.forwardRef<
+const InnerFormItem = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => {
@@ -86,7 +85,10 @@ const FormItem = React.forwardRef<
     </FormItemContext.Provider>
   );
 });
-FormItem.displayName = 'FormItem';
+
+InnerFormItem.displayName = 'FormItem';
+
+const FormItem = React.memo(InnerFormItem);
 
 const FormLabel = React.forwardRef<
   React.ElementRef<typeof LabelPrimitive.Root>,
@@ -104,16 +106,7 @@ const FormLabel = React.forwardRef<
       {...props}
     >
       {props.children}
-      {tooltip && (
-        <Tooltip>
-          <TooltipTrigger>
-            <Info className="size-3 ml-2" />
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{tooltip}</p>
-          </TooltipContent>
-        </Tooltip>
-      )}
+      {tooltip && <FormTooltip tooltip={tooltip}></FormTooltip>}
     </Label>
   );
 });

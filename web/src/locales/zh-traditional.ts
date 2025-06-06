@@ -143,7 +143,7 @@ export default {
       toMessage: '缺少結束頁碼（不包含）',
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
-        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。',
+        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dev/select_pdf_parser。',
       taskPageSize: '任務頁面大小',
       taskPageSizeMessage: '請輸入您的任務頁面大小！',
       taskPageSizeTip: `如果使用佈局識別，PDF 文件將被分成連續的組。佈局分析將在組之間並行執行，以提高處理速度。“任務頁面大小”決定組的大小。頁面大小越大，將頁面之間的連續文本分割成不同塊的機會就越低。`,
@@ -160,7 +160,7 @@ export default {
       cancel: '取消',
       rerankModel: 'rerank模型',
       rerankPlaceholder: '請選擇',
-      rerankTip: `如果是空的。它使用查詢和塊的嵌入來構成矢量餘弦相似性。否則，它使用rerank評分代替矢量餘弦相似性。`,
+      rerankTip: `非必選項：若不選擇 rerank 模型，系統將默認採用關鍵詞相似度與向量餘弦相似度相結合的混合查詢方式；如果設定了 rerank 模型，則混合查詢中的向量相似度部分將被 rerank 打分替代。請注意：採用 rerank 模型會非常耗時。如需選用 rerank 模型，建議使用 SaaS 的 rerank 模型服務；如果你傾向使用本地部署的 rerank 模型，請務必確保你使用 docker-compose-gpu.yml 啟動 RAGFlow。`,
       topK: 'Top-K',
       topKTip: `與 Rerank 模型配合使用，用於設定傳給 Rerank 模型的文本塊數量。`,
       delimiter: `文字分段標識符`,
@@ -231,7 +231,7 @@ export default {
       cancel: '取消',
       methodTitle: '分塊方法說明',
       methodExamples: '示例',
-      methodExamplesDescription: '提出以下屏幕截圖以促進理解。',
+      methodExamplesDescription: '為方便您理解，我們附上相關截圖供您參考。',
       dialogueExamplesTitle: '對話示例',
       methodEmpty: '這將顯示知識庫類別的可視化解釋',
       book: `<p>支持的文件格式為<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
@@ -246,7 +246,7 @@ export default {
         我們假設手冊具有分層部分結構。我們使用最低的部分標題作為對文檔進行切片的樞軸。
         因此，同一部分中的圖和表不會被分割，並且塊大小可能會很大。
         </p>`,
-      naive: `<p>支持的文件格式為<b>DOCX、XLSX、XLS (Excel 97-2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
+      naive: `<p>支持的文件格式為<b>MD、MDX、DOCX、XLSX、XLS (Excel 97-2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
         <p>此方法將簡單的方法應用於塊文件：</p>
         <p>
         <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
@@ -761,7 +761,8 @@ export default {
       examples: '範例',
       to: '下一步',
       msg: '訊息',
-      messagePlaceholder: '訊息',
+      msgTip: '輸出上游組件的變數內容或自行輸入的文字。',
+      messagePlaceholder: '請輸入您的訊息內容，使用‘/’快速插入變數。',
       messageMsg: '請輸入訊息或刪除此欄位。',
       addField: '新增字段',
       addMessage: '新增訊息',
@@ -786,7 +787,7 @@ export default {
       relevantDescription: `此元件用來判斷upstream的輸出是否與使用者最新的問題相關，『是』代表相關，『否』代表不相關。`,
       rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。`,
       messageDescription:
-        '此元件用於向使用者發送靜態訊息。您可以準備幾條訊息，這些訊息將隨機選擇。',
+        '此元件用來傳回工作流程最後產生的資料內容和原先設定的文字內容。',
       keywordDescription: `該組件用於從用戶的問題中提取關鍵字。 Top N指定需要提取的關鍵字數量。`,
       switchDescription: `該組件用於根據前面組件的輸出評估條件，並相應地引導執行流程。通過定義各種情況並指定操作，或在不滿足條件時採取默認操作，實現複雜的分支邏輯。`,
       wikipediaDescription: `此元件用於從 https://www.wikipedia.org/ 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要調整的搜尋結果數。`,
@@ -1162,6 +1163,9 @@ export default {
       codeDescription: '它允許開發人員編寫自訂 Python 邏輯。',
       inputVariables: '輸入變數',
       runningHintText: '正在運行...🕞',
+      openingSwitchTip: '您的用戶將在開始時看到此歡迎訊息。',
+      modeTip: '模式定義工作流程如何啟動。 ',
+      beginInputTip: `透過定義輸入參數，這些內容可以在後續流程中被其他元件存取。`,
     },
     footer: {
       profile: '“保留所有權利 @ react”',

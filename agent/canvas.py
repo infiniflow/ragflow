@@ -317,6 +317,8 @@ class Canvas:
 
     def get_history(self, window_size):
         convs = []
+        if window_size <= 0:
+            return convs
         for role, obj in self.history[window_size * -1:]:
             if isinstance(obj, dict):
                 convs.append({"role": role, "content": obj.get("content", "")})
