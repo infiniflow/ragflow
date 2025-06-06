@@ -15,7 +15,7 @@ import { Play, X } from 'lucide-react';
 import { useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { BeginId, Operator, operatorMap } from '../constant';
-import { FlowFormContext } from '../context';
+import { AgentFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
 import { useHandleNodeNameChange } from '../hooks';
 import { useHandleFormValuesChange } from '../hooks/use-watch-form-change';
@@ -145,13 +145,13 @@ const FormSheet = ({
         </SheetHeader>
         <section className="pt-4 overflow-auto max-h-[85vh]">
           {visible && (
-            <FlowFormContext.Provider value={node}>
+            <AgentFormContext.Provider value={node}>
               <OperatorForm
                 onValuesChange={handleValuesChange}
                 form={form}
                 node={node}
               ></OperatorForm>
-            </FlowFormContext.Provider>
+            </AgentFormContext.Provider>
           )}
         </section>
       </SheetContent>
