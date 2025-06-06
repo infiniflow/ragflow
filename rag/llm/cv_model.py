@@ -356,7 +356,7 @@ class QWenCV(Base):
                 if resp.status_code == HTTPStatus.OK:
                     cnt = resp.output.choices[0]['message']['content']
                     if isinstance(cnt, list):
-                        cnt = ans[0]["text"] if ans else ""
+                        cnt = cnt[0]["text"] if ans else ""
                     ans += cnt
                     tk_count = resp.usage.total_tokens
                     if resp.output.choices[0].get("finish_reason", "") == "length":
