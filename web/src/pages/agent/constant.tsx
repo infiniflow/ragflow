@@ -30,8 +30,8 @@ import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.s
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 
 export enum AgentDialogueMode {
-  Conversational = 'Conversational',
-  Task = 'Task',
+  Conversational = 'conversational',
+  Task = 'task',
 }
 
 import {
@@ -779,6 +779,7 @@ export const RestrictedUpstreamMap = {
   [Operator.IterationStart]: [Operator.Begin],
   [Operator.Code]: [Operator.Begin],
   [Operator.WaitingDialogue]: [Operator.Begin],
+  [Operator.Agent]: [Operator.Begin],
 };
 
 export const NodeMap = {

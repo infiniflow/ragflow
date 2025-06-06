@@ -202,7 +202,7 @@ export default {
       methodTitle: 'チャンク方法の説明',
       methodExamples: '例',
       methodExamplesDescription:
-        '以下のスクリーンショットは明確な説明のために提供されています。',
+        '理解を深めるために、関連するスクリーンショットを参考として提供しております。',
       dialogueExamplesTitle: '会話の例',
       methodEmpty: 'ナレッジベースカテゴリの視覚的説明がここに表示されます',
       book: `<p>対応ファイル形式は<b>DOCX</b>, <b>PDF</b>, <b>TXT</b>です。</p><p>

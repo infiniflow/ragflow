@@ -195,7 +195,7 @@ export default {
       methodTitle: 'Deskripsi Metode Pemotongan',
       methodExamples: 'Contoh',
       methodExamplesDescription:
-        'Cuplikan berikut disajikan untuk memudahkan pemahaman.',
+        'Untuk membantu Anda memahami lebih baik, kami menyediakan tangkapan layar terkait sebagai referensi.',
       dialogueExamplesTitle: 'Contoh Dialog',
       methodEmpty:
         'Ini akan menampilkan penjelasan visual dari kategori basis pengetahuan',
