@@ -993,6 +993,8 @@ wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/af/03/4d69b8d64b39096a721808a349199ca5d7989acf2177e270d15e6f82c356/Crawl4AI-0.3.8-py3-none-any.whl", hash = "sha256:aa19165440c32b667b7325c166d68b00a99375b09e3a7db929d3873064d5ef4f" },
 ]
 
+
+
 [[package]]
 name = "cryptography"
 version = "44.0.2"
