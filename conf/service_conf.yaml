@@ -9,6 +9,7 @@ mysql:
   port: 5455
   max_connections: 900
   stale_timeout: 300
+  max_allowed_packet: 1073741824
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
@@ -24,6 +25,11 @@ os:
 infinity:
   uri: 'localhost:23817'
   db_name: 'default_db'
+# The OSS object storage uses the MySQL configuration above by default. If you need to switch to another object storage service, please uncomment and configure the following parameters.
+opendal:
+  schema: 'mysql'  # Storage type, such as s3, oss, azure, etc.
+  config:
+    oss_table: 'your_table_name'
 redis:
   db: 1
   password: 'infini_rag_flow'

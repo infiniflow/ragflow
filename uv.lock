@@ -3663,6 +3663,17 @@ wheels = [
 ]
 
 [[package]]
+name = "opendal"
+version = "0.35.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/9b/47/21ebe2a955d35b019d7a79926eaef7cc75eb3eb56fc45e229ba045981332/opendal-0.35.0.tar.gz", hash = "sha256:a087c45cb4e184c49f875778f21b7eb43cae29ae0c86e7416d5b2e8e998c0a20" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/7d/e1/c3a4a491a775f341087df953d4ff89121907dcc88407c26c9f758b0011a8/opendal-0.35.0-cp37-abi3-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl", hash = "sha256:4de97dbbd050e223004b89d45b236ae0e59bf5b095874238d2743161cbfac91e" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/74/36/cdc60e8be6646a9741ec5d8fa10ac0233e0066b6d99ad9771b159ac3db91/opendal-0.35.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:071b13fd79c7876910870c8721f6865403a9d8e03ecfdc4e9d1dadd4483efe23" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/56/35/2f8d45b008502400934f286d4489688c6999f0e648156fe5a1e5e65d0853/opendal-0.35.0-cp37-abi3-win_amd64.whl", hash = "sha256:eac2bf96ac4e5aeeba8dccdb21c90d37f67af670f56f1d7893138299875b489f" },
+]
+
+[[package]]
 name = "openpyxl"
 version = "3.1.5"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -4891,6 +4902,7 @@ dependencies = [
     { name = "openai" },
     { name = "opencv-python" },
     { name = "opencv-python-headless" },
+    { name = "opendal" },
     { name = "openpyxl" },
     { name = "opensearch-py" },
     { name = "ormsgpack" },
@@ -5041,6 +5053,7 @@ requires-dist = [
     { name = "openai", specifier = "==1.45.0" },
     { name = "opencv-python", specifier = "==4.10.0.84" },
     { name = "opencv-python-headless", specifier = "==4.10.0.84" },
+    { name = "opendal", specifier = ">=0.35.0,<0.36.0" },
     { name = "openpyxl", specifier = ">=3.1.0,<4.0.0" },
     { name = "opensearch-py", specifier = "==2.7.1" },
     { name = "ormsgpack", specifier = "==1.5.0" },
