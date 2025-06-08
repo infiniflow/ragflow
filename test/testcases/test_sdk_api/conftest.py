@@ -23,7 +23,7 @@ from common import (
 )
 from configs import HOST_ADDRESS, VERSION
 from pytest import FixtureRequest
-from ragflow_sdk import DataSet, RAGFlow
+from ragflow_sdk import Chunk, DataSet, Document, RAGFlow
 from utils import wait_for
 from utils.file_utils import (
     create_docx_file,
@@ -41,7 +41,7 @@ from utils.file_utils import (
 
 @wait_for(30, 1, "Document parsing timeout")
 def condition(_dataset: DataSet):
-    documents = DataSet.list_documents(page_size=1000)
+    documents = _dataset.list_documents(page_size=1000)
     for document in documents:
         if document.run != "DONE":
             return False
@@ -49,7 +49,7 @@ def condition(_dataset: DataSet):
 
 
 @pytest.fixture
-def generate_test_files(request, tmp_path):
+def generate_test_files(request: FixtureRequest, tmp_path: Path):
     file_creators = {
         "docx": (tmp_path / "ragflow_test.docx", create_docx_file),
         "excel": (tmp_path / "ragflow_test.xlsx", create_excel_file),
@@ -72,13 +72,13 @@ def generate_test_files(request, tmp_path):
 
 
 @pytest.fixture(scope="class")
-def ragflow_tmp_dir(request, tmp_path_factory) -> Path:
+def ragflow_tmp_dir(request: FixtureRequest, tmp_path_factory: Path) -> Path:
     class_name = request.cls.__name__
     return tmp_path_factory.mktemp(class_name)
 
 
 @pytest.fixture(scope="session")
-def client(token) -> RAGFlow:
+def client(token: str) -> RAGFlow:
     return RAGFlow(api_key=token, base_url=HOST_ADDRESS, version=VERSION)
 
 
@@ -96,9 +96,7 @@ def add_dataset(request: FixtureRequest, client: RAGFlow):
         client.delete_datasets(ids=None)
 
     request.addfinalizer(cleanup)
-
-    dataset_ids = batch_create_datasets(client, 1)
-    return dataset_ids[0]
+    return batch_create_datasets(client, 1)[0]
 
 
 @pytest.fixture(scope="function")
@@ -111,12 +109,31 @@ def add_dataset_func(request: FixtureRequest, client: RAGFlow) -> DataSet:
 
 
 @pytest.fixture(scope="class")
-def add_document(request: FixtureRequest, add_dataset: DataSet, ragflow_tmp_dir):
-    dataset = add_dataset
-    documents = bulk_upload_documents(dataset, 1, ragflow_tmp_dir)
+def add_document(add_dataset: DataSet, ragflow_tmp_dir: Path) -> tuple[DataSet, Document]:
+    return add_dataset, bulk_upload_documents(add_dataset, 1, ragflow_tmp_dir)[0]
+
+
+@pytest.fixture(scope="class")
+def add_chunks(request: FixtureRequest, add_document: tuple[DataSet, Document]) -> tuple[DataSet, Document, list[Chunk]]:
+    dataset, document = add_document
+    dataset.async_parse_documents([document.id])
+    condition(dataset)
+
+    chunks = []
+    for i in range(4):
+        chunk = document.add_chunk(content=f"chunk test {i}")
+        chunks.append(chunk)
+
+    # issues/6487
+    from time import sleep
+
+    sleep(1)
 
     def cleanup():
-        dataset.delete_documents(ids=None)
+        try:
+            document.delete_chunks(ids=[])
+        except Exception:
+            pass
 
     request.addfinalizer(cleanup)
-    return dataset, documents[0]
+    return dataset, document, chunks

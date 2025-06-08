@@ -696,6 +696,21 @@ export const initialAgentValues = {
   prompts: [],
   message_history_window_size: 12,
   tools: [],
+  outputs: {
+    structured_output: {
+      // topic: {
+      //   type: 'string',
+      //   description:
+      //     'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
+      //   enum: ['general', 'news'],
+      //   default: 'general',
+      // },
+    },
+    content: {
+      type: 'string',
+      value: '',
+    },
+  },
 };
 
 export const CategorizeAnchorPointPositions = [

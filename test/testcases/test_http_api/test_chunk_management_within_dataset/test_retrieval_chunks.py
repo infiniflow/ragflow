@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import (
@@ -302,12 +303,12 @@ class TestChunksRetrieval:
 
     @pytest.mark.p3
     def test_concurrent_retrieval(self, api_key, add_chunks):
-        from concurrent.futures import ThreadPoolExecutor
-
         dataset_id, _, _ = add_chunks
+        count = 100
         payload = {"question": "chunk", "dataset_ids": [dataset_id]}
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(retrieval_chunks, api_key, payload) for i in range(100)]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses)
+            futures = [executor.submit(retrieval_chunks, api_key, payload) for i in range(count)]
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)

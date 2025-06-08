@@ -1,11 +1,11 @@
-import { useFetchFlow } from '@/hooks/flow-hooks';
+import { useFetchAgent } from '@/hooks/use-agent-request';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { useCallback } from 'react';
 import useGraphStore from '../store';
 import { buildDslComponentsByGraph } from '../utils';
 
 export const useBuildDslData = () => {
-  const { data } = useFetchFlow();
+  const { data } = useFetchAgent();
   const { nodes, edges } = useGraphStore((state) => state);
 
   const buildDslData = useCallback(

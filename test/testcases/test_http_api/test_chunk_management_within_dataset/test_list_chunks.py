@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import INVALID_API_TOKEN, batch_add_chunks, list_chunks
@@ -149,12 +149,12 @@ class TestChunksList:
     @pytest.mark.p3
     def test_concurrent_list(self, api_key, add_chunks):
         dataset_id, document_id, _ = add_chunks
-
+        count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_chunks, api_key, dataset_id, document_id) for i in range(100)]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses)
-        assert all(len(r["data"]["chunks"]) == 5 for r in responses)
+            futures = [executor.submit(list_chunks, api_key, dataset_id, document_id) for i in range(count)]
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(len(future.result()["data"]["chunks"]) == 5 for future in futures)
 
     @pytest.mark.p1
     def test_default(self, api_key, add_document):
