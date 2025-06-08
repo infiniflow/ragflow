@@ -20,6 +20,7 @@ import numpy as np
 
 DEFAULT_MATCH_VECTOR_TOPN = 10
 DEFAULT_MATCH_SPARSE_TOPN = 10
+
 VEC = list | np.ndarray
 
 
