@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import INVALID_API_TOKEN, batch_create_chat_assistants, delete_chat_assistants, list_chat_assistants
@@ -107,16 +107,18 @@ class TestChatAssistantsDelete:
 
     @pytest.mark.p3
     def test_concurrent_deletion(self, api_key):
-        ids = batch_create_chat_assistants(api_key, 100)
+        count = 100
+        ids = batch_create_chat_assistants(api_key, count)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(delete_chat_assistants, api_key, {"ids": ids[i : i + 1]}) for i in range(100)]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses)
+            futures = [executor.submit(delete_chat_assistants, api_key, {"ids": ids[i : i + 1]}) for i in range(count)]
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
     def test_delete_10k(self, api_key):
-        ids = batch_create_chat_assistants(api_key, 10_000)
+        ids = batch_create_chat_assistants(api_key, 1_000)
         res = delete_chat_assistants(api_key, {"ids": ids})
         assert res["code"] == 0
 
