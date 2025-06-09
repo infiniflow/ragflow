@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import pytest
+from common import batch_create_chat_assistants
 from pytest import FixtureRequest
 from ragflow_sdk import Chat, DataSet, Document, RAGFlow
 from utils import wait_for
@@ -38,10 +39,4 @@ def add_chat_assistants_func(request: FixtureRequest, client: RAGFlow, add_docum
     dataset, document = add_document
     dataset.async_parse_documents([document.id])
     condition(dataset)
-
-    chat_assistants = []
-    for i in range(5):
-        chat_assistant = client.create_chat(name=f"test_chat_assistant_{i}", dataset_ids=[dataset.id])
-        chat_assistants.append(chat_assistant)
-
-    return dataset, document, chat_assistants
+    return dataset, document, batch_create_chat_assistants(client, 5)

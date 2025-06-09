@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import create_chat_assistant, delete_chat_assistants, list_documents, parse_documents
+from common import batch_create_chat_assistants, delete_chat_assistants, list_documents, parse_documents
 from utils import wait_for
 
 
@@ -37,10 +37,4 @@ def add_chat_assistants_func(request, api_key, add_document):
     dataset_id, document_id = add_document
     parse_documents(api_key, dataset_id, {"document_ids": [document_id]})
     condition(api_key, dataset_id)
-
-    chat_assistant_ids = []
-    for i in range(5):
-        res = create_chat_assistant(api_key, {"name": f"test_chat_assistant_{i}", "dataset_ids": [dataset_id]})
-        chat_assistant_ids.append(res["data"]["id"])
-
-    return dataset_id, document_id, chat_assistant_ids
+    return dataset_id, document_id, batch_create_chat_assistants(api_key, 5)

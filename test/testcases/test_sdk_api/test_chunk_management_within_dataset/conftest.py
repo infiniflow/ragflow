@@ -15,7 +15,10 @@
 #
 
 
+from time import sleep
+
 import pytest
+from common import batch_add_chunks
 from pytest import FixtureRequest
 from ragflow_sdk import Chunk, DataSet, Document
 from utils import wait_for
@@ -32,18 +35,18 @@ def condition(_dataset: DataSet):
 
 @pytest.fixture(scope="function")
 def add_chunks_func(request: FixtureRequest, add_document: tuple[DataSet, Document]) -> tuple[DataSet, Document, list[Chunk]]:
+    def cleanup():
+        try:
+            document.delete_chunks(ids=[])
+        except Exception:
+            pass
+
+    request.addfinalizer(cleanup)
+
     dataset, document = add_document
     dataset.async_parse_documents([document.id])
     condition(dataset)
-    chunks = [document.add_chunk(content=f"chunk test {i}") for i in range(4)]
-
+    chunks = batch_add_chunks(document, 4)
     # issues/6487
-    from time import sleep
-
     sleep(1)
-
-    def cleanup():
-        document.delete_chunks(ids=[])
-
-    request.addfinalizer(cleanup)
     return dataset, document, chunks

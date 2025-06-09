@@ -15,15 +15,18 @@
 #
 
 from pathlib import Path
+from time import sleep
 
 import pytest
 from common import (
+    batch_add_chunks,
+    batch_create_chat_assistants,
     batch_create_datasets,
     bulk_upload_documents,
 )
 from configs import HOST_ADDRESS, VERSION
 from pytest import FixtureRequest
-from ragflow_sdk import Chunk, DataSet, Document, RAGFlow
+from ragflow_sdk import Chat, Chunk, DataSet, Document, RAGFlow
 from utils import wait_for
 from utils.file_utils import (
     create_docx_file,
@@ -98,6 +101,20 @@ def clear_chat_assistants(request: FixtureRequest, client: RAGFlow):
     request.addfinalizer(cleanup)
 
 
+@pytest.fixture(scope="function")
+def clear_session_with_chat_assistants(request, add_chat_assistants):
+    def cleanup():
+        for chat_assistant in chat_assistants:
+            try:
+                chat_assistant.delete_sessions(ids=None)
+            except Exception:
+                pass
+
+    request.addfinalizer(cleanup)
+
+    _, _, chat_assistants = add_chat_assistants
+
+
 @pytest.fixture(scope="class")
 def add_dataset(request: FixtureRequest, client: RAGFlow):
     def cleanup():
@@ -123,20 +140,6 @@ def add_document(add_dataset: DataSet, ragflow_tmp_dir: Path) -> tuple[DataSet, 
 
 @pytest.fixture(scope="class")
 def add_chunks(request: FixtureRequest, add_document: tuple[DataSet, Document]) -> tuple[DataSet, Document, list[Chunk]]:
-    dataset, document = add_document
-    dataset.async_parse_documents([document.id])
-    condition(dataset)
-
-    chunks = []
-    for i in range(4):
-        chunk = document.add_chunk(content=f"chunk test {i}")
-        chunks.append(chunk)
-
-    # issues/6487
-    from time import sleep
-
-    sleep(1)
-
     def cleanup():
         try:
             document.delete_chunks(ids=[])
@@ -144,23 +147,27 @@ def add_chunks(request: FixtureRequest, add_document: tuple[DataSet, Document]) 
             pass
 
     request.addfinalizer(cleanup)
+
+    dataset, document = add_document
+    dataset.async_parse_documents([document.id])
+    condition(dataset)
+    chunks = batch_add_chunks(document, 4)
+    # issues/6487
+    sleep(1)
     return dataset, document, chunks
 
 
 @pytest.fixture(scope="class")
-def add_chat_assistants(request, client, add_document):
+def add_chat_assistants(request, client, add_document) -> tuple[DataSet, Document, list[Chat]]:
     def cleanup():
-        client.delete_chats(ids=None)
+        try:
+            client.delete_chats(ids=None)
+        except Exception:
+            pass
 
     request.addfinalizer(cleanup)
 
     dataset, document = add_document
     dataset.async_parse_documents([document.id])
     condition(dataset)
-
-    chat_assistants = []
-    for i in range(5):
-        chat_assistant = client.create_chat(name=f"test_chat_assistant_{i}", dataset_ids=[dataset.id])
-        chat_assistants.append(chat_assistant)
-
-    return dataset, document, chat_assistants
+    return dataset, document, batch_create_chat_assistants(client, 5)
