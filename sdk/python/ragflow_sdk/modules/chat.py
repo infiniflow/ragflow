@@ -46,7 +46,7 @@ class Chat(Base):
             self.top_n = 8
             self.top_k = 1024
             self.variables = [{"key": "knowledge", "optional": True}]
-            self.rerank_model = None
+            self.rerank_model = ""
             self.empty_response = None
             self.opener = "Hi! I'm your assistant, what can I do for you?"
             self.show_quote = True
