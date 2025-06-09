@@ -263,7 +263,7 @@ export const useHandleDrop = () => {
     [reactFlowInstance, getNodeName, nodes, initializeOperatorParams, addNode],
   );
 
-  return { onDrop, onDragOver, setReactFlowInstance };
+  return { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance };
 };
 
 export const useHandleFormValuesChange = (
