@@ -20,6 +20,9 @@ from io import BytesIO
 
 from PIL import Image
 
+from api.db import LLMType
+from api.db.services.llm_service import LLMBundle
+from deepdoc.parser.pdf_parser import VisionParser
 from rag.nlp import tokenize, is_english
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, PptParser, PlainParser
@@ -123,11 +126,21 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             res.append(d)
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if kwargs.get("layout_recognize", "DeepDOC") == "Plain Text":
+        layout_recognizer = kwargs.get("layout_recognize", "DeepDOC")
+        if layout_recognizer == "DeepDOC":
+            pdf_parser = Pdf()
+            sections = pdf_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
+        elif layout_recognizer == "Plain Text":
             pdf_parser = PlainParser()
-        for pn, (txt, img) in enumerate(pdf_parser(filename, binary,
-                                                   from_page=from_page, to_page=to_page, callback=callback)):
+            sections, _ = pdf_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
+        else:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT, llm_name=layout_recognizer, lang=lang)
+            pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
+            sections, _ = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page,
+                                      callback=callback)
+
+        callback(0.8, "Finish parsing.")
+        for pn, (txt, img) in enumerate(sections):
             d = copy.deepcopy(doc)
             pn += from_page
             if img:
