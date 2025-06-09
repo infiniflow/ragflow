@@ -56,10 +56,13 @@ function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
   }, []);
 }
 
-function buildOutputOptions(outputs: Record<string, any> = {}) {
+function buildOutputOptions(
+  outputs: Record<string, any> = {},
+  nodeId?: string,
+) {
   return Object.keys(outputs).map((x) => ({
     label: x,
-    value: x,
+    value: `${nodeId}@${x}`,
   }));
 }
 
@@ -84,7 +87,7 @@ export function useBuildNodeOutputOptions(nodeId?: string) {
         label: x.data.name,
         value: x.id,
         title: x.data.name,
-        options: buildOutputOptions(x.data.form.outputs),
+        options: buildOutputOptions(x.data.form.outputs, x.id),
       }));
   }, [edges, nodeId, nodes]);
 
