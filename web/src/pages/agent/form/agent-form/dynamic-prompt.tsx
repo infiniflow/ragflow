@@ -12,11 +12,7 @@ import { memo } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { PromptEditor } from '../components/prompt-editor';
-
-export enum PromptRole {
-  User = 'user',
-  Assistant = 'assistant',
-}
+import { PromptRole } from './constant';
 
 const options = [
   { label: 'User', value: PromptRole.User },
