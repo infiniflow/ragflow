@@ -11,11 +11,12 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo } from 'react';
+import { useContext, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialAgentValues } from '../../constant';
+import { Operator, initialAgentValues } from '../../constant';
+import { AgentInstanceContext } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
@@ -62,6 +63,8 @@ const AgentForm = ({ node }: INextOperatorForm) => {
 
   useWatchFormChange(node?.id, form);
 
+  const { addCanvasNode } = useContext(AgentInstanceContext);
+
   return (
     <Form {...form}>
       <form
@@ -106,7 +109,9 @@ const AgentForm = ({ node }: INextOperatorForm) => {
             )}
           />
         </FormContainer>
-        <BlockButton>Add Agent</BlockButton>
+        <BlockButton onClick={addCanvasNode(Operator.Agent, node?.id)}>
+          Add Agent
+        </BlockButton>
         <Output list={outputList}></Output>
       </form>
     </Form>
