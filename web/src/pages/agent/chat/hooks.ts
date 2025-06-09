@@ -52,11 +52,13 @@ export const useSelectNextMessages = () => {
 };
 
 function findMessageFromList(eventList: IEventList) {
-  const event = eventList.find((x) => x.event === MessageEventType.Message) as
-    | IMessageEvent
-    | undefined;
-
-  return event?.data?.content;
+  const messageEventList = eventList.filter(
+    (x) => x.event === MessageEventType.Message,
+  ) as IMessageEvent[];
+  return {
+    id: messageEventList[0]?.message_id,
+    content: messageEventList.map((x) => x.data.content).join(''),
+  };
 }
 
 const useGetBeginNodePrologue = () => {
@@ -127,10 +129,11 @@ export const useSendNextMessage = () => {
   );
 
   useEffect(() => {
-    const message = findMessageFromList(answerList);
-    if (message) {
+    const { content, id } = findMessageFromList(answerList);
+    if (content) {
       addNewestAnswer({
-        answer: message,
+        answer: content,
+        id: id,
         reference: {
           chunks: [],
           doc_aggs: [],
