@@ -166,7 +166,7 @@ async def generate_subgraph(
         )
     if ignored_rels:
         callback(msg=f"ignored {ignored_rels} relations due to missing entities.")
-    tidy_graph(subgraph, callback)
+    tidy_graph(subgraph, callback, check_attribute=False)
 
     subgraph.graph["source_id"] = [doc_id]
     chunk = {
