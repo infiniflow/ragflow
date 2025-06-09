@@ -40,6 +40,19 @@ function InnerAgentNode({
         id="b"
         style={RightHandleStyle}
       ></Handle>
+      <Handle
+        type="target"
+        position={Position.Top}
+        isConnectable={false}
+        id="f"
+      ></Handle>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        isConnectable={false}
+        id="e"
+        style={{ left: 180 }}
+      ></Handle>
       <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
     </section>
   );
