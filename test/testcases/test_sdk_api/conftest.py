@@ -90,6 +90,14 @@ def clear_datasets(request: FixtureRequest, client: RAGFlow):
     request.addfinalizer(cleanup)
 
 
+@pytest.fixture(scope="function")
+def clear_chat_assistants(request: FixtureRequest, client: RAGFlow):
+    def cleanup():
+        client.delete_chats(ids=None)
+
+    request.addfinalizer(cleanup)
+
+
 @pytest.fixture(scope="class")
 def add_dataset(request: FixtureRequest, client: RAGFlow):
     def cleanup():
@@ -137,3 +145,22 @@ def add_chunks(request: FixtureRequest, add_document: tuple[DataSet, Document]) 
 
     request.addfinalizer(cleanup)
     return dataset, document, chunks
+
+
+@pytest.fixture(scope="class")
+def add_chat_assistants(request, client, add_document):
+    def cleanup():
+        client.delete_chats(ids=None)
+
+    request.addfinalizer(cleanup)
+
+    dataset, document = add_document
+    dataset.async_parse_documents([document.id])
+    condition(dataset)
+
+    chat_assistants = []
+    for i in range(5):
+        chat_assistant = client.create_chat(name=f"test_chat_assistant_{i}", dataset_ids=[dataset.id])
+        chat_assistants.append(chat_assistant)
+
+    return dataset, document, chat_assistants
