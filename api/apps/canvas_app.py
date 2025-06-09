@@ -86,6 +86,10 @@ def save():
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
+
+        canvas = Canvas(json.dumps(req["dsl"]), current_user.id)
+        canvas.reset()
+        req["dsl"] = json.loads(str(canvas))
         UserCanvasService.update_by_id(req["id"], req)
     # save version    
     UserCanvasVersionService.insert( user_canvas_id=req["id"], dsl=req["dsl"], title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")))
@@ -212,7 +216,6 @@ def upload():
             url = request.json["url"]
             filename = re.sub(r"\?.*", "", url.split("/")[-1])
             async def adownload():
-                nonlocal request
                 browser_config = BrowserConfig(
                     headless=True,
                     verbose=False,

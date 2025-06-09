@@ -412,7 +412,7 @@ class ComponentBase(ABC):
         try:
             self._invoke(**kwargs)
         except Exception as e:
-            self._param.outputs["_ERROR"] = {"value": e}
+            self._param.outputs["_ERROR"] = {"value": str(e)}
 
         self._param.outputs["_elapsed_time"] = {"value": time.perf_counter() - st}
         return self.output()

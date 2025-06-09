@@ -233,12 +233,13 @@ class Canvas:
                     self.retrieval["doc_aggs"].extend(cpn["obj"].output("_references")).get("doc_aggs", [])
 
                 if cpn["obj"].component_name.lower() != "iteration" or error:
+                    o = cpn["obj"].output()
                     if isinstance(cpn["obj"].output("content"), partial):
-                        cpn["obj"].set_output("content", None)
+                        o["content"] = None
                     yield decorate("node_finished",
                                {
                                    "inputs": cpn["obj"].get_input(),
-                                   "outputs": cpn["obj"].output(),
+                                   "outputs": o,
                                    "component_id": self.path[i],
                                    "error": cpn["obj"].error(),
                                    "elapsed_time": cpn["obj"].output("_elapsed_time"),
