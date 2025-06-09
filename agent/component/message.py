@@ -40,7 +40,9 @@ class Message(ComponentBase, ABC):
         if kwargs.get("stream"):
             return partial(self.stream_output)
 
-        return Message.be_output(random.choice(self._param.messages))
+        res = Message.be_output(random.choice(self._param.messages))
+        self.set_output(res)
+        return res
 
     def stream_output(self):
         res = None

@@ -30,8 +30,8 @@ import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.s
 import { CodeTemplateStrMap, ProgrammingLanguage } from '@/constants/agent';
 
 export enum AgentDialogueMode {
-  Conversational = 'Conversational',
-  Task = 'Task',
+  Conversational = 'conversational',
+  Task = 'task',
 }
 
 import {
@@ -696,6 +696,21 @@ export const initialAgentValues = {
   prompts: [],
   message_history_window_size: 12,
   tools: [],
+  outputs: {
+    structured_output: {
+      // topic: {
+      //   type: 'string',
+      //   description:
+      //     'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
+      //   enum: ['general', 'news'],
+      //   default: 'general',
+      // },
+    },
+    content: {
+      type: 'string',
+      value: '',
+    },
+  },
 };
 
 export const CategorizeAnchorPointPositions = [
@@ -781,6 +796,7 @@ export const RestrictedUpstreamMap = {
   [Operator.IterationStart]: [Operator.Begin],
   [Operator.Code]: [Operator.Begin],
   [Operator.WaitingDialogue]: [Operator.Begin],
+  [Operator.Agent]: [Operator.Begin],
 };
 
 export const NodeMap = {

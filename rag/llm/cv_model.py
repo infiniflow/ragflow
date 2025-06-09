@@ -323,7 +323,9 @@ class QWenCV(Base):
         ans = ""
         tk_count = 0
         if response.status_code == HTTPStatus.OK:
-            ans += response.output.choices[0]['message']['content']
+            ans = response.output.choices[0]['message']['content']
+            if isinstance(ans, list):
+                ans = ans[0]["text"] if ans else ""
             tk_count += response.usage.total_tokens
             if response.output.choices[0].get("finish_reason", "") == "length":
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english(
@@ -352,7 +354,10 @@ class QWenCV(Base):
                                                    stream=True)
             for resp in response:
                 if resp.status_code == HTTPStatus.OK:
-                    ans = resp.output.choices[0]['message']['content']
+                    cnt = resp.output.choices[0]['message']['content']
+                    if isinstance(cnt, list):
+                        cnt = cnt[0]["text"] if ans else ""
+                    ans += cnt
                     tk_count = resp.usage.total_tokens
                     if resp.output.choices[0].get("finish_reason", "") == "length":
                         ans += "...\nFor the content length reason, it stopped, continue?" if is_english(

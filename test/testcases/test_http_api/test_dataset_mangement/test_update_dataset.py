@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import DATASET_NAME_LIMIT, INVALID_API_TOKEN, list_datasets, update_dataset
@@ -90,10 +90,12 @@ class TestCapability:
     @pytest.mark.p3
     def test_update_dateset_concurrent(self, api_key, add_dataset_func):
         dataset_id = add_dataset_func
+        count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(update_dataset, api_key, dataset_id, {"name": f"dataset_{i}"}) for i in range(100)]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses), responses
+            futures = [executor.submit(update_dataset, api_key, dataset_id, {"name": f"dataset_{i}"}) for i in range(count)]
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)
 
 
 class TestDatasetUpdate:
@@ -811,10 +813,4 @@ class TestDatasetUpdate:
         assert res["data"][0]["permission"] == original_data["permission"], res
         assert res["data"][0]["chunk_method"] == original_data["chunk_method"], res
         assert res["data"][0]["pagerank"] == original_data["pagerank"], res
-        assert res["data"][0]["parser_config"] == {
-            "chunk_token_num": 128,
-            "delimiter": r"\n",
-            "html4excel": False,
-            "layout_recognize": "DeepDOC",
-            "raptor": {"use_raptor": False},
-        }, res
+        assert res["data"][0]["parser_config"] == original_data["parser_config"], res

@@ -14,11 +14,11 @@
 #  limitations under the License.
 #
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 
 import pytest
-from common import INVALID_API_TOKEN, delete_documnets, update_chunk
+from common import INVALID_API_TOKEN, delete_documents, update_chunk
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -219,7 +219,7 @@ class TestUpdatedChunk:
     @pytest.mark.p3
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6554")
     def test_concurrent_update_chunk(self, api_key, add_chunks):
-        chunk_num = 50
+        count = 50
         dataset_id, document_id, chunk_ids = add_chunks
 
         with ThreadPoolExecutor(max_workers=5) as executor:
@@ -232,15 +232,16 @@ class TestUpdatedChunk:
                     chunk_ids[randint(0, 3)],
                     {"content": f"update chunk test {i}"},
                 )
-                for i in range(chunk_num)
+                for i in range(count)
             ]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses)
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
     def test_update_chunk_to_deleted_document(self, api_key, add_chunks):
         dataset_id, document_id, chunk_ids = add_chunks
-        delete_documnets(api_key, dataset_id, {"ids": [document_id]})
+        delete_documents(api_key, dataset_id, {"ids": [document_id]})
         res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0])
         assert res["code"] == 102
         assert res["message"] == f"Can't find this chunk {chunk_ids[0]}"

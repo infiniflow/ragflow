@@ -80,10 +80,12 @@ class TestCapability:
 
     @pytest.mark.p3
     def test_create_dataset_concurrent(self, api_key):
+        count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(create_dataset, api_key, {"name": f"dataset_{i}"}) for i in range(100)]
+            futures = [executor.submit(create_dataset, api_key, {"name": f"dataset_{i}"}) for i in range(count)]
         responses = list(as_completed(futures))
-        assert all(r["code"] == 0 for r in responses), responses
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)
 
 
 @pytest.mark.usefixtures("clear_datasets")

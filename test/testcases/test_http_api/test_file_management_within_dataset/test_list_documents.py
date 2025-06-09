@@ -13,10 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import INVALID_API_TOKEN, list_documnets
+from common import INVALID_API_TOKEN, list_documents
 from libs.auth import RAGFlowHttpApiAuth
 from utils import is_sorted
 
@@ -35,7 +35,7 @@ class TestAuthorization:
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
-        res = list_documnets(invalid_auth, "dataset_id")
+        res = list_documents(invalid_auth, "dataset_id")
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -44,7 +44,7 @@ class TestDocumentsList:
     @pytest.mark.p1
     def test_default(self, api_key, add_documents):
         dataset_id, _ = add_documents
-        res = list_documnets(api_key, dataset_id)
+        res = list_documents(api_key, dataset_id)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == 5
         assert res["data"]["total"] == 5
@@ -62,7 +62,7 @@ class TestDocumentsList:
         ],
     )
     def test_invalid_dataset_id(self, api_key, dataset_id, expected_code, expected_message):
-        res = list_documnets(api_key, dataset_id)
+        res = list_documents(api_key, dataset_id)
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -101,7 +101,7 @@ class TestDocumentsList:
         expected_message,
     ):
         dataset_id, _ = add_documents
-        res = list_documnets(api_key, dataset_id, params=params)
+        res = list_documents(api_key, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_page_size
@@ -144,7 +144,7 @@ class TestDocumentsList:
         expected_message,
     ):
         dataset_id, _ = add_documents
-        res = list_documnets(api_key, dataset_id, params=params)
+        res = list_documents(api_key, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_page_size
@@ -172,7 +172,7 @@ class TestDocumentsList:
         expected_message,
     ):
         dataset_id, _ = add_documents
-        res = list_documnets(api_key, dataset_id, params=params)
+        res = list_documents(api_key, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -205,7 +205,7 @@ class TestDocumentsList:
         expected_message,
     ):
         dataset_id, _ = add_documents
-        res = list_documnets(api_key, dataset_id, params=params)
+        res = list_documents(api_key, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -226,7 +226,7 @@ class TestDocumentsList:
     )
     def test_keywords(self, api_key, add_documents, params, expected_num):
         dataset_id, _ = add_documents
-        res = list_documnets(api_key, dataset_id, params=params)
+        res = list_documents(api_key, dataset_id, params=params)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == expected_num
         assert res["data"]["total"] == expected_num
@@ -256,7 +256,7 @@ class TestDocumentsList:
         expected_message,
     ):
         dataset_id, _ = add_documents
-        res = list_documnets(api_key, dataset_id, params=params)
+        res = list_documents(api_key, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["name"] in [None, ""]:
@@ -290,7 +290,7 @@ class TestDocumentsList:
             params = {"id": document_id(document_ids)}
         else:
             params = {"id": document_id}
-        res = list_documnets(api_key, dataset_id, params=params)
+        res = list_documents(api_key, dataset_id, params=params)
 
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -333,7 +333,7 @@ class TestDocumentsList:
         else:
             params = {"id": document_id, "name": name}
 
-        res = list_documnets(api_key, dataset_id, params=params)
+        res = list_documents(api_key, dataset_id, params=params)
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_num
         else:
@@ -342,16 +342,18 @@ class TestDocumentsList:
     @pytest.mark.p3
     def test_concurrent_list(self, api_key, add_documents):
         dataset_id, _ = add_documents
+        count = 100
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_documnets, api_key, dataset_id) for i in range(100)]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses)
+            futures = [executor.submit(list_documents, api_key, dataset_id) for i in range(count)]
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
     def test_invalid_params(self, api_key, add_documents):
         dataset_id, _ = add_documents
         params = {"a": "b"}
-        res = list_documnets(api_key, dataset_id, params=params)
+        res = list_documents(api_key, dataset_id, params=params)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == 5

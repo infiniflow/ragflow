@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import (
@@ -86,13 +86,14 @@ class TestCapability:
 
     @pytest.mark.p3
     def test_concurrent_deletion(self, api_key):
-        dataset_num = 1_000
-        ids = batch_create_datasets(api_key, dataset_num)
+        count = 1_000
+        ids = batch_create_datasets(api_key, count)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(delete_datasets, api_key, {"ids": ids[i : i + 1]}) for i in range(dataset_num)]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses), responses
+            futures = [executor.submit(delete_datasets, api_key, {"ids": ids[i : i + 1]}) for i in range(count)]
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)
 
 
 class TestDatasetsDelete:
