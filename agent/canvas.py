@@ -207,10 +207,10 @@ class Canvas:
                     else:
                         thr.append(executor.submit(cpn.invoke, **cpn.get_input()))
                 for t in thr:
-                    t.join()
+                    t.result()
 
         error = ""
-        idx = 0
+        idx = len(self.path) - 1
         while idx < len(self.path):
             to = len(self.path)
             for i in range(idx, to):
