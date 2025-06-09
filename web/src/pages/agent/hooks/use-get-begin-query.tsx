@@ -142,11 +142,6 @@ export const useBuildComponentIdSelectOptions = (
     const query: BeginQuery[] = getBeginNodeDataQuery();
     return [
       {
-        label: <span>Component Output</span>,
-        title: 'Component Output',
-        options: componentIdOptions,
-      },
-      {
         label: <span>Begin Input</span>,
         title: 'Begin Input',
         options: query.map((x) => ({
@@ -156,7 +151,7 @@ export const useBuildComponentIdSelectOptions = (
       },
       ...nodeOutputOptions,
     ];
-  }, [componentIdOptions, getBeginNodeDataQuery, nodeOutputOptions]);
+  }, [getBeginNodeDataQuery, nodeOutputOptions]);
 
   return options;
 };
