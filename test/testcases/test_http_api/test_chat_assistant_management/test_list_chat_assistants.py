@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import INVALID_API_TOKEN, delete_datasets, list_chat_assistants
@@ -288,10 +288,12 @@ class TestChatAssistantsList:
 
     @pytest.mark.p3
     def test_concurrent_list(self, api_key):
+        count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_chat_assistants, api_key) for i in range(100)]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses)
+            futures = [executor.submit(list_chat_assistants, api_key) for i in range(count)]
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
     def test_invalid_params(self, api_key):
