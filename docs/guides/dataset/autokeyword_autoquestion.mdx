@@ -6,61 +6,65 @@ slug: /autokeyword_autoquestion
 # Auto-keyword Auto-question
 import APITable from '@site/src/components/APITable';
 
-Use a chat model to generate keywords and questions from the original chunks.
+Use a chat model to generate keywords and questions from each chunk in the knowledge base.
 
 ---
 
-When selecting a chunking method, you can also enable auto-keyword or auto-question generation to increase retrieval rates. This feature uses a chat model to produce a specified number of keywords and questions from each created chunk, creating a layer of higher-level information from the original content.
+When selecting a chunking method, you can also enable auto-keyword or auto-question generation to increase retrieval rates. This feature uses a chat model to produce a specified number of keywords and questions from each created chunk, generating a layer of higher-level information from the original content.
 
 :::tip NOTE
 Enabling this feature increases document indexing time, as all created chunks will be sent to the chat model for keyword or question generation.
 :::
 
-- **Auto-keyword**  
-   - **Definition:** The number of additional keywords the LLM generates for each chunk. By supplying synonyms for text that is unfriendly to tokenization or multilingual content, this improves recall for full-text or hybrid retrieval. It can also be used to correct bad cases. Disabling this can significantly accelerate parsing.  
-   - **Common Values:**  
-     - `0`: Disabled;  
-     - `3`-`5` = Recommended (if a chunk has over a thousand characters, more keywords may be needed);  
-     - Maximum `30`. Note that, as the number increases, the marginal benefit decreases.  
+## What is Auto-keyword?
 
-- **Auto-question**  
-   - **Definition:** Generates potential FAQ-style questions for each chunk, making retrieval matches more aligned with real user queries (Who/What/Why).  
-   - **Common Values:**  
-     - `0` = disabled;  
-     - `1–2` = commonly used (if a chunk has thousands of characters, more may be needed);  
-     - Upper limit `30` (to avoid generating too many at once). Can also be used to correct bad cases.  
-   - **Typical Use Cases:** Scenarios requiring FAQ retrieval, such as product manuals, policy documents, etc.
+Auto-keyword refers to the auto-keyword generation feature of RAGFlow. It uses a chat model to generate set of keywords or synonyms generated from each chunk to correct errors and enhance retrieval accuracy. This feature is implemented as a slider under **Page rank** on the **Configuration** page of your knowledge base.
 
+Values:  
 
-## Configuration
-
-On the **Configuration** page of your knowledge base, you will find the Auto-keyword and Auto-question sliders under **Page rank**.
+- 0: (Default) Disabled.  
+- Between 3 and 5 (invlusive): Recommended if you have chunks of approximately 1,000 characters. 
+- Maximum: 30. If your chunk size increases, you can increase the value accordingly. Please note, as the value increases, the marginal benefit decreases.  
 
 :::tip NOTE
-The Auto-keyword or Auto-question value must be an integer. If you set their value to a non-integer, say 1.7, it will be rounded down to the nearest integer, which in this case is 1.
+An Auto-keyword value must be an integer. If you set it to a non-integer, say 1.7, it will be rounded down to the nearest integer, which in this case is 1.
 :::
 
+## What is Auto-question?
 
-## Best practices
+Auto-question is a feature of RAGFlow that automatically generates questions from chunks of data using a chat model. These questions (e.g. who, what, and why) also help correct errors and improve the matching of user queries. You can find this feature as a slider under **Page rank** on the **Configuration** page of your knowledge base.
 
-If you are uncertain how to set auto-keyword or auto-question values, here are some best practices gathered from our community:
+Values:
+
+- 0: (Default) Disabled.  
+- 1 or 2: Recommended if you have chunks of approximately 1,000 characters.  
+- Maximum: 10. Can also be used to correct bad cases.  
+- Typical use cases: Scenarios requiring FAQ retrieval, such as product manuals and policy documents.
+
+:::tip NOTE
+An Auto-question value must be an integer. If you set it to a non-integer, say 1.7, it will be rounded down to the nearest integer, which in this case is 1.
+:::
+
+## Some tips from the community
+
+The corresponding values relate closely to the chunking size in your knowledge base. However, if you are new to this feature and unsure which values to start with, here are some suggested values gathered from our community:
 
 ```mdx-code-block
 <APITable>
 ```
 
-| Use cases or typical scenarios                                      | Document volume/length          | Auto_keyword (0–30)        | Auto_question (0–30)       |
+| Use cases or typical scenarios                                      | Document volume/length          | Auto_keyword (0–30)        | Auto_question (0–10)       |
 |---------------------------------------------------------------------|---------------------------------|----------------------------|----------------------------|
-| 1. Internal Process Guidance for Employee Handbook                  | Small, under 10 pages           | 0                          | 0                          |
-| 2. Customer Service FAQ Hot Questions                               | Medium, 10–100 pages            | 3–7                        | 1–3                        |
-| 3. Technical Whitepapers: Development Standards, Protocol Explanations | Large, over 100 pages        | 2–4                        | 1–2                        |
-| 4. Contracts / Regulations / Legal Clause Retrieval                 | Large, over 50 pages            | 2–5                        | 0–1                        |
-| 5. Multi-repository Layered New Documents + Old Archive             | Many                            | Adjust as appropriate      |Adjust as appropriate       |
-| 6. Social Media Comment Pool: Multilingual & Mixed Spelling         | Very large volume of short text | 8–12                       | 0                          |
-| 7. Operational Logs for DevOps Troubleshooting                      | Very large volume of short text | 3–6                        | 0                          |
-| 8. Marketing Asset Library: Multilingual Product Descriptions       | Medium                          | 6–10                       | 1–2                        |
-| 9. Training Courseware / eBooks                                     | Large                           | 2–5                        | 1–2                        |
-| 10. Maintenance Manual: Equipment Diagrams + Steps                  | Medium                          | 3–7                        | 1–2                        |
+| Internal process guidance for employee handbook                     | Small, under 10 pages           | 0                          | 0                          |
+| Customer service FAQs                                               | Medium, 10–100 pages            | 3–7                        | 1–3                        |
+| Technical whitepapers: Development standards, protocol details      | Large, over 100 pages           | 2–4                        | 1–2                        |
+| Contracts / Regulations / Legal clause retrieval                    | Large, over 50 pages            | 2–5                        | 0–1                        |
+| Multi-repository layered new documents + old archive                | Many                            | Adjust as appropriate      |Adjust as appropriate       |
+| Social media comment pool: multilingual & mixed spelling            | Very large volume of short text | 8–12                       | 0                          |
+| Operational logs for troubleshooting                                | Very large volume of short text | 3–6                        | 0                          |
+| Marketing asset library: Multilingual product descriptions          | Medium                          | 6–10                       | 1–2                        |
+| Training Courses / eBooks                                           | Large                           | 2–5                        | 1–2                        |
+| Maintenance manual: equipment diagrams + steps                      | Medium                          | 3–7                        | 1–2                        |
 
 ```mdx-code-block
 </APITable>
