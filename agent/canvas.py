@@ -93,7 +93,7 @@ class Canvas:
             },
             "history": [],
             "path": [],
-            "retrieval": {"chunks": [], "doc_aggs": []},
+            "retrieval": [],
             "globals": {
                 "sys.query": "",
                 "sys.user_id": "",
@@ -158,9 +158,9 @@ class Canvas:
 
     def reset(self, mem=False):
         self.path = []
-        self.retrieval = {"chunks": [], "doc_aggs": []}
         if not mem:
             self.history = []
+            self.retrieval = []
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset()
 
@@ -192,8 +192,9 @@ class Canvas:
                 "data": dt
             }
 
-        if not self.path:
-            self.path = ["begin"]
+        if not self.path or self.path[-1].lower().find("userfillup") < 0:
+            self.path.append("begin")
+            self.retrieval.append({"chunks": [], "doc_aggs": []})
 
         yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
 
@@ -229,8 +230,8 @@ class Canvas:
                     yield decorate("message_end", {})
 
                 if cpn["obj"].output("_references"):
-                    self.retrieval["chunks"].extend(cpn["obj"].output("_references")).get("chunks", [])
-                    self.retrieval["doc_aggs"].extend(cpn["obj"].output("_references")).get("doc_aggs", [])
+                    self.retrieval[-1]["chunks"].extend(cpn["obj"].output("_references").get("chunks", []))
+                    self.retrieval[-1]["doc_aggs"].extend(cpn["obj"].output("_references").get("doc_aggs", []))
 
                 if cpn["obj"].component_name.lower() != "iteration" or error:
                     o = cpn["obj"].output()

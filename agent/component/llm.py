@@ -51,12 +51,14 @@ class LLMParam(ComponentParamBase):
         self.cite = True
 
     def check(self):
-        self.check_decimal_float(self.temperature, "Temperature")
-        self.check_decimal_float(self.presence_penalty, "Presence penalty")
-        self.check_decimal_float(self.frequency_penalty, "Frequency penalty")
-        self.check_nonnegative_number(self.max_tokens, "Max tokens")
-        self.check_decimal_float(self.top_p, "Top P")
-        self.check_empty(self.llm_id, "LLM")
+        self.check_decimal_float(self.temperature, "[Agent] Temperature")
+        self.check_decimal_float(self.presence_penalty, "[Agent] Presence penalty")
+        self.check_decimal_float(self.frequency_penalty, "[Agent] Frequency penalty")
+        self.check_nonnegative_number(self.max_tokens, "[Agent] Max tokens")
+        self.check_decimal_float(self.top_p, "[Agent] Top P")
+        self.check_empty(self.llm_id, "[Agent] LLM")
+        self.check_empty(self.sys_prompt, "[Agent] System prompt")
+        self.check_empty(self.prompts, "[Agent] User prompt")
 
     def gen_conf(self):
         conf = {}
@@ -99,8 +101,8 @@ class LLM(ComponentBase):
         references = {"chunks": [], "doc_aggs": []}
         prompt = self._param.sys_prompt
         for k, o in vars.items():
-            if o.get("_retrieval"):
-                ref = o["_retrieval"]
+            if o.get("_references"):
+                ref = o["_references"]
                 prompt = replace_ids(prompt, len(references["chunks"]), o["_cpn_id"])
                 references["chunks"].extend(ref["chunks"])
                 references["doc_aggs"].extend(ref["doc_aggs"])
@@ -117,7 +119,7 @@ class LLM(ComponentBase):
         prompt = self.string_format(prompt, args)
         for m in msg:
             m["content"] = self.string_format(m["content"], args)
-        if references["chunks"] and self._param.cite:
+        if references["chunks"]:
             prompt += citation_prompt()
             self._canvas.retrieval = references
 

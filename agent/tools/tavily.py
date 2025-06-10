@@ -130,7 +130,7 @@ class TavilySearch(ToolBase, ABC):
             })
         ref = {"chunks": chunks, "doc_aggs": aggs}
         self.set_output("_references", ref)
-        self.set_output("formalized_content", kb_prompt(ref, 200000, prefix=self._id))
+        self.set_output("formalized_content", "\n".join(kb_prompt(ref, 200000, prefix=self._id)))
         self.set_output("json", response)
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))

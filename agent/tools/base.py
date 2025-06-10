@@ -100,9 +100,11 @@ class ToolBase(ComponentBase):
 
     def invoke(self, **kwargs):
         self._param.debug_inputs = []
+        print(kwargs, "#############################")
         try:
             self._invoke(**kwargs)
         except Exception as e:
+            self._param.outputs["_ERROR"] = {"value": str(e)}
             raise e
 
         return self.output()

@@ -13,24 +13,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import json
-import logging
 import os
 import re
 from abc import ABC
-
-import pandas as pd
-
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from api.db import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
-from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 from rag.app.tag import label_question
 from rag.prompts import kb_prompt
-from rag.utils.tavily_conn import Tavily
 
 
 class RetrievalParam(ToolParamBase):
@@ -66,6 +59,7 @@ class RetrievalParam(ToolParamBase):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
         self.check_decimal_float(self.keywords_similarity_weight, "[Retrieval] Keyword similarity weight")
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
+        self.check_empty(self.query, "[Retrieval] query")
 
 
 class Retrieval(ToolBase, ABC):
@@ -105,10 +99,11 @@ class Retrieval(ToolBase, ABC):
         if self._param.rerank_id:
             rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
 
+        query = kwargs["query"]
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
             kbinfos = settings.retrievaler.retrieval(
-                kwargs["query"],
+                query,
                 embd_mdl,
                 [kb.tenant_id for kb in kbs],
                 filtered_kb_ids,
@@ -118,13 +113,13 @@ class Retrieval(ToolBase, ABC):
                 1 - self._param.keywords_similarity_weight,
                 aggs=False,
                 rerank_mdl=rerank_mdl,
-                rank_feature=label_question(kwargs["query"], kbs),
+                rank_feature=label_question(query, kbs),
             )
         else:
             kbinfos = {"chunks": [], "doc_aggs": []}
 
         if self._param.use_kg and kbs:
-            ck = settings.kg_retrievaler.retrieval(kwargs["query"], [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
+            ck = settings.kg_retrievaler.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 kbinfos["chunks"].insert(0, ck)
 
@@ -138,4 +133,4 @@ class Retrieval(ToolBase, ABC):
             return
 
         self.set_output("_references", kbinfos)
-        self.set_output("formalized_content", kb_prompt(kbinfos, 200000, prefix=self._id))
+        self.set_output("formalized_content", "\n".join(kb_prompt(kbinfos, 200000, prefix=self._id)))
