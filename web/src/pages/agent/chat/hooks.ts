@@ -27,7 +27,7 @@ const antMessage = message;
 
 export const useSelectNextMessages = () => {
   const { data: flowDetail, loading } = useFetchAgent();
-  const reference = flowDetail.dsl.reference;
+  const reference = flowDetail.dsl.retrieval;
   const {
     derivedMessages,
     ref,
@@ -134,11 +134,6 @@ export const useSendNextMessage = () => {
       addNewestAnswer({
         answer: content,
         id: id,
-        reference: {
-          chunks: [],
-          doc_aggs: [],
-          total: 0,
-        },
       });
     }
   }, [answerList, addNewestAnswer]);
@@ -161,11 +156,6 @@ export const useSendNextMessage = () => {
     if (prologue) {
       addNewestAnswer({
         answer: prologue,
-        reference: {
-          chunks: [],
-          doc_aggs: [],
-          total: 0,
-        },
       });
     }
   }, [addNewestAnswer, prologue]);

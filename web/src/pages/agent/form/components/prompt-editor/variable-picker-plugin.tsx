@@ -20,19 +20,12 @@ import {
   $isRangeSelection,
   TextNode,
 } from 'lexical';
-import React, {
-  ReactElement,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-} from 'react';
+import React, { ReactElement, useCallback, useEffect, useRef } from 'react';
 import * as ReactDOM from 'react-dom';
 
 import { $createVariableNode } from './variable-node';
 
-import { AgentFormContext } from '@/pages/agent/context';
-import { useBuildComponentIdSelectOptions } from '@/pages/agent/hooks/use-get-begin-query';
+import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
 import { ProgrammaticTag } from './constant';
 import './index.css';
 class VariableInnerOption extends MenuOption {
@@ -109,15 +102,13 @@ export default function VariablePickerMenuPlugin({
   const [editor] = useLexicalComposerContext();
   const isFirstRender = useRef(true);
 
-  const node = useContext(AgentFormContext);
-
   const checkForTriggerMatch = useBasicTypeaheadTriggerMatch('/', {
     minLength: 0,
   });
 
   const [queryString, setQueryString] = React.useState<string | null>('');
 
-  const options = useBuildComponentIdSelectOptions(node?.id, node?.parentId);
+  const options = useBuildQueryVariableOptions();
 
   const buildNextOptions = useCallback(() => {
     let filteredOptions = options;

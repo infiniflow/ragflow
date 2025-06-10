@@ -16,7 +16,8 @@ import {
 } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
-import { useShowDrawer } from '../hooks/use-show-drawer';
+import { useShowDrawer, useShowLogSheet } from '../hooks/use-show-drawer';
+import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
 import styles from './index.less';
@@ -100,6 +101,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideDrawer,
   });
 
+  const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet();
+
   const { handleBeforeDelete } = useBeforeDelete();
 
   useWatchNodeFormDataChange();
@@ -178,12 +181,14 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           hideModal={hideRunOrChatDrawer}
         ></ChatSheet>
       )}
-
       {runVisible && (
         <RunSheet
           hideModal={hideRunOrChatDrawer}
           showModal={showChatModal}
         ></RunSheet>
+      )}
+      {logSheetVisible && (
+        <LogSheet hideModal={hideLogSheet} showModal={showLogSheet}></LogSheet>
       )}
     </div>
   );

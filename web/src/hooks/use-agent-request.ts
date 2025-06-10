@@ -1,3 +1,4 @@
+import { AgentGlobals } from '@/constants/agent';
 import { DSL, IFlow, IFlowTemplate } from '@/interfaces/database/flow';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
@@ -61,10 +62,10 @@ export const EmptyDsl = {
   history: [],
   path: [],
   globals: {
-    'sys.query': '',
-    'sys.user_id': '',
-    'sys.conversation_turns': 0,
-    'sys.files': [],
+    [AgentGlobals.SysQuery]: '',
+    [AgentGlobals.SysUserId]: '',
+    [AgentGlobals.SysConversationTurns]: 0,
+    [AgentGlobals.SysFiles]: [],
   },
 };
 
