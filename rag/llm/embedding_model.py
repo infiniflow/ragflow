@@ -19,6 +19,7 @@ import threading
 from urllib.parse import urljoin
 
 import requests
+from requests.exceptions import JSONDecodeError
 from huggingface_hub import snapshot_download
 from zhipuai import ZhipuAI
 import os
@@ -397,7 +398,12 @@ class JinaEmbed(Base):
                 "input": texts[i:i + batch_size],
                 'encoding_type': 'float'
             }
-            res = requests.post(self.base_url, headers=self.headers, json=data).json()
+            response = requests.post(self.base_url, headers=self.headers, json=data)
+            try:
+                res = response.json()
+            except JSONDecodeError as e:
+                logging.error(f"JSON decode error: {e}\nResponse content: {response.text[:2000]}")
+                raise
             ress.extend([d["embedding"] for d in res["data"]])
             token_count += self.total_token_count(res)
         return np.array(ress), token_count
@@ -584,7 +590,12 @@ class NvidiaEmbed(Base):
                 "encoding_format": "float",
                 "truncate": "END",
             }
-            res = requests.post(self.base_url, headers=self.headers, json=payload).json()
+            response = requests.post(self.base_url, headers=self.headers, json=payload)
+            try:
+                res = response.json()
+            except JSONDecodeError as e:
+                logging.error(f"JSON decode error: {e}\nResponse content: {response.text[:2000]}")
+                raise
             ress.extend([d["embedding"] for d in res["data"]])
             token_count += self.total_token_count(res)
         return np.array(ress), token_count
@@ -692,7 +703,12 @@ class SILICONFLOWEmbed(Base):
                 "input": texts_batch,
                 "encoding_format": "float",
             }
-            res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+            response = requests.post(self.base_url, json=payload, headers=self.headers)
+            try:
+                res = response.json()
+            except JSONDecodeError as e:
+                logging.error(f"JSON decode error: {e}\nResponse content: {response.text[:2000]}")
+                raise
             if "data" not in res or not isinstance(res["data"], list) or len(res["data"]) != len(texts_batch):
                 raise ValueError(f"SILICONFLOWEmbed.encode got invalid response from {self.base_url}")
             ress.extend([d["embedding"] for d in res["data"]])
@@ -705,7 +721,12 @@ class SILICONFLOWEmbed(Base):
             "input": text,
             "encoding_format": "float",
         }
-        res = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        response = requests.post(self.base_url, json=payload, headers=self.headers).json()
+        try:
+            res = response.json()
+        except JSONDecodeError as e:
+            logging.error(f"JSON decode error: {e}\nResponse content: {response.text[:2000]}")
+            raise
         if "data" not in res or not isinstance(res["data"], list) or len(res["data"])!= 1:
             raise ValueError(f"SILICONFLOWEmbed.encode_queries got invalid response from {self.base_url}")
         return np.array(res["data"][0]["embedding"]), self.total_token_count(res)
