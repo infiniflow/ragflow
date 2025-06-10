@@ -12,6 +12,7 @@ export interface DSL {
   messages: Message[];
   reference: IReference[];
   globals: Record<string, any>;
+  retrieval: IReference[];
 }
 
 export interface IOperator {
