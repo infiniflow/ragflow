@@ -15,8 +15,11 @@
 #
 import json
 import re
+
+from jinja2 import StrictUndefined
+from jinja2.sandbox import SandboxedEnvironment
+
 from agent.component.base import ComponentBase, ComponentParamBase
-from jinja2 import Template as Jinja2Template
 
 
 class TemplateParam(ComponentParamBase):
@@ -95,13 +98,15 @@ class Template(ComponentBase):
 
             result = ""
             if "content" in out.columns:
-                result = "\n".join(
-                    [o if isinstance(o, str) else str(o) for o in out["content"]]
-                )
+                result = "\n".join([o if isinstance(o, str) else str(o) for o in out["content"]])
 
             self.make_kwargs(para, kwargs, result)
 
-        template = Jinja2Template(content)
+        env = SandboxedEnvironment(
+            autoescape=True,
+            undefined=StrictUndefined,
+        )
+        template = env.from_string(content)
 
         try:
             content = template.render(kwargs)
@@ -114,19 +119,16 @@ class Template(ComponentBase):
                     v = json.dumps(v, ensure_ascii=False)
                 except Exception:
                     pass
-            content = re.sub(
-                r"\{%s\}" % re.escape(n), v, content
-            )
-            content = re.sub(
-                r"(#+)", r" \1 ", content
-            )
+            # Process backslashes in strings, Use Lambda function to avoid escape issues
+            if isinstance(v, str):
+                v = v.replace("\\", "\\\\")
+            content = re.sub(r"\{%s\}" % re.escape(n), lambda match: v, content)
+            content = re.sub(r"(#+)", r" \1 ", content)
 
         return Template.be_output(content)
 
     def make_kwargs(self, para, kwargs, value):
-        self._param.inputs.append(
-            {"component_id": para["key"], "content": value}
-        )
+        self._param.inputs.append({"component_id": para["key"], "content": value})
         try:
             value = json.loads(value)
         except Exception:

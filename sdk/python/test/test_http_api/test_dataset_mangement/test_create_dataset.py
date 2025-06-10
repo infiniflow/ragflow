@@ -122,7 +122,7 @@ class TestDatasetCreate:
         assert res["code"] == 0, res
 
         res = create_dataset(get_http_api_auth, payload)
-        assert res["code"] == 102, res
+        assert res["code"] == 103, res
         assert res["message"] == f"Dataset name '{name}' already exists", res
 
     @pytest.mark.p3
@@ -134,7 +134,7 @@ class TestDatasetCreate:
 
         payload = {"name": name.lower()}
         res = create_dataset(get_http_api_auth, payload)
-        assert res["code"] == 102, res
+        assert res["code"] == 103, res
         assert res["message"] == f"Dataset name '{name.lower()}' already exists", res
 
     @pytest.mark.p2
@@ -296,14 +296,15 @@ class TestDatasetCreate:
             ("team", "team"),
             ("me_upercase", "ME"),
             ("team_upercase", "TEAM"),
+            ("whitespace", " ME "),
         ],
-        ids=["me", "team", "me_upercase", "team_upercase"],
+        ids=["me", "team", "me_upercase", "team_upercase", "whitespace"],
     )
     def test_permission(self, get_http_api_auth, name, permission):
         payload = {"name": name, "permission": permission}
         res = create_dataset(get_http_api_auth, payload)
         assert res["code"] == 0, res
-        assert res["data"]["permission"] == permission.lower(), res
+        assert res["data"]["permission"] == permission.lower().strip(), res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

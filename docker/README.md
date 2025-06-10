@@ -78,8 +78,8 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:v0.18.0-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.18.0`: The RAGFlow Docker image with embedding models including:
+  - `infiniflow/ragflow:v0.19.0-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.19.0`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
       - `maidalun1020/bce-embedding-base_v1`
@@ -154,9 +154,20 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `addressing_style`: Optional. The style of addressing to use for the S3 endpoint. This can be `path` or `virtual`.
   - `prefix_path`: Optional. A prefix path to prepend to file names in the S3 bucket, which can help organize files within the bucket.
 
-- `oauth`  
-  The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
-  - `github`: The GitHub authentication settings for your application. Visit the [Github Developer Settings page](https://github.com/settings/developers) to obtain your client_id and secret_key.
+- `oauth`
+  The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.
+  - `<channel>`: Custom channel ID.
+    - `type`: Authentication type, options include `oauth2`, `oidc`, `github`. Default is `oauth2`, when `issuer` parameter is provided, defaults to `oidc`.
+    - `icon`: Icon ID, options include `github`, `sso`, default is `sso`.
+    - `display_name`: Channel name, defaults to the Title Case format of the channel ID.
+    - `client_id`: Required, unique identifier assigned to the client application.
+    - `client_secret`: Required, secret key for the client application, used for communication with the authentication server.
+    - `authorization_url`: Base URL for obtaining user authorization.
+    - `token_url`: URL for exchanging authorization code and obtaining access token.
+    - `userinfo_url`: URL for obtaining user information (username, email, etc.).
+    - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
+    - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
+    - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/v1/user/oauth/callback/<channel>`. For local configuration, you can directly use `http://127.0.0.1:80/v1/user/oauth/callback/<channel>`.
 
 - `user_default_llm`  
   The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.  

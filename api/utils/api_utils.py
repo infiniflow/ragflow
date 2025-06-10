@@ -329,6 +329,14 @@ def get_error_argument_result(message="Invalid arguments"):
     return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=message)
 
 
+def get_error_permission_result(message="Permission error"):
+    return get_result(code=settings.RetCode.PERMISSION_ERROR, message=message)
+
+
+def get_error_operating_result(message="Operating error"):
+    return get_result(code=settings.RetCode.OPERATING_ERROR, message=message)
+
+
 def generate_confirmation_token(tenant_id):
     serializer = URLSafeTimedSerializer(tenant_id)
     return "ragflow-" + serializer.dumps(get_uuid(), salt=tenant_id)[2:34]
@@ -420,11 +428,11 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, R
     """
     Verifies availability of an embedding model for a specific tenant.
 
-    Implements a four-stage validation process:
-    1. Model identifier parsing and validation
-    2. System support verification
-    3. Tenant authorization check
-    4. Database operation error handling
+    Performs comprehensive verification through:
+    1. Identifier Parsing: Decomposes embd_id into name and factory components
+    2. System Verification: Checks model registration in LLMService
+    3. Tenant Authorization: Validates tenant-specific model assignments
+    4. Built-in Model Check: Confirms inclusion in predefined system models
 
     Args:
         embd_id (str): Unique identifier for the embedding model in format "model_name@factory"
@@ -452,14 +460,15 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, R
     """
     try:
         llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(embd_id)
-        if not LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"):
-            return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
+        in_llm_service = bool(LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"))
 
-        # Tongyi-Qianwen is added to TenantLLM by default, but remains unusable with empty api_key
         tenant_llms = TenantLLMService.get_my_llms(tenant_id=tenant_id)
         is_tenant_model = any(llm["llm_name"] == llm_name and llm["llm_factory"] == llm_factory and llm["model_type"] == "embedding" for llm in tenant_llms)
 
         is_builtin_model = embd_id in settings.BUILTIN_EMBEDDING_MODELS
+        if not (is_builtin_model or is_tenant_model or in_llm_service):
+            return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
+
         if not (is_builtin_model or is_tenant_model):
             return False, get_error_argument_result(f"Unauthorized model: <{embd_id}>")
     except OperationalError as e:
@@ -514,3 +523,38 @@ def deep_merge(default: dict, custom: dict) -> dict:
                 base_dict[key] = val
 
     return merged
+
+
+def remap_dictionary_keys(source_data: dict, key_aliases: dict = None) -> dict:
+    """
+    Transform dictionary keys using a configurable mapping schema.
+
+    Args:
+        source_data: Original dictionary to process
+        key_aliases: Custom key transformation rules (Optional)
+            When provided, overrides default key mapping
+            Format: {<original_key>: <new_key>, ...}
+
+    Returns:
+        dict: New dictionary with transformed keys preserving original values
+
+    Example:
+        >>> input_data = {"old_key": "value", "another_field": 42}
+        >>> remap_dictionary_keys(input_data, {"old_key": "new_key"})
+        {'new_key': 'value', 'another_field': 42}
+    """
+    DEFAULT_KEY_MAP = {
+        "chunk_num": "chunk_count",
+        "doc_num": "document_count",
+        "parser_id": "chunk_method",
+        "embd_id": "embedding_model",
+    }
+
+    transformed_data = {}
+    mapping = key_aliases or DEFAULT_KEY_MAP
+
+    for original_key, value in source_data.items():
+        mapped_key = mapping.get(original_key, original_key)
+        transformed_data[mapped_key] = value
+
+    return transformed_data

@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -77,6 +78,13 @@ class TestRquest:
         assert res["code"] == 101, res
         assert res["message"] == "No properties were modified", res
 
+    @pytest.mark.p3
+    def test_payload_unset(self, get_http_api_auth, add_dataset_func):
+        dataset_id = add_dataset_func
+        res = update_dataset(get_http_api_auth, dataset_id, None)
+        assert res["code"] == 101, res
+        assert res["message"] == "Malformed JSON syntax: Missing commas/brackets or invalid encoding", res
+
 
 class TestCapability:
     @pytest.mark.p3
@@ -91,16 +99,23 @@ class TestCapability:
 class TestDatasetUpdate:
     @pytest.mark.p3
     def test_dataset_id_not_uuid(self, get_http_api_auth):
-        payload = {"name": "not_uuid"}
+        payload = {"name": "not uuid"}
         res = update_dataset(get_http_api_auth, "not_uuid", payload)
         assert res["code"] == 101, res
-        assert "Input should be a valid UUID" in res["message"], res
+        assert "Invalid UUID1 format" in res["message"], res
+
+    @pytest.mark.p3
+    def test_dataset_id_not_uuid1(self, get_http_api_auth):
+        payload = {"name": "not uuid1"}
+        res = update_dataset(get_http_api_auth, uuid.uuid4().hex, payload)
+        assert res["code"] == 101, res
+        assert "Invalid UUID1 format" in res["message"], res
 
     @pytest.mark.p3
     def test_dataset_id_wrong_uuid(self, get_http_api_auth):
-        payload = {"name": "wrong_uuid"}
+        payload = {"name": "wrong uuid"}
         res = update_dataset(get_http_api_auth, "d94a8dc02c9711f0930f7fbc369eab6d", payload)
-        assert res["code"] == 102, res
+        assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p1
@@ -315,8 +330,9 @@ class TestDatasetUpdate:
             "team",
             "ME",
             "TEAM",
+            " ME ",
         ],
-        ids=["me", "team", "me_upercase", "team_upercase"],
+        ids=["me", "team", "me_upercase", "team_upercase", "whitespace"],
     )
     def test_permission(self, get_http_api_auth, add_dataset_func, permission):
         dataset_id = add_dataset_func
@@ -326,7 +342,7 @@ class TestDatasetUpdate:
 
         res = list_datasets(get_http_api_auth)
         assert res["code"] == 0, res
-        assert res["data"][0]["permission"] == permission.lower(), res
+        assert res["data"][0]["permission"] == permission.lower().strip(), res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -727,7 +743,6 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
 
         res = list_datasets(get_http_api_auth)
-        print(res)
         assert res["code"] == 0, res
         assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
 
@@ -750,7 +765,6 @@ class TestDatasetUpdate:
         assert res["code"] == 0, res
 
         res = list_datasets(get_http_api_auth, {"id": dataset_id})
-        print(res)
         assert res["code"] == 0, res
         assert res["data"][0]["parser_config"] == {"raptor": {"use_raptor": False}}, res
 

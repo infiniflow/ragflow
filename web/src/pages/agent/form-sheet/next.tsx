@@ -10,21 +10,20 @@ import { IModalProps } from '@/interfaces/common';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { get, isPlainObject, lowerFirst } from 'lodash';
+import { lowerFirst } from 'lodash';
 import { Play, X } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { BeginId, Operator, operatorMap } from '../constant';
-import { FlowFormContext } from '../context';
+import { AgentFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
-import { useHandleFormValuesChange, useHandleNodeNameChange } from '../hooks';
+import { useHandleNodeNameChange } from '../hooks';
+import { useHandleFormValuesChange } from '../hooks/use-watch-form-change';
 import OperatorIcon from '../operator-icon';
-import {
-  buildCategorizeListFromObject,
-  needsSingleStepDebugging,
-} from '../utils';
+import { needsSingleStepDebugging } from '../utils';
 import SingleDebugDrawer from './single-debug-drawer';
 import { useFormConfigMap } from './use-form-config-map';
+import { useValues } from './use-values';
 
 interface IProps {
   node?: RAGFlowNodeType;
@@ -51,8 +50,10 @@ const FormSheet = ({
 
   const OperatorForm = currentFormMap.component ?? EmptyContent;
 
+  const values = useValues(node);
+
   const form = useForm({
-    defaultValues: currentFormMap.defaultValues,
+    values: values,
     resolver: zodResolver(currentFormMap.schema),
   });
 
@@ -71,35 +72,45 @@ const FormSheet = ({
     form,
   );
 
-  useEffect(() => {
-    if (visible && !form.formState.isDirty) {
-      if (node?.id !== previousId.current) {
-        form.reset();
-        form.clearErrors();
-      }
+  // useEffect(() => {
+  //   if (visible && !form.formState.isDirty) {
+  //     // if (node?.id !== previousId.current) {
+  //     //   form.reset();
+  //     //   form.clearErrors();
+  //     // }
 
-      if (operatorName === Operator.Categorize) {
-        const items = buildCategorizeListFromObject(
-          get(node, 'data.form.category_description', {}),
-        );
-        const formData = node?.data?.form;
-        if (isPlainObject(formData)) {
-          //   form.setFieldsValue({ ...formData, items });
-          form.reset({ ...formData, items });
-        }
-      } else {
-        // form.setFieldsValue(node?.data?.form);
-        form.reset(node?.data?.form);
-      }
-      previousId.current = node?.id;
-    }
-  }, [visible, form, node?.data?.form, node?.id, node, operatorName]);
+  //     const formData = node?.data?.form;
+
+  //     if (operatorName === Operator.Categorize) {
+  //       const items = buildCategorizeListFromObject(
+  //         get(node, 'data.form.category_description', {}),
+  //       );
+  //       if (isPlainObject(formData)) {
+  //         console.info('xxx');
+  //         const nextValues = {
+  //           ...omit(formData, 'category_description'),
+  //           items,
+  //         };
+
+  //         form.reset(nextValues);
+  //       }
+  //     } else if (operatorName === Operator.Message) {
+  //       form.reset({
+  //         ...formData,
+  //         content: convertToObjectArray(formData.content),
+  //       });
+  //     } else {
+  //       form.reset(node?.data?.form);
+  //     }
+  //     previousId.current = node?.id;
+  //   }
+  // }, [visible, form, node?.data?.form, node?.id, node, operatorName]);
 
   return (
     <Sheet open={visible} modal={false}>
-      <SheetTitle className="hidden"></SheetTitle>
-      <SheetContent className={cn('bg-white top-20 p-0')} closeIcon={false}>
+      <SheetContent className={cn('top-20 p-0')} closeIcon={false}>
         <SheetHeader>
+          <SheetTitle className="hidden"></SheetTitle>
           <section className="flex-col border-b py-2 px-5">
             <div className="flex items-center gap-2 pb-3">
               <OperatorIcon
@@ -132,15 +143,15 @@ const FormSheet = ({
             <span>{t(`${lowerFirst(operatorName)}Description`)}</span>
           </section>
         </SheetHeader>
-        <section className="pt-4">
+        <section className="pt-4 overflow-auto max-h-[85vh]">
           {visible && (
-            <FlowFormContext.Provider value={node}>
+            <AgentFormContext.Provider value={node}>
               <OperatorForm
                 onValuesChange={handleValuesChange}
                 form={form}
                 node={node}
               ></OperatorForm>
-            </FlowFormContext.Provider>
+            </AgentFormContext.Provider>
           )}
         </section>
       </SheetContent>

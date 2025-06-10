@@ -18,10 +18,11 @@ import os
 
 import pytest
 import requests
-from libs.auth import RAGFlowHttpApiAuth
 
 HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
-
+ZHIPU_AI_API_KEY = os.getenv("ZHIPU_AI_API_KEY")
+if ZHIPU_AI_API_KEY is None:
+    pytest.exit("Error: Environment variable ZHIPU_AI_API_KEY must be set")
 
 # def generate_random_email():
 #     return 'user_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))+'@1.com'
@@ -90,11 +91,6 @@ def get_email():
     return EMAIL
 
 
-@pytest.fixture(scope="session")
-def get_http_api_auth(get_api_key_fixture):
-    return RAGFlowHttpApiAuth(get_api_key_fixture)
-
-
 def get_my_llms(auth, name):
     url = HOST_ADDRESS + "/v1/llm/my_llms"
     authorization = {"Authorization": auth}
@@ -111,7 +107,7 @@ def add_models(auth):
     url = HOST_ADDRESS + "/v1/llm/set_api_key"
     authorization = {"Authorization": auth}
     models_info = {
-        "ZHIPU-AI": {"llm_factory": "ZHIPU-AI", "api_key": "d06253dacd404180aa8afb096fcb6c30.KatwBIUpvCSml9sU"},
+        "ZHIPU-AI": {"llm_factory": "ZHIPU-AI", "api_key": ZHIPU_AI_API_KEY},
     }
 
     for name, model_info in models_info.items():
@@ -119,7 +115,7 @@ def add_models(auth):
             response = requests.post(url=url, headers=authorization, json=model_info)
             res = response.json()
             if res.get("code") != 0:
-                raise Exception(res.get("message"))
+                pytest.exit(f"Critical error in add_models: {res.get('message')}")
 
 
 def get_tenant_info(auth):
@@ -139,7 +135,7 @@ def set_tenant_info(get_auth):
         add_models(auth)
         tenant_id = get_tenant_info(auth)
     except Exception as e:
-        raise Exception(e)
+        pytest.exit(f"Error in set_tenant_info: {str(e)}")
     url = HOST_ADDRESS + "/v1/user/set_tenant_info"
     authorization = {"Authorization": get_auth}
     tenant_info = {

@@ -34,6 +34,7 @@ from api import settings
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.settings import PAGERANK_FLD
+from rag.utils.storage_factory import STORAGE_IMPL
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
@@ -46,7 +47,7 @@ def create():
         return get_data_error_result(message="Dataset name must be string.")
     if dataset_name == "":
         return get_data_error_result(message="Dataset name can't be empty.")
-    if len(dataset_name) >= DATASET_NAME_LIMIT:
+    if len(dataset_name.encode("utf-8")) >= DATASET_NAME_LIMIT:
         return get_data_error_result(
             message=f"Dataset name length is {len(dataset_name)} which is large than {DATASET_NAME_LIMIT}")
 
@@ -58,6 +59,7 @@ def create():
         status=StatusEnum.VALID.value)
     try:
         req["id"] = get_uuid()
+        req["name"] = dataset_name
         req["tenant_id"] = current_user.id
         req["created_by"] = current_user.id
         e, t = TenantService.get_by_id(current_user.id)
@@ -225,6 +227,8 @@ def rm():
         for kb in kbs:
             settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
             settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
+            if hasattr(STORAGE_IMPL, 'remove_bucket'):
+                STORAGE_IMPL.remove_bucket(kb.id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

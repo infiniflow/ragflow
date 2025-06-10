@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 
 import pytest
 from common import (
@@ -26,6 +27,7 @@ from common import (
     list_documnets,
     parse_documnets,
 )
+from libs.auth import RAGFlowHttpApiAuth
 from libs.utils import wait_for
 from libs.utils.file_utils import (
     create_docx_file,
@@ -45,6 +47,7 @@ MARKER_EXPRESSIONS = {
     "p2": "p1 or p2",
     "p3": "p1 or p2 or p3",
 }
+HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -73,10 +76,15 @@ def condition(_auth, _dataset_id):
     return True
 
 
+@pytest.fixture(scope="session")
+def get_http_api_auth(get_api_key_fixture):
+    return RAGFlowHttpApiAuth(get_api_key_fixture)
+
+
 @pytest.fixture(scope="function")
 def clear_datasets(request, get_http_api_auth):
     def cleanup():
-        delete_datasets(get_http_api_auth)
+        delete_datasets(get_http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
@@ -132,7 +140,7 @@ def ragflow_tmp_dir(request, tmp_path_factory):
 @pytest.fixture(scope="class")
 def add_dataset(request, get_http_api_auth):
     def cleanup():
-        delete_datasets(get_http_api_auth)
+        delete_datasets(get_http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
@@ -143,12 +151,11 @@ def add_dataset(request, get_http_api_auth):
 @pytest.fixture(scope="function")
 def add_dataset_func(request, get_http_api_auth):
     def cleanup():
-        delete_datasets(get_http_api_auth)
+        delete_datasets(get_http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
-    dataset_ids = batch_create_datasets(get_http_api_auth, 1)
-    return dataset_ids[0]
+    return batch_create_datasets(get_http_api_auth, 1)[0]
 
 
 @pytest.fixture(scope="class")

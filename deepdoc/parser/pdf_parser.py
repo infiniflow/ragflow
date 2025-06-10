@@ -61,7 +61,7 @@ class RAGFlowPdfParser:
 
         self.ocr = OCR()
         self.parallel_limiter = None
-        if PARALLEL_DEVICES is not None and PARALLEL_DEVICES > 1:
+        if PARALLEL_DEVICES > 1:
             self.parallel_limiter = [trio.CapacityLimiter(1) for _ in range(PARALLEL_DEVICES)]
 
         if hasattr(self, "model_speciess"):

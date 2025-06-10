@@ -15,12 +15,15 @@ import camelCase from 'lodash/camelCase';
 import SelectFiles from './select-files';
 
 import {
+  useAllTestingResult,
+  useAllTestingSuccess,
   useSelectIsTestingSuccess,
   useSelectTestingResult,
 } from '@/hooks/knowledge-hooks';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import { api_host } from '@/utils/api';
-import { useCallback, useState } from 'react';
+import { showImage } from '@/utils/chat';
+import { useCallback } from 'react';
 import styles from './index.less';
 
 const similarityList: Array<{ field: keyof ITestingChunk; label: string }> = [
@@ -47,20 +50,21 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
 
 interface IProps {
   handleTesting: (documentIds?: string[]) => Promise<any>;
+  selectedDocumentIds: string[];
+  setSelectedDocumentIds: (ids: string[]) => void;
 }
 
-const ShowImageFields = ['image', 'table'];
-
-function showImage(filed: string) {
-  return ShowImageFields.some((x) => x === filed);
-}
-
-const TestingResult = ({ handleTesting }: IProps) => {
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+const TestingResult = ({
+  handleTesting,
+  selectedDocumentIds,
+  setSelectedDocumentIds,
+}: IProps) => {
   const { documents, chunks, total } = useSelectTestingResult();
+  const { documents: documentsAll, total: totalAll } = useAllTestingResult();
   const { t } = useTranslate('knowledgeDetails');
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const isSuccess = useSelectIsTestingSuccess();
+  const isAllSuccess = useAllTestingSuccess();
 
   const onChange: PaginationProps['onChange'] = (pageNumber, pageSize) => {
     pagination.onChange?.(pageNumber, pageSize);
@@ -93,7 +97,8 @@ const TestingResult = ({ handleTesting }: IProps) => {
               >
                 <Space>
                   <span>
-                    {selectedDocumentIds?.length ?? 0}/{documents?.length ?? 0}
+                    {selectedDocumentIds?.length ?? 0}/
+                    {documentsAll?.length ?? 0}
                   </span>
                   {t('filesSelected')}
                 </Space>

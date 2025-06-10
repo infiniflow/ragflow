@@ -17,6 +17,7 @@ import logging
 from abc import ABC
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 import re
 from agent.component.base import ComponentBase, ComponentParamBase
 
@@ -44,17 +45,28 @@ class Baidu(ComponentBase, ABC):
             return Baidu.be_output("")
 
         try:
-            url = 'http://www.baidu.com/s?wd=' + ans + '&rn=' + str(self._param.top_n)
+            url = 'https://www.baidu.com/s?wd=' + ans + '&rn=' + str(self._param.top_n)
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36'}
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Connection': 'keep-alive',
+            }
             response = requests.get(url=url, headers=headers)
-
-            url_res = re.findall(r"'url': \\\"(.*?)\\\"}", response.text)
-            title_res = re.findall(r"'title': \\\"(.*?)\\\",\\n", response.text)
-            body_res = re.findall(r"\"contentText\":\"(.*?)\"", response.text)
-            baidu_res = [{"content": re.sub('<em>|</em>', '', '<a href="' + url + '">' + title + '</a>    ' + body)} for
-                         url, title, body in zip(url_res, title_res, body_res)]
-            del body_res, url_res, title_res
+            # check if request success
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                url_res = []
+                title_res = []
+                body_res = []
+                for item in soup.select('.result.c-container'):
+                    # extract title
+                    title_res.append(item.select_one('h3 a').get_text(strip=True))
+                    url_res.append(item.select_one('h3 a')['href'])
+                    body_res.append(item.select_one('.c-abstract').get_text(strip=True) if item.select_one('.c-abstract') else '')
+                baidu_res = [{"content": re.sub('<em>|</em>', '', '<a href="' + url + '">' + title + '</a>    ' + body)} for
+                             url, title, body in zip(url_res, title_res, body_res)]
+                del body_res, url_res, title_res
         except Exception as e:
             return Baidu.be_output("**ERROR**: " + str(e))
 

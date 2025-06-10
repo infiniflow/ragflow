@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 5
 slug: /python_api_reference
 ---
 
@@ -200,16 +200,19 @@ dataset = rag_object.create_dataset(name="kb_1")
 ### Delete datasets
 
 ```python
-RAGFlow.delete_datasets(ids: list[str] = None)
+RAGFlow.delete_datasets(ids: list[str] | None = None)
 ```
 
 Deletes datasets by ID.
 
 #### Parameters
 
-##### ids: `list[str]`, *Required*
+##### ids: `list[str]` or `None`, *Required*
 
-The IDs of the datasets to delete. Defaults to `None`. If it is not specified, all datasets will be deleted.
+The IDs of the datasets to delete. Defaults to `None`.
+  - If `None`, all datasets will be deleted.
+  - If an array of IDs, only the specified datasets will be deleted.
+  - If an empty array, no datasets will be deleted.
 
 #### Returns
 
@@ -219,7 +222,7 @@ The IDs of the datasets to delete. Defaults to `None`. If it is not specified, a
 #### Examples
 
 ```python
-rag_object.delete_datasets(ids=["id_1","id_2"])
+rag_object.delete_datasets(ids=["d94a8dc02c9711f0930f7fbc369eab6d","e94a8dc02c9711f0930f7fbc369eab6e"])
 ```
 
 ---
@@ -1235,7 +1238,7 @@ The name of the chat session to create.
 - Success: A `Session` object containing the following attributes:
   - `id`: `str` The auto-generated unique identifier of the created session.
   - `name`: `str` The name of the created session.
-  - `message`: `list[Message]` The opening message of the created session. Default: `[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]`
+  - `message`: `list[Message]` The opening message of the created session. Default: `[{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]`
   - `chat_id`: `str` The ID of the associated chat assistant.
 - Failure: `Exception`
 
@@ -1494,7 +1497,7 @@ The parameters in `begin` component.
 
 - Success: A `Session` object containing the following attributes:
   - `id`: `str` The auto-generated unique identifier of the created session.
-  - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]`
+  - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]`
   - `agent_id`: `str` The ID of the associated agent.
 - Failure: `Exception`
 
