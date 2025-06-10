@@ -128,9 +128,10 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const addNode = useGraphStore((state) => state.addNode);
   const getNode = useGraphStore((state) => state.getNode);
   const addEdge = useGraphStore((state) => state.addEdge);
+  const nodes = useGraphStore((state) => state.nodes);
+  const edges = useGraphStore((state) => state.edges);
   const getNodeName = useGetNodeName();
   const initializeOperatorParams = useInitializeOperatorParams();
-  const nodes = useGraphStore((state) => state.nodes);
   //   const [reactFlowInstance, setReactFlowInstance] =
   //     useState<ReactFlowInstance<any, any>>();
 
@@ -182,8 +183,19 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
       } else if (type === Operator.Agent) {
         const agentNode = getNode(id);
         if (agentNode) {
+          // Calculate the coordinates of child nodes to prevent newly added child nodes from covering other child nodes
+          const allChildAgentNodeIds = edges
+            .filter((x) => x.source === id && x.sourceHandle === 'e')
+            .map((x) => x.target);
+
+          const xAxises = nodes
+            .filter((x) => allChildAgentNodeIds.some((y) => y === x.id))
+            .map((x) => x.position.x);
+
+          const maxX = Math.max(...xAxises);
+
           newNode.position = {
-            x: agentNode.position.x + 82,
+            x: xAxises.length > 0 ? maxX + 262 : agentNode.position.x + 82,
             y: agentNode.position.y + 140,
           };
         }
