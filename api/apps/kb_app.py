@@ -185,9 +185,9 @@ def list_kbs():
                 tenants, current_user.id, 0,
                 0, orderby, desc, keywords, parser_id)
             kbs = [kb for kb in kbs if kb["tenant_id"] in tenants]
+            total = len(kbs)
             if page_number and items_per_page:
                 kbs = kbs[(page_number-1)*items_per_page:page_number*items_per_page]
-            total = len(kbs)
         return get_json_result(data={"kbs": kbs, "total": total})
     except Exception as e:
         return server_error_response(e)
