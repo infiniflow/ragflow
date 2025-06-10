@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 
 import pytest
@@ -122,7 +122,7 @@ class TestSessionWithChatAssistantUpdate:
 
     @pytest.mark.p3
     def test_concurrent_update_session(self, api_key, add_sessions_with_chat_assistant_func):
-        chunk_num = 50
+        count = 50
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
 
         with ThreadPoolExecutor(max_workers=5) as executor:
@@ -134,10 +134,11 @@ class TestSessionWithChatAssistantUpdate:
                     session_ids[randint(0, 4)],
                     {"name": f"update session test {i}"},
                 )
-                for i in range(chunk_num)
+                for i in range(count)
             ]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses)
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
     def test_update_session_to_deleted_chat_assistant(self, api_key, add_sessions_with_chat_assistant_func):

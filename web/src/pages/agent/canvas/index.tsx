@@ -6,6 +6,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { ChatSheet } from '../chat/chat-sheet';
+import { AgentInstanceContext } from '../context';
 import FormSheet from '../form-sheet/next';
 import {
   useHandleDrop,
@@ -13,6 +14,7 @@ import {
   useValidateConnection,
   useWatchNodeFormDataChange,
 } from '../hooks';
+import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useShowDrawer } from '../hooks/use-show-drawer';
 import RunSheet from '../run-sheet';
@@ -77,7 +79,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
 
-  const { onDrop, onDragOver, setReactFlowInstance } = useHandleDrop();
+  const { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance } =
+    useHandleDrop();
 
   const {
     onNodeClick,
@@ -100,6 +103,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const { handleBeforeDelete } = useBeforeDelete();
 
   useWatchNodeFormDataChange();
+
+  const { addCanvasNode } = useAddNode(reactFlowInstance);
 
   return (
     <div className={styles.canvasWrapper}>
@@ -156,14 +161,16 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         <Background />
       </ReactFlow>
       {formDrawerVisible && (
-        <FormSheet
-          node={clickedNode}
-          visible={formDrawerVisible}
-          hideModal={hideFormDrawer}
-          singleDebugDrawerVisible={singleDebugDrawerVisible}
-          hideSingleDebugDrawer={hideSingleDebugDrawer}
-          showSingleDebugDrawer={showSingleDebugDrawer}
-        ></FormSheet>
+        <AgentInstanceContext.Provider value={{ addCanvasNode }}>
+          <FormSheet
+            node={clickedNode}
+            visible={formDrawerVisible}
+            hideModal={hideFormDrawer}
+            singleDebugDrawerVisible={singleDebugDrawerVisible}
+            hideSingleDebugDrawer={hideSingleDebugDrawer}
+            showSingleDebugDrawer={showSingleDebugDrawer}
+          ></FormSheet>
+        </AgentInstanceContext.Provider>
       )}
       {chatVisible && (
         <ChatSheet
