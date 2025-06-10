@@ -11,6 +11,7 @@ export interface DSL {
   graph?: IGraph;
   messages: Message[];
   reference: IReference[];
+  globals: Record<string, any>;
 }
 
 export interface IOperator {

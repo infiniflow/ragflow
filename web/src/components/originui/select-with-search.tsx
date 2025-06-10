@@ -153,7 +153,7 @@ export const SelectWithSearch = forwardRef<
                       <span className="text-lg leading-none">
                         {option.label}
                       </span>
-                      {option.value}
+
                       {value === option.value && (
                         <CheckIcon size={16} className="ml-auto" />
                       )}
