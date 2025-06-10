@@ -151,3 +151,13 @@ export function useShowDrawer({
     showChatModal,
   };
 }
+
+export function useShowLogSheet() {
+  const { visible, showModal, hideModal } = useSetModalState();
+
+  return {
+    logSheetVisible: visible,
+    hideLogSheet: hideModal,
+    showLogSheet: showModal,
+  };
+}

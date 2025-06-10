@@ -29,9 +29,9 @@ export const buildMessageItemReference = (
   conversation: { message: IMessage[]; reference: IReference[] },
   message: IMessage,
 ) => {
-  const assistantMessages = conversation.message
-    ?.filter((x) => x.role === MessageType.Assistant)
-    .slice(1);
+  const assistantMessages = conversation.message?.filter(
+    (x) => x.role === MessageType.Assistant,
+  );
   const referenceIndex = assistantMessages.findIndex(
     (x) => x.id === message.id,
   );

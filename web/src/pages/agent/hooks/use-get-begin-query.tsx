@@ -1,10 +1,12 @@
+import { useFetchAgent } from '@/hooks/use-agent-request';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { Edge } from '@xyflow/react';
 import { DefaultOptionType } from 'antd/es/select';
 import { isEmpty } from 'lodash';
 import get from 'lodash/get';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { BeginId, Operator } from '../constant';
+import { AgentFormContext } from '../context';
 import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
@@ -173,3 +175,22 @@ export const useGetComponentLabelByValue = (nodeId: string) => {
   );
   return getLabel;
 };
+
+export function useBuildQueryVariableOptions() {
+  const { data } = useFetchAgent();
+  const node = useContext(AgentFormContext);
+  const options = useBuildComponentIdSelectOptions(node?.id, node?.parentId);
+
+  const nextOptions = useMemo(() => {
+    const globalOptions = Object.keys(data?.dsl?.globals ?? {}).map((x) => ({
+      label: x,
+      value: x,
+    }));
+    return [
+      { ...options[0], options: [...options[0]?.options, ...globalOptions] },
+      ...options.slice(1),
+    ];
+  }, [data.dsl.globals, options]);
+
+  return nextOptions;
+}

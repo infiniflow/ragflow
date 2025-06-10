@@ -35,7 +35,7 @@ const AgentChatBox = () => {
   return (
     <>
       <section className="flex flex-1 flex-col pl-5 h-[90vh]">
-        <div className="flex-1 ">
+        <div className="flex-1 overflow-auto">
           <div>
             <Spin spinning={loading}>
               {derivedMessages?.map((message, i) => {
