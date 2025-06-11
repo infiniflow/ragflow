@@ -42,9 +42,9 @@ class AgentParam(LLMParam):
 class Agent(LLM):
     component_name = "Agent"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
-    def _invoke(self, **kwargs):
-        tools = {}
+    def __init__(self, canvas, id, param: LLMParam):
+        super().__init__(canvas, id, param)
+        self.tools = {}
         for cpn in self._param.llm_enabled_tools:
             from agent.component import component_class
             param = component_class(cpn["component_name"] + "Param")()
@@ -56,25 +56,27 @@ class Agent(LLM):
                 return
             cpn_id = "_" + cpn["component_name"]
             cpn = component_class(cpn["component_name"])(self._canvas, cpn_id, param)
-            tools[cpn.get_meta()["function"]["name"]] = cpn
+            self.tools[cpn.get_meta()["function"]["name"]] = cpn
 
-        if not tools:
+        self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools), [v.get_meta() for _,v in self.tools.items()])
+
+    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    def _invoke(self, **kwargs):
+        if not self.tools:
             return super()._invoke(**kwargs)
 
         prompt, msg = self._prepare_prompt_variables()
-        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
-        chat_mdl.bind_tools(LLMToolPluginCallSession(tools), [v.get_meta() for _,v in tools.items()])
 
         print(prompt, "\n####################################")
         downstreams = self._canvas.get_component(self._id)["downstream"]
         if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure:
-            self.set_output("content", partial(self.stream_output_with_tools, chat_mdl, prompt, msg))
+            self.set_output("content", partial(self.stream_output_with_tools, prompt, msg))
             return
 
         for _ in range(self._param.retry_times+1):
-            _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
+            _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
             error = ""
-            ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), max_rounds=self._param.max_rounds)
+            ans = self._generate(msg[0]["content"], msg[1:], self._param.gen_conf())
             msg.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"Extractor._chat got error. response: {ans}")
