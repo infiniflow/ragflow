@@ -204,7 +204,7 @@ class Base(ABC):
         # Implement exponential backoff retry strategy
         for attempt in range(self.max_retries+1):
             try:
-                return self._chat(history, **gen_conf)
+                return self._chat(history, gen_conf)
             except Exception as e:
                 logging.exception("chat_model.Base.chat got exception")
                 # Classify the error
