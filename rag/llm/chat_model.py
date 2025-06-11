@@ -28,7 +28,6 @@ from urllib.parse import urljoin
 
 import openai
 import requests
-import trio
 from dashscope import Generation
 from ollama import Client
 from openai import OpenAI
@@ -68,6 +67,7 @@ class Base(ABC):
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
+        self.max_rounds = kwargs.get("max_rounds", 5)
         self.is_tools = False
 
     def _get_delay(self, attempt):
@@ -124,8 +124,7 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    def chat_with_tools(self, system: str, history: list, gen_conf: dict,
-                        max_rounds:int = 5):
+    def chat_with_tools(self, system: str, history: list, gen_conf: dict):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
@@ -134,10 +133,11 @@ class Base(ABC):
         if system:
             history.insert(0, {"role": "system", "content": system})
 
-        tk_count = 0
         ans = ""
-        try:
-            for _ in range(max_rounds):
+        tk_count = 0
+        # Implement exponential backoff retry strategy
+        for attempt in range(self.max_retries+1):
+            try:
                 response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=tools, **gen_conf)
 
                 assistant_output = response.choices[0].message
@@ -159,24 +159,42 @@ class Base(ABC):
 
                 for tool_call in response.choices[0].message.tool_calls:
                     name = tool_call.function.name
-                    try:
-                        args = json.loads(tool_call.function.arguments)
-                        tool_response = trio.run(self.toolcall_session.tool_call, name, args)
-                        history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
-                        ans += "<tool>"+json.dumps({"name": name, "request": args, "response": tool_response}, ensure_ascii=False)+"</tool>"
-                    except Exception as e:
-                        history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(e)})
-                        break
+                    args = json.loads(tool_call.function.arguments)
 
+                    tool_response = self.toolcall_session.tool_call(name, args)
+                    history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
+
+                final_response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=tools, **gen_conf)
+                assistant_output = final_response.choices[0].message
+                if "tool_calls" not in assistant_output and "reasoning_content" in assistant_output:
+                    ans += "<think>" + ans + "</think>"
+                ans += final_response.choices[0].message.content
+                if final_response.choices[0].finish_reason == "length":
+                    tk_count += self.total_token_count(response)
+                    if is_chinese([ans]):
+                        ans += LENGTH_NOTIFICATION_CN
+                    else:
+                        ans += LENGTH_NOTIFICATION_EN
+                    return ans, tk_count
                 return ans, tk_count
 
-        except Exception as e:
-            logging.exception("OpenAI cat_with_tools")
-            # Classify the error
-            error_code = self._classify_error(e)
-            return f"{ERROR_PREFIX}: {error_code} - {str(e)}", 0
+            except Exception as e:
+                logging.exception("OpenAI cat_with_tools")
+                # Classify the error
+                error_code = self._classify_error(e)
 
-        return ans, tk_count
+                # Check if it's a rate limit error or server error and not the last attempt
+                should_retry = (error_code == ERROR_RATE_LIMIT or error_code == ERROR_SERVER) and attempt < self.max_retries - 1
+
+                if should_retry:
+                    delay = self._get_delay(attempt)
+                    logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+                    time.sleep(delay)
+                else:
+                    # For non-rate limit errors or the last attempt, return an error message
+                    if attempt == self.max_retries:
+                        error_code = ERROR_MAX_RETRIES
+                    return f"{ERROR_PREFIX}: {error_code} - {str(e)}", 0
 
     def chat(self, system, history, gen_conf):
         if system:
@@ -184,7 +202,7 @@ class Base(ABC):
         gen_conf = self._clean_conf(gen_conf)
 
         # Implement exponential backoff retry strategy
-        for attempt in range(self.max_retries):
+        for attempt in range(self.max_retries+1):
             try:
                 return self._chat(history, **gen_conf)
             except Exception as e:
@@ -201,7 +219,7 @@ class Base(ABC):
                     time.sleep(delay)
                 else:
                     # For non-rate limit errors or the last attempt, return an error message
-                    if attempt == self.max_retries - 1:
+                    if attempt == self.max_retries:
                         error_code = ERROR_MAX_RETRIES
                     return f"{ERROR_PREFIX}: {error_code} - {str(e)}", 0
 
@@ -219,8 +237,7 @@ class Base(ABC):
 
         return final_tool_calls
 
-    def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict,
-                        max_rounds:int = 5):
+    def chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
@@ -235,9 +252,8 @@ class Base(ABC):
         finish_completion = False
         final_tool_calls = {}
         try:
-            while not finish_completion and max_rounds > 0:
-                response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, **gen_conf)
-                max_rounds -= 1
+            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, **gen_conf)
+            while not finish_completion:
                 for resp in response:
                     if resp.choices[0].delta.tool_calls:
                         for tool_call in resp.choices[0].delta.tool_calls or []:
@@ -271,6 +287,16 @@ class Base(ABC):
                     finish_reason = resp.choices[0].finish_reason
                     if finish_reason == "tool_calls" and final_tool_calls:
                         for tool_call in final_tool_calls.values():
+                            name = tool_call.function.name
+                            try:
+                                args = json.loads(tool_call.function.arguments)
+                            except Exception as e:
+                                logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
+                                yield ans + "\n**ERROR**: " + str(e)
+                                finish_completion = True
+                                break
+
+                            tool_response = self.toolcall_session.tool_call(name, args)
                             history.append(
                                 {
                                     "role": "assistant",
@@ -287,17 +313,10 @@ class Base(ABC):
                                     ],
                                 }
                             )
-                            name = tool_call.function.name
-                            try:
-                                args = json.loads(tool_call.function.arguments)
-                                tool_response = trio.run(self.toolcall_session.tool_call, name, args)
-                                history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
-                                yield "<tool>"+json.dumps({"name": name, "request": args, "response": tool_response}, ensure_ascii=False)+"</tool>"
-                            except Exception as e:
-                                history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(e)})
-                                logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-
+                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
                         final_tool_calls = {}
+                        response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, **gen_conf)
+                        continue
                     if finish_reason == "length":
                         if is_chinese(ans):
                             ans += LENGTH_NOTIFICATION_CN
@@ -309,6 +328,7 @@ class Base(ABC):
                         yield ans
                         break
                     yield ans
+                    continue
 
         except openai.APIError as e:
             yield ans + "\n**ERROR**: " + str(e)
@@ -484,7 +504,7 @@ class BaiChuanChat(Base):
             model=self.model_name,
             messages=history,
             extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
-            **self._format_params(gen_conf),
+            **gen_conf,
         )
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
@@ -856,13 +876,14 @@ class OllamaChat(Base):
         self.model_name = model_name
 
     def _clean_conf(self, gen_conf):
-        if "max_tokens" in gen_conf:
-            del gen_conf["max_tokens"]
         options = {}
-        for k in ["temperature", "num_predict", "top_p", "presence_penalty", "frequency_penalty"]:
+        if "max_tokens" in gen_conf:
+            options["num_predict"] = gen_conf["max_tokens"]
+        for k in ["temperature", "top_p", "presence_penalty", "frequency_penalty"]:
             if k not in gen_conf:
                 continue
             options[k] = gen_conf[k]
+        return options
 
     def _chat(self, history, gen_conf):
         # Calculate context size
@@ -1495,8 +1516,6 @@ class ReplicateChat(Base):
 
     def _chat(self, history, gen_conf):
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        if history and history[0]["role"] == "system":
-            history = history[1:]
         prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:] if item["role"] != "system"])
         response = self.client.run(
             self.model_name,
@@ -1684,6 +1703,9 @@ class AnthropicChat(Base):
             del gen_conf["presence_penalty"]
         if "frequency_penalty" in gen_conf:
             del gen_conf["frequency_penalty"]
+        gen_conf["max_tokens"] = 8192
+        if "haiku" in self.model_name or "opus" in self.model_name:
+            gen_conf["max_tokens"] = 4096
         return gen_conf
 
     def _chat(self, history, gen_conf):
@@ -1812,7 +1834,7 @@ class GoogleChat(Base):
                 response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
             )
 
-        self.client._system_instruction = self.system
+        self.client._system_instruction = system
         hist = []
         for item in history:
             if item["role"] == "system":

@@ -58,6 +58,11 @@ class Agent(LLM):
             cpn = component_class(cpn["component_name"])(self._canvas, cpn_id, param)
             self.tools[cpn.get_meta()["function"]["name"]] = cpn
 
+        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id,
+                                  max_retries=self._param.max_retries,
+                                  retry_interval=self._param.delay_after_error,
+                                  max_rounds=self._param.max_rounds
+                                  )
         self.chat_mdl.bind_tools(LLMToolPluginCallSession(self.tools), [v.get_meta() for _,v in self.tools.items()])
 
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
@@ -73,25 +78,19 @@ class Agent(LLM):
             self.set_output("content", partial(self.stream_output_with_tools, prompt, msg))
             return
 
-        for _ in range(self._param.retry_times+1):
-            _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
-            error = ""
-            ans = self._generate(msg[0]["content"], msg[1:], self._param.gen_conf())
-            msg.pop(0)
-            if ans.find("**ERROR**") >= 0:
-                logging.error(f"Extractor._chat got error. response: {ans}")
-                error = ans
-                continue
-            self.set_output("content", ans)
-            break
-
-        if error:
-            self.set_output("_ERROR", error)
+        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
+        ans = self._generate(msg[0]["content"], msg[1:], self._param.gen_conf())
+        msg.pop(0)
+        if ans.find("**ERROR**") >= 0:
+            logging.error(f"Extractor._chat got error. response: {ans}")
+            self.set_output("_ERROR", ans)
+            return
+        self.set_output("content", ans)
 
     def stream_output_with_tools(self, chat_mdl, prompt, msg):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
         answer = ""
-        for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), max_rounds=self._param.max_rounds):
+        for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
             yield ans[len(answer):]
             answer = ans
         self.set_output("content", answer)
