@@ -588,7 +588,29 @@ class OCR:
             flags=cv2.INTER_CUBIC)
         dst_img_height, dst_img_width = dst_img.shape[0:2]
         if dst_img_height * 1.0 / dst_img_width >= 1.5:
-            dst_img = np.rot90(dst_img)
+            # Try original orientation
+            rec_result = self.text_recognizer[0]([dst_img])
+            text, score = rec_result[0][0]
+            best_score = score
+            best_img = dst_img
+
+            # Try clockwise 90° rotation
+            rotated_cw = np.rot90(dst_img, k=3)
+            rec_result = self.text_recognizer[0]([rotated_cw])
+            rotated_cw_text, rotated_cw_score = rec_result[0][0]
+            if rotated_cw_score > best_score:
+                best_score = rotated_cw_score
+                best_img = rotated_cw
+
+            # Try counter-clockwise 90° rotation
+            rotated_ccw = np.rot90(dst_img, k=1)
+            rec_result = self.text_recognizer[0]([rotated_ccw])
+            rotated_ccw_text, rotated_ccw_score = rec_result[0][0]
+            if rotated_ccw_score > best_score:
+                best_img = rotated_ccw
+
+            # Use the best image
+            dst_img = best_img
         return dst_img
 
     def sorted_boxes(self, dt_boxes):
