@@ -636,18 +636,21 @@ class QWenChat(Base):
                 return "".join(result_list[:-1]), result_list[-1]
 
     def _chat(self, history, gen_conf):
+        tk_count = 0
         if self.is_reasoning_model(self.model_name) or self.model_name in ["qwen-vl-plus", "qwen-vl-plus-latest", "qwen-vl-max", "qwen-vl-max-latest"]:
-            response = super()._chat(history, gen_conf)
-            if isinstance(response, tuple) and response[0].startswith(ERROR_PREFIX):
-                error_msg = str(response[0]).lower()
+            try:
+                response = super()._chat(history, gen_conf)
+                return response
+            except Exception as e:
+                error_msg = str(e).lower()
                 if "invalid_parameter_error" in error_msg and "only support stream mode" in error_msg:
                     return self._simulate_one_shot_from_stream(history, gen_conf)
-            return response
+                else:
+                    return "**ERROR**: " + str(e), tk_count
 
         try:
-            response = Generation.call(self.model_name, messages=history, result_format="message", **gen_conf)
             ans = ""
-            tk_count = 0
+            response = Generation.call(self.model_name, messages=history, result_format="message", **gen_conf)
             if response.status_code == HTTPStatus.OK:
                 ans += response.output.choices[0]["message"]["content"]
                 tk_count += self.total_token_count(response)
@@ -662,12 +665,14 @@ class QWenChat(Base):
             error_msg = str(e).lower()
             if "invalid_parameter_error" in error_msg and "only support stream mode" in error_msg:
                 return self._simulate_one_shot_from_stream(history, gen_conf)
+            else:
+                return "**ERROR**: " + str(e), tk_count
 
-    def _simulate_one_shot_from_stream(self, system, history, gen_conf):
+    def _simulate_one_shot_from_stream(self, history, gen_conf):
         """
         Handles models that require streaming output but need one-shot response.
         """
-        g = self._chat_streamly(history, gen_conf, incremental_output=True)
+        g = self._chat_streamly("", history, gen_conf, incremental_output=True)
         result_list = list(g)
         error_msg_list = [item for item in result_list if str(item).find("**ERROR**") >= 0]
         if len(error_msg_list) > 0:
