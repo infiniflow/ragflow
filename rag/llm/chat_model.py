@@ -553,8 +553,8 @@ class BaiChuanChat(Base):
 
 
 class QWenChat(Base):
-    def __init__(self, key, model_name=Generation.Models.qwen_turbo, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+    def __init__(self, key, model_name=Generation.Models.qwen_turbo, base_url=None, **kwargs):
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         import dashscope
 
@@ -803,8 +803,8 @@ class QWenChat(Base):
 
 
 class ZhipuChat(Base):
-    def __init__(self, key, model_name="glm-3-turbo", **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+    def __init__(self, key, model_name="glm-3-turbo", base_url=None, **kwargs):
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         self.client = ZhipuAI(api_key=key)
         self.model_name = model_name
@@ -868,8 +868,8 @@ class ZhipuChat(Base):
 
 
 class OllamaChat(Base):
-    def __init__(self, key, model_name, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         self.client = Client(host=kwargs["base_url"]) if not key or key == "x" else Client(host=kwargs["base_url"], headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
@@ -932,8 +932,8 @@ class OllamaChat(Base):
 
 
 class LocalAIChat(Base):
-    def __init__(self, key, model_name, base_url, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         if not base_url:
             raise ValueError("Local llm url cannot be None")
@@ -944,11 +944,9 @@ class LocalAIChat(Base):
 
 class LocalLLM(Base):
 
-    def __init__(self, key, model_name, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
-
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
         from jina import Client
-
         self.client = Client(port=12345, protocol="grpc", asyncio=True)
 
     def _prepare_prompt(self, system, history, gen_conf):
@@ -1012,7 +1010,7 @@ class MiniMaxChat(Base):
         base_url="https://api.minimax.chat/v1/text/chatcompletion_v2",
         **kwargs
     ):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         if not base_url:
             base_url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
@@ -1090,7 +1088,7 @@ class MiniMaxChat(Base):
 
 class MistralChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         from mistralai.client import MistralClient
 
@@ -1142,8 +1140,8 @@ class MistralChat(Base):
 
 
 class BedrockChat(Base):
-    def __init__(self, key, model_name, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         import boto3
 
@@ -1225,7 +1223,7 @@ class BedrockChat(Base):
 
 class GeminiChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         from google.generativeai import GenerativeModel, client
 
@@ -1291,8 +1289,8 @@ class GeminiChat(Base):
 
 
 class GroqChat(Base):
-    def __init__(self, key, model_name, base_url="", **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         from groq import Groq
 
@@ -1381,8 +1379,8 @@ class PPIOChat(Base):
 
 
 class CoHereChat(Base):
-    def __init__(self, key, model_name, base_url="", **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         from cohere import Client
 
@@ -1506,7 +1504,7 @@ class YiChat(Base):
 
 class ReplicateChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         from replicate.client import Client
 
@@ -1545,7 +1543,7 @@ class ReplicateChat(Base):
 
 class HunyuanChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         from tencentcloud.common import credential
         from tencentcloud.hunyuan.v20230901 import hunyuan_client
@@ -1641,7 +1639,7 @@ class SparkChat(Base):
 
 class BaiduYiyanChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         import qianfan
 
@@ -1687,7 +1685,7 @@ class BaiduYiyanChat(Base):
 
 class AnthropicChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         import anthropic
 
@@ -1763,7 +1761,7 @@ class AnthropicChat(Base):
 
 class GoogleChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
-        super().__init__(key, model_name, base_url=None, **kwargs)
+        super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         import base64
 
