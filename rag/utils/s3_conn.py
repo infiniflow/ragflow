@@ -65,10 +65,14 @@ class RAGFlowS3:
             pass
 
         try:
-            s3_params = {
-                'aws_access_key_id': self.access_key,
-                'aws_secret_access_key': self.secret_key,
-            }
+            s3_params = {}
+            # if not set ak/sk, boto3 s3 client would try several ways to do the authentication
+            # see doc: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html#configuring-credentials
+            if self.access_key and self.secret_key:
+                s3_params = {
+                    'aws_access_key_id': self.access_key,
+                    'aws_secret_access_key': self.secret_key,
+                }
             if self.region in self.s3_config:
                 s3_params['region_name'] = self.region
             if 'endpoint_url' in self.s3_config:

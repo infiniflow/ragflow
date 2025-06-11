@@ -1,4 +1,3 @@
-import MessageItem from '@/components/message-item';
 import { MessageType } from '@/constants/chat';
 import { useGetFileIcon } from '@/pages/chat/hooks';
 import { buildMessageItemReference } from '@/pages/chat/utils';
@@ -7,6 +6,7 @@ import { Spin } from 'antd';
 import { useSendNextMessage } from './hooks';
 
 import MessageInput from '@/components/message-input';
+import MessageItem from '@/components/next-message-item';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useFetchAgent } from '@/hooks/use-agent-request';
@@ -35,7 +35,7 @@ const AgentChatBox = () => {
   return (
     <>
       <section className="flex flex-1 flex-col pl-5 h-[90vh]">
-        <div className="flex-1 ">
+        <div className="flex-1 overflow-auto">
           <div>
             <Spin spinning={loading}>
               {derivedMessages?.map((message, i) => {

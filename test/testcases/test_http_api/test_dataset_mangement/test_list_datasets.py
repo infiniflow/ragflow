@@ -43,10 +43,10 @@ class TestAuthorization:
 
 class TestCapability:
     @pytest.mark.p3
-    def test_concurrent_list(self, api_key):
+    def test_concurrent_list(self, HttpApiAuth):
         count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_datasets, api_key) for i in range(count)]
+            futures = [executor.submit(list_datasets, HttpApiAuth) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
@@ -55,14 +55,14 @@ class TestCapability:
 @pytest.mark.usefixtures("add_datasets")
 class TestDatasetsList:
     @pytest.mark.p1
-    def test_params_unset(self, api_key):
-        res = list_datasets(api_key, None)
+    def test_params_unset(self, HttpApiAuth):
+        res = list_datasets(HttpApiAuth, None)
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
     @pytest.mark.p2
-    def test_params_empty(self, api_key):
-        res = list_datasets(api_key, {})
+    def test_params_empty(self, HttpApiAuth):
+        res = list_datasets(HttpApiAuth, {})
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
@@ -78,8 +78,8 @@ class TestDatasetsList:
         ],
         ids=["normal_middle_page", "normal_last_partial_page", "beyond_max_page", "string_page_number", "full_data_single_page"],
     )
-    def test_page(self, api_key, params, expected_page_size):
-        res = list_datasets(api_key, params)
+    def test_page(self, HttpApiAuth, params, expected_page_size):
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == expected_page_size, res
 
@@ -92,15 +92,15 @@ class TestDatasetsList:
         ],
         ids=["page_0", "page_a"],
     )
-    def test_page_invalid(self, api_key, params, expected_code, expected_message):
-        res = list_datasets(api_key, params=params)
+    def test_page_invalid(self, HttpApiAuth, params, expected_code, expected_message):
+        res = list_datasets(HttpApiAuth, params=params)
         assert res["code"] == expected_code, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p2
-    def test_page_none(self, api_key):
+    def test_page_none(self, HttpApiAuth):
         params = {"page": None}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
@@ -116,8 +116,8 @@ class TestDatasetsList:
         ],
         ids=["min_valid_page_size", "medium_page_size", "page_size_equals_total", "page_size_exceeds_total", "string_type_page_size"],
     )
-    def test_page_size(self, api_key, params, expected_page_size):
-        res = list_datasets(api_key, params)
+    def test_page_size(self, HttpApiAuth, params, expected_page_size):
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == expected_page_size, res
 
@@ -129,15 +129,15 @@ class TestDatasetsList:
             ({"page_size": "a"}, 101, "Input should be a valid integer, unable to parse string as an integer"),
         ],
     )
-    def test_page_size_invalid(self, api_key, params, expected_code, expected_message):
-        res = list_datasets(api_key, params)
+    def test_page_size_invalid(self, HttpApiAuth, params, expected_code, expected_message):
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == expected_code, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p2
-    def test_page_size_none(self, api_key):
+    def test_page_size_none(self, HttpApiAuth):
         params = {"page_size": None}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
@@ -153,8 +153,8 @@ class TestDatasetsList:
         ],
         ids=["orderby_create_time", "orderby_update_time", "orderby_create_time_upper", "orderby_update_time_upper", "whitespace"],
     )
-    def test_orderby(self, api_key, params, assertions):
-        res = list_datasets(api_key, params)
+    def test_orderby(self, HttpApiAuth, params, assertions):
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         if callable(assertions):
             assert assertions(res), res
@@ -168,15 +168,15 @@ class TestDatasetsList:
         ],
         ids=["empty", "unknown"],
     )
-    def test_orderby_invalid(self, api_key, params):
-        res = list_datasets(api_key, params)
+    def test_orderby_invalid(self, HttpApiAuth, params):
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
         assert "Input should be 'create_time' or 'update_time'" in res["message"], res
 
     @pytest.mark.p3
-    def test_orderby_none(self, api_key):
+    def test_orderby_none(self, HttpApiAuth):
         params = {"orderby": None}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert is_sorted(res["data"], "create_time", True), res
 
@@ -197,8 +197,8 @@ class TestDatasetsList:
         ],
         ids=["desc=True", "desc=False", "desc=true", "desc=false", "desc=1", "desc=0", "desc=yes", "desc=no", "desc=y", "desc=n"],
     )
-    def test_desc(self, api_key, params, assertions):
-        res = list_datasets(api_key, params)
+    def test_desc(self, HttpApiAuth, params, assertions):
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         if callable(assertions):
             assert assertions(res), res
@@ -212,88 +212,88 @@ class TestDatasetsList:
         ],
         ids=["empty", "unknown"],
     )
-    def test_desc_invalid(self, api_key, params):
-        res = list_datasets(api_key, params)
+    def test_desc_invalid(self, HttpApiAuth, params):
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
         assert "Input should be a valid boolean, unable to interpret input" in res["message"], res
 
     @pytest.mark.p3
-    def test_desc_none(self, api_key):
+    def test_desc_none(self, HttpApiAuth):
         params = {"desc": None}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert is_sorted(res["data"], "create_time", True), res
 
     @pytest.mark.p1
-    def test_name(self, api_key):
+    def test_name(self, HttpApiAuth):
         params = {"name": "dataset_1"}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == 1, res
         assert res["data"][0]["name"] == "dataset_1", res
 
     @pytest.mark.p2
-    def test_name_wrong(self, api_key):
+    def test_name_wrong(self, HttpApiAuth):
         params = {"name": "wrong name"}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
-    def test_name_empty(self, api_key):
+    def test_name_empty(self, HttpApiAuth):
         params = {"name": ""}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
     @pytest.mark.p2
-    def test_name_none(self, api_key):
+    def test_name_none(self, HttpApiAuth):
         params = {"name": None}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
     @pytest.mark.p1
-    def test_id(self, api_key, add_datasets):
+    def test_id(self, HttpApiAuth, add_datasets):
         dataset_ids = add_datasets
         params = {"id": dataset_ids[0]}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0
         assert len(res["data"]) == 1
         assert res["data"][0]["id"] == dataset_ids[0]
 
     @pytest.mark.p2
-    def test_id_not_uuid(self, api_key):
+    def test_id_not_uuid(self, HttpApiAuth):
         params = {"id": "not_uuid"}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
         assert "Invalid UUID1 format" in res["message"], res
 
     @pytest.mark.p2
-    def test_id_not_uuid1(self, api_key):
+    def test_id_not_uuid1(self, HttpApiAuth):
         params = {"id": uuid.uuid4().hex}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
         assert "Invalid UUID1 format" in res["message"], res
 
     @pytest.mark.p2
-    def test_id_wrong_uuid(self, api_key):
+    def test_id_wrong_uuid(self, HttpApiAuth):
         params = {"id": "d94a8dc02c9711f0930f7fbc369eab6d"}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
-    def test_id_empty(self, api_key):
+    def test_id_empty(self, HttpApiAuth):
         params = {"id": ""}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
         assert "Invalid UUID1 format" in res["message"], res
 
     @pytest.mark.p2
-    def test_id_none(self, api_key):
+    def test_id_none(self, HttpApiAuth):
         params = {"id": None}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == 5, res
 
@@ -306,11 +306,11 @@ class TestDatasetsList:
         ],
         ids=["name_and_id_match", "name_and_id_mismatch"],
     )
-    def test_name_and_id(self, api_key, add_datasets, func, name, expected_num):
+    def test_name_and_id(self, HttpApiAuth, add_datasets, func, name, expected_num):
         dataset_ids = add_datasets
         if callable(func):
             params = {"id": func(dataset_ids), "name": name}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 0, res
         assert len(res["data"]) == expected_num, res
 
@@ -323,19 +323,19 @@ class TestDatasetsList:
         ],
         ids=["name", "id"],
     )
-    def test_name_and_id_wrong(self, api_key, add_datasets, dataset_id, name):
+    def test_name_and_id_wrong(self, HttpApiAuth, add_datasets, dataset_id, name):
         dataset_ids = add_datasets
         if callable(dataset_id):
             params = {"id": dataset_id(dataset_ids), "name": name}
         else:
             params = {"id": dataset_id, "name": name}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
-    def test_field_unsupported(self, api_key):
+    def test_field_unsupported(self, HttpApiAuth):
         params = {"unknown_field": "unknown_field"}
-        res = list_datasets(api_key, params)
+        res = list_datasets(HttpApiAuth, params)
         assert res["code"] == 101, res
         assert "Extra inputs are not permitted" in res["message"], res

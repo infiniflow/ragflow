@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import INVALID_API_TOKEN, batch_add_sessions_with_chat_assistant, delete_session_with_chat_assistants, list_session_with_chat_assistants
@@ -52,9 +52,9 @@ class TestSessionWithChatAssistantDelete:
             ),
         ],
     )
-    def test_invalid_chat_assistant_id(self, api_key, add_sessions_with_chat_assistant_func, chat_assistant_id, expected_code, expected_message):
+    def test_invalid_chat_assistant_id(self, HttpApiAuth, add_sessions_with_chat_assistant_func, chat_assistant_id, expected_code, expected_message):
         _, session_ids = add_sessions_with_chat_assistant_func
-        res = delete_session_with_chat_assistants(api_key, chat_assistant_id, {"ids": session_ids})
+        res = delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id, {"ids": session_ids})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -66,72 +66,73 @@ class TestSessionWithChatAssistantDelete:
             pytest.param(lambda r: {"ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
         ],
     )
-    def test_delete_partial_invalid_id(self, api_key, add_sessions_with_chat_assistant_func, payload):
+    def test_delete_partial_invalid_id(self, HttpApiAuth, add_sessions_with_chat_assistant_func, payload):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
         if callable(payload):
             payload = payload(session_ids)
-        res = delete_session_with_chat_assistants(api_key, chat_assistant_id, payload)
+        res = delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id, payload)
         assert res["code"] == 0
         assert res["data"]["errors"][0] == "The chat doesn't own the session invalid_id"
 
-        res = list_session_with_chat_assistants(api_key, chat_assistant_id)
+        res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
         if res["code"] != 0:
             assert False, res
         assert len(res["data"]) == 0
 
     @pytest.mark.p3
-    def test_repeated_deletion(self, api_key, add_sessions_with_chat_assistant_func):
+    def test_repeated_deletion(self, HttpApiAuth, add_sessions_with_chat_assistant_func):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
         payload = {"ids": session_ids}
-        res = delete_session_with_chat_assistants(api_key, chat_assistant_id, payload)
+        res = delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id, payload)
         assert res["code"] == 0
 
-        res = delete_session_with_chat_assistants(api_key, chat_assistant_id, payload)
+        res = delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id, payload)
         assert res["code"] == 102
         assert "The chat doesn't own the session" in res["message"]
 
     @pytest.mark.p3
-    def test_duplicate_deletion(self, api_key, add_sessions_with_chat_assistant_func):
+    def test_duplicate_deletion(self, HttpApiAuth, add_sessions_with_chat_assistant_func):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
-        res = delete_session_with_chat_assistants(api_key, chat_assistant_id, {"ids": session_ids * 2})
+        res = delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id, {"ids": session_ids * 2})
         assert res["code"] == 0
         assert "Duplicate session ids" in res["data"]["errors"][0]
         assert res["data"]["success_count"] == 5
 
-        res = list_session_with_chat_assistants(api_key, chat_assistant_id)
+        res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
         if res["code"] != 0:
             assert False, res
         assert len(res["data"]) == 0
 
     @pytest.mark.p3
-    def test_concurrent_deletion(self, api_key, add_chat_assistants):
-        sessions_num = 100
+    def test_concurrent_deletion(self, HttpApiAuth, add_chat_assistants):
+        count = 100
         _, _, chat_assistant_ids = add_chat_assistants
-        session_ids = batch_add_sessions_with_chat_assistant(api_key, chat_assistant_ids[0], sessions_num)
+        session_ids = batch_add_sessions_with_chat_assistant(HttpApiAuth, chat_assistant_ids[0], count)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
                 executor.submit(
                     delete_session_with_chat_assistants,
-                    api_key,
+                    HttpApiAuth,
                     chat_assistant_ids[0],
                     {"ids": session_ids[i : i + 1]},
                 )
-                for i in range(sessions_num)
+                for i in range(count)
             ]
-        responses = [f.result() for f in futures]
-        assert all(r["code"] == 0 for r in responses)
+        responses = list(as_completed(futures))
+        assert len(responses) == count, responses
+        assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
-    def test_delete_1k(self, api_key, add_chat_assistants):
+    def test_delete_1k(self, HttpApiAuth, add_chat_assistants):
         sessions_num = 1_000
         _, _, chat_assistant_ids = add_chat_assistants
-        session_ids = batch_add_sessions_with_chat_assistant(api_key, chat_assistant_ids[0], sessions_num)
+        session_ids = batch_add_sessions_with_chat_assistant(HttpApiAuth, chat_assistant_ids[0], sessions_num)
 
-        res = delete_session_with_chat_assistants(api_key, chat_assistant_ids[0], {"ids": session_ids})
+        res = delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_ids[0], {"ids": session_ids})
         assert res["code"] == 0
 
-        res = list_session_with_chat_assistants(api_key, chat_assistant_ids[0])
+        res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_ids[0])
         if res["code"] != 0:
             assert False, res
         assert len(res["data"]) == 0
@@ -149,7 +150,7 @@ class TestSessionWithChatAssistantDelete:
     )
     def test_basic_scenarios(
         self,
-        api_key,
+        HttpApiAuth,
         add_sessions_with_chat_assistant_func,
         payload,
         expected_code,
@@ -159,12 +160,12 @@ class TestSessionWithChatAssistantDelete:
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
         if callable(payload):
             payload = payload(session_ids)
-        res = delete_session_with_chat_assistants(api_key, chat_assistant_id, payload)
+        res = delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id, payload)
         assert res["code"] == expected_code
         if res["code"] != 0:
             assert res["message"] == expected_message
 
-        res = list_session_with_chat_assistants(api_key, chat_assistant_id)
+        res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
         if res["code"] != 0:
             assert False, res
         assert len(res["data"]) == remaining

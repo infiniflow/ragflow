@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
+import { PromptRole } from '../../constant';
 import useGraphStore from '../../store';
-import { PromptRole } from './constant';
 
 export function useWatchFormChange(id?: string, form?: UseFormReturn) {
   let values = useWatch({ control: form?.control });

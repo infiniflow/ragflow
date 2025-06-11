@@ -16,10 +16,11 @@ import api from '@/utils/api';
 import { message } from 'antd';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useContext, useEffect, useMemo } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
+import { AgentChatLogContext } from '../context';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
 
@@ -27,7 +28,7 @@ const antMessage = message;
 
 export const useSelectNextMessages = () => {
   const { data: flowDetail, loading } = useFetchAgent();
-  const reference = flowDetail.dsl.reference;
+  const reference = flowDetail.dsl.retrieval;
   const {
     derivedMessages,
     ref,
@@ -52,11 +53,13 @@ export const useSelectNextMessages = () => {
 };
 
 function findMessageFromList(eventList: IEventList) {
-  const event = eventList.find((x) => x.event === MessageEventType.Message) as
-    | IMessageEvent
-    | undefined;
-
-  return event?.data?.content;
+  const messageEventList = eventList.filter(
+    (x) => x.event === MessageEventType.Message,
+  ) as IMessageEvent[];
+  return {
+    id: messageEventList[0]?.message_id,
+    content: messageEventList.map((x) => x.data.content).join(''),
+  };
 }
 
 const useGetBeginNodePrologue = () => {
@@ -84,6 +87,7 @@ export const useSendNextMessage = () => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const { refetch } = useFetchAgent();
+  const { addEventList } = useContext(AgentChatLogContext);
 
   const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
     api.runCanvas,
@@ -127,15 +131,11 @@ export const useSendNextMessage = () => {
   );
 
   useEffect(() => {
-    const message = findMessageFromList(answerList);
-    if (message) {
+    const { content, id } = findMessageFromList(answerList);
+    if (content) {
       addNewestAnswer({
-        answer: message,
-        reference: {
-          chunks: [],
-          doc_aggs: [],
-          total: 0,
-        },
+        answer: content,
+        id: id,
       });
     }
   }, [answerList, addNewestAnswer]);
@@ -158,14 +158,13 @@ export const useSendNextMessage = () => {
     if (prologue) {
       addNewestAnswer({
         answer: prologue,
-        reference: {
-          chunks: [],
-          doc_aggs: [],
-          total: 0,
-        },
       });
     }
   }, [addNewestAnswer, prologue]);
+
+  useEffect(() => {
+    addEventList(answerList);
+  }, [addEventList, answerList]);
 
   return {
     handlePressEnter,
