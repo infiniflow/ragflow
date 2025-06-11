@@ -38,7 +38,9 @@ export type INodeEvent = IAnswerEvent<INodeData>;
 
 export type IMessageEvent = IAnswerEvent<IMessageData>;
 
-export type IEventList = Array<INodeEvent | IMessageEvent>;
+export type IChatEvent = INodeEvent | IMessageEvent;
+
+export type IEventList = Array<IChatEvent>;
 
 export const useSendMessageBySSE = (url: string = api.completeConversation) => {
   const [answerList, setAnswerList] = useState<IEventList>([]);

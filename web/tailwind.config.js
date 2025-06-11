@@ -54,6 +54,8 @@ module.exports = {
         'background-highlight': 'var(--background-highlight)',
 
         'input-border': 'var(--input-border)',
+        'dot-green': 'var(--dot-green)',
+        'dot-red': 'var(--dot-red)',
 
         primary: {
           DEFAULT: 'hsl(var(--primary))',

@@ -16,10 +16,11 @@ import api from '@/utils/api';
 import { message } from 'antd';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useContext, useEffect, useMemo } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
+import { AgentChatLogContext } from '../context';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
 
@@ -86,6 +87,7 @@ export const useSendNextMessage = () => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const { refetch } = useFetchAgent();
+  const { addEventList } = useContext(AgentChatLogContext);
 
   const { send, answerList, done, stopOutputMessage } = useSendMessageBySSE(
     api.runCanvas,
@@ -159,6 +161,10 @@ export const useSendNextMessage = () => {
       });
     }
   }, [addNewestAnswer, prologue]);
+
+  useEffect(() => {
+    addEventList(answerList);
+  }, [addEventList, answerList]);
 
   return {
     handlePressEnter,
