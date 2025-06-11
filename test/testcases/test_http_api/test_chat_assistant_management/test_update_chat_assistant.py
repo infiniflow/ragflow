@@ -51,13 +51,13 @@ class TestChatAssistantUpdate:
             pytest.param({"name": "TEST_CHAT_ASSISTANT_1"}, 102, "Duplicated chat name in updating chat.", marks=pytest.mark.p3),
         ],
     )
-    def test_name(self, api_key, add_chat_assistants_func, payload, expected_code, expected_message):
+    def test_name(self, HttpApiAuth, add_chat_assistants_func, payload, expected_code, expected_message):
         _, _, chat_assistant_ids = add_chat_assistants_func
 
-        res = update_chat_assistant(api_key, chat_assistant_ids[0], payload)
+        res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
-            res = list_chat_assistants(api_key, {"id": chat_assistant_ids[0]})
+            res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
             assert res["data"][0]["name"] == payload.get("name")
         else:
             assert res["message"] == expected_message
@@ -71,7 +71,7 @@ class TestChatAssistantUpdate:
             pytest.param("invalid_dataset_id", 102, "You don't own the dataset i", marks=pytest.mark.p3),
         ],
     )
-    def test_dataset_ids(self, api_key, add_chat_assistants_func, dataset_ids, expected_code, expected_message):
+    def test_dataset_ids(self, HttpApiAuth, add_chat_assistants_func, dataset_ids, expected_code, expected_message):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         payload = {"name": "ragflow test"}
         if callable(dataset_ids):
@@ -79,20 +79,20 @@ class TestChatAssistantUpdate:
         else:
             payload["dataset_ids"] = dataset_ids
 
-        res = update_chat_assistant(api_key, chat_assistant_ids[0], payload)
+        res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
-            res = list_chat_assistants(api_key, {"id": chat_assistant_ids[0]})
+            res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
             assert res["data"][0]["name"] == payload.get("name")
         else:
             assert res["message"] == expected_message
 
     @pytest.mark.p3
-    def test_avatar(self, api_key, add_chat_assistants_func, tmp_path):
+    def test_avatar(self, HttpApiAuth, add_chat_assistants_func, tmp_path):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {"name": "avatar_test", "avatar": encode_avatar(fn), "dataset_ids": [dataset_id]}
-        res = update_chat_assistant(api_key, chat_assistant_ids[0], payload)
+        res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == 0
 
     @pytest.mark.p3
@@ -130,13 +130,13 @@ class TestChatAssistantUpdate:
             pytest.param({"unknown": "unknown"}, 0, "", marks=pytest.mark.skip),
         ],
     )
-    def test_llm(self, api_key, add_chat_assistants_func, llm, expected_code, expected_message):
+    def test_llm(self, HttpApiAuth, add_chat_assistants_func, llm, expected_code, expected_message):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm}
-        res = update_chat_assistant(api_key, chat_assistant_ids[0], payload)
+        res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_chat_assistants(api_key, {"id": chat_assistant_ids[0]})
+            res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
             if llm:
                 for k, v in llm.items():
                     assert res["data"][0]["llm"][k] == v
@@ -198,13 +198,13 @@ class TestChatAssistantUpdate:
             pytest.param({"unknown": "unknown"}, 0, "", marks=pytest.mark.skip),
         ],
     )
-    def test_prompt(self, api_key, add_chat_assistants_func, prompt, expected_code, expected_message):
+    def test_prompt(self, HttpApiAuth, add_chat_assistants_func, prompt, expected_code, expected_message):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         payload = {"name": "prompt_test", "dataset_ids": [dataset_id], "prompt": prompt}
-        res = update_chat_assistant(api_key, chat_assistant_ids[0], payload)
+        res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_chat_assistants(api_key, {"id": chat_assistant_ids[0]})
+            res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
             if prompt:
                 for k, v in prompt.items():
                     if k == "keywords_similarity_weight":
