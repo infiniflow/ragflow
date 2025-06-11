@@ -331,7 +331,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     if stream:
         try:
             completion_tokens = 0
-            for ans in canvas.run(stream=True):
+            for ans in canvas.run(stream=True, pass_begin=True):
                 if ans.get("running_status"):
                     completion_tokens += len(tiktokenenc.encode(ans.get("content", "")))
                     yield "data: " + json.dumps(
@@ -394,7 +394,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     else:  # Non-streaming mode
         try:
             all_answer_content = ""
-            for answer in canvas.run(stream=False):
+            for answer in canvas.run(stream=False, pass_begin=True):
                 if answer.get("running_status"):
                     continue
                 

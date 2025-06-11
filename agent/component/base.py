@@ -442,8 +442,7 @@ class ComponentBase(ABC):
             elif q.get("value"):
                 outs.append(pd.DataFrame([{"content": q["value"]}]))
         return outs
-
-    def get_input(self):
+    def get_input(self, pass_begin=False):
         if self._param.debug_inputs:
             return pd.DataFrame([{"content": v["value"]} for v in self._param.debug_inputs if v.get("value")])
 
@@ -479,6 +478,8 @@ class ComponentBase(ABC):
 
         for u in reversed_up_cpnts[::-1]:
             if self.get_component_name(u) in ["switch", "concentrator"]:
+                continue
+            if self.get_component_name(u) == "begin" and pass_begin:
                 continue
             if self.component_name.lower() == "generate" and self.get_component_name(u) == "retrieval":
                 o = self._canvas.get_component(u)["obj"].output(allow_partial=False)[1]
@@ -531,7 +532,7 @@ class ComponentBase(ABC):
                 eles.append({"key": q["value"], "name": q["value"], "value": q["value"]})
         return eles
 
-    def get_stream_input(self):
+    def get_stream_input(self, pass_begin=False):
         reversed_cpnts = []
         if len(self._canvas.path) > 1:
             reversed_cpnts.extend(self._canvas.path[-2])
@@ -541,6 +542,8 @@ class ComponentBase(ABC):
 
         for u in reversed_up_cpnts[::-1]:
             if self.get_component_name(u) in ["switch", "answer"]:
+                continue
+            if self.get_component_name(u) == "begin" and pass_begin:
                 continue
             return self._canvas.get_component(u)["obj"].output()[1]
 
