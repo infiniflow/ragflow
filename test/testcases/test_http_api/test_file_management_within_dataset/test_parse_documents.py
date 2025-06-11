@@ -83,17 +83,17 @@ class TestDocumentsParse:
             pytest.param(lambda r: {"document_ids": r}, 0, "", marks=pytest.mark.p1),
         ],
     )
-    def test_basic_scenarios(self, api_key, add_documents_func, payload, expected_code, expected_message):
+    def test_basic_scenarios(self, HttpApiAuth, add_documents_func, payload, expected_code, expected_message):
         dataset_id, document_ids = add_documents_func
         if callable(payload):
             payload = payload(document_ids)
-        res = parse_documents(api_key, dataset_id, payload)
+        res = parse_documents(HttpApiAuth, dataset_id, payload)
         assert res["code"] == expected_code
         if expected_code != 0:
             assert res["message"] == expected_message
         if expected_code == 0:
-            condition(api_key, dataset_id, payload["document_ids"])
-            validate_document_details(api_key, dataset_id, payload["document_ids"])
+            condition(HttpApiAuth, dataset_id, payload["document_ids"])
+            validate_document_details(HttpApiAuth, dataset_id, payload["document_ids"])
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -109,14 +109,14 @@ class TestDocumentsParse:
     )
     def test_invalid_dataset_id(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents_func,
         dataset_id,
         expected_code,
         expected_message,
     ):
         _, document_ids = add_documents_func
-        res = parse_documents(api_key, dataset_id, {"document_ids": document_ids})
+        res = parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -128,44 +128,44 @@ class TestDocumentsParse:
             pytest.param(lambda r: {"document_ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
         ],
     )
-    def test_parse_partial_invalid_document_id(self, api_key, add_documents_func, payload):
+    def test_parse_partial_invalid_document_id(self, HttpApiAuth, add_documents_func, payload):
         dataset_id, document_ids = add_documents_func
         if callable(payload):
             payload = payload(document_ids)
-        res = parse_documents(api_key, dataset_id, payload)
+        res = parse_documents(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 102
         assert res["message"] == "Documents not found: ['invalid_id']"
 
-        condition(api_key, dataset_id)
+        condition(HttpApiAuth, dataset_id)
 
-        validate_document_details(api_key, dataset_id, document_ids)
-
-    @pytest.mark.p3
-    def test_repeated_parse(self, api_key, add_documents_func):
-        dataset_id, document_ids = add_documents_func
-        res = parse_documents(api_key, dataset_id, {"document_ids": document_ids})
-        assert res["code"] == 0
-
-        condition(api_key, dataset_id)
-
-        res = parse_documents(api_key, dataset_id, {"document_ids": document_ids})
-        assert res["code"] == 0
+        validate_document_details(HttpApiAuth, dataset_id, document_ids)
 
     @pytest.mark.p3
-    def test_duplicate_parse(self, api_key, add_documents_func):
+    def test_repeated_parse(self, HttpApiAuth, add_documents_func):
         dataset_id, document_ids = add_documents_func
-        res = parse_documents(api_key, dataset_id, {"document_ids": document_ids + document_ids})
+        res = parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
+        assert res["code"] == 0
+
+        condition(HttpApiAuth, dataset_id)
+
+        res = parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
+        assert res["code"] == 0
+
+    @pytest.mark.p3
+    def test_duplicate_parse(self, HttpApiAuth, add_documents_func):
+        dataset_id, document_ids = add_documents_func
+        res = parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids + document_ids})
         assert res["code"] == 0
         assert "Duplicate document ids" in res["data"]["errors"][0]
         assert res["data"]["success_count"] == 3
 
-        condition(api_key, dataset_id)
+        condition(HttpApiAuth, dataset_id)
 
-        validate_document_details(api_key, dataset_id, document_ids)
+        validate_document_details(HttpApiAuth, dataset_id, document_ids)
 
 
 @pytest.mark.p3
-def test_parse_100_files(api_key, add_dataset_func, tmp_path):
+def test_parse_100_files(HttpApiAuth, add_dataset_func, tmp_path):
     @wait_for(100, 1, "Document parsing timeout")
     def condition(_auth, _dataset_id, _document_num):
         res = list_documents(_auth, _dataset_id, {"page_size": _document_num})
@@ -176,17 +176,17 @@ def test_parse_100_files(api_key, add_dataset_func, tmp_path):
 
     document_num = 100
     dataset_id = add_dataset_func
-    document_ids = bulk_upload_documents(api_key, dataset_id, document_num, tmp_path)
-    res = parse_documents(api_key, dataset_id, {"document_ids": document_ids})
+    document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, document_num, tmp_path)
+    res = parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
     assert res["code"] == 0
 
-    condition(api_key, dataset_id, document_num)
+    condition(HttpApiAuth, dataset_id, document_num)
 
-    validate_document_details(api_key, dataset_id, document_ids)
+    validate_document_details(HttpApiAuth, dataset_id, document_ids)
 
 
 @pytest.mark.p3
-def test_concurrent_parse(api_key, add_dataset_func, tmp_path):
+def test_concurrent_parse(HttpApiAuth, add_dataset_func, tmp_path):
     @wait_for(120, 1, "Document parsing timeout")
     def condition(_auth, _dataset_id, _document_num):
         res = list_documents(_auth, _dataset_id, {"page_size": _document_num})
@@ -197,13 +197,13 @@ def test_concurrent_parse(api_key, add_dataset_func, tmp_path):
 
     count = 100
     dataset_id = add_dataset_func
-    document_ids = bulk_upload_documents(api_key, dataset_id, count, tmp_path)
+    document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, count, tmp_path)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [
             executor.submit(
                 parse_documents,
-                api_key,
+                HttpApiAuth,
                 dataset_id,
                 {"document_ids": document_ids[i : i + 1]},
             )
@@ -213,6 +213,6 @@ def test_concurrent_parse(api_key, add_dataset_func, tmp_path):
     assert len(responses) == count, responses
     assert all(future.result()["code"] == 0 for future in futures)
 
-    condition(api_key, dataset_id, count)
+    condition(HttpApiAuth, dataset_id, count)
 
-    validate_document_details(api_key, dataset_id, document_ids)
+    validate_document_details(HttpApiAuth, dataset_id, document_ids)

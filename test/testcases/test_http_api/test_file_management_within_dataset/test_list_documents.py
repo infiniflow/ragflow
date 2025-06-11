@@ -42,9 +42,9 @@ class TestAuthorization:
 
 class TestDocumentsList:
     @pytest.mark.p1
-    def test_default(self, api_key, add_documents):
+    def test_default(self, HttpApiAuth, add_documents):
         dataset_id, _ = add_documents
-        res = list_documents(api_key, dataset_id)
+        res = list_documents(HttpApiAuth, dataset_id)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == 5
         assert res["data"]["total"] == 5
@@ -61,8 +61,8 @@ class TestDocumentsList:
             ),
         ],
     )
-    def test_invalid_dataset_id(self, api_key, dataset_id, expected_code, expected_message):
-        res = list_documents(api_key, dataset_id)
+    def test_invalid_dataset_id(self, HttpApiAuth, dataset_id, expected_code, expected_message):
+        res = list_documents(HttpApiAuth, dataset_id)
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -93,7 +93,7 @@ class TestDocumentsList:
     )
     def test_page(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents,
         params,
         expected_code,
@@ -101,7 +101,7 @@ class TestDocumentsList:
         expected_message,
     ):
         dataset_id, _ = add_documents
-        res = list_documents(api_key, dataset_id, params=params)
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_page_size
@@ -136,7 +136,7 @@ class TestDocumentsList:
     )
     def test_page_size(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents,
         params,
         expected_code,
@@ -144,7 +144,7 @@ class TestDocumentsList:
         expected_message,
     ):
         dataset_id, _ = add_documents
-        res = list_documents(api_key, dataset_id, params=params)
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_page_size
@@ -164,7 +164,7 @@ class TestDocumentsList:
     )
     def test_orderby(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents,
         params,
         expected_code,
@@ -172,7 +172,7 @@ class TestDocumentsList:
         expected_message,
     ):
         dataset_id, _ = add_documents
-        res = list_documents(api_key, dataset_id, params=params)
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -197,7 +197,7 @@ class TestDocumentsList:
     )
     def test_desc(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents,
         params,
         expected_code,
@@ -205,7 +205,7 @@ class TestDocumentsList:
         expected_message,
     ):
         dataset_id, _ = add_documents
-        res = list_documents(api_key, dataset_id, params=params)
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -224,9 +224,9 @@ class TestDocumentsList:
             ({"keywords": "unknown"}, 0),
         ],
     )
-    def test_keywords(self, api_key, add_documents, params, expected_num):
+    def test_keywords(self, HttpApiAuth, add_documents, params, expected_num):
         dataset_id, _ = add_documents
-        res = list_documents(api_key, dataset_id, params=params)
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == expected_num
         assert res["data"]["total"] == expected_num
@@ -248,7 +248,7 @@ class TestDocumentsList:
     )
     def test_name(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents,
         params,
         expected_code,
@@ -256,7 +256,7 @@ class TestDocumentsList:
         expected_message,
     ):
         dataset_id, _ = add_documents
-        res = list_documents(api_key, dataset_id, params=params)
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["name"] in [None, ""]:
@@ -278,7 +278,7 @@ class TestDocumentsList:
     )
     def test_id(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents,
         document_id,
         expected_code,
@@ -290,7 +290,7 @@ class TestDocumentsList:
             params = {"id": document_id(document_ids)}
         else:
             params = {"id": document_id}
-        res = list_documents(api_key, dataset_id, params=params)
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
 
         assert res["code"] == expected_code
         if expected_code == 0:
@@ -319,7 +319,7 @@ class TestDocumentsList:
     )
     def test_name_and_id(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents,
         document_id,
         name,
@@ -333,27 +333,27 @@ class TestDocumentsList:
         else:
             params = {"id": document_id, "name": name}
 
-        res = list_documents(api_key, dataset_id, params=params)
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
         if expected_code == 0:
             assert len(res["data"]["docs"]) == expected_num
         else:
             assert res["message"] == expected_message
 
     @pytest.mark.p3
-    def test_concurrent_list(self, api_key, add_documents):
+    def test_concurrent_list(self, HttpApiAuth, add_documents):
         dataset_id, _ = add_documents
         count = 100
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_documents, api_key, dataset_id) for i in range(count)]
+            futures = [executor.submit(list_documents, HttpApiAuth, dataset_id) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
-    def test_invalid_params(self, api_key, add_documents):
+    def test_invalid_params(self, HttpApiAuth, add_documents):
         dataset_id, _ = add_documents
         params = {"a": "b"}
-        res = list_documents(api_key, dataset_id, params=params)
+        res = list_documents(HttpApiAuth, dataset_id, params=params)
         assert res["code"] == 0
         assert len(res["data"]["docs"]) == 5

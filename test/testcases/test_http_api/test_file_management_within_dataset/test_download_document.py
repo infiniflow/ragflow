@@ -63,14 +63,14 @@ class TestAuthorization:
     ],
     indirect=True,
 )
-def test_file_type_validation(api_key, add_dataset, generate_test_files, request):
+def test_file_type_validation(HttpApiAuth, add_dataset, generate_test_files, request):
     dataset_id = add_dataset
     fp = generate_test_files[request.node.callspec.params["generate_test_files"]]
-    res = upload_documents(api_key, dataset_id, [fp])
+    res = upload_documents(HttpApiAuth, dataset_id, [fp])
     document_id = res["data"][0]["id"]
 
     res = download_document(
-        api_key,
+        HttpApiAuth,
         dataset_id,
         document_id,
         fp.with_stem("ragflow_test_download"),
@@ -94,10 +94,10 @@ class TestDocumentDownload:
             ),
         ],
     )
-    def test_invalid_document_id(self, api_key, add_documents, tmp_path, document_id, expected_code, expected_message):
+    def test_invalid_document_id(self, HttpApiAuth, add_documents, tmp_path, document_id, expected_code, expected_message):
         dataset_id, _ = add_documents
         res = download_document(
-            api_key,
+            HttpApiAuth,
             dataset_id,
             document_id,
             tmp_path / "ragflow_test_download_1.txt",
@@ -120,10 +120,10 @@ class TestDocumentDownload:
             ),
         ],
     )
-    def test_invalid_dataset_id(self, api_key, add_documents, tmp_path, dataset_id, expected_code, expected_message):
+    def test_invalid_dataset_id(self, HttpApiAuth, add_documents, tmp_path, dataset_id, expected_code, expected_message):
         _, document_ids = add_documents
         res = download_document(
-            api_key,
+            HttpApiAuth,
             dataset_id,
             document_ids[0],
             tmp_path / "ragflow_test_download_1.txt",
@@ -135,12 +135,12 @@ class TestDocumentDownload:
         assert response_json["message"] == expected_message
 
     @pytest.mark.p3
-    def test_same_file_repeat(self, api_key, add_documents, tmp_path, ragflow_tmp_dir):
+    def test_same_file_repeat(self, HttpApiAuth, add_documents, tmp_path, ragflow_tmp_dir):
         num = 5
         dataset_id, document_ids = add_documents
         for i in range(num):
             res = download_document(
-                api_key,
+                HttpApiAuth,
                 dataset_id,
                 document_ids[0],
                 tmp_path / f"ragflow_test_download_{i}.txt",
@@ -153,16 +153,16 @@ class TestDocumentDownload:
 
 
 @pytest.mark.p3
-def test_concurrent_download(api_key, add_dataset, tmp_path):
+def test_concurrent_download(HttpApiAuth, add_dataset, tmp_path):
     count = 20
     dataset_id = add_dataset
-    document_ids = bulk_upload_documents(api_key, dataset_id, count, tmp_path)
+    document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, count, tmp_path)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [
             executor.submit(
                 download_document,
-                api_key,
+                HttpApiAuth,
                 dataset_id,
                 document_ids[i],
                 tmp_path / f"ragflow_test_download_{i}.txt",

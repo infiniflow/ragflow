@@ -47,10 +47,10 @@ class TestAuthorization:
 
 class TestDocumentsUpload:
     @pytest.mark.p1
-    def test_valid_single_upload(self, api_key, add_dataset_func, tmp_path):
+    def test_valid_single_upload(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
-        res = upload_documents(api_key, dataset_id, [fp])
+        res = upload_documents(HttpApiAuth, dataset_id, [fp])
         assert res["code"] == 0
         assert res["data"][0]["dataset_id"] == dataset_id
         assert res["data"][0]["name"] == fp.name
@@ -72,10 +72,10 @@ class TestDocumentsUpload:
         ],
         indirect=True,
     )
-    def test_file_type_validation(self, api_key, add_dataset_func, generate_test_files, request):
+    def test_file_type_validation(self, HttpApiAuth, add_dataset_func, generate_test_files, request):
         dataset_id = add_dataset_func
         fp = generate_test_files[request.node.callspec.params["generate_test_files"]]
-        res = upload_documents(api_key, dataset_id, [fp])
+        res = upload_documents(HttpApiAuth, dataset_id, [fp])
         assert res["code"] == 0
         assert res["data"][0]["dataset_id"] == dataset_id
         assert res["data"][0]["name"] == fp.name
@@ -85,33 +85,33 @@ class TestDocumentsUpload:
         "file_type",
         ["exe", "unknown"],
     )
-    def test_unsupported_file_type(self, api_key, add_dataset_func, tmp_path, file_type):
+    def test_unsupported_file_type(self, HttpApiAuth, add_dataset_func, tmp_path, file_type):
         dataset_id = add_dataset_func
         fp = tmp_path / f"ragflow_test.{file_type}"
         fp.touch()
-        res = upload_documents(api_key, dataset_id, [fp])
+        res = upload_documents(HttpApiAuth, dataset_id, [fp])
         assert res["code"] == 500
         assert res["message"] == f"ragflow_test.{file_type}: This type of file has not been supported yet!"
 
     @pytest.mark.p2
-    def test_missing_file(self, api_key, add_dataset_func):
+    def test_missing_file(self, HttpApiAuth, add_dataset_func):
         dataset_id = add_dataset_func
-        res = upload_documents(api_key, dataset_id)
+        res = upload_documents(HttpApiAuth, dataset_id)
         assert res["code"] == 101
         assert res["message"] == "No file part!"
 
     @pytest.mark.p3
-    def test_empty_file(self, api_key, add_dataset_func, tmp_path):
+    def test_empty_file(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fp = tmp_path / "empty.txt"
         fp.touch()
 
-        res = upload_documents(api_key, dataset_id, [fp])
+        res = upload_documents(HttpApiAuth, dataset_id, [fp])
         assert res["code"] == 0
         assert res["data"][0]["size"] == 0
 
     @pytest.mark.p3
-    def test_filename_empty(self, api_key, add_dataset_func, tmp_path):
+    def test_filename_empty(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
@@ -120,33 +120,33 @@ class TestDocumentsUpload:
         res = requests.post(
             url=url,
             headers={"Content-Type": m.content_type},
-            auth=api_key,
+            auth=HttpApiAuth,
             data=m,
         )
         assert res.json()["code"] == 101
         assert res.json()["message"] == "No file selected!"
 
     @pytest.mark.p2
-    def test_filename_exceeds_max_length(self, api_key, add_dataset_func, tmp_path):
+    def test_filename_exceeds_max_length(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         # filename_length = 129
         fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt")
-        res = upload_documents(api_key, dataset_id, [fp])
+        res = upload_documents(HttpApiAuth, dataset_id, [fp])
         assert res["code"] == 101
         assert res["message"] == "File name should be less than 128 bytes."
 
     @pytest.mark.p2
-    def test_invalid_dataset_id(self, api_key, tmp_path):
+    def test_invalid_dataset_id(self, HttpApiAuth, tmp_path):
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
-        res = upload_documents(api_key, "invalid_dataset_id", [fp])
+        res = upload_documents(HttpApiAuth, "invalid_dataset_id", [fp])
         assert res["code"] == 100
         assert res["message"] == """LookupError("Can\'t find the dataset with ID invalid_dataset_id!")"""
 
     @pytest.mark.p2
-    def test_duplicate_files(self, api_key, add_dataset_func, tmp_path):
+    def test_duplicate_files(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
-        res = upload_documents(api_key, dataset_id, [fp, fp])
+        res = upload_documents(HttpApiAuth, dataset_id, [fp, fp])
         assert res["code"] == 0
         assert len(res["data"]) == 2
         for i in range(len(res["data"])):
@@ -157,11 +157,11 @@ class TestDocumentsUpload:
             assert res["data"][i]["name"] == expected_name
 
     @pytest.mark.p2
-    def test_same_file_repeat(self, api_key, add_dataset_func, tmp_path):
+    def test_same_file_repeat(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         for i in range(3):
-            res = upload_documents(api_key, dataset_id, [fp])
+            res = upload_documents(HttpApiAuth, dataset_id, [fp])
             assert res["code"] == 0
             assert len(res["data"]) == 1
             assert res["data"][0]["dataset_id"] == dataset_id
@@ -171,7 +171,7 @@ class TestDocumentsUpload:
             assert res["data"][0]["name"] == expected_name
 
     @pytest.mark.p3
-    def test_filename_special_characters(self, api_key, add_dataset_func, tmp_path):
+    def test_filename_special_characters(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         illegal_chars = '<>:"/\\|?*'
         translation_table = str.maketrans({char: "_" for char in illegal_chars})
@@ -179,28 +179,28 @@ class TestDocumentsUpload:
         fp = tmp_path / f"{safe_filename}.txt"
         fp.write_text("Sample text content")
 
-        res = upload_documents(api_key, dataset_id, [fp])
+        res = upload_documents(HttpApiAuth, dataset_id, [fp])
         assert res["code"] == 0
         assert len(res["data"]) == 1
         assert res["data"][0]["dataset_id"] == dataset_id
         assert res["data"][0]["name"] == fp.name
 
     @pytest.mark.p1
-    def test_multiple_files(self, api_key, add_dataset_func, tmp_path):
+    def test_multiple_files(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
         expected_document_count = 20
         fps = []
         for i in range(expected_document_count):
             fp = create_txt_file(tmp_path / f"ragflow_test_{i}.txt")
             fps.append(fp)
-        res = upload_documents(api_key, dataset_id, fps)
+        res = upload_documents(HttpApiAuth, dataset_id, fps)
         assert res["code"] == 0
 
-        res = list_datasets(api_key, {"id": dataset_id})
+        res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["data"][0]["document_count"] == expected_document_count
 
     @pytest.mark.p3
-    def test_concurrent_upload(self, api_key, add_dataset_func, tmp_path):
+    def test_concurrent_upload(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
 
         count = 20
@@ -210,10 +210,10 @@ class TestDocumentsUpload:
             fps.append(fp)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(upload_documents, api_key, dataset_id, fps[i : i + 1]) for i in range(count)]
+            futures = [executor.submit(upload_documents, HttpApiAuth, dataset_id, fps[i : i + 1]) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
 
-        res = list_datasets(api_key, {"id": dataset_id})
+        res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["data"][0]["document_count"] == count

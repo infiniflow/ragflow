@@ -68,17 +68,17 @@ class TestAddChunk:
             ({"content": "\n!?。；！？\"'"}, 0, ""),
         ],
     )
-    def test_content(self, api_key, add_document, payload, expected_code, expected_message):
+    def test_content(self, HttpApiAuth, add_document, payload, expected_code, expected_message):
         dataset_id, document_id = add_document
-        res = list_chunks(api_key, dataset_id, document_id)
+        res = list_chunks(HttpApiAuth, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
-        res = add_chunk(api_key, dataset_id, document_id, payload)
+        res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
         assert res["code"] == expected_code
         if expected_code == 0:
             validate_chunk_details(dataset_id, document_id, payload, res)
-            res = list_chunks(api_key, dataset_id, document_id)
+            res = list_chunks(HttpApiAuth, dataset_id, document_id)
             if res["code"] != 0:
                 assert False, res
             assert res["data"]["doc"]["chunk_count"] == chunks_count + 1
@@ -101,17 +101,17 @@ class TestAddChunk:
             ({"content": "chunk test", "important_keywords": 123}, 102, "`important_keywords` is required to be a list"),
         ],
     )
-    def test_important_keywords(self, api_key, add_document, payload, expected_code, expected_message):
+    def test_important_keywords(self, HttpApiAuth, add_document, payload, expected_code, expected_message):
         dataset_id, document_id = add_document
-        res = list_chunks(api_key, dataset_id, document_id)
+        res = list_chunks(HttpApiAuth, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
-        res = add_chunk(api_key, dataset_id, document_id, payload)
+        res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
         assert res["code"] == expected_code
         if expected_code == 0:
             validate_chunk_details(dataset_id, document_id, payload, res)
-            res = list_chunks(api_key, dataset_id, document_id)
+            res = list_chunks(HttpApiAuth, dataset_id, document_id)
             if res["code"] != 0:
                 assert False, res
             assert res["data"]["doc"]["chunk_count"] == chunks_count + 1
@@ -130,19 +130,19 @@ class TestAddChunk:
             ({"content": "chunk test", "questions": 123}, 102, "`questions` is required to be a list"),
         ],
     )
-    def test_questions(self, api_key, add_document, payload, expected_code, expected_message):
+    def test_questions(self, HttpApiAuth, add_document, payload, expected_code, expected_message):
         dataset_id, document_id = add_document
-        res = list_chunks(api_key, dataset_id, document_id)
+        res = list_chunks(HttpApiAuth, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
-        res = add_chunk(api_key, dataset_id, document_id, payload)
+        res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
         assert res["code"] == expected_code
         if expected_code == 0:
             validate_chunk_details(dataset_id, document_id, payload, res)
             if res["code"] != 0:
                 assert False, res
-            res = list_chunks(api_key, dataset_id, document_id)
+            res = list_chunks(HttpApiAuth, dataset_id, document_id)
             assert res["data"]["doc"]["chunk_count"] == chunks_count + 1
         else:
             assert res["message"] == expected_message
@@ -161,14 +161,14 @@ class TestAddChunk:
     )
     def test_invalid_dataset_id(
         self,
-        api_key,
+        HttpApiAuth,
         add_document,
         dataset_id,
         expected_code,
         expected_message,
     ):
         _, document_id = add_document
-        res = add_chunk(api_key, dataset_id, document_id, {"content": "a"})
+        res = add_chunk(HttpApiAuth, dataset_id, document_id, {"content": "a"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -184,49 +184,49 @@ class TestAddChunk:
             ),
         ],
     )
-    def test_invalid_document_id(self, api_key, add_document, document_id, expected_code, expected_message):
+    def test_invalid_document_id(self, HttpApiAuth, add_document, document_id, expected_code, expected_message):
         dataset_id, _ = add_document
-        res = add_chunk(api_key, dataset_id, document_id, {"content": "chunk test"})
+        res = add_chunk(HttpApiAuth, dataset_id, document_id, {"content": "chunk test"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
     @pytest.mark.p3
-    def test_repeated_add_chunk(self, api_key, add_document):
+    def test_repeated_add_chunk(self, HttpApiAuth, add_document):
         payload = {"content": "chunk test"}
         dataset_id, document_id = add_document
-        res = list_chunks(api_key, dataset_id, document_id)
+        res = list_chunks(HttpApiAuth, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
-        res = add_chunk(api_key, dataset_id, document_id, payload)
+        res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
         assert res["code"] == 0
         validate_chunk_details(dataset_id, document_id, payload, res)
-        res = list_chunks(api_key, dataset_id, document_id)
+        res = list_chunks(HttpApiAuth, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
         assert res["data"]["doc"]["chunk_count"] == chunks_count + 1
 
-        res = add_chunk(api_key, dataset_id, document_id, payload)
+        res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
         assert res["code"] == 0
         validate_chunk_details(dataset_id, document_id, payload, res)
-        res = list_chunks(api_key, dataset_id, document_id)
+        res = list_chunks(HttpApiAuth, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
         assert res["data"]["doc"]["chunk_count"] == chunks_count + 2
 
     @pytest.mark.p2
-    def test_add_chunk_to_deleted_document(self, api_key, add_document):
+    def test_add_chunk_to_deleted_document(self, HttpApiAuth, add_document):
         dataset_id, document_id = add_document
-        delete_documents(api_key, dataset_id, {"ids": [document_id]})
-        res = add_chunk(api_key, dataset_id, document_id, {"content": "chunk test"})
+        delete_documents(HttpApiAuth, dataset_id, {"ids": [document_id]})
+        res = add_chunk(HttpApiAuth, dataset_id, document_id, {"content": "chunk test"})
         assert res["code"] == 102
         assert res["message"] == f"You don't own the document {document_id}."
 
     @pytest.mark.skip(reason="issues/6411")
-    def test_concurrent_add_chunk(self, api_key, add_document):
+    def test_concurrent_add_chunk(self, HttpApiAuth, add_document):
         count = 50
         dataset_id, document_id = add_document
-        res = list_chunks(api_key, dataset_id, document_id)
+        res = list_chunks(HttpApiAuth, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
@@ -235,7 +235,7 @@ class TestAddChunk:
             futures = [
                 executor.submit(
                     add_chunk,
-                    api_key,
+                    HttpApiAuth,
                     dataset_id,
                     document_id,
                     {"content": f"chunk test {i}"},
@@ -245,7 +245,7 @@ class TestAddChunk:
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
-        res = list_chunks(api_key, dataset_id, document_id)
+        res = list_chunks(HttpApiAuth, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
         assert res["data"]["doc"]["chunk_count"] == chunks_count + count

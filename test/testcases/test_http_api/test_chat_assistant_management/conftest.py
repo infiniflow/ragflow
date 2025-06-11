@@ -28,13 +28,13 @@ def condition(_auth, _dataset_id):
 
 
 @pytest.fixture(scope="function")
-def add_chat_assistants_func(request, api_key, add_document):
+def add_chat_assistants_func(request, HttpApiAuth, add_document):
     def cleanup():
-        delete_chat_assistants(api_key)
+        delete_chat_assistants(HttpApiAuth)
 
     request.addfinalizer(cleanup)
 
     dataset_id, document_id = add_document
-    parse_documents(api_key, dataset_id, {"document_ids": [document_id]})
-    condition(api_key, dataset_id)
-    return dataset_id, document_id, batch_create_chat_assistants(api_key, 5)
+    parse_documents(HttpApiAuth, dataset_id, {"document_ids": [document_id]})
+    condition(HttpApiAuth, dataset_id)
+    return dataset_id, document_id, batch_create_chat_assistants(HttpApiAuth, 5)

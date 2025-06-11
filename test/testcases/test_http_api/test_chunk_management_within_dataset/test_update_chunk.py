@@ -69,9 +69,9 @@ class TestUpdatedChunk:
             ({"content": "\n!?。；！？\"'"}, 0, ""),
         ],
     )
-    def test_content(self, api_key, add_chunks, payload, expected_code, expected_message):
+    def test_content(self, HttpApiAuth, add_chunks, payload, expected_code, expected_message):
         dataset_id, document_id, chunk_ids = add_chunks
-        res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0], payload)
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code != 0:
             assert res["message"] == expected_message
@@ -88,9 +88,9 @@ class TestUpdatedChunk:
             ({"important_keywords": 123}, 102, "`important_keywords` should be a list"),
         ],
     )
-    def test_important_keywords(self, api_key, add_chunks, payload, expected_code, expected_message):
+    def test_important_keywords(self, HttpApiAuth, add_chunks, payload, expected_code, expected_message):
         dataset_id, document_id, chunk_ids = add_chunks
-        res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0], payload)
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code != 0:
             assert res["message"] == expected_message
@@ -107,9 +107,9 @@ class TestUpdatedChunk:
             ({"questions": 123}, 102, "`questions` should be a list"),
         ],
     )
-    def test_questions(self, api_key, add_chunks, payload, expected_code, expected_message):
+    def test_questions(self, HttpApiAuth, add_chunks, payload, expected_code, expected_message):
         dataset_id, document_id, chunk_ids = add_chunks
-        res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0], payload)
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code != 0:
             assert res["message"] == expected_message
@@ -128,14 +128,14 @@ class TestUpdatedChunk:
     )
     def test_available(
         self,
-        api_key,
+        HttpApiAuth,
         add_chunks,
         payload,
         expected_code,
         expected_message,
     ):
         dataset_id, document_id, chunk_ids = add_chunks
-        res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0], payload)
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code != 0:
             assert res["message"] == expected_message
@@ -149,9 +149,9 @@ class TestUpdatedChunk:
             pytest.param("invalid_dataset_id", 102, "Can't find this chunk", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch")),
         ],
     )
-    def test_invalid_dataset_id(self, api_key, add_chunks, dataset_id, expected_code, expected_message):
+    def test_invalid_dataset_id(self, HttpApiAuth, add_chunks, dataset_id, expected_code, expected_message):
         _, document_id, chunk_ids = add_chunks
-        res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0])
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0])
         assert res["code"] == expected_code
         assert expected_message in res["message"]
 
@@ -167,9 +167,9 @@ class TestUpdatedChunk:
             ),
         ],
     )
-    def test_invalid_document_id(self, api_key, add_chunks, document_id, expected_code, expected_message):
+    def test_invalid_document_id(self, HttpApiAuth, add_chunks, document_id, expected_code, expected_message):
         dataset_id, _, chunk_ids = add_chunks
-        res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0])
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0])
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -185,19 +185,19 @@ class TestUpdatedChunk:
             ),
         ],
     )
-    def test_invalid_chunk_id(self, api_key, add_chunks, chunk_id, expected_code, expected_message):
+    def test_invalid_chunk_id(self, HttpApiAuth, add_chunks, chunk_id, expected_code, expected_message):
         dataset_id, document_id, _ = add_chunks
-        res = update_chunk(api_key, dataset_id, document_id, chunk_id)
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_id)
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
     @pytest.mark.p3
-    def test_repeated_update_chunk(self, api_key, add_chunks):
+    def test_repeated_update_chunk(self, HttpApiAuth, add_chunks):
         dataset_id, document_id, chunk_ids = add_chunks
-        res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0], {"content": "chunk test 1"})
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0], {"content": "chunk test 1"})
         assert res["code"] == 0
 
-        res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0], {"content": "chunk test 2"})
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0], {"content": "chunk test 2"})
         assert res["code"] == 0
 
     @pytest.mark.p3
@@ -209,16 +209,16 @@ class TestUpdatedChunk:
             pytest.param(None, 100, """TypeError("argument of type \'NoneType\' is not iterable")""", marks=pytest.mark.skip),
         ],
     )
-    def test_invalid_params(self, api_key, add_chunks, payload, expected_code, expected_message):
+    def test_invalid_params(self, HttpApiAuth, add_chunks, payload, expected_code, expected_message):
         dataset_id, document_id, chunk_ids = add_chunks
-        res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0], payload)
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code != 0:
             assert res["message"] == expected_message
 
     @pytest.mark.p3
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6554")
-    def test_concurrent_update_chunk(self, api_key, add_chunks):
+    def test_concurrent_update_chunk(self, HttpApiAuth, add_chunks):
         count = 50
         dataset_id, document_id, chunk_ids = add_chunks
 
@@ -226,7 +226,7 @@ class TestUpdatedChunk:
             futures = [
                 executor.submit(
                     update_chunk,
-                    api_key,
+                    HttpApiAuth,
                     dataset_id,
                     document_id,
                     chunk_ids[randint(0, 3)],
@@ -239,9 +239,9 @@ class TestUpdatedChunk:
         assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
-    def test_update_chunk_to_deleted_document(self, api_key, add_chunks):
+    def test_update_chunk_to_deleted_document(self, HttpApiAuth, add_chunks):
         dataset_id, document_id, chunk_ids = add_chunks
-        delete_documents(api_key, dataset_id, {"ids": [document_id]})
-        res = update_chunk(api_key, dataset_id, document_id, chunk_ids[0])
+        delete_documents(HttpApiAuth, dataset_id, {"ids": [document_id]})
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0])
         assert res["code"] == 102
         assert res["message"] == f"Can't find this chunk {chunk_ids[0]}"

@@ -75,7 +75,7 @@ class TestDocumentsParseStop:
             pytest.param(lambda r: {"document_ids": r}, 0, "", marks=pytest.mark.p1),
         ],
     )
-    def test_basic_scenarios(self, api_key, add_documents_func, payload, expected_code, expected_message):
+    def test_basic_scenarios(self, HttpApiAuth, add_documents_func, payload, expected_code, expected_message):
         @wait_for(10, 1, "Document parsing timeout")
         def condition(_auth, _dataset_id, _document_ids):
             for _document_id in _document_ids:
@@ -85,20 +85,20 @@ class TestDocumentsParseStop:
             return True
 
         dataset_id, document_ids = add_documents_func
-        parse_documents(api_key, dataset_id, {"document_ids": document_ids})
+        parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
 
         if callable(payload):
             payload = payload(document_ids)
 
-        res = stop_parse_documents(api_key, dataset_id, payload)
+        res = stop_parse_documents(HttpApiAuth, dataset_id, payload)
         assert res["code"] == expected_code
         if expected_code != 0:
             assert res["message"] == expected_message
         else:
             completed_document_ids = list(set(document_ids) - set(payload["document_ids"]))
-            condition(api_key, dataset_id, completed_document_ids)
-            validate_document_parse_cancel(api_key, dataset_id, payload["document_ids"])
-            validate_document_parse_done(api_key, dataset_id, completed_document_ids)
+            condition(HttpApiAuth, dataset_id, completed_document_ids)
+            validate_document_parse_cancel(HttpApiAuth, dataset_id, payload["document_ids"])
+            validate_document_parse_done(HttpApiAuth, dataset_id, completed_document_ids)
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -114,15 +114,15 @@ class TestDocumentsParseStop:
     )
     def test_invalid_dataset_id(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents_func,
         invalid_dataset_id,
         expected_code,
         expected_message,
     ):
         dataset_id, document_ids = add_documents_func
-        parse_documents(api_key, dataset_id, {"document_ids": document_ids})
-        res = stop_parse_documents(api_key, invalid_dataset_id, {"document_ids": document_ids})
+        parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
+        res = stop_parse_documents(HttpApiAuth, invalid_dataset_id, {"document_ids": document_ids})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -135,63 +135,63 @@ class TestDocumentsParseStop:
             lambda r: {"document_ids": r + ["invalid_id"]},
         ],
     )
-    def test_stop_parse_partial_invalid_document_id(self, api_key, add_documents_func, payload):
+    def test_stop_parse_partial_invalid_document_id(self, HttpApiAuth, add_documents_func, payload):
         dataset_id, document_ids = add_documents_func
-        parse_documents(api_key, dataset_id, {"document_ids": document_ids})
+        parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
 
         if callable(payload):
             payload = payload(document_ids)
-        res = stop_parse_documents(api_key, dataset_id, payload)
+        res = stop_parse_documents(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 102
         assert res["message"] == "You don't own the document invalid_id."
 
-        validate_document_parse_cancel(api_key, dataset_id, document_ids)
+        validate_document_parse_cancel(HttpApiAuth, dataset_id, document_ids)
 
     @pytest.mark.p3
-    def test_repeated_stop_parse(self, api_key, add_documents_func):
+    def test_repeated_stop_parse(self, HttpApiAuth, add_documents_func):
         dataset_id, document_ids = add_documents_func
-        parse_documents(api_key, dataset_id, {"document_ids": document_ids})
-        res = stop_parse_documents(api_key, dataset_id, {"document_ids": document_ids})
+        parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
+        res = stop_parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 0
 
-        res = stop_parse_documents(api_key, dataset_id, {"document_ids": document_ids})
+        res = stop_parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 102
         assert res["message"] == "Can't stop parsing document with progress at 0 or 1"
 
     @pytest.mark.p3
-    def test_duplicate_stop_parse(self, api_key, add_documents_func):
+    def test_duplicate_stop_parse(self, HttpApiAuth, add_documents_func):
         dataset_id, document_ids = add_documents_func
-        parse_documents(api_key, dataset_id, {"document_ids": document_ids})
-        res = stop_parse_documents(api_key, dataset_id, {"document_ids": document_ids + document_ids})
+        parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
+        res = stop_parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids + document_ids})
         assert res["code"] == 0
         assert res["data"]["success_count"] == 3
         assert f"Duplicate document ids: {document_ids[0]}" in res["data"]["errors"]
 
 
 @pytest.mark.skip(reason="unstable")
-def test_stop_parse_100_files(api_key, add_dataset_func, tmp_path):
+def test_stop_parse_100_files(HttpApiAuth, add_dataset_func, tmp_path):
     document_num = 100
     dataset_id = add_dataset_func
-    document_ids = bulk_upload_documents(api_key, dataset_id, document_num, tmp_path)
-    parse_documents(api_key, dataset_id, {"document_ids": document_ids})
+    document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, document_num, tmp_path)
+    parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
     sleep(1)
-    res = stop_parse_documents(api_key, dataset_id, {"document_ids": document_ids})
+    res = stop_parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
     assert res["code"] == 0
-    validate_document_parse_cancel(api_key, dataset_id, document_ids)
+    validate_document_parse_cancel(HttpApiAuth, dataset_id, document_ids)
 
 
 @pytest.mark.skip(reason="unstable")
-def test_concurrent_parse(api_key, add_dataset_func, tmp_path):
+def test_concurrent_parse(HttpApiAuth, add_dataset_func, tmp_path):
     document_num = 50
     dataset_id = add_dataset_func
-    document_ids = bulk_upload_documents(api_key, dataset_id, document_num, tmp_path)
-    parse_documents(api_key, dataset_id, {"document_ids": document_ids})
+    document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, document_num, tmp_path)
+    parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [
             executor.submit(
                 stop_parse_documents,
-                api_key,
+                HttpApiAuth,
                 dataset_id,
                 {"document_ids": document_ids[i : i + 1]},
             )
@@ -199,4 +199,4 @@ def test_concurrent_parse(api_key, add_dataset_func, tmp_path):
         ]
     responses = [f.result() for f in futures]
     assert all(r["code"] == 0 for r in responses)
-    validate_document_parse_cancel(api_key, dataset_id, document_ids)
+    validate_document_parse_cancel(HttpApiAuth, dataset_id, document_ids)
