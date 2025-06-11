@@ -1566,9 +1566,6 @@ class HunyuanChat(Base):
         return _gen_conf
 
     def _chat(self, history, gen_conf):
-        from tencentcloud.common.exception.tencent_cloud_sdk_exception import (
-            TencentCloudSDKException,
-        )
         from tencentcloud.hunyuan.v20230901 import models
 
         hist = [{k.capitalize(): v for k, v in item.items()} for item in history]
@@ -1580,9 +1577,6 @@ class HunyuanChat(Base):
         return ans, response.Usage.TotalTokens
 
     def chat_streamly(self, system, history, gen_conf):
-        from tencentcloud.common.exception.tencent_cloud_sdk_exception import (
-            TencentCloudSDKException,
-        )
         from tencentcloud.hunyuan.v20230901 import models
 
         _gen_conf = {}
