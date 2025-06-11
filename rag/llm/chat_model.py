@@ -1577,6 +1577,9 @@ class HunyuanChat(Base):
         return ans, response.Usage.TotalTokens
 
     def chat_streamly(self, system, history, gen_conf):
+        from tencentcloud.common.exception.tencent_cloud_sdk_exception import (
+            TencentCloudSDKException,
+        )
         from tencentcloud.hunyuan.v20230901 import models
 
         _gen_conf = {}
