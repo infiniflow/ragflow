@@ -49,6 +49,7 @@ class LLMParam(ComponentParamBase):
         self.frequency_penalty = 0
         self.output_structure = None
         self.cite = True
+        self.visual_files_var = None
 
     def check(self):
         self.check_decimal_float(self.temperature, "[Agent] Temperature")
@@ -125,13 +126,21 @@ class LLM(ComponentBase):
 
         return prompt, msg
 
+    def _generate(self, chat_mdl, sys_prompt, msg, conf, imgs=[]):
+        if not imgs:
+            return chat_mdl.chat(sys_prompt, msg, conf)
+        return chat_mdl.chat(sys_prompt, msg, conf, image=imgs[0])
+
     @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
     def _invoke(self, **kwargs):
-
         def clean_formated_answer(ans: str) -> str:
             ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
             return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
+
+        imgs = []
+        if self._param.visual_files_var:
+            imgs = self._canvas.get_variable_value(self._param.visual_files_var)
 
         prompt, msg = self._prepare_prompt_variables()
         error = ""
@@ -143,7 +152,7 @@ class LLM(ComponentBase):
             for _ in range(self._param.retry_times+1):
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
                 error = ""
-                ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
+                ans = self._generate(chat_mdl, msg[0]["content"], msg[1:], self._param.gen_conf(), imgs)
                 msg.pop(0)
                 if ans.find("**ERROR**") >= 0:
                     logging.error(f"LLM response error: {ans}")
@@ -168,7 +177,7 @@ class LLM(ComponentBase):
         for _ in range(self._param.retry_times+1):
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
             error = ""
-            ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
+            ans = self._generate(chat_mdl, msg[0]["content"], msg[1:], self._param.gen_conf(), imgs)
             msg.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"LLM response error: {ans}")
@@ -180,12 +189,17 @@ class LLM(ComponentBase):
         if error:
             self.set_output("_ERROR", error)
 
-    def _stream_output(self, chat_mdl, prompt, msg):
+    def _stream_output(self, chat_mdl, prompt, msg, images=[]):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(chat_mdl.max_length * 0.97))
         answer = ""
-        for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
-            yield ans[len(answer):]
-            answer = ans
+        if images:
+            for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), image=images[0]):
+                yield ans[len(answer):]
+                answer = ans
+        else:
+            for ans in chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf()):
+                yield ans[len(answer):]
+                answer = ans
 
         self.set_output("content", answer)
 

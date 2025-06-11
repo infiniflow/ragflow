@@ -98,7 +98,8 @@ class Base(ABC):
 
         yield tk_count
 
-    def image2base64(self, image):
+    @staticmethod
+    def image2base64(image):
         if isinstance(image, bytes):
             return base64.b64encode(image).decode("utf-8")
         if isinstance(image, BytesIO):

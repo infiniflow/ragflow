@@ -29,6 +29,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils import get_uuid
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img
+from rag.llm import GptV4
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -455,6 +456,19 @@ class FileService(CommonService):
 
     @staticmethod
     def parse_docs(file_objs, user_id):
+        exe = ThreadPoolExecutor(max_workers=12)
+        threads = []
+        for file in file_objs:
+            threads.append(exe.submit(FileService.parse, file.filename, file.read(), False))
+
+        res = []
+        for th in threads:
+            res.append(th.result())
+
+        return "\n\n".join(res)
+
+    @staticmethod
+    def parse(filename, blob, img_base64=True):
         from rag.app import audio, email, naive, picture, presentation
 
         def dummy(prog=None, msg=""):
@@ -462,19 +476,12 @@ class FileService(CommonService):
 
         FACTORY = {ParserType.PRESENTATION.value: presentation, ParserType.PICTURE.value: picture, ParserType.AUDIO.value: audio, ParserType.EMAIL.value: email}
         parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text"}
-        exe = ThreadPoolExecutor(max_workers=12)
-        threads = []
-        for file in file_objs:
-            kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": user_id}
-            filetype = filename_type(file.filename)
-            blob = file.read()
-            threads.append(exe.submit(FACTORY.get(FileService.get_parser(filetype, file.filename, ""), naive).chunk, file.filename, blob, **kwargs))
-
-        res = []
-        for th in threads:
-            res.append("\n".join([ck["content_with_weight"] for ck in th.result()]))
-
-        return "\n\n".join(res)
+        kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": current_user.id}
+        file_type = filename_type(filename)
+        if img_base64 and file_type == FileType.VISUAL.value:
+            return GptV4.image2base64(blob)
+        cks = FACTORY.get(FileService.get_parser(filename_type(filename), filename, ""), naive).chunk(filename, blob, **kwargs)
+        return "\n".join([ck["content_with_weight"] for ck in cks])
 
     @staticmethod
     def get_parser(doc_type, filename, default):
@@ -487,4 +494,12 @@ class FileService(CommonService):
         if re.search(r"\.(eml)$", filename):
             return ParserType.EMAIL.value
         return default
+
+    @staticmethod
+    def get_blob(user_id, location):
+        return  STORAGE_IMPL.get(user_id + "-downloads", location)
+
+    @staticmethod
+    def put_blob(user_id, location, blob):
+        return  STORAGE_IMPL.put(user_id + "-downloads", location, blob)
 

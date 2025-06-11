@@ -20,9 +20,11 @@ from copy import deepcopy
 from functools import partial
 from typing import Any, Union
 
-import trio
+from flask_login import current_user
+
 from agent.component import component_class
 from agent.component.base import ComponentBase
+from api.db.services.file_service import FileService
 from api.utils import get_uuid
 
 
@@ -178,7 +180,10 @@ class Canvas:
 
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
-                self.globals[f"sys.{k}"] = kwargs[k]
+                if k == "files":
+                    self.globals[f"sys.{k}"] = self.get_files(kwargs[k])
+                else:
+                    self.globals[f"sys.{k}"] = kwargs[k]
         self.globals["sys.conversation_turns"] += 1
 
         def decorate(event, dt):
@@ -376,4 +381,13 @@ class Canvas:
 
     def get_component_input_elements(self, cpnnm):
         return self.components[cpnnm]["obj"].get_input_elements()
+
+    def get_files(self, files: Union[None, list[dict]]) -> list[str]:
+        if not files:
+            return  []
+        exe = ThreadPoolExecutor(max_workers=5)
+        threads = []
+        for file in files:
+            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"])))
+        return [th.result() for th in threads]
 

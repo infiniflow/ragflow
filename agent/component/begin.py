@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from agent.component.fillup import UserFillUpParam, UserFillUp
+from api.db.services.file_service import FileService
 
 
 class BeginParam(UserFillUpParam):
@@ -34,5 +35,9 @@ class Begin(UserFillUp):
     component_name = "Begin"
 
     def _invoke(self, **kwargs):
-        for k, v in kwargs.get("inputs", {}):
+        for k, v in kwargs.get("inputs", {}).items():
+            if isinstance(v, dict) and v.get("type", "").lower().find("file") >=0:
+                v = self._canvas.get_files(v)
+            else:
+                v = v.get("value")
             self.set_output(k, v)

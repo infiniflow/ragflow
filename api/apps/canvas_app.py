@@ -16,15 +16,17 @@
 import json
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import trio
 from flask import request, Response
 from flask_login import login_required, current_user
 
 from api import settings
-from api.db import FileType
+from api.db import FileType, ParserType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService
 from api.db.services.document_service import DocumentService
+from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.settings import RetCode
@@ -128,6 +130,7 @@ def run():
     query = req.get("query", "")
     files = req.get("files", [])
     inputs = req.get("inputs", {})
+    user_id = req.get("user_id", current_user.id)
     e, cvs = UserCanvasService.get_by_id(req["id"])
     if not e:
         return get_data_error_result(message="canvas not found.")
@@ -145,8 +148,8 @@ def run():
         return server_error_response(e)
 
     def sse():
-        nonlocal cvs
-        for ans in canvas.run(query=query, files=files, user_id=req.get("user_id"), inputs=inputs):
+        nonlocal cvs, user_id
+        for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
             yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
         cvs.dsl = json.loads(str(canvas))
@@ -186,19 +189,22 @@ def reset():
 @manager.route("/upload", methods=["POST"])  # noqa: F821
 @login_required
 def upload():
+    user_id = request.json.get("user_id", current_user.id)
     def structured(filename, filetype, blob, content_type):
+        nonlocal user_id
         if filetype == FileType.PDF.value:
             blob = read_potential_broken_pdf(blob)
 
         location = get_uuid()
-        STORAGE_IMPL.put(current_user.id + "-downloads", location, blob)
+        FileService.put_blob(user_id, location, blob)
+
         return {
             "id": location,
             "name": filename,
             "size": sys.getsizeof(blob),
             "extension": filename.split(".")[-1].lower(),
             "mime_type": content_type,
-            "created_by": current_user.id,
+            "created_by": user_id,
             "created_at": time.time(),
             "preview_url": None
         }
@@ -239,7 +245,7 @@ def upload():
                     filename += ".pdf"
                 return get_json_result(data=structured(filename, "pdf", page.pdf, page.response_headers["content-type"]))
 
-            return get_json_result(data=structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"]))
+            return get_json_result(data=structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], request.json.get("user_id", current_user.id)))
 
         except Exception as e:
             return  server_error_response(e)
@@ -247,7 +253,7 @@ def upload():
     file = request.files['file']
     try:
         DocumentService.check_doc_health(current_user.id, file.filename)
-        return get_json_result(data=structured(file.filename, filename_type(file.filename), file.read(), file.content_type))
+        return get_json_result(data=structured(file.filename, filename_type(file.filename), file.read(), file.content_type, request.json.get("user_id", current_user.id)))
     except Exception as e:
         return  server_error_response(e)
 
