@@ -8,9 +8,16 @@ import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import AgentChatBox from './box';
 
-export function ChatSheet({ visible, hideModal }: IModalProps<any>) {
+export function ChatSheet({ hideModal }: IModalProps<any>) {
   return (
-    <Sheet open={visible} modal={false} onOpenChange={hideModal}>
+    <Sheet
+      open
+      modal={false}
+      onOpenChange={(open) => {
+        console.log('🚀 ~ ChatSheet ~ open:', open);
+        hideModal();
+      }}
+    >
       <SheetTitle className="hidden"></SheetTitle>
       <SheetContent className={cn('top-20 p-0')}>
         <SheetHeader>
