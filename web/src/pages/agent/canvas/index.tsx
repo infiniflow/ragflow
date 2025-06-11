@@ -5,6 +5,7 @@ import {
   ReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { useEffect } from 'react';
 import { ChatSheet } from '../chat/chat-sheet';
 import {
   AgentChatContext,
@@ -106,8 +107,12 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideDrawer,
   });
 
-  const { addEventList, setCurrentMessageId, currentEventListWithoutMessage } =
-    useCacheChatLog();
+  const {
+    addEventList,
+    setCurrentMessageId,
+    currentEventListWithoutMessage,
+    clearEventList,
+  } = useCacheChatLog();
 
   const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
     setCurrentMessageId,
@@ -118,6 +123,12 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   useWatchNodeFormDataChange();
 
   const { addCanvasNode } = useAddNode(reactFlowInstance);
+
+  useEffect(() => {
+    if (!chatVisible) {
+      clearEventList();
+    }
+  }, [chatVisible, clearEventList]);
 
   return (
     <div className={styles.canvasWrapper}>
