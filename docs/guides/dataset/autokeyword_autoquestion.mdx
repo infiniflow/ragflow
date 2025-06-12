@@ -6,11 +6,11 @@ slug: /autokeyword_autoquestion
 # Auto-keyword Auto-question
 import APITable from '@site/src/components/APITable';
 
-Use a chat model to generate keywords and questions from each chunk in the knowledge base.
+Use a chat model to generate keywords or questions from each chunk in the knowledge base.
 
 ---
 
-When selecting a chunking method, you can also enable auto-keyword or auto-question generation to increase retrieval rates. This feature uses a chat model to produce a specified number of keywords and questions from each created chunk, generating a layer of "higher-level information" from the original content.
+When selecting a chunking method, you can also enable auto-keyword or auto-question generation to increase retrieval rates. This feature uses a chat model to produce a specified number of keywords and questions from each created chunk, generating an "additional layer of information" from the original content.
 
 :::caution WARNING
 Enabling this feature increases document indexing time and uses extra tokens, as all created chunks will be sent to the chat model for keyword or question generation.
@@ -23,7 +23,7 @@ Auto-keyword refers to the auto-keyword generation feature of RAGFlow. It uses a
 **Values**:  
 
 - 0: (Default) Disabled.  
-- Between 3 and 5 (invlusive): Recommended if you have chunks of approximately 1,000 characters. 
+- Between 3 and 5 (inclusive): Recommended if you have chunks of approximately 1,000 characters. 
 - 30 (maximum) 
 
 :::tip NOTE
