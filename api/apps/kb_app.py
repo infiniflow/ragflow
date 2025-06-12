@@ -179,7 +179,10 @@ def list_kbs():
     items_per_page = int(request.args.get("page_size", 0))
     parser_id = request.args.get("parser_id")
     orderby = request.args.get("orderby", "create_time")
-    desc = request.args.get("desc", True)
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
 
     req = request.get_json()
     owner_ids = req.get("owner_ids", [])
