@@ -16,6 +16,7 @@ export default defineConfig({
   icons: {},
   hash: true,
   favicons: ['/logo.svg'],
+  headScripts: [{ src: '/iconfont.js', defer: true }],
   clickToComponent: {},
   history: {
     type: 'browser',
