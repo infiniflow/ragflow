@@ -165,11 +165,10 @@ async def release_container(name: str, language: SupportLanguage):
 
 async def allocate_container_blocking(language: SupportLanguage, timeout=10) -> str:
     """Asynchronously allocate an available container"""
-    start_time = time.time()
-    while time.time() - start_time < timeout:
+    start_time = asyncio.get_running_loop().time()
+    while asyncio.get_running_loop().time() - start_time < timeout:
         try:
             name = _CONTAINER_QUEUES[language].get_nowait()
-
             with _CONTAINER_LOCK:
                 if not await container_is_running(name) and not await recreate_container(name, language):
                     continue
