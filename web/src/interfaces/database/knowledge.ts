@@ -25,6 +25,7 @@ export interface IKnowledge {
   embd_id: string;
   nickname: string;
   operator_permission: number;
+  size: number;
 }
 
 export interface IKnowledgeResult {
@@ -103,7 +104,7 @@ export interface IChunk {
   content_with_weight: string;
   doc_id: string;
   doc_name: string;
-  img_id: string;
+  image_id: string;
   important_kwd?: string[];
   question_kwd?: string[]; // keywords
   tag_kwd?: string[];
@@ -128,6 +129,7 @@ export interface ITestingChunk {
   highlight: string;
   positions: number[][];
   docnm_kwd: string;
+  doc_type_kwd: string;
 }
 
 export interface ITestingDocument {

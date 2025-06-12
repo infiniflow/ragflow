@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.18.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.18.0">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.19.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.19.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -137,8 +137,10 @@ releases! 🌟
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-  > If you have not installed Docker on your local machine (Windows, Mac, or Linux),
-  > see [Install Docker Engine](https://docs.docker.com/engine/install/).
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only if you intend to use the code executor (sandbox) feature of RAGFlow.
+
+> [!TIP]
+> If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
 ### 🚀 Start up the server
 
@@ -176,7 +178,7 @@ releases! 🌟
 > All Docker images are built for x86 platforms. We don't currently offer Docker images for ARM64.
 > If you are on an ARM64 platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a Docker image compatible with your system.
 
-   > The command below downloads the `v0.18.0-slim` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.18.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.18.0` for the full edition `v0.18.0`.
+   > The command below downloads the `v0.19.0-slim` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.19.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.19.0` for the full edition `v0.19.0`.
 
    ```bash
    $ cd ragflow/docker
@@ -189,8 +191,8 @@ releases! 🌟
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    |-------------------|-----------------|-----------------------|--------------------------|
-   | v0.18.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.18.0-slim      | &approx;2       | ❌                   | Stable release            |
+   | v0.19.0           | &approx;9       | :heavy_check_mark:    | Stable release           |
+   | v0.19.0-slim      | &approx;2       | ❌                   | Stable release            |
    | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
    | nightly-slim      | &approx;2       | ❌                   | _Unstable_ nightly build  |
 
@@ -296,7 +298,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 1. Install uv, or skip this step if it is already installed:
 
    ```bash
-   pipx install uv
+   pipx install uv pre-commit
    ```
 
 2. Clone the source code and install Python dependencies:
@@ -305,6 +307,8 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv run download_deps.py
+   pre-commit install
    ```
 
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
@@ -316,7 +320,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/.env** to `127.0.0.1`:
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
@@ -325,7 +329,16 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Launch backend service:
+5. If your operating system does not have jemalloc, please install it as follows:
+
+   ```bash
+   # ubuntu
+   sudo apt-get install libjemalloc-dev
+   # centos
+   sudo yum install jemalloc
+   ```
+   
+6. Launch backend service:
 
    ```bash
    source .venv/bin/activate
@@ -333,12 +346,14 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    bash docker/launch_backend_service.sh
    ```
 
-6. Install frontend dependencies:
+7. Install frontend dependencies:
+
    ```bash
    cd web
    npm install
    ```
-7. Launch frontend service:
+
+8. Launch frontend service:
 
    ```bash
    npm run dev
@@ -347,6 +362,13 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _The following output confirms a successful launch of the system:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+
+9. Stop RAGFlow front-end and back-end service after development is complete:
+
+   ```bash
+   pkill -f "ragflow_server.py|task_executor.py"
+   ```
+
 
 ## 📚 Documentation
 
@@ -371,4 +393,4 @@ See the [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214
 ## 🙌 Contributing
 
 RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community.
-If you would like to be a part, review our [Contribution Guidelines](./CONTRIBUTING.md) first.
+If you would like to be a part, review our [Contribution Guidelines](https://ragflow.io/docs/dev/contributing) first.

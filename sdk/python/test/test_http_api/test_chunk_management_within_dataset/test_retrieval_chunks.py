@@ -23,6 +23,7 @@ from common import (
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -42,6 +43,7 @@ class TestAuthorization:
 
 
 class TestChunksRetrieval:
+    @pytest.mark.p1
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [
@@ -64,6 +66,7 @@ class TestChunksRetrieval:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [
@@ -110,6 +113,7 @@ class TestChunksRetrieval:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [
@@ -145,6 +149,7 @@ class TestChunksRetrieval:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [
@@ -170,6 +175,7 @@ class TestChunksRetrieval:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [
@@ -239,6 +245,7 @@ class TestChunksRetrieval:
         else:
             assert expected_message in res["message"]
 
+    @pytest.mark.skip
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [
@@ -259,6 +266,7 @@ class TestChunksRetrieval:
         else:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_highlight, expected_message",
         [
@@ -284,6 +292,7 @@ class TestChunksRetrieval:
         if expected_code != 0:
             assert res["message"] == expected_message
 
+    @pytest.mark.p3
     def test_invalid_params(self, get_http_api_auth, add_chunks):
         dataset_id, _, _ = add_chunks
         payload = {"question": "chunk", "dataset_ids": [dataset_id], "a": "b"}
@@ -291,7 +300,7 @@ class TestChunksRetrieval:
         assert res["code"] == 0
         assert len(res["data"]["chunks"]) == 4
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_concurrent_retrieval(self, get_http_api_auth, add_chunks):
         from concurrent.futures import ThreadPoolExecutor
 

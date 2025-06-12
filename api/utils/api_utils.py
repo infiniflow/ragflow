@@ -19,6 +19,7 @@ import logging
 import random
 import time
 from base64 import b64encode
+from copy import deepcopy
 from functools import wraps
 from hmac import HMAC
 from io import BytesIO
@@ -36,11 +37,13 @@ from flask import (
     request as flask_request,
 )
 from itsdangerous import URLSafeTimedSerializer
+from peewee import OperationalError
 from werkzeug.http import HTTP_STATUS_CODES
 
 from api import settings
 from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
 from api.db.db_models import APIToken
+from api.db.services.llm_service import LLMService, TenantLLMService
 from api.utils import CustomJSONEncoder, get_uuid, json_dumps
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
@@ -322,25 +325,21 @@ def get_error_data_result(
     return jsonify(response)
 
 
-def generate_confirmation_token(tenent_id):
-    serializer = URLSafeTimedSerializer(tenent_id)
-    return "ragflow-" + serializer.dumps(get_uuid(), salt=tenent_id)[2:34]
+def get_error_argument_result(message="Invalid arguments"):
+    return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=message)
 
 
-def valid(permission, valid_permission, chunk_method, valid_chunk_method):
-    if valid_parameter(permission, valid_permission):
-        return valid_parameter(permission, valid_permission)
-    if valid_parameter(chunk_method, valid_chunk_method):
-        return valid_parameter(chunk_method, valid_chunk_method)
+def get_error_permission_result(message="Permission error"):
+    return get_result(code=settings.RetCode.PERMISSION_ERROR, message=message)
 
 
-def valid_parameter(parameter, valid_values):
-    if parameter and parameter not in valid_values:
-        return get_error_data_result(f"'{parameter}' is not in {valid_values}")
+def get_error_operating_result(message="Operating error"):
+    return get_result(code=settings.RetCode.OPERATING_ERROR, message=message)
 
 
-def dataset_readonly_fields(field_name):
-    return field_name in ["chunk_count", "create_date", "create_time", "update_date", "update_time", "created_by", "document_count", "token_num", "status", "tenant_id", "id"]
+def generate_confirmation_token(tenant_id):
+    serializer = URLSafeTimedSerializer(tenant_id)
+    return "ragflow-" + serializer.dumps(get_uuid(), salt=tenant_id)[2:34]
 
 
 def get_parser_config(chunk_method, parser_config):
@@ -349,7 +348,7 @@ def get_parser_config(chunk_method, parser_config):
     if not chunk_method:
         chunk_method = "naive"
     key_mapping = {
-        "naive": {"chunk_token_num": 128, "delimiter": "\\n!?;。；！？", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}},
+        "naive": {"chunk_token_num": 128, "delimiter": r"\n", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}},
         "qa": {"raptor": {"use_raptor": False}},
         "tag": None,
         "resume": None,
@@ -360,7 +359,7 @@ def get_parser_config(chunk_method, parser_config):
         "laws": {"raptor": {"use_raptor": False}},
         "presentation": {"raptor": {"use_raptor": False}},
         "one": None,
-        "knowledge_graph": {"chunk_token_num": 8192, "delimiter": "\\n!?;。；！？", "entity_types": ["organization", "person", "location", "event", "time"]},
+        "knowledge_graph": {"chunk_token_num": 8192, "delimiter": r"\n", "entity_types": ["organization", "person", "location", "event", "time"]},
         "email": None,
         "picture": None,
     }
@@ -368,81 +367,32 @@ def get_parser_config(chunk_method, parser_config):
     return parser_config
 
 
-def get_data_openai(id=None, 
-                    created=None, 
-                    model=None, 
-                    prompt_tokens= 0, 
-                    completion_tokens=0, 
-                    content = None, 
-                    finish_reason= None,
-                    object="chat.completion",
-                    param=None,
+def get_data_openai(
+    id=None,
+    created=None,
+    model=None,
+    prompt_tokens=0,
+    completion_tokens=0,
+    content=None,
+    finish_reason=None,
+    object="chat.completion",
+    param=None,
 ):
-   
-    total_tokens= prompt_tokens + completion_tokens
+    total_tokens = prompt_tokens + completion_tokens
     return {
-        "id":f"{id}",
+        "id": f"{id}",
         "object": object,
         "created": int(time.time()) if created else None,
         "model": model,
-        "param":param,
+        "param": param,
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
-            "completion_tokens_details": {
-                "reasoning_tokens": 0,
-                "accepted_prediction_tokens": 0,
-                "rejected_prediction_tokens": 0
-            }
+            "completion_tokens_details": {"reasoning_tokens": 0, "accepted_prediction_tokens": 0, "rejected_prediction_tokens": 0},
         },
-        "choices": [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": content
-                },
-                "logprobs": None,
-                "finish_reason": finish_reason,
-                "index": 0
-            }
-        ]
-    } 
-def valid_parser_config(parser_config):
-    if not parser_config:
-        return
-    scopes = set(
-        [
-            "chunk_token_num",
-            "delimiter",
-            "raptor",
-            "graphrag",
-            "layout_recognize",
-            "task_page_size",
-            "pages",
-            "html4excel",
-            "auto_keywords",
-            "auto_questions",
-            "tag_kb_ids",
-            "topn_tags",
-            "filename_embd_weight",
-        ]
-    )
-    for k in parser_config.keys():
-        assert k in scopes, f"Abnormal 'parser_config'. Invalid key: {k}"
-
-    assert isinstance(parser_config.get("chunk_token_num", 1), int), "chunk_token_num should be int"
-    assert 1 <= parser_config.get("chunk_token_num", 1) < 100000000, "chunk_token_num should be in range from 1 to 100000000"
-    assert isinstance(parser_config.get("task_page_size", 1), int), "task_page_size should be int"
-    assert 1 <= parser_config.get("task_page_size", 1) < 100000000, "task_page_size should be in range from 1 to 100000000"
-    assert isinstance(parser_config.get("auto_keywords", 1), int), "auto_keywords should be int"
-    assert 0 <= parser_config.get("auto_keywords", 0) < 32, "auto_keywords should be in range from 0 to 32"
-    assert isinstance(parser_config.get("auto_questions", 1), int), "auto_questions should be int"
-    assert 0 <= parser_config.get("auto_questions", 0) < 10, "auto_questions should be in range from 0 to 10"
-    assert isinstance(parser_config.get("topn_tags", 1), int), "topn_tags should be int"
-    assert 0 <= parser_config.get("topn_tags", 0) < 10, "topn_tags should be in range from 0 to 10"
-    assert isinstance(parser_config.get("html4excel", False), bool), "html4excel should be True or False"
-    assert isinstance(parser_config.get("delimiter", ""), str), "delimiter should be str"
+        "choices": [{"message": {"role": "assistant", "content": content}, "logprobs": None, "finish_reason": finish_reason, "index": 0}],
+    }
 
 
 def check_duplicate_ids(ids, id_type="item"):
@@ -472,3 +422,138 @@ def check_duplicate_ids(ids, id_type="item"):
 
     # Return unique IDs and error messages
     return list(set(ids)), duplicate_messages
+
+
+def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, Response | None]:
+    """
+    Verifies availability of an embedding model for a specific tenant.
+
+    Implements a four-stage validation process:
+    1. Model identifier parsing and validation
+    2. System support verification
+    3. Tenant authorization check
+    4. Database operation error handling
+
+    Args:
+        embd_id (str): Unique identifier for the embedding model in format "model_name@factory"
+        tenant_id (str): Tenant identifier for access control
+
+    Returns:
+        tuple[bool, Response | None]:
+        - First element (bool):
+            - True: Model is available and authorized
+            - False: Validation failed
+        - Second element contains:
+            - None on success
+            - Error detail dict on failure
+
+    Raises:
+        ValueError: When model identifier format is invalid
+        OperationalError: When database connection fails (auto-handled)
+
+    Examples:
+        >>> verify_embedding_availability("text-embedding@openai", "tenant_123")
+        (True, None)
+
+        >>> verify_embedding_availability("invalid_model", "tenant_123")
+        (False, {'code': 101, 'message': "Unsupported model: <invalid_model>"})
+    """
+    try:
+        llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(embd_id)
+        if not LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"):
+            return False, get_error_argument_result(f"Unsupported model: <{embd_id}>")
+
+        # Tongyi-Qianwen is added to TenantLLM by default, but remains unusable with empty api_key
+        tenant_llms = TenantLLMService.get_my_llms(tenant_id=tenant_id)
+        is_tenant_model = any(llm["llm_name"] == llm_name and llm["llm_factory"] == llm_factory and llm["model_type"] == "embedding" for llm in tenant_llms)
+
+        is_builtin_model = embd_id in settings.BUILTIN_EMBEDDING_MODELS
+        if not (is_builtin_model or is_tenant_model):
+            return False, get_error_argument_result(f"Unauthorized model: <{embd_id}>")
+    except OperationalError as e:
+        logging.exception(e)
+        return False, get_error_data_result(message="Database operation failed")
+
+    return True, None
+
+
+def deep_merge(default: dict, custom: dict) -> dict:
+    """
+    Recursively merges two dictionaries with priority given to `custom` values.
+
+    Creates a deep copy of the `default` dictionary and iteratively merges nested
+    dictionaries using a stack-based approach. Non-dict values in `custom` will
+    completely override corresponding entries in `default`.
+
+    Args:
+        default (dict): Base dictionary containing default values.
+        custom (dict): Dictionary containing overriding values.
+
+    Returns:
+        dict: New merged dictionary combining values from both inputs.
+
+    Example:
+        >>> from copy import deepcopy
+        >>> default = {"a": 1, "nested": {"x": 10, "y": 20}}
+        >>> custom = {"b": 2, "nested": {"y": 99, "z": 30}}
+        >>> deep_merge(default, custom)
+        {'a': 1, 'b': 2, 'nested': {'x': 10, 'y': 99, 'z': 30}}
+
+        >>> deep_merge({"config": {"mode": "auto"}}, {"config": "manual"})
+        {'config': 'manual'}
+
+    Notes:
+        1. Merge priority is always given to `custom` values at all nesting levels
+        2. Non-dict values (e.g. list, str) in `custom` will replace entire values
+           in `default`, even if the original value was a dictionary
+        3. Time complexity: O(N) where N is total key-value pairs in `custom`
+        4. Recommended for configuration merging and nested data updates
+    """
+    merged = deepcopy(default)
+    stack = [(merged, custom)]
+
+    while stack:
+        base_dict, override_dict = stack.pop()
+
+        for key, val in override_dict.items():
+            if key in base_dict and isinstance(val, dict) and isinstance(base_dict[key], dict):
+                stack.append((base_dict[key], val))
+            else:
+                base_dict[key] = val
+
+    return merged
+
+
+def remap_dictionary_keys(source_data: dict, key_aliases: dict = None) -> dict:
+    """
+    Transform dictionary keys using a configurable mapping schema.
+
+    Args:
+        source_data: Original dictionary to process
+        key_aliases: Custom key transformation rules (Optional)
+            When provided, overrides default key mapping
+            Format: {<original_key>: <new_key>, ...}
+
+    Returns:
+        dict: New dictionary with transformed keys preserving original values
+
+    Example:
+        >>> input_data = {"old_key": "value", "another_field": 42}
+        >>> remap_dictionary_keys(input_data, {"old_key": "new_key"})
+        {'new_key': 'value', 'another_field': 42}
+    """
+    DEFAULT_KEY_MAP = {
+        "chunk_num": "chunk_count",
+        "doc_num": "document_count",
+        "parser_id": "chunk_method",
+        "embd_id": "embedding_model",
+    }
+
+    transformed_data = {}
+    mapping = key_aliases or DEFAULT_KEY_MAP
+
+    for original_key, value in source_data.items():
+        mapped_key = mapping.get(original_key, original_key)
+        transformed_data[mapped_key] = value
+
+    return transformed_data

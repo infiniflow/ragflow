@@ -26,7 +26,7 @@ export interface IOperatorNode {
 }
 
 export declare interface IFlow {
-  avatar?: null | string;
+  avatar?: string;
   canvas_type: null;
   create_date: string;
   create_time: number;
@@ -119,6 +119,12 @@ export interface IRetrievalForm {
   kb_ids: string[];
 }
 
+export interface ICodeForm {
+  inputs?: Array<{ name?: string; component_id?: string }>;
+  lang: string;
+  script?: string;
+}
+
 export type BaseNodeData<TForm extends any> = {
   label: string; // operator type
   name: string; // operator name
@@ -145,6 +151,7 @@ export type IEmailNode = BaseNode;
 export type IIterationNode = BaseNode;
 export type IIterationStartNode = BaseNode;
 export type IKeywordNode = BaseNode;
+export type ICodeNode = BaseNode<ICodeForm>;
 
 export type RAGFlowNodeType =
   | IBeginNode

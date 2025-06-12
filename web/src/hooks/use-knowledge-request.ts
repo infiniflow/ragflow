@@ -1,4 +1,6 @@
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import {
+  IKnowledge,
   IKnowledgeResult,
   INextTestingResult,
 } from '@/interfaces/database/knowledge';
@@ -8,13 +10,12 @@ import kbService, { listDataset } from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { message } from 'antd';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { useSetPaginationParams } from './route-hook';
 
 export const enum KnowledgeApiAction {
   TestRetrieval = 'testRetrieval',
@@ -22,6 +23,7 @@ export const enum KnowledgeApiAction {
   CreateKnowledge = 'createKnowledge',
   DeleteKnowledge = 'deleteKnowledge',
   SaveKnowledge = 'saveKnowledge',
+  FetchKnowledgeDetail = 'fetchKnowledgeDetail',
 }
 
 export const useKnowledgeBaseId = () => {
@@ -32,8 +34,17 @@ export const useKnowledgeBaseId = () => {
 
 export const useTestRetrieval = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
-  const { page, size: pageSize } = useSetPaginationParams();
   const [values, setValues] = useState<ITestRetrievalRequestBody>();
+  const mountedRef = useRef(false);
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const onPaginationChange = useCallback((page: number, pageSize: number) => {
+    setPage(page);
+    setPageSize(pageSize);
+  }, []);
 
   const queryParams = useMemo(() => {
     return {
@@ -41,15 +52,16 @@ export const useTestRetrieval = () => {
       kb_id: values?.kb_id || knowledgeBaseId,
       page,
       size: pageSize,
+      doc_ids: filterValue.doc_ids,
     };
-  }, [knowledgeBaseId, page, pageSize, values]);
+  }, [filterValue, knowledgeBaseId, page, pageSize, values]);
 
   const {
     data,
     isFetching: loading,
     refetch,
   } = useQuery<INextTestingResult>({
-    queryKey: [KnowledgeApiAction.TestRetrieval, queryParams],
+    queryKey: [KnowledgeApiAction.TestRetrieval, queryParams, page, pageSize],
     initialData: {
       chunks: [],
       doc_aggs: [],
@@ -59,19 +71,35 @@ export const useTestRetrieval = () => {
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.retrieval_test(queryParams);
-      console.log('🚀 ~ queryFn: ~ data:', data);
       return data?.data ?? {};
     },
   });
 
-  return { data, loading, setValues, refetch };
+  useEffect(() => {
+    if (mountedRef.current) {
+      refetch();
+    }
+    mountedRef.current = true;
+  }, [page, pageSize, refetch, filterValue]);
+
+  return {
+    data,
+    loading,
+    setValues,
+    refetch,
+    onPaginationChange,
+    page,
+    pageSize,
+    handleFilterSubmit,
+    filterValue,
+  };
 };
 
 export const useFetchNextKnowledgeListByPage = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
-  const [ownerIds, setOwnerIds] = useState<string[]>([]);
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
 
   const { data, isFetching: loading } = useQuery<IKnowledgeResult>({
     queryKey: [
@@ -79,7 +107,7 @@ export const useFetchNextKnowledgeListByPage = () => {
       {
         debouncedSearchString,
         ...pagination,
-        ownerIds,
+        filterValue,
       },
     ],
     initialData: {
@@ -95,7 +123,7 @@ export const useFetchNextKnowledgeListByPage = () => {
           page: pagination.current,
         },
         {
-          owner_ids: ownerIds,
+          owner_ids: filterValue.owner,
         },
       );
 
@@ -111,11 +139,6 @@ export const useFetchNextKnowledgeListByPage = () => {
     [handleInputChange],
   );
 
-  const handleOwnerIdsChange = useCallback((ids: string[]) => {
-    // setPagination({ page: 1 }); // TODO: 这里导致重复请求
-    setOwnerIds(ids);
-  }, []);
-
   return {
     ...data,
     searchString,
@@ -123,8 +146,8 @@ export const useFetchNextKnowledgeListByPage = () => {
     pagination: { ...pagination, total: data?.total },
     setPagination,
     loading,
-    setOwnerIds: handleOwnerIdsChange,
-    ownerIds,
+    filterValue,
+    handleFilterSubmit,
   };
 };
 
@@ -203,4 +226,22 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
   });
 
   return { data, loading, saveKnowledgeConfiguration: mutateAsync };
+};
+
+export const useFetchKnowledgeBaseConfiguration = () => {
+  const { id } = useParams();
+
+  const { data, isFetching: loading } = useQuery<IKnowledge>({
+    queryKey: [KnowledgeApiAction.FetchKnowledgeDetail],
+    initialData: {} as IKnowledge,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await kbService.get_kb_detail({
+        kb_id: id,
+      });
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading };
 };

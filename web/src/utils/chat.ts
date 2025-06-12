@@ -66,3 +66,9 @@ export function setInitialChatVariableEnabledFieldValue(
 ) {
   return field !== ChatVariableEnabledField.MaxTokensEnabled;
 }
+
+const ShowImageFields = ['image', 'table'];
+
+export function showImage(filed?: string) {
+  return ShowImageFields.some((x) => x === filed);
+}

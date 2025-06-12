@@ -99,8 +99,8 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `RAGFLOW-IMAGE`  
   The Docker image edition. Available editions:  
   
-  - `infiniflow/ragflow:v0.18.0-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.18.0`: The RAGFlow Docker image with embedding models including:
+  - `infiniflow/ragflow:v0.19.0-slim` (default): The RAGFlow Docker image without embedding models.  
+  - `infiniflow/ragflow:v0.19.0`: The RAGFlow Docker image with embedding models including:
     - Built-in embedding models:
       - `BAAI/bge-large-zh-v1.5` 
       - `maidalun1020/bce-embedding-base_v1`
@@ -132,6 +132,12 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `MACOS`  
   Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
 
+### User registration
+
+- `REGISTER_ENABLED`
+  - `1`: (Default) Enable user registration.
+  - `0`: Disable user registration.
+
 ## Service configuration
 
 [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
@@ -158,9 +164,52 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 ### `oauth`  
 
-The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.  It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
+The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.
 
-- `github`: The GitHub authentication settings for your application. Visit the [GitHub Developer Settings](https://github.com/settings/developers) page to obtain your client_id and secret_key.
+- `<channel>`: Custom channel ID.
+  - `type`: Authentication type, options include `oauth2`, `oidc`, `github`. Default is `oauth2`, when `issuer` parameter is provided, defaults to `oidc`.
+  - `icon`: Icon ID, options include `github`, `sso`, default is `sso`.
+  - `display_name`: Channel name, defaults to the Title Case format of the channel ID.
+  - `client_id`: Required, unique identifier assigned to the client application.
+  - `client_secret`: Required, secret key for the client application, used for communication with the authentication server.
+  - `authorization_url`: Base URL for obtaining user authorization.
+  - `token_url`: URL for exchanging authorization code and obtaining access token.
+  - `userinfo_url`: URL for obtaining user information (username, email, etc.).
+  - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
+  - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
+  - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/v1/user/oauth/callback/<channel>`. For local configuration, you can directly use `http://127.0.0.1:80/v1/user/oauth/callback/<channel>`.
+
+:::tip NOTE 
+The following are best practices for configuring various third-party authentication methods. You can configure one or multiple third-party authentication methods for Ragflow:
+```yaml
+oauth:
+  oauth2:
+    display_name: "OAuth2"
+    client_id: "your_client_id"
+    client_secret: "your_client_secret"
+    authorization_url: "https://your-oauth-provider.com/oauth/authorize"
+    token_url: "https://your-oauth-provider.com/oauth/token"
+    userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
+    redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+
+  oidc:
+    display_name: "OIDC"
+    client_id: "your_client_id"
+    client_secret: "your_client_secret"
+    issuer: "https://your-oauth-provider.com/oidc"
+    scope: "openid email profile"
+    redirect_uri: "https://your-app.com/v1/user/oauth/callback/oidc"
+
+  github:
+    # https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app
+    type: "github"
+    icon: "github"
+    display_name: "Github"
+    client_id: "your_client_id"
+    client_secret: "your_client_secret"
+    redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
+```
+:::
 
 ### `user_default_llm`  
 

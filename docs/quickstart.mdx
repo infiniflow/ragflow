@@ -29,6 +29,11 @@ If you are on an ARM platform, follow [this guide](./develop/build_docker_image.
 - RAM &ge; 16 GB;
 - Disk &ge; 50 GB;
 - Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1.
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only if you intend to use the code executor (sandbox) feature of RAGFlow.
+
+:::tip NOTE
+If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
+:::
 
 ## Start up the server
 
@@ -39,7 +44,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abnormal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation.
 
-   RAGFlow v0.18.0 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.19.0 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -179,13 +184,13 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    $ cd ragflow/docker
-   $ git checkout -f v0.18.0
+   $ git checkout -f v0.19.0
    ```
 
 3. Use the pre-built Docker images and start up the server:
 
    :::tip NOTE
-   The command below downloads the `v0.18.0-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.18.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.18.0` for the full edition `v0.18.0`.
+   The command below downloads the `v0.19.0-slim` edition of the RAGFlow Docker image. Refer to the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.19.0-slim`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server. For example: set `RAGFLOW_IMAGE=infiniflow/ragflow:v0.19.0` for the full edition `v0.19.0`.
    :::
 
    ```bash
@@ -200,16 +205,25 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 <APITable>
 ```
 
-| RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages? | Stable?                  |
+| RAGFlow image tag   | Image size (GB) | Has embedding models and Python packages?:collision: | Stable?                  |
 | ------------------- | --------------- | ----------------------------------------- | ------------------------ |
-| `v0.18.0`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
-| `v0.18.0-slim`      | &approx;2       | ❌                                        | Stable release           |
+| `v0.19.0`           | &approx;9       | :heavy_check_mark:                        | Stable release           |
+| `v0.19.0-slim`      | &approx;2       | ❌                                        | Stable release           |
 | `nightly`           | &approx;9       | :heavy_check_mark:                        | *Unstable* nightly build |
 | `nightly-slim`      | &approx;2       | ❌                                        | *Unstable* nightly build |
 
 ```mdx-code-block
 </APITable>
 ```
+
+:::danger IMPORTANT
+:collision: The embedding models included in `v0.19.0` and `nightly` are:
+
+- BAAI/bge-large-zh-v1.5
+- maidalun1020/bce-embedding-base_v1
+
+Please note these two embedding models support both English and Chinese. If your knowledge base contains other languages, the performance may be COMPROMISED.
+:::
 
 4. Check the server status after having the server up and running:
 
@@ -229,7 +243,9 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
     * Running on all addresses (0.0.0.0)
    ```
 
-   > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.  
+:::danger IMPORTANT
+If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anomaly` error because, at that moment, your RAGFlow may not be fully initialized.
+:::  
 
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
@@ -285,7 +301,7 @@ To create your first knowledge base:
 
    ![knowledge base configuration](https://github.com/infiniflow/ragflow/assets/93570324/384c671a-8b9c-468c-b1c9-1401128a9b65)
 
-3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunk method (template) for your knowledge base. 
+3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunking method (template) for your knowledge base. 
 
 :::danger IMPORTANT 
 Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific knowledge base are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space). 

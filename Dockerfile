@@ -59,7 +59,8 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y libatk-bridge2.0-0 && \
     apt install -y libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev && \
     apt install -y libjemalloc-dev && \
-    apt install -y python3-pip pipx nginx unzip curl wget git vim less
+    apt install -y python3-pip pipx nginx unzip curl wget git vim less && \
+    apt install -y ghostscript
 
 RUN if [ "$NEED_MIRROR" == "1" ]; then \
         pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
@@ -199,6 +200,7 @@ COPY graphrag graphrag
 COPY agentic_reasoning agentic_reasoning
 COPY pyproject.toml uv.lock ./
 COPY mcp mcp
+COPY plugin plugin
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./

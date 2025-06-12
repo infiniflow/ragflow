@@ -16,7 +16,6 @@
 
 import logging
 import json
-import math
 import re
 from collections import defaultdict
 
@@ -78,6 +77,7 @@ class FulltextQueryer:
             " ",
             rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
         ).strip()
+        otxt = txt
         txt = FulltextQueryer.rmWWW(txt)
 
         if not self.isChinese(txt):
@@ -197,6 +197,8 @@ class FulltextQueryer:
 
         if qs:
             query = " OR ".join([f"({t})" for t in qs if t])
+            if not query:
+                query = otxt
             return MatchTextExpr(
                 self.query_fields, query, 100, {"minimum_should_match": min_match}
             ), keywords
@@ -234,11 +236,11 @@ class FulltextQueryer:
         s = 1e-9
         for k, v in qtwt.items():
             if k in dtwt:
-                s += v * dtwt[k]
+                s += v #* dtwt[k]
         q = 1e-9
         for k, v in qtwt.items():
-            q += v * v
-        return math.sqrt(3. * (s / q / math.log10( len(dtwt.keys()) + 512 )))
+            q += v #* v
+        return s/q #math.sqrt(3. * (s / q / math.log10( len(dtwt.keys()) + 512 )))
 
     def paragraph(self, content_tks: str, keywords: list = [], keywords_topn=30):
         if isinstance(content_tks, str):

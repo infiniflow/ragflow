@@ -16,13 +16,27 @@
 import json
 import re
 from functools import partial
+from typing import Any
 import pandas as pd
 from api.db import LLMType
 from api.db.services.conversation_service import structure_answer
 from api.db.services.llm_service import LLMBundle
 from api import settings
 from agent.component.base import ComponentBase, ComponentParamBase
+from plugin import GlobalPluginManager
+from plugin.llm_tool_plugin import llm_tool_metadata_to_openai_tool
+from rag.llm.chat_model import ToolCallSession
 from rag.prompts import message_fit_in
+
+
+class LLMToolPluginCallSession(ToolCallSession):
+    def tool_call(self, name: str, arguments: dict[str, Any]) -> str:
+        tool = GlobalPluginManager.get_llm_tool_by_name(name)
+
+        if tool is None:
+            raise ValueError(f"LLM tool {name} does not exist")
+
+        return tool().invoke(**arguments)
 
 
 class GenerateParam(ComponentParamBase):
@@ -41,6 +55,7 @@ class GenerateParam(ComponentParamBase):
         self.frequency_penalty = 0
         self.cite = True
         self.parameters = []
+        self.llm_enabled_tools = []
 
     def check(self):
         self.check_decimal_float(self.temperature, "[Generate] Temperature")
@@ -133,6 +148,15 @@ class Generate(ComponentBase):
 
     def _run(self, history, **kwargs):
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
+
+        if len(self._param.llm_enabled_tools) > 0:
+            tools = GlobalPluginManager.get_llm_tools_by_names(self._param.llm_enabled_tools)
+
+            chat_mdl.bind_tools(
+                LLMToolPluginCallSession(),
+                [llm_tool_metadata_to_openai_tool(t.get_metadata()) for t in tools]
+            )
+
         prompt = self._param.prompt
 
         retrieval_res = []
@@ -200,8 +224,8 @@ class Generate(ComponentBase):
         if len(msg) < 2:
             msg.append({"role": "user", "content": "Output: "})
         ans = chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf())
-        ans = re.sub(r"<think>.*</think>", "", ans, flags=re.DOTALL)
-
+        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+        self._canvas.set_component_infor(self._id, {"prompt":msg[0]["content"],"messages":  msg[1:],"conf":  self._param.gen_conf()})
         if self._param.cite and "chunks" in retrieval_res.columns:
             res = self.set_cite(retrieval_res, ans)
             return pd.DataFrame([res])
@@ -234,7 +258,7 @@ class Generate(ComponentBase):
         if self._param.cite and "chunks" in retrieval_res.columns:
             res = self.set_cite(retrieval_res, answer)
             yield res
-
+        self._canvas.set_component_infor(self._id, {"prompt":msg[0]["content"],"messages":  msg[1:],"conf":  self._param.gen_conf()})
         self.set_output(Generate.be_output(res))
 
     def debug(self, **kwargs):

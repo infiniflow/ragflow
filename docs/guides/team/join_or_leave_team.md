@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 slug: /join_or_leave_team
 ---
 
@@ -12,9 +12,8 @@ Accept an invite to join a team, decline an invite, or leave a team.
 Once you join a team, you can do the following:
 
 - Upload documents to the team owner's shared datasets (knowledge bases).
-- Update document configurations in the team owner's shared datasets.
-- Update the default configurations for the team owner's shared datasets.
 - Parse documents in the team owner's shared datasets.
+- Use the team owner's shared Agents.
 
 :::tip NOTE
 You cannot invite users to a team unless you are its owner.

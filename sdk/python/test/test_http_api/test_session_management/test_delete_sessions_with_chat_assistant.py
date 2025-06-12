@@ -20,6 +20,7 @@ from common import INVALID_API_TOKEN, batch_add_sessions_with_chat_assistant, de
 from libs.auth import RAGFlowHttpApiAuth
 
 
+@pytest.mark.p1
 class TestAuthorization:
     @pytest.mark.parametrize(
         "auth, expected_code, expected_message",
@@ -39,6 +40,7 @@ class TestAuthorization:
 
 
 class TestSessionWithChatAssistantDelete:
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "chat_assistant_id, expected_code, expected_message",
         [
@@ -59,9 +61,9 @@ class TestSessionWithChatAssistantDelete:
     @pytest.mark.parametrize(
         "payload",
         [
-            lambda r: {"ids": ["invalid_id"] + r},
-            lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:5]},
-            lambda r: {"ids": r + ["invalid_id"]},
+            pytest.param(lambda r: {"ids": ["invalid_id"] + r}, marks=pytest.mark.p3),
+            pytest.param(lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:5]}, marks=pytest.mark.p1),
+            pytest.param(lambda r: {"ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
         ],
     )
     def test_delete_partial_invalid_id(self, get_http_api_auth, add_sessions_with_chat_assistant_func, payload):
@@ -77,6 +79,7 @@ class TestSessionWithChatAssistantDelete:
             assert False, res
         assert len(res["data"]) == 0
 
+    @pytest.mark.p3
     def test_repeated_deletion(self, get_http_api_auth, add_sessions_with_chat_assistant_func):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
         payload = {"ids": session_ids}
@@ -87,6 +90,7 @@ class TestSessionWithChatAssistantDelete:
         assert res["code"] == 102
         assert "The chat doesn't own the session" in res["message"]
 
+    @pytest.mark.p3
     def test_duplicate_deletion(self, get_http_api_auth, add_sessions_with_chat_assistant_func):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
         res = delete_session_with_chat_assistants(get_http_api_auth, chat_assistant_id, {"ids": session_ids * 2})
@@ -99,7 +103,7 @@ class TestSessionWithChatAssistantDelete:
             assert False, res
         assert len(res["data"]) == 0
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_concurrent_deletion(self, get_http_api_auth, add_chat_assistants):
         sessions_num = 100
         _, _, chat_assistant_ids = add_chat_assistants
@@ -118,7 +122,7 @@ class TestSessionWithChatAssistantDelete:
         responses = [f.result() for f in futures]
         assert all(r["code"] == 0 for r in responses)
 
-    @pytest.mark.slow
+    @pytest.mark.p3
     def test_delete_1k(self, get_http_api_auth, add_chat_assistants):
         sessions_num = 1_000
         _, _, chat_assistant_ids = add_chat_assistants
@@ -136,17 +140,11 @@ class TestSessionWithChatAssistantDelete:
         "payload, expected_code, expected_message, remaining",
         [
             pytest.param(None, 0, """TypeError("argument of type \'NoneType\' is not iterable")""", 0, marks=pytest.mark.skip),
-            ({"ids": ["invalid_id"]}, 102, "The chat doesn't own the session invalid_id", 5),
-            pytest.param(
-                "not json",
-                100,
-                """AttributeError("\'str\' object has no attribute \'get\'")""",
-                5,
-                marks=pytest.mark.skip,
-            ),
-            (lambda r: {"ids": r[:1]}, 0, "", 4),
-            (lambda r: {"ids": r}, 0, "", 0),
-            ({"ids": []}, 0, "", 0),
+            pytest.param({"ids": ["invalid_id"]}, 102, "The chat doesn't own the session invalid_id", 5, marks=pytest.mark.p3),
+            pytest.param("not json", 100, """AttributeError("\'str\' object has no attribute \'get\'")""", 5, marks=pytest.mark.skip),
+            pytest.param(lambda r: {"ids": r[:1]}, 0, "", 4, marks=pytest.mark.p3),
+            pytest.param(lambda r: {"ids": r}, 0, "", 0, marks=pytest.mark.p1),
+            pytest.param({"ids": []}, 0, "", 0, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(
