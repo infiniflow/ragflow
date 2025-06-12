@@ -124,6 +124,9 @@ def update():
             return get_data_error_result()
 
         if kb.pagerank != req.get("pagerank", 0):
+            if os.environ.get("DOC_ENGINE", "elasticsearch") != "elasticsearch":
+                return get_data_error_result(message="'pagerank' can only be set when doc_engine is elasticsearch")
+            
             if req.get("pagerank", 0) > 0:
                 settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
                                          search.index_name(kb.tenant_id), kb.id)
