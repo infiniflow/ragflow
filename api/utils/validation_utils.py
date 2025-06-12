@@ -383,7 +383,6 @@ class CreateDatasetReq(Base):
     embedding_model: Annotated[str, StringConstraints(strip_whitespace=True, max_length=255), Field(default="", serialization_alias="embd_id")]
     permission: PermissionEnum = Field(default=PermissionEnum.me, min_length=1, max_length=16)
     chunk_method: ChunkMethodnEnum = Field(default=ChunkMethodnEnum.naive, min_length=1, max_length=32, serialization_alias="parser_id")
-    pagerank: int = Field(default=0, ge=0, le=100)
     parser_config: ParserConfig | None = Field(default=None)
 
     @field_validator("avatar")
@@ -539,6 +538,7 @@ class CreateDatasetReq(Base):
 class UpdateDatasetReq(CreateDatasetReq):
     dataset_id: str = Field(...)
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(default="")]
+    pagerank: int = Field(default=0, ge=0, le=100)
 
     @field_validator("dataset_id", mode="before")
     @classmethod
