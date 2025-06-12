@@ -40,16 +40,15 @@ class Answer(ComponentBase, ABC):
     component_name = "Answer"
 
     def _run(self, history, **kwargs):
-        pass_begin = bool(kwargs.get("pass_begin", False))
         if kwargs.get("stream"):
-            return partial(self.stream_output, pass_begin=pass_begin)
+            return partial(self.stream_output)
 
-        ans = self.get_input(pass_begin=pass_begin)
+        ans = self.get_input()
         if self._param.post_answers:
             ans = pd.concat([ans, pd.DataFrame([{"content": random.choice(self._param.post_answers)}])], ignore_index=False)
         return ans
 
-    def stream_output(self, pass_begin=False):
+    def stream_output(self):
         res = None
         if hasattr(self, "exception") and self.exception:
             res = {"content": str(self.exception)}
@@ -58,7 +57,7 @@ class Answer(ComponentBase, ABC):
             self.set_output(res)
             return
 
-        stream = self.get_stream_input(pass_begin=pass_begin)
+        stream = self.get_stream_input()
         if isinstance(stream, pd.DataFrame):
             res = stream
             answer = ""
