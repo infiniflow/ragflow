@@ -3,7 +3,7 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { MinusCircleOutlined } from '@ant-design/icons';
 import { Form, Input, Select } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
+import { useBuildVariableOptions } from '../../hooks/use-get-begin-query';
 import { FormCollapse } from '../components/dynamic-input-variable';
 
 type DynamicInputVariableProps = {
@@ -17,10 +17,7 @@ export const DynamicInputVariable = ({
 }: DynamicInputVariableProps) => {
   const { t } = useTranslation();
 
-  const valueOptions = useBuildComponentIdSelectOptions(
-    node?.id,
-    node?.parentId,
-  );
+  const valueOptions = useBuildVariableOptions(node?.id, node?.parentId);
 
   return (
     <FormCollapse title={t('flow.inputVariables')}>
