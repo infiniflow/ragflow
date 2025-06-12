@@ -82,12 +82,12 @@ class TestDocumentsUpdated:
             ),
         ],
     )
-    def test_name(self, api_key, add_documents, name, expected_code, expected_message):
+    def test_name(self, HttpApiAuth, add_documents, name, expected_code, expected_message):
         dataset_id, document_ids = add_documents
-        res = update_document(api_key, dataset_id, document_ids[0], {"name": name})
+        res = update_document(HttpApiAuth, dataset_id, document_ids[0], {"name": name})
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_documents(api_key, dataset_id, {"id": document_ids[0]})
+            res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
             assert res["data"]["docs"][0]["name"] == name
         else:
             assert res["message"] == expected_message
@@ -104,9 +104,9 @@ class TestDocumentsUpdated:
             ),
         ],
     )
-    def test_invalid_document_id(self, api_key, add_documents, document_id, expected_code, expected_message):
+    def test_invalid_document_id(self, HttpApiAuth, add_documents, document_id, expected_code, expected_message):
         dataset_id, _ = add_documents
-        res = update_document(api_key, dataset_id, document_id, {"name": "new_name.txt"})
+        res = update_document(HttpApiAuth, dataset_id, document_id, {"name": "new_name.txt"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -122,9 +122,9 @@ class TestDocumentsUpdated:
             ),
         ],
     )
-    def test_invalid_dataset_id(self, api_key, add_documents, dataset_id, expected_code, expected_message):
+    def test_invalid_dataset_id(self, HttpApiAuth, add_documents, dataset_id, expected_code, expected_message):
         _, document_ids = add_documents
-        res = update_document(api_key, dataset_id, document_ids[0], {"name": "new_name.txt"})
+        res = update_document(HttpApiAuth, dataset_id, document_ids[0], {"name": "new_name.txt"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -133,11 +133,11 @@ class TestDocumentsUpdated:
         "meta_fields, expected_code, expected_message",
         [({"test": "test"}, 0, ""), ("test", 102, "meta_fields must be a dictionary")],
     )
-    def test_meta_fields(self, api_key, add_documents, meta_fields, expected_code, expected_message):
+    def test_meta_fields(self, HttpApiAuth, add_documents, meta_fields, expected_code, expected_message):
         dataset_id, document_ids = add_documents
-        res = update_document(api_key, dataset_id, document_ids[0], {"meta_fields": meta_fields})
+        res = update_document(HttpApiAuth, dataset_id, document_ids[0], {"meta_fields": meta_fields})
         if expected_code == 0:
-            res = list_documents(api_key, dataset_id, {"id": document_ids[0]})
+            res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
             assert res["data"]["docs"][0]["meta_fields"] == meta_fields
         else:
             assert res["message"] == expected_message
@@ -167,12 +167,12 @@ class TestDocumentsUpdated:
             ),
         ],
     )
-    def test_chunk_method(self, api_key, add_documents, chunk_method, expected_code, expected_message):
+    def test_chunk_method(self, HttpApiAuth, add_documents, chunk_method, expected_code, expected_message):
         dataset_id, document_ids = add_documents
-        res = update_document(api_key, dataset_id, document_ids[0], {"chunk_method": chunk_method})
+        res = update_document(HttpApiAuth, dataset_id, document_ids[0], {"chunk_method": chunk_method})
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_documents(api_key, dataset_id, {"id": document_ids[0]})
+            res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
             if chunk_method != "":
                 assert res["data"]["docs"][0]["chunk_method"] == chunk_method
             else:
@@ -287,14 +287,14 @@ class TestDocumentsUpdated:
     )
     def test_invalid_field(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents,
         payload,
         expected_code,
         expected_message,
     ):
         dataset_id, document_ids = add_documents
-        res = update_document(api_key, dataset_id, document_ids[0], payload)
+        res = update_document(HttpApiAuth, dataset_id, document_ids[0], payload)
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -515,7 +515,7 @@ class TestUpdateDocumentParserConfig:
     )
     def test_parser_config(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents,
         chunk_method,
         parser_config,
@@ -524,14 +524,14 @@ class TestUpdateDocumentParserConfig:
     ):
         dataset_id, document_ids = add_documents
         res = update_document(
-            api_key,
+            HttpApiAuth,
             dataset_id,
             document_ids[0],
             {"chunk_method": chunk_method, "parser_config": parser_config},
         )
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_documents(api_key, dataset_id, {"id": document_ids[0]})
+            res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
             if parser_config != {}:
                 for k, v in parser_config.items():
                     assert res["data"]["docs"][0]["parser_config"][k] == v

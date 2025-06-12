@@ -361,6 +361,12 @@
                     "model_type": "embedding"
                 },
                 {
+                    "llm_name": "text-embedding-v4",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8192,
+                    "model_type": "embedding"
+                },
+                {
                     "llm_name": "qwen-vl-max",
                     "tags": "LLM,CHAT,IMAGE2TEXT",
                     "max_tokens": 765,

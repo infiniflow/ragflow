@@ -22,7 +22,7 @@ from utils import wait_for
 
 
 @wait_for(30, 1, "Document parsing timeout")
-def condition(_dataset: DataSet, _document_ids=None):
+def condition(_dataset: DataSet, _document_ids: list[str] = None):
     documents = _dataset.list_documents(page_size=1000)
 
     if _document_ids is None:
@@ -116,17 +116,34 @@ class TestDocumentsParse:
 
 @pytest.mark.p3
 def test_parse_100_files(add_dataset_func, tmp_path):
+    @wait_for(100, 1, "Document parsing timeout")
+    def condition(_dataset: DataSet, _count: int):
+        documents = _dataset.list_documents(page_size=_count * 2)
+        for document in documents:
+            if document.run != "DONE":
+                return False
+        return True
+
+    count = 100
     dataset = add_dataset_func
-    documents = bulk_upload_documents(dataset, 100, tmp_path)
+    documents = bulk_upload_documents(dataset, count, tmp_path)
     document_ids = [doc.id for doc in documents]
 
     dataset.async_parse_documents(document_ids=document_ids)
-    condition(dataset, document_ids)
+    condition(dataset, count)
     validate_document_details(dataset, document_ids)
 
 
 @pytest.mark.p3
 def test_concurrent_parse(add_dataset_func, tmp_path):
+    @wait_for(120, 1, "Document parsing timeout")
+    def condition(_dataset: DataSet, _count: int):
+        documents = _dataset.list_documents(page_size=_count * 2)
+        for document in documents:
+            if document.run != "DONE":
+                return False
+        return True
+
     count = 100
     dataset = add_dataset_func
     documents = bulk_upload_documents(dataset, count, tmp_path)
@@ -141,5 +158,5 @@ def test_concurrent_parse(add_dataset_func, tmp_path):
     responses = list(as_completed(futures))
     assert len(responses) == count, responses
 
-    condition(dataset, document_ids)
+    condition(dataset, count)
     validate_document_details(dataset, document_ids)
