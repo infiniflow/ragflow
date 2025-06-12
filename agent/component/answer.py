@@ -64,13 +64,16 @@ class Answer(ComponentBase, ABC):
             for ii, row in stream.iterrows():
                 answer += row.to_dict()["content"]
                 yield {"content": answer}
-        else:
+        elif stream is not None:
             for st in stream():
                 res = st
                 yield st
-        if self._param.post_answers:
+        if self._param.post_answers and res:
             res["content"] += random.choice(self._param.post_answers)
             yield res
+
+        if res is None:
+            res = {"content": ""}
 
         self.set_output(res)
 
