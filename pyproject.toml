@@ -62,7 +62,7 @@ dependencies = [
     "opencv-python==4.10.0.84",
     "opencv-python-headless==4.10.0.84",
     "openpyxl>=3.1.0,<4.0.0",
-    "opendal>=0.35.0,<0.36.0",
+    "opendal>=0.45.0,<0.46.0",
     "ormsgpack==1.5.0",
     "pandas>=2.2.0,<3.0.0",
     "pdfplumber==0.10.4",
