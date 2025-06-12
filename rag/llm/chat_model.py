@@ -871,7 +871,7 @@ class OllamaChat(Base):
         ctx_size = self._calculate_dynamic_ctx(history)
 
         gen_conf["num_ctx"] = ctx_size
-        response = self.client.chat(model=self.model_name, messages=history, options=gen_conf)
+        response = self.client.chat(model=self.model_name, messages=history, options=gen_conf, keep_alive=-1)
         ans = response["message"]["content"].strip()
         token_count = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
         return ans, token_count
@@ -898,7 +898,7 @@ class OllamaChat(Base):
 
             ans = ""
             try:
-                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options)
+                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options, keep_alive=-1)
                 for resp in response:
                     if resp["done"]:
                         token_count = resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
