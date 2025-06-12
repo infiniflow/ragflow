@@ -13,7 +13,7 @@ Use a chat model to generate keywords and questions from each chunk in the knowl
 When selecting a chunking method, you can also enable auto-keyword or auto-question generation to increase retrieval rates. This feature uses a chat model to produce a specified number of keywords and questions from each created chunk, generating a layer of "higher-level information" from the original content.
 
 :::caution WARNING
-Enabling this feature increases document indexing time, as all created chunks will be sent to the chat model for keyword or question generation.
+Enabling this feature increases document indexing time and uses extra tokens, as all created chunks will be sent to the chat model for keyword or question generation.
 :::
 
 ## What is Auto-keyword?
