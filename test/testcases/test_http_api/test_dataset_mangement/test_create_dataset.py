@@ -394,51 +394,6 @@ class TestDatasetCreate:
         assert res["code"] == 101, res
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
 
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "name, pagerank",
-        [
-            ("pagerank_min", 0),
-            ("pagerank_mid", 50),
-            ("pagerank_max", 100),
-        ],
-        ids=["min", "mid", "max"],
-    )
-    def test_pagerank(self, HttpApiAuth, name, pagerank):
-        payload = {"name": name, "pagerank": pagerank}
-        res = create_dataset(HttpApiAuth, payload)
-        assert res["code"] == 0, res
-        assert res["data"]["pagerank"] == pagerank, res
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "name, pagerank, expected_message",
-        [
-            ("pagerank_min_limit", -1, "Input should be greater than or equal to 0"),
-            ("pagerank_max_limit", 101, "Input should be less than or equal to 100"),
-        ],
-        ids=["min_limit", "max_limit"],
-    )
-    def test_pagerank_invalid(self, HttpApiAuth, name, pagerank, expected_message):
-        payload = {"name": name, "pagerank": pagerank}
-        res = create_dataset(HttpApiAuth, payload)
-        assert res["code"] == 101, res
-        assert expected_message in res["message"], res
-
-    @pytest.mark.p3
-    def test_pagerank_unset(self, HttpApiAuth):
-        payload = {"name": "pagerank_unset"}
-        res = create_dataset(HttpApiAuth, payload)
-        assert res["code"] == 0, res
-        assert res["data"]["pagerank"] == 0, res
-
-    @pytest.mark.p3
-    def test_pagerank_none(self, HttpApiAuth):
-        payload = {"name": "pagerank_unset", "pagerank": None}
-        res = create_dataset(HttpApiAuth, payload)
-        assert res["code"] == 101, res
-        assert "Input should be a valid integer" in res["message"], res
-
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "name, parser_config",
@@ -730,6 +685,7 @@ class TestDatasetCreate:
             {"name": "chunk_count", "chunk_count": 1},
             {"name": "token_num", "token_num": 1},
             {"name": "status", "status": "1"},
+            {"name": "pagerank", "pagerank": 50},
             {"name": "unknown_field", "unknown_field": "unknown_field"},
         ],
     )
