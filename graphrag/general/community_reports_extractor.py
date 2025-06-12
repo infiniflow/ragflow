@@ -89,7 +89,15 @@ class CommunityReportsExtractor(Extractor):
             text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
             gen_conf = {"temperature": 0.3}
             async with chat_limiter:
-                response = await trio.to_thread.run_sync(lambda: self._chat(text, [{"role": "user", "content": "Output:"}], gen_conf))
+                try:
+                    with trio.move_on_after(120) as cancel_scope:
+                        response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
+                    if cancel_scope.cancelled_caught:
+                        logging.warning("extract_community_report._chat timeout, skipping...")
+                        return
+                except Exception as e:
+                    logging.error(f"extract_community_report._chat failed: {e}")
+                    return
             token_count += num_tokens_from_string(text + response)
             response = re.sub(r"^[^\{]*", "", response)
             response = re.sub(r"[^\}]*$", "", response)
