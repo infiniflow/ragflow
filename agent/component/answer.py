@@ -42,7 +42,7 @@ class Answer(ComponentBase, ABC):
     def _run(self, history, **kwargs):
         pass_begin = bool(kwargs.get("pass_begin", False))
         if kwargs.get("stream"):
-            return partial(self.stream_output(pass_begin=pass_begin))
+            return partial(self.stream_output, pass_begin=pass_begin)
 
         ans = self.get_input(pass_begin=pass_begin)
         if self._param.post_answers:
