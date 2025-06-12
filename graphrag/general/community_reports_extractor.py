@@ -93,10 +93,10 @@ class CommunityReportsExtractor(Extractor):
                     with trio.move_on_after(120) as cancel_scope:
                         response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
                     if cancel_scope.cancelled_caught:
-                        logging.warning("extract_community_report._chat timeout, skipping...", CHAT_FAILED)
+                        logging.warning("extract_community_report._chat timeout, skipping...")
                         return
                 except Exception as e:
-                    logging.error(f"extract_community_report._chat failed: {e}", CHAT_FAILED)
+                    logging.error(f"extract_community_report._chat failed: {e}")
                     return
             token_count += num_tokens_from_string(text + response)
             response = re.sub(r"^[^\{]*", "", response)
