@@ -12,7 +12,7 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { ISwitchForm } from '@/interfaces/database/flow';
+import { ISwitchForm } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
@@ -27,6 +27,7 @@ import {
 } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
 import { useBuildComponentIdAndBeginOptions } from '../../hooks/use-get-begin-query';
+import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { IOperatorForm } from '../../interface';
 import { useValues } from './use-values';
 
@@ -40,20 +41,27 @@ type ConditionCardsProps = {
   parentLength: number;
 } & IOperatorForm;
 
+const OperatorIcon = function OperatorIcon({
+  icon,
+  value,
+}: Omit<(typeof SwitchOperatorOptions)[0], 'label'>) {
+  return (
+    <IconFont
+      name={icon}
+      className={cn('size-4', {
+        'rotate-180': value === '>',
+      })}
+    ></IconFont>
+  );
+};
+
 function useBuildSwitchOperatorOptions() {
   const { t } = useTranslation();
 
   const switchOperatorOptions = useMemo(() => {
     return SwitchOperatorOptions.map((x) => ({
       value: x.value,
-      icon: (
-        <IconFont
-          name={x.icon}
-          className={cn('size-4', {
-            'rotate-180': x.value === '>',
-          })}
-        ></IconFont>
-      ),
+      icon: <OperatorIcon icon={x.icon} value={x.value}></OperatorIcon>,
       label: t(`flow.switchOperatorOptions.${x.label}`),
     }));
   }, [t]);
@@ -174,7 +182,7 @@ function ConditionCards({
           className="mt-6"
           onClick={() => append({ operator: switchOperatorOptions[0].value })}
         >
-          add
+          Add
         </BlockButton>
       </div>
     </section>
@@ -183,7 +191,7 @@ function ConditionCards({
 
 const SwitchForm = ({ node }: IOperatorForm) => {
   const { t } = useTranslation();
-  const values = useValues();
+  const values = useValues(node);
   const switchOperatorOptions = useBuildSwitchOperatorOptions();
 
   const FormSchema = z.object({
@@ -233,6 +241,8 @@ const SwitchForm = ({ node }: IOperatorForm) => {
       label: t(`flow.switchLogicOperatorOptions.${x}`),
     }));
   }, [t]);
+
+  useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
@@ -289,7 +299,7 @@ const SwitchForm = ({ node }: IOperatorForm) => {
             })
           }
         >
-          add
+          Add
         </BlockButton>
       </form>
     </Form>
