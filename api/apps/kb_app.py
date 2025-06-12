@@ -79,7 +79,15 @@ def create():
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
 def update():
     req = request.json
+    if not isinstance(req["name"], str):
+        return get_data_error_result(message="Dataset name must be string.")
+    if req["name"].strip() == "":
+        return get_data_error_result(message="Dataset name can't be empty.")
+    if len(req["name"].encode("utf-8")) > DATASET_NAME_LIMIT:
+        return get_data_error_result(
+            message=f"Dataset name length is {len(req['name'])} which is large than {DATASET_NAME_LIMIT}")
     req["name"] = req["name"].strip()
+
     if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
         return get_json_result(
             data=False,
