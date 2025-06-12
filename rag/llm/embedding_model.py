@@ -19,8 +19,6 @@ import threading
 from urllib.parse import urljoin
 
 import requests
-from pecan import response
-from requests.exceptions import JSONDecodeError
 from huggingface_hub import snapshot_download
 from zhipuai import ZhipuAI
 import os
