@@ -100,7 +100,6 @@ RAGFlow.create_dataset(
     embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
     permission: str = "me", 
     chunk_method: str = "naive",
-    pagerank: int = 0,
     parser_config: DataSet.ParserConfig = None
 ) -> DataSet
 ```
@@ -147,10 +146,6 @@ The chunking method of the dataset to create. Available options:
 - `"picture"`: Picture
 - `"one"`: One
 - `"email"`: Email
-
-##### pagerank, `int`
-
-The pagerank of the dataset to create. Defaults to `0`.
 
 ##### parser_config
 

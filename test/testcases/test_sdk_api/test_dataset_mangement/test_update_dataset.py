@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from operator import attrgetter
 
@@ -324,6 +325,7 @@ class TestDatasetUpdate:
             dataset.update({"chunk_method": None})
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(excinfo.value), str(excinfo.value)
 
+    @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
     @pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
     def test_pagerank(self, client, add_dataset_func, pagerank):
@@ -333,6 +335,30 @@ class TestDatasetUpdate:
 
         retrieved_dataset = client.get_dataset(name=dataset.name)
         assert retrieved_dataset.pagerank == pagerank, str(retrieved_dataset)
+
+    @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
+    @pytest.mark.p2
+    def test_pagerank_set_to_0(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        dataset.update({"pagerank": 50})
+        assert dataset.pagerank == 50, str(dataset)
+
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.pagerank == 50, str(retrieved_dataset)
+
+        dataset.update({"pagerank": 0})
+        assert dataset.pagerank == 0, str(dataset)
+
+        retrieved_dataset = client.get_dataset(name=dataset.name)
+        assert retrieved_dataset.pagerank == 0, str(retrieved_dataset)
+
+    @pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="#8208")
+    @pytest.mark.p2
+    def test_pagerank_infinity(self, client, add_dataset_func):
+        dataset = add_dataset_func
+        with pytest.raises(Exception) as excinfo:
+            dataset.update({"pagerank": 50})
+        assert "'pagerank' can only be set when doc_engine is elasticsearch" in str(excinfo.value), str(excinfo.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

@@ -13,11 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import DATASET_NAME_LIMIT, INVALID_API_TOKEN, list_datasets, update_dataset
+from common import list_datasets, update_dataset
+from configs import DATASET_NAME_LIMIT, INVALID_API_TOKEN
 from hypothesis import HealthCheck, example, given, settings
 from libs.auth import RAGFlowHttpApiAuth
 from utils import encode_avatar
@@ -155,10 +157,10 @@ class TestDatasetUpdate:
 
     @pytest.mark.p3
     def test_name_duplicated(self, HttpApiAuth, add_datasets_func):
-        dataset_ids = add_datasets_func[0]
+        dataset_id = add_datasets_func[0]
         name = "dataset_1"
         payload = {"name": name}
-        res = update_dataset(HttpApiAuth, dataset_ids, payload)
+        res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 102, res
         assert res["message"] == f"Dataset name '{name}' already exists", res
 
@@ -425,6 +427,7 @@ class TestDatasetUpdate:
         assert res["code"] == 101, res
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
 
+    @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
     @pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
     def test_pagerank(self, HttpApiAuth, add_dataset_func, pagerank):
@@ -436,6 +439,35 @@ class TestDatasetUpdate:
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["code"] == 0, res
         assert res["data"][0]["pagerank"] == pagerank
+
+    @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
+    @pytest.mark.p2
+    def test_pagerank_set_to_0(self, HttpApiAuth, add_dataset_func):
+        dataset_id = add_dataset_func
+        payload = {"pagerank": 50}
+        res = update_dataset(HttpApiAuth, dataset_id, payload)
+        assert res["code"] == 0, res
+
+        res = list_datasets(HttpApiAuth, {"id": dataset_id})
+        assert res["code"] == 0, res
+        assert res["data"][0]["pagerank"] == 50, res
+
+        payload = {"pagerank": 0}
+        res = update_dataset(HttpApiAuth, dataset_id, payload)
+        assert res["code"] == 0
+
+        res = list_datasets(HttpApiAuth, {"id": dataset_id})
+        assert res["code"] == 0, res
+        assert res["data"][0]["pagerank"] == 0, res
+
+    @pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="#8208")
+    @pytest.mark.p2
+    def test_pagerank_infinity(self, HttpApiAuth, add_dataset_func):
+        dataset_id = add_dataset_func
+        payload = {"pagerank": 50}
+        res = update_dataset(HttpApiAuth, dataset_id, payload)
+        assert res["code"] == 101, res
+        assert res["message"] == "'pagerank' can only be set when doc_engine is elasticsearch", res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
