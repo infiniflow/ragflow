@@ -5,6 +5,7 @@ import {
   IFactory,
   IMyLlmValue,
   IThirdOAIModelCollection as IThirdAiModelCollection,
+  IThirdOAIModel,
   IThirdOAIModelCollection,
 } from '@/interfaces/database/llm';
 import {
@@ -13,10 +14,11 @@ import {
 } from '@/interfaces/request/llm';
 import userService from '@/services/user-service';
 import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/common-util';
+import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Flex, message } from 'antd';
 import { DefaultOptionType } from 'antd/es/select';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export const useFetchLlmList = (
@@ -43,7 +45,7 @@ export const useSelectLlmOptions = () => {
       return {
         label: key,
         options: value.map((x) => ({
-          label: x.llm_name,
+          label: getRealModelName(x.llm_name),
           value: `${x.llm_name}@${x.fid}`,
           disabled: !x.available,
         })),
@@ -54,55 +56,78 @@ export const useSelectLlmOptions = () => {
   return embeddingModelOptions;
 };
 
-const getLLMIconName = (fid: string, llm_name: string) => {
-  if (fid === 'FastEmbed') {
-    return llm_name.split('/').at(0) ?? '';
-  }
-
-  return fid;
-};
+function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
+  return {
+    label: (
+      <Flex align="center" gap={6}>
+        <LlmIcon
+          name={getLLMIconName(x.fid, x.llm_name)}
+          width={26}
+          height={26}
+          size={'small'}
+        />
+        <span>{getRealModelName(x.llm_name)}</span>
+      </Flex>
+    ),
+    value: `${x.llm_name}@${x.fid}`,
+    disabled: !x.available,
+    is_tools: x.is_tools,
+  };
+}
 
 export const useSelectLlmOptionsByModelType = () => {
   const llmInfo: IThirdOAIModelCollection = useFetchLlmList();
 
-  const groupOptionsByModelType = (modelType: LlmModelType) => {
+  const groupImage2TextOptions = useCallback(() => {
+    const modelType = LlmModelType.Image2text;
+    const modelTag = modelType.toUpperCase();
+
     return Object.entries(llmInfo)
-      .filter(([, value]) =>
-        modelType ? value.some((x) => x.model_type.includes(modelType)) : true,
-      )
       .map(([key, value]) => {
         return {
           label: key,
           options: value
             .filter(
               (x) =>
-                (modelType ? x.model_type.includes(modelType) : true) &&
+                (x.model_type.includes(modelType) ||
+                  (x.tags && x.tags.includes(modelTag))) &&
                 x.available,
             )
-            .map((x) => ({
-              label: (
-                <Flex align="center" gap={6}>
-                  <LlmIcon
-                    name={getLLMIconName(x.fid, x.llm_name)}
-                    width={26}
-                    height={26}
-                    size={'small'}
-                  />
-                  <span>{x.llm_name}</span>
-                </Flex>
-              ),
-              value: `${x.llm_name}@${x.fid}`,
-              disabled: !x.available,
-            })),
+            .map(buildLlmOptionsWithIcon),
         };
       })
       .filter((x) => x.options.length > 0);
-  };
+  }, [llmInfo]);
+
+  const groupOptionsByModelType = useCallback(
+    (modelType: LlmModelType) => {
+      return Object.entries(llmInfo)
+        .filter(([, value]) =>
+          modelType
+            ? value.some((x) => x.model_type.includes(modelType))
+            : true,
+        )
+        .map(([key, value]) => {
+          return {
+            label: key,
+            options: value
+              .filter(
+                (x) =>
+                  (modelType ? x.model_type.includes(modelType) : true) &&
+                  x.available,
+              )
+              .map(buildLlmOptionsWithIcon),
+          };
+        })
+        .filter((x) => x.options.length > 0);
+    },
+    [llmInfo],
+  );
 
   return {
     [LlmModelType.Chat]: groupOptionsByModelType(LlmModelType.Chat),
     [LlmModelType.Embedding]: groupOptionsByModelType(LlmModelType.Embedding),
-    [LlmModelType.Image2text]: groupOptionsByModelType(LlmModelType.Image2text),
+    [LlmModelType.Image2text]: groupImage2TextOptions(),
     [LlmModelType.Speech2text]: groupOptionsByModelType(
       LlmModelType.Speech2text,
     ),
@@ -116,7 +141,11 @@ export const useComposeLlmOptionsByModelTypes = (
 ) => {
   const allOptions = useSelectLlmOptionsByModelType();
 
-  return modelTypes.reduce<DefaultOptionType[]>((pre, cur) => {
+  return modelTypes.reduce<
+    (DefaultOptionType & {
+      options: { label: JSX.Element; value: string; disabled: boolean; is_tools: boolean }[];
+    })[]
+  >((pre, cur) => {
     const options = allOptions[cur];
     options.forEach((x) => {
       const item = pre.find((y) => y.label === x.label);
@@ -175,6 +204,7 @@ export const useSelectLlmList = () => {
       name: key,
       logo: factoryList.find((x) => x.name === key)?.logo ?? '',
       ...value,
+      llm: value.llm.map((x) => ({ ...x, name: x.name })),
     }));
   }, [myLlmList, factoryList]);
 

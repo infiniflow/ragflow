@@ -11,6 +11,8 @@ export default {
   user_info: `${api_host}/user/info`,
   tenant_info: `${api_host}/user/tenant_info`,
   set_tenant_info: `${api_host}/user/set_tenant_info`,
+  login_channels: `${api_host}/user/login/channels`,
+  login_channel: (channel: string) => `${api_host}/user/login/${channel}`,
 
   // team
   addTenantUser: (tenantId: string) => `${api_host}/tenant/${tenantId}/user`,
@@ -29,6 +31,9 @@ export default {
   add_llm: `${api_host}/llm/add_llm`,
   delete_llm: `${api_host}/llm/delete_llm`,
   deleteFactory: `${api_host}/llm/delete_factory`,
+
+  // plugin
+  llm_tools: `${api_host}/plugin/llm_tools`,
 
   // knowledge base
   kb_list: `${api_host}/kb/list`,
@@ -119,14 +124,20 @@ export default {
   createSystemToken: `${api_host}/system/new_token`,
   listSystemToken: `${api_host}/system/token_list`,
   removeSystemToken: `${api_host}/system/token`,
+  getSystemConfig: `${api_host}/system/config`,
+  setLangfuseConfig: `${api_host}/langfuse/api_key`,
 
   // flow
   listTemplates: `${api_host}/canvas/templates`,
   listCanvas: `${api_host}/canvas/list`,
+  listCanvasTeam: `${api_host}/canvas/listteam`,
   getCanvas: `${api_host}/canvas/get`,
   getCanvasSSE: `${api_host}/canvas/getsse`,
   removeCanvas: `${api_host}/canvas/rm`,
   setCanvas: `${api_host}/canvas/set`,
+  settingCanvas: `${api_host}/canvas/setting`,
+  getListVersion: `${api_host}/canvas/getlistversion`,
+  getVersion: `${api_host}/canvas/getversion`,
   resetCanvas: `${api_host}/canvas/reset`,
   runCanvas: `${api_host}/canvas/completion`,
   testDbConnect: `${api_host}/canvas/test_db_connect`,

@@ -16,8 +16,11 @@
 
 import os
 import re
+
 import tiktoken
+
 from api.utils.file_utils import get_project_base_directory
+
 
 def singleton(cls, *args, **kw):
     instances = {}
@@ -53,7 +56,7 @@ def findMaxDt(fnm):
         pass
     return m
 
-  
+
 def findMaxTm(fnm):
     m = 0
     try:
@@ -89,3 +92,19 @@ def num_tokens_from_string(string: str) -> int:
 def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
     return encoder.decode(encoder.encode(string)[:max_len])
+
+  
+def clean_markdown_block(text):
+    text = re.sub(r'^\s*```markdown\s*\n?', '', text)
+    text = re.sub(r'\n?\s*```\s*$', '', text)
+    return text.strip()
+
+  
+def get_float(v):
+    if v is None:
+        return float('-inf')
+    try:
+        return float(v)
+    except Exception:
+        return float('-inf')
+

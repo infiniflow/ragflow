@@ -21,9 +21,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
     if [ "$LIGHTEN" != "1" ]; then \
         (tar -cf - \
             /huggingface.co/BAAI/bge-large-zh-v1.5 \
-            /huggingface.co/BAAI/bge-reranker-v2-m3 \
             /huggingface.co/maidalun1020/bce-embedding-base_v1 \
-            /huggingface.co/maidalun1020/bce-reranker-base_v1 \
             | tar -xf - --strip-components=2 -C /root/.ragflow) \
     fi
 
@@ -46,7 +44,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Building C extensions: libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
-        sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
+        sed -i 's|http://ports.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
+        sed -i 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
     fi; \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
@@ -59,14 +58,16 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y default-jdk && \
     apt install -y libatk-bridge2.0-0 && \
     apt install -y libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev && \
-    apt install -y python3-pip pipx nginx unzip curl wget git vim less
+    apt install -y libjemalloc-dev && \
+    apt install -y python3-pip pipx nginx unzip curl wget git vim less && \
+    apt install -y ghostscript
 
 RUN if [ "$NEED_MIRROR" == "1" ]; then \
-        pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-        pip3 config set global.trusted-host pypi.tuna.tsinghua.edu.cn; \
+        pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
+        pip3 config set global.trusted-host mirrors.aliyun.com; \
         mkdir -p /etc/uv && \
         echo "[[index]]" > /etc/uv/uv.toml && \
-        echo 'url = "https://pypi.tuna.tsinghua.edu.cn/simple"' >> /etc/uv/uv.toml && \
+        echo 'url = "https://mirrors.aliyun.com/pypi/simple"' >> /etc/uv/uv.toml && \
         echo "default = true" >> /etc/uv/uv.toml; \
     fi; \
     pipx install uv
@@ -150,9 +151,9 @@ COPY pyproject.toml uv.lock ./
 # uv records index url into uv.lock but doesn't failover among multiple indexes
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
-        sed -i 's|pypi.org|pypi.tuna.tsinghua.edu.cn|g' uv.lock; \
+        sed -i 's|pypi.org|mirrors.aliyun.com/pypi|g' uv.lock; \
     else \
-        sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
+        sed -i 's|mirrors.aliyun.com/pypi|pypi.org|g' uv.lock; \
     fi; \
     if [ "$LIGHTEN" == "1" ]; then \
         uv sync --python 3.10 --frozen; \
@@ -196,10 +197,13 @@ COPY deepdoc deepdoc
 COPY rag rag
 COPY agent agent
 COPY graphrag graphrag
+COPY agentic_reasoning agentic_reasoning
 COPY pyproject.toml uv.lock ./
+COPY mcp mcp
+COPY plugin plugin
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
-COPY docker/entrypoint.sh docker/entrypoint-parser.sh ./
+COPY docker/entrypoint.sh ./
 RUN chmod +x ./entrypoint*.sh
 
 # Copy compiled web pages

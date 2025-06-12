@@ -24,7 +24,7 @@ from rag.utils import singleton
 
 
 @singleton
-class RAGFlowMinio(object):
+class RAGFlowMinio:
     def __init__(self):
         self.conn = None
         self.__open__()
@@ -118,18 +118,3 @@ class RAGFlowMinio(object):
                 time.sleep(1)
         return
 
-
-MINIO = RAGFlowMinio()
-
-if __name__ == "__main__":
-    conn = RAGFlowMinio()
-    fnm = "/opt/home/kevinhu/docgpt/upload/13/11-408.jpg"
-    from PIL import Image
-
-    img = Image.open(fnm)
-    buff = BytesIO()
-    img.save(buff, format='JPEG')
-    print(conn.put("test", "11-408.jpg", buff.getvalue()))
-    bts = conn.get("test", "11-408.jpg")
-    img = Image.open(BytesIO(bts))
-    img.save("test.jpg")

@@ -86,6 +86,7 @@ export interface IReferenceChunk {
   vector_similarity: number;
   term_similarity: number;
   positions: number[];
+  doc_type?: string;
 }
 
 export interface IReference {
@@ -107,6 +108,7 @@ export interface Docagg {
   count: number;
   doc_id: string;
   doc_name: string;
+  url?: string;
 }
 
 // interface Chunk {

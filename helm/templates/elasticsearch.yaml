@@ -3,6 +3,8 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ include "ragflow.fullname" . }}-es-data
+  annotations:
+    "helm.sh/resource-policy": keep
   labels:
     {{- include "ragflow.labels" . | nindent 4 }}
     app.kubernetes.io/component: elasticsearch
@@ -60,7 +62,7 @@ spec:
         command: ["sysctl", "-w", "vm.max_map_count=262144"]
       containers:
       - name: elasticsearch
-        image: docker.elastic.co/elasticsearch/elasticsearch:{{ .Values.env.STACK_VERSION }}
+        image: elasticsearch:{{ .Values.env.STACK_VERSION }}
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config

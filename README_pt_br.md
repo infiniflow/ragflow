@@ -22,7 +22,7 @@
         <img alt="Badge Estático" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.15.1-brightgreen" alt="docker pull infiniflow/ragflow:v0.15.1">
+        <img src="https://img.shields.io/badge/docker_pull-ragflow:v0.19.0-brightgreen" alt="docker pull infiniflow/ragflow:v0.19.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Última%20Relese" alt="Última Versão">
@@ -36,12 +36,12 @@
   <a href="https://ragflow.io/docs/dev/">Documentação</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
-  <a href="https://discord.gg/4XxujFgUN7">Discord</a> |
+  <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
 <details open>
-<summary></b>📕 Índice</b></summary>
+<summary><b>📕 Índice</b></summary>
 
 - 💡 [O que é o RAGFlow?](#-o-que-é-o-ragflow)
 - 🎮 [Demo](#-demo)
@@ -75,10 +75,10 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Últimas Atualizações
 
+- 19-03-2025 Suporta o uso de um modelo multi-modal para entender imagens dentro de arquivos PDF ou DOCX.
+- 28-02-2025 combinado com a pesquisa na Internet (T AVI LY), suporta pesquisas profundas para qualquer LLM.
 - 26-01-2025 Otimize a extração e aplicação de gráficos de conhecimento e forneça uma variedade de opções de configuração.
-- 18-12-2024 Atualiza o modelo de Análise de Layout de Documentos no Deepdoc.
-- 04-12-2024 Adiciona suporte para pontuação de pagerank na base de conhecimento.
-- 22-11-2024 Adiciona mais variáveis para o Agente.
+- 18-12-2024 Atualiza o modelo de Análise de Layout de Documentos no DeepDoc.
 - 01-11-2024 Adiciona extração de palavras-chave e geração de perguntas relacionadas aos blocos analisados para melhorar a precisão da recuperação.
 - 22-08-2024 Suporta conversão de texto para comandos SQL via RAG.
 
@@ -132,7 +132,10 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 - RAM >= 16 GB
 - Disco >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-  > Se você não instalou o Docker na sua máquina local (Windows, Mac ou Linux), veja [Instalar Docker Engine](https://docs.docker.com/engine/install/).
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Necessário apenas se você pretende usar o recurso de executor de código (sandbox) do RAGFlow.
+
+> [!TIP]
+> Se você não instalou o Docker na sua máquina local (Windows, Mac ou Linux), veja [Instalar Docker Engine](https://docs.docker.com/engine/install/).
 
 ### 🚀 Iniciar o servidor
 
@@ -165,19 +168,27 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 3.  Inicie o servidor usando as imagens Docker pré-compiladas:
 
-    > O comando abaixo baixa a edição `v0.15.1-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.15.1-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.15.1` para a edição completa `v0.15.1`.
+> [!CAUTION]
+> Todas as imagens Docker são construídas para plataformas x86. Atualmente, não oferecemos imagens Docker para ARM64.
+> Se você estiver usando uma plataforma ARM64, por favor, utilize [este guia](https://ragflow.io/docs/dev/build_docker_image) para construir uma imagem Docker compatível com o seu sistema.
+
+    > O comando abaixo baixa a edição `v0.19.0-slim` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.19.0-slim`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor. Por exemplo: defina `RAGFLOW_IMAGE=infiniflow/ragflow:v0.19.0` para a edição completa `v0.19.0`.
 
     ```bash
-    $ cd ragflow
-    $ docker compose -f docker/docker-compose.yml up -d
+    $ cd ragflow/docker
+    # Use CPU for embedding and DeepDoc tasks:
+    $ docker compose -f docker-compose.yml up -d
+
+    # To use GPU to accelerate embedding and DeepDoc tasks:
+    # docker compose -f docker-compose-gpu.yml up -d
     ```
 
     | Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                 |
     | --------------------- | ---------------------- | ------------------------------- | ------------------------ |
-    | v0.15.1               | ~9                     | :heavy_check_mark:              | Lançamento estável       |
-    | v0.15.1-slim          | ~2                     | ❌                              | Lançamento estável       |
+    | v0.19.0               | ~9                     | :heavy_check_mark:              | Lançamento estável       |
+    | v0.19.0-slim          | ~2                     | ❌                              | Lançamento estável       |
     | nightly               | ~9                     | :heavy_check_mark:              | _Instável_ build noturno |
-    | nightly-slim          | ~2                     | ❌                              | _Instável_ build noturno |
+    | nightly-slim          | ~2                     | ❌                               | _Instável_ build noturno |
 
 4.  Verifique o status do servidor após tê-lo iniciado:
 
@@ -195,9 +206,6 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
      /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
      * Rodando em todos os endereços (0.0.0.0)
-     * Rodando em http://127.0.0.1:9380
-     * Rodando em http://x.x.x.x:9380
-     INFO:werkzeug:Pressione CTRL+C para sair
     ```
 
     > Se você pular essa etapa de confirmação e acessar diretamente o RAGFlow, seu navegador pode exibir um erro `network anormal`, pois, nesse momento, seu RAGFlow pode não estar totalmente inicializado.
@@ -227,7 +235,7 @@ Para atualizar a porta HTTP de serviço padrão (80), vá até [docker-compose.y
 Atualizações nas configurações acima exigem um reinício de todos os contêineres para que tenham efeito:
 
 > ```bash
-> $ docker compose -f docker/docker-compose.yml up -d
+> $ docker compose -f docker-compose.yml up -d
 > ```
 
 ### Mudar o mecanismo de documentos de Elasticsearch para Infinity
@@ -239,13 +247,13 @@ O RAGFlow usa o Elasticsearch por padrão para armazenar texto completo e vetore
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
-
+   Note: `-v` irá deletar os volumes do contêiner, e os dados existentes serão apagados.
 2. Defina `DOC_ENGINE` no **docker/.env** para `infinity`.
 
 3. Inicie os contêineres:
 
    ```bash
-   $ docker compose -f docker/docker-compose.yml up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
 
 > [!ATENÇÃO]
@@ -258,7 +266,7 @@ Esta imagem tem cerca de 2 GB de tamanho e depende de serviços externos de LLM 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
+docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
 ```
 
 ## 🔧 Criar uma imagem Docker incluindo modelos de incorporação
@@ -268,7 +276,7 @@ Esta imagem tem cerca de 9 GB de tamanho. Como inclui modelos de incorporação,
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build -f Dockerfile -t infiniflow/ragflow:nightly .
+docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 Lançar o serviço a partir do código-fonte para desenvolvimento
@@ -276,7 +284,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 1. Instale o `uv`, ou pule esta etapa se ele já estiver instalado:
 
    ```bash
-   pipx install uv
+   pipx install uv pre-commit
    ```
 
 2. Clone o código-fonte e instale as dependências Python:
@@ -285,6 +293,8 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.10 --all-extras # instala os módulos Python dependentes do RAGFlow
+   uv run download_deps.py
+   pre-commit install
    ```
 
 3. Inicie os serviços dependentes (MinIO, Elasticsearch, Redis e MySQL) usando Docker Compose:
@@ -296,7 +306,7 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    Adicione a seguinte linha ao arquivo `/etc/hosts` para resolver todos os hosts especificados em **docker/.env** para `127.0.0.1`:
 
    ```
-   127.0.0.1       es01 infinity mysql minio redis
+   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 
 4. Se não conseguir acessar o HuggingFace, defina a variável de ambiente `HF_ENDPOINT` para usar um site espelho:
@@ -305,7 +315,16 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
-5. Lance o serviço de back-end:
+5. Se o seu sistema operacional não tiver jemalloc, instale-o da seguinte maneira:
+
+    ```bash
+    # ubuntu
+    sudo apt-get install libjemalloc-dev
+    # centos
+    sudo yum instalar jemalloc
+    ```
+
+6. Lance o serviço de back-end:
 
    ```bash
    source .venv/bin/activate
@@ -313,14 +332,14 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
    bash docker/launch_backend_service.sh
    ```
 
-6. Instale as dependências do front-end:
+7. Instale as dependências do front-end:
 
    ```bash
    cd web
    npm install
    ```
 
-7. Lance o serviço de front-end:
+8. Lance o serviço de front-end:
 
    ```bash
    npm run dev
@@ -330,12 +349,22 @@ docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
+9. Pare os serviços de front-end e back-end do RAGFlow após a conclusão do desenvolvimento:
+
+    ```bash
+    pkill -f "ragflow_server.py|task_executor.py"
+    ```
+
+
 ## 📚 Documentação
 
-- [Início rápido](https://ragflow.io/docs/dev/)
-- [Guia do usuário](https://ragflow.io/docs/dev/category/guides)
-- [Referências](https://ragflow.io/docs/dev/category/references)
-- [FAQ](https://ragflow.io/docs/dev/faq)
+- [Quickstart](https://ragflow.io/docs/dev/)
+- [Configuration](https://ragflow.io/docs/dev/configurations)
+- [Release notes](https://ragflow.io/docs/dev/release_notes)
+- [User guides](https://ragflow.io/docs/dev/category/guides)
+- [Developer guides](https://ragflow.io/docs/dev/category/developers)
+- [References](https://ragflow.io/docs/dev/category/references)
+- [FAQs](https://ragflow.io/docs/dev/faq)
 
 ## 📜 Roadmap
 
@@ -343,11 +372,11 @@ Veja o [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214)
 
 ## 🏄 Comunidade
 
-- [Discord](https://discord.gg/4XxujFgUN7)
+- [Discord](https://discord.gg/NjYzJD3GM3)
 - [Twitter](https://twitter.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 Contribuindo
 
 O RAGFlow prospera por meio da colaboração de código aberto. Com esse espírito, abraçamos contribuições diversas da comunidade.
-Se você deseja fazer parte, primeiro revise nossas [Diretrizes de Contribuição](./CONTRIBUTING.md).
+Se você deseja fazer parte, primeiro revise nossas [Diretrizes de Contribuição](https://ragflow.io/docs/dev/contributing).

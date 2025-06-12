@@ -30,6 +30,8 @@ from docx import Document
 from PIL import Image
 from markdown import markdown
 
+from rag.utils import get_float
+
 
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, callback=None):
@@ -126,8 +128,8 @@ class Pdf(PdfParser):
             section, line_tag = box['text'], self._line_tag(box, zoomin)
             has_bull, index = has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list)
             last_box, last_index, last_bull = box, index, has_bull
-            line_pn = float(line_tag.lstrip('@@').split('\t')[0])
-            line_top = float(line_tag.rstrip('##').split('\t')[3])
+            line_pn = get_float(line_tag.lstrip('@@').split('\t')[0])
+            line_top = get_float(line_tag.rstrip('##').split('\t')[3])
             tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
             if not has_bull:  # No question bullet
                 if not last_q:
@@ -269,7 +271,9 @@ def beAdocPdf(d, q, a, eng, image, poss):
         [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
     d["content_ltks"] = rag_tokenizer.tokenize(q)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["image"] = image
+    if image:
+        d["image"] = image
+        d["doc_type_kwd"] = "image"
     add_positions(d, poss)
     return d
 
@@ -281,7 +285,9 @@ def beAdocDocx(d, q, a, eng, image, row_num=-1):
         [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
     d["content_ltks"] = rag_tokenizer.tokenize(q)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["image"] = image
+    if image:
+        d["image"] = image
+        d["doc_type_kwd"] = "image"
     if row_num >= 0:
         d["top_int"] = [row_num]
     return d

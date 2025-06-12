@@ -1,4 +1,5 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
+import { LLMFactory } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Modal } from 'antd';
 import { useEffect } from 'react';
@@ -18,7 +19,7 @@ type FieldType = {
   group_id?: string;
 };
 
-const modelsWithBaseUrl = ['OpenAI', 'Azure-OpenAI'];
+const modelsWithBaseUrl = [LLMFactory.OpenAI, LLMFactory.AzureOpenAI];
 
 const ApiKeyModal = ({
   visible,
@@ -35,6 +36,12 @@ const ApiKeyModal = ({
     const ret = await form.validateFields();
 
     return onOk(ret);
+  };
+
+  const handleKeyDown = async (e) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
   };
 
   useEffect(() => {
@@ -66,7 +73,7 @@ const ApiKeyModal = ({
           tooltip={t('apiKeyTip')}
           rules={[{ required: true, message: t('apiKeyMessage') }]}
         >
-          <Input />
+          <Input onKeyDown={handleKeyDown} />
         </Form.Item>
         {modelsWithBaseUrl.some((x) => x === llmFactory) && (
           <Form.Item<FieldType>
@@ -74,7 +81,10 @@ const ApiKeyModal = ({
             name="base_url"
             tooltip={t('baseUrlTip')}
           >
-            <Input placeholder="https://api.openai.com/v1" />
+            <Input
+              placeholder="https://api.openai.com/v1"
+              onKeyDown={handleKeyDown}
+            />
           </Form.Item>
         )}
         {llmFactory?.toLowerCase() === 'Minimax'.toLowerCase() && (

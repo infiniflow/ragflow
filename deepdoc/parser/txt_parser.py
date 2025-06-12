@@ -31,6 +31,7 @@ class RAGFlowTxtParser:
             raise TypeError("txt type should be str!")
         cks = [""]
         tk_nums = [0]
+        delimiter = delimiter.encode('utf-8').decode('unicode_escape').encode('latin1').decode('utf-8')
 
         def add_chunk(t):
             nonlocal cks, tk_nums, delimiter
@@ -51,11 +52,13 @@ class RAGFlowTxtParser:
             s = t
         if s < len(delimiter):
             dels.extend(list(delimiter[s:]))
-        dels = [re.escape(d) for d in delimiter if d]
+        dels = [re.escape(d) for d in dels if d]
         dels = [d for d in dels if d]
         dels = "|".join(dels)
         secs = re.split(r"(%s)" % dels, txt)
         for sec in secs:
+            if re.match(f"^{dels}$", sec):
+                continue
             add_chunk(sec)
 
         return [[c, ""] for c in cks]

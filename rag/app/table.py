@@ -20,7 +20,7 @@ from io import BytesIO
 from xpinyin import Pinyin
 import numpy as np
 import pandas as pd
-from openpyxl import load_workbook
+# from openpyxl import load_workbook, Workbook
 from dateutil.parser import parse as datetime_parse
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -33,9 +33,9 @@ class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, from_page=0,
                  to_page=10000000000, callback=None):
         if not binary:
-            wb = load_workbook(fnm)
+            wb = Excel._load_excel_to_workbook(fnm)
         else:
-            wb = load_workbook(BytesIO(binary))
+            wb = Excel._load_excel_to_workbook(BytesIO(binary))
         total = 0
         for sheetname in wb.sheetnames:
             total += len(list(wb[sheetname].rows))
@@ -193,6 +193,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
             if n in df.columns:
                 del df[n]
         clmns = df.columns.values
+        if len(clmns) != len(set(clmns)):
+            duplicates = [col for col in clmns if list(clmns).count(col) > 1]
+            raise ValueError(f"Duplicate column names detected: {set(duplicates)}")
         txts = list(copy.deepcopy(clmns))
         py_clmns = [
             PY.get_pinyins(
@@ -223,7 +226,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000,
                     continue
                 if not str(row[clmns[j]]):
                     continue
-                if pd.isna(row[clmns[j]]):
+                if not isinstance(row[clmns[j]], pd.Series) and pd.isna(row[clmns[j]]):
                     continue
                 fld = clmns_map[j][0]
                 d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(

@@ -15,6 +15,8 @@ on:
       - 'docs/**'
       - '*.md'
       - '*.mdx'
+  schedule:
+    - cron: '0 16 * * *'  # This schedule runs every 16:00:00Z(00:00:00+08:00)
 
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
@@ -32,12 +34,9 @@ jobs:
       # https://github.com/hmarr/debug-action
       #- uses: hmarr/debug-action@v2
 
-      - name: Show PR labels
+      - name: Show who triggered this workflow
         run: |
           echo "Workflow triggered by ${{ github.event_name }}"
-          if [[ ${{ github.event_name }} == 'pull_request' ]]; then
-            echo "PR labels: ${{ join(github.event.pull_request.labels.*.name, ', ') }}"
-          fi
 
       - name: Ensure workspace ownership
         run: echo "chown -R $USER $GITHUB_WORKSPACE" && sudo chown -R $USER $GITHUB_WORKSPACE
@@ -51,10 +50,10 @@ jobs:
 
       # https://github.com/astral-sh/ruff-action
       - name: Static check with Ruff
-        uses: astral-sh/ruff-action@v2
+        uses: astral-sh/ruff-action@v3
         with:
-          version: ">=0.8.2"
-          args: "check --ignore E402"
+          version: ">=0.11.x"
+          args: "check"
 
       - name: Build ragflow:nightly-slim
         run: |
@@ -68,7 +67,7 @@ jobs:
 
       - name: Start ragflow:nightly-slim
         run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
+          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly-slim" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Stop ragflow:nightly-slim
@@ -78,7 +77,7 @@ jobs:
 
       - name: Start ragflow:nightly
         run: |
-          echo "RAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
+          echo -e "\nRAGFLOW_IMAGE=infiniflow/ragflow:nightly" >> docker/.env
           sudo docker compose -f docker/docker-compose.yml up -d
 
       - name: Run sdk tests against Elasticsearch
@@ -89,7 +88,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+          cd sdk/python && uv sync --python 3.10 --group test --frozen && uv pip install . && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
 
       - name: Run frontend api tests against Elasticsearch
         run: |
@@ -99,8 +98,22 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py 
+          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
           
+      - name: Run http api tests against Elasticsearch
+        run: |
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+          export HOST_ADDRESS=http://host.docker.internal:9380
+          until sudo docker exec ragflow-server curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
+            echo "Waiting for service to be available..."
+            sleep 5
+          done
+          if [[ $GITHUB_EVENT_NAME == 'schedule' ]]; then
+            export HTTP_API_TEST_LEVEL=p3
+          else
+            export HTTP_API_TEST_LEVEL=p2
+          fi
+          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL}
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
@@ -119,7 +132,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+          cd sdk/python && uv sync --python 3.10 --group test --frozen && uv pip install . && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
 
       - name: Run frontend api tests against Infinity
         run: |
@@ -129,7 +142,22 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --frozen && uv pip install . && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
+          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
+
+      - name: Run http api tests against Infinity
+        run: |
+          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
+          export HOST_ADDRESS=http://host.docker.internal:9380
+          until sudo docker exec ragflow-server curl -s --connect-timeout 5 ${HOST_ADDRESS} > /dev/null; do
+            echo "Waiting for service to be available..."
+            sleep 5
+          done
+          if [[ $GITHUB_EVENT_NAME == 'schedule' ]]; then
+            export HTTP_API_TEST_LEVEL=p3
+          else
+            export HTTP_API_TEST_LEVEL=p2
+          fi
+          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL}
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed

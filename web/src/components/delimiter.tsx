@@ -30,7 +30,7 @@ const Delimiter = () => {
     <Form.Item
       name={['parser_config', 'delimiter']}
       label={t('knowledgeDetails.delimiter')}
-      initialValue={`\\n!?;。；！？`}
+      initialValue={`\n`}
       rules={[{ required: true }]}
       tooltip={t('knowledgeDetails.delimiterTip')}
     >

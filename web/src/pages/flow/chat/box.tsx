@@ -1,12 +1,12 @@
 import MessageItem from '@/components/message-item';
 import { MessageType } from '@/constants/chat';
-import { useTranslate } from '@/hooks/common-hooks';
 import { useGetFileIcon } from '@/pages/chat/hooks';
 import { buildMessageItemReference } from '@/pages/chat/utils';
-import { Button, Flex, Input, Spin } from 'antd';
+import { Flex, Spin } from 'antd';
 
 import { useSendNextMessage } from './hooks';
 
+import MessageInput from '@/components/message-input';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useFetchFlow } from '@/hooks/flow-hooks';
@@ -24,14 +24,14 @@ const FlowChatBox = () => {
     ref,
     derivedMessages,
     reference,
+    stopOutputMessage,
   } = useSendNextMessage();
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   useGetFileIcon();
-  const { t } = useTranslate('chat');
   const { data: userInfo } = useFetchUserInfo();
-  const { data: cavasInfo } = useFetchFlow();
+  const { data: canvasInfo } = useFetchFlow();
 
   return (
     <>
@@ -50,7 +50,7 @@ const FlowChatBox = () => {
                     key={buildMessageUuidWithRole(message)}
                     nickname={userInfo.nickname}
                     avatar={userInfo.avatar}
-                    avatardialog={cavasInfo.avatar}
+                    avatarDialog={canvasInfo.avatar}
                     item={message}
                     reference={buildMessageItemReference(
                       { message: derivedMessages, reference },
@@ -67,21 +67,16 @@ const FlowChatBox = () => {
           </div>
           <div ref={ref} />
         </Flex>
-        <Input
-          size="large"
-          placeholder={t('sendPlaceholder')}
+        <MessageInput
+          showUploadIcon={false}
           value={value}
-          suffix={
-            <Button
-              type="primary"
-              onClick={handlePressEnter}
-              loading={sendLoading}
-            >
-              {t('send')}
-            </Button>
-          }
+          sendLoading={sendLoading}
+          disabled={false}
+          sendDisabled={sendLoading}
+          conversationId=""
           onPressEnter={handlePressEnter}
-          onChange={handleInputChange}
+          onInputChange={handleInputChange}
+          stopOutputMessage={stopOutputMessage}
         />
       </Flex>
       <PdfDrawer

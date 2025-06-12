@@ -1,6 +1,6 @@
 import { PlusOutlined } from '@ant-design/icons';
 import type { InputRef } from 'antd';
-import { Input, Tag, theme } from 'antd';
+import { Input, Tag, theme, Tooltip } from 'antd';
 import { TweenOneGroup } from 'rc-tween-one';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -50,17 +50,19 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
 
   const forMap = (tag: string) => {
     return (
-      <Tag
-        key={tag}
-        className={styles.tag}
-        closable
-        onClose={(e) => {
-          e.preventDefault();
-          handleClose(tag);
-        }}
-      >
-        {tag}
-      </Tag>
+      <Tooltip title={tag}>
+        <Tag
+          key={tag}
+          className={styles.tag}
+          closable
+          onClose={(e) => {
+            e.preventDefault();
+            handleClose(tag);
+          }}
+        >
+          {tag}
+        </Tag>
+      </Tooltip>
     );
   };
 

@@ -16,8 +16,9 @@
 
 import argparse
 import json
-
+import logging
 import networkx as nx
+import trio
 
 from api import settings
 from api.db import LLMType
@@ -25,39 +26,85 @@ from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import TenantService
-from graphrag.general.index import WithCommunity, Dealer, WithResolution
-from graphrag.light.graph_extractor import GraphExtractor
-from rag.utils.redis_conn import RedisDistributedLock
+from graphrag.general.graph_extractor import GraphExtractor
+from graphrag.general.index import update_graph, with_resolution, with_community
 
 settings.init_settings()
 
-if __name__ == "__main__":
+
+def callback(prog=None, msg="Processing..."):
+    logging.info(msg)
+
+
+async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-t', '--tenant_id', default=False, help="Tenant ID", action='store', required=True)
-    parser.add_argument('-d', '--doc_id', default=False, help="Document ID", action='store', required=True)
+    parser.add_argument(
+        "-t",
+        "--tenant_id",
+        default=False,
+        help="Tenant ID",
+        action="store",
+        required=True,
+    )
+    parser.add_argument(
+        "-d",
+        "--doc_id",
+        default=False,
+        help="Document ID",
+        action="store",
+        required=True,
+    )
     args = parser.parse_args()
     e, doc = DocumentService.get_by_id(args.doc_id)
     if not e:
         raise LookupError("Document not found.")
     kb_id = doc.kb_id
 
-    chunks = [d["content_with_weight"] for d in
-              settings.retrievaler.chunk_list(args.doc_id, args.tenant_id, [kb_id], max_count=6,
-                                              fields=["content_with_weight"])]
-    chunks = [("x", c) for c in chunks]
-
-    RedisDistributedLock.clean_lock(kb_id)
+    chunks = [
+        d["content_with_weight"]
+        for d in settings.retrievaler.chunk_list(
+            args.doc_id,
+            args.tenant_id,
+            [kb_id],
+            max_count=6,
+            fields=["content_with_weight"],
+        )
+    ]
 
     _, tenant = TenantService.get_by_id(args.tenant_id)
     llm_bdl = LLMBundle(args.tenant_id, LLMType.CHAT, tenant.llm_id)
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
 
-    dealer = Dealer(GraphExtractor, args.tenant_id, kb_id, llm_bdl, chunks, "English", embed_bdl=embed_bdl)
-    print(json.dumps(nx.node_link_data(dealer.graph), ensure_ascii=False, indent=2))
+    graph, doc_ids = await update_graph(
+        GraphExtractor,
+        args.tenant_id,
+        kb_id,
+        args.doc_id,
+        chunks,
+        "English",
+        llm_bdl,
+        embed_bdl,
+        callback,
+    )
+    print(json.dumps(nx.node_link_data(graph), ensure_ascii=False, indent=2))
 
-    dealer = WithResolution(args.tenant_id, kb_id, llm_bdl, embed_bdl)
-    dealer = WithCommunity(args.tenant_id, kb_id, llm_bdl, embed_bdl)
+    await with_resolution(
+        args.tenant_id, kb_id, args.doc_id, llm_bdl, embed_bdl, callback
+    )
+    community_structure, community_reports = await with_community(
+        args.tenant_id, kb_id, args.doc_id, llm_bdl, embed_bdl, callback
+    )
 
-    print("------------------ COMMUNITY REPORT ----------------------\n", dealer.community_reports)
-    print(json.dumps(dealer.community_structure, ensure_ascii=False, indent=2))
+    print(
+        "------------------ COMMUNITY STRUCTURE--------------------\n",
+        json.dumps(community_structure, ensure_ascii=False, indent=2),
+    )
+    print(
+        "------------------ COMMUNITY REPORTS----------------------\n",
+        community_reports,
+    )
+
+
+if __name__ == "__main__":
+    trio.run(main)

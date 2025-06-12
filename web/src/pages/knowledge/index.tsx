@@ -38,14 +38,19 @@ const KnowledgeList = () => {
     handleInputChange,
     loading,
   } = useInfiniteFetchKnowledgeList();
-  const nextList = data?.pages?.flatMap((x) => x.kbs) ?? [];
+
+  const nextList = useMemo(() => {
+    const list =
+      data?.pages?.flatMap((x) => (Array.isArray(x.kbs) ? x.kbs : [])) ?? [];
+    return list;
+  }, [data?.pages]);
 
   const total = useMemo(() => {
     return data?.pages.at(-1).total ?? 0;
   }, [data?.pages]);
 
   return (
-    <Flex className={styles.knowledge} vertical flex={1} id="scrollableDiv">
+    <Flex className={styles.knowledge} vertical flex={1}>
       <div className={styles.topWrapper}>
         <div>
           <span className={styles.title}>
@@ -74,33 +79,45 @@ const KnowledgeList = () => {
         </Space>
       </div>
       <Spin spinning={loading}>
-        <InfiniteScroll
-          dataLength={nextList?.length ?? 0}
-          next={fetchNextPage}
-          hasMore={hasNextPage}
-          loader={<Skeleton avatar paragraph={{ rows: 1 }} active />}
-          endMessage={!!total && <Divider plain>{t('noMoreData')} 🤐</Divider>}
-          scrollableTarget="scrollableDiv"
+        <div
+          id="scrollableDiv"
+          style={{
+            height: 'calc(100vh - 250px)',
+            overflow: 'auto',
+            padding: '0 16px',
+          }}
         >
-          <Flex
-            gap={'large'}
-            wrap="wrap"
-            className={styles.knowledgeCardContainer}
+          <InfiniteScroll
+            dataLength={nextList?.length ?? 0}
+            next={fetchNextPage}
+            hasMore={hasNextPage}
+            loader={<Skeleton avatar paragraph={{ rows: 1 }} active />}
+            endMessage={
+              !!total && <Divider plain>{t('noMoreData')} 🤐</Divider>
+            }
+            scrollableTarget="scrollableDiv"
+            scrollThreshold="200px"
           >
-            {nextList?.length > 0 ? (
-              nextList.map((item: any, index: number) => {
-                return (
-                  <KnowledgeCard
-                    item={item}
-                    key={`${item?.name}-${index}`}
-                  ></KnowledgeCard>
-                );
-              })
-            ) : (
-              <Empty className={styles.knowledgeEmpty}></Empty>
-            )}
-          </Flex>
-        </InfiniteScroll>
+            <Flex
+              gap={'large'}
+              wrap="wrap"
+              className={styles.knowledgeCardContainer}
+            >
+              {nextList?.length > 0 ? (
+                nextList.map((item: any, index: number) => {
+                  return (
+                    <KnowledgeCard
+                      item={item}
+                      key={`${item?.name}-${index}`}
+                    ></KnowledgeCard>
+                  );
+                })
+              ) : (
+                <Empty className={styles.knowledgeEmpty}></Empty>
+              )}
+            </Flex>
+          </InfiniteScroll>
+        </div>
       </Spin>
       <KnowledgeCreatingModal
         loading={creatingLoading}

@@ -1,3 +1,6 @@
+import { LanguageList, LanguageMap } from '@/constants/common';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useFetchUserInfo, useSaveSetting } from '@/hooks/user-setting-hooks';
 import {
   getBase64FromUploadFileList,
@@ -16,15 +19,10 @@ import {
   Upload,
   UploadFile,
 } from 'antd';
-import camelCase from 'lodash/camelCase';
 import { useEffect } from 'react';
 import SettingTitle from '../components/setting-title';
 import { TimezoneList } from '../constants';
 import { useValidateSubmittable } from '../hooks';
-
-import { LanguageList } from '@/constants/common';
-import { useTranslate } from '@/hooks/common-hooks';
-import { useChangeLanguage } from '@/hooks/logic-hooks';
 import parentStyles from '../index.less';
 import styles from './index.less';
 
@@ -155,7 +153,7 @@ const UserSettingProfile = () => {
             >
               {LanguageList.map((x) => (
                 <Option value={x} key={x}>
-                  {t(camelCase(x), { keyPrefix: 'common' })}
+                  {LanguageMap[x as keyof typeof LanguageMap]}
                 </Option>
               ))}
             </Select>

@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-class Base(object):
+class Base:
     def __init__(self, rag, res_dict):
         self.rag = rag
         for k, v in res_dict.items():

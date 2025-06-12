@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import json
-import logging
+import os
 
 from flask import request
 from flask_login import login_required, current_user
@@ -24,7 +24,6 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserTenantService
-from api.settings import DOC_ENGINE
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
 from api.utils import get_uuid
 from api.db import StatusEnum, FileSource
@@ -59,6 +58,7 @@ def create():
         status=StatusEnum.VALID.value)
     try:
         req["id"] = get_uuid()
+        req["name"] = dataset_name
         req["tenant_id"] = current_user.id
         req["created_by"] = current_user.id
         e, t = TenantService.get_by_id(current_user.id)
@@ -74,7 +74,7 @@ def create():
 
 @manager.route('/update', methods=['post'])  # noqa: F821
 @login_required
-@validate_request("kb_id", "name", "description", "permission", "parser_id")
+@validate_request("kb_id", "name", "description", "parser_id")
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
 def update():
     req = request.json
@@ -97,10 +97,10 @@ def update():
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
 
-        if req.get("parser_id", "") == "tag" and DOC_ENGINE == "infinity":
+        if req.get("parser_id", "") == "tag" and os.environ.get('DOC_ENGINE', "elasticsearch") == "infinity":
             return get_json_result(
                 data=False,
-                message='The chunk method Tag has not been supported by Infinity yet.',
+                message='The chunking method Tag has not been supported by Infinity yet.',
                 code=settings.RetCode.OPERATING_ERROR
             )
 
@@ -153,29 +153,43 @@ def detail():
         if not kb:
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
+        kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
         return get_json_result(data=kb)
     except Exception as e:
         return server_error_response(e)
 
 
-@manager.route('/list', methods=['GET'])  # noqa: F821
+@manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
 def list_kbs():
     keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 150))
+    page_number = int(request.args.get("page", 0))
+    items_per_page = int(request.args.get("page_size", 0))
     parser_id = request.args.get("parser_id")
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", True)
+
+    req = request.get_json()
+    owner_ids = req.get("owner_ids", [])
     try:
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        kbs, total = KnowledgebaseService.get_by_tenant_ids(
-            [m["tenant_id"] for m in tenants], current_user.id, page_number,
-            items_per_page, orderby, desc, keywords, parser_id)
+        if not owner_ids:
+            tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+            tenants = [m["tenant_id"] for m in tenants]
+            kbs, total = KnowledgebaseService.get_by_tenant_ids(
+                tenants, current_user.id, page_number,
+                items_per_page, orderby, desc, keywords, parser_id)
+        else:
+            tenants = owner_ids
+            kbs, total = KnowledgebaseService.get_by_tenant_ids(
+                tenants, current_user.id, 0,
+                0, orderby, desc, keywords, parser_id)
+            kbs = [kb for kb in kbs if kb["tenant_id"] in tenants]
+            if page_number and items_per_page:
+                kbs = kbs[(page_number-1)*items_per_page:page_number*items_per_page]
+            total = len(kbs)
         return get_json_result(data={"kbs": kbs, "total": total})
     except Exception as e:
         return server_error_response(e)
-
 
 @manager.route('/rm', methods=['post'])  # noqa: F821
 @login_required
@@ -300,11 +314,12 @@ def knowledge_graph(kb_id):
         "kb_id": [kb_id],
         "knowledge_graph_kwd": ["graph"]
     }
+
     obj = {"graph": {}, "mind_map": {}}
-    try:
-        sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
-    except Exception as e:
-        logging.exception(e)
+    if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
+        return get_json_result(data=obj)
+    sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
+    if not len(sres.ids):
         return get_json_result(data=obj)
 
     for id in sres.ids[:1]:
@@ -318,6 +333,22 @@ def knowledge_graph(kb_id):
 
     if "nodes" in obj["graph"]:
         obj["graph"]["nodes"] = sorted(obj["graph"]["nodes"], key=lambda x: x.get("pagerank", 0), reverse=True)[:256]
-    if "edges" in obj["graph"]:
-        obj["graph"]["edges"] = sorted(obj["graph"]["edges"], key=lambda x: x.get("weight", 0), reverse=True)[:128]
+        if "edges" in obj["graph"]:
+            node_id_set = { o["id"] for o in obj["graph"]["nodes"] }
+            filtered_edges = [o for o in obj["graph"]["edges"] if o["source"] != o["target"] and o["source"] in node_id_set and o["target"] in node_id_set]
+            obj["graph"]["edges"] = sorted(filtered_edges, key=lambda x: x.get("weight", 0), reverse=True)[:128]
     return get_json_result(data=obj)
+
+@manager.route('/<kb_id>/knowledge_graph', methods=['DELETE'])  # noqa: F821
+@login_required
+def delete_knowledge_graph(kb_id):
+    if not KnowledgebaseService.accessible(kb_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='No authorization.',
+            code=settings.RetCode.AUTHENTICATION_ERROR
+        )
+    _, kb = KnowledgebaseService.get_by_id(kb_id)
+    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
+
+    return get_json_result(data=True)

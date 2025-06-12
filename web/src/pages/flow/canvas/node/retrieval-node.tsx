@@ -3,10 +3,10 @@ import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
 import { IRetrievalNode } from '@/interfaces/database/flow';
 import { UserOutlined } from '@ant-design/icons';
 import { Handle, NodeProps, Position } from '@xyflow/react';
-import { Avatar, Flex } from 'antd';
+import { Avatar, Button, Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
 import NodeHeader from './node-header';
@@ -20,6 +20,7 @@ export function RetrievalNode({
   const knowledgeBaseIds: string[] = get(data, 'form.kb_ids', []);
   const { theme } = useTheme();
   const { list: knowledgeList } = useFetchKnowledgeList(true);
+  const [showAllKnowledge, setShowAllKnowledge] = useState(false);
   const knowledgeBases = useMemo(() => {
     return knowledgeBaseIds.map((x) => {
       const item = knowledgeList.find((y) => x === y.id);
@@ -31,6 +32,13 @@ export function RetrievalNode({
     });
   }, [knowledgeList, knowledgeBaseIds]);
 
+  const displayedKnowledgeBases = showAllKnowledge
+    ? knowledgeBases
+    : knowledgeBases.slice(0, 3);
+  function showAllItem(e: any) {
+    e.stopPropagation(); // Prevent event from bubbling to parent
+    setShowAllKnowledge(!showAllKnowledge);
+  }
   return (
     <section
       className={classNames(
@@ -66,7 +74,7 @@ export function RetrievalNode({
         })}
       ></NodeHeader>
       <Flex vertical gap={8}>
-        {knowledgeBases.map((knowledge) => {
+        {displayedKnowledgeBases.map((knowledge) => {
           return (
             <div className={styles.nodeText} key={knowledge.id}>
               <Flex align={'center'} gap={6}>
@@ -82,6 +90,25 @@ export function RetrievalNode({
             </div>
           );
         })}
+        {knowledgeBases.length > 3 && (
+          <div className={styles.nodeText}>
+            <Button
+              type="link"
+              size="small"
+              onClick={showAllItem}
+              style={{
+                padding: 0,
+                height: 'auto',
+                lineHeight: '1.5',
+                textAlign: 'left',
+              }}
+            >
+              {showAllKnowledge
+                ? 'Hide'
+                : `Show more ${knowledgeBases.length - 3} knowledge`}
+            </Button>
+          </div>
+        )}
       </Flex>
     </section>
   );

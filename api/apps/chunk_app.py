@@ -19,9 +19,10 @@ import json
 from flask import request
 from flask_login import login_required, current_user
 
-from api.db.services.dialog_service import keyword_extraction, label_question
 from rag.app.qa import rmPrefix, beAdoc
+from rag.app.tag import label_question
 from rag.nlp import search, rag_tokenizer
+from rag.prompts import keyword_extraction, cross_languages
 from rag.settings import PAGERANK_FLD
 from rag.utils import rmSpace
 from api.db import LLMType, ParserType
@@ -34,6 +35,7 @@ from api import settings
 from api.utils.api_utils import get_json_result
 import xxhash
 import re
+
 
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
@@ -93,12 +95,14 @@ def get():
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
-        tenant_id = tenants[0].tenant_id
-
-        kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
-        chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
+        for tenant in tenants:
+            kb_ids = KnowledgebaseService.get_kb_ids(tenant.tenant_id)
+            chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant.tenant_id), kb_ids)
+            if chunk:
+                break
         if chunk is None:
             return server_error_response(Exception("Chunk not found"))
+
         k = []
         for n in chunk.keys():
             if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
@@ -191,6 +195,7 @@ def switch():
 @login_required
 @validate_request("chunk_ids", "doc_id")
 def rm():
+    from rag.utils.storage_factory import STORAGE_IMPL
     req = request.json
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
@@ -201,6 +206,9 @@ def rm():
         deleted_chunk_ids = req["chunk_ids"]
         chunk_number = len(deleted_chunk_ids)
         DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, chunk_number, 0)
+        for cid in deleted_chunk_ids:
+            if STORAGE_IMPL.obj_exist(doc.kb_id, cid):
+                STORAGE_IMPL.rm(doc.kb_id, cid)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -272,6 +280,7 @@ def retrieval_test():
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
+    langs = req.get("cross_languages", [])
     tenant_ids = []
 
     try:
@@ -290,6 +299,9 @@ def retrieval_test():
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_data_error_result(message="Knowledgebase not found!")
+
+        if langs:
+            question = cross_languages(kb.tenant_id, None, question, langs)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
