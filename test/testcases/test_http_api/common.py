@@ -14,15 +14,14 @@
 #  limitations under the License.
 #
 
-import os
 from pathlib import Path
 
 import requests
+from configs import HOST_ADDRESS
 from requests_toolbelt import MultipartEncoder
 from utils.file_utils import create_txt_file
 
 HEADERS = {"Content-Type": "application/json"}
-HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
 DATASETS_API_URL = "/api/v1/datasets"
 FILE_API_URL = "/api/v1/datasets/{dataset_id}/documents"
 FILE_CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/chunks"
@@ -30,12 +29,6 @@ CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks"
 CHAT_ASSISTANT_API_URL = "/api/v1/chats"
 SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
 SESSION_WITH_AGENT_API_URL = "/api/v1/agents/{agent_id}/sessions"
-
-INVALID_API_TOKEN = "invalid_key_123"
-DATASET_NAME_LIMIT = 128
-DOCUMENT_NAME_LIMIT = 128
-CHAT_ASSISTANT_NAME_LIMIT = 255
-SESSION_WITH_CHAT_NAME_LIMIT = 255
 
 
 # DATASET MANAGEMENT

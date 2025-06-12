@@ -17,10 +17,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import (
-    INVALID_API_TOKEN,
-    retrieval_chunks,
-)
+from common import retrieval_chunks
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
