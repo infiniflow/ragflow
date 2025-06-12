@@ -54,14 +54,14 @@ class TestChatAssistantCreate:
             ({"name": "case insensitive"}, 102, "Duplicated chat name in creating chat."),
         ],
     )
-    def test_name(self, api_key, add_chunks, payload, expected_code, expected_message):
+    def test_name(self, HttpApiAuth, add_chunks, payload, expected_code, expected_message):
         payload["dataset_ids"] = []  # issues/
         if payload["name"] == "duplicated_name":
-            create_chat_assistant(api_key, payload)
+            create_chat_assistant(HttpApiAuth, payload)
         elif payload["name"] == "case insensitive":
-            create_chat_assistant(api_key, {"name": payload["name"].upper()})
+            create_chat_assistant(HttpApiAuth, {"name": payload["name"].upper()})
 
-        res = create_chat_assistant(api_key, payload)
+        res = create_chat_assistant(HttpApiAuth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert res["data"]["name"] == payload["name"]
@@ -78,7 +78,7 @@ class TestChatAssistantCreate:
             ("invalid_dataset_id", 102, "You don't own the dataset i"),
         ],
     )
-    def test_dataset_ids(self, api_key, add_chunks, dataset_ids, expected_code, expected_message):
+    def test_dataset_ids(self, HttpApiAuth, add_chunks, dataset_ids, expected_code, expected_message):
         dataset_id, _, _ = add_chunks
         payload = {"name": "ragflow test"}
         if callable(dataset_ids):
@@ -86,7 +86,7 @@ class TestChatAssistantCreate:
         else:
             payload["dataset_ids"] = dataset_ids
 
-        res = create_chat_assistant(api_key, payload)
+        res = create_chat_assistant(HttpApiAuth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert res["data"]["name"] == payload["name"]
@@ -94,10 +94,10 @@ class TestChatAssistantCreate:
             assert res["message"] == expected_message
 
     @pytest.mark.p3
-    def test_avatar(self, api_key, tmp_path):
+    def test_avatar(self, HttpApiAuth, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {"name": "avatar_test", "avatar": encode_avatar(fn), "dataset_ids": []}
-        res = create_chat_assistant(api_key, payload)
+        res = create_chat_assistant(HttpApiAuth, payload)
         assert res["code"] == 0
 
     @pytest.mark.p2
@@ -135,10 +135,10 @@ class TestChatAssistantCreate:
             pytest.param({"unknown": "unknown"}, 0, "", marks=pytest.mark.skip),
         ],
     )
-    def test_llm(self, api_key, add_chunks, llm, expected_code, expected_message):
+    def test_llm(self, HttpApiAuth, add_chunks, llm, expected_code, expected_message):
         dataset_id, _, _ = add_chunks
         payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm}
-        res = create_chat_assistant(api_key, payload)
+        res = create_chat_assistant(HttpApiAuth, payload)
         assert res["code"] == expected_code
         if expected_code == 0:
             if llm:
@@ -202,10 +202,10 @@ class TestChatAssistantCreate:
             pytest.param({"unknown": "unknown"}, 0, "", marks=pytest.mark.skip),
         ],
     )
-    def test_prompt(self, api_key, add_chunks, prompt, expected_code, expected_message):
+    def test_prompt(self, HttpApiAuth, add_chunks, prompt, expected_code, expected_message):
         dataset_id, _, _ = add_chunks
         payload = {"name": "prompt_test", "dataset_ids": [dataset_id], "prompt": prompt}
-        res = create_chat_assistant(api_key, payload)
+        res = create_chat_assistant(HttpApiAuth, payload)
         assert res["code"] == expected_code
         if expected_code == 0:
             if prompt:
@@ -233,9 +233,9 @@ class TestChatAssistantCreate:
 
 class TestChatAssistantCreate2:
     @pytest.mark.p2
-    def test_unparsed_document(self, api_key, add_document):
+    def test_unparsed_document(self, HttpApiAuth, add_document):
         dataset_id, _ = add_document
         payload = {"name": "prompt_test", "dataset_ids": [dataset_id]}
-        res = create_chat_assistant(api_key, payload)
+        res = create_chat_assistant(HttpApiAuth, payload)
         assert res["code"] == 102
         assert "doesn't own parsed file" in res["message"]

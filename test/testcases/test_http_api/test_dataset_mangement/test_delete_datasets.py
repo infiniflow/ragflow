@@ -47,9 +47,9 @@ class TestAuthorization:
 
 class TestRquest:
     @pytest.mark.p3
-    def test_content_type_bad(self, api_key):
+    def test_content_type_bad(self, HttpApiAuth):
         BAD_CONTENT_TYPE = "text/xml"
-        res = delete_datasets(api_key, headers={"Content-Type": BAD_CONTENT_TYPE})
+        res = delete_datasets(HttpApiAuth, headers={"Content-Type": BAD_CONTENT_TYPE})
         assert res["code"] == 101, res
         assert res["message"] == f"Unsupported content type: Expected application/json, got {BAD_CONTENT_TYPE}", res
 
@@ -62,35 +62,35 @@ class TestRquest:
         ],
         ids=["malformed_json_syntax", "invalid_request_payload_type"],
     )
-    def test_payload_bad(self, api_key, payload, expected_message):
-        res = delete_datasets(api_key, data=payload)
+    def test_payload_bad(self, HttpApiAuth, payload, expected_message):
+        res = delete_datasets(HttpApiAuth, data=payload)
         assert res["code"] == 101, res
         assert res["message"] == expected_message, res
 
     @pytest.mark.p3
-    def test_payload_unset(self, api_key):
-        res = delete_datasets(api_key, None)
+    def test_payload_unset(self, HttpApiAuth):
+        res = delete_datasets(HttpApiAuth, None)
         assert res["code"] == 101, res
         assert res["message"] == "Malformed JSON syntax: Missing commas/brackets or invalid encoding", res
 
 
 class TestCapability:
     @pytest.mark.p3
-    def test_delete_dataset_1k(self, api_key):
-        ids = batch_create_datasets(api_key, 1_000)
-        res = delete_datasets(api_key, {"ids": ids})
+    def test_delete_dataset_1k(self, HttpApiAuth):
+        ids = batch_create_datasets(HttpApiAuth, 1_000)
+        res = delete_datasets(HttpApiAuth, {"ids": ids})
         assert res["code"] == 0, res
 
-        res = list_datasets(api_key)
+        res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 0, res
 
     @pytest.mark.p3
-    def test_concurrent_deletion(self, api_key):
+    def test_concurrent_deletion(self, HttpApiAuth):
         count = 1_000
-        ids = batch_create_datasets(api_key, count)
+        ids = batch_create_datasets(HttpApiAuth, count)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(delete_datasets, api_key, {"ids": ids[i : i + 1]}) for i in range(count)]
+            futures = [executor.submit(delete_datasets, HttpApiAuth, {"ids": ids[i : i + 1]}) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
@@ -106,64 +106,64 @@ class TestDatasetsDelete:
         ],
         ids=["single_dataset", "multiple_datasets"],
     )
-    def test_ids(self, api_key, add_datasets_func, func, expected_code, expected_message, remaining):
+    def test_ids(self, HttpApiAuth, add_datasets_func, func, expected_code, expected_message, remaining):
         dataset_ids = add_datasets_func
         if callable(func):
             payload = func(dataset_ids)
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == expected_code, res
 
-        res = list_datasets(api_key)
+        res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == remaining, res
 
     @pytest.mark.p1
     @pytest.mark.usefixtures("add_dataset_func")
-    def test_ids_empty(self, api_key):
+    def test_ids_empty(self, HttpApiAuth):
         payload = {"ids": []}
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
-        res = list_datasets(api_key)
+        res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 1, res
 
     @pytest.mark.p1
     @pytest.mark.usefixtures("add_datasets_func")
-    def test_ids_none(self, api_key):
+    def test_ids_none(self, HttpApiAuth):
         payload = {"ids": None}
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
-        res = list_datasets(api_key)
+        res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 0, res
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
-    def test_id_not_uuid(self, api_key):
+    def test_id_not_uuid(self, HttpApiAuth):
         payload = {"ids": ["not_uuid"]}
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Invalid UUID1 format" in res["message"], res
 
-        res = list_datasets(api_key)
+        res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 1, res
 
     @pytest.mark.p3
     @pytest.mark.usefixtures("add_dataset_func")
-    def test_id_not_uuid1(self, api_key):
+    def test_id_not_uuid1(self, HttpApiAuth):
         payload = {"ids": [uuid.uuid4().hex]}
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Invalid UUID1 format" in res["message"], res
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
-    def test_id_wrong_uuid(self, api_key):
+    def test_id_wrong_uuid(self, HttpApiAuth):
         payload = {"ids": ["d94a8dc02c9711f0930f7fbc369eab6d"]}
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
-        res = list_datasets(api_key)
+        res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 1, res
 
     @pytest.mark.p2
@@ -175,46 +175,46 @@ class TestDatasetsDelete:
             lambda r: {"ids": r + ["d94a8dc02c9711f0930f7fbc369eab6d"]},
         ],
     )
-    def test_ids_partial_invalid(self, api_key, add_datasets_func, func):
+    def test_ids_partial_invalid(self, HttpApiAuth, add_datasets_func, func):
         dataset_ids = add_datasets_func
         if callable(func):
             payload = func(dataset_ids)
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
-        res = list_datasets(api_key)
+        res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 3, res
 
     @pytest.mark.p2
-    def test_ids_duplicate(self, api_key, add_datasets_func):
+    def test_ids_duplicate(self, HttpApiAuth, add_datasets_func):
         dataset_ids = add_datasets_func
         payload = {"ids": dataset_ids + dataset_ids}
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Duplicate ids:" in res["message"], res
 
-        res = list_datasets(api_key)
+        res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 3, res
 
     @pytest.mark.p2
-    def test_repeated_delete(self, api_key, add_datasets_func):
+    def test_repeated_delete(self, HttpApiAuth, add_datasets_func):
         dataset_ids = add_datasets_func
         payload = {"ids": dataset_ids}
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 108, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
-    def test_field_unsupported(self, api_key):
+    def test_field_unsupported(self, HttpApiAuth):
         payload = {"unknown_field": "unknown_field"}
-        res = delete_datasets(api_key, payload)
+        res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Extra inputs are not permitted" in res["message"], res
 
-        res = list_datasets(api_key)
+        res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 1, res

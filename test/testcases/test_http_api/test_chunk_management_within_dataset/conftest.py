@@ -32,16 +32,16 @@ def condition(_auth, _dataset_id):
 
 
 @pytest.fixture(scope="function")
-def add_chunks_func(request, api_key, add_document):
+def add_chunks_func(request, HttpApiAuth, add_document):
     def cleanup():
-        delete_chunks(api_key, dataset_id, document_id, {"chunk_ids": []})
+        delete_chunks(HttpApiAuth, dataset_id, document_id, {"chunk_ids": []})
 
     request.addfinalizer(cleanup)
 
     dataset_id, document_id = add_document
-    parse_documents(api_key, dataset_id, {"document_ids": [document_id]})
-    condition(api_key, dataset_id)
-    chunk_ids = batch_add_chunks(api_key, dataset_id, document_id, 4)
+    parse_documents(HttpApiAuth, dataset_id, {"document_ids": [document_id]})
+    condition(HttpApiAuth, dataset_id)
+    chunk_ids = batch_add_chunks(HttpApiAuth, dataset_id, document_id, 4)
     # issues/6487
     sleep(1)
     return dataset_id, document_id, chunk_ids

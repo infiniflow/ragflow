@@ -48,9 +48,9 @@ class TestAuthorization:
 
 class TestRquest:
     @pytest.mark.p3
-    def test_content_type_bad(self, api_key):
+    def test_content_type_bad(self, HttpApiAuth):
         BAD_CONTENT_TYPE = "text/xml"
-        res = create_dataset(api_key, {"name": "bad_content_type"}, headers={"Content-Type": BAD_CONTENT_TYPE})
+        res = create_dataset(HttpApiAuth, {"name": "bad_content_type"}, headers={"Content-Type": BAD_CONTENT_TYPE})
         assert res["code"] == 101, res
         assert res["message"] == f"Unsupported content type: Expected application/json, got {BAD_CONTENT_TYPE}", res
 
@@ -63,8 +63,8 @@ class TestRquest:
         ],
         ids=["malformed_json_syntax", "invalid_request_payload_type"],
     )
-    def test_payload_bad(self, api_key, payload, expected_message):
-        res = create_dataset(api_key, data=payload)
+    def test_payload_bad(self, HttpApiAuth, payload, expected_message):
+        res = create_dataset(HttpApiAuth, data=payload)
         assert res["code"] == 101, res
         assert res["message"] == expected_message, res
 
@@ -72,17 +72,17 @@ class TestRquest:
 @pytest.mark.usefixtures("clear_datasets")
 class TestCapability:
     @pytest.mark.p3
-    def test_create_dataset_1k(self, api_key):
+    def test_create_dataset_1k(self, HttpApiAuth):
         for i in range(1_000):
             payload = {"name": f"dataset_{i}"}
-            res = create_dataset(api_key, payload)
+            res = create_dataset(HttpApiAuth, payload)
             assert res["code"] == 0, f"Failed to create dataset {i}"
 
     @pytest.mark.p3
-    def test_create_dataset_concurrent(self, api_key):
+    def test_create_dataset_concurrent(self, HttpApiAuth):
         count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(create_dataset, api_key, {"name": f"dataset_{i}"}) for i in range(count)]
+            futures = [executor.submit(create_dataset, HttpApiAuth, {"name": f"dataset_{i}"}) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
@@ -94,8 +94,8 @@ class TestDatasetCreate:
     @given(name=valid_names())
     @example("a" * 128)
     @settings(max_examples=20)
-    def test_name(self, api_key, name):
-        res = create_dataset(api_key, {"name": name})
+    def test_name(self, HttpApiAuth, name):
+        res = create_dataset(HttpApiAuth, {"name": name})
         assert res["code"] == 0, res
         assert res["data"]["name"] == name, res
 
@@ -111,49 +111,49 @@ class TestDatasetCreate:
         ],
         ids=["empty_name", "space_name", "too_long_name", "invalid_name", "None_name"],
     )
-    def test_name_invalid(self, api_key, name, expected_message):
+    def test_name_invalid(self, HttpApiAuth, name, expected_message):
         payload = {"name": name}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p3
-    def test_name_duplicated(self, api_key):
+    def test_name_duplicated(self, HttpApiAuth):
         name = "duplicated_name"
         payload = {"name": name}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 103, res
         assert res["message"] == f"Dataset name '{name}' already exists", res
 
     @pytest.mark.p3
-    def test_name_case_insensitive(self, api_key):
+    def test_name_case_insensitive(self, HttpApiAuth):
         name = "CaseInsensitive"
         payload = {"name": name.upper()}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
         payload = {"name": name.lower()}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 103, res
         assert res["message"] == f"Dataset name '{name.lower()}' already exists", res
 
     @pytest.mark.p2
-    def test_avatar(self, api_key, tmp_path):
+    def test_avatar(self, HttpApiAuth, tmp_path):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {
             "name": "avatar",
             "avatar": f"data:image/png;base64,{encode_avatar(fn)}",
         }
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
 
     @pytest.mark.p2
-    def test_avatar_exceeds_limit_length(self, api_key):
+    def test_avatar_exceeds_limit_length(self, HttpApiAuth):
         payload = {"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "String should have at most 65535 characters" in res["message"], res
 
@@ -168,55 +168,55 @@ class TestDatasetCreate:
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
     )
-    def test_avatar_invalid_prefix(self, api_key, tmp_path, name, prefix, expected_message):
+    def test_avatar_invalid_prefix(self, HttpApiAuth, tmp_path, name, prefix, expected_message):
         fn = create_image_file(tmp_path / "ragflow_test.png")
         payload = {
             "name": name,
             "avatar": f"{prefix}{encode_avatar(fn)}",
         }
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p3
-    def test_avatar_unset(self, api_key):
+    def test_avatar_unset(self, HttpApiAuth):
         payload = {"name": "avatar_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["avatar"] is None, res
 
     @pytest.mark.p3
-    def test_avatar_none(self, api_key):
+    def test_avatar_none(self, HttpApiAuth):
         payload = {"name": "avatar_none", "avatar": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["avatar"] is None, res
 
     @pytest.mark.p2
-    def test_description(self, api_key):
+    def test_description(self, HttpApiAuth):
         payload = {"name": "description", "description": "description"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["description"] == "description", res
 
     @pytest.mark.p2
-    def test_description_exceeds_limit_length(self, api_key):
+    def test_description_exceeds_limit_length(self, HttpApiAuth):
         payload = {"name": "description_exceeds_limit_length", "description": "a" * 65536}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "String should have at most 65535 characters" in res["message"], res
 
     @pytest.mark.p3
-    def test_description_unset(self, api_key):
+    def test_description_unset(self, HttpApiAuth):
         payload = {"name": "description_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["description"] is None, res
 
     @pytest.mark.p3
-    def test_description_none(self, api_key):
+    def test_description_none(self, HttpApiAuth):
         payload = {"name": "description_none", "description": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["description"] is None, res
 
@@ -230,9 +230,9 @@ class TestDatasetCreate:
         ],
         ids=["builtin_baai", "builtin_youdao", "tenant_zhipu"],
     )
-    def test_embedding_model(self, api_key, name, embedding_model):
+    def test_embedding_model(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["embedding_model"] == embedding_model, res
 
@@ -247,9 +247,9 @@ class TestDatasetCreate:
         ],
         ids=["unknown_llm_name", "unknown_llm_factory", "tenant_no_auth_default_tenant_llm", "tenant_no_auth"],
     )
-    def test_embedding_model_invalid(self, api_key, name, embedding_model):
+    def test_embedding_model_invalid(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         if "tenant_no_auth" in name:
             assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
@@ -268,9 +268,9 @@ class TestDatasetCreate:
         ],
         ids=["missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
-    def test_embedding_model_format(self, api_key, name, embedding_model):
+    def test_embedding_model_format(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         if name == "missing_at":
             assert "Embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
@@ -278,16 +278,16 @@ class TestDatasetCreate:
             assert "Both model_name and provider must be non-empty strings" in res["message"], res
 
     @pytest.mark.p2
-    def test_embedding_model_unset(self, api_key):
+    def test_embedding_model_unset(self, HttpApiAuth):
         payload = {"name": "embedding_model_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["embedding_model"] == "BAAI/bge-large-zh-v1.5@BAAI", res
 
     @pytest.mark.p2
-    def test_embedding_model_none(self, api_key):
+    def test_embedding_model_none(self, HttpApiAuth):
         payload = {"name": "embedding_model_none", "embedding_model": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Input should be a valid string" in res["message"], res
 
@@ -303,9 +303,9 @@ class TestDatasetCreate:
         ],
         ids=["me", "team", "me_upercase", "team_upercase", "whitespace"],
     )
-    def test_permission(self, api_key, name, permission):
+    def test_permission(self, HttpApiAuth, name, permission):
         payload = {"name": name, "permission": permission}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["permission"] == permission.lower().strip(), res
 
@@ -319,23 +319,23 @@ class TestDatasetCreate:
         ],
         ids=["empty", "unknown", "type_error"],
     )
-    def test_permission_invalid(self, api_key, name, permission):
+    def test_permission_invalid(self, HttpApiAuth, name, permission):
         payload = {"name": name, "permission": permission}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101
         assert "Input should be 'me' or 'team'" in res["message"]
 
     @pytest.mark.p2
-    def test_permission_unset(self, api_key):
+    def test_permission_unset(self, HttpApiAuth):
         payload = {"name": "permission_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["permission"] == "me", res
 
     @pytest.mark.p3
-    def test_permission_none(self, api_key):
+    def test_permission_none(self, HttpApiAuth):
         payload = {"name": "permission_none", "permission": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Input should be 'me' or 'team'" in res["message"], res
 
@@ -358,9 +358,9 @@ class TestDatasetCreate:
         ],
         ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
     )
-    def test_chunk_method(self, api_key, name, chunk_method):
+    def test_chunk_method(self, HttpApiAuth, name, chunk_method):
         payload = {"name": name, "chunk_method": chunk_method}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["chunk_method"] == chunk_method, res
 
@@ -374,23 +374,23 @@ class TestDatasetCreate:
         ],
         ids=["empty", "unknown", "type_error"],
     )
-    def test_chunk_method_invalid(self, api_key, name, chunk_method):
+    def test_chunk_method_invalid(self, HttpApiAuth, name, chunk_method):
         payload = {"name": name, "chunk_method": chunk_method}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
 
     @pytest.mark.p2
-    def test_chunk_method_unset(self, api_key):
+    def test_chunk_method_unset(self, HttpApiAuth):
         payload = {"name": "chunk_method_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["chunk_method"] == "naive", res
 
     @pytest.mark.p3
-    def test_chunk_method_none(self, api_key):
+    def test_chunk_method_none(self, HttpApiAuth):
         payload = {"name": "chunk_method_none", "chunk_method": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
 
@@ -404,9 +404,9 @@ class TestDatasetCreate:
         ],
         ids=["min", "mid", "max"],
     )
-    def test_pagerank(self, api_key, name, pagerank):
+    def test_pagerank(self, HttpApiAuth, name, pagerank):
         payload = {"name": name, "pagerank": pagerank}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["pagerank"] == pagerank, res
 
@@ -419,23 +419,23 @@ class TestDatasetCreate:
         ],
         ids=["min_limit", "max_limit"],
     )
-    def test_pagerank_invalid(self, api_key, name, pagerank, expected_message):
+    def test_pagerank_invalid(self, HttpApiAuth, name, pagerank, expected_message):
         payload = {"name": name, "pagerank": pagerank}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p3
-    def test_pagerank_unset(self, api_key):
+    def test_pagerank_unset(self, HttpApiAuth):
         payload = {"name": "pagerank_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["pagerank"] == 0, res
 
     @pytest.mark.p3
-    def test_pagerank_none(self, api_key):
+    def test_pagerank_none(self, HttpApiAuth):
         payload = {"name": "pagerank_unset", "pagerank": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Input should be a valid integer" in res["message"], res
 
@@ -543,9 +543,9 @@ class TestDatasetCreate:
             "raptor_random_seed_min",
         ],
     )
-    def test_parser_config(self, api_key, name, parser_config):
+    def test_parser_config(self, HttpApiAuth, name, parser_config):
         payload = {"name": name, "parser_config": parser_config}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         for k, v in parser_config.items():
             if isinstance(v, dict):
@@ -670,16 +670,16 @@ class TestDatasetCreate:
             "parser_config_type_invalid",
         ],
     )
-    def test_parser_config_invalid(self, api_key, name, parser_config, expected_message):
+    def test_parser_config_invalid(self, HttpApiAuth, name, parser_config, expected_message):
         payload = {"name": name, "parser_config": parser_config}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert expected_message in res["message"], res
 
     @pytest.mark.p2
-    def test_parser_config_empty(self, api_key):
+    def test_parser_config_empty(self, HttpApiAuth):
         payload = {"name": "parser_config_empty", "parser_config": {}}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
             "chunk_token_num": 128,
@@ -690,9 +690,9 @@ class TestDatasetCreate:
         }, res
 
     @pytest.mark.p2
-    def test_parser_config_unset(self, api_key):
+    def test_parser_config_unset(self, HttpApiAuth):
         payload = {"name": "parser_config_unset"}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
             "chunk_token_num": 128,
@@ -703,9 +703,9 @@ class TestDatasetCreate:
         }, res
 
     @pytest.mark.p3
-    def test_parser_config_none(self, api_key):
+    def test_parser_config_none(self, HttpApiAuth):
         payload = {"name": "parser_config_none", "parser_config": None}
-        res = create_dataset(api_key, payload)
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["parser_config"] == {
             "chunk_token_num": 128,
@@ -733,7 +733,7 @@ class TestDatasetCreate:
             {"name": "unknown_field", "unknown_field": "unknown_field"},
         ],
     )
-    def test_unsupported_field(self, api_key, payload):
-        res = create_dataset(api_key, payload)
+    def test_unsupported_field(self, HttpApiAuth, payload):
+        res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         assert "Extra inputs are not permitted" in res["message"], res
