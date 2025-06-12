@@ -28,6 +28,7 @@ from yarl import URL
 
 from api import settings
 from api.utils.file_utils import get_home_cache_dir
+from api.utils.log_utils import log_exception
 from rag.utils import num_tokens_from_string, truncate
 import json
 
@@ -170,8 +171,11 @@ class JinaRerank(Base):
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
         rank = np.zeros(len(texts), dtype=float)
-        for d in res["results"]:
-            rank[d["index"]] = d["relevance_score"]
+        try:
+            for d in res["results"]:
+                rank[d["index"]] = d["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, res)
         return rank, self.total_token_count(res)
 
 
@@ -238,8 +242,11 @@ class XInferenceRerank(Base):
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
         rank = np.zeros(len(texts), dtype=float)
-        for d in res["results"]:
-            rank[d["index"]] = d["relevance_score"]
+        try:
+            for d in res["results"]:
+                rank[d["index"]] = d["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, res)
         return rank, token_count
 
 
@@ -269,10 +276,11 @@ class LocalAIRerank(Base):
             token_count += num_tokens_from_string(t)
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
         rank = np.zeros(len(texts), dtype=float)
-        if 'results' not in res:
-            raise ValueError("response not contains results\n" + str(res))
-        for d in res["results"]:
-            rank[d["index"]] = d["relevance_score"]
+        try:
+            for d in res["results"]:
+                rank[d["index"]] = d["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, res)
 
         # Normalize the rank values to the range 0 to 1
         min_rank = np.min(rank)
@@ -322,8 +330,11 @@ class NvidiaRerank(Base):
         }
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
         rank = np.zeros(len(texts), dtype=float)
-        for d in res["rankings"]:
-            rank[d["index"]] = d["logit"]
+        try:
+            for d in res["rankings"]:
+                rank[d["index"]] = d["logit"]
+        except Exception as _e:
+            log_exception(_e, res)
         return rank, token_count
 
 
@@ -361,10 +372,11 @@ class OpenAI_APIRerank(Base):
             token_count += num_tokens_from_string(t)
         res = requests.post(self.base_url, headers=self.headers, json=data).json()
         rank = np.zeros(len(texts), dtype=float)
-        if 'results' not in res:
-            raise ValueError("response not contains results\n" + str(res))
-        for d in res["results"]:
-            rank[d["index"]] = d["relevance_score"]
+        try:
+            for d in res["results"]:
+                rank[d["index"]] = d["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, res)
 
         # Normalize the rank values to the range 0 to 1
         min_rank = np.min(rank)
@@ -398,8 +410,11 @@ class CoHereRerank(Base):
             return_documents=False,
         )
         rank = np.zeros(len(texts), dtype=float)
-        for d in res.results:
-            rank[d.index] = d.relevance_score
+        try:
+            for d in res.results:
+                rank[d.index] = d.relevance_score
+        except Exception as _e:
+            log_exception(_e, res)
         return rank, token_count
 
 
@@ -439,11 +454,11 @@ class SILICONFLOWRerank(Base):
             self.base_url, json=payload, headers=self.headers
         ).json()
         rank = np.zeros(len(texts), dtype=float)
-        if "results" not in response:
-            return rank, 0
-
-        for d in response["results"]:
-            rank[d["index"]] = d["relevance_score"]
+        try:
+            for d in response["results"]:
+                rank[d["index"]] = d["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, response)
         return (
             rank,
             response["meta"]["tokens"]["input_tokens"] + response["meta"]["tokens"]["output_tokens"],
@@ -468,8 +483,11 @@ class BaiduYiyanRerank(Base):
             top_n=len(texts),
         ).body
         rank = np.zeros(len(texts), dtype=float)
-        for d in res["results"]:
-            rank[d["index"]] = d["relevance_score"]
+        try:
+            for d in res["results"]:
+                rank[d["index"]] = d["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, res)
         return rank, self.total_token_count(res)
 
 
@@ -487,8 +505,11 @@ class VoyageRerank(Base):
         res = self.client.rerank(
             query=query, documents=texts, model=self.model_name, top_k=len(texts)
         )
-        for r in res.results:
-            rank[r.index] = r.relevance_score
+        try:
+            for r in res.results:
+                rank[r.index] = r.relevance_score
+        except Exception as _e:
+            log_exception(_e, res)
         return rank, res.total_tokens
 
 
@@ -511,8 +532,11 @@ class QWenRerank(Base):
         )
         rank = np.zeros(len(texts), dtype=float)
         if resp.status_code == HTTPStatus.OK:
-            for r in resp.output.results:
-                rank[r.index] = r.relevance_score
+            try:
+                for r in resp.output.results:
+                    rank[r.index] = r.relevance_score
+            except Exception as _e:
+                log_exception(_e, resp)
             return rank, resp.usage.total_tokens
         else:
             raise ValueError(f"Error calling QWenRerank model {self.model_name}: {resp.status_code} - {resp.text}")
@@ -529,6 +553,7 @@ class HuggingfaceRerank(DefaultRerank):
                 res = requests.post(f"http://{url}/rerank", headers={"Content-Type": "application/json"},
                                     json={"query": query, "texts": texts[i: i + batch_size],
                                           "raw_scores": False, "truncate": True})
+
                 for o in res.json():
                     scores[o["index"] + i] = o["score"]
             except Exception as e:
@@ -582,15 +607,15 @@ class GPUStackRerank(Base):
             response_json = response.json()
 
             rank = np.zeros(len(texts), dtype=float)
-            if "results" not in response_json:
-                return rank, 0
 
             token_count = 0
             for t in texts:
                 token_count += num_tokens_from_string(t)
-
-            for result in response_json["results"]:
-                rank[result["index"]] = result["relevance_score"]
+            try:
+                for result in response_json["results"]:
+                    rank[result["index"]] = result["relevance_score"]
+            except Exception as _e:
+                log_exception(_e, response)
 
             return (
                 rank,
