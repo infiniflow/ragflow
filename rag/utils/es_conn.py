@@ -14,23 +14,24 @@
 #  limitations under the License.
 #
 
-import logging
-import re
-import json
-import time
-import os
-
 import copy
+import json
+import logging
+import os
+import re
+import time
+
+from elastic_transport import ConnectionTimeout
 from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
-from elastic_transport import ConnectionTimeout
-from rag import settings
+
+from api.utils import get_base_config
+from api.utils.file_utils import get_project_base_directory
+from rag.nlp import is_english, rag_tokenizer
 from rag.settings import TAG_FLD, PAGERANK_FLD
 from rag.utils import singleton, get_float
-from api.utils.file_utils import get_project_base_directory
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
-from rag.nlp import is_english, rag_tokenizer
 
 ATTEMPT_TIME = 2
 
@@ -41,13 +42,14 @@ logger = logging.getLogger('ragflow.es_conn')
 class ESConnection(DocStoreConnection):
     def __init__(self):
         self.info = {}
-        logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
+        config = get_base_config("es", {})
+        logger.info(f"Use Elasticsearch {config['hosts']} as the doc engine.")
         for _ in range(ATTEMPT_TIME):
             try:
                 self.es = Elasticsearch(
-                    settings.ES["hosts"].split(","),
-                    basic_auth=(settings.ES["username"], settings.ES[
-                        "password"]) if "username" in settings.ES and "password" in settings.ES else None,
+                    config["hosts"].split(","),
+                    basic_auth=(config["username"], config[
+                        "password"]) if "username" in config and "password" in config else None,
                     verify_certs=False,
                     timeout=600
                 )
@@ -55,10 +57,10 @@ class ESConnection(DocStoreConnection):
                     self.info = self.es.info()
                     break
             except Exception as e:
-                logger.warning(f"{str(e)}. Waiting Elasticsearch {settings.ES['hosts']} to be healthy.")
+                logger.warning(f"{str(e)}. Waiting Elasticsearch {config['hosts']} to be healthy.")
                 time.sleep(5)
         if not self.es.ping():
-            msg = f"Elasticsearch {settings.ES['hosts']} is unhealthy in 120s."
+            msg = f"Elasticsearch {config['hosts']} is unhealthy in 120s."
             logger.error(msg)
             raise Exception(msg)
         v = self.info.get("version", {"number": "8.11.3"})
@@ -73,7 +75,7 @@ class ESConnection(DocStoreConnection):
             logger.error(msg)
             raise Exception(msg)
         self.mapping = json.load(open(fp_mapping, "r"))
-        logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
+        logger.info(f"Elasticsearch {config['hosts']} is healthy.")
 
     """
     Database operations

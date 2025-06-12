@@ -16,10 +16,12 @@
 
 import logging
 import time
+from io import BytesIO
+
 from minio import Minio
 from minio.error import S3Error
-from io import BytesIO
-from rag import settings
+
+from api.utils import decrypt_database_config
 from rag.utils import singleton
 
 
@@ -36,15 +38,16 @@ class RAGFlowMinio:
         except Exception:
             pass
 
+        config = decrypt_database_config(name="minio")
+
         try:
-            self.conn = Minio(settings.MINIO["host"],
-                              access_key=settings.MINIO["user"],
-                              secret_key=settings.MINIO["password"],
+            self.conn = Minio(config["host"],
+                              access_key=config["user"],
+                              secret_key=config["password"],
                               secure=False
                               )
         except Exception:
-            logging.exception(
-                "Fail to connect %s " % settings.MINIO["host"])
+            logging.exception("Fail to connect %s " % config["host"])
 
     def __close__(self):
         del self.conn

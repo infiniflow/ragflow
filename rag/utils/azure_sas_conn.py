@@ -18,17 +18,20 @@ import logging
 import os
 import time
 from io import BytesIO
-from rag import settings
-from rag.utils import singleton
+
 from azure.storage.blob import ContainerClient
+
+from api.utils import get_base_config
+from rag.utils import singleton
 
 
 @singleton
 class RAGFlowAzureSasBlob:
     def __init__(self):
         self.conn = None
-        self.container_url = os.getenv('CONTAINER_URL', settings.AZURE["container_url"])
-        self.sas_token = os.getenv('SAS_TOKEN', settings.AZURE["sas_token"])
+        config = get_base_config("azure", {})
+        self.container_url = os.getenv('CONTAINER_URL', config["container_url"])
+        self.sas_token = os.getenv('SAS_TOKEN', config["sas_token"])
         self.__open__()
 
     def __open__(self):

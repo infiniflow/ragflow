@@ -14,15 +14,17 @@
 #  limitations under the License.
 #
 
-import logging
 import json
+import logging
 import uuid
 
-import valkey as redis
-from rag import settings
-from rag.utils import singleton
-from valkey.lock import Lock
 import trio
+import valkey as redis
+from valkey.lock import Lock
+
+from api.utils import decrypt_database_config
+from rag.utils import singleton
+
 
 class RedisMsg:
     def __init__(self, consumer, queue_name, group_name, msg_id, message):
@@ -61,7 +63,7 @@ class RedisDB:
 
     def __init__(self):
         self.REDIS = None
-        self.config = settings.REDIS
+        self.config = decrypt_database_config(name="redis")
         self.__open__()
 
     def register_scripts(self) -> None:
