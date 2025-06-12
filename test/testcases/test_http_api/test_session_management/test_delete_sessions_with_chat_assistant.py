@@ -16,7 +16,8 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import INVALID_API_TOKEN, batch_add_sessions_with_chat_assistant, delete_session_with_chat_assistants, list_session_with_chat_assistants
+from common import batch_add_sessions_with_chat_assistant, delete_session_with_chat_assistants, list_session_with_chat_assistants
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
