@@ -17,7 +17,8 @@ from concurrent.futures import ThreadPoolExecutor
 from time import sleep
 
 import pytest
-from common import INVALID_API_TOKEN, bulk_upload_documents, list_documents, parse_documents, stop_parse_documents
+from common import bulk_upload_documents, list_documents, parse_documents, stop_parse_documents
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from utils import wait_for
 
