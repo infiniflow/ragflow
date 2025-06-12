@@ -73,7 +73,9 @@ class Answer(ComponentBase, ABC):
             res["content"] += random.choice(self._param.post_answers)
             yield res
 
-        res = {"content": ""}
+        if res is None:
+            res = {"content": ""}
+
         self.set_output(res)
 
     def set_exception(self, e):
