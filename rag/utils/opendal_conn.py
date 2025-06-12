@@ -75,14 +75,9 @@ class OpenDALStorage:
     def scan(self, bucket, fnm):
         return self._operator.scan(f"{bucket}/{fnm}")
 
-    def exists(self, bucket, fnm):
-        return self._operator.exist(f"{bucket}/{fnm}")
+    def obj_exist(self, bucket, fnm):
+        return self._operator.exists(f"{bucket}/{fnm}")
 
-    def load_stream(self, bucket, fnm):
-        return self._operator.read_stream(f"{bucket}/{fnm}")
-
-    def load_once(self, bucket, fnm):
-        return self._operator.read(f"{bucket}/{fnm}")
 
     def init_db_config(self):
         try:
