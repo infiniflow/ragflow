@@ -34,8 +34,6 @@ from ollama import Client
 from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
-
-from mcp.server.server import handle_sse
 from rag.nlp import is_chinese, is_english
 from rag.utils import num_tokens_from_string
 
