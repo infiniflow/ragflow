@@ -1,4 +1,5 @@
 import { FormContainer } from '@/components/form-container';
+import { IconFont } from '@/components/icon-font';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -9,8 +10,10 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { RAGFlowSelect } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { ISwitchForm } from '@/interfaces/database/flow';
+import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
 import { useMemo } from 'react';
@@ -49,6 +52,12 @@ function ConditionCards({ name: parentName, node }: ConditionCardsProps) {
   const switchOperatorOptions = useMemo(() => {
     return SwitchOperatorOptions.map((x) => ({
       value: x.value,
+      icon: (
+        <IconFont
+          name={x.icon}
+          className={cn('size-4', { 'rotate-180': x.value === '>' })}
+        ></IconFont>
+      ),
       label: t(`flow.switchOperatorOptions.${x.label}`),
     }));
   }, [t]);
@@ -66,7 +75,7 @@ function ConditionCards({ name: parentName, node }: ConditionCardsProps) {
         return (
           <div key={field.id} className="flex">
             <Card className="bg-transparent border-input-border border flex-1">
-              <section className="p-2 bg-background-card flex justify-between">
+              <section className="p-2 bg-background-card flex justify-between items-center">
                 <FormField
                   control={form.control}
                   name={`${name}.${index}.cpn_id`}
@@ -76,29 +85,34 @@ function ConditionCards({ name: parentName, node }: ConditionCardsProps) {
                         <RAGFlowSelect
                           {...field}
                           options={componentIdOptions}
-                          triggerClassName="w-30 text-background-checked"
+                          placeholder={t('common.pleaseSelect')}
+                          triggerClassName="w-30 text-background-checked bg-transparent border-none"
                         />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name={`${name}.${index}.operator`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <RAGFlowSelect
-                          {...field}
-                          options={switchOperatorOptions}
-                          triggerClassName="w-30"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="flex items-center">
+                  <Separator orientation="vertical" className="h-2.5" />
+                  <FormField
+                    control={form.control}
+                    name={`${name}.${index}.operator`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <RAGFlowSelect
+                            {...field}
+                            options={switchOperatorOptions}
+                            onlyShowSelectedIcon
+                            triggerClassName="w-30 bg-transparent border-none"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </section>
               <CardContent className="p-4 ">
                 <FormField
@@ -177,13 +191,6 @@ const SwitchForm = ({ node }: IOperatorForm) => {
 
     return conditions?.filter((x) => !!x).map((x) => x?.to) ?? [];
   };
-
-  const switchOperatorOptions = useMemo(() => {
-    return SwitchOperatorOptions.map((x) => ({
-      value: x.value,
-      label: t(`flow.switchOperatorOptions.${x.label}`),
-    }));
-  }, [t]);
 
   const switchLogicOperatorOptions = useMemo(() => {
     return SwitchLogicOperatorOptions.map((x) => ({
