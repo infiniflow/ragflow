@@ -1,11 +1,11 @@
-import opendal
 import logging
-import pymysql
-import yaml
 
+import opendal
+import pymysql
+
+from api.utils import get_base_config
 from rag.utils import singleton
 
-SERVICE_CONF_PATH = "conf/service_conf.yaml"
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS `{}` (
@@ -20,40 +20,36 @@ SET GLOBAL max_allowed_packet={}
 """
 
 
-def get_opendal_config_from_yaml(yaml_path=SERVICE_CONF_PATH):
+def get_opendal_config():
     try:
-        with open(yaml_path, 'r') as f:
-            config = yaml.safe_load(f)
-
-        opendal_config = config.get('opendal', {})
-        kwargs = {}
+        opendal_config = get_base_config('opendal', {})
+        config_data = opendal_config.get("config", {})
+        kwargs = {"table": config_data.get("table", "opendal_storage")}
         if opendal_config.get("scheme") == 'mysql':
-            mysql_config = config.get('mysql', {})
-            kwargs = {
+            mysql_config = get_base_config('mysql', {})
+            kwargs.update({
                 "scheme": "mysql",
                 "host": mysql_config.get("host", "127.0.0.1"),
                 "port": str(mysql_config.get("port", 3306)),
                 "user": mysql_config.get("user", "root"),
                 "password": mysql_config.get("password", ""),
                 "database": mysql_config.get("name", "test_open_dal"),
-                "table": opendal_config.get("config").get("table", "opendal_storage")
-            }
+            })
             kwargs["connection_string"] = f"mysql://{kwargs['user']}:{kwargs['password']}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}"
         else:
             scheme = opendal_config.get("scheme")
-            config_data = opendal_config.get("config", {})
-            kwargs = {"scheme": scheme, **config_data}
-        logging.info("Loaded OpenDAL configuration from yaml: %s", kwargs)
+            kwargs.update({"scheme": scheme, **config_data})
+        logging.info("Loaded OpenDAL configuration: %s", kwargs)
         return kwargs
     except Exception as e:
-        logging.error("Failed to load OpenDAL configuration from yaml: %s", str(e))
+        logging.error("Failed to load OpenDAL configuration: %s", str(e))
         raise
 
 
 @singleton
 class OpenDALStorage:
     def __init__(self):
-        self._kwargs = get_opendal_config_from_yaml()
+        self._kwargs = get_opendal_config()
         self._scheme = self._kwargs.get('scheme', 'mysql')
         if self._scheme == 'mysql':
             self.init_db_config()
@@ -77,7 +73,6 @@ class OpenDALStorage:
 
     def obj_exist(self, bucket, fnm):
         return self._operator.exists(f"{bucket}/{fnm}")
-
 
     def init_db_config(self):
         try:
