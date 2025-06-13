@@ -35,7 +35,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import current_timestamp, get_format_time, get_uuid
 from rag.nlp import rag_tokenizer, search
-from rag.settings import get_svr_queue_name
+from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr
@@ -514,6 +514,8 @@ class DocumentService(CommonService):
                     info["progress"] = prg
                 if msg:
                     info["progress_msg"] = msg
+                else:
+                    info["progress_msg"] = "%d tasks are ahead in the queue..."%get_queue_length(priority)
                 cls.update_by_id(d["id"], info)
             except Exception as e:
                 if str(e).find("'0'") < 0:
@@ -560,6 +562,11 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
     assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+
+
+def get_queue_length(priority):
+    group_info = REDIS_CONN.queue_info(get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
+    return int(group_info.get("lag", 0))
 
 
 def doc_upload_and_parse(conversation_id, file_objs, user_id):
