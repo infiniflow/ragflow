@@ -3220,16 +3220,16 @@ Failure:
 
 ---
 
-### Related Questions
+### Generate related questions
 
 **POST** `/v1/sessions/related_questions`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-This operation requires a `Bearer Login Token`, typically expires with in 24 hours. You can find the it in the browser request easily.
+This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily.
 
 :::tip NOTE
-The chat model dynamically determines the number of questions to generate based on the instruction, typically between five and ten.
+The chat model autonomously determines the number of questions to generate based on the instruction, typically between five and ten.
 :::
 
 #### Request
