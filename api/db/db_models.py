@@ -743,6 +743,7 @@ class API4Conversation(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
     user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
+    name = CharField(max_length=255, null=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     tokens = IntegerField(default=0)
@@ -885,5 +886,9 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "name", CharField(max_length=255, null=True, index=True)))
     except Exception:
         pass

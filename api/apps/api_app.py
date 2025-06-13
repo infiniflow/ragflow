@@ -155,6 +155,7 @@ def set_conversation():
             conv = {
                 "id": get_uuid(),
                 "dialog_id": cvs.id,
+                "name": request.args.get("name", "New conversation"),
                 "user_id": request.args.get("user_id", ""),
                 "message": [{"role": "assistant", "content": canvas.get_prologue()}],
                 "source": "agent"
@@ -168,6 +169,7 @@ def set_conversation():
             conv = {
                 "id": get_uuid(),
                 "dialog_id": dia.id,
+                "name": request.args.get("name", "New conversation"),
                 "user_id": request.args.get("user_id", ""),
                 "message": [{"role": "assistant", "content": dia.prompt_config["prologue"]}]
             }
