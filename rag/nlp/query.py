@@ -24,7 +24,7 @@ from rag.nlp import rag_tokenizer, term_weight, synonym
 
 
 class FulltextQueryer:
-    def __init__(self):
+    def __init__(self, docEngine: str = "elasticsearch"):
         self.tw = term_weight.Dealer()
         self.syn = synonym.Dealer()
         self.query_fields = [
@@ -36,6 +36,15 @@ class FulltextQueryer:
             "content_ltks^2",
             "content_sm_ltks",
         ]
+        self.baidu_vdb_query_fields = [
+            "title_tks",
+            "title_sm_tks",
+            "important_tks",
+            "question_tks",
+            "content_ltks",
+            "content_sm_ltks",
+        ]
+        self.docEngine = docEngine
 
     @staticmethod
     def subSpecialChar(line):
@@ -83,6 +92,8 @@ class FulltextQueryer:
         return txt
 
     def question(self, txt, tbl="qa", min_match: float = 0.6):
+        if self.docEngine == "baiduvdb":
+            return self.question_by_baidu_vdb(txt=txt)
         txt = FulltextQueryer.add_space_between_eng_zh(txt)
         txt = re.sub(
             r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
@@ -215,6 +226,84 @@ class FulltextQueryer:
                 self.query_fields, query, 100, {"minimum_should_match": min_match}
             ), keywords
         return None, keywords
+
+    def question_by_baidu_vdb(self, txt):
+        txt = re.sub(
+            r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
+            " ",
+            rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
+        ).strip()
+        txt = FulltextQueryer.rmWWW(txt)
+
+        if not self.isChinese(txt):
+            txt = FulltextQueryer.rmWWW(txt)
+            tks = rag_tokenizer.tokenize(txt).split()
+            keywords = [t for t in tks if t]
+            tks_w = self.tw.weights(tks, preprocess=False)
+            tks_w = [(re.sub(r"[ \\\"'^]", "", tk), w) for tk, w in tks_w]
+            tks_w = [(re.sub(r"^[a-z0-9]$", "", tk), w) for tk, w in tks_w if tk]
+            tks_w = [(re.sub(r"^[\+-]", "", tk), w) for tk, w in tks_w if tk]
+            tks_w = [(tk.strip(), w) for tk, w in tks_w if tk.strip()]
+            for tk, w in tks_w[:256]:
+                syn = self.syn.lookup(tk)
+                syn = rag_tokenizer.tokenize(" ".join(syn)).split()
+                keywords.extend(syn)
+
+            return MatchTextExpr(
+                self.baidu_vdb_query_fields, txt, 100
+            ), keywords
+        
+        def need_fine_grained_tokenize(tk):
+            if len(tk) < 3:
+                return False
+            if re.match(r"[0-9a-z\.\+#_\*-]+$", tk):
+                return False
+            return True
+
+        txt = FulltextQueryer.rmWWW(txt)
+        keywords = []
+        for tt in self.tw.split(txt)[:256]:  # .split():
+            if not tt:
+                continue
+            keywords.append(tt)
+            twts = self.tw.weights([tt])
+            syns = self.syn.lookup(tt)
+            if syns and len(keywords) < 32:
+                keywords.extend(syns)
+            logging.debug(json.dumps(twts, ensure_ascii=False))
+            for tk, w in sorted(twts, key=lambda x: x[1] * -1):
+                sm = (
+                    rag_tokenizer.fine_grained_tokenize(tk).split()
+                    if need_fine_grained_tokenize(tk)
+                    else []
+                )
+                sm = [
+                    re.sub(
+                        r"[ ,\./;'\[\]\\`~!@#$%\^&\*\(\)=\+_<>\?:\"\{\}\|，。；‘’【】、！￥……（）——《》？：“”-]+",
+                        "",
+                        m,
+                    )
+                    for m in sm
+                ]
+                sm = [FulltextQueryer.subSpecialChar(m) for m in sm if len(m) > 1]
+                sm = [m for m in sm if len(m) > 1]
+
+                if len(keywords) < 32:
+                    keywords.append(re.sub(r"[ \\\"']+", "", tk))
+                    keywords.extend(sm)
+
+                tk_syns = self.syn.lookup(tk)
+                tk_syns = [FulltextQueryer.subSpecialChar(s) for s in tk_syns]
+                if len(keywords) < 32:
+                    keywords.extend([s for s in tk_syns if s])
+                tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
+                tk_syns = [f"\"{s}\"" if s.find(" ") > 0 else s for s in tk_syns]
+
+                if len(keywords) >= 32:
+                    break
+        return MatchTextExpr(
+            self.baidu_vdb_query_fields, txt, 100
+        ), keywords
 
     def hybrid_similarity(self, avec, bvecs, atks, btkss, tkweight=0.3, vtweight=0.7):
         from sklearn.metrics.pairwise import cosine_similarity as CosineSimilarity

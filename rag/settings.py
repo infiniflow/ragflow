@@ -27,6 +27,7 @@ DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 
 ES = {}
 INFINITY = {}
+BAIDUVDB = {}
 AZURE = {}
 S3 = {}
 MINIO = {}
@@ -40,6 +41,8 @@ elif DOC_ENGINE == 'opensearch':
     OS = get_base_config("os", {})
 elif DOC_ENGINE == 'infinity':
     INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
+elif DOC_ENGINE == 'baiduvdb':
+    BAIDUVDB = get_base_config("baiduvdb", {})
 
 if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
     AZURE = get_base_config("azure", {})

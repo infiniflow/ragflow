@@ -128,6 +128,7 @@ dependencies = [
     "debugpy>=1.8.13",
     "mcp>=1.6.0",
     "opensearch-py==2.7.1",
+    "pymochow==2.2.4"
     "pluginlib==0.9.4",
 ]
 
