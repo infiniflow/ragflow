@@ -27,10 +27,10 @@ def get_opendal_config_from_yaml(yaml_path=SERVICE_CONF_PATH):
 
         opendal_config = config.get('opendal', {})
         kwargs = {}
-        if opendal_config.get("schema") == 'mysql':
+        if opendal_config.get("scheme") == 'mysql':
             mysql_config = config.get('mysql', {})
             kwargs = {
-                "schema": "mysql",
+                "scheme": "mysql",
                 "host": mysql_config.get("host", "127.0.0.1"),
                 "port": str(mysql_config.get("port", 3306)),
                 "user": mysql_config.get("user", "root"),
@@ -40,9 +40,9 @@ def get_opendal_config_from_yaml(yaml_path=SERVICE_CONF_PATH):
             }
             kwargs["connection_string"] = f"mysql://{kwargs['user']}:{kwargs['password']}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}"
         else:
-            schema = opendal_config.get("schema")
+            scheme = opendal_config.get("scheme")
             config_data = opendal_config.get("config", {})
-            kwargs = {"schema": schema, **config_data}
+            kwargs = {"scheme": scheme, **config_data}
         logging.info("Loaded OpenDAL configuration from yaml: %s", kwargs)
         return kwargs
     except Exception as e:
@@ -54,11 +54,11 @@ def get_opendal_config_from_yaml(yaml_path=SERVICE_CONF_PATH):
 class OpenDALStorage:
     def __init__(self):
         self._kwargs = get_opendal_config_from_yaml()
-        self._schema = self._kwargs.get('schema', 'mysql')
-        if self._schema == 'mysql':
+        self._scheme = self._kwargs.get('scheme', 'mysql')
+        if self._scheme == 'mysql':
             self.init_db_config()
             self.init_opendal_mysql_table()
-        self._operator = opendal.Operator(self._schema, **self._kwargs)
+        self._operator = opendal.Operator(self._scheme, **self._kwargs)
 
         logging.info("OpenDALStorage initialized successfully")
 
