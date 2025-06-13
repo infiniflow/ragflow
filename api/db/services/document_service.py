@@ -231,7 +231,7 @@ class DocumentService(CommonService):
     def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
         num = cls.model.update(token_num=cls.model.token_num + token_num,
                                chunk_num=cls.model.chunk_num + chunk_num,
-                               process_duation=cls.model.process_duation + duation).where(
+                               process_duration=cls.model.process_duration + duation).where(
             cls.model.id == doc_id).execute()
         if num == 0:
             raise LookupError(
@@ -249,7 +249,7 @@ class DocumentService(CommonService):
     def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duation):
         num = cls.model.update(token_num=cls.model.token_num - token_num,
                                chunk_num=cls.model.chunk_num - chunk_num,
-                               process_duation=cls.model.process_duation + duation).where(
+                               process_duration=cls.model.process_duration + duation).where(
             cls.model.id == doc_id).execute()
         if num == 0:
             raise LookupError(
@@ -506,7 +506,7 @@ class DocumentService(CommonService):
 
                 msg = "\n".join(sorted(msg))
                 info = {
-                    "process_duation": datetime.timestamp(
+                    "process_duration": datetime.timestamp(
                         datetime.now()) -
                     d["process_begin_at"].timestamp(),
                     "run": status}

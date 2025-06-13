@@ -629,7 +629,7 @@ class Document(DataBaseModel):
     progress = FloatField(default=0, index=True)
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
-    process_duation = FloatField(default=0)
+    process_duration = FloatField(default=0, column_name="process_duation")
     meta_fields = JSONField(null=True, default={})
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
@@ -672,7 +672,7 @@ class Task(DataBaseModel):
     priority = IntegerField(default=0)
 
     begin_at = DateTimeField(null=True, index=True)
-    process_duation = FloatField(default=0)
+    process_duration = FloatField(default=0, column_name="process_duation")
 
     progress = FloatField(default=0, index=True)
     progress_msg = TextField(null=True, help_text="process message", default="")
