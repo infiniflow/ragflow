@@ -25,7 +25,7 @@ from reportlab.pdfgen import canvas  # pip install reportlab
 
 def create_docx_file(path):
     doc = Document()
-    doc.add_paragraph("这是一个测试 DOCX 文件。")
+    doc.add_paragraph("This is a test DOCX file.")
     doc.save(path)
     return path
 
@@ -33,7 +33,7 @@ def create_docx_file(path):
 def create_excel_file(path):
     wb = Workbook()
     ws = wb.active
-    ws["A1"] = "测试 Excel 文件"
+    ws["A1"] = "Test Excel File"
     wb.save(path)
     return path
 
@@ -41,7 +41,7 @@ def create_excel_file(path):
 def create_ppt_file(path):
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[0])
-    slide.shapes.title.text = "测试 PPT 文件"
+    slide.shapes.title.text = "Test PPT File"
     prs.save(path)
     return path
 
@@ -58,26 +58,26 @@ def create_pdf_file(path):
     if not isinstance(path, str):
         path = str(path)
     c = canvas.Canvas(path)
-    c.drawString(100, 750, "测试 PDF 文件")
+    c.drawString(100, 750, "Test PDF File")
     c.save()
     return path
 
 
 def create_txt_file(path):
     with open(path, "w", encoding="utf-8") as f:
-        f.write("这是测试 TXT 文件的内容。")
+        f.write("This is the content of a test TXT file.")
     return path
 
 
 def create_md_file(path):
-    md_content = "# 测试 MD 文件\n\n这是一份 Markdown 格式的测试文件。"
+    md_content = "# Test MD File\n\nThis is a test Markdown file."
     with open(path, "w", encoding="utf-8") as f:
         f.write(md_content)
     return path
 
 
 def create_json_file(path):
-    data = {"message": "这是测试 JSON 文件", "value": 123}
+    data = {"message": "This is a test JSON file", "value": 123}
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     return path
@@ -87,8 +87,8 @@ def create_eml_file(path):
     eml_content = (
         "From: sender@example.com\n"
         "To: receiver@example.com\n"
-        "Subject: 测试 EML 文件\n\n"
-        "这是一封测试邮件的内容。\n"
+        "Subject: Test EML File\n\n"
+        "This is a test email content.\n"
     )
     with open(path, "w", encoding="utf-8") as f:
         f.write(eml_content)
@@ -98,8 +98,8 @@ def create_eml_file(path):
 def create_html_file(path):
     html_content = (
         "<html>\n"
-        "<head><title>测试 HTML 文件</title></head>\n"
-        "<body><h1>这是一个测试 HTML 文件</h1></body>\n"
+        "<head><title>Test HTML File</title></head>\n"
+        "<body><h1>This is a test HTML file</h1></body>\n"
         "</html>"
     )
     with open(path, "w", encoding="utf-8") as f:
