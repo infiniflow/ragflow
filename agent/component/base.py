@@ -24,6 +24,7 @@ from typing import Any, List, Union
 
 import pandas as pd
 import trio
+from sympy.codegen.ast import continue_
 
 from agent import settings
 from api.utils.api_utils import timeout
@@ -42,6 +43,9 @@ class ComponentParamBase(ABC):
         self.description = ""
         self.max_retries = 0
         self.delay_after_error = 2.0
+        self.exception_method = None
+        self.exception_comment = None
+        self.exception_goto = None
         self.debug_inputs = {}
 
     def set_name(self, name: str):
@@ -515,4 +519,12 @@ class ComponentBase(ABC):
                 r"\{%s\}" % re.escape(n), re.escape(v), content
             )
         return content
+
+    def exception_handler(self):
+        if not self._param.exception_method:
+            return
+        return {
+            "goto": self._param.exception_goto,
+            "comment": self._param.exception_comment
+        }
 

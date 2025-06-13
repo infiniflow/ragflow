@@ -223,10 +223,10 @@ class Canvas:
                 yield decorate("node_started", {"inputs": None, "created_at": int(time.time()), "component_id": self.path[i]})
             _run_batch(idx, to)
 
+            # post processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
-                error = cpn["obj"].error() if not error else error
-                if not error and cpn["obj"].component_name.lower() == "message":
+                if cpn["obj"].component_name.lower() == "message":
                     if isinstance(cpn["obj"].output("content"), partial):
                         for m in cpn["obj"].output("content")():
                             yield decorate("message", {"content": m})
@@ -238,7 +238,17 @@ class Canvas:
                     self.retrieval[-1]["chunks"].extend(cpn["obj"].output("_references").get("chunks", []))
                     self.retrieval[-1]["doc_aggs"].extend(cpn["obj"].output("_references").get("doc_aggs", []))
 
-                if cpn["obj"].component_name.lower() != "iteration" or error:
+                if cpn["obj"].error():
+                    ex = cpn["obj"].exception_handler()
+                    if ex and ex["comment"]:
+                        yield decorate("message", {"content": ex["comment"]})
+                        yield decorate("message_end", {})
+                    if ex and ex["goto"]:
+                        self.path.append(ex["goto"])
+                    else:
+                        error = cpn["obj"].error()
+
+                if cpn["obj"].component_name.lower() != "iteration":
                     o = cpn["obj"].output()
                     if isinstance(cpn["obj"].output("content"), partial):
                         o["content"] = None
@@ -254,7 +264,7 @@ class Canvas:
 
                 if cpn["obj"].component_name.lower() == "iterationitem" and cpn["obj"].end():
                     iter = cpn["obj"].get_parent()
-                    yield decorate("node_finished",
+                    yield decorate("node_finished", # End of iteration
                                    {
                                        "inputs": iter.get_input(),
                                        "outputs": iter.output(),
