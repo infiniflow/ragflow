@@ -186,6 +186,7 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
 async def collect():
     global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS
     global UNACKED_ITERATOR
+
     svr_queue_names = get_svr_queue_names()
     try:
         if not UNACKED_ITERATOR:

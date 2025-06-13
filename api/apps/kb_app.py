@@ -79,7 +79,15 @@ def create():
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
 def update():
     req = request.json
+    if not isinstance(req["name"], str):
+        return get_data_error_result(message="Dataset name must be string.")
+    if req["name"].strip() == "":
+        return get_data_error_result(message="Dataset name can't be empty.")
+    if len(req["name"].encode("utf-8")) > DATASET_NAME_LIMIT:
+        return get_data_error_result(
+            message=f"Dataset name length is {len(req['name'])} which is large than {DATASET_NAME_LIMIT}")
     req["name"] = req["name"].strip()
+
     if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
         return get_json_result(
             data=False,
@@ -107,7 +115,7 @@ def update():
 
         if req["name"].lower() != kb.name.lower() \
                 and len(
-            KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) > 1:
+            KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) >= 1:
             return get_data_error_result(
                 message="Duplicated knowledgebase name.")
 
@@ -116,6 +124,9 @@ def update():
             return get_data_error_result()
 
         if kb.pagerank != req.get("pagerank", 0):
+            if os.environ.get("DOC_ENGINE", "elasticsearch") != "elasticsearch":
+                return get_data_error_result(message="'pagerank' can only be set when doc_engine is elasticsearch")
+            
             if req.get("pagerank", 0) > 0:
                 settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
                                          search.index_name(kb.tenant_id), kb.id)
@@ -168,7 +179,10 @@ def list_kbs():
     items_per_page = int(request.args.get("page_size", 0))
     parser_id = request.args.get("parser_id")
     orderby = request.args.get("orderby", "create_time")
-    desc = request.args.get("desc", True)
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
 
     req = request.get_json()
     owner_ids = req.get("owner_ids", [])

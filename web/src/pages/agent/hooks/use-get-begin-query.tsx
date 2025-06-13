@@ -104,14 +104,58 @@ const ExcludedNodes = [
   Operator.Note,
 ];
 
-export const useBuildComponentIdSelectOptions = (
-  nodeId?: string,
-  parentId?: string,
-) => {
-  const nodes = useGraphStore((state) => state.nodes);
+export function useBuildBeginVariableOptions() {
   const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
 
+  const options = useMemo(() => {
+    const query: BeginQuery[] = getBeginNodeDataQuery();
+    return [
+      {
+        label: <span>Begin Input</span>,
+        title: 'Begin Input',
+        options: query.map((x) => ({
+          label: x.name,
+          value: `begin@${x.key}`,
+        })),
+      },
+    ];
+  }, [getBeginNodeDataQuery]);
+
+  return options;
+}
+
+export const useBuildVariableOptions = (nodeId?: string) => {
   const nodeOutputOptions = useBuildNodeOutputOptions(nodeId);
+  const beginOptions = useBuildBeginVariableOptions();
+
+  const options = useMemo(() => {
+    return [...beginOptions, ...nodeOutputOptions];
+  }, [beginOptions, nodeOutputOptions]);
+
+  return options;
+};
+
+export function useBuildQueryVariableOptions() {
+  const { data } = useFetchAgent();
+  const node = useContext(AgentFormContext);
+  const options = useBuildVariableOptions(node?.id);
+
+  const nextOptions = useMemo(() => {
+    const globalOptions = Object.keys(data?.dsl?.globals ?? {}).map((x) => ({
+      label: x,
+      value: x,
+    }));
+    return [
+      { ...options[0], options: [...options[0]?.options, ...globalOptions] },
+      ...options.slice(1),
+    ];
+  }, [data.dsl.globals, options]);
+
+  return nextOptions;
+}
+
+export function useBuildComponentIdOptions(nodeId?: string, parentId?: string) {
+  const nodes = useGraphStore((state) => state.nodes);
 
   // Limit the nodes inside iteration to only reference peer nodes with the same parentId and other external nodes other than their parent nodes
   const filterChildNodesToSameParentOrExternal = useCallback(
@@ -140,26 +184,27 @@ export const useBuildComponentIdSelectOptions = (
       .map((x) => ({ label: x.data.name, value: x.id }));
   }, [nodes, nodeId, filterChildNodesToSameParentOrExternal]);
 
-  const options = useMemo(() => {
-    const query: BeginQuery[] = getBeginNodeDataQuery();
-    return [
-      {
-        label: <span>Begin Input</span>,
-        title: 'Begin Input',
-        options: query.map((x) => ({
-          label: x.name,
-          value: `begin@${x.key}`,
-        })),
-      },
-      ...nodeOutputOptions,
-    ];
-  }, [getBeginNodeDataQuery, nodeOutputOptions]);
+  return [
+    {
+      label: <span>Component Output</span>,
+      title: 'Component Output',
+      options: componentIdOptions,
+    },
+  ];
+}
 
-  return options;
-};
+export function useBuildComponentIdAndBeginOptions(
+  nodeId?: string,
+  parentId?: string,
+) {
+  const componentIdOptions = useBuildComponentIdOptions(nodeId, parentId);
+  const beginOptions = useBuildBeginVariableOptions();
+
+  return [...beginOptions, ...componentIdOptions];
+}
 
 export const useGetComponentLabelByValue = (nodeId: string) => {
-  const options = useBuildComponentIdSelectOptions(nodeId);
+  const options = useBuildComponentIdAndBeginOptions(nodeId);
 
   const flattenOptions = useMemo(() => {
     return options.reduce<DefaultOptionType[]>((pre, cur) => {
@@ -175,22 +220,3 @@ export const useGetComponentLabelByValue = (nodeId: string) => {
   );
   return getLabel;
 };
-
-export function useBuildQueryVariableOptions() {
-  const { data } = useFetchAgent();
-  const node = useContext(AgentFormContext);
-  const options = useBuildComponentIdSelectOptions(node?.id, node?.parentId);
-
-  const nextOptions = useMemo(() => {
-    const globalOptions = Object.keys(data?.dsl?.globals ?? {}).map((x) => ({
-      label: x,
-      value: x,
-    }));
-    return [
-      { ...options[0], options: [...options[0]?.options, ...globalOptions] },
-      ...options.slice(1),
-    ];
-  }, [data.dsl.globals, options]);
-
-  return nextOptions;
-}

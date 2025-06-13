@@ -16,7 +16,8 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import INVALID_API_TOKEN, batch_add_chunks, delete_chunks, list_chunks
+from common import batch_add_chunks, delete_chunks, list_chunks
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -157,8 +158,8 @@ class TestChunksDeletion:
         res = list_chunks(HttpApiAuth, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
-        assert len(res["data"]["chunks"]) == 1
-        assert res["data"]["total"] == 1
+        assert len(res["data"]["chunks"]) == 0
+        assert res["data"]["total"] == 0
 
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",

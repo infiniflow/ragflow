@@ -20,7 +20,7 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { Plus, Trash2 } from 'lucide-react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
+import { useBuildVariableOptions } from '../../hooks/use-get-begin-query';
 
 interface IProps {
   node?: RAGFlowNodeType;
@@ -42,10 +42,7 @@ export function DynamicVariableForm({ node }: IProps) {
     control: form.control,
   });
 
-  const valueOptions = useBuildComponentIdSelectOptions(
-    node?.id,
-    node?.parentId,
-  );
+  const valueOptions = useBuildVariableOptions(node?.id, node?.parentId);
 
   const options = [
     { value: VariableType.Reference, label: t('flow.reference') },
