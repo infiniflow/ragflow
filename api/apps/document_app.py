@@ -67,12 +67,13 @@ def upload():
         raise LookupError("Can't find this knowledgebase!")
     err, files = FileService.upload_document(kb, file_objs, current_user.id)
 
+    if err:
+        return get_json_result(data=files, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
+
     if not files:
         return get_json_result(data=files, message="There seems to be an issue with your file format. Please verify it is correct and not corrupted.", code=settings.RetCode.DATA_ERROR)
     files = [f[0] for f in files]  # remove the blob
 
-    if err:
-        return get_json_result(data=files, message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
     return get_json_result(data=files)
 
 
