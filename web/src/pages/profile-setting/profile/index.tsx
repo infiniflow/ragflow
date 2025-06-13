@@ -1,4 +1,5 @@
 import PasswordInput from '@/components/password-input';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -16,45 +17,53 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Pencil, Upload } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { toast } from 'sonner';
 import { z } from 'zod';
 
-const FormSchema = z.object({
-  userName: z
-    .string()
-    .min(1, {
-      message: 'user name is required.',
-    })
-    .trim(),
-  avatarUrl: z.string().trim(),
-  timeZone: z.string().trim().min(1, {
-    message: 'Enter a time zone',
-  }),
-  email: z
-    .string({
-      required_error: 'Please select an email to display.',
-    })
-    .trim()
-    .regex(/^[A-Za-z0-9\u4e00-\u9fa5]+@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$/, {
-      message: 'Enter a valid email address.',
+const FormSchema = z
+  .object({
+    userName: z
+      .string()
+      .min(1, {
+        message: 'user name is required.',
+      })
+      .trim(),
+    avatarUrl: z.string().trim(),
+    timeZone: z.string().trim().min(1, {
+      message: 'Enter a time zone',
     }),
-  currPasswd: z.string().trim().min(1, {
-    message: 'Current Password',
-  }),
-  newPasswd: z.string().trim().min(1, {
-    message: 'New Password',
-  }),
-  confirmPasswd: z.string().trim().min(1, {
-    message: 'Confirm Password',
-  }),
-});
+    email: z
+      .string({
+        required_error: 'Please select an email to display.',
+      })
+      .trim()
+      .regex(/^[A-Za-z0-9\u4e00-\u9fa5]+@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$/, {
+        message: 'Enter a valid email address.',
+      }),
+    currPasswd: z.string().trim().min(1, {
+      message: 'Current Password Required',
+    }),
+    newPasswd: z.string().trim().min(8, {
+      message: 'password must be at least 8 characters',
+    }),
+    confirmPasswd: z.string().trim().min(8, {
+      message: 'password must be at least 8 characters',
+    }),
+  })
+  .refine((data) => data.newPasswd === data.confirmPasswd, {
+    message: 'The new password that you entered do not match!',
+    path: ['confirmPasswd'],
+  });
 
 export default function Profile() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarStr, setAvatarStr] = useState(''); // Avatar Image base64
+  const { data: userInfo } = useFetchUserInfo();
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -69,14 +78,34 @@ export default function Profile() {
     },
   });
 
+  useEffect(() => {
+    // init user info when mounted
+    form.setValue('email', userInfo?.email); // email
+    form.setValue('userName', userInfo?.nickname); // nickname
+    form.setValue('timeZone', userInfo?.timezone); // time zone
+    form.setValue('currPasswd', ''); // current password
+  }, [userInfo]);
+
+  useEffect(() => {
+    if (avatarFile) {
+      const fr = new FileReader();
+      fr.onload = () => {
+        setAvatarStr(fr.result as string);
+      };
+      fr.readAsDataURL(avatarFile);
+    }
+  }, [avatarFile]);
+
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    toast('You submitted the following values', {
-      description: (
-        <pre className="mt-2 w-[320px] rounded-md bg-neutral-950 p-4">
-          <code className="text-white">{JSON.stringify(data, null, 2)}</code>
-        </pre>
-      ),
-    });
+    // toast('You submitted the following values', {
+    //   description: (
+    //     <pre className="mt-2 w-[320px] rounded-md bg-neutral-950 p-4">
+    //       <code className="text-white">{JSON.stringify(data, null, 2)}</code>
+    //     </pre>
+    //   ),
+    // });
+    // final submit form
+    console.log('data=', data);
   }
 
   return (
@@ -136,11 +165,14 @@ export default function Profile() {
                             </div>
                           ) : (
                             <div className="w-[64px] h-[64px] relative grid place-content-center">
-                              <img
-                                className="w-full h-full overflow-hidden rounded-xl"
-                                src={URL.createObjectURL(avatarFile)}
-                                alt=""
-                              />
+                              <Avatar className="w-[64px] h-[64px]">
+                                <AvatarImage
+                                  className=" block"
+                                  src={avatarStr}
+                                  alt=""
+                                />
+                                <AvatarFallback></AvatarFallback>
+                              </Avatar>
                               <div className="absolute inset-0 bg-[#000]/20 group-hover:bg-[#000]/60">
                                 <Pencil
                                   size={20}
@@ -159,7 +191,7 @@ export default function Profile() {
                             onChange={(ev) => {
                               const file = ev.target?.files?.[0];
                               if (
-                                /\.(jpg|jpeg|png|webp|bmp)$/.test(
+                                /\.(jpg|jpeg|png|webp|bmp)$/i.test(
                                   file?.name ?? '',
                                 )
                               ) {
@@ -188,25 +220,18 @@ export default function Profile() {
                     <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
                       <span className="text-red-600">*</span>Time Zone
                     </FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl className="w-3/4">
                         <SelectTrigger>
                           <SelectValue placeholder="Select a timeZone" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="m@example.com">
-                          m@example.com
-                        </SelectItem>
-                        <SelectItem value="m@google.com">
-                          m@google.com
-                        </SelectItem>
-                        <SelectItem value="m@support.com">
-                          m@support.com
-                        </SelectItem>
+                        {TimezoneList.map((timeStr) => (
+                          <SelectItem key={timeStr} value={timeStr}>
+                            {timeStr}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -228,7 +253,11 @@ export default function Profile() {
                         Email Address
                       </FormLabel>
                       <FormControl className="w-3/4">
-                        <Input placeholder="Alex@gmail.com" {...field} />
+                        <Input
+                          placeholder="Alex@gmail.com"
+                          disabled
+                          {...field}
+                        />
                       </FormControl>
                     </div>
                     <div className="flex w-[600px] pt-1">
@@ -251,6 +280,9 @@ export default function Profile() {
               <div className="text-sm text-muted-foreground">
                 Please enter your current password to change your password.
               </div>
+            </div>
+            <div className="h-0 overflow-hidden absolute">
+              <input type="password" className=" w-0 height-0 opacity-0" />
             </div>
             <FormField
               control={form.control}
@@ -302,7 +334,18 @@ export default function Profile() {
                       <span className="text-red-600">*</span>Confirm password
                     </FormLabel>
                     <FormControl className="w-3/5">
-                      <PasswordInput {...field} />
+                      <PasswordInput
+                        {...field}
+                        onBlur={() => {
+                          form.trigger('confirmPasswd');
+                        }}
+                        onChange={(ev) => {
+                          form.setValue(
+                            'confirmPasswd',
+                            ev.target.value.trim(),
+                          );
+                        }}
+                      />
                     </FormControl>
                   </div>
                   <div className="flex w-[600px] pt-1">

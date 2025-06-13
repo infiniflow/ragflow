@@ -23,10 +23,13 @@ function PasswordInput(
       {/* <Label htmlFor={id}>Show/hide password input</Label> */}
       <div className="relative">
         <Input
+          autoComplete="off"
+          inputMode="numeric"
           id={id}
           className="pe-9"
           placeholder="Password"
           type={isVisible ? 'text' : 'password'}
+          value={props.value}
           onBlur={props.onBlur}
           onChange={(ev) => props.onChange(ev)}
         />
