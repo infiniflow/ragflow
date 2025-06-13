@@ -21,8 +21,6 @@ import sys
 import threading
 import time
 
-from valkey import RedisError
-
 from api.utils.log_utils import initRootLogger, get_project_base_directory
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
