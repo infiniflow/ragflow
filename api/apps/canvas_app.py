@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -89,8 +90,11 @@ def save():
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
 
-        canvas = Canvas(json.dumps(req["dsl"]), current_user.id)
-        canvas.reset()
+        try:
+            canvas = Canvas(json.dumps(req["dsl"]), current_user.id)
+            canvas.reset()
+        except Exception as e:
+            logging.warning(f"Canvas saving exception: {str(e)}")
         req["dsl"] = json.loads(str(canvas))
         UserCanvasService.update_by_id(req["id"], req)
     # save version    

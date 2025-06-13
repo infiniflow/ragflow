@@ -116,22 +116,20 @@ def kb_prompt(kbinfos, max_tokens, prefix=""):
     docs = DocumentService.get_by_ids([ck["doc_id"] for ck in kbinfos["chunks"][:chunks_num]])
     docs = {d.id: d.meta_fields for d in docs}
 
-    doc2chunks = defaultdict(lambda: {"chunks": [], "meta": []})
-    for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
-        cnt = f"---\nID: {prefix}_{i}\n" + (f"URL: {ck['url']}\n" if "url" in ck else "")
-        cnt += re.sub(r"( style=\"[^\"]+\"|</?(html|body|head|title)>|<!DOCTYPE html>)", " ", ck["content_with_weight"], flags=re.DOTALL|re.IGNORECASE)
-        doc2chunks[ck["docnm_kwd"]]["chunks"].append(cnt)
-        doc2chunks[ck["docnm_kwd"]]["meta"] = docs.get(ck["doc_id"], {})
+    def draw_node(k, line):
+        return f"\n├── {k}: " + re.sub(r"\n+", " ", line, flags=re.DOTALL)
 
     knowledges = []
-    for nm, cks_meta in doc2chunks.items():
-        txt = f"\nDocument: {nm} \n"
-        for k, v in cks_meta["meta"].items():
-            txt += f"{k}: {v}\n"
-        txt += "Relevant fragments as following:\n"
-        for i, chunk in enumerate(cks_meta["chunks"], 1):
-            txt += f"{chunk}\n"
-        knowledges.append(txt)
+    for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
+        cnt = f"\nID: " + (f"{prefix}_{i}" if prefix else f"{i}")
+        cnt += draw_node("Title", ck["docnm_kwd"])
+        cnt += draw_node("URL", ck['url'])  if "url" in ck else ""
+        for k, v in docs.get(ck["doc_id"], {}).items():
+            cnt += draw_node(k, v)
+        cnt += "\n└── Content:\n"
+        cnt += ck["content_with_weight"]
+        knowledges.append(cnt)
+
     return knowledges
 
 
@@ -150,30 +148,34 @@ def citation_prompt():
 - Any failure to adhere to the above rules, including but not limited to incorrect formatting, use of prohibited styles, or unsupported citations, will be considered an error, and no citation will be added for that sentence.
 
 --- Example START ---
-<SYSTEM>: Here is the knowledge base:
-
-Document: Elon Musk Breaks Silence on Crypto, Warns Against Dogecoin ...
-URL: https://blockworks.co/news/elon-musk-crypto-dogecoin
+SYSTEM: 
+<context>
 ID: 0
+├── Title: Elon Musk Breaks Silence on Crypto, Warns Against Dogecoin ...
+├── URL: https://blockworks.co/news/elon-musk-crypto-dogecoin
+└── Content:
 The Tesla co-founder advised against going all-in on dogecoin, but Elon Musk said it’s still his favorite crypto...
 
-Document: Elon Musk's Dogecoin tweet sparks social media frenzy
 ID: 1
+├── Title: Elon Musk's Dogecoin tweet sparks social media frenzy
+└── Content:
 Musk said he is 'willing to serve' D.O.G.E. – shorthand for Dogecoin.
 
-Document: Causal effect of Elon Musk tweets on Dogecoin price
 ID: 2
+├── Title: Causal effect of Elon Musk tweets on Dogecoin price
+└── Content:
 If you think of Dogecoin — the cryptocurrency based on a meme — you can’t help but also think of Elon Musk...
 
-Document: Elon Musk's Tweet Ignites Dogecoin's Future In Public Services
 ID: 3
+├── Title: Elon Musk's Tweet Ignites Dogecoin's Future In Public Services
+└── Content:
 The market is heating up after Elon Musk's announcement about Dogecoin. Is this a new era for crypto?...
 
-      The above is the knowledge base.
+</context>
 
-<USER>: What's the Elon's view on dogecoin?
+USER: What's the Elon's view on dogecoin?
 
-<ASSISTANT>: Musk has consistently expressed his fondness for Dogecoin, often citing its humor and the inclusion of dogs in its branding. He has referred to it as his favorite cryptocurrency [ID:0] [ID:1].
+ASSISTANT: Musk has consistently expressed his fondness for Dogecoin, often citing its humor and the inclusion of dogs in its branding. He has referred to it as his favorite cryptocurrency [ID:0] [ID:1].
 Recently, Musk has hinted at potential future roles for Dogecoin. His tweets have sparked speculation about Dogecoin's potential integration into public services [ID:3].
 Overall, while Musk enjoys Dogecoin and often promotes it, he also warns against over-investing in it, reflecting both his personal amusement and caution regarding its speculative nature.
 
