@@ -18,7 +18,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 
 import pytest
-from common import INVALID_API_TOKEN, delete_documents, update_chunk
+from common import delete_documents, update_chunk
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 

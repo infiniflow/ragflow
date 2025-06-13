@@ -135,24 +135,6 @@ export const useBuildVariableOptions = (nodeId?: string) => {
   return options;
 };
 
-export const useGetComponentLabelByValue = (nodeId: string) => {
-  const options = useBuildVariableOptions(nodeId);
-
-  const flattenOptions = useMemo(() => {
-    return options.reduce<DefaultOptionType[]>((pre, cur) => {
-      return [...pre, ...cur.options];
-    }, []);
-  }, [options]);
-
-  const getLabel = useCallback(
-    (val?: string) => {
-      return flattenOptions.find((x) => x.value === val)?.label;
-    },
-    [flattenOptions],
-  );
-  return getLabel;
-};
-
 export function useBuildQueryVariableOptions() {
   const { data } = useFetchAgent();
   const node = useContext(AgentFormContext);
@@ -220,3 +202,21 @@ export function useBuildComponentIdAndBeginOptions(
 
   return [...beginOptions, ...componentIdOptions];
 }
+
+export const useGetComponentLabelByValue = (nodeId: string) => {
+  const options = useBuildComponentIdAndBeginOptions(nodeId);
+
+  const flattenOptions = useMemo(() => {
+    return options.reduce<DefaultOptionType[]>((pre, cur) => {
+      return [...pre, ...cur.options];
+    }, []);
+  }, [options]);
+
+  const getLabel = useCallback(
+    (val?: string) => {
+      return flattenOptions.find((x) => x.value === val)?.label;
+    },
+    [flattenOptions],
+  );
+  return getLabel;
+};

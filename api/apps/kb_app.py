@@ -124,6 +124,9 @@ def update():
             return get_data_error_result()
 
         if kb.pagerank != req.get("pagerank", 0):
+            if os.environ.get("DOC_ENGINE", "elasticsearch") != "elasticsearch":
+                return get_data_error_result(message="'pagerank' can only be set when doc_engine is elasticsearch")
+            
             if req.get("pagerank", 0) > 0:
                 settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
                                          search.index_name(kb.tenant_id), kb.id)
@@ -176,7 +179,10 @@ def list_kbs():
     items_per_page = int(request.args.get("page_size", 0))
     parser_id = request.args.get("parser_id")
     orderby = request.args.get("orderby", "create_time")
-    desc = request.args.get("desc", True)
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
 
     req = request.get_json()
     owner_ids = req.get("owner_ids", [])

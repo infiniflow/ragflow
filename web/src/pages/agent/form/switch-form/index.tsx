@@ -12,11 +12,11 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { ISwitchForm } from '@/interfaces/database/flow';
+import { ISwitchForm } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -26,10 +26,8 @@ import {
   SwitchOperatorOptions,
 } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
-import {
-  useBuildComponentIdAndBeginOptions,
-  useBuildVariableOptions,
-} from '../../hooks/use-get-begin-query';
+import { useBuildComponentIdAndBeginOptions } from '../../hooks/use-get-begin-query';
+import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { IOperatorForm } from '../../interface';
 import { useValues } from './use-values';
 
@@ -38,9 +36,46 @@ const ItemKey = 'items';
 
 type ConditionCardsProps = {
   name: string;
+  removeParent(index: number): void;
+  parentIndex: number;
+  parentLength: number;
 } & IOperatorForm;
 
-function ConditionCards({ name: parentName, node }: ConditionCardsProps) {
+const OperatorIcon = function OperatorIcon({
+  icon,
+  value,
+}: Omit<(typeof SwitchOperatorOptions)[0], 'label'>) {
+  return (
+    <IconFont
+      name={icon}
+      className={cn('size-4', {
+        'rotate-180': value === '>',
+      })}
+    ></IconFont>
+  );
+};
+
+function useBuildSwitchOperatorOptions() {
+  const { t } = useTranslation();
+
+  const switchOperatorOptions = useMemo(() => {
+    return SwitchOperatorOptions.map((x) => ({
+      value: x.value,
+      icon: <OperatorIcon icon={x.icon} value={x.value}></OperatorIcon>,
+      label: t(`flow.switchOperatorOptions.${x.label}`),
+    }));
+  }, [t]);
+
+  return switchOperatorOptions;
+}
+
+function ConditionCards({
+  name: parentName,
+  node,
+  parentIndex,
+  removeParent,
+  parentLength,
+}: ConditionCardsProps) {
   const form = useFormContext();
   const { t } = useTranslation();
 
@@ -49,18 +84,7 @@ function ConditionCards({ name: parentName, node }: ConditionCardsProps) {
     node?.parentId,
   );
 
-  const switchOperatorOptions = useMemo(() => {
-    return SwitchOperatorOptions.map((x) => ({
-      value: x.value,
-      icon: (
-        <IconFont
-          name={x.icon}
-          className={cn('size-4', { 'rotate-180': x.value === '>' })}
-        ></IconFont>
-      ),
-      label: t(`flow.switchOperatorOptions.${x.label}`),
-    }));
-  }, [t]);
+  const switchOperatorOptions = useBuildSwitchOperatorOptions();
 
   const name = `${parentName}.${ItemKey}`;
 
@@ -69,12 +93,30 @@ function ConditionCards({ name: parentName, node }: ConditionCardsProps) {
     control: form.control,
   });
 
+  const handleRemove = useCallback(
+    (index: number) => () => {
+      remove(index);
+      if (parentIndex !== 0 && index === 0 && parentLength === 1) {
+        removeParent(parentIndex);
+      }
+    },
+    [parentIndex, parentLength, remove, removeParent],
+  );
+
   return (
     <section className="flex-1 space-y-2.5">
       {fields.map((field, index) => {
         return (
           <div key={field.id} className="flex">
-            <Card className="bg-transparent border-input-border border flex-1">
+            <Card
+              className={cn(
+                'relative bg-transparent border-input-border border flex-1 ',
+                {
+                  'before:w-10 before:absolute before:h-[1px] before:bg-input-border before:top-1/2 before:-left-10':
+                    index === 0 || index === fields.length - 1,
+                },
+              )}
+            >
               <section className="p-2 bg-background-card flex justify-between items-center">
                 <FormField
                   control={form.control}
@@ -129,7 +171,7 @@ function ConditionCards({ name: parentName, node }: ConditionCardsProps) {
                 />
               </CardContent>
             </Card>
-            <Button variant={'ghost'} onClick={() => remove(index)}>
+            <Button variant={'ghost'} onClick={handleRemove(index)}>
               <X />
             </Button>
           </div>
@@ -140,7 +182,7 @@ function ConditionCards({ name: parentName, node }: ConditionCardsProps) {
           className="mt-6"
           onClick={() => append({ operator: switchOperatorOptions[0].value })}
         >
-          add
+          Add
         </BlockButton>
       </div>
     </section>
@@ -149,7 +191,8 @@ function ConditionCards({ name: parentName, node }: ConditionCardsProps) {
 
 const SwitchForm = ({ node }: IOperatorForm) => {
   const { t } = useTranslation();
-  const values = useValues();
+  const values = useValues(node);
+  const switchOperatorOptions = useBuildSwitchOperatorOptions();
 
   const FormSchema = z.object({
     conditions: z.array(
@@ -199,7 +242,7 @@ const SwitchForm = ({ node }: IOperatorForm) => {
     }));
   }, [t]);
 
-  const componentIdOptions = useBuildVariableOptions(node?.id, node?.parentId);
+  useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
@@ -212,26 +255,33 @@ const SwitchForm = ({ node }: IOperatorForm) => {
         {fields.map((field, index) => {
           return (
             <FormContainer key={field.id} className="">
-              <div>IF</div>
-              <section className="flex items-center gap-2 !mt-2">
-                <FormField
-                  control={form.control}
-                  name={`${ConditionKey}.${index}.logical_operator`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <RAGFlowSelect
-                          {...field}
-                          options={switchLogicOperatorOptions}
-                          triggerClassName="w-18"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <div>{index === 0 ? 'IF' : 'ELSEIF'}</div>
+              <section className="flex  gap-2 !mt-2 relative">
+                <section className="flex flex-col">
+                  <div className="relative  w-1 flex-1 before:absolute before:w-[1px]  before:bg-input-border before:top-20 before:bottom-0 before:left-10"></div>
+                  <FormField
+                    control={form.control}
+                    name={`${ConditionKey}.${index}.logical_operator`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <RAGFlowSelect
+                            {...field}
+                            options={switchLogicOperatorOptions}
+                            triggerClassName="w-18"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="relative  w-1 flex-1 before:absolute before:w-[1px]  before:bg-input-border before:top-0 before:bottom-36 before:left-10"></div>
+                </section>
                 <ConditionCards
                   name={`${ConditionKey}.${index}`}
+                  removeParent={remove}
+                  parentIndex={index}
+                  parentLength={fields.length}
                 ></ConditionCards>
               </section>
             </FormContainer>
@@ -239,10 +289,18 @@ const SwitchForm = ({ node }: IOperatorForm) => {
         })}
         <BlockButton
           onClick={() =>
-            append({ logical_operator: SwitchLogicOperatorOptions[0] })
+            append({
+              logical_operator: SwitchLogicOperatorOptions[0],
+              [ItemKey]: [
+                {
+                  operator: switchOperatorOptions[0].value,
+                },
+              ],
+              to: [],
+            })
           }
         >
-          add
+          Add
         </BlockButton>
       </form>
     </Form>

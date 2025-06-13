@@ -18,11 +18,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import (
-    INVALID_API_TOKEN,
     batch_create_datasets,
     delete_datasets,
     list_datasets,
 )
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -99,14 +99,14 @@ class TestCapability:
 class TestDatasetsDelete:
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "func, expected_code, expected_message, remaining",
+        "func, expected_code, remaining",
         [
-            (lambda r: {"ids": r[:1]}, 0, "", 2),
-            (lambda r: {"ids": r}, 0, "", 0),
+            (lambda r: {"ids": r[:1]}, 0, 2),
+            (lambda r: {"ids": r}, 0, 0),
         ],
         ids=["single_dataset", "multiple_datasets"],
     )
-    def test_ids(self, HttpApiAuth, add_datasets_func, func, expected_code, expected_message, remaining):
+    def test_ids(self, HttpApiAuth, add_datasets_func, func, expected_code, remaining):
         dataset_ids = add_datasets_func
         if callable(func):
             payload = func(dataset_ids)
