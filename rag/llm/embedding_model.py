@@ -913,3 +913,8 @@ class GPUStackEmbed(OpenAIEmbed):
 
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
+
+
+class NovitaEmbed(SILICONFLOWEmbed):
+    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai/embeddings"):
+        super().__init__(key, model_name, base_url)
