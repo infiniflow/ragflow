@@ -29,7 +29,6 @@ redis:
   db: 1
   password: 'infini_rag_flow'
   host: 'localhost:6379'
-
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'
@@ -61,7 +60,7 @@ redis:
 #   container_name: 'container_name'
 # The OSS object storage uses the MySQL configuration above by default. If you need to switch to another object storage service, please uncomment and configure the following parameters.
 # opendal:
-#   schema: 'mysql'  # Storage type, such as s3, oss, azure, etc.
+#   scheme: 'mysql'  # Storage type, such as s3, oss, azure, etc.
 #   config:
 #     oss_table: 'your_table_name'
 # user_default_llm:
