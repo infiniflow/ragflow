@@ -1,25 +1,25 @@
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from '@/components/ui/sheet';
 import { IModalProps } from '@/interfaces/common';
+import { cn } from '@/lib/utils';
+import AgentChatBox from './box';
 
-export function ChatSheet({ visible }: IModalProps<any>) {
+export function ChatSheet({ hideModal }: IModalProps<any>) {
   return (
-    <Sheet open={visible} modal={false}>
-      <SheetTrigger>Open</SheetTrigger>
-      <SheetContent>
+    <Sheet open modal={false} onOpenChange={hideModal}>
+      <SheetTitle className="hidden"></SheetTitle>
+      <SheetContent
+        className={cn('top-20 p-0')}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <SheetHeader>
           <SheetTitle>Are you absolutely sure?</SheetTitle>
-          <SheetDescription>
-            This action cannot be undone. This will permanently delete your
-            account and remove your data from our servers.
-          </SheetDescription>
         </SheetHeader>
+        <AgentChatBox></AgentChatBox>
       </SheetContent>
     </Sheet>
   );

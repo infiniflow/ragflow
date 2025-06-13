@@ -294,8 +294,22 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
             "source": "agent",
             "dsl": cvs.dsl
         }
+        canvas.messages.append({"role": "user", "content": question, "id": message_id})
+        canvas.add_user_input(question)
+
         API4ConversationService.save(**conv)
         conv = API4Conversation(**conv)
+        if not conv.message:
+            conv.message = []
+        conv.message.append({
+            "role": "user",
+            "content": question,
+            "id": message_id
+        })
+        
+        if not conv.reference:
+            conv.reference = []
+        conv.reference.append({"chunks": [], "doc_aggs": []})
             
     # Handle existing session
     else:
@@ -331,7 +345,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     if stream:
         try:
             completion_tokens = 0
-            for ans in canvas.run(stream=True):
+            for ans in canvas.run(stream=True, bypass_begin=True):
                 if ans.get("running_status"):
                     completion_tokens += len(tiktokenenc.encode(ans.get("content", "")))
                     yield "data: " + json.dumps(
@@ -394,7 +408,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
     else:  # Non-streaming mode
         try:
             all_answer_content = ""
-            for answer in canvas.run(stream=False):
+            for answer in canvas.run(stream=False, bypass_begin=True):
                 if answer.get("running_status"):
                     continue
                 

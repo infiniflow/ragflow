@@ -5,6 +5,7 @@ import { useCallback, useEffect } from 'react';
 import { Operator } from '../constant';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
+import { useCacheChatLog } from './use-cache-chat-log';
 import { useGetBeginNodeDataQuery } from './use-get-begin-query';
 import { useSaveGraph } from './use-save-graph';
 
@@ -149,5 +150,25 @@ export function useShowDrawer({
     hideFormDrawer,
     hideRunOrChatDrawer,
     showChatModal,
+  };
+}
+
+export function useShowLogSheet({
+  setCurrentMessageId,
+}: Pick<ReturnType<typeof useCacheChatLog>, 'setCurrentMessageId'>) {
+  const { visible, showModal, hideModal } = useSetModalState();
+
+  const handleShow = useCallback(
+    (messageId: string) => {
+      setCurrentMessageId(messageId);
+      showModal();
+    },
+    [setCurrentMessageId, showModal],
+  );
+
+  return {
+    logSheetVisible: visible,
+    hideLogSheet: hideModal,
+    showLogSheet: handleShow,
   };
 }

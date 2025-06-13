@@ -17,7 +17,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 
 import pytest
-from common import INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT, delete_chat_assistants, list_session_with_chat_assistants, update_session_with_chat_assistant
+from common import delete_chat_assistants, list_session_with_chat_assistants, update_session_with_chat_assistant
+from configs import INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -52,17 +53,17 @@ class TestSessionWithChatAssistantUpdate:
             pytest.param({"name": "case insensitive"}, 0, "", marks=pytest.mark.p3),
         ],
     )
-    def test_name(self, api_key, add_sessions_with_chat_assistant_func, payload, expected_code, expected_message):
+    def test_name(self, HttpApiAuth, add_sessions_with_chat_assistant_func, payload, expected_code, expected_message):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
         if payload["name"] == "duplicated_name":
-            update_session_with_chat_assistant(api_key, chat_assistant_id, session_ids[0], payload)
+            update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], payload)
         elif payload["name"] == "case insensitive":
-            update_session_with_chat_assistant(api_key, chat_assistant_id, session_ids[0], {"name": payload["name"].upper()})
+            update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], {"name": payload["name"].upper()})
 
-        res = update_session_with_chat_assistant(api_key, chat_assistant_id, session_ids[0], payload)
+        res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
-            res = list_session_with_chat_assistants(api_key, chat_assistant_id, {"id": session_ids[0]})
+            res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_id, {"id": session_ids[0]})
             assert res["data"][0]["name"] == payload["name"]
         else:
             assert res["message"] == expected_message
@@ -75,9 +76,9 @@ class TestSessionWithChatAssistantUpdate:
             pytest.param("invalid_chat_assistant_id", 102, "Session does not exist", marks=pytest.mark.skip(reason="issues/")),
         ],
     )
-    def test_invalid_chat_assistant_id(self, api_key, add_sessions_with_chat_assistant_func, chat_assistant_id, expected_code, expected_message):
+    def test_invalid_chat_assistant_id(self, HttpApiAuth, add_sessions_with_chat_assistant_func, chat_assistant_id, expected_code, expected_message):
         _, session_ids = add_sessions_with_chat_assistant_func
-        res = update_session_with_chat_assistant(api_key, chat_assistant_id, session_ids[0], {"name": "valid_name"})
+        res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], {"name": "valid_name"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -89,19 +90,19 @@ class TestSessionWithChatAssistantUpdate:
             ("invalid_session_id", 102, "Session does not exist"),
         ],
     )
-    def test_invalid_session_id(self, api_key, add_sessions_with_chat_assistant_func, session_id, expected_code, expected_message):
+    def test_invalid_session_id(self, HttpApiAuth, add_sessions_with_chat_assistant_func, session_id, expected_code, expected_message):
         chat_assistant_id, _ = add_sessions_with_chat_assistant_func
-        res = update_session_with_chat_assistant(api_key, chat_assistant_id, session_id, {"name": "valid_name"})
+        res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_id, {"name": "valid_name"})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
     @pytest.mark.p3
-    def test_repeated_update_session(self, api_key, add_sessions_with_chat_assistant_func):
+    def test_repeated_update_session(self, HttpApiAuth, add_sessions_with_chat_assistant_func):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
-        res = update_session_with_chat_assistant(api_key, chat_assistant_id, session_ids[0], {"name": "valid_name_1"})
+        res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], {"name": "valid_name_1"})
         assert res["code"] == 0
 
-        res = update_session_with_chat_assistant(api_key, chat_assistant_id, session_ids[0], {"name": "valid_name_2"})
+        res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], {"name": "valid_name_2"})
         assert res["code"] == 0
 
     @pytest.mark.p3
@@ -113,15 +114,15 @@ class TestSessionWithChatAssistantUpdate:
             pytest.param(None, 100, "TypeError", marks=pytest.mark.skip),
         ],
     )
-    def test_invalid_params(self, api_key, add_sessions_with_chat_assistant_func, payload, expected_code, expected_message):
+    def test_invalid_params(self, HttpApiAuth, add_sessions_with_chat_assistant_func, payload, expected_code, expected_message):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
-        res = update_session_with_chat_assistant(api_key, chat_assistant_id, session_ids[0], payload)
+        res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code != 0:
             assert expected_message in res["message"]
 
     @pytest.mark.p3
-    def test_concurrent_update_session(self, api_key, add_sessions_with_chat_assistant_func):
+    def test_concurrent_update_session(self, HttpApiAuth, add_sessions_with_chat_assistant_func):
         count = 50
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
 
@@ -129,7 +130,7 @@ class TestSessionWithChatAssistantUpdate:
             futures = [
                 executor.submit(
                     update_session_with_chat_assistant,
-                    api_key,
+                    HttpApiAuth,
                     chat_assistant_id,
                     session_ids[randint(0, 4)],
                     {"name": f"update session test {i}"},
@@ -141,9 +142,9 @@ class TestSessionWithChatAssistantUpdate:
         assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
-    def test_update_session_to_deleted_chat_assistant(self, api_key, add_sessions_with_chat_assistant_func):
+    def test_update_session_to_deleted_chat_assistant(self, HttpApiAuth, add_sessions_with_chat_assistant_func):
         chat_assistant_id, session_ids = add_sessions_with_chat_assistant_func
-        delete_chat_assistants(api_key, {"ids": [chat_assistant_id]})
-        res = update_session_with_chat_assistant(api_key, chat_assistant_id, session_ids[0], {"name": "valid_name"})
+        delete_chat_assistants(HttpApiAuth, {"ids": [chat_assistant_id]})
+        res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], {"name": "valid_name"})
         assert res["code"] == 102
         assert res["message"] == "You do not own the session"

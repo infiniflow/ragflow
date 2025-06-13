@@ -134,17 +134,16 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       className,
     )}
     {...props}
   >
-    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+    <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
         <Check className="h-4 w-4" />
       </SelectPrimitive.ItemIndicator>
     </span>
-
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
   </SelectPrimitive.Item>
 ));
@@ -179,6 +178,7 @@ export type RAGFlowSelectOptionType = {
   label: React.ReactNode;
   value: string;
   disabled?: boolean;
+  icon?: React.ReactNode;
 };
 
 export type RAGFlowSelectGroupOptionType = {
@@ -193,6 +193,7 @@ export type RAGFlowSelectProps = Partial<ControllerRenderProps> & {
   placeholder?: React.ReactNode;
   contentProps?: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>;
   triggerClassName?: string;
+  onlyShowSelectedIcon?: boolean;
 } & SelectPrimitive.SelectProps;
 
 /**
@@ -225,6 +226,7 @@ export const RAGFlowSelect = forwardRef<
     contentProps = {},
     defaultValue,
     triggerClassName,
+    onlyShowSelectedIcon = false,
   },
   ref,
 ) {
@@ -257,6 +259,24 @@ export const RAGFlowSelect = forwardRef<
     });
   }, [initialValue]);
 
+  // The value selected in the drop-down box only displays the icon
+  const label = React.useMemo(() => {
+    let nextOptions = options;
+    if (options.some((x) => !('value' in x))) {
+      nextOptions = (options as RAGFlowSelectGroupOptionType[]).reduce<
+        RAGFlowSelectOptionType[]
+      >((pre, cur) => {
+        return pre.concat(cur?.options ?? []);
+      }, []);
+    }
+
+    const option = (nextOptions as RAGFlowSelectOptionType[]).find(
+      (x) => x.value === value,
+    );
+
+    return onlyShowSelectedIcon ? option?.icon : option?.label;
+  }, [onlyShowSelectedIcon, options, value]);
+
   return (
     <Select onValueChange={handleChange} value={value} key={key}>
       <FormControlWidget>
@@ -267,7 +287,7 @@ export const RAGFlowSelect = forwardRef<
           ref={ref}
           className={triggerClassName}
         >
-          <SelectValue placeholder={placeholder} />
+          <SelectValue placeholder={placeholder}>{label}</SelectValue>
         </SelectTrigger>
       </FormControlWidget>
       <SelectContent {...contentProps}>
@@ -279,14 +299,17 @@ export const RAGFlowSelect = forwardRef<
                 key={o.value}
                 disabled={o.disabled}
               >
-                {o.label}
+                <div className="flex items-center gap-1">
+                  {o.icon}
+                  {o.label}
+                </div>
               </SelectItem>
             );
           }
 
           return (
             <SelectGroup key={idx}>
-              <SelectLabel>{o.label}</SelectLabel>
+              <SelectLabel className="pl-2">{o.label}</SelectLabel>
               {o.options.map((x) => (
                 <SelectItem value={x.value} key={x.value} disabled={x.disabled}>
                   {x.label}

@@ -16,7 +16,8 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import INVALID_API_TOKEN, delete_datasets, list_chat_assistants
+from common import delete_datasets, list_chat_assistants
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from utils import is_sorted
 
@@ -43,8 +44,8 @@ class TestAuthorization:
 @pytest.mark.usefixtures("add_chat_assistants")
 class TestChatAssistantsList:
     @pytest.mark.p1
-    def test_default(self, api_key):
-        res = list_chat_assistants(api_key)
+    def test_default(self, HttpApiAuth):
+        res = list_chat_assistants(HttpApiAuth)
         assert res["code"] == 0
         assert len(res["data"]) == 5
 
@@ -73,8 +74,8 @@ class TestChatAssistantsList:
             ),
         ],
     )
-    def test_page(self, api_key, params, expected_code, expected_page_size, expected_message):
-        res = list_chat_assistants(api_key, params=params)
+    def test_page(self, HttpApiAuth, params, expected_code, expected_page_size, expected_message):
+        res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]) == expected_page_size
@@ -108,13 +109,13 @@ class TestChatAssistantsList:
     )
     def test_page_size(
         self,
-        api_key,
+        HttpApiAuth,
         params,
         expected_code,
         expected_page_size,
         expected_message,
     ):
-        res = list_chat_assistants(api_key, params=params)
+        res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]) == expected_page_size
@@ -146,13 +147,13 @@ class TestChatAssistantsList:
     )
     def test_orderby(
         self,
-        api_key,
+        HttpApiAuth,
         params,
         expected_code,
         assertions,
         expected_message,
     ):
-        res = list_chat_assistants(api_key, params=params)
+        res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -183,13 +184,13 @@ class TestChatAssistantsList:
     )
     def test_desc(
         self,
-        api_key,
+        HttpApiAuth,
         params,
         expected_code,
         assertions,
         expected_message,
     ):
-        res = list_chat_assistants(api_key, params=params)
+        res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if callable(assertions):
@@ -207,8 +208,8 @@ class TestChatAssistantsList:
             ({"name": "unknown"}, 102, 0, "The chat doesn't exist"),
         ],
     )
-    def test_name(self, api_key, params, expected_code, expected_num, expected_message):
-        res = list_chat_assistants(api_key, params=params)
+    def test_name(self, HttpApiAuth, params, expected_code, expected_num, expected_message):
+        res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["name"] in [None, ""]:
@@ -230,7 +231,7 @@ class TestChatAssistantsList:
     )
     def test_id(
         self,
-        api_key,
+        HttpApiAuth,
         add_chat_assistants,
         chat_assistant_id,
         expected_code,
@@ -243,7 +244,7 @@ class TestChatAssistantsList:
         else:
             params = {"id": chat_assistant_id}
 
-        res = list_chat_assistants(api_key, params=params)
+        res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             if params["id"] in [None, ""]:
@@ -265,7 +266,7 @@ class TestChatAssistantsList:
     )
     def test_name_and_id(
         self,
-        api_key,
+        HttpApiAuth,
         add_chat_assistants,
         chat_assistant_id,
         name,
@@ -279,7 +280,7 @@ class TestChatAssistantsList:
         else:
             params = {"id": chat_assistant_id, "name": name}
 
-        res = list_chat_assistants(api_key, params=params)
+        res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
             assert len(res["data"]) == expected_num
@@ -287,27 +288,27 @@ class TestChatAssistantsList:
             assert res["message"] == expected_message
 
     @pytest.mark.p3
-    def test_concurrent_list(self, api_key):
+    def test_concurrent_list(self, HttpApiAuth):
         count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(list_chat_assistants, api_key) for i in range(count)]
+            futures = [executor.submit(list_chat_assistants, HttpApiAuth) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)
 
     @pytest.mark.p3
-    def test_invalid_params(self, api_key):
+    def test_invalid_params(self, HttpApiAuth):
         params = {"a": "b"}
-        res = list_chat_assistants(api_key, params=params)
+        res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == 0
         assert len(res["data"]) == 5
 
     @pytest.mark.p2
-    def test_list_chats_after_deleting_associated_dataset(self, api_key, add_chat_assistants):
+    def test_list_chats_after_deleting_associated_dataset(self, HttpApiAuth, add_chat_assistants):
         dataset_id, _, _ = add_chat_assistants
-        res = delete_datasets(api_key, {"ids": [dataset_id]})
+        res = delete_datasets(HttpApiAuth, {"ids": [dataset_id]})
         assert res["code"] == 0
 
-        res = list_chat_assistants(api_key)
+        res = list_chat_assistants(HttpApiAuth)
         assert res["code"] == 0
         assert len(res["data"]) == 5

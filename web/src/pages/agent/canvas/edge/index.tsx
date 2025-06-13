@@ -57,7 +57,7 @@ export function ButtonEdge({
     if (previousGraphPath.length > 0 && previousLatestElement) {
       graphPath = [previousLatestElement, ...graphPath];
     }
-    return graphPath;
+    return Array.isArray(graphPath) ? graphPath : [];
   }, [flowDetail.dsl?.path]);
 
   const highlightStyle = useMemo(() => {

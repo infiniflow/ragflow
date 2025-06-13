@@ -88,6 +88,8 @@
     --background-checked: rgba(76, 164, 231, 1);
 
     --input-border: rgba(22, 22, 24, 0.2);
+    --dot-green: rgba(59, 160, 92, 1);
+    --dot-red: rgba(216, 73, 75, 1);
   }
 
   .dark {
@@ -196,6 +198,9 @@
     --background-checked: rgba(76, 164, 231, 1);
 
     --input-border: rgba(255, 255, 255, 0.2);
+
+    --dot-green: rgba(59, 160, 92, 1);
+    --dot-red: rgba(216, 73, 75, 1);
   }
 }
 

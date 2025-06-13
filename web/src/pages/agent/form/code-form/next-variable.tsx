@@ -16,7 +16,7 @@ import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
+import { useBuildVariableOptions } from '../../hooks/use-get-begin-query';
 
 interface IProps {
   node?: RAGFlowNodeType;
@@ -41,10 +41,7 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
     control: form.control,
   });
 
-  const valueOptions = useBuildComponentIdSelectOptions(
-    node?.id,
-    node?.parentId,
-  );
+  const valueOptions = useBuildVariableOptions(node?.id, node?.parentId);
 
   return (
     <div className="space-y-5">
