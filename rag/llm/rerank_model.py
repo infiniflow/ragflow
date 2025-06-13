@@ -626,3 +626,7 @@ class GPUStackRerank(Base):
             raise ValueError(
                 f"Error calling GPUStackRerank model {self.model_name}: {e.response.status_code} - {e.response.text}")
 
+
+class NovitaRerank(JinaRerank):
+    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai/rerank"):
+        super().__init__(key, model_name, base_url)
