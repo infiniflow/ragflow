@@ -58,7 +58,7 @@ from rag.app import laws, paper, presentation, manual, qa, table, book, resume, 
     email, tag
 from rag.nlp import search, rag_tokenizer
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
-from rag.settings import DOC_MAXIMUM_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
+from rag.settings import DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
 from rag.utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.utils.storage_factory import STORAGE_IMPL
@@ -407,7 +407,6 @@ def init_kb(row, vector_size: int):
 async def embedding(docs, mdl, parser_config=None, callback=None):
     if parser_config is None:
         parser_config = {}
-    batch_size = 16
     tts, cnts = [], []
     for d in docs:
         tts.append(d.get("docnm_kwd", "Title"))
@@ -426,8 +425,8 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         tk_count += c
 
     cnts_ = np.array([])
-    for i in range(0, len(cnts), batch_size):
-        vts, c = await trio.to_thread.run_sync(lambda: mdl.encode([truncate(c, mdl.max_length-10) for c in cnts[i: i + batch_size]]))
+    for i in range(0, len(cnts), EMBEDDING_BATCH_SIZE):
+        vts, c = await trio.to_thread.run_sync(lambda: mdl.encode([truncate(c, mdl.max_length-10) for c in cnts[i: i + EMBEDDING_BATCH_SIZE]]))
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -581,7 +580,6 @@ async def do_handle_task(task):
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
     doc_store_result = ""
-    es_bulk_size = 4
 
     async def delete_image(kb_id, chunk_id):
         try:
@@ -592,8 +590,8 @@ async def do_handle_task(task):
                 "Deleting image of chunk {}/{}/{} got exception".format(task["location"], task["name"], chunk_id))
             raise
 
-    for b in range(0, len(chunks), es_bulk_size):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + es_bulk_size], search.index_name(task_tenant_id), task_dataset_id))
+    for b in range(0, len(chunks), DOC_BULK_SIZE):
+        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
         task_canceled = TaskService.do_cancel(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
@@ -604,7 +602,7 @@ async def do_handle_task(task):
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             progress_callback(-1, msg=error_message)
             raise Exception(error_message)
-        chunk_ids = [chunk["id"] for chunk in chunks[:b + es_bulk_size]]
+        chunk_ids = [chunk["id"] for chunk in chunks[:b + DOC_BULK_SIZE]]
         chunk_ids_str = " ".join(chunk_ids)
         try:
             TaskService.update_chunk_ids(task["id"], chunk_ids_str)
