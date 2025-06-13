@@ -1,13 +1,19 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Flex } from 'antd';
-import { Play } from 'lucide-react';
+import { Copy, Play, Trash2 } from 'lucide-react';
 import { Operator, operatorMap } from '../../constant';
 import OperatorIcon from '../../operator-icon';
 import { needsSingleStepDebugging } from '../../utils';
 import NodeDropdown from './dropdown';
 import { NextNodePopover } from './popover';
 
-import { memo } from 'react';
+import {
+  TooltipContent,
+  TooltipNode,
+  TooltipTrigger,
+} from '@/components/xyflow/tooltip-node';
+import { Position } from '@xyflow/react';
+import { PropsWithChildren, memo } from 'react';
 import { RunTooltip } from '../../flow-tooltip';
 interface IProps {
   id: string;
@@ -74,3 +80,37 @@ const InnerNodeHeader = ({
 const NodeHeader = memo(InnerNodeHeader);
 
 export default NodeHeader;
+
+function IconWrapper({ children }: PropsWithChildren) {
+  return (
+    <div className="p-1.5 bg-text-title rounded-sm cursor-pointer">
+      {children}
+    </div>
+  );
+}
+
+type ToolBarProps = {
+  selected?: boolean | undefined;
+} & PropsWithChildren;
+
+export function ToolBar({ selected, children }: ToolBarProps) {
+  return (
+    <TooltipNode selected={selected}>
+      <TooltipTrigger>{children}</TooltipTrigger>
+
+      <TooltipContent position={Position.Top}>
+        <section className="flex gap-2 items-center">
+          <IconWrapper>
+            <Play className="size-3.5" />
+          </IconWrapper>
+          <IconWrapper>
+            <Copy className="size-3.5" />
+          </IconWrapper>
+          <IconWrapper>
+            <Trash2 className="size-3.5" />
+          </IconWrapper>
+        </section>
+      </TooltipContent>
+    </TooltipNode>
+  );
+}
