@@ -13,21 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-from pathlib import Path
-from time import sleep
-
 import pytest
 from common import (
-    batch_add_chunks,
-    batch_create_chat_assistants,
     batch_create_datasets,
-    bulk_upload_documents,
 )
 from configs import HOST_ADDRESS, VERSION
+from libs.auth import RAGFlowWebApiAuth
 from pytest import FixtureRequest
-from ragflow_sdk import Chat, Chunk, DataSet, Document, RAGFlow
-from utils import wait_for
+from ragflow_sdk import RAGFlow
 from utils.file_utils import (
     create_docx_file,
     create_eml_file,
@@ -42,17 +35,8 @@ from utils.file_utils import (
 )
 
 
-@wait_for(30, 1, "Document parsing timeout")
-def condition(_dataset: DataSet):
-    documents = _dataset.list_documents(page_size=1000)
-    for document in documents:
-        if document.run != "DONE":
-            return False
-    return True
-
-
 @pytest.fixture
-def generate_test_files(request: FixtureRequest, tmp_path: Path):
+def generate_test_files(request: FixtureRequest, tmp_path):
     file_creators = {
         "docx": (tmp_path / "ragflow_test.docx", create_docx_file),
         "excel": (tmp_path / "ragflow_test.xlsx", create_excel_file),
@@ -75,9 +59,14 @@ def generate_test_files(request: FixtureRequest, tmp_path: Path):
 
 
 @pytest.fixture(scope="class")
-def ragflow_tmp_dir(request: FixtureRequest, tmp_path_factory: Path) -> Path:
+def ragflow_tmp_dir(request, tmp_path_factory):
     class_name = request.cls.__name__
     return tmp_path_factory.mktemp(class_name)
+
+
+@pytest.fixture(scope="session")
+def WebApiAuth(auth):
+    return RAGFlowWebApiAuth(auth)
 
 
 @pytest.fixture(scope="session")
@@ -93,81 +82,19 @@ def clear_datasets(request: FixtureRequest, client: RAGFlow):
     request.addfinalizer(cleanup)
 
 
-@pytest.fixture(scope="function")
-def clear_chat_assistants(request: FixtureRequest, client: RAGFlow):
-    def cleanup():
-        client.delete_chats(ids=None)
-
-    request.addfinalizer(cleanup)
-
-
-@pytest.fixture(scope="function")
-def clear_session_with_chat_assistants(request, add_chat_assistants):
-    def cleanup():
-        for chat_assistant in chat_assistants:
-            try:
-                chat_assistant.delete_sessions(ids=None)
-            except Exception:
-                pass
-
-    request.addfinalizer(cleanup)
-
-    _, _, chat_assistants = add_chat_assistants
-
-
 @pytest.fixture(scope="class")
-def add_dataset(request: FixtureRequest, client: RAGFlow) -> DataSet:
+def add_dataset(request: FixtureRequest, client: RAGFlow, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
         client.delete_datasets(ids=None)
 
     request.addfinalizer(cleanup)
-    return batch_create_datasets(client, 1)[0]
+    return batch_create_datasets(WebApiAuth, 1)[0]
 
 
 @pytest.fixture(scope="function")
-def add_dataset_func(request: FixtureRequest, client: RAGFlow) -> DataSet:
+def add_dataset_func(request: FixtureRequest, client: RAGFlow, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
         client.delete_datasets(ids=None)
 
     request.addfinalizer(cleanup)
-    return batch_create_datasets(client, 1)[0]
-
-
-@pytest.fixture(scope="class")
-def add_document(add_dataset: DataSet, ragflow_tmp_dir: Path) -> tuple[DataSet, Document]:
-    return add_dataset, bulk_upload_documents(add_dataset, 1, ragflow_tmp_dir)[0]
-
-
-@pytest.fixture(scope="class")
-def add_chunks(request: FixtureRequest, add_document: tuple[DataSet, Document]) -> tuple[DataSet, Document, list[Chunk]]:
-    def cleanup():
-        try:
-            document.delete_chunks(ids=[])
-        except Exception:
-            pass
-
-    request.addfinalizer(cleanup)
-
-    dataset, document = add_document
-    dataset.async_parse_documents([document.id])
-    condition(dataset)
-    chunks = batch_add_chunks(document, 4)
-    # issues/6487
-    sleep(1)
-    return dataset, document, chunks
-
-
-@pytest.fixture(scope="class")
-def add_chat_assistants(request, client, add_document) -> tuple[DataSet, Document, list[Chat]]:
-    def cleanup():
-        try:
-            client.delete_chats(ids=None)
-        except Exception:
-            pass
-
-    request.addfinalizer(cleanup)
-
-    dataset, document = add_document
-    dataset.async_parse_documents([document.id])
-    condition(dataset)
-    return dataset, document, batch_create_chat_assistants(client, 5)
+    return batch_create_datasets(WebApiAuth, 1)[0]
