@@ -129,6 +129,8 @@ export enum Operator {
   Agent = 'Agent',
 }
 
+export const SwitchLogicOperatorOptions = ['and', 'or'];
+
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
 );
@@ -445,6 +447,23 @@ export const componentMenuList = [
   },
 ];
 
+export const SwitchOperatorOptions = [
+  { value: '=', label: 'equal', icon: 'equal' },
+  { value: '≠', label: 'notEqual', icon: 'not-equals' },
+  { value: '>', label: 'gt', icon: 'Less' },
+  { value: '≥', label: 'ge', icon: 'Greater-or-equal' },
+  { value: '<', label: 'lt', icon: 'Less' },
+  { value: '≤', label: 'le', icon: 'less-or-equal' },
+  { value: 'contains', label: 'contains', icon: 'Contains' },
+  { value: 'not contains', label: 'notContains', icon: 'not-contains' },
+  { value: 'start with', label: 'startWith', icon: 'list-start' },
+  { value: 'end with', label: 'endWith', icon: 'list-end' },
+  { value: 'empty', label: 'empty', icon: 'circle' },
+  { value: 'not empty', label: 'notEmpty', icon: 'circle-slash-2' },
+];
+
+export const SwitchElseTo = 'end_cpn_ids';
+
 const initialQueryBaseValues = {
   query: [],
 };
@@ -616,7 +635,20 @@ export const initialExeSqlValues = {
   ...initialQueryBaseValues,
 };
 
-export const initialSwitchValues = { conditions: [] };
+export const initialSwitchValues = {
+  conditions: [
+    {
+      logical_operator: SwitchLogicOperatorOptions[0],
+      items: [
+        {
+          operator: SwitchOperatorOptions[0].value,
+        },
+      ],
+      to: [],
+    },
+  ],
+  [SwitchElseTo]: [],
+};
 
 export const initialWenCaiValues = {
   top_n: 20,
@@ -2999,25 +3031,6 @@ export const ExeSQLOptions = ['mysql', 'postgresql', 'mariadb', 'mssql'].map(
     value: x,
   }),
 );
-
-export const SwitchElseTo = 'end_cpn_id';
-
-export const SwitchOperatorOptions = [
-  { value: '=', label: 'equal', icon: 'equal' },
-  { value: '≠', label: 'notEqual', icon: 'not-equals' },
-  { value: '>', label: 'gt', icon: 'Less' },
-  { value: '≥', label: 'ge', icon: 'Greater-or-equal' },
-  { value: '<', label: 'lt', icon: 'Less' },
-  { value: '≤', label: 'le', icon: 'less-or-equal' },
-  { value: 'contains', label: 'contains', icon: 'Contains' },
-  { value: 'not contains', label: 'notContains', icon: 'not-contains' },
-  { value: 'start with', label: 'startWith', icon: 'list-start' },
-  { value: 'end with', label: 'endWith', icon: 'list-end' },
-  // { value: 'empty', label: 'empty', icon: '' },
-  // { value: 'not empty', label: 'notEmpty', icon: '' },
-];
-
-export const SwitchLogicOperatorOptions = ['and', 'or'];
 
 export const WenCaiQueryTypeOptions = [
   'stock',

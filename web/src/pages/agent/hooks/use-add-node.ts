@@ -224,6 +224,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
     [
       addEdge,
       addNode,
+      edges,
       getNode,
       getNodeName,
       initializeOperatorParams,

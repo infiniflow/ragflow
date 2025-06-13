@@ -17,7 +17,6 @@ import {
   useHandleDrop,
   useSelectCanvasData,
   useValidateConnection,
-  useWatchNodeFormDataChange,
 } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
@@ -119,8 +118,6 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   });
 
   const { handleBeforeDelete } = useBeforeDelete();
-
-  useWatchNodeFormDataChange();
 
   const { addCanvasNode } = useAddNode(reactFlowInstance);
 

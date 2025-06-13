@@ -92,7 +92,7 @@ export interface IRelevantForm extends IGenerateForm {
 export interface ISwitchCondition {
   items: ISwitchItem[];
   logical_operator: string;
-  to: string;
+  to: string[] | string;
 }
 
 export interface ISwitchItem {
