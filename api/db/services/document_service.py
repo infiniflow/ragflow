@@ -484,7 +484,8 @@ class DocumentService(CommonService):
                     if t.progress == -1:
                         bad += 1
                     prg += t.progress if t.progress >= 0 else 0
-                    msg.append(t.progress_msg)
+                    if t.progress_msg.strip():
+                        msg.append(t.progress_msg)
                     if t.task_type == "raptor":
                         has_raptor = True
                     elif t.task_type == "graphrag":
