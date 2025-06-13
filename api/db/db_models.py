@@ -796,6 +796,48 @@ class UserCanvasVersion(DataBaseModel):
         db_table = "user_canvas_version"
 
 
+class ScheduleAgent(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    canvas_id = CharField(max_length=32, null=False, help_text="canvas id to execute", index=True)
+    name = CharField(max_length=255, null=False, help_text="schedule name", index=True)
+    description = TextField(null=True, help_text="schedule description")
+    
+    # Frequency options
+    frequency_type = CharField(max_length=20, null=False, help_text="once|daily|weekly|monthly", default="once", index=True)
+    
+    # Time settings
+    execute_time = CharField(max_length=8, null=True, help_text="HH:MM:SS format", index=True)
+    execute_date = DateTimeField(null=True, help_text="specific date for one-time execution", index=True)
+    
+    # Weekly settings
+    days_of_week = JSONField(null=False, default=[], help_text="[1,2,3,4,5,6,7] where 1=Monday")
+    
+    # Monthly settings
+    day_of_month = IntegerField(null=True, help_text="day of month (1-31)", index=True)
+    
+    enabled = BooleanField(default=True, help_text="whether the schedule is enabled", index=True)
+    input_params = JSONField(null=False, default={}, help_text="input parameters for agent")
+    created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "schedule_agent"
+
+
+class ScheduleAgentRun(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    schedule_id = CharField(max_length=32, null=False, help_text="schedule agent id", index=True)
+    started_at = DateTimeField(null=False, help_text="execution start datetime", index=True)
+    finished_at = DateTimeField(null=True, help_text="execution finish datetime", index=True)
+    success = BooleanField(null=True, help_text="execution result", index=True)
+    error_message = TextField(null=True, help_text="error message if failed")
+    conversation_id = CharField(max_length=32, null=True, help_text="conversation id from execution", index=True)
+    
+    class Meta:
+        db_table = "schedule_agent_run"
+
+
 def migrate_db():
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
     try:
@@ -885,5 +927,57 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("schedule_agent", "enabled", BooleanField(default=True, help_text="whether the schedule is enabled", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("schedule_agent", "input_params", JSONField(null=False, default={}, help_text="input parameters for agent")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("schedule_agent", "frequency_type", CharField(max_length=20, null=False, help_text="once|daily|weekly|monthly", default="once", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("schedule_agent", "execute_time", CharField(max_length=8, null=True, help_text="HH:MM:SS format", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("schedule_agent", "execute_date", DateTimeField(null=True, help_text="specific date for one-time execution", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("schedule_agent", "days_of_week", JSONField(null=False, default=[], help_text="[1,2,3,4,5,6,7] where 1=Monday")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("schedule_agent", "day_of_month", IntegerField(null=True, help_text="day of month (1-31)", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.drop_column("schedule_agent", "next_run_time"))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.drop_column("schedule_agent", "last_run_time"))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.drop_column("schedule_agent", "run_count"))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("schedule_agent_run", "started_at", DateTimeField(null=False, help_text="execution start datetime", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("schedule_agent_run", "finished_at", DateTimeField(null=True, help_text="execution finish datetime", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.drop_column("schedule_agent_run", "execution_duration"))
     except Exception:
         pass
