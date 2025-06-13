@@ -52,7 +52,10 @@
             "parameters": [],
             "presence_penalty": 0.4,
             "prompt": "",
-            "query": [],
+            "query": [{
+              "type": "reference",
+              "component_id": "RewriteQuestion:AllNightsSniff"
+             }],
             "temperature": 0.1,
             "top_p": 0.3
           }
@@ -195,14 +198,13 @@
             "message_history_window_size": 22,
             "output": null,
             "output_var_name": "output",
-            "query": [],
             "rerank_id": "",
             "similarity_threshold": 0.2,
             "top_k": 1024,
             "top_n": 6,
             "query": [{
               "type": "reference",
-              "component_id": "answer:0"
+              "component_id": "RewriteQuestion:AllNightsSniff"
              }],
             "use_kg": false
           }
@@ -553,7 +555,11 @@
               "temperature": 0.1,
               "temperatureEnabled": true,
               "topPEnabled": true,
-              "top_p": 0.3
+              "top_p": 0.3,
+              "query": [{
+                "type": "reference",
+                "component_id": "RewriteQuestion:AllNightsSniff"
+              }]
             },
             "label": "Categorize",
             "name": "Question Categorize"
@@ -630,7 +636,11 @@
               "keywords_similarity_weight": 0.3,
               "similarity_threshold": 0.2,
               "top_k": 1024,
-              "top_n": 6
+              "top_n": 6,
+              "query": [{
+                "type": "reference",
+                "component_id": "RewriteQuestion:AllNightsSniff"
+              }]
             },
             "label": "Retrieval",
             "name": "Search product info"
@@ -650,7 +660,7 @@
             "x": 674.4543037737495,
             "y": 855.3858500356805
           },
-          "selected": true,
+          "selected": false,
           "sourcePosition": "right",
           "targetPosition": "left",
           "type": "retrievalNode",
