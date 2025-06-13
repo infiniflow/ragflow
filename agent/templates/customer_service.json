@@ -199,7 +199,12 @@
             "rerank_id": "",
             "similarity_threshold": 0.2,
             "top_k": 1024,
-            "top_n": 6
+            "top_n": 6,
+            "query": [{
+              "type": "reference",
+              "component_id": "answer:0"
+             }],
+            "use_kg": false
           }
         },
         "upstream": [
@@ -645,7 +650,7 @@
             "x": 674.4543037737495,
             "y": 855.3858500356805
           },
-          "selected": false,
+          "selected": true,
           "sourcePosition": "right",
           "targetPosition": "left",
           "type": "retrievalNode",
@@ -932,7 +937,7 @@
             "y": 962.5655101584402
           },
           "resizing": false,
-          "selected": true,
+          "selected": false,
           "sourcePosition": "right",
           "style": {
             "height": 163,
