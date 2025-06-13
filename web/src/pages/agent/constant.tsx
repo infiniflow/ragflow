@@ -1,33 +1,4 @@
 import {
-  GitHubIcon,
-  KeywordIcon,
-  QWeatherIcon,
-  WikipediaIcon,
-} from '@/assets/icon/Icon';
-import { ReactComponent as AkShareIcon } from '@/assets/svg/akshare.svg';
-import { ReactComponent as ArXivIcon } from '@/assets/svg/arxiv.svg';
-import { ReactComponent as baiduFanyiIcon } from '@/assets/svg/baidu-fanyi.svg';
-import { ReactComponent as BaiduIcon } from '@/assets/svg/baidu.svg';
-import { ReactComponent as BeginIcon } from '@/assets/svg/begin.svg';
-import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
-import { ReactComponent as ConcentratorIcon } from '@/assets/svg/concentrator.svg';
-import { ReactComponent as CrawlerIcon } from '@/assets/svg/crawler.svg';
-import { ReactComponent as DeepLIcon } from '@/assets/svg/deepl.svg';
-import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
-import { ReactComponent as EmailIcon } from '@/assets/svg/email.svg';
-import { ReactComponent as ExeSqlIcon } from '@/assets/svg/exesql.svg';
-import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
-import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
-import { ReactComponent as InvokeIcon } from '@/assets/svg/invoke-ai.svg';
-import { ReactComponent as Jin10Icon } from '@/assets/svg/jin10.svg';
-import { ReactComponent as NoteIcon } from '@/assets/svg/note.svg';
-import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
-import { ReactComponent as SwitchIcon } from '@/assets/svg/switch.svg';
-import { ReactComponent as TemplateIcon } from '@/assets/svg/template.svg';
-import { ReactComponent as TuShareIcon } from '@/assets/svg/tushare.svg';
-import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
-import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
-import {
   initialKeywordsSimilarityWeightValue,
   initialSimilarityThresholdValue,
 } from '@/components/similarity-slider';
@@ -61,24 +32,10 @@ export enum PromptRole {
   Assistant = 'assistant',
 }
 
-import {
-  BranchesOutlined,
-  DatabaseOutlined,
-  FormOutlined,
-  MergeCellsOutlined,
-  MessageOutlined,
-  RocketOutlined,
-  SendOutlined,
-} from '@ant-design/icons';
 import upperFirst from 'lodash/upperFirst';
 import {
-  Box,
-  CirclePower,
   CloudUpload,
-  CodeXml,
-  IterationCcw,
   ListOrdered,
-  MessageSquareMore,
   OptionIcon,
   TextCursorInput,
   ToggleLeft,
@@ -151,48 +108,6 @@ export const AgentOperatorList = [
   Operator.Note,
   Operator.Agent,
 ];
-
-export const operatorIconMap = {
-  [Operator.Retrieval]: RocketOutlined,
-  [Operator.Generate]: MergeCellsOutlined,
-  [Operator.Answer]: SendOutlined,
-  [Operator.Begin]: BeginIcon,
-  [Operator.Categorize]: DatabaseOutlined,
-  [Operator.Message]: MessageOutlined,
-  [Operator.Relevant]: BranchesOutlined,
-  [Operator.RewriteQuestion]: FormOutlined,
-  [Operator.KeywordExtract]: KeywordIcon,
-  [Operator.DuckDuckGo]: DuckIcon,
-  [Operator.Baidu]: BaiduIcon,
-  [Operator.Wikipedia]: WikipediaIcon,
-  [Operator.PubMed]: PubMedIcon,
-  [Operator.ArXiv]: ArXivIcon,
-  [Operator.Google]: GoogleIcon,
-  [Operator.Bing]: BingIcon,
-  [Operator.GoogleScholar]: GoogleScholarIcon,
-  [Operator.DeepL]: DeepLIcon,
-  [Operator.GitHub]: GitHubIcon,
-  [Operator.BaiduFanyi]: baiduFanyiIcon,
-  [Operator.QWeather]: QWeatherIcon,
-  [Operator.ExeSQL]: ExeSqlIcon,
-  [Operator.Switch]: SwitchIcon,
-  [Operator.WenCai]: WenCaiIcon,
-  [Operator.AkShare]: AkShareIcon,
-  [Operator.YahooFinance]: YahooFinanceIcon,
-  [Operator.Jin10]: Jin10Icon,
-  [Operator.Concentrator]: ConcentratorIcon,
-  [Operator.TuShare]: TuShareIcon,
-  [Operator.Note]: NoteIcon,
-  [Operator.Crawler]: CrawlerIcon,
-  [Operator.Invoke]: InvokeIcon,
-  [Operator.Template]: TemplateIcon,
-  [Operator.Email]: EmailIcon,
-  [Operator.Iteration]: IterationCcw,
-  [Operator.IterationStart]: CirclePower,
-  [Operator.Code]: CodeXml,
-  [Operator.WaitingDialogue]: MessageSquareMore,
-  [Operator.Agent]: Box,
-};
 
 export const operatorMap: Record<
   Operator,

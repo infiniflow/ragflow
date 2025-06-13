@@ -296,6 +296,7 @@ const SwitchForm = ({ node }: IOperatorForm) => {
                   operator: switchOperatorOptions[0].value,
                 },
               ],
+              to: [],
             })
           }
         >
