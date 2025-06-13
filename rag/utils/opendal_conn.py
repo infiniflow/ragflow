@@ -58,9 +58,14 @@ class OpenDALStorage:
         if self._scheme == 'mysql':
             self.init_db_config()
             self.init_opendal_mysql_table()
-        self._operator = opendal.Operator(self._scheme, **self._kwargs)
+        self._operator = opendal.Operator(**self._kwargs)
 
         logging.info("OpenDALStorage initialized successfully")
+
+    def health(self):
+        bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
+        r = self._operator.write(f"{bucket}/{fnm}", binary)
+        return r
 
     def put(self, bucket, fnm, binary):
         self._operator.write(f"{bucket}/{fnm}", binary)
