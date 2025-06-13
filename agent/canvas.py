@@ -123,11 +123,6 @@ class Canvas:
                 param.check()
             except Exception as e:
                 raise ValueError(self.get_component_name(k) + f": {e}")
-            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
-            if cpn["obj"].component_name == "Categorize":
-                for _, desc in param.category_description.items():
-                    if desc["to"] not in cpn["downstream"]:
-                        cpn["downstream"].append(desc["to"])
 
         self.path = self.dsl["path"]
         self.history = self.dsl["history"]

@@ -89,13 +89,6 @@ def save():
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
-
-        try:
-            canvas = Canvas(json.dumps(req["dsl"]), current_user.id)
-            canvas.reset()
-        except Exception as e:
-            logging.warning(f"Canvas saving exception: {str(e)}")
-        req["dsl"] = json.loads(str(canvas))
         UserCanvasService.update_by_id(req["id"], req)
     # save version    
     UserCanvasVersionService.insert( user_canvas_id=req["id"], dsl=req["dsl"], title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")))
