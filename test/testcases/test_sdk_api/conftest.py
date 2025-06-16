@@ -116,7 +116,7 @@ def clear_session_with_chat_assistants(request, add_chat_assistants):
 
 
 @pytest.fixture(scope="class")
-def add_dataset(request: FixtureRequest, client: RAGFlow):
+def add_dataset(request: FixtureRequest, client: RAGFlow) -> DataSet:
     def cleanup():
         client.delete_datasets(ids=None)
 

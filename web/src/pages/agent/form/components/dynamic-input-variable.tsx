@@ -3,7 +3,7 @@ import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Collapse, Flex, Form, Input, Select } from 'antd';
 import { PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useBuildComponentIdSelectOptions } from '../../hooks/use-get-begin-query';
+import { useBuildVariableOptions } from '../../hooks/use-get-begin-query';
 
 import styles from './index.less';
 
@@ -21,10 +21,7 @@ const getVariableName = (type: string) =>
 
 const DynamicVariableForm = ({ node }: IProps) => {
   const { t } = useTranslation();
-  const valueOptions = useBuildComponentIdSelectOptions(
-    node?.id,
-    node?.parentId,
-  );
+  const valueOptions = useBuildVariableOptions(node?.id, node?.parentId);
   const form = Form.useFormInstance();
 
   const options = [

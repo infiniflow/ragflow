@@ -1,24 +1,66 @@
-import { Operator, operatorIconMap } from './constant';
+import { IconFont } from '@/components/icon-font';
+import { cn } from '@/lib/utils';
+import { CirclePlay } from 'lucide-react';
+import { Operator } from './constant';
 
 interface IProps {
   name: Operator;
-  fontSize?: number;
-  width?: number;
-  color?: string;
+  className?: string;
 }
+
+export const OperatorIconMap = {
+  [Operator.Retrieval]: 'KR',
+  // [Operator.Generate]: MergeCellsOutlined,
+  // [Operator.Answer]: SendOutlined,
+  [Operator.Begin]: CirclePlay,
+  [Operator.Categorize]: 'a-QuestionClassification',
+  [Operator.Message]: 'reply',
+  [Operator.Iteration]: 'loop',
+  [Operator.Switch]: 'condition',
+  [Operator.Code]: 'code-set',
+  [Operator.Agent]: 'agent-ai',
+  // [Operator.Relevant]: BranchesOutlined,
+  // [Operator.RewriteQuestion]: FormOutlined,
+  // [Operator.KeywordExtract]: KeywordIcon,
+  // [Operator.DuckDuckGo]: DuckIcon,
+  // [Operator.Baidu]: BaiduIcon,
+  // [Operator.Wikipedia]: WikipediaIcon,
+  // [Operator.PubMed]: PubMedIcon,
+  // [Operator.ArXiv]: ArXivIcon,
+  // [Operator.Google]: GoogleIcon,
+  // [Operator.Bing]: BingIcon,
+  // [Operator.GoogleScholar]: GoogleScholarIcon,
+  // [Operator.DeepL]: DeepLIcon,
+  // [Operator.GitHub]: GitHubIcon,
+  // [Operator.BaiduFanyi]: baiduFanyiIcon,
+  // [Operator.QWeather]: QWeatherIcon,
+  // [Operator.ExeSQL]: ExeSqlIcon,
+  // [Operator.WenCai]: WenCaiIcon,
+  // [Operator.AkShare]: AkShareIcon,
+  // [Operator.YahooFinance]: YahooFinanceIcon,
+  // [Operator.Jin10]: Jin10Icon,
+  // [Operator.Concentrator]: ConcentratorIcon,
+  // [Operator.TuShare]: TuShareIcon,
+  // [Operator.Note]: NoteIcon,
+  // [Operator.Crawler]: CrawlerIcon,
+  // [Operator.Invoke]: InvokeIcon,
+  // [Operator.Template]: TemplateIcon,
+  // [Operator.Email]: EmailIcon,
+  // [Operator.IterationStart]: CirclePower,
+  // [Operator.WaitingDialogue]: MessageSquareMore,
+};
 
 const Empty = () => {
   return <div className="hidden"></div>;
 };
 
-const OperatorIcon = ({ name, fontSize, width, color }: IProps) => {
-  const Icon = operatorIconMap[name] || Empty;
-  return (
-    <Icon
-      className={'text-2xl max-h-6 max-w-6 text-[rgb(59, 118, 244)]'}
-      style={{ fontSize, color }}
-      width={width}
-    ></Icon>
+const OperatorIcon = ({ name, className }: IProps) => {
+  const Icon = OperatorIconMap[name as keyof typeof OperatorIconMap] || Empty;
+
+  return typeof Icon === 'string' ? (
+    <IconFont name={Icon} className={cn('size-5', className)}></IconFont>
+  ) : (
+    <Icon className={cn('size-5', className)}> </Icon>
   );
 };
 

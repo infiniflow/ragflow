@@ -16,10 +16,12 @@
 
 
 import logging
+import os
 
 from flask import request
 from peewee import OperationalError
 
+from api import settings
 from api.db import FileSource, StatusEnum
 from api.db.db_models import File
 from api.db.services.document_service import DocumentService
@@ -48,6 +50,8 @@ from api.utils.validation_utils import (
     validate_and_parse_json_request,
     validate_and_parse_request_args,
 )
+from rag.nlp import search
+from rag.settings import PAGERANK_FLD
 
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
@@ -97,9 +101,6 @@ def create(tenant_id):
                      "picture", "presentation", "qa", "table", "tag"
                      ]
               description: Chunking method.
-            pagerank:
-              type: integer
-              description: Set page rank.
             parser_config:
               type: object
               description: Parser configuration.
@@ -351,6 +352,16 @@ def update(tenant_id, dataset_id):
             ok, err = verify_embedding_availability(req["embd_id"], tenant_id)
             if not ok:
                 return err
+
+        if "pagerank" in req and req["pagerank"] != kb.pagerank:
+            if os.environ.get("DOC_ENGINE", "elasticsearch") == "infinity":
+                return get_error_argument_result(message="'pagerank' can only be set when doc_engine is elasticsearch")
+
+            if req["pagerank"] > 0:
+                settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]}, search.index_name(kb.tenant_id), kb.id)
+            else:
+                # Elasticsearch requires PAGERANK_FLD be non-zero!
+                settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD}, search.index_name(kb.tenant_id), kb.id)
 
         if not KnowledgebaseService.update_by_id(kb.id, req):
             return get_error_data_result(message="Update dataset error.(Database error)")

@@ -21,7 +21,7 @@ The auto-tagging feature is *unavailable* on the [Infinity](https://github.com/i
 
 Auto-tagging applies in situations where chunks are so similar to each other that the intended chunks cannot be distinguished from the rest. For example, when you have a few chunks about iPhone and a majority about iPhone case or iPhone accessaries, it becomes difficult to retrieve those chunks about iPhone without additional information.
 
-## Create tag set
+## 1. Create tag set
 
 You can consider a tag set as a closed set, and the tags to attach to the chunks in your dataset (knowledge base) are *exclusively* from the specified tag set. You use a tag set to "inform" RAGFlow which chunks to tag and which tags to apply.
 
@@ -41,6 +41,10 @@ As a rule of thumb, consider including the following entries in your tag table:
 
 ### Create a tag set
 
+:::danger IMPORTANT
+A tag set is *not* involved in document indexing or retrieval. Do not specify a tag set when configuring your chat assistant or agent.
+:::
+
 1. Click **+ Create knowledge base** to create a knowledge base.
 2. Navigate to the **Configuration** page of the created knowledge base and choose **Tag** as the default chunking method.
 3. Navigate to the **Dataset** page and upload and parse your table file in XLSX, CSV, or TXT formats.  
@@ -49,11 +53,7 @@ As a rule of thumb, consider including the following entries in your tag table:
 4. Click the **Table** tab to view the tag frequency table:  
    ![Image](https://github.com/user-attachments/assets/af91d10c-5ea5-491f-ab21-3803d5ebf59f)
 
-:::danger IMPORTANT
-A tag set is *not* involved in document indexing or retrieval. Do not specify a tag set when configuring your chat assistant or agent.
-:::
-
-## Tag chunks
+## 2. Tag chunks
 
 Once a tag set is created, you can apply it to your dataset:
 
@@ -67,7 +67,7 @@ If the tag set is missing from the dropdown, check that it has been created or c
 3. Re-parse your documents to start the auto-tagging process.  
    _In an AI chat scenario using auto-tagged datasets, each query will be tagged using the corresponding tag set(s) and chunks with these tags will have a higher chance to be retrieved._
 
-## Update tag set
+## 3. Update tag set
 
 Creating a tag set is *not* for once and for all. Oftentimes, you may find it necessary to update or delete existing tags or add new entries. 
 
