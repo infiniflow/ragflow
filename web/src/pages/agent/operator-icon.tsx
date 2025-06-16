@@ -9,7 +9,7 @@ interface IProps {
 }
 
 export const OperatorIconMap = {
-  [Operator.Retrieval]: 'retrival-0',
+  [Operator.Retrieval]: 'KR',
   // [Operator.Generate]: MergeCellsOutlined,
   // [Operator.Answer]: SendOutlined,
   [Operator.Begin]: CirclePlay,
