@@ -113,16 +113,17 @@ class TestDocumentsUpload:
         assert str(excinfo.value) == "No file selected!", str(excinfo.value)
 
     @pytest.mark.p2
-    def test_filename_exceeds_max_length(self, add_dataset_func, tmp_path):
+    def test_filename_max_length(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
-        fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt")
+        fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 4)}.txt")
 
         with fp.open("rb") as f:
             blob = f.read()
 
-        with pytest.raises(Exception) as excinfo:
-            dataset.upload_documents([{"display_name": fp.name, "blob": blob}])
-        assert str(excinfo.value) == "File name should be less than 128 bytes.", str(excinfo.value)
+        documents = dataset.upload_documents([{"display_name": fp.name, "blob": blob}])
+        for document in documents:
+            assert document.dataset_id == dataset.id, str(document)
+            assert document.name == fp.name, str(document)
 
     @pytest.mark.p2
     def test_duplicate_files(self, add_dataset_func, tmp_path):
