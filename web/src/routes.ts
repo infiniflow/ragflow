@@ -93,6 +93,7 @@ const routes = [
           { path: '/user-setting', redirect: '/user-setting/profile' },
           {
             path: '/user-setting/profile',
+            // component: '@/pages/user-setting/setting-profile',
             component: '@/pages/user-setting/setting-profile',
           },
           {

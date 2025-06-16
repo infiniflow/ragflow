@@ -1,13 +1,13 @@
 export const UserSettingBaseKey = 'user-setting';
 
 export enum UserSettingRouteKey {
-  Team = 'team',
-  Model = 'model',
-  // Password = 'password',
-  Api = 'api',
   Profile = 'profile',
-  // Logout = 'logout',
+  Password = 'password',
+  Model = 'model',
   System = 'system',
+  Api = 'api',
+  Team = 'team',
+  Logout = 'logout',
 }
 
 export const ProfileSettingBaseKey = 'profile-setting';
