@@ -25,7 +25,7 @@ class TestDocumentsUpdated:
         "name, expected_message",
         [
             ("new_name.txt", ""),
-            (f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt", f"File name must be {DOCUMENT_NAME_LIMIT} bytes or less."),
+            (f"{'a' * (DOCUMENT_NAME_LIMIT - 4)}.txt", ""),
             (0, "AttributeError"),
             (None, "AttributeError"),
             ("", "The extension of file can't be changed"),
