@@ -56,7 +56,8 @@ except Exception:
     REDIS = {}
     pass
 DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
-
+DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 4))
+EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", 16))
 SVR_QUEUE_NAME = "rag_flow_svr_queue"
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
 PAGERANK_FLD = "pagerank_fea"
