@@ -109,7 +109,11 @@ const LlmSettingItems = ({ prefix, formItemLayout = {}, onChange }: IProps) => {
               >
                 <Switch size="small" />
               </Form.Item>
-              <Form.Item noStyle dependencies={['temperatureEnabled']}>
+              <Form.Item
+                noStyle
+                dependencies={['temperatureEnabled']}
+                shouldUpdate
+              >
                 {({ getFieldValue }) => {
                   const disabled = !getFieldValue('temperatureEnabled');
                   return (
@@ -154,7 +158,7 @@ const LlmSettingItems = ({ prefix, formItemLayout = {}, onChange }: IProps) => {
               <Form.Item name={'topPEnabled'} valuePropName="checked" noStyle>
                 <Switch size="small" />
               </Form.Item>
-              <Form.Item noStyle dependencies={['topPEnabled']}>
+              <Form.Item noStyle dependencies={['topPEnabled']} shouldUpdate>
                 {({ getFieldValue }) => {
                   const disabled = !getFieldValue('topPEnabled');
                   return (
@@ -197,7 +201,11 @@ const LlmSettingItems = ({ prefix, formItemLayout = {}, onChange }: IProps) => {
               >
                 <Switch size="small" />
               </Form.Item>
-              <Form.Item noStyle dependencies={['presencePenaltyEnabled']}>
+              <Form.Item
+                noStyle
+                dependencies={['presencePenaltyEnabled']}
+                shouldUpdate
+              >
                 {({ getFieldValue }) => {
                   const disabled = !getFieldValue('presencePenaltyEnabled');
                   return (
@@ -246,7 +254,11 @@ const LlmSettingItems = ({ prefix, formItemLayout = {}, onChange }: IProps) => {
               >
                 <Switch size="small" />
               </Form.Item>
-              <Form.Item noStyle dependencies={['frequencyPenaltyEnabled']}>
+              <Form.Item
+                noStyle
+                dependencies={['frequencyPenaltyEnabled']}
+                shouldUpdate
+              >
                 {({ getFieldValue }) => {
                   const disabled = !getFieldValue('frequencyPenaltyEnabled');
                   return (
@@ -295,7 +307,11 @@ const LlmSettingItems = ({ prefix, formItemLayout = {}, onChange }: IProps) => {
               >
                 <Switch size="small" />
               </Form.Item>
-              <Form.Item noStyle dependencies={['maxTokensEnabled']}>
+              <Form.Item
+                noStyle
+                dependencies={['maxTokensEnabled']}
+                shouldUpdate
+              >
                 {({ getFieldValue }) => {
                   const disabled = !getFieldValue('maxTokensEnabled');
 
