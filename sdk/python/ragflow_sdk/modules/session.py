@@ -50,33 +50,28 @@ class Session(Base):
                 json_data = json.loads(line[5:])
                 if json_data["data"] is True or json_data["data"].get("running_status"):
                     continue
-                answer = json_data["data"]["answer"]
-                reference = json_data["data"].get("reference", {})
-                temp_dict = {
-                    "content": answer,
-                    "role": "assistant"
-                }
-                if reference and "chunks" in reference:
-                    chunks = reference["chunks"]
-                    temp_dict["reference"] = chunks
-                message = Message(self.rag, temp_dict)
+                message = self._structure_answer(json_data)
                 yield message
         else:
             try:
                 json_data = json.loads(res.text)
             except ValueError:
                 raise Exception(f"Invalid response {res}")
-            answer = json_data["data"]["answer"]
-            reference = json_data["data"].get("reference", {})
-            temp_dict = {
-                "content": answer,
-                "role": "assistant"
-            }
-            if reference and "chunks" in reference:
-                chunks = reference["chunks"]
-                temp_dict["reference"] = chunks
-            message = Message(self.rag, temp_dict)
-            return message
+            return self._structure_answer(json_data)
+        
+
+    def _structure_answer(self, json_data):
+        answer = json_data["data"]["answer"]
+        reference = json_data["data"].get("reference", {})
+        temp_dict = {
+            "content": answer,
+            "role": "assistant"
+        }
+        if reference and "chunks" in reference:
+            chunks = reference["chunks"]
+            temp_dict["reference"] = chunks
+        message = Message(self.rag, temp_dict)
+        return message
 
     def _ask_chat(self, question: str, stream: bool, **kwargs):
         json_data = {"question": question, "stream": stream, "session_id": self.id}
