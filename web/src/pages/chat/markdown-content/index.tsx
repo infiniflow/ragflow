@@ -25,14 +25,11 @@ import {
   replaceThinkToSection,
   showImage,
 } from '@/utils/chat';
-import { replaceTextByOldReg } from '../utils';
+import { currentReg, replaceTextByOldReg } from '../utils';
 
 import classNames from 'classnames';
 import { pipe } from 'lodash/fp';
 import styles from './index.less';
-
-const reg = /(~{2}\d+={2})/g;
-// const curReg = /(~{2}\d+\${2})/g;
 
 const getChunkIndex = (match: string) => Number(match.slice(2, -2));
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
@@ -201,7 +198,7 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, reg, (match, i) => {
+      let replacedText = reactStringReplace(text, currentReg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
 
         const { documentUrl, fileExtension, imageId, chunkItem, documentId } =

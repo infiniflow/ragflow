@@ -14,15 +14,14 @@
 #  limitations under the License.
 #
 
-import os
 from pathlib import Path
 
 import requests
+from configs import HOST_ADDRESS
 from requests_toolbelt import MultipartEncoder
 from utils.file_utils import create_txt_file
 
 HEADERS = {"Content-Type": "application/json"}
-HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
 DATASETS_API_URL = "/api/v1/datasets"
 FILE_API_URL = "/api/v1/datasets/{dataset_id}/documents"
 FILE_CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/chunks"
@@ -30,12 +29,6 @@ CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks"
 CHAT_ASSISTANT_API_URL = "/api/v1/chats"
 SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
 SESSION_WITH_AGENT_API_URL = "/api/v1/agents/{agent_id}/sessions"
-
-INVALID_API_TOKEN = "invalid_key_123"
-DATASET_NAME_LIMIT = 128
-DOCUMENT_NAME_LIMIT = 128
-CHAT_ASSISTANT_NAME_LIMIT = 255
-SESSION_WITH_CHAT_NAME_LIMIT = 255
 
 
 # DATASET MANAGEMENT
@@ -68,7 +61,7 @@ def batch_create_datasets(auth, num):
 
 
 # FILE MANAGEMENT WITHIN DATASET
-def upload_documnets(auth, dataset_id, files_path=None):
+def upload_documents(auth, dataset_id, files_path=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
 
     if files_path is None:
@@ -110,31 +103,31 @@ def download_document(auth, dataset_id, document_id, save_path):
     return res
 
 
-def list_documnets(auth, dataset_id, params=None):
+def list_documents(auth, dataset_id, params=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
     res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
 
-def update_documnet(auth, dataset_id, document_id, payload=None):
+def update_document(auth, dataset_id, document_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_id}".format(dataset_id=dataset_id)
     res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def delete_documnets(auth, dataset_id, payload=None):
+def delete_documents(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def parse_documnets(auth, dataset_id, payload=None):
+def parse_documents(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
 
-def stop_parse_documnets(auth, dataset_id, payload=None):
+def stop_parse_documents(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{FILE_CHUNK_API_URL}".format(dataset_id=dataset_id)
     res = requests.delete(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
@@ -145,7 +138,7 @@ def bulk_upload_documents(auth, dataset_id, num, tmp_path):
     for i in range(num):
         fp = create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt")
         fps.append(fp)
-    res = upload_documnets(auth, dataset_id, fps)
+    res = upload_documents(auth, dataset_id, fps)
     document_ids = []
     for document in res["data"]:
         document_ids.append(document["id"])

@@ -16,36 +16,37 @@
 
 
 import pytest
-from common import bulk_upload_documents, delete_documnets
+from common import bulk_upload_documents, delete_documents
 
 
 @pytest.fixture(scope="function")
-def add_document_func(request, api_key, add_dataset, ragflow_tmp_dir):
-    dataset_id = add_dataset
-    document_ids = bulk_upload_documents(api_key, dataset_id, 1, ragflow_tmp_dir)
-
+def add_document_func(request, HttpApiAuth, add_dataset, ragflow_tmp_dir):
     def cleanup():
-        delete_documnets(api_key, dataset_id, {"ids": document_ids})
+        delete_documents(HttpApiAuth, dataset_id, {"ids": None})
 
     request.addfinalizer(cleanup)
-    return dataset_id, document_ids[0]
+
+    dataset_id = add_dataset
+    return dataset_id, bulk_upload_documents(HttpApiAuth, dataset_id, 1, ragflow_tmp_dir)[0]
 
 
 @pytest.fixture(scope="class")
-def add_documents(request, api_key, add_dataset, ragflow_tmp_dir):
-    dataset_id = add_dataset
-    document_ids = bulk_upload_documents(api_key, dataset_id, 5, ragflow_tmp_dir)
-
+def add_documents(request, HttpApiAuth, add_dataset, ragflow_tmp_dir):
     def cleanup():
-        delete_documnets(api_key, dataset_id, {"ids": document_ids})
+        delete_documents(HttpApiAuth, dataset_id, {"ids": None})
 
     request.addfinalizer(cleanup)
-    return dataset_id, document_ids
+
+    dataset_id = add_dataset
+    return dataset_id, bulk_upload_documents(HttpApiAuth, dataset_id, 5, ragflow_tmp_dir)
 
 
 @pytest.fixture(scope="function")
-def add_documents_func(api_key, add_dataset_func, ragflow_tmp_dir):
-    dataset_id = add_dataset_func
-    document_ids = bulk_upload_documents(api_key, dataset_id, 3, ragflow_tmp_dir)
+def add_documents_func(request, HttpApiAuth, add_dataset_func, ragflow_tmp_dir):
+    def cleanup():
+        delete_documents(HttpApiAuth, dataset_id, {"ids": None})
 
-    return dataset_id, document_ids
+    request.addfinalizer(cleanup)
+
+    dataset_id = add_dataset_func
+    return dataset_id, bulk_upload_documents(HttpApiAuth, dataset_id, 3, ragflow_tmp_dir)

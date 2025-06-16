@@ -3,6 +3,7 @@ import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentDialogueMode } from '../../constant';
+import { buildBeginInputListFromObject } from './utils';
 
 export function useValues(node?: RAGFlowNodeType) {
   const { t } = useTranslation();
@@ -12,6 +13,7 @@ export function useValues(node?: RAGFlowNodeType) {
       enablePrologue: true,
       prologue: t('chat.setAnOpenerInitial'),
       mode: AgentDialogueMode.Conversational,
+      inputs: [],
     }),
     [t],
   );
@@ -23,7 +25,9 @@ export function useValues(node?: RAGFlowNodeType) {
       return defaultValues;
     }
 
-    return formData;
+    const inputs = buildBeginInputListFromObject(formData?.inputs);
+
+    return { ...(formData || {}), inputs };
   }, [defaultValues, node?.data?.form]);
 
   return values;

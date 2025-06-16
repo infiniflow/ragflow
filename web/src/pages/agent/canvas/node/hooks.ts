@@ -72,13 +72,13 @@ export const useBuildSwitchHandlePositions = ({
     }> = [];
 
     [...conditions, ''].forEach((x, idx) => {
-      let top = idx === 0 ? 58 + 20 : list[idx - 1].top + 32; // case number (Case 1) height + flex gap
+      let top = idx === 0 ? 58 + 20 : list[idx - 1].top + 10; // case number (Case 1) height + flex gap
       if (idx - 1 >= 0) {
         const previousItems = conditions[idx - 1]?.items ?? [];
         if (previousItems.length > 0) {
-          top += 12; // ConditionBlock padding
+          // top += 12; // ConditionBlock padding
           top += previousItems.length * 22; // condition variable height
-          top += (previousItems.length - 1) * 25; // operator height
+          // top += (previousItems.length - 1) * 25; // operator height
         }
       }
 

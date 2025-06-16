@@ -15,17 +15,16 @@ import { FormTooltip } from '@/components/ui/tooltip';
 import { buildSelectOptions } from '@/utils/component-util';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
-import { useCallback } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { AgentDialogueMode } from '../../constant';
-import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
 import { useEditQueryRecord } from './use-edit-query';
 import { useValues } from './use-values';
+import { useWatchFormChange } from './use-watch-change';
 
 const ModeOptions = buildSelectOptions([
   AgentDialogueMode.Conversational,
@@ -39,15 +38,9 @@ const BeginForm = ({ node }: INextOperatorForm) => {
 
   const FormSchema = z.object({
     enablePrologue: z.boolean().optional(),
-    prologue: z
-      .string()
-      .min(1, {
-        message: t('common.namePlaceholder'),
-      })
-      .trim()
-      .optional(),
+    prologue: z.string().trim().optional(),
     mode: z.string(),
-    query: z
+    inputs: z
       .array(
         z.object({
           key: z.string(),
@@ -68,7 +61,7 @@ const BeginForm = ({ node }: INextOperatorForm) => {
 
   useWatchFormChange(node?.id, form);
 
-  const query = useWatch({ control: form.control, name: 'query' });
+  const inputs = useWatch({ control: form.control, name: 'inputs' });
   const mode = useWatch({ control: form.control, name: 'mode' });
 
   const enablePrologue = useWatch({
@@ -88,13 +81,6 @@ const BeginForm = ({ node }: INextOperatorForm) => {
     form,
     node,
   });
-
-  const handleParameterDialogSubmit = useCallback(
-    (values: any) => {
-      ok(values);
-    },
-    [ok],
-  );
 
   return (
     <section className="px-5 space-y-5">
@@ -160,7 +146,7 @@ const BeginForm = ({ node }: INextOperatorForm) => {
         {/* Create a hidden field to make Form instance record this */}
         <FormField
           control={form.control}
-          name={'query'}
+          name={'inputs'}
           render={() => <div></div>}
         />
         <Collapse
@@ -183,7 +169,7 @@ const BeginForm = ({ node }: INextOperatorForm) => {
           }
         >
           <QueryTable
-            data={query}
+            data={inputs}
             showModal={showModal}
             deleteRecord={handleDeleteRecord}
           ></QueryTable>
@@ -191,12 +177,10 @@ const BeginForm = ({ node }: INextOperatorForm) => {
 
         {visible && (
           <ParameterDialog
-            visible={visible}
             hideModal={hideModal}
             initialValue={currentRecord}
-            onOk={ok}
             otherThanCurrentQuery={otherThanCurrentQuery}
-            submit={handleParameterDialogSubmit}
+            submit={ok}
           ></ParameterDialog>
         )}
       </Form>

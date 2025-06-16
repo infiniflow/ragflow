@@ -13,10 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import INVALID_API_TOKEN, bulk_upload_documents, delete_documnets, list_documnets
+from common import bulk_upload_documents, delete_documents, list_documents
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -34,7 +35,7 @@ class TestAuthorization:
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
-        res = delete_documnets(invalid_auth, "dataset_id")
+        res = delete_documents(invalid_auth, "dataset_id")
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -65,7 +66,7 @@ class TestDocumentsDeletion:
     )
     def test_basic_scenarios(
         self,
-        api_key,
+        HttpApiAuth,
         add_documents_func,
         payload,
         expected_code,
@@ -75,12 +76,12 @@ class TestDocumentsDeletion:
         dataset_id, document_ids = add_documents_func
         if callable(payload):
             payload = payload(document_ids)
-        res = delete_documnets(api_key, dataset_id, payload)
+        res = delete_documents(HttpApiAuth, dataset_id, payload)
         assert res["code"] == expected_code
         if res["code"] != 0:
             assert res["message"] == expected_message
 
-        res = list_documnets(api_key, dataset_id)
+        res = list_documents(HttpApiAuth, dataset_id)
         assert len(res["data"]["docs"]) == remaining
         assert res["data"]["total"] == remaining
 
@@ -96,9 +97,9 @@ class TestDocumentsDeletion:
             ),
         ],
     )
-    def test_invalid_dataset_id(self, api_key, add_documents_func, dataset_id, expected_code, expected_message):
+    def test_invalid_dataset_id(self, HttpApiAuth, add_documents_func, dataset_id, expected_code, expected_message):
         _, document_ids = add_documents_func
-        res = delete_documnets(api_key, dataset_id, {"ids": document_ids[:1]})
+        res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids[:1]})
         assert res["code"] == expected_code
         assert res["message"] == expected_message
 
@@ -111,71 +112,72 @@ class TestDocumentsDeletion:
             lambda r: {"ids": r + ["invalid_id"]},
         ],
     )
-    def test_delete_partial_invalid_id(self, api_key, add_documents_func, payload):
+    def test_delete_partial_invalid_id(self, HttpApiAuth, add_documents_func, payload):
         dataset_id, document_ids = add_documents_func
         if callable(payload):
             payload = payload(document_ids)
-        res = delete_documnets(api_key, dataset_id, payload)
+        res = delete_documents(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 102
         assert res["message"] == "Documents not found: ['invalid_id']"
 
-        res = list_documnets(api_key, dataset_id)
+        res = list_documents(HttpApiAuth, dataset_id)
         assert len(res["data"]["docs"]) == 0
         assert res["data"]["total"] == 0
 
     @pytest.mark.p2
-    def test_repeated_deletion(self, api_key, add_documents_func):
+    def test_repeated_deletion(self, HttpApiAuth, add_documents_func):
         dataset_id, document_ids = add_documents_func
-        res = delete_documnets(api_key, dataset_id, {"ids": document_ids})
+        res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids})
         assert res["code"] == 0
 
-        res = delete_documnets(api_key, dataset_id, {"ids": document_ids})
+        res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids})
         assert res["code"] == 102
         assert "Documents not found" in res["message"]
 
     @pytest.mark.p2
-    def test_duplicate_deletion(self, api_key, add_documents_func):
+    def test_duplicate_deletion(self, HttpApiAuth, add_documents_func):
         dataset_id, document_ids = add_documents_func
-        res = delete_documnets(api_key, dataset_id, {"ids": document_ids + document_ids})
+        res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids + document_ids})
         assert res["code"] == 0
         assert "Duplicate document ids" in res["data"]["errors"][0]
         assert res["data"]["success_count"] == 3
 
-        res = list_documnets(api_key, dataset_id)
+        res = list_documents(HttpApiAuth, dataset_id)
         assert len(res["data"]["docs"]) == 0
         assert res["data"]["total"] == 0
 
 
 @pytest.mark.p3
-def test_concurrent_deletion(api_key, add_dataset, tmp_path):
-    documnets_num = 100
+def test_concurrent_deletion(HttpApiAuth, add_dataset, tmp_path):
+    count = 100
     dataset_id = add_dataset
-    document_ids = bulk_upload_documents(api_key, dataset_id, documnets_num, tmp_path)
+    document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, count, tmp_path)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [
             executor.submit(
-                delete_documnets,
-                api_key,
+                delete_documents,
+                HttpApiAuth,
                 dataset_id,
                 {"ids": document_ids[i : i + 1]},
             )
-            for i in range(documnets_num)
+            for i in range(count)
         ]
-    responses = [f.result() for f in futures]
-    assert all(r["code"] == 0 for r in responses)
+    responses = list(as_completed(futures))
+    assert len(responses) == count, responses
+    assert all(future.result()["code"] == 0 for future in futures)
 
 
 @pytest.mark.p3
-def test_delete_1k(api_key, add_dataset, tmp_path):
-    documnets_num = 1_000
+def test_delete_1k(HttpApiAuth, add_dataset, tmp_path):
+    documents_num = 1_000
     dataset_id = add_dataset
-    document_ids = bulk_upload_documents(api_key, dataset_id, documnets_num, tmp_path)
-    res = list_documnets(api_key, dataset_id)
-    assert res["data"]["total"] == documnets_num
+    document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, documents_num, tmp_path)
+    res = list_documents(HttpApiAuth, dataset_id)
+    assert res["data"]["total"] == documents_num
 
-    res = delete_documnets(api_key, dataset_id, {"ids": document_ids})
+    res = delete_documents(HttpApiAuth, dataset_id, {"ids": document_ids})
     assert res["code"] == 0
 
-    res = list_documnets(api_key, dataset_id)
+    res = list_documents(HttpApiAuth, dataset_id)
     assert res["data"]["total"] == 0

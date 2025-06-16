@@ -11,6 +11,8 @@ export interface DSL {
   graph?: IGraph;
   messages: Message[];
   reference: IReference[];
+  globals: Record<string, any>;
+  retrieval: IReference[];
 }
 
 export interface IOperator {
@@ -90,7 +92,7 @@ export interface IRelevantForm extends IGenerateForm {
 export interface ISwitchCondition {
   items: ISwitchItem[];
   logical_operator: string;
-  to: string;
+  to: string[] | string;
 }
 
 export interface ISwitchItem {
