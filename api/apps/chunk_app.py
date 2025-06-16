@@ -29,7 +29,7 @@ from api.db import LLMType, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import UserTenantService
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
+from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, get_uuid
 from api.db.services.document_service import DocumentService
 from api import settings
 from api.utils.api_utils import get_json_result
@@ -219,7 +219,7 @@ def rm():
 @validate_request("doc_id", "content_with_weight")
 def create():
     req = request.json
-    chunck_id = xxhash.xxh64((req["content_with_weight"] + req["doc_id"]).encode("utf-8")).hexdigest()
+    chunck_id = get_uuid()
     d = {"id": chunck_id, "content_ltks": rag_tokenizer.tokenize(req["content_with_weight"]),
          "content_with_weight": req["content_with_weight"]}
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
@@ -255,7 +255,11 @@ def create():
         v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
         v = 0.1 * v[0] + 0.9 * v[1]
         d["q_%d_vec" % len(v)] = v.tolist()
-        settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
+
+        doc_store_result = settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
+        if doc_store_result:
+            error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
+            raise Exception(error_message)
 
         DocumentService.increment_chunk_num(
             doc.id, doc.kb_id, c, 1, 0)

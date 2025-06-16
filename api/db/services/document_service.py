@@ -633,7 +633,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         for ck in th.result():
             d = deepcopy(doc)
             d.update(ck)
-            d["id"] = xxhash.xxh64((ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
+            d["id"] = get_uuid()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
             if not d.get("image"):
@@ -706,7 +706,11 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
                 if not settings.docStoreConn.indexExist(idxnm, kb_id):
                     settings.docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
                 try_create_idx = False
-            settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
+
+            doc_store_result = settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
+            if doc_store_result:
+                error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
+                raise Exception(error_message)
 
         DocumentService.increment_chunk_num(
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)

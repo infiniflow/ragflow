@@ -297,10 +297,6 @@ def is_float_regex(value):
     return bool(re.match(r"^[-+]?[0-9]*\.?[0-9]+$", value))
 
 
-def chunk_id(chunk):
-    return xxhash.xxh64((chunk["content_with_weight"] + chunk["kb_id"]).encode("utf-8")).hexdigest()
-
-
 async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
     chunk = {
         "id": get_uuid(),

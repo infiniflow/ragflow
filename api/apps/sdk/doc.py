@@ -19,7 +19,6 @@ import pathlib
 import re
 from io import BytesIO
 
-import xxhash
 from flask import request, send_file
 from peewee import OperationalError
 from pydantic import BaseModel, Field, validator
@@ -33,7 +32,7 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle, TenantLLMService
 from api.db.services.task_service import TaskService, queue_tasks
-from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required
+from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, get_uuid
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -1059,7 +1058,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
     if "questions" in req:
         if not isinstance(req["questions"], list):
             return get_error_data_result("`questions` is required to be a list")
-    chunk_id = xxhash.xxh64((req["content"] + document_id).encode("utf-8")).hexdigest()
+    chunk_id = get_uuid()
     d = {
         "id": chunk_id,
         "content_ltks": rag_tokenizer.tokenize(req["content"]),
@@ -1080,7 +1079,11 @@ def add_chunk(tenant_id, dataset_id, document_id):
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
-    settings.docStoreConn.insert([d], search.index_name(tenant_id), dataset_id)
+
+    doc_store_result = settings.docStoreConn.insert([d], search.index_name(tenant_id), dataset_id)
+    if doc_store_result:
+        error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
+        return server_error_response(error_message)
 
     DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
     # rename keys
