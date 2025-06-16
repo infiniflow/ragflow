@@ -17,10 +17,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchUserInfo, useSaveSetting } from '@/hooks/user-setting-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
+import { rsaPsw } from '@/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Pencil, Upload } from 'lucide-react';
+import { Loader2Icon, Pencil, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -62,8 +64,11 @@ const FormSchema = z
 
 export default function Profile() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [avatarStr, setAvatarStr] = useState(''); // Avatar Image base64
+  const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
   const { data: userInfo } = useFetchUserInfo();
+  const { saveSetting, loading: submitLoading } = useSaveSetting();
+
+  const { t } = useTranslate('setting');
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -84,13 +89,14 @@ export default function Profile() {
     form.setValue('userName', userInfo?.nickname); // nickname
     form.setValue('timeZone', userInfo?.timezone); // time zone
     form.setValue('currPasswd', ''); // current password
+    setAvatarBase64Str(userInfo?.avatar ?? '');
   }, [userInfo]);
 
   useEffect(() => {
     if (avatarFile) {
       const fr = new FileReader();
       fr.onload = () => {
-        setAvatarStr(fr.result as string);
+        setAvatarBase64Str(fr.result as string);
       };
       fr.readAsDataURL(avatarFile);
     }
@@ -104,15 +110,22 @@ export default function Profile() {
     //     </pre>
     //   ),
     // });
-    // final submit form
     console.log('data=', data);
+    // final submit form
+    saveSetting({
+      nickname: data.userName,
+      password: rsaPsw(data.currPasswd) as string,
+      new_password: rsaPsw(data.newPasswd) as string,
+      avatar: avatarBase64Str,
+      timezone: data.timeZone,
+    });
   }
 
   return (
     <section className="p-8">
-      <h1 className="text-3xl font-bold">Profile</h1>
+      <h1 className="text-3xl font-bold">{t('profile')}</h1>
       <div className="text-sm text-muted-foreground mb-6">
-        Update your photo and personal details here.
+        {t('profileDescription')}
       </div>
       <div>
         <Form {...form}>
@@ -127,7 +140,8 @@ export default function Profile() {
                 <FormItem className=" items-center space-y-0 ">
                   <div className="flex w-[600px]">
                     <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
-                      <span className="text-red-600">*</span>User Name
+                      <span className="text-red-600">*</span>
+                      {t('username')}
                     </FormLabel>
                     <FormControl className="w-3/4">
                       <Input
@@ -156,7 +170,7 @@ export default function Profile() {
                     <FormControl className="w-3/4">
                       <>
                         <div className="relative group">
-                          {!avatarFile ? (
+                          {!avatarBase64Str ? (
                             <div className="w-[64px] h-[64px] grid place-content-center">
                               <div className="flex flex-col items-center">
                                 <Upload />
@@ -168,7 +182,7 @@ export default function Profile() {
                               <Avatar className="w-[64px] h-[64px]">
                                 <AvatarImage
                                   className=" block"
-                                  src={avatarStr}
+                                  src={avatarBase64Str}
                                   alt=""
                                 />
                                 <AvatarFallback></AvatarFallback>
@@ -218,7 +232,8 @@ export default function Profile() {
                 <FormItem className="items-center space-y-0">
                   <div className="flex w-[600px]">
                     <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
-                      <span className="text-red-600">*</span>Time Zone
+                      <span className="text-red-600">*</span>
+                      {t('timezone')}
                     </FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl className="w-3/4">
@@ -250,7 +265,7 @@ export default function Profile() {
                   <FormItem className="items-center space-y-0">
                     <div className="flex w-[600px]">
                       <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
-                        Email Address
+                        {t('email')}
                       </FormLabel>
                       <FormControl className="w-3/4">
                         <Input
@@ -268,7 +283,7 @@ export default function Profile() {
                   <div className="flex w-[600px] pt-1">
                     <p className="w-1/4">&nbsp;</p>
                     <p className="text-sm text-muted-foreground whitespace-nowrap w-3/4">
-                      Once registered, E-mail cannot be changed.
+                      {t('emailDescription')}
                     </p>
                   </div>
                 </div>
@@ -276,9 +291,9 @@ export default function Profile() {
             />
             <div className="h-[10px]"></div>
             <div className="pb-6">
-              <h1 className="text-3xl font-bold">Password</h1>
+              <h1 className="text-3xl font-bold">{t('password')}</h1>
               <div className="text-sm text-muted-foreground">
-                Please enter your current password to change your password.
+                {t('passwordDescription')}
               </div>
             </div>
             <div className="h-0 overflow-hidden absolute">
@@ -291,7 +306,8 @@ export default function Profile() {
                 <FormItem className=" items-center space-y-0">
                   <div className="flex w-[600px]">
                     <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-2/5">
-                      <span className="text-red-600">*</span>Current Password
+                      <span className="text-red-600">*</span>
+                      {t('currentPassword')}
                     </FormLabel>
                     <FormControl className="w-3/5">
                       <PasswordInput {...field} />
@@ -311,7 +327,8 @@ export default function Profile() {
                 <FormItem className=" items-center space-y-0">
                   <div className="flex w-[600px]">
                     <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-2/5">
-                      <span className="text-red-600">*</span>New Password
+                      <span className="text-red-600">*</span>
+                      {t('newPassword')}
                     </FormLabel>
                     <FormControl className="w-3/5">
                       <PasswordInput {...field} />
@@ -331,7 +348,8 @@ export default function Profile() {
                 <FormItem className=" items-center space-y-0">
                   <div className="flex w-[600px]">
                     <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-2/5">
-                      <span className="text-red-600">*</span>Confirm password
+                      <span className="text-red-600">*</span>
+                      {t('confirmPassword')}
                     </FormLabel>
                     <FormControl className="w-3/5">
                       <PasswordInput
@@ -356,8 +374,11 @@ export default function Profile() {
               )}
             />
             <div className="w-[600px] text-right space-x-4">
-              <Button variant="secondary">Cancel</Button>
-              <Button type="submit">Save</Button>
+              <Button variant="secondary">{t('cancel')}</Button>
+              <Button type="submit" disabled={submitLoading}>
+                {submitLoading && <Loader2Icon className="animate-spin" />}
+                {t('save', { keyPrefix: 'common' })}
+              </Button>
             </div>
           </form>
         </Form>
