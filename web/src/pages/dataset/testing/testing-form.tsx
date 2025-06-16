@@ -30,6 +30,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { trim } from 'lodash';
+import { CirclePlay } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -103,13 +104,16 @@ export default function TestingForm({
             </FormItem>
           )}
         />
-        <ButtonLoading
-          type="submit"
-          disabled={!!!trim(question)}
-          loading={loading}
-        >
-          {t('knowledgeDetails.testingLabel')}
-        </ButtonLoading>
+        <div className="flex justify-end">
+          <ButtonLoading
+            type="submit"
+            disabled={!!!trim(question)}
+            loading={loading}
+          >
+            {!loading && <CirclePlay />}
+            {t('knowledgeDetails.testingLabel')}
+          </ButtonLoading>
+        </div>
       </form>
     </Form>
   );
