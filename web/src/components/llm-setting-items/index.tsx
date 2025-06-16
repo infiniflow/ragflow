@@ -6,9 +6,9 @@ import {
 import { Flex, Form, InputNumber, Select, Slider, Switch, Tooltip } from 'antd';
 import camelCase from 'lodash/camelCase';
 
-import { ChatVariableEnabledField } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
+import { setChatVariableEnabledFieldValuePage } from '@/utils/chat';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import { useCallback, useMemo } from 'react';
 import styles from './index.less';
@@ -35,12 +35,7 @@ const LlmSettingItems = ({ prefix, formItemLayout = {}, onChange }: IProps) => {
       if (prefix) {
         nextVariable = { [prefix]: variable };
       }
-      const variableCheckBoxFieldMap = Object.values(
-        ChatVariableEnabledField,
-      ).reduce<Record<string, boolean>>((pre, cur) => {
-        pre[cur] = cur !== ChatVariableEnabledField.MaxTokensEnabled;
-        return pre;
-      }, {});
+      const variableCheckBoxFieldMap = setChatVariableEnabledFieldValuePage();
       form.setFieldsValue({ ...nextVariable, ...variableCheckBoxFieldMap });
     },
     [form, prefix],
