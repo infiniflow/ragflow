@@ -6,6 +6,7 @@ import {
 import { Flex, Form, InputNumber, Select, Slider, Switch, Tooltip } from 'antd';
 import camelCase from 'lodash/camelCase';
 
+import { ChatVariableEnabledField } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
 import { QuestionCircleOutlined } from '@ant-design/icons';
@@ -34,7 +35,13 @@ const LlmSettingItems = ({ prefix, formItemLayout = {}, onChange }: IProps) => {
       if (prefix) {
         nextVariable = { [prefix]: variable };
       }
-      form.setFieldsValue(nextVariable);
+      const variableCheckBoxFieldMap = Object.values(
+        ChatVariableEnabledField,
+      ).reduce<Record<string, boolean>>((pre, cur) => {
+        pre[cur] = cur !== ChatVariableEnabledField.MaxTokensEnabled;
+        return pre;
+      }, {});
+      form.setFieldsValue({ ...nextVariable, ...variableCheckBoxFieldMap });
     },
     [form, prefix],
   );
@@ -267,6 +274,54 @@ const LlmSettingItems = ({ prefix, formItemLayout = {}, onChange }: IProps) => {
                           min={0}
                           step={0.01}
                           disabled={disabled}
+                        />
+                      </Form.Item>
+                    </>
+                  );
+                }}
+              </Form.Item>
+            </Flex>
+          </Form.Item>
+          <Form.Item
+            label={t('maxTokens')}
+            tooltip={t('maxTokensTip')}
+            {...formItemLayout}
+          >
+            <Flex gap={20} align="center">
+              <Form.Item
+                name={'maxTokensEnabled'}
+                valuePropName="checked"
+                noStyle
+              >
+                <Switch size="small" />
+              </Form.Item>
+              <Form.Item noStyle dependencies={['maxTokensEnabled']}>
+                {({ getFieldValue }) => {
+                  const disabled = !getFieldValue('maxTokensEnabled');
+
+                  return (
+                    <>
+                      <Flex flex={1}>
+                        <Form.Item
+                          name={[...memorizedPrefix, 'max_tokens']}
+                          noStyle
+                        >
+                          <Slider
+                            className={styles.variableSlider}
+                            max={128000}
+                            disabled={disabled}
+                          />
+                        </Form.Item>
+                      </Flex>
+                      <Form.Item
+                        name={[...memorizedPrefix, 'max_tokens']}
+                        noStyle
+                      >
+                        <InputNumber
+                          disabled={disabled}
+                          className={styles.sliderInputNumber}
+                          max={128000}
+                          min={0}
                         />
                       </Form.Item>
                     </>
