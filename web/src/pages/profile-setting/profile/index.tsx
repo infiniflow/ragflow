@@ -22,45 +22,63 @@ import { useFetchUserInfo, useSaveSetting } from '@/hooks/user-setting-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { rsaPsw } from '@/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { TFunction } from 'i18next';
 import { Loader2Icon, Pencil, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-const FormSchema = z
-  .object({
-    userName: z
-      .string()
-      .min(1, {
-        message: 'user name is required.',
-      })
-      .trim(),
-    avatarUrl: z.string().trim(),
-    timeZone: z.string().trim().min(1, {
-      message: 'Enter a time zone',
-    }),
-    email: z
-      .string({
-        required_error: 'Please select an email to display.',
-      })
-      .trim()
-      .regex(/^[A-Za-z0-9\u4e00-\u9fa5]+@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$/, {
-        message: 'Enter a valid email address.',
-      }),
-    currPasswd: z.string().trim().min(1, {
-      message: 'Current Password Required',
-    }),
-    newPasswd: z.string().trim().min(8, {
-      message: 'password must be at least 8 characters',
-    }),
-    confirmPasswd: z.string().trim().min(8, {
-      message: 'password must be at least 8 characters',
-    }),
-  })
-  .refine((data) => data.newPasswd === data.confirmPasswd, {
-    message: 'The new password that you entered do not match!',
-    path: ['confirmPasswd'],
-  });
+function defineSchema(t: TFunction<'translation', string>) {
+  return z
+    .object({
+      userName: z
+        .string()
+        .min(1, {
+          message: t('usernameMessage'),
+        })
+        .trim(),
+      avatarUrl: z.string().trim(),
+      timeZone: z
+        .string()
+        .trim()
+        .min(1, {
+          message: t('timezonePlaceholder'),
+        }),
+      email: z
+        .string({
+          required_error: 'Please select an email to display.',
+        })
+        .trim()
+        .regex(
+          /^[A-Za-z0-9\u4e00-\u9fa5]+@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$/,
+          {
+            message: 'Enter a valid email address.',
+          },
+        ),
+      currPasswd: z
+        .string()
+        .trim()
+        .min(1, {
+          message: t('currentPasswordMessage'),
+        }),
+      newPasswd: z
+        .string()
+        .trim()
+        .min(8, {
+          message: t('confirmPasswordMessage'),
+        }),
+      confirmPasswd: z
+        .string()
+        .trim()
+        .min(8, {
+          message: t('newPasswordDescription'),
+        }),
+    })
+    .refine((data) => data.newPasswd === data.confirmPasswd, {
+      message: t('confirmPasswordNonMatchMessage'),
+      path: ['confirmPasswd'],
+    });
+}
 
 export default function Profile() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -69,6 +87,7 @@ export default function Profile() {
   const { saveSetting, loading: submitLoading } = useSaveSetting();
 
   const { t } = useTranslate('setting');
+  const FormSchema = defineSchema(t);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),

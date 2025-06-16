@@ -1,4 +1,5 @@
 import { Input } from '@/components/originui/input';
+import { useTranslate } from '@/hooks/common-hooks';
 import { EyeIcon, EyeOffIcon } from 'lucide-react';
 import { ChangeEvent, LegacyRef, forwardRef, useId, useState } from 'react';
 
@@ -18,6 +19,8 @@ function PasswordInput(
 
   const toggleVisibility = () => setIsVisible((prevState) => !prevState);
 
+  const { t } = useTranslate('setting');
+
   return (
     <div className="*:not-first:mt-2 w-full">
       {/* <Label htmlFor={id}>Show/hide password input</Label> */}
@@ -27,7 +30,7 @@ function PasswordInput(
           inputMode="numeric"
           id={id}
           className="pe-9"
-          placeholder="Password"
+          placeholder=""
           type={isVisible ? 'text' : 'password'}
           value={props.value}
           onBlur={props.onBlur}
