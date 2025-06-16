@@ -75,7 +75,7 @@ def create_agent_session(tenant_id, agent_id):
     e, cvs = UserCanvasService.get_by_id(agent_id)
     if not e:
         return get_error_data_result("Agent not found.")
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+    if not UserCanvasService.exists(user_id=tenant_id, id=agent_id):
         return get_error_data_result("You cannot access the agent.")
     if not isinstance(cvs.dsl, str):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
@@ -133,7 +133,7 @@ def update(tenant_id, chat_id, session_id):
     conv = ConversationService.query(id=conv_id, dialog_id=chat_id)
     if not conv:
         return get_error_data_result(message="Session does not exist")
-    if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
+    if not DialogService.exists(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You do not own the session")
     if "message" in req or "messages" in req:
         return get_error_data_result(message="`message` can not be change")
@@ -154,10 +154,10 @@ def chat_completion(tenant_id, chat_id):
         req = {"question": ""}
     if not req.get("session_id"):
         req["question"] = ""
-    if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
+    if not DialogService.exists(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(f"You don't own the chat {chat_id}")
     if req.get("session_id"):
-        if not ConversationService.query(id=req["session_id"], dialog_id=chat_id):
+        if not ConversationService.exists(id=req["session_id"], dialog_id=chat_id):
             return get_error_data_result(f"You don't own the session {req['session_id']}")
     if req.get("stream", True):
         resp = Response(rag_completion(tenant_id, chat_id, **req), mimetype="text/event-stream")
@@ -439,7 +439,7 @@ def agent_completions(tenant_id, agent_id):
 @manager.route("/chats/<chat_id>/sessions", methods=["GET"])  # noqa: F821
 @token_required
 def list_session(tenant_id, chat_id):
-    if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
+    if not DialogService.exists(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message=f"You don't own the assistant {chat_id}.")
     id = request.args.get("id")
     name = request.args.get("name")
@@ -490,7 +490,7 @@ def list_session(tenant_id, chat_id):
 @manager.route("/agents/<agent_id>/sessions", methods=["GET"])  # noqa: F821
 @token_required
 def list_agent_session(tenant_id, agent_id):
-    if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
+    if not UserCanvasService.exists(user_id=tenant_id, id=agent_id):
         return get_error_data_result(message=f"You don't own the agent {agent_id}.")
     id = request.args.get("id")
     user_id = request.args.get("user_id")
@@ -543,7 +543,7 @@ def list_agent_session(tenant_id, agent_id):
 @manager.route("/chats/<chat_id>/sessions", methods=["DELETE"])  # noqa: F821
 @token_required
 def delete(tenant_id, chat_id):
-    if not DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
+    if not DialogService.exists(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You don't own the chat")
     
     errors = []

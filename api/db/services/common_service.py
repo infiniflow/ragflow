@@ -37,6 +37,22 @@ class CommonService:
 
     @classmethod
     @DB.connection_context()
+    def exists(cls, **kwargs):
+        """Check if a record exists in the database matching the given criteria.
+
+        This method checks for the existence of a record that matches the specified
+        filter conditions. It returns True if at least one record is found, otherwise False.
+
+        Args:
+            **kwargs: Filter conditions as keyword arguments.
+
+        Returns:
+            bool: True if a matching record exists, False otherwise.
+        """
+        return cls.model.select(cls.model.id).where(**kwargs).exists()
+
+    @classmethod
+    @DB.connection_context()
     def query(cls, cols=None, reverse=None, order_by=None, **kwargs):
         """Execute a database query with optional column selection and ordering.
 
