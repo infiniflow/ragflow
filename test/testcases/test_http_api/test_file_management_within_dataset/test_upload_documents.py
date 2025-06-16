@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
 import string
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -130,11 +129,10 @@ class TestDocumentsUpload:
     @pytest.mark.p2
     def test_filename_exceeds_max_length(self, HttpApiAuth, add_dataset_func, tmp_path):
         dataset_id = add_dataset_func
-        # filename_length = 129
         fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt")
         res = upload_documents(HttpApiAuth, dataset_id, [fp])
         assert res["code"] == 101
-        assert res["message"] == "File name should be less than 128 bytes."
+        assert res["message"] == f"File name must be {DOCUMENT_NAME_LIMIT} bytes or less."
 
     @pytest.mark.p2
     def test_invalid_dataset_id(self, HttpApiAuth, tmp_path):

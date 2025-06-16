@@ -122,7 +122,7 @@ class TestDocumentsUpload:
 
         with pytest.raises(Exception) as excinfo:
             dataset.upload_documents([{"display_name": fp.name, "blob": blob}])
-        assert str(excinfo.value) == "File name should be less than 128 bytes.", str(excinfo.value)
+        assert str(excinfo.value) == f"File name must be {DOCUMENT_NAME_LIMIT} bytes or less.", str(excinfo.value)
 
     @pytest.mark.p2
     def test_duplicate_files(self, add_dataset_func, tmp_path):
