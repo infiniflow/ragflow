@@ -249,7 +249,8 @@ class LLMBundle:
             generation = self.trace.generation(name="encode_queries", model=self.llm_name, input={"query": query})
 
         emd, used_tokens = self.mdl.encode_queries(query)
-        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
+        llm_name = getattr(self, "llm_name", None)
+        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
             logging.error("LLMBundle.encode_queries can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
 
         if self.langfuse:
