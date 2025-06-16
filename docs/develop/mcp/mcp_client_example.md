@@ -13,4 +13,10 @@ If your MCP server is running in host mode, include your acquired API key in you
 async with sse_client("http://localhost:9382/sse", headers={"api_key": "YOUR_KEY_HERE"}) as streams:
     # Rest of your code...
 ```
+
+Or follow the requirements of [OAuth 2.1 Section 5](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-12#section-5) by providing an Authorization request headers field:
+```python
+async with sse_client("http://localhost:9382/sse", headers={"Authorization": "YOUR_KEY_HERE"}) as streams:
+    # Rest of your code...
+```
 :::
