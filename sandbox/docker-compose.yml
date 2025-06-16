@@ -21,6 +21,8 @@ services:
       - SANDBOX_BASE_PYTHON_IMAGE=${SANDBOX_BASE_PYTHON_IMAGE-"sandbox-base-python:latest"}
       - SANDBOX_BASE_NODEJS_IMAGE=${SANDBOX_BASE_NODEJS_IMAGE-"sandbox-base-nodejs:latest"}
       - SANDBOX_ENABLE_SECCOMP=${SANDBOX_ENABLE_SECCOMP:-false}
+      - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m} # b, k, m, g
+      - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-10s} # s, m, 1m30s
     healthcheck:
       test: ["CMD-SHELL", "curl --fail http://localhost:9385/healthz || exit 1"]
       interval: 10s

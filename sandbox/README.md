@@ -213,6 +213,79 @@ To add Node.js dependencies:
 
 ---
 
+## 📋 FAQ
+
+### ❓Sandbox Not Working?
+
+Follow this checklist to troubleshoot:
+
+- [ ] **Is your machine compatible with gVisor?**
+
+  Ensure that your system supports gVisor. Refer to the [gVisor installation guide](https://gvisor.dev/docs/user_guide/install/).
+
+- [ ] **Is gVisor properly installed?**
+
+  **Common error:**
+
+  `HTTPConnectionPool(host='sandbox-executor-manager', port=9385): Read timed out.`
+
+  Cause: `runsc` is an unknown or invalid Docker runtime.
+  **Fix:**
+
+  - Install gVisor
+
+  - Restart Docker
+
+  - Test with:
+
+    ```bash
+    docker run --rm --runtime=runsc hello-world
+    ```
+
+- [ ] **Is `sandbox-executor-manager` mapped in `/etc/hosts`?**
+
+  **Common error:**
+
+  `HTTPConnectionPool(host='none', port=9385): Max retries exceeded.`
+
+  **Fix:**
+
+  Add the following entry to `/etc/hosts`:
+
+  ```text
+  127.0.0.1 es01 infinity mysql minio redis sandbox-executor-manager
+  ```
+
+- [ ] **Have you enabled sandbox-related configurations in RAGFlow?**
+
+  Double-check that all sandbox settings are correctly enabled in your RAGFlow configuration.
+
+- [ ] **Have you pulled the required base images for the runners?**
+
+  **Common error:**
+
+  `HTTPConnectionPool(host='sandbox-executor-manager', port=9385): Read timed out.`
+
+  Cause: no runner was started.
+
+  **Fix:**
+
+  Pull the necessary base images:
+
+  ```bash
+  docker pull infiniflow/sandbox-base-nodejs:latest
+  docker pull infiniflow/sandbox-base-python:latest
+  ```
+
+- [ ] **Did you restart the service after making changes?**
+
+  Any changes to configuration or environment require a full service restart to take effect.
+
+
+### ❓Container pool is busy?
+
+All available runners are currently in use, executing tasks/running code. Please try again shortly, or consider increasing the pool size in the configuration to improve availability and reduce wait times.
+
 ## 🤝 Contribution
 
 Contributions are welcome!
