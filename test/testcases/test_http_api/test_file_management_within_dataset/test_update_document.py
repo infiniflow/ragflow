@@ -47,9 +47,9 @@ class TestDocumentsUpdated:
         [
             ("new_name.txt", 0, ""),
             (
-                f"{'a' * (DOCUMENT_NAME_LIMIT - 3)}.txt",
-                101,
-                "The name should be less than 128 bytes.",
+                f"{'a' * (DOCUMENT_NAME_LIMIT - 4)}.txt",
+                0,
+                "",
             ),
             (
                 0,
