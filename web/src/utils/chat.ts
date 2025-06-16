@@ -64,6 +64,7 @@ export function replaceThinkToSection(text: string = '') {
 export function setInitialChatVariableEnabledFieldValue(
   field: ChatVariableEnabledField,
 ) {
+  return false;
   return field !== ChatVariableEnabledField.MaxTokensEnabled;
 }
 
