@@ -21,7 +21,7 @@ import sys
 import threading
 import time
 
-from api.utils.log_utils import initRootLogger, get_project_base_directory
+from api.utils.log_utils import init_root_logger, get_project_base_directory
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.prompts import keyword_extraction, question_proposal, content_tagging
@@ -773,5 +773,5 @@ async def main():
 
 if __name__ == "__main__":
     faulthandler.enable()
-    initRootLogger(CONSUMER_NAME)
+    init_root_logger(CONSUMER_NAME)
     trio.run(main)
