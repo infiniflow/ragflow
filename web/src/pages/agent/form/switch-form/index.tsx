@@ -27,9 +27,9 @@ import {
 } from '../../constant';
 import { useBuildFormSelectOptions } from '../../form-hooks';
 import { useBuildComponentIdAndBeginOptions } from '../../hooks/use-get-begin-query';
-import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { IOperatorForm } from '../../interface';
 import { useValues } from './use-values';
+import { useWatchFormChange } from './use-watch-change';
 
 const ConditionKey = 'conditions';
 const ItemKey = 'items';

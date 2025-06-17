@@ -1,54 +1,9 @@
+import { ISwitchCondition, RAGFlowNodeType } from '@/interfaces/database/flow';
 import { useUpdateNodeInternals } from '@xyflow/react';
 import get from 'lodash/get';
 import { useEffect, useMemo } from 'react';
 import { SwitchElseTo } from '../../constant';
-
-import {
-  ICategorizeItemResult,
-  ISwitchCondition,
-  RAGFlowNodeType,
-} from '@/interfaces/database/flow';
 import { generateSwitchHandleText } from '../../utils';
-
-export const useBuildCategorizeHandlePositions = ({
-  data,
-  id,
-}: {
-  id: string;
-  data: RAGFlowNodeType['data'];
-}) => {
-  const updateNodeInternals = useUpdateNodeInternals();
-
-  const categoryData: ICategorizeItemResult = useMemo(() => {
-    return get(data, `form.category_description`, {});
-  }, [data]);
-
-  const positions = useMemo(() => {
-    const list: Array<{
-      text: string;
-      top: number;
-      idx: number;
-    }> = [];
-
-    Object.keys(categoryData)
-      .sort((a, b) => categoryData[a].index - categoryData[b].index)
-      .forEach((x, idx) => {
-        list.push({
-          text: x,
-          idx,
-          top: idx === 0 ? 98 + 20 : list[idx - 1].top + 8 + 26,
-        });
-      });
-
-    return list;
-  }, [categoryData]);
-
-  useEffect(() => {
-    updateNodeInternals(id);
-  }, [id, updateNodeInternals, categoryData]);
-
-  return { positions };
-};
 
 export const useBuildSwitchHandlePositions = ({
   data,
@@ -63,6 +18,10 @@ export const useBuildSwitchHandlePositions = ({
     return get(data, 'form.conditions', []);
   }, [data]);
 
+  useEffect(() => {
+    console.info('xxx0000');
+  }, [conditions]);
+
   const positions = useMemo(() => {
     const list: Array<{
       text: string;
@@ -72,12 +31,12 @@ export const useBuildSwitchHandlePositions = ({
     }> = [];
 
     [...conditions, ''].forEach((x, idx) => {
-      let top = idx === 0 ? 58 + 20 : list[idx - 1].top + 10; // case number (Case 1) height + flex gap
-      if (idx - 1 >= 0) {
+      let top = idx === 0 ? 53 : list[idx - 1].top + 10 + 14; // case number (Case 1) height + flex gap
+      if (idx >= 1) {
         const previousItems = conditions[idx - 1]?.items ?? [];
         if (previousItems.length > 0) {
           // top += 12; // ConditionBlock padding
-          top += previousItems.length * 22; // condition variable height
+          top += previousItems.length * 26; // condition variable height
           // top += (previousItems.length - 1) * 25; // operator height
         }
       }
