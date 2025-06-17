@@ -152,6 +152,10 @@ def create():
     if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
         return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
 
+    if req["name"].strip() == "":
+        return get_json_result(data=False, message="File name can't be empty.", code=settings.RetCode.ARGUMENT_ERROR)
+    req["name"] = req["name"].strip()
+
     try:
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
