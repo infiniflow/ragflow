@@ -66,6 +66,7 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
           position={Position.Left}
           isConnectable
           id={'a'}
+          nodeId={id}
         ></CommonHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="gap-2.5 flex flex-col">
@@ -94,6 +95,7 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
                   position={Position.Right}
                   isConnectable
                   style={{ ...RightHandleStyle, top: position.top }}
+                  nodeId={id}
                 ></CommonHandle>
               </div>
             );

@@ -24,6 +24,7 @@ export function InnerCategorizeNode({
           position={Position.Left}
           isConnectable
           id={'a'}
+          nodeId={id}
         ></CommonHandle>
 
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
@@ -45,6 +46,7 @@ export function InnerCategorizeNode({
                   position={Position.Right}
                   isConnectable
                   style={{ ...RightHandleStyle, top: position.top }}
+                  nodeId={id}
                 ></CommonHandle>
               </div>
             );

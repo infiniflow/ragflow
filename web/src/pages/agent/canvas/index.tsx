@@ -149,38 +149,40 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           </marker>
         </defs>
       </svg>
-      <ReactFlow
-        connectionMode={ConnectionMode.Loose}
-        nodes={nodes}
-        onNodesChange={onNodesChange}
-        edges={edges}
-        onEdgesChange={onEdgesChange}
-        fitView
-        onConnect={onConnect}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-        onInit={setReactFlowInstance}
-        onSelectionChange={onSelectionChange}
-        nodeOrigin={[0.5, 0]}
-        isValidConnection={isValidConnection}
-        defaultEdgeOptions={{
-          type: 'buttonEdge',
-          markerEnd: 'logo',
-          style: {
-            strokeWidth: 2,
-            stroke: 'rgb(202 197 245)',
-          },
-          zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
-        }}
-        deleteKeyCode={['Delete', 'Backspace']}
-        onBeforeDelete={handleBeforeDelete}
-      >
-        <Background />
-      </ReactFlow>
+      <AgentInstanceContext.Provider value={{ addCanvasNode }}>
+        <ReactFlow
+          connectionMode={ConnectionMode.Loose}
+          nodes={nodes}
+          onNodesChange={onNodesChange}
+          edges={edges}
+          onEdgesChange={onEdgesChange}
+          fitView
+          onConnect={onConnect}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          onInit={setReactFlowInstance}
+          onSelectionChange={onSelectionChange}
+          nodeOrigin={[0.5, 0]}
+          isValidConnection={isValidConnection}
+          defaultEdgeOptions={{
+            type: 'buttonEdge',
+            markerEnd: 'logo',
+            style: {
+              strokeWidth: 2,
+              stroke: 'rgb(202 197 245)',
+            },
+            zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
+          }}
+          deleteKeyCode={['Delete', 'Backspace']}
+          onBeforeDelete={handleBeforeDelete}
+        >
+          <Background />
+        </ReactFlow>
+      </AgentInstanceContext.Provider>
       {formDrawerVisible && (
         <AgentInstanceContext.Provider value={{ addCanvasNode }}>
           <FormSheet

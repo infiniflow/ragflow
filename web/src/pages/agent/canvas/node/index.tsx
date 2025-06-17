@@ -1,11 +1,10 @@
-import { useTheme } from '@/components/theme-provider';
 import { IRagNode } from '@/interfaces/database/flow';
-import { Handle, NodeProps, Position } from '@xyflow/react';
-import classNames from 'classnames';
+import { NodeProps, Position } from '@xyflow/react';
 import { memo } from 'react';
+import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
-import styles from './index.less';
 import NodeHeader from './node-header';
+import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
 
 function InnerRagNode({
@@ -14,36 +13,27 @@ function InnerRagNode({
   isConnectable = true,
   selected,
 }: NodeProps<IRagNode>) {
-  const { theme } = useTheme();
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
-      <section
-        className={classNames(
-          styles.ragNode,
-          theme === 'dark' ? styles.dark : '',
-          {
-            [styles.selectedNode]: selected,
-          },
-        )}
-      >
-        <Handle
+      <NodeWrapper>
+        <CommonHandle
           id="c"
           type="source"
           position={Position.Left}
           isConnectable={isConnectable}
-          className={styles.handle}
           style={LeftHandleStyle}
-        ></Handle>
-        <Handle
+          nodeId={id}
+        ></CommonHandle>
+        <CommonHandle
           type="source"
           position={Position.Right}
           isConnectable={isConnectable}
-          className={styles.handle}
           id="b"
           style={RightHandleStyle}
-        ></Handle>
+          nodeId={id}
+        ></CommonHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
-      </section>
+      </NodeWrapper>
     </ToolBar>
   );
 }

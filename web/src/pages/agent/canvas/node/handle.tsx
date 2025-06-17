@@ -1,17 +1,41 @@
 import { cn } from '@/lib/utils';
 import { Handle, HandleProps } from '@xyflow/react';
 import { Plus } from 'lucide-react';
+import { useMemo } from 'react';
+import { HandleContext } from '../../context';
+import { NextStepDropdown } from './dropdown/next-step-dropdown';
 
-export function CommonHandle({ className, ...props }: HandleProps) {
+export function CommonHandle({
+  className,
+  nodeId,
+  ...props
+}: HandleProps & { nodeId: string }) {
+  const value = useMemo(
+    () => ({
+      nodeId,
+      id: props.id,
+      type: props.type,
+      position: props.position,
+    }),
+    [nodeId, props.id, props.position, props.type],
+  );
+
   return (
-    <Handle
-      {...props}
-      className={cn(
-        'inline-flex justify-center items-center !bg-background-checked !size-4 !rounded-sm !border-none ',
-        className,
-      )}
-    >
-      <Plus className="size-3 pointer-events-none" />
-    </Handle>
+    <HandleContext.Provider value={value}>
+      <NextStepDropdown>
+        <Handle
+          {...props}
+          className={cn(
+            'inline-flex justify-center items-center !bg-background-checked !size-4 !rounded-sm !border-none ',
+            className,
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+        >
+          <Plus className="size-3 pointer-events-none" />
+        </Handle>
+      </NextStepDropdown>
+    </HandleContext.Provider>
   );
 }

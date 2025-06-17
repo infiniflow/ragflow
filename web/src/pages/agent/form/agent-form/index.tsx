@@ -11,6 +11,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { Position } from '@xyflow/react';
 import { useContext, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -109,7 +110,12 @@ const AgentForm = ({ node }: INextOperatorForm) => {
             )}
           />
         </FormContainer>
-        <BlockButton onClick={addCanvasNode(Operator.Agent, node?.id)}>
+        <BlockButton
+          onClick={addCanvasNode(Operator.Agent, {
+            id: node?.id,
+            position: Position.Bottom,
+          })}
+        >
           Add Agent
         </BlockButton>
         <Output list={outputList}></Output>

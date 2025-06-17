@@ -1,4 +1,5 @@
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { HandleType, Position } from '@xyflow/react';
 import { createContext } from 'react';
 import { useAddNode } from './hooks/use-add-node';
 import { useCacheChatLog } from './hooks/use-cache-chat-log';
@@ -33,4 +34,15 @@ type AgentChatLogContextType = Pick<
 
 export const AgentChatLogContext = createContext<AgentChatLogContextType>(
   {} as AgentChatLogContextType,
+);
+
+export type HandleContextType = {
+  nodeId?: string;
+  id?: string;
+  type: HandleType;
+  position: Position;
+};
+
+export const HandleContext = createContext<HandleContextType>(
+  {} as HandleContextType,
 );
