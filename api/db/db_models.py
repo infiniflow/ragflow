@@ -172,9 +172,10 @@ class BaseModel(Model):
     @classmethod
     def getter_by(cls, attr):
         return operator.attrgetter(attr)(cls)
+    
 
     @classmethod
-    def query(cls, reverse=None, order_by=None, **kwargs):
+    def _prepare_filters(cls, **kwargs):
         filters = []
         for f_n, f_v in kwargs.items():
             attr_name = "%s" % f_n
@@ -200,6 +201,19 @@ class BaseModel(Model):
                     filters.append(operator.attrgetter(attr_name)(cls) << f_v)
             else:
                 filters.append(operator.attrgetter(attr_name)(cls) == f_v)
+            return filters
+    
+    @classmethod
+    def exists(cls, **kwargs):
+        filters = cls._prepare_filters(**kwargs)
+        if filters:
+            query_records = cls.select().where(*filters)
+            return query_records.exists()
+        return True
+
+    @classmethod
+    def query(cls, reverse=None, order_by=None, **kwargs):
+        filters = cls._prepare_filters(**kwargs)
         if filters:
             query_records = cls.select().where(*filters)
             if reverse is not None:

@@ -49,7 +49,7 @@ class CommonService:
         Returns:
             bool: True if a matching record exists, False otherwise.
         """
-        return cls.model.select(cls.model.id).where(**kwargs).exists()
+        return cls.model.exists(**kwargs)
 
     @classmethod
     @DB.connection_context()
