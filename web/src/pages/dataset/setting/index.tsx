@@ -1,9 +1,14 @@
-import { ButtonLoading } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs-underlined';
 import { DocumentParserType } from '@/constants/knowledge';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { TopTitle } from '../dataset-title';
 import CategoryPanel from './category-panel';
@@ -31,6 +36,7 @@ const enum MethodValue {
 }
 
 export default function DatasetSettings() {
+  const { t } = useTranslation();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -76,9 +82,8 @@ export default function DatasetSettings() {
   return (
     <section className="p-5 ">
       <TopTitle
-        title={'Configuration'}
-        description={`  Update your knowledge base configuration here, particularly the chunk
-          method.`}
+        title={t('knowledgeDetails.configuration')}
+        description={t('knowledgeConfiguration.titleDescription')}
       ></TopTitle>
       <div className="flex gap-14">
         <Form {...form}>
@@ -87,9 +92,27 @@ export default function DatasetSettings() {
             className="space-y-6 basis-full"
           >
             <Tabs defaultValue="account">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="account">Account</TabsTrigger>
-                <TabsTrigger value="password">Password</TabsTrigger>
+              <TabsList className="grid w-full bg-background grid-cols-2 rounded-none bg-[#161618]">
+                <TabsTrigger
+                  value="account"
+                  className="group bg-transparent p-0 !border-transparent"
+                >
+                  <div className="flex w-full h-full justify-center	items-center	bg-[#161618]">
+                    <span className="h-full group-data-[state=active]:border-b-2 border-white	">
+                      General
+                    </span>
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="password"
+                  className="group bg-transparent p-0 !border-transparent"
+                >
+                  <div className="flex w-full h-full justify-center	items-center	bg-[#161618]">
+                    <span className="h-full group-data-[state=active]:border-b-2 border-white	">
+                      Chunk Method
+                    </span>
+                  </div>
+                </TabsTrigger>
               </TabsList>
               <TabsContent value="account">
                 <GeneralForm></GeneralForm>
@@ -98,9 +121,9 @@ export default function DatasetSettings() {
                 <ChunkMethodForm></ChunkMethodForm>
               </TabsContent>
             </Tabs>
-            <div className="text-right">
+            {/* <div className="text-right">
               <ButtonLoading type="submit">Submit</ButtonLoading>
-            </div>
+            </div> */}
           </form>
         </Form>
 
