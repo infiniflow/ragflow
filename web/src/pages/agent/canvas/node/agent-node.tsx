@@ -36,6 +36,7 @@ function InnerAgentNode({
               position={Position.Left}
               isConnectable={isConnectable}
               style={LeftHandleStyle}
+              nodeId={id}
             ></CommonHandle>
             <CommonHandle
               type="source"
@@ -44,6 +45,7 @@ function InnerAgentNode({
               className={styles.handle}
               id="b"
               style={RightHandleStyle}
+              nodeId={id}
             ></CommonHandle>
           </>
         )}

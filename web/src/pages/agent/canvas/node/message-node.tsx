@@ -27,6 +27,7 @@ function InnerMessageNode({
           position={Position.Left}
           isConnectable={isConnectable}
           style={LeftHandleStyle}
+          nodeId={id}
         ></CommonHandle>
         <CommonHandle
           type="source"
@@ -34,6 +35,7 @@ function InnerMessageNode({
           isConnectable={isConnectable}
           style={RightHandleStyle}
           id="b"
+          nodeId={id}
         ></CommonHandle>
         <NodeHeader
           id={id}
