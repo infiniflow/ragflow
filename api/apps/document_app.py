@@ -23,7 +23,7 @@ from flask import request
 from flask_login import current_user, login_required
 
 from api import settings
-from api.constants import IMG_BASE64_PREFIX
+from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, VALID_TASK_STATUS, FileSource, FileType, ParserType, TaskStatus
 from api.db.db_models import File, Task
 from api.db.services import duplicate_name
@@ -61,8 +61,8 @@ def upload():
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_json_result(data=False, message="No file selected!", code=settings.RetCode.ARGUMENT_ERROR)
-        if len(file_obj.filename.encode("utf-8")) > 255:
-            return get_json_result(data=False, message="File name must be 255 bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
+        if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+            return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
 
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
@@ -149,8 +149,9 @@ def create():
     kb_id = req["kb_id"]
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
-    if len(req["name"].encode("utf-8")) > 255:
-        return get_json_result(data=False, message="File name must be 255 bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
+    if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+        return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
+
     if req["name"].strip() == "":
         return get_json_result(data=False, message="File name can't be empty.", code=settings.RetCode.ARGUMENT_ERROR)
     req["name"] = req["name"].strip()
@@ -409,8 +410,8 @@ def rename():
             return get_data_error_result(message="Document not found!")
         if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
             return get_json_result(data=False, message="The extension of file can't be changed", code=settings.RetCode.ARGUMENT_ERROR)
-        if len(req["name"].encode("utf-8")) > 255:
-            return get_json_result(data=False, message="File name must be 255 bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
+        if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+            return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
 
         for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
             if d.name == req["name"]:

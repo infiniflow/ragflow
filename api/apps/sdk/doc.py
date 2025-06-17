@@ -25,6 +25,7 @@ from peewee import OperationalError
 from pydantic import BaseModel, Field, validator
 
 from api import settings
+from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileSource, FileType, LLMType, ParserType, TaskStatus
 from api.db.db_models import File, Task
 from api.db.services.document_service import DocumentService
@@ -129,8 +130,8 @@ def upload(dataset_id, tenant_id):
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_result(message="No file selected!", code=settings.RetCode.ARGUMENT_ERROR)
-        if len(file_obj.filename.encode("utf-8")) > 255:
-            return get_result(message="File name must be 255 bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
+        if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+            return get_result(message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
     """
     # total size
     total_size = 0
@@ -247,9 +248,9 @@ def update_doc(tenant_id, dataset_id, document_id):
         DocumentService.update_meta_fields(document_id, req["meta_fields"])
 
     if "name" in req and req["name"] != doc.name:
-        if len(req["name"].encode("utf-8")) > 255:
+        if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
             return get_result(
-                message="File name must be 255 bytes or less.",
+                message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
                 code=settings.RetCode.ARGUMENT_ERROR,
             )
         if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
