@@ -42,6 +42,7 @@ function InnerRetrievalNode({
           isConnectable={isConnectable}
           className={styles.handle}
           style={LeftHandleStyle}
+          nodeId={id}
         ></CommonHandle>
         <CommonHandle
           type="source"
@@ -50,6 +51,7 @@ function InnerRetrievalNode({
           className={styles.handle}
           style={RightHandleStyle}
           id="b"
+          nodeId={id}
         ></CommonHandle>
         <NodeHeader
           id={id}

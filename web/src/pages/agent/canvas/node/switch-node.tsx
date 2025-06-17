@@ -7,10 +7,10 @@ import { SwitchOperatorOptions } from '../../constant';
 import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
 import { CommonHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
-import { useBuildSwitchHandlePositions } from './hooks';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
+import { useBuildSwitchHandlePositions } from './use-build-switch-handle-positions';
 
 const getConditionKey = (idx: number, length: number) => {
   if (idx === 0 && length !== 1) {
@@ -66,6 +66,7 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
           position={Position.Left}
           isConnectable
           id={'a'}
+          nodeId={id}
         ></CommonHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="gap-2.5 flex flex-col">
@@ -94,6 +95,7 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
                   position={Position.Right}
                   isConnectable
                   style={{ ...RightHandleStyle, top: position.top }}
+                  nodeId={id}
                 ></CommonHandle>
               </div>
             );
