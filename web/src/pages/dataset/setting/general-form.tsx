@@ -13,12 +13,15 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import kbService from '@/services/knowledge-service';
 import { transformFile2Base64 } from '@/utils/file-util';
 import { Loader2Icon, Pencil, Upload } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'umi';
+import SettingContext from '../data-set-context';
 
 export function GeneralForm() {
+  const { setRefreshCount } = useContext(SettingContext);
+
   const form = useFormContext();
   const { t } = useTranslation();
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -26,7 +29,7 @@ export function GeneralForm() {
   const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
 
   const pageUrl = useLocation();
-  const [_, kb_id] = pageUrl.pathname.match(/\/([^/]+)$/);
+  const [_, kb_id] = pageUrl.pathname.match(/\/([^/]+)$/)!;
   // console.log('页面***form=', form.formState.defaultValues);
   const defaultValues = form.formState.defaultValues ?? {};
   const parser_id = defaultValues['parser_id'];
@@ -235,6 +238,7 @@ export function GeneralForm() {
                   console.log(e);
                 } finally {
                   setSubmitLoading(false);
+                  setRefreshCount();
                 }
               }
             })();
