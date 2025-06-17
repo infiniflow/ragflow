@@ -7,10 +7,10 @@ import { SwitchOperatorOptions } from '../../constant';
 import { useGetComponentLabelByValue } from '../../hooks/use-get-begin-query';
 import { CommonHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
-import { useBuildSwitchHandlePositions } from './hooks';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
+import { useBuildSwitchHandlePositions } from './use-build-switch-handle-positions';
 
 const getConditionKey = (idx: number, length: number) => {
   if (idx === 0 && length !== 1) {
