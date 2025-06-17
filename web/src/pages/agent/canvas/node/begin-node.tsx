@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import {
   BeginQueryType,
   BeginQueryTypeIconMap,
+  NodeHandleId,
   Operator,
 } from '../../constant';
 import { BeginQuery } from '../../interface';
@@ -27,9 +28,9 @@ function InnerBeginNode({ data, id }: NodeProps<IBeginNode>) {
         type="source"
         position={Position.Right}
         isConnectable
-        className={styles.handle}
         style={RightHandleStyle}
         nodeId={id}
+        id={NodeHandleId.Start}
       ></CommonHandle>
 
       <section className="flex items-center justify-center gap-2">

@@ -1,6 +1,7 @@
 import { IRagNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo } from 'react';
+import { NodeHandleId } from '../../constant';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
@@ -17,8 +18,8 @@ function InnerRagNode({
     <ToolBar selected={selected} id={id} label={data.label}>
       <NodeWrapper>
         <CommonHandle
-          id="c"
-          type="source"
+          id={NodeHandleId.End}
+          type="target"
           position={Position.Left}
           isConnectable={isConnectable}
           style={LeftHandleStyle}
@@ -28,9 +29,10 @@ function InnerRagNode({
           type="source"
           position={Position.Right}
           isConnectable={isConnectable}
-          id="b"
+          id={NodeHandleId.Start}
           style={RightHandleStyle}
           nodeId={id}
+          isConnectableEnd={false}
         ></CommonHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
       </NodeWrapper>
