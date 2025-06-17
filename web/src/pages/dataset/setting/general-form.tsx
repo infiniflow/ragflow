@@ -11,6 +11,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import kbService from '@/services/knowledge-service';
+import { transformFile2Base64 } from '@/utils/file-util';
 import { Loader2Icon, Pencil, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
@@ -43,11 +44,10 @@ export function GeneralForm() {
   // input[type=file] on change event, get img base64
   useEffect(() => {
     if (avatarFile) {
-      const fr = new FileReader();
-      fr.onload = () => {
-        setAvatarBase64Str(fr.result as string);
-      };
-      fr.readAsDataURL(avatarFile);
+      (async () => {
+        // make use of img compression transformFile2Base64
+        setAvatarBase64Str(await transformFile2Base64(avatarFile));
+      })();
     }
   }, [avatarFile]);
 
