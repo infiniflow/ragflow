@@ -151,6 +151,9 @@ def create():
         return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
     if len(req["name"].encode("utf-8")) > 255:
         return get_json_result(data=False, message="File name must be 255 bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
+    if req["name"].strip() == "":
+        return get_json_result(data=False, message="File name can't be empty.", code=settings.RetCode.ARGUMENT_ERROR)
+    req["name"] = req["name"].strip()
 
     try:
         e, kb = KnowledgebaseService.get_by_id(kb_id)
