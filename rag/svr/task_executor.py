@@ -22,6 +22,7 @@ import threading
 import time
 
 from api.utils.log_utils import initRootLogger, get_project_base_directory
+from api.utils.api_utils import get_uuid
 from graphrag.general.index import run_graphrag
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.prompts import keyword_extraction, question_proposal, content_tagging
@@ -30,7 +31,6 @@ import logging
 import os
 from datetime import datetime
 import json
-import xxhash
 import copy
 import re
 from functools import partial
@@ -280,7 +280,7 @@ async def build_chunks(task, progress_callback):
         try:
             d = copy.deepcopy(document)
             d.update(chunk)
-            d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8")).hexdigest()
+            d["id"] = get_uuid()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
             if not d.get("image"):
@@ -477,7 +477,7 @@ async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
     tk_count = 0
     for content, vctr in chunks[original_length:]:
         d = copy.deepcopy(doc)
-        d["id"] = xxhash.xxh64((content + str(d["doc_id"])).encode("utf-8")).hexdigest()
+        d["id"] = get_uuid()
         d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
         d["create_timestamp_flt"] = datetime.now().timestamp()
         d[vctr_nm] = vctr.tolist()

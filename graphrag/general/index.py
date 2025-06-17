@@ -29,7 +29,6 @@ from graphrag.utils import (
     graph_merge,
     get_graph,
     set_graph,
-    chunk_id,
     does_graph_contains,
     tidy_graph,
     GraphChange,
@@ -179,7 +178,7 @@ async def generate_subgraph(
         "available_int": 0,
         "removed_kwd": "N",
     }
-    cid = chunk_id(chunk)
+    cid = get_uuid()
     await trio.to_thread.run_sync(
         lambda: settings.docStoreConn.delete(
             {"knowledge_graph_kwd": "subgraph", "source_id": doc_id}, search.index_name(tenant_id), kb_id
