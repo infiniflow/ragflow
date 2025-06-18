@@ -127,7 +127,19 @@ The corresponding APIs are now available. See the [RAGFlow HTTP API Reference](.
 
 ### Do you support stream output?
 
-Yes, we do.
+Yes, we do. Stream output is enabled by default in the chat assistant and agent. Note that you cannot disable stream output via RAGFlow's UI. To disable stream output in responses, use RAGFlow's Python or RESTful APIs:
+
+Python:
+
+- [Create chat completion](./references/python_api_reference.md#create-chat-completion)
+- [Converse with chat assistant](./references/python_api_reference.md#converse-with-chat-assistant)
+- [Converse with agent](./references/python_api_reference.md#converse-with-agent)
+
+RESTful:
+
+- [Create chat completion](./references/http_api_reference.md#create-chat-completion)
+- [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant)
+- [Converse with agent](./references/http_api_reference.md#converse-with-agent)
 
 ---
 
@@ -487,5 +499,11 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
 ### Where are my uploaded files stored in RAGFlow's image?
 
 All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
+
+---
+
+### How to tune batch size for document parsing and embedding?
+
+You can control the batch size for document parsing and embedding by setting the environment variables `DOC_BULK_SIZE` and `EMBEDDING_BATCH_SIZE`. Increasing these values may improve throughput for large-scale data processing, but will also increase memory usage. Adjust them according to your hardware resources.
 
 ---

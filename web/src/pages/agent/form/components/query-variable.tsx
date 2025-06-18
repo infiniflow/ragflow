@@ -8,10 +8,13 @@ import {
 } from '@/components/ui/form';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
 
 export function QueryVariable() {
   const { t } = useTranslation();
   const form = useFormContext();
+
+  const nextOptions = useBuildQueryVariableOptions();
 
   return (
     <FormField
@@ -21,7 +24,10 @@ export function QueryVariable() {
         <FormItem>
           <FormLabel tooltip={t('chat.modelTip')}>{t('flow.query')}</FormLabel>
           <FormControl>
-            <SelectWithSearch {...field}></SelectWithSearch>
+            <SelectWithSearch
+              options={nextOptions}
+              {...field}
+            ></SelectWithSearch>
           </FormControl>
           <FormMessage />
         </FormItem>

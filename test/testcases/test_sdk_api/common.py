@@ -16,7 +16,7 @@
 
 from pathlib import Path
 
-from ragflow_sdk import DataSet, Document, RAGFlow
+from ragflow_sdk import Chat, Chunk, DataSet, Document, RAGFlow, Session
 from utils.file_utils import create_txt_file
 
 
@@ -38,5 +38,15 @@ def bulk_upload_documents(dataset: DataSet, num: int, tmp_path: Path) -> list[Do
 
 
 # CHUNK MANAGEMENT WITHIN DATASET
-def batch_add_chunks(document: Document, num: int):
+def batch_add_chunks(document: Document, num: int) -> list[Chunk]:
     return [document.add_chunk(content=f"chunk test {i}") for i in range(num)]
+
+
+# CHAT ASSISTANT MANAGEMENT
+def batch_create_chat_assistants(client: RAGFlow, num: int) -> list[Chat]:
+    return [client.create_chat(name=f"test_chat_assistant_{i}") for i in range(num)]
+
+
+# SESSION MANAGEMENT
+def batch_add_sessions_with_chat_assistant(chat_assistant: Chat, num) -> list[Session]:
+    return [chat_assistant.create_session(name=f"session_with_chat_assistant_{i}") for i in range(num)]

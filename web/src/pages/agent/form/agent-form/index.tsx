@@ -2,6 +2,7 @@ import { FormContainer } from '@/components/form-container';
 import { LargeModelFormField } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
+import { BlockButton } from '@/components/ui/button';
 import {
   Form,
   FormControl,
@@ -9,30 +10,32 @@ import {
   FormItem,
   FormLabel,
 } from '@/components/ui/form';
-import { useFetchModelId } from '@/hooks/logic-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo } from 'react';
+import { Position } from '@xyflow/react';
+import { useContext, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialAgentValues } from '../../constant';
-import { useFormValues } from '../../hooks/use-form-values';
-import { useWatchFormChange } from '../../hooks/use-watch-form-change';
+import { Operator, initialAgentValues } from '../../constant';
+import { AgentInstanceContext } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
-import DynamicPrompt from './dynamic-prompt';
+import { ToolPopover } from './tool-popover';
+import { useToolOptions, useValues } from './use-values';
+import { useWatchFormChange } from './use-watch-change';
 
 const FormSchema = z.object({
   sys_prompt: z.string(),
-  prompts: z
-    .array(
-      z.object({
-        role: z.string(),
-        content: z.string(),
-      }),
-    )
-    .optional(),
+  prompts: z.string().optional(),
+  // prompts: z
+  //   .array(
+  //     z.object({
+  //       role: z.string(),
+  //       content: z.string(),
+  //     }),
+  //   )
+  //   .optional(),
   message_history_window_size: z.coerce.number(),
   tools: z
     .array(
@@ -46,11 +49,8 @@ const FormSchema = z.object({
 
 const AgentForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
-  const llmId = useFetchModelId();
-  const defaultValues = useFormValues(
-    { ...initialAgentValues, llm_id: llmId },
-    node,
-  );
+
+  const defaultValues = useValues(node);
 
   const outputList = useMemo(() => {
     return [
@@ -64,6 +64,10 @@ const AgentForm = ({ node }: INextOperatorForm) => {
   });
 
   useWatchFormChange(node?.id, form);
+
+  const { addCanvasNode } = useContext(AgentInstanceContext);
+
+  const toolOptions = useToolOptions();
 
   return (
     <Form {...form}>
@@ -94,8 +98,32 @@ const AgentForm = ({ node }: INextOperatorForm) => {
           <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
         </FormContainer>
         <FormContainer>
-          <DynamicPrompt></DynamicPrompt>
+          {/* <DynamicPrompt></DynamicPrompt> */}
+          <FormField
+            control={form.control}
+            name={`prompts`}
+            render={({ field }) => (
+              <FormItem className="flex-1">
+                <FormControl>
+                  <section>
+                    <PromptEditor {...field} showToolbar={false}></PromptEditor>
+                  </section>
+                </FormControl>
+              </FormItem>
+            )}
+          />
         </FormContainer>
+        <ToolPopover>
+          <BlockButton>Add Tool</BlockButton>
+        </ToolPopover>
+        <BlockButton
+          onClick={addCanvasNode(Operator.Agent, {
+            nodeId: node?.id,
+            position: Position.Bottom,
+          })}
+        >
+          Add Agent
+        </BlockButton>
         <Output list={outputList}></Output>
       </form>
     </Form>

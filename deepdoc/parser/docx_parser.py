@@ -69,7 +69,7 @@ class RAGFlowDocxParser:
         max_type = max(max_type.items(), key=lambda x: x[1])[0]
 
         colnm = len(df.iloc[0, :])
-        hdrows = [0]  # header is not nessesarily appear in the first line
+        hdrows = [0]  # header is not necessarily appear in the first line
         if max_type == "Nu":
             for r in range(1, len(df)):
                 tys = Counter([blockType(str(df.iloc[r, j]))
