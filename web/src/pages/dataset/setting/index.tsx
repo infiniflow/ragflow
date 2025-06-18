@@ -7,12 +7,13 @@ import {
 } from '@/components/ui/tabs-underlined';
 import { DocumentParserType } from '@/constants/knowledge';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { TopTitle } from '../dataset-title';
-import CategoryPanel from './category-panel';
 import { ChunkMethodForm } from './chunk-method-form';
+import ChunkMethodLearnMore from './chunk-method-learn-more';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import { useFetchKnowledgeConfigurationOnMount } from './hooks';
@@ -70,6 +71,10 @@ export default function DatasetSettings() {
 
   useFetchKnowledgeConfigurationOnMount(form);
 
+  const [currentTab, setCurrentTab] = useState<
+    'generalForm' | 'chunkMethodForm'
+  >('generalForm'); // currnet Tab state
+
   const parserId = useWatch({
     control: form.control,
     name: 'parser_id',
@@ -89,12 +94,17 @@ export default function DatasetSettings() {
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-6 basis-full"
+            className="space-y-6 basis-full min-w-[1000px] max-w-[1000px]"
           >
-            <Tabs defaultValue="account">
+            <Tabs
+              defaultValue="generalForm"
+              onValueChange={(val) => {
+                setCurrentTab(val);
+              }}
+            >
               <TabsList className="grid w-full bg-background grid-cols-2 rounded-none bg-[#161618]">
                 <TabsTrigger
-                  value="account"
+                  value="generalForm"
                   className="group bg-transparent p-0 !border-transparent"
                 >
                   <div className="flex w-full h-full justify-center	items-center	bg-[#161618]">
@@ -104,7 +114,7 @@ export default function DatasetSettings() {
                   </div>
                 </TabsTrigger>
                 <TabsTrigger
-                  value="password"
+                  value="chunkMethodForm"
                   className="group bg-transparent p-0 !border-transparent"
                 >
                   <div className="flex w-full h-full justify-center	items-center	bg-[#161618]">
@@ -114,10 +124,10 @@ export default function DatasetSettings() {
                   </div>
                 </TabsTrigger>
               </TabsList>
-              <TabsContent value="account">
+              <TabsContent value="generalForm">
                 <GeneralForm></GeneralForm>
               </TabsContent>
-              <TabsContent value="password">
+              <TabsContent value="chunkMethodForm">
                 <ChunkMethodForm></ChunkMethodForm>
               </TabsContent>
             </Tabs>
@@ -126,8 +136,17 @@ export default function DatasetSettings() {
             </div> */}
           </form>
         </Form>
-
-        <CategoryPanel chunkMethod={parserId}></CategoryPanel>
+        <ChunkMethodLearnMore tab={currentTab} parserId={parserId} />
+        {/* <div
+          style={{
+            display: currentTab === 'chunkMethodForm' ? 'block' : 'none',
+          }}
+        >
+          <Button variant="outline">Learn More</Button>
+          <div className="bg-[#FFF]/10 p-[20px] rounded-[12px] mt-[10px]">
+            <CategoryPanel chunkMethod={parserId}></CategoryPanel>
+          </div>
+        </div> */}
       </div>
     </section>
   );
