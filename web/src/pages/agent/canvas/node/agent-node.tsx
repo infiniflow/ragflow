@@ -1,7 +1,7 @@
 import { IAgentNode } from '@/interfaces/database/flow';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { memo, useMemo } from 'react';
-import { Operator } from '../../constant';
+import { NodeHandleId, Operator } from '../../constant';
 import useGraphStore from '../../store';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
@@ -31,19 +31,22 @@ function InnerAgentNode({
         {isNotParentAgent && (
           <>
             <CommonHandle
-              id="c"
-              type="source"
+              type="target"
               position={Position.Left}
               isConnectable={isConnectable}
               style={LeftHandleStyle}
+              nodeId={id}
+              id={NodeHandleId.End}
             ></CommonHandle>
             <CommonHandle
               type="source"
               position={Position.Right}
               isConnectable={isConnectable}
               className={styles.handle}
-              id="b"
               style={RightHandleStyle}
+              nodeId={id}
+              id={NodeHandleId.Start}
+              isConnectableEnd={false}
             ></CommonHandle>
           </>
         )}

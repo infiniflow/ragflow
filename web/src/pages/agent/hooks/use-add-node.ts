@@ -1,10 +1,11 @@
 import { useFetchModelId } from '@/hooks/logic-hooks';
-import { Node, Position, ReactFlowInstance } from '@xyflow/react';
+import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
 import { lowerFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  NodeHandleId,
   NodeMap,
   Operator,
   initialAgentValues,
@@ -124,6 +125,64 @@ export const useGetNodeName = () => {
   };
 };
 
+export function useCalculateNewlyChildPosition() {
+  const getNode = useGraphStore((state) => state.getNode);
+  const nodes = useGraphStore((state) => state.nodes);
+  const edges = useGraphStore((state) => state.edges);
+
+  const calculateNewlyBackChildPosition = useCallback(
+    (id?: string, sourceHandle?: string) => {
+      const parentNode = getNode(id);
+
+      // Calculate the coordinates of child nodes to prevent newly added child nodes from covering other child nodes
+      const allChildNodeIds = edges
+        .filter((x) => x.source === id && x.sourceHandle === sourceHandle)
+        .map((x) => x.target);
+
+      const yAxises = nodes
+        .filter((x) => allChildNodeIds.some((y) => y === x.id))
+        .map((x) => x.position.y);
+
+      const maxY = Math.max(...yAxises);
+
+      const position = {
+        y: yAxises.length > 0 ? maxY + 150 : parentNode?.position.y || 0,
+        x: (parentNode?.position.x || 0) + 300,
+      };
+
+      return position;
+    },
+    [edges, getNode, nodes],
+  );
+
+  return { calculateNewlyBackChildPosition };
+}
+
+function useAddChildEdge() {
+  const addEdge = useGraphStore((state) => state.addEdge);
+
+  const addChildEdge = useCallback(
+    (position: Position = Position.Right, edge: Partial<Connection>) => {
+      if (
+        position === Position.Right &&
+        edge.source &&
+        edge.target &&
+        edge.sourceHandle
+      ) {
+        addEdge({
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: NodeHandleId.End,
+        });
+      }
+    },
+    [addEdge],
+  );
+
+  return { addChildEdge };
+}
+
 export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const addNode = useGraphStore((state) => state.addNode);
   const getNode = useGraphStore((state) => state.getNode);
@@ -132,98 +191,125 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const edges = useGraphStore((state) => state.edges);
   const getNodeName = useGetNodeName();
   const initializeOperatorParams = useInitializeOperatorParams();
+  const { calculateNewlyBackChildPosition } = useCalculateNewlyChildPosition();
+  const { addChildEdge } = useAddChildEdge();
   //   const [reactFlowInstance, setReactFlowInstance] =
   //     useState<ReactFlowInstance<any, any>>();
 
   const addCanvasNode = useCallback(
-    (type: string, id?: string) => (event: React.MouseEvent<HTMLElement>) => {
-      // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
-      // and you don't need to subtract the reactFlowBounds.left/top anymore
-      // details: https://@xyflow/react.dev/whats-new/2023-11-10
-      const position = reactFlowInstance?.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
+    (
+      type: string,
+      params: { nodeId?: string; position: Position; id?: string } = {
+        position: Position.Right,
+      },
+    ) =>
+      (event: React.MouseEvent<HTMLElement>) => {
+        const nodeId = params.nodeId;
 
-      const newNode: Node<any> = {
-        id: `${type}:${humanId()}`,
-        type: NodeMap[type as Operator] || 'ragNode',
-        position: position || {
-          x: 0,
-          y: 0,
-        },
-        data: {
-          label: `${type}`,
-          name: generateNodeNamesWithIncreasingIndex(getNodeName(type), nodes),
-          form: initializeOperatorParams(type as Operator),
-        },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        dragHandle: getNodeDragHandle(type),
-      };
+        // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
+        // and you don't need to subtract the reactFlowBounds.left/top anymore
+        // details: https://@xyflow/react.dev/whats-new/2023-11-10
+        let position = reactFlowInstance?.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        });
 
-      if (type === Operator.Iteration) {
-        newNode.width = 500;
-        newNode.height = 250;
-        const iterationStartNode: Node<any> = {
-          id: `${Operator.IterationStart}:${humanId()}`,
-          type: 'iterationStartNode',
-          position: { x: 50, y: 100 },
-          // draggable: false,
-          data: {
-            label: Operator.IterationStart,
-            name: Operator.IterationStart,
-            form: {},
-          },
-          parentId: newNode.id,
-          extent: 'parent',
-        };
-        addNode(newNode);
-        addNode(iterationStartNode);
-      } else if (type === Operator.Agent) {
-        const agentNode = getNode(id);
-        if (agentNode) {
-          // Calculate the coordinates of child nodes to prevent newly added child nodes from covering other child nodes
-          const allChildAgentNodeIds = edges
-            .filter((x) => x.source === id && x.sourceHandle === 'e')
-            .map((x) => x.target);
-
-          const xAxises = nodes
-            .filter((x) => allChildAgentNodeIds.some((y) => y === x.id))
-            .map((x) => x.position.x);
-
-          const maxX = Math.max(...xAxises);
-
-          newNode.position = {
-            x: xAxises.length > 0 ? maxX + 262 : agentNode.position.x + 82,
-            y: agentNode.position.y + 140,
-          };
+        if (params.position === Position.Right) {
+          position = calculateNewlyBackChildPosition(nodeId, params.id);
         }
-        addNode(newNode);
-        if (id) {
-          addEdge({
-            source: id,
+
+        const newNode: Node<any> = {
+          id: `${type}:${humanId()}`,
+          type: NodeMap[type as Operator] || 'ragNode',
+          position: position || {
+            x: 0,
+            y: 0,
+          },
+          data: {
+            label: `${type}`,
+            name: generateNodeNamesWithIncreasingIndex(
+              getNodeName(type),
+              nodes,
+            ),
+            form: initializeOperatorParams(type as Operator),
+          },
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+          dragHandle: getNodeDragHandle(type),
+        };
+
+        if (type === Operator.Iteration) {
+          newNode.width = 500;
+          newNode.height = 250;
+          const iterationStartNode: Node<any> = {
+            id: `${Operator.IterationStart}:${humanId()}`,
+            type: 'iterationStartNode',
+            position: { x: 50, y: 100 },
+            // draggable: false,
+            data: {
+              label: Operator.IterationStart,
+              name: Operator.IterationStart,
+              form: {},
+            },
+            parentId: newNode.id,
+            extent: 'parent',
+          };
+          addNode(newNode);
+          addNode(iterationStartNode);
+        } else if (
+          type === Operator.Agent &&
+          params.position === Position.Bottom
+        ) {
+          const agentNode = getNode(nodeId);
+          if (agentNode) {
+            // Calculate the coordinates of child nodes to prevent newly added child nodes from covering other child nodes
+            const allChildAgentNodeIds = edges
+              .filter((x) => x.source === nodeId && x.sourceHandle === 'e')
+              .map((x) => x.target);
+
+            const xAxises = nodes
+              .filter((x) => allChildAgentNodeIds.some((y) => y === x.id))
+              .map((x) => x.position.x);
+
+            const maxX = Math.max(...xAxises);
+
+            newNode.position = {
+              x: xAxises.length > 0 ? maxX + 262 : agentNode.position.x + 82,
+              y: agentNode.position.y + 140,
+            };
+          }
+          addNode(newNode);
+          if (nodeId) {
+            addEdge({
+              source: nodeId,
+              target: newNode.id,
+              sourceHandle: 'e',
+              targetHandle: 'f',
+            });
+          }
+        } else {
+          const subNodeOfIteration = getRelativePositionToIterationNode(
+            nodes,
+            position,
+          );
+          if (subNodeOfIteration) {
+            newNode.parentId = subNodeOfIteration.parentId;
+            newNode.position = subNodeOfIteration.position;
+            newNode.extent = 'parent';
+          }
+          addNode(newNode);
+          addChildEdge(params.position, {
+            source: params.nodeId,
             target: newNode.id,
-            sourceHandle: 'e',
-            targetHandle: 'f',
+            sourceHandle: params.id,
           });
         }
-      } else {
-        const subNodeOfIteration = getRelativePositionToIterationNode(
-          nodes,
-          position,
-        );
-        if (subNodeOfIteration) {
-          newNode.parentId = subNodeOfIteration.parentId;
-          newNode.position = subNodeOfIteration.position;
-          newNode.extent = 'parent';
-        }
-        addNode(newNode);
-      }
-    },
+      },
     [
+      addChildEdge,
       addEdge,
       addNode,
+      calculateNewlyBackChildPosition,
       edges,
       getNode,
       getNodeName,

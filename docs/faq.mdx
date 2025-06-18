@@ -501,3 +501,9 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
 All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
 
 ---
+
+### How to tune batch size for document parsing and embedding?
+
+You can control the batch size for document parsing and embedding by setting the environment variables `DOC_BULK_SIZE` and `EMBEDDING_BATCH_SIZE`. Increasing these values may improve throughput for large-scale data processing, but will also increase memory usage. Adjust them according to your hardware resources.
+
+---

@@ -52,20 +52,20 @@ class Recognizer:
         self.label_list = label_list
 
     @staticmethod
-    def sort_Y_firstly(arr, threashold):
+    def sort_Y_firstly(arr, threshold):
         def cmp(c1, c2):
             diff = c1["top"] - c2["top"]
-            if abs(diff) < threashold:
+            if abs(diff) < threshold:
                 diff = c1["x0"] - c2["x0"]
             return diff
         arr = sorted(arr, key=cmp_to_key(cmp))
         return arr
 
     @staticmethod
-    def sort_X_firstly(arr, threashold):
+    def sort_X_firstly(arr, threshold):
         def cmp(c1, c2):
             diff = c1["x0"] - c2["x0"]
-            if abs(diff) < threashold:
+            if abs(diff) < threshold:
                 diff = c1["top"] - c2["top"]
             return diff
         arr = sorted(arr, key=cmp_to_key(cmp))
@@ -239,15 +239,15 @@ class Recognizer:
                 e -= 1
             break
 
-        max_overlaped_i, max_overlaped = None, 0
+        max_overlapped_i, max_overlapped = None, 0
         for i in range(s, e):
             ov = Recognizer.overlapped_area(bxs[i], box)
-            if ov <= max_overlaped:
+            if ov <= max_overlapped:
                 continue
-            max_overlaped_i = i
-            max_overlaped = ov
+            max_overlapped_i = i
+            max_overlapped = ov
 
-        return max_overlaped_i
+        return max_overlapped_i
 
     @staticmethod
     def find_horizontally_tightest_fit(box, boxes):
@@ -264,7 +264,7 @@ class Recognizer:
         return min_i
 
     @staticmethod
-    def find_overlapped_with_threashold(box, boxes, thr=0.3):
+    def find_overlapped_with_threshold(box, boxes, thr=0.3):
         if not boxes:
             return
         max_overlapped_i, max_overlapped, _max_overlapped = None, thr, 0

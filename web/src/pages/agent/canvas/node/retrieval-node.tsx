@@ -6,6 +6,7 @@ import { Avatar, Flex } from 'antd';
 import classNames from 'classnames';
 import { get } from 'lodash';
 import { memo, useMemo } from 'react';
+import { NodeHandleId } from '../../constant';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import styles from './index.less';
@@ -36,20 +37,23 @@ function InnerRetrievalNode({
     <ToolBar selected={selected} id={id} label={data.label}>
       <NodeWrapper>
         <CommonHandle
-          id="c"
-          type="source"
+          id={NodeHandleId.End}
+          type="target"
           position={Position.Left}
           isConnectable={isConnectable}
           className={styles.handle}
           style={LeftHandleStyle}
+          nodeId={id}
         ></CommonHandle>
         <CommonHandle
+          id={NodeHandleId.Start}
           type="source"
           position={Position.Right}
           isConnectable={isConnectable}
           className={styles.handle}
           style={RightHandleStyle}
-          id="b"
+          nodeId={id}
+          isConnectableEnd={false}
         ></CommonHandle>
         <NodeHeader
           id={id}
