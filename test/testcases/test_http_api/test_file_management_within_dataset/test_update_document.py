@@ -533,7 +533,7 @@ class TestUpdateDocumentParserConfig:
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_documents(HttpApiAuth, dataset_id, {"id": document_ids[0]})
-            if parser_config != {}:
+            if parser_config == {}:
                 assert res["data"]["docs"][0]["parser_config"] == {
                     "chunk_token_num": 128,
                     "delimiter": r"\n",
