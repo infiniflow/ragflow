@@ -3,7 +3,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import random from 'lodash/random';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
+import { useFormContext } from 'react-hook-form';
 import { SliderInputFormField } from '../slider-input-form-field';
 import { Button } from '../ui/button';
 import {
@@ -51,20 +51,18 @@ const RandomSeedField = 'parser_config.raptor.random_seed';
 const RaptorFormFields = () => {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
-  const useRaptor = useWatch({ name: UseRaptorField });
 
   const [raptorValue, setRaptorValue] = useState(false);
+  const [manual, setManual] = useState(false);
 
   const handleGenerate = useCallback(() => {
     form.setValue(RandomSeedField, random(10000));
   }, [form]);
 
-  console.log('form:::::::', form);
-
   useEffect(() => {
-    if (!raptorValue) {
+    if (!manual) {
       const defaultValues = form.formState.defaultValues?.parser_config ?? {};
-      const use_graphrag = defaultValues?.graphrag?.use_graphrag ?? false;
+      const use_graphrag = defaultValues?.raptor?.use_raptor ?? false;
       setRaptorValue(use_graphrag);
     }
   }, [form]);
@@ -74,27 +72,22 @@ const RaptorFormFields = () => {
       <FormField
         control={form.control}
         name={UseRaptorField}
-        render={({ field }) => {
-          console.log('field::::', field);
-          return (
-            <FormItem defaultChecked={false}>
-              <FormLabel tooltip={t('useRaptorTip')}>
-                {t('useRaptor')}
-              </FormLabel>
-              <FormControl>
-                <Switch
-                  checked={raptorValue}
-                  onCheckedChange={(ev) => {
-                    console.log('ev=>', ev);
-                    setRaptorValue(ev);
-                    field.onChange(ev);
-                  }}
-                ></Switch>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          );
-        }}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel tooltip={t('useRaptorTip')}>{t('useRaptor')}</FormLabel>
+            <FormControl>
+              <Switch
+                checked={raptorValue}
+                onCheckedChange={(ev) => {
+                  setManual(true);
+                  setRaptorValue(ev);
+                  field.onChange(ev);
+                }}
+              ></Switch>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
       />
       {raptorValue && (
         <div className="space-y-3">

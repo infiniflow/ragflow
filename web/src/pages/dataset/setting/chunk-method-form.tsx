@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { Loader2Icon } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -68,28 +69,28 @@ export function ChunkMethodForm() {
       </section>
       <div className="text-right pt-4">
         <Button
+          disabled={submitLoading}
           onClick={() => {
-            console.log('用户表单: ', form, kb_id);
+            // console.log('用户表单: ', form, kb_id);
             (async () => {
               try {
                 let beValid = await form.formControl.trigger();
-                // console.log('表单完整性: ', beValid, form.formState.errors);
-                const { name, description, parser_config, parser_id } =
-                  form.formState.values;
-                await kbService.updateKb({
-                  kb_id,
-                  name,
-                  description,
-                  parser_id,
-                  parser_config,
-                });
+
+                if (beValid) {
+                  setSubmitLoading(true);
+                  let postData = form.formState.values;
+                  delete postData['avatar']; // has submitted in first form general
+                  await kbService.updateKb({ ...postData, kb_id });
+                }
               } catch (e) {
                 console.log(e);
               } finally {
+                setSubmitLoading(false);
               }
             })();
           }}
         >
+          {submitLoading && <Loader2Icon className="animate-spin" />}
           {t('common.submit')}
         </Button>
       </div>
