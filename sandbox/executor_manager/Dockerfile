@@ -15,7 +15,7 @@ ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 
 WORKDIR /app
-COPY executor_manager/ .
+COPY . .
 
 RUN uv pip install --system -r requirements.txt
 
