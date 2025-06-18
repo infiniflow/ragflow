@@ -40,7 +40,9 @@ class IterationItem(ComponentBase, ABC):
             self._idx = -1
             raise Exception(parent._param.items_ref + " must be an array, but its type is "+str(type(arr)))
 
-        self.set_output("result", arr[self._idx])
+        self.set_output("item", arr[self._idx])
+        self.set_output("index", self._idx)
+
         if self._idx > 0:
             self.output_collation()
 
