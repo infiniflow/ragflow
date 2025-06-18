@@ -13,16 +13,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import hashlib
 import inspect
 import logging
 import operator
 import os
 import sys
-import typing
 import time
+import typing
 from enum import Enum
 from functools import wraps
-import hashlib
 
 from flask_login import UserMixin
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
@@ -264,14 +264,15 @@ class BaseDataBase:
 
 def with_retry(max_retries=3, retry_delay=1.0):
     """Decorator: Add retry mechanism to database operations
-    
+
     Args:
         max_retries (int): maximum number of retries
         retry_delay (float): initial retry delay (seconds), will increase exponentially
-        
+
     Returns:
         decorated function
     """
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -284,26 +285,28 @@ def with_retry(max_retries=3, retry_delay=1.0):
                     # get self and method name for logging
                     self_obj = args[0] if args else None
                     func_name = func.__name__
-                    lock_name = getattr(self_obj, 'lock_name', 'unknown') if self_obj else 'unknown'
-                    
+                    lock_name = getattr(self_obj, "lock_name", "unknown") if self_obj else "unknown"
+
                     if retry < max_retries - 1:
-                        current_delay = retry_delay * (2 ** retry)
-                        logging.warning(f"{func_name} {lock_name} failed: {str(e)}, retrying ({retry+1}/{max_retries})")
+                        current_delay = retry_delay * (2**retry)
+                        logging.warning(f"{func_name} {lock_name} failed: {str(e)}, retrying ({retry + 1}/{max_retries})")
                         time.sleep(current_delay)
                     else:
                         logging.error(f"{func_name} {lock_name} failed after all attempts: {str(e)}")
-            
+
             if last_exception:
                 raise last_exception
             return False
+
         return wrapper
+
     return decorator
 
 
 class PostgresDatabaseLock:
     def __init__(self, lock_name, timeout=10, db=None):
         self.lock_name = lock_name
-        self.lock_id = int(hashlib.md5(lock_name.encode()).hexdigest(), 16) % (2**31-1)
+        self.lock_id = int(hashlib.md5(lock_name.encode()).hexdigest(), 16) % (2**31 - 1)
         self.timeout = int(timeout)
         self.db = db if db else DB
 
@@ -542,7 +545,7 @@ class LLM(DataBaseModel):
     max_tokens = IntegerField(default=0)
 
     tags = CharField(max_length=255, null=False, help_text="LLM, Text Embedding, Image2Text, Chat, 32k...", index=True)
-    is_tools =  BooleanField(null=False, help_text="support tools", default=False)
+    is_tools = BooleanField(null=False, help_text="support tools", default=False)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
@@ -794,6 +797,50 @@ class UserCanvasVersion(DataBaseModel):
 
     class Meta:
         db_table = "user_canvas_version"
+
+
+class Search(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    avatar = TextField(null=True, help_text="avatar base64 string")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, help_text="Search name", index=True)
+    description = TextField(null=True, help_text="KB description")
+    created_by = CharField(max_length=32, null=False, index=True)
+    search_config = JSONField(
+        null=False,
+        default={
+            "kb_ids": [],
+            "doc_ids": [],
+            "similarity_threshold": 0.0,
+            "vector_similarity_weight": 0.3,
+            "use_kg": False,
+            # rerank settings
+            "rerank_id": "",
+            "top_k": 1024,
+            # chat settings
+            "summary": False,
+            "chat_id": "",
+            "llm_setting": {
+                "temperature": 0.1,
+                "top_p": 0.3,
+                "frequency_penalty": 0.7,
+                "presence_penalty": 0.4,
+            },
+            "chat_settingcross_languages": [],
+            "highlight": False,
+            "keyword": False,
+            "web_search": False,
+            "related_search": False,
+            "query_mindmap": False,
+        },
+    )
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        db_table = "search"
 
 
 def migrate_db():
