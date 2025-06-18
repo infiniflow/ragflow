@@ -21,7 +21,8 @@ import { AgentInstanceContext } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
-import { useValues } from './use-values';
+import { ToolPopover } from './tool-popover';
+import { useToolOptions, useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
 const FormSchema = z.object({
@@ -65,6 +66,8 @@ const AgentForm = ({ node }: INextOperatorForm) => {
   useWatchFormChange(node?.id, form);
 
   const { addCanvasNode } = useContext(AgentInstanceContext);
+
+  const toolOptions = useToolOptions();
 
   return (
     <Form {...form}>
@@ -110,6 +113,9 @@ const AgentForm = ({ node }: INextOperatorForm) => {
             )}
           />
         </FormContainer>
+        <ToolPopover>
+          <BlockButton>Add Tool</BlockButton>
+        </ToolPopover>
         <BlockButton
           onClick={addCanvasNode(Operator.Agent, {
             nodeId: node?.id,

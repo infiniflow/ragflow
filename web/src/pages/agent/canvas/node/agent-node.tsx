@@ -63,6 +63,13 @@ function InnerAgentNode({
           id="e"
           style={{ left: 180 }}
         ></Handle>
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          isConnectable={false}
+          id={NodeHandleId.Tool}
+          style={{ left: 20 }}
+        ></Handle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
       </NodeWrapper>
     </ToolBar>
