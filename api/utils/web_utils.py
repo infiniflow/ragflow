@@ -112,8 +112,6 @@ def is_valid_url(url: str) -> bool:
         return False
     try:
         ip = socket.gethostbyname(hostname)
-        if is_private_ip(ip):
-            return False
     except socket.gaierror:
         return False
     return True

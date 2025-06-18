@@ -1,0 +1,11 @@
+name: Deploy to production environment
+"on":
+  push:
+    tags:
+      - "*"
+jobs:
+  build-production-image:
+    uses: ./.github/workflows/image.yml
+    with:
+      IMAGE_TAG: "${{ github.ref_name }}"
+    secrets: inherit

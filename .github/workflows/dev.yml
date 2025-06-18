@@ -1,0 +1,27 @@
+name: "Build and deploy to dev environment"
+"on":
+  push:
+    branches:
+      - main
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+  setup:
+    needs: ci
+    runs-on: ubuntu-latest
+    outputs:
+      COMMIT_SHORT_SHA: "${{ steps.short-sha.outputs.COMMIT_SHORT_SHA }}"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set short git SHA
+        id: short-sha
+        run: |
+          calculatedSha=$(git rev-parse --short ${{ github.sha }})
+          echo "COMMIT_SHORT_SHA=$calculatedSha" >> $GITHUB_OUTPUT
+  build-dev-image:
+    needs: setup
+    uses: ./.github/workflows/image.yml
+    with:
+      IMAGE_TAG: "${{ needs.setup.outputs.COMMIT_SHORT_SHA }}"
+    secrets: inherit

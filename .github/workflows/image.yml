@@ -1,0 +1,64 @@
+name: Build and push Docker image
+"on":
+  workflow_call:
+    inputs:
+      IMAGE_TAG:
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  RAGFLOW_IMAGE_NAME: "${{ github.repository }}"
+  QUALIFIED_RAGFLOW_IMAGE_NAME: "mcx-projects/ragflow"
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: "${{ env.REGISTRY }}"
+          username: "${{ github.actor }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: "${{ env.REGISTRY }}/${{ env.RAGFLOW_IMAGE_NAME }}"
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: "manifest,index"
+      - name: Validate build configuration
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          call: check
+      - name: Get Git commit timestamps
+        id: timestamp
+        run: echo "TIMESTAMP=$(git log -1 --pretty=%ct)" >> $GITHUB_OUTPUT
+      - name: Build and push slim Ragflow image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        id: push
+        with:
+          context: .
+          push: true
+          file: Dockerfile
+          build-args: LIGHTEN=1
+          platforms: linux/amd64
+          annotations: "${{ steps.meta.outputs.annotations }}"
+          tags: ${{ env.REGISTRY }}/${{ env.QUALIFIED_RAGFLOW_IMAGE_NAME }}:${{ inputs.IMAGE_TAG }}-slim
+          labels: "${{ steps.meta.outputs.labels }}"
+          cache-from: >-
+            type=registry,ref=${{ env.REGISTRY }}/${{
+            env.QUALIFIED_INTEGRATOR_IMAGE_NAME }}:buildcache
+          cache-to: >-
+            type=registry,ref=${{ env.REGISTRY }}/${{
+            env.QUALIFIED_INTEGRATOR_IMAGE_NAME }}:buildcache,mode=max
+        env:
+          SOURCE_DATE_EPOCH: "${{ steps.timestamp.outputs.TIMESTAMP }}"
