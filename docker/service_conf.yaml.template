@@ -20,7 +20,7 @@ es:
 os:
   hosts: 'http://${OS_HOST:-opensearch01}:9201'
   username: '${OS_USER:-admin}'
-  password: '${OPENSEARCHH_PASSWORD:-infini_rag_flow_OS_01}'
+  password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   db_name: 'default_db'
