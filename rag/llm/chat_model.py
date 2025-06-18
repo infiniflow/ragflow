@@ -1217,7 +1217,7 @@ class GeminiChat(Base):
 
     def _clean_conf(self, gen_conf):
         for k in list(gen_conf.keys()):
-            if k not in ["temperature", "top_p", "max_tokens"]:
+            if k not in ["temperature", "top_p"]:
                 del gen_conf[k]
         return gen_conf
 

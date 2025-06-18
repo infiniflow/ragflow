@@ -103,6 +103,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Code]: initialCodeValues,
       [Operator.WaitingDialogue]: initialWaitingDialogueValues,
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
+      [Operator.Tool]: {},
     };
   }, [llmId]);
 
@@ -183,6 +184,53 @@ function useAddChildEdge() {
   return { addChildEdge };
 }
 
+function useAddTooNode() {
+  const addNode = useGraphStore((state) => state.addNode);
+  const getNode = useGraphStore((state) => state.getNode);
+  const addEdge = useGraphStore((state) => state.addEdge);
+  const edges = useGraphStore((state) => state.edges);
+  const nodes = useGraphStore((state) => state.nodes);
+
+  const addToolNode = useCallback(
+    (newNode: Node<any>, nodeId?: string) => {
+      const agentNode = getNode(nodeId);
+
+      if (agentNode) {
+        const childToolNodeIds = edges
+          .filter(
+            (x) => x.source === nodeId && x.sourceHandle === NodeHandleId.Tool,
+          )
+          .map((x) => x.target);
+
+        if (
+          childToolNodeIds.length > 0 &&
+          nodes.some((x) => x.id === childToolNodeIds[0])
+        ) {
+          return;
+        }
+
+        newNode.position = {
+          x: agentNode.position.x - 82,
+          y: agentNode.position.y + 140,
+        };
+
+        addNode(newNode);
+        if (nodeId) {
+          addEdge({
+            source: nodeId,
+            target: newNode.id,
+            sourceHandle: NodeHandleId.Tool,
+            targetHandle: NodeHandleId.End,
+          });
+        }
+      }
+    },
+    [addEdge, addNode, edges, getNode, nodes],
+  );
+
+  return { addToolNode };
+}
+
 export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const addNode = useGraphStore((state) => state.addNode);
   const getNode = useGraphStore((state) => state.getNode);
@@ -193,6 +241,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const initializeOperatorParams = useInitializeOperatorParams();
   const { calculateNewlyBackChildPosition } = useCalculateNewlyChildPosition();
   const { addChildEdge } = useAddChildEdge();
+  const { addToolNode } = useAddTooNode();
   //   const [reactFlowInstance, setReactFlowInstance] =
   //     useState<ReactFlowInstance<any, any>>();
 
@@ -203,15 +252,15 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
         position: Position.Right,
       },
     ) =>
-      (event: React.MouseEvent<HTMLElement>) => {
+      (event?: React.MouseEvent<HTMLElement>) => {
         const nodeId = params.nodeId;
 
         // reactFlowInstance.project was renamed to reactFlowInstance.screenToFlowPosition
         // and you don't need to subtract the reactFlowBounds.left/top anymore
         // details: https://@xyflow/react.dev/whats-new/2023-11-10
         let position = reactFlowInstance?.screenToFlowPosition({
-          x: event.clientX,
-          y: event.clientY,
+          x: event?.clientX || 0,
+          y: event?.clientY || 0,
         });
 
         if (params.position === Position.Right) {
@@ -287,6 +336,8 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
               targetHandle: 'f',
             });
           }
+        } else if (type === Operator.Tool) {
+          addToolNode(newNode, params.nodeId);
         } else {
           const subNodeOfIteration = getRelativePositionToIterationNode(
             nodes,
@@ -309,6 +360,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
       addChildEdge,
       addEdge,
       addNode,
+      addToolNode,
       calculateNewlyBackChildPosition,
       edges,
       getNode,

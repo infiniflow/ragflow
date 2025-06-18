@@ -126,10 +126,10 @@ class TestSessionsWithChatAssistantList:
             assert expected_message in str(excinfo.value)
         else:
             sessions = chat_assistant.list_sessions(**params)
-            if params["name"] != "session_with_chat_assistant_1":
-                assert len(sessions) == expected_num
-            else:
+            if params["name"] == "session_with_chat_assistant_1":
                 assert sessions[0].name == params["name"]
+            else:
+                assert len(sessions) == expected_num
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -154,10 +154,10 @@ class TestSessionsWithChatAssistantList:
             assert expected_message in str(excinfo.value)
         else:
             list_sessions = chat_assistant.list_sessions(**params)
-            if "id" in params and params["id"] != sessions[0].id:
-                assert len(list_sessions) == expected_num
-            else:
+            if "id" in params and params["id"] == sessions[0].id:
                 assert list_sessions[0].id == params["id"]
+            else:
+                assert len(list_sessions) == expected_num
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
