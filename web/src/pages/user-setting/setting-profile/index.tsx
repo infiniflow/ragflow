@@ -1,407 +1,208 @@
-import PasswordInput from '@/components/password-input';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { LanguageList, LanguageMap } from '@/constants/common';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useFetchUserInfo, useSaveSetting } from '@/hooks/user-setting-hooks';
-import { TimezoneList } from '@/pages/user-setting/constants';
-import { rsaPsw } from '@/utils';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { TFunction } from 'i18next';
-import { Loader2Icon, Pencil, Upload } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
+import {
+  getBase64FromUploadFileList,
+  getUploadFileListFromBase64,
+  normFile,
+} from '@/utils/file-util';
+import { PlusOutlined } from '@ant-design/icons';
+import {
+  Button,
+  Divider,
+  Form,
+  Input,
+  Select,
+  Space,
+  Spin,
+  Upload,
+  UploadFile,
+} from 'antd';
+import { useEffect } from 'react';
+import SettingTitle from '../components/setting-title';
+import { TimezoneList } from '../constants';
+import { useValidateSubmittable } from '../hooks';
+import parentStyles from '../index.less';
+import styles from './index.less';
 
-function defineSchema(t: TFunction<'translation', string>) {
-  return z
-    .object({
-      userName: z
-        .string()
-        .min(1, {
-          message: t('usernameMessage'),
-        })
-        .trim(),
-      avatarUrl: z.string().trim(),
-      timeZone: z
-        .string()
-        .trim()
-        .min(1, {
-          message: t('timezonePlaceholder'),
-        }),
-      email: z
-        .string({
-          required_error: 'Please select an email to display.',
-        })
-        .trim()
-        .regex(
-          /^[A-Za-z0-9\u4e00-\u9fa5]+@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$/,
-          {
-            message: 'Enter a valid email address.',
-          },
-        ),
-      currPasswd: z
-        .string()
-        .trim()
-        .min(1, {
-          message: t('currentPasswordMessage'),
-        }),
-      newPasswd: z
-        .string()
-        .trim()
-        .min(8, {
-          message: t('confirmPasswordMessage'),
-        }),
-      confirmPasswd: z
-        .string()
-        .trim()
-        .min(8, {
-          message: t('newPasswordDescription'),
-        }),
-    })
-    .refine((data) => data.newPasswd === data.confirmPasswd, {
-      message: t('confirmPasswordNonMatchMessage'),
-      path: ['confirmPasswd'],
-    });
-}
+const { Option } = Select;
 
-export default function Profile() {
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
-  const { data: userInfo } = useFetchUserInfo();
+type FieldType = {
+  nickname?: string;
+  language?: string;
+  email?: string;
+  color_schema?: string;
+  timezone?: string;
+  avatar?: string;
+};
+
+const tailLayout = {
+  wrapperCol: { offset: 20, span: 4 },
+};
+
+const UserSettingProfile = () => {
+  const { data: userInfo, loading } = useFetchUserInfo();
   const { saveSetting, loading: submitLoading } = useSaveSetting();
-
+  const { form, submittable } = useValidateSubmittable();
   const { t } = useTranslate('setting');
-  const FormSchema = defineSchema(t);
+  const changeLanguage = useChangeLanguage();
 
-  const form = useForm<z.infer<typeof FormSchema>>({
-    resolver: zodResolver(FormSchema),
-    defaultValues: {
-      userName: '',
-      avatarUrl: '',
-      timeZone: '',
-      email: '',
-      currPasswd: '',
-      newPasswd: '',
-      confirmPasswd: '',
-    },
-  });
+  const onFinish = async (values: any) => {
+    const avatar = await getBase64FromUploadFileList(values.avatar);
+    saveSetting({ ...values, avatar });
+  };
+
+  const onFinishFailed = (errorInfo: any) => {
+    console.log('Failed:', errorInfo);
+  };
 
   useEffect(() => {
-    // init user info when mounted
-    form.setValue('email', userInfo?.email); // email
-    form.setValue('userName', userInfo?.nickname); // nickname
-    form.setValue('timeZone', userInfo?.timezone); // time zone
-    form.setValue('currPasswd', ''); // current password
-    setAvatarBase64Str(userInfo?.avatar ?? '');
-  }, [userInfo]);
-
-  useEffect(() => {
-    if (avatarFile) {
-      const fr = new FileReader();
-      fr.onload = () => {
-        setAvatarBase64Str(fr.result as string);
-      };
-      fr.readAsDataURL(avatarFile);
-    }
-  }, [avatarFile]);
-
-  function onSubmit(data: z.infer<typeof FormSchema>) {
-    // toast('You submitted the following values', {
-    //   description: (
-    //     <pre className="mt-2 w-[320px] rounded-md bg-neutral-950 p-4">
-    //       <code className="text-white">{JSON.stringify(data, null, 2)}</code>
-    //     </pre>
-    //   ),
-    // });
-    console.log('data=', data);
-    // final submit form
-    saveSetting({
-      nickname: data.userName,
-      password: rsaPsw(data.currPasswd) as string,
-      new_password: rsaPsw(data.newPasswd) as string,
-      avatar: avatarBase64Str,
-      timezone: data.timeZone,
-    });
-  }
+    const fileList: UploadFile[] = getUploadFileListFromBase64(userInfo.avatar);
+    form.setFieldsValue({ ...userInfo, avatar: fileList });
+  }, [form, userInfo]);
 
   return (
-    <section className="p-8">
-      <h1 className="text-3xl font-bold">{t('profile')}</h1>
-      <div className="text-sm text-muted-foreground mb-6">
-        {t('profileDescription')}
-      </div>
-      <div>
-        <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit(onSubmit)}
-            className="block space-y-6"
+    <section className={styles.profileWrapper}>
+      <SettingTitle
+        title={t('profile')}
+        description={t('profileDescription')}
+      ></SettingTitle>
+      <Divider />
+      <Spin spinning={loading}>
+        <Form
+          colon={false}
+          name="basic"
+          labelAlign={'left'}
+          labelCol={{ span: 8 }}
+          wrapperCol={{ span: 16 }}
+          style={{ width: '100%' }}
+          initialValues={{ remember: true }}
+          onFinish={onFinish}
+          onFinishFailed={onFinishFailed}
+          form={form}
+          autoComplete="off"
+        >
+          <Form.Item<FieldType>
+            label={t('username')}
+            name="nickname"
+            rules={[
+              {
+                required: true,
+                message: t('usernameMessage'),
+                whitespace: true,
+              },
+            ]}
           >
-            <FormField
-              control={form.control}
-              name="userName"
-              render={({ field }) => (
-                <FormItem className=" items-center space-y-0 ">
-                  <div className="flex w-[600px]">
-                    <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
-                      <span className="text-red-600">*</span>
-                      {t('username')}
-                    </FormLabel>
-                    <FormControl className="w-3/4">
-                      <Input
-                        placeholder=""
-                        {...field}
-                        className="bg-colors-background-inverse-weak"
-                      />
-                    </FormControl>
-                  </div>
-                  <div className="flex w-[600px] pt-1">
-                    <div className="w-1/4"></div>
-                    <FormMessage />
-                  </div>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="avatarUrl"
-              render={({ field }) => (
-                <FormItem className="flex items-center space-y-0">
-                  <div className="flex w-[600px]">
-                    <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
-                      Avatar
-                    </FormLabel>
-                    <FormControl className="w-3/4">
-                      <>
-                        <div className="relative group">
-                          {!avatarBase64Str ? (
-                            <div className="w-[64px] h-[64px] grid place-content-center">
-                              <div className="flex flex-col items-center">
-                                <Upload />
-                                <p>Upload</p>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="w-[64px] h-[64px] relative grid place-content-center">
-                              <Avatar className="w-[64px] h-[64px]">
-                                <AvatarImage
-                                  className=" block"
-                                  src={avatarBase64Str}
-                                  alt=""
-                                />
-                                <AvatarFallback></AvatarFallback>
-                              </Avatar>
-                              <div className="absolute inset-0 bg-[#000]/20 group-hover:bg-[#000]/60">
-                                <Pencil
-                                  size={20}
-                                  className="absolute right-2 bottom-0 opacity-50 hidden group-hover:block"
-                                />
-                              </div>
-                            </div>
-                          )}
-                          <Input
-                            placeholder=""
-                            {...field}
-                            type="file"
-                            title=""
-                            accept="image/*"
-                            className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
-                            onChange={(ev) => {
-                              const file = ev.target?.files?.[0];
-                              if (
-                                /\.(jpg|jpeg|png|webp|bmp)$/i.test(
-                                  file?.name ?? '',
-                                )
-                              ) {
-                                setAvatarFile(file!);
-                              }
-                              ev.target.value = '';
-                            }}
-                          />
-                        </div>
-                      </>
-                    </FormControl>
-                  </div>
-                  <div className="flex w-[600px] pt-1">
-                    <div className="w-1/4"></div>
-                    <FormMessage />
-                  </div>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="timeZone"
-              render={({ field }) => (
-                <FormItem className="items-center space-y-0">
-                  <div className="flex w-[600px]">
-                    <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
-                      <span className="text-red-600">*</span>
-                      {t('timezone')}
-                    </FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl className="w-3/4">
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a timeZone" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {TimezoneList.map((timeStr) => (
-                          <SelectItem key={timeStr} value={timeStr}>
-                            {timeStr}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex w-[600px] pt-1">
-                    <div className="w-1/4"></div>
-                    <FormMessage />
-                  </div>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <div>
-                  <FormItem className="items-center space-y-0">
-                    <div className="flex w-[600px]">
-                      <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
-                        {t('email')}
-                      </FormLabel>
-                      <FormControl className="w-3/4">
-                        <Input
-                          placeholder="Alex@gmail.com"
-                          disabled
-                          {...field}
-                        />
-                      </FormControl>
-                    </div>
-                    <div className="flex w-[600px] pt-1">
-                      <div className="w-1/4"></div>
-                      <FormMessage />
-                    </div>
-                  </FormItem>
-                  <div className="flex w-[600px] pt-1">
-                    <p className="w-1/4">&nbsp;</p>
-                    <p className="text-sm text-muted-foreground whitespace-nowrap w-3/4">
-                      {t('emailDescription')}
-                    </p>
-                  </div>
-                </div>
-              )}
-            />
-            <div className="h-[10px]"></div>
-            <div className="pb-6">
-              <h1 className="text-3xl font-bold">{t('password')}</h1>
-              <div className="text-sm text-muted-foreground">
-                {t('passwordDescription')}
+            <Input />
+          </Form.Item>
+          <Divider />
+          <Form.Item<FieldType>
+            label={
+              <div>
+                <Space>{t('photo')}</Space>
+                <div>{t('photoDescription')}</div>
               </div>
-            </div>
-            <div className="h-0 overflow-hidden absolute">
-              <input type="password" className=" w-0 height-0 opacity-0" />
-            </div>
-            <FormField
-              control={form.control}
-              name="currPasswd"
-              render={({ field }) => (
-                <FormItem className=" items-center space-y-0">
-                  <div className="flex w-[600px]">
-                    <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-2/5">
-                      <span className="text-red-600">*</span>
-                      {t('currentPassword')}
-                    </FormLabel>
-                    <FormControl className="w-3/5">
-                      <PasswordInput {...field} />
-                    </FormControl>
-                  </div>
-                  <div className="flex w-[600px] pt-1">
-                    <div className="min-w-[170px] max-w-[170px]"></div>
-                    <FormMessage />
-                  </div>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="newPasswd"
-              render={({ field }) => (
-                <FormItem className=" items-center space-y-0">
-                  <div className="flex w-[600px]">
-                    <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-2/5">
-                      <span className="text-red-600">*</span>
-                      {t('newPassword')}
-                    </FormLabel>
-                    <FormControl className="w-3/5">
-                      <PasswordInput {...field} />
-                    </FormControl>
-                  </div>
-                  <div className="flex w-[600px] pt-1">
-                    <div className="min-w-[170px] max-w-[170px]"></div>
-                    <FormMessage />
-                  </div>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="confirmPasswd"
-              render={({ field }) => (
-                <FormItem className=" items-center space-y-0">
-                  <div className="flex w-[600px]">
-                    <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-2/5">
-                      <span className="text-red-600">*</span>
-                      {t('confirmPassword')}
-                    </FormLabel>
-                    <FormControl className="w-3/5">
-                      <PasswordInput
-                        {...field}
-                        onBlur={() => {
-                          form.trigger('confirmPasswd');
-                        }}
-                        onChange={(ev) => {
-                          form.setValue(
-                            'confirmPasswd',
-                            ev.target.value.trim(),
-                          );
-                        }}
-                      />
-                    </FormControl>
-                  </div>
-                  <div className="flex w-[600px] pt-1">
-                    <div className="min-w-[170px] max-w-[170px]">&nbsp;</div>
-                    <FormMessage />
-                  </div>
-                </FormItem>
-              )}
-            />
-            <div className="w-[600px] text-right space-x-4">
-              <Button variant="secondary">{t('cancel')}</Button>
-              <Button type="submit" disabled={submitLoading}>
-                {submitLoading && <Loader2Icon className="animate-spin" />}
+            }
+            name="avatar"
+            valuePropName="fileList"
+            getValueFromEvent={normFile}
+          >
+            <Upload
+              listType="picture-card"
+              maxCount={1}
+              accept="image/*"
+              beforeUpload={() => {
+                return false;
+              }}
+              showUploadList={{ showPreviewIcon: false, showRemoveIcon: false }}
+            >
+              <button style={{ border: 0, background: 'none' }} type="button">
+                <PlusOutlined />
+                <div style={{ marginTop: 8 }}>
+                  {t('upload', { keyPrefix: 'common' })}
+                </div>
+              </button>
+            </Upload>
+          </Form.Item>
+          <Divider />
+          <Form.Item<FieldType>
+            label={t('colorSchema')}
+            name="color_schema"
+            rules={[{ required: true, message: t('colorSchemaMessage') }]}
+          >
+            <Select placeholder={t('colorSchemaPlaceholder')}>
+              <Option value="Bright">{t('bright')}</Option>
+              <Option value="Dark">{t('dark')}</Option>
+            </Select>
+          </Form.Item>
+          <Divider />
+          <Form.Item<FieldType>
+            label={t('language', { keyPrefix: 'common' })}
+            name="language"
+            rules={[
+              {
+                required: true,
+                message: t('languageMessage', { keyPrefix: 'common' }),
+              },
+            ]}
+          >
+            <Select
+              placeholder={t('languagePlaceholder', { keyPrefix: 'common' })}
+              onChange={changeLanguage}
+            >
+              {LanguageList.map((x) => (
+                <Option value={x} key={x}>
+                  {LanguageMap[x as keyof typeof LanguageMap]}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Divider />
+          <Form.Item<FieldType>
+            label={t('timezone')}
+            name="timezone"
+            rules={[{ required: true, message: t('timezoneMessage') }]}
+          >
+            <Select placeholder={t('timezonePlaceholder')} showSearch>
+              {TimezoneList.map((x) => (
+                <Option value={x} key={x}>
+                  {x}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Divider />
+          <Form.Item label={t('email')}>
+            <Form.Item<FieldType> name="email" noStyle>
+              <Input disabled />
+            </Form.Item>
+            <p className={parentStyles.itemDescription}>
+              {t('emailDescription')}
+            </p>
+          </Form.Item>
+          <Form.Item
+            {...tailLayout}
+            shouldUpdate={(prevValues, curValues) =>
+              prevValues.additional !== curValues.additional
+            }
+          >
+            <Space>
+              <Button htmlType="button">{t('cancel')}</Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                disabled={!submittable}
+                loading={submitLoading}
+              >
                 {t('save', { keyPrefix: 'common' })}
               </Button>
-            </div>
-          </form>
+            </Space>
+          </Form.Item>
         </Form>
-      </div>
+      </Spin>
     </section>
   );
-}
+};
+
+export default UserSettingProfile;

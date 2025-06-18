@@ -48,8 +48,8 @@ const routes = [
       { path: '/', redirect: '/knowledge' },
       {
         path: '/knowledge',
-        // component: '@/pages/knowledge',
-        component: '@/pages/knowledge/datasets',
+        component: '@/pages/knowledge',
+        // component: '@/pages/knowledge/datasets',
       },
       {
         path: '/knowledge',
