@@ -162,10 +162,10 @@ class TestSessionsWithChatAssistantList:
         res = list_session_with_chat_assistants(get_http_api_auth, chat_assistant_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
-            if params["name"] != "session_with_chat_assistant_1":
-                assert len(res["data"]) == expected_num
-            else:
+            if params["name"] == "session_with_chat_assistant_1":
                 assert res["data"][0]["name"] == params["name"]
+            else:
+                assert len(res["data"]) == expected_num
         else:
             assert res["message"] == expected_message
 
@@ -189,10 +189,10 @@ class TestSessionsWithChatAssistantList:
         res = list_session_with_chat_assistants(get_http_api_auth, chat_assistant_id, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
-            if params["id"] != session_ids[0]:
-                assert len(res["data"]) == expected_num
-            else:
+            if params["id"] == session_ids[0]:
                 assert res["data"][0]["id"] == params["id"]
+            else:
+                assert len(res["data"]) == expected_num
         else:
             assert res["message"] == expected_message
 
