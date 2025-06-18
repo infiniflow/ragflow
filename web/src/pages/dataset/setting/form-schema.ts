@@ -7,7 +7,8 @@ export const formSchema = z.object({
   description: z.string().min(2, {
     message: 'Username must be at least 2 characters.',
   }),
-  avatar: z.instanceof(File),
+  // avatar: z.instanceof(File),
+  avatar: z.any().nullish(),
   permission: z.string(),
   parser_id: z.string(),
   embd_id: z.string(),
@@ -18,7 +19,7 @@ export const formSchema = z.object({
     auto_keywords: z.number(),
     auto_questions: z.number(),
     html4excel: z.boolean(),
-    tag_kb_ids: z.array(z.string()),
+    tag_kb_ids: z.array(z.string()).nullish(),
     topn_tags: z.number(),
     raptor: z.object({
       use_raptor: z.boolean(),

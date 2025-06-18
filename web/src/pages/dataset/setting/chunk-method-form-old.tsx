@@ -1,11 +1,7 @@
-import { Button } from '@/components/ui/button';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
 
 import { DocumentParserType } from '@/constants/knowledge';
-import kbService from '@/services/knowledge-service';
-import { useContext, useMemo, useState } from 'react';
-import SettingContext from '../data-set-context';
+import { useMemo } from 'react';
 import { AudioConfiguration } from './configuration/audio';
 import { BookConfiguration } from './configuration/book';
 import { EmailConfiguration } from './configuration/email';
@@ -46,9 +42,6 @@ function EmptyComponent() {
 
 export function ChunkMethodForm() {
   const form = useFormContext();
-  const { t } = useTranslation();
-  const { kb_id } = useContext(SettingContext);
-  const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
 
   const finalParserId: DocumentParserType = useWatch({
     control: form.control,
@@ -62,37 +55,8 @@ export function ChunkMethodForm() {
   }, [finalParserId]);
 
   return (
-    <>
-      <section className="overflow-auto max-h-[76vh]">
-        <ConfigurationComponent></ConfigurationComponent>
-      </section>
-      <div className="text-right pt-4">
-        <Button
-          onClick={() => {
-            console.log('用户表单: ', form, kb_id);
-            (async () => {
-              try {
-                let beValid = await form.formControl.trigger();
-                // console.log('表单完整性: ', beValid, form.formState.errors);
-                const { name, description, parser_config, parser_id } =
-                  form.formState.values;
-                await kbService.updateKb({
-                  kb_id,
-                  name,
-                  description,
-                  parser_id,
-                  parser_config,
-                });
-              } catch (e) {
-                console.log(e);
-              } finally {
-              }
-            })();
-          }}
-        >
-          {t('common.submit')}
-        </Button>
-      </div>
-    </>
+    <section className="overflow-auto max-h-[76vh]">
+      <ConfigurationComponent></ConfigurationComponent>
+    </section>
   );
 }

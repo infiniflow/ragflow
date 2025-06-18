@@ -67,6 +67,10 @@ export function SliderInputFormField({
                 min={min}
                 step={step}
                 {...field}
+                onChange={(ev) => {
+                  const value = ev.target.value;
+                  field.onChange(value === '' ? 0 : Number(value)); // convert to number
+                }}
                 // defaultValue={defaultValue}
               ></Input>
             </FormControl>
