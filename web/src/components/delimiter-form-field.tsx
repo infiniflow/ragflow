@@ -44,14 +44,24 @@ export function DelimiterFormField() {
       control={form.control}
       name={'parser_config.delimiter'}
       render={({ field }) => (
-        <FormItem>
-          <FormLabel tooltip={t('knowledgeDetails.delimiterTip')}>
-            {t('knowledgeDetails.delimiter')}
-          </FormLabel>
-          <FormControl>
-            <DelimiterInput {...field}></DelimiterInput>
-          </FormControl>
-          <FormMessage />
+        <FormItem className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              tooltip={t('knowledgeDetails.delimiterTip')}
+              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+            >
+              {t('knowledgeDetails.delimiter')}
+            </FormLabel>
+            <div className="w-3/4">
+              <FormControl>
+                <DelimiterInput {...field}></DelimiterInput>
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
         </FormItem>
       )}
     />

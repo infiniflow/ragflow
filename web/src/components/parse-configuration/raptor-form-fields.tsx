@@ -73,19 +73,31 @@ const RaptorFormFields = () => {
         control={form.control}
         name={UseRaptorField}
         render={({ field }) => (
-          <FormItem>
-            <FormLabel tooltip={t('useRaptorTip')}>{t('useRaptor')}</FormLabel>
-            <FormControl>
-              <Switch
-                checked={raptorValue}
-                onCheckedChange={(ev) => {
-                  setManual(true);
-                  setRaptorValue(ev);
-                  field.onChange(ev);
-                }}
-              ></Switch>
-            </FormControl>
-            <FormMessage />
+          <FormItem className=" items-center space-y-0 ">
+            <div className="flex items-center">
+              <FormLabel
+                className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                tooltip={t('useRaptorTip')}
+              >
+                {t('useRaptor')}
+              </FormLabel>
+              <div className="w-3/4">
+                <FormControl>
+                  <Switch
+                    checked={raptorValue}
+                    onCheckedChange={(ev) => {
+                      setManual(true);
+                      setRaptorValue(ev);
+                      field.onChange(ev);
+                    }}
+                  ></Switch>
+                </FormControl>
+              </div>
+            </div>
+            <div className="flex pt-1">
+              <div className="w-1/4"></div>
+              <FormMessage />
+            </div>
           </FormItem>
         )}
       />
@@ -95,15 +107,25 @@ const RaptorFormFields = () => {
             control={form.control}
             name={'parser_config.raptor.prompt'}
             render={({ field }) => (
-              <FormItem>
-                <FormLabel tooltip={t('promptTip')}>
-                  <span className="text-red-600">*</span>
-                  {t('prompt')}
-                </FormLabel>
-                <FormControl>
-                  <Textarea {...field} rows={8} />
-                </FormControl>
-                <FormMessage />
+              <FormItem className=" items-center space-y-0 ">
+                <div className="flex items-start">
+                  <FormLabel
+                    tooltip={t('promptTip')}
+                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                  >
+                    <span className="text-red-600">*</span>
+                    {t('prompt')}
+                  </FormLabel>
+                  <div className="w-3/4">
+                    <FormControl>
+                      <Textarea {...field} rows={8} />
+                    </FormControl>
+                  </div>
+                </div>
+                <div className="flex pt-1">
+                  <div className="w-1/4"></div>
+                  <FormMessage />
+                </div>
               </FormItem>
             )}
           />
@@ -136,21 +158,30 @@ const RaptorFormFields = () => {
             control={form.control}
             name={'parser_config.raptor.random_seed'}
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('randomSeed')}</FormLabel>
-                <FormControl defaultValue={0}>
-                  <div className="flex gap-4">
-                    <Input {...field} />
-                    <Button
-                      size={'sm'}
-                      onClick={handleGenerate}
-                      type={'button'}
-                    >
-                      <Plus />
-                    </Button>
+              <FormItem className=" items-center space-y-0 ">
+                <div className="flex items-center">
+                  <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
+                    {t('randomSeed')}
+                  </FormLabel>
+                  <div className="w-3/4">
+                    <FormControl defaultValue={0}>
+                      <div className="flex gap-4">
+                        <Input {...field} />
+                        <Button
+                          size={'sm'}
+                          onClick={handleGenerate}
+                          type={'button'}
+                        >
+                          <Plus />
+                        </Button>
+                      </div>
+                    </FormControl>
                   </div>
-                </FormControl>
-                <FormMessage />
+                </div>
+                <div className="flex pt-1">
+                  <div className="w-1/4"></div>
+                  <FormMessage />
+                </div>
               </FormItem>
             )}
           />

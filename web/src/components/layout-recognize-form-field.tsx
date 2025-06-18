@@ -55,14 +55,24 @@ export function LayoutRecognizeFormField() {
       control={form.control}
       name="parser_config.layout_recognize"
       render={({ field }) => (
-        <FormItem>
-          <FormLabel tooltip={t('layoutRecognizeTip')}>
-            {t('layoutRecognize')}
-          </FormLabel>
-          <FormControl>
-            <RAGFlowSelect {...field} options={options}></RAGFlowSelect>
-          </FormControl>
-          <FormMessage />
+        <FormItem className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              tooltip={t('layoutRecognizeTip')}
+              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+            >
+              {t('layoutRecognize')}
+            </FormLabel>
+            <div className="w-3/4">
+              <FormControl>
+                <RAGFlowSelect {...field} options={options}></RAGFlowSelect>
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
         </FormItem>
       )}
     />
