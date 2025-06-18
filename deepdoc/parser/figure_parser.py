@@ -21,7 +21,7 @@ from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
 from rag.prompts import vision_llm_figure_describe_prompt
 
 
-def vision_figure_parser_figure_data_wraper(figures_data_without_positions):
+def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
     return [
         (
             (figure_data[1], [figure_data[0]]),

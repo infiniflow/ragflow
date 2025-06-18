@@ -84,14 +84,14 @@ def init_superuser():
         {"role": "user", "content": "Hello!"}], gen_conf={})
     if msg.find("ERROR: ") == 0:
         logging.error(
-            "'{}' dosen't work. {}".format(
+            "'{}' doesn't work. {}".format(
                 tenant["llm_id"],
                 msg))
     embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
     v, c = embd_mdl.encode(["Hello!"])
     if c == 0:
         logging.error(
-            "'{}' dosen't work!".format(
+            "'{}' doesn't work!".format(
                 tenant["embd_id"]))
 
 

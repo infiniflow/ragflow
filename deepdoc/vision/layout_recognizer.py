@@ -106,7 +106,7 @@ class LayoutRecognizer(Recognizer):
                         bxs.pop(i)
                         continue
 
-                    ii = self.find_overlapped_with_threashold(bxs[i], lts_,
+                    ii = self.find_overlapped_with_threshold(bxs[i], lts_,
                                                               thr=0.4)
                     if ii is None:  # belong to nothing
                         bxs[i]["layout_type"] = ""
