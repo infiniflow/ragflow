@@ -78,6 +78,11 @@ class Template(ComponentBase):
                     if p["key"] == key:
                         value = p.get("value", "")
                         self.make_kwargs(para, kwargs, value)
+
+                        origin_pattern = "{begin@" + key + "}"
+                        new_pattern = "begin_" + key
+                        content = content.replace(origin_pattern, new_pattern)
+                        kwargs[new_pattern] = kwargs.pop(origin_pattern, "")
                         break
                 else:
                     assert False, f"Can't find parameter '{key}' for {cpn_id}"
@@ -92,6 +97,12 @@ class Template(ComponentBase):
                 else:
                     hist = ""
                 self.make_kwargs(para, kwargs, hist)
+
+                if ":" in component_id:
+                    origin_pattern = "{" + component_id + "}"
+                    new_pattern = component_id.replace(":", "_")
+                    content = content.replace(origin_pattern, new_pattern)
+                    kwargs[new_pattern] = kwargs.pop(component_id, "")
                 continue
 
             _, out = cpn.output(allow_partial=False)
