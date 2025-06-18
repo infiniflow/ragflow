@@ -43,6 +43,7 @@ import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
+import { ToolNode } from './node/tool-node';
 
 const nodeTypes: NodeTypes = {
   ragNode: RagNode,
@@ -63,6 +64,7 @@ const nodeTypes: NodeTypes = {
   group: IterationNode,
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
+  toolNode: ToolNode,
 };
 
 const edgeTypes = {
