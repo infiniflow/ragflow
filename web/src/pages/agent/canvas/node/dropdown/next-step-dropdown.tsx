@@ -30,8 +30,8 @@ function OperatorItemList({ operators }: OperatorItemProps) {
             key={x}
             className="hover:bg-background-card py-1 px-3 cursor-pointer rounded-sm flex gap-2 items-center justify-start"
             onClick={addCanvasNode(x, {
-              id: nodeId,
-              sourceHandle: id,
+              nodeId,
+              id,
               position,
             })}
           >

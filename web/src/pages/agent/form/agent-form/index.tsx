@@ -112,7 +112,7 @@ const AgentForm = ({ node }: INextOperatorForm) => {
         </FormContainer>
         <BlockButton
           onClick={addCanvasNode(Operator.Agent, {
-            id: node?.id,
+            nodeId: node?.id,
             position: Position.Bottom,
           })}
         >
