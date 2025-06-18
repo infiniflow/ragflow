@@ -806,22 +806,34 @@ class Search(DataBaseModel):
     name = CharField(max_length=128, null=False, help_text="Search name", index=True)
     description = TextField(null=True, help_text="KB description")
     created_by = CharField(max_length=32, null=False, index=True)
-    search_config = JSONField(null=False, default={
-        "kb_ids":[],
-        "doc_ids": [],
-        "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
-        "use_kg": False,
-        "top_k": 1024,
-        "cross_languages": [],
-        "rerank_id": "",
-        "highlight": False,
-        "keyword": False,
-        "summary": False,
-        "web_search": False,
-        "related_search": False,
-        "query_mindmap": False,
-        })
+    search_config = JSONField(
+        null=False,
+        default={
+            "kb_ids": [],
+            "doc_ids": [],
+            "similarity_threshold": 0.0,
+            "vector_similarity_weight": 0.3,
+            "use_kg": False,
+            # rerank settings
+            "rerank_id": "",
+            "top_k": 1024,
+            # chat settings
+            "summary": False,
+            "chat_id": "",
+            "llm_setting": {
+                "temperature": 0.1,
+                "top_p": 0.3,
+                "frequency_penalty": 0.7,
+                "presence_penalty": 0.4,
+            },
+            "chat_settingcross_languages": [],
+            "highlight": False,
+            "keyword": False,
+            "web_search": False,
+            "related_search": False,
+            "query_mindmap": False,
+        },
+    )
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
