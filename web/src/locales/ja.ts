@@ -453,6 +453,7 @@ export default {
     },
     setting: {
       profile: 'プロファイル',
+      avatar: 'アバター‌',
       profileDescription: 'ここで写真と個人情報を更新してください。',
       maxTokens: '最大トークン数',
       maxTokensMessage: '最大トークン数は必須です',
