@@ -28,7 +28,6 @@ Alternatively, to comply with [OAuth 2.1 Section 5](https://datatracker.ietf.org
 async with sse_client("http://localhost:9382/sse", headers={"Authorization": "YOUR_KEY_HERE"}) as streams:
     # Rest of your code...
 ```
-
 :::
 
 ## Use curl to interact with the RAGFlow MCP server
@@ -239,4 +238,3 @@ curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
   }'
 
 ```
-

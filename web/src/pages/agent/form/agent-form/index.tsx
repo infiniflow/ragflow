@@ -11,6 +11,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { Position } from '@xyflow/react';
 import { useContext, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -20,7 +21,8 @@ import { AgentInstanceContext } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
-import { useValues } from './use-values';
+import { ToolPopover } from './tool-popover';
+import { useToolOptions, useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
 const FormSchema = z.object({
@@ -64,6 +66,8 @@ const AgentForm = ({ node }: INextOperatorForm) => {
   useWatchFormChange(node?.id, form);
 
   const { addCanvasNode } = useContext(AgentInstanceContext);
+
+  const toolOptions = useToolOptions();
 
   return (
     <Form {...form}>
@@ -109,7 +113,15 @@ const AgentForm = ({ node }: INextOperatorForm) => {
             )}
           />
         </FormContainer>
-        <BlockButton onClick={addCanvasNode(Operator.Agent, node?.id)}>
+        <ToolPopover>
+          <BlockButton>Add Tool</BlockButton>
+        </ToolPopover>
+        <BlockButton
+          onClick={addCanvasNode(Operator.Agent, {
+            nodeId: node?.id,
+            position: Position.Bottom,
+          })}
+        >
           Add Agent
         </BlockButton>
         <Output list={outputList}></Output>

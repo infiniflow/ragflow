@@ -8,7 +8,7 @@ export function NodeWrapper({
   return (
     <section
       className={cn(
-        'bg-background-header-bar p-2.5 rounded-md w-[200px]',
+        'bg-background-header-bar p-2.5 rounded-md w-[200px] text-xs',
         className,
       )}
     >

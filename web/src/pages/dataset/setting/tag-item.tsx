@@ -38,31 +38,39 @@ export const TagSetItem = () => {
       control={form.control}
       name="parser_config.tag_kb_ids"
       render={({ field }) => (
-        <FormItem>
-          <FormLabel
-            tooltip={
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(
-                    t('knowledgeConfiguration.tagSetTip'),
-                  ),
-                }}
-              ></div>
-            }
-          >
-            {t('knowledgeConfiguration.tagSet')}
-          </FormLabel>
-          <FormControl>
-            <MultiSelect
-              options={knowledgeOptions}
-              onValueChange={field.onChange}
-              placeholder={t('chat.knowledgeBasesMessage')}
-              variant="inverted"
-              maxCount={0}
-              {...field}
-            />
-          </FormControl>
-          <FormMessage />
+        <FormItem className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+              tooltip={
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(
+                      t('knowledgeConfiguration.tagSetTip'),
+                    ),
+                  }}
+                ></div>
+              }
+            >
+              {t('knowledgeConfiguration.tagSet')}
+            </FormLabel>
+            <div className="w-3/4">
+              <FormControl>
+                <MultiSelect
+                  options={knowledgeOptions}
+                  onValueChange={field.onChange}
+                  placeholder={t('chat.knowledgeBasesMessage')}
+                  variant="inverted"
+                  maxCount={0}
+                  {...field}
+                />
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
         </FormItem>
       )}
     />

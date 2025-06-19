@@ -5,6 +5,7 @@ import { SideBar } from './sidebar';
 
 export default function DatasetWrapper() {
   const { navigateToDatasetList } = useNavigatePage();
+
   return (
     <section>
       <PageHeader
