@@ -10,13 +10,12 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import kbService from '@/services/knowledge-service';
+import { useUpdateKnowledge } from '@/hooks/knowledge-hooks';
 import { transformFile2Base64 } from '@/utils/file-util';
 import { Loader2Icon, Pencil, Upload } from 'lucide-react';
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 import SettingContext from '../data-set-context';
 
 export function GeneralForm() {
@@ -26,9 +25,15 @@ export function GeneralForm() {
   const { t } = useTranslation();
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
-  const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
+  // const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
 
-  const defaultValues = form.formState.defaultValues ?? {};
+  const { saveKnowledgeConfiguration, loading: submitLoading } =
+    useUpdateKnowledge();
+
+  const defaultValues = useMemo(
+    () => form.formState.defaultValues ?? {},
+    [form.formState.defaultValues],
+  );
   const parser_id = defaultValues['parser_id'];
 
   // init avatar file if it exists in defaultValues
@@ -39,7 +44,7 @@ export function GeneralForm() {
         setAvatarBase64Str(avatarList[0].thumbUrl);
       }
     }
-  });
+  }, [avatarFile, defaultValues]);
 
   // input[type=file] on change event, get img base64
   useEffect(() => {
@@ -219,34 +224,14 @@ export function GeneralForm() {
               const avatar = avatarBase64Str;
 
               if (isValidate) {
-                setSubmitLoading(true);
-                try {
-                  let {
-                    data: { code, message },
-                  } = await kbService.updateKb({
-                    kb_id,
-                    parser_id,
-                    name,
-                    description,
-                    permission,
-                    avatar,
-                  });
-
-                  if (0 === code) {
-                    toast.success('', {
-                      description: message,
-                    });
-                  } else {
-                    toast.error('', {
-                      description: message,
-                    });
-                  }
-                } catch (e) {
-                  console.log(e);
-                } finally {
-                  setSubmitLoading(false);
-                  setRefreshCount();
-                }
+                saveKnowledgeConfiguration({
+                  kb_id,
+                  parser_id,
+                  name,
+                  description,
+                  permission,
+                  avatar,
+                });
               }
             })();
           }}

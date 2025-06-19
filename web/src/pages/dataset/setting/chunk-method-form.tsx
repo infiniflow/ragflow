@@ -4,9 +4,8 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { DocumentParserType } from '@/constants/knowledge';
-import kbService from '@/services/knowledge-service';
-import { useContext, useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import { useUpdateKnowledge } from '@/hooks/knowledge-hooks';
+import { useContext, useMemo } from 'react';
 import SettingContext from '../data-set-context';
 import { AudioConfiguration } from './configuration/audio';
 import { BookConfiguration } from './configuration/book';
@@ -50,7 +49,10 @@ export function ChunkMethodForm() {
   const form = useFormContext();
   const { t } = useTranslation();
   const { kb_id } = useContext(SettingContext);
-  const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
+  // const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
+
+  const { saveKnowledgeConfiguration, loading: submitLoading } =
+    useUpdateKnowledge();
 
   const finalParserId: DocumentParserType = useWatch({
     control: form.control,
@@ -77,29 +79,19 @@ export function ChunkMethodForm() {
                 let beValid = await form.formControl.trigger();
                 console.log('user chunk form: ', form);
                 if (beValid) {
-                  setSubmitLoading(true);
+                  // setSubmitLoading(true);
                   let postData = form.formState.values;
                   delete postData['avatar']; // has submitted in first form general
-                  let {
-                    data: { code, message },
-                  } = await kbService.updateKb({
+
+                  saveKnowledgeConfiguration({
                     ...postData,
                     kb_id,
                   });
-                  if (0 === code) {
-                    toast.success('', {
-                      description: message,
-                    });
-                  } else {
-                    toast.error('', {
-                      description: message,
-                    });
-                  }
                 }
               } catch (e) {
                 console.log(e);
               } finally {
-                setSubmitLoading(false);
+                // setSubmitLoading(false);
               }
             })();
           }}
