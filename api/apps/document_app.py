@@ -199,7 +199,10 @@ def list_docs():
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
     orderby = request.args.get("orderby", "create_time")
-    desc = request.args.get("desc", True)
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
 
     req = request.get_json()
 
