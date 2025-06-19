@@ -139,6 +139,29 @@ export interface ICodeForm {
   script?: string;
 }
 
+export interface IAgentForm {
+  sys_prompt: string;
+  prompts: Array<{
+    role: string;
+    content: string;
+  }>;
+  max_retries: number;
+  delay_after_error: number;
+  visual_files_var: string;
+  max_rounds: number;
+  exception_method: Nullable<'comment' | 'go'>;
+  exception_comment: any;
+  exception_goto: any;
+  tools: Array<{
+    component_name: string;
+    params: Record<string, any>;
+  }>;
+  outputs: {
+    structured_output: Record<string, Record<string, any>>;
+    content: Record<string, any>;
+  };
+}
+
 export type BaseNodeData<TForm extends any> = {
   label: string; // operator type
   name: string; // operator name
@@ -167,7 +190,7 @@ export type IIterationStartNode = BaseNode;
 export type IKeywordNode = BaseNode;
 export type ICodeNode = BaseNode<ICodeForm>;
 export type IAgentNode = BaseNode;
-export type IToolNode = BaseNode;
+export type IToolNode = BaseNode<IAgentForm>;
 
 export type RAGFlowNodeType =
   | IBeginNode
