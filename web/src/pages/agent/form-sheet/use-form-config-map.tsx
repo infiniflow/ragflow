@@ -34,6 +34,7 @@ import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SwitchForm from '../form/switch-form';
 import TemplateForm from '../form/template-form';
+import ToolForm from '../form/tool-form';
 import TuShareForm from '../form/tushare-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
@@ -366,6 +367,11 @@ export function useFormConfigMap() {
     },
     [Operator.IterationStart]: {
       component: () => <></>,
+      defaultValues: {},
+      schema: z.object({}),
+    },
+    [Operator.Tool]: {
+      component: ToolForm,
       defaultValues: {},
       schema: z.object({}),
     },
