@@ -23,6 +23,9 @@ async def main():
     try:
         # To access RAGFlow server in `host` mode, you need to attach `api_key` for each request to indicate identification.
         # async with sse_client("http://localhost:9382/sse", headers={"api_key": "ragflow-IyMGI1ZDhjMTA2ZTExZjBiYTMyMGQ4Zm"}) as streams:
+        # Or follow the requirements of OAuth 2.1 Section 5 with Authorization header
+        # async with sse_client("http://localhost:9382/sse", headers={"Authorization": "Bearer ragflow-IyMGI1ZDhjMTA2ZTExZjBiYTMyMGQ4Zm"}) as streams:
+
         async with sse_client("http://localhost:9382/sse") as streams:
             async with ClientSession(
                 streams[0],

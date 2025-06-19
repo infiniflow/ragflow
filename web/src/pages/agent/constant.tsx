@@ -84,6 +84,7 @@ export enum Operator {
   Code = 'Code',
   WaitingDialogue = 'WaitingDialogue',
   Agent = 'Agent',
+  Tool = 'Tool',
 }
 
 export const SwitchLogicOperatorOptions = ['and', 'or'];
@@ -809,6 +810,7 @@ export const NodeMap = {
   [Operator.Code]: 'ragNode',
   [Operator.WaitingDialogue]: 'ragNode',
   [Operator.Agent]: 'agentNode',
+  [Operator.Tool]: 'toolNode',
 };
 
 export const LanguageOptions = [
@@ -3008,3 +3010,9 @@ export const NoDebugOperatorsList = [
   Operator.Switch,
   Operator.Iteration,
 ];
+
+export enum NodeHandleId {
+  Start = 'start',
+  End = 'end',
+  Tool = 'tool',
+}

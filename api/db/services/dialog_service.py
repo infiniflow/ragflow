@@ -159,6 +159,7 @@ BAD_CITATION_PATTERNS = [
     re.compile(r"ref\s*(\d+)", flags=re.IGNORECASE),  # ref12、REF 12
 ]
 
+
 def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
     max_index = len(kbinfos["chunks"])
 
@@ -555,7 +556,7 @@ def tts(tts_mdl, text):
     return binascii.hexlify(bin).decode("utf-8")
 
 
-def ask(question, kb_ids, tenant_id):
+def ask(question, kb_ids, tenant_id, chat_llm_name=None):
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
@@ -563,7 +564,7 @@ def ask(question, kb_ids, tenant_id):
     retriever = settings.retrievaler if not is_knowledge_graph else settings.kg_retrievaler
 
     embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_list[0])
-    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
+    chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_llm_name)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
     kbinfos = retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids, 1, 12, 0.1, 0.3, aggs=False, rank_feature=label_question(question, kbs))
