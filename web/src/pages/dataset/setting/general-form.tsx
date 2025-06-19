@@ -13,14 +13,11 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useUpdateKnowledge } from '@/hooks/knowledge-hooks';
 import { transformFile2Base64 } from '@/utils/file-util';
 import { Loader2Icon, Pencil, Upload } from 'lucide-react';
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import SettingContext from '../data-set-context';
 
 export function GeneralForm() {
-  const { setRefreshCount, kb_id } = useContext(SettingContext);
-
   const form = useFormContext();
   const { t } = useTranslation();
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -222,6 +219,7 @@ export function GeneralForm() {
               // console.log(isValidate);
               const { name, description, permission } = form.formState.values;
               const avatar = avatarBase64Str;
+              let [, kb_id] = location.pathname.match(/\/([^/]+)$/)!;
 
               if (isValidate) {
                 saveKnowledgeConfiguration({
