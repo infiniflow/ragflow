@@ -75,6 +75,7 @@ export type RFState = {
   generateNodeName: (name: string) => string;
   setClickedNodeId: (id?: string) => void;
   setClickedToolId: (id?: string) => void;
+  findUpstreamNodeById: (id?: string | null) => RAGFlowNodeType | undefined;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -470,6 +471,11 @@ const useGraphStore = create<RFState>()(
       },
       setClickedToolId: (id?: string) => {
         set({ clickedToolId: id });
+      },
+      findUpstreamNodeById: (id) => {
+        const { edges, getNode } = get();
+        const edge = edges.find((x) => x.target === id);
+        return getNode(edge?.source);
       },
     })),
     { name: 'graph', trace: true },
