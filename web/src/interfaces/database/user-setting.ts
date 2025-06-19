@@ -16,6 +16,7 @@ export interface IUserInfo {
   nickname: string;
   password: string;
   status: string;
+  timezone: string;
   update_date: string;
   update_time: number;
 }

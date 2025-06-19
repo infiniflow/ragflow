@@ -232,7 +232,8 @@ export default {
       cancel: '取消',
       methodTitle: '分块方法说明',
       methodExamples: '示例',
-      methodExamplesDescription: '为帮助您更好地理解，我们提供了相关截图供您参考。',
+      methodExamplesDescription:
+        '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
       book: `<p>支持的文件格式为<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
@@ -554,6 +555,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
     },
     setting: {
       profile: '概要',
+      avatar: '头像',
       profileDescription: '在此更新您的照片和个人详细信息。',
       maxTokens: '最大token数',
       maxTokensMessage: '最大token数是必填项',

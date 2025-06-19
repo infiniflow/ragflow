@@ -74,7 +74,7 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
   };
 
   return (
-    <div>
+    <div className="flex gap-[8px] items-start">
       {Array.isArray(tagChild) && tagChild.length > 0 && (
         <TweenOneGroup
           className={styles.tweenGroup}
@@ -96,19 +96,23 @@ const EditTag = ({ value = [], onChange }: EditTagsProps) => {
         </TweenOneGroup>
       )}
       {inputVisible ? (
-        <Input
-          ref={inputRef}
-          type="text"
-          size="small"
-          value={inputValue}
-          onChange={handleInputChange}
-          onBlur={handleInputConfirm}
-          onPressEnter={handleInputConfirm}
-        />
+        <div className="w-[180px] mb-[8px]">
+          <Input
+            ref={inputRef}
+            type="text"
+            size="small"
+            value={inputValue}
+            onChange={handleInputChange}
+            onBlur={handleInputConfirm}
+            onPressEnter={handleInputConfirm}
+          />
+        </div>
       ) : (
-        <Tag onClick={showInput} style={tagPlusStyle}>
-          <PlusOutlined />
-        </Tag>
+        <div className="mb-[8px]">
+          <Tag onClick={showInput} style={tagPlusStyle}>
+            <PlusOutlined />
+          </Tag>
+        </div>
       )}
     </div>
   );

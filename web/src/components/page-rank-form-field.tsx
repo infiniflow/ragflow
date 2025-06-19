@@ -11,7 +11,7 @@ export function PageRankFormField() {
       tooltip={t('pageRankTip')}
       defaultValue={0}
       max={100}
-      min={1}
+      min={0}
     ></SliderInputFormField>
   );
 }

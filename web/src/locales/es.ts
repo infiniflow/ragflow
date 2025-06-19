@@ -282,6 +282,7 @@ export default {
     },
     setting: {
       profile: 'Perfil',
+      avatar: 'Avatar',
       profileDescription: 'Actualiza tu foto y tus datos personales aquí.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'El máximo de tokens es obligatorio',

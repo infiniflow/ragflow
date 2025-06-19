@@ -456,6 +456,7 @@ export default {
     },
     setting: {
       profile: 'Profil',
+      avatar: 'Avatar',
       profileDescription: 'Perbarui foto dan detail pribadi Anda di sini.',
       maxTokens: 'Token Maksimum',
       maxTokensMessage: 'Token Maksimum diperlukan',
