@@ -46,7 +46,7 @@ For more information about this initialization process, see [here](https://model
 
 In the following sections, we will walk you through a complete tool calling process.
 
-### 1. Get a session ID
+### 1. Obtain a session ID
 
 Each curl request with the MCP server must include a session ID:
 
@@ -101,8 +101,6 @@ _The server replies with an `initialize` response, including the supported proto
 ```bash
 event: message
 data: {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"experimental":{"headers":{"host":"127.0.0.1:9382","user-agent":"curl/8.7.1","accept":"*/*","api_key":"ragflow-xxxxxxxxxxxx","accept-encoding":"gzip"}},"tools":{"listChanged":false}},"serverInfo":{"name":"ragflow-server","version":"1.9.4"}}}
-
-: ping - 2025-06-14 08:15:18.217575+00:00
 ```
 
 ### 3. Acknowledge readiness
