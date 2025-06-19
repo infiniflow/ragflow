@@ -45,11 +45,6 @@ const Menus = [
   },
 ];
 
-const Options = Menus.reduce<string[]>((pre, cur) => {
-  pre.push(...cur.list);
-  return pre;
-}, []);
-
 type ToolCommandProps = {
   value?: string[];
   onChange?(values: string[]): void;
@@ -57,7 +52,6 @@ type ToolCommandProps = {
 
 export function ToolCommand({ value, onChange }: ToolCommandProps) {
   const [currentValue, setCurrentValue] = useState<string[]>([]);
-  console.log('🚀 ~ ToolCommand ~ currentValue:', currentValue);
 
   const toggleOption = useCallback(
     (option: string) => {
