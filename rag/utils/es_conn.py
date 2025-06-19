@@ -483,6 +483,9 @@ class ESConnection(DocStoreConnection):
                 if isinstance(v, list):
                     m[n] = v
                     continue
+                if n == "available_int" and isinstance(v, (int, float)):
+                    m[n] = v
+                    continue
                 if not isinstance(v, str):
                     m[n] = str(m[n])
                 # if n.find("tks") > 0:
