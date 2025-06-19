@@ -551,6 +551,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     },
     setting: {
       profile: 'Profile',
+      avatar: 'Avatar',
       profileDescription: 'Update your photo and personal details here.',
       maxTokens: 'Max Tokens',
       maxTokensMessage: 'Max Tokens is required',
