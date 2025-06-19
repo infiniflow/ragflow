@@ -534,6 +534,7 @@ export default {
     },
     setting: {
       profile: '概述',
+      avatar: '头像',
       profileDescription: '在此更新您的照片和個人詳細信息。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
