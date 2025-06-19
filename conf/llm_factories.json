@@ -361,6 +361,12 @@
                     "model_type": "embedding"
                 },
                 {
+                    "llm_name": "text-embedding-v4",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8192,
+                    "model_type": "embedding"
+                },
+                {
                     "llm_name": "qwen-vl-max",
                     "tags": "LLM,CHAT,IMAGE2TEXT",
                     "max_tokens": 765,
@@ -3195,6 +3201,12 @@
             "tags": "TEXT EMBEDDING, TEXT RE-RANK",
             "status": "1",
             "llm": [
+                {
+                    "llm_name": "voyage-multimodal-3",
+                    "tags": "TEXT EMBEDDING,Chat,IMAGE2TEXT,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
                 {
                     "llm_name": "voyage-large-2-instruct",
                     "tags": "TEXT EMBEDDING,16000",

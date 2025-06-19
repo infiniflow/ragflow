@@ -120,7 +120,6 @@ RAGFlow.create_dataset(
     embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
     permission: str = "me", 
     chunk_method: str = "naive",
-    pagerank: int = 0,
     parser_config: DataSet.ParserConfig = None
 ) -> DataSet
 ```
@@ -167,10 +166,6 @@ The chunking method of the dataset to create. Available options:
 - `"picture"`: Picture
 - `"one"`: One
 - `"email"`: Email
-
-##### pagerank, `int`
-
-The pagerank of the dataset to create. Defaults to `0`.
 
 ##### parser_config
 
@@ -1267,7 +1262,7 @@ The name of the chat session to create.
 - Success: A `Session` object containing the following attributes:
   - `id`: `str` The auto-generated unique identifier of the created session.
   - `name`: `str` The name of the created session.
-  - `message`: `list[Message]` The opening message of the created session. Default: `[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]`
+  - `message`: `list[Message]` The opening message of the created session. Default: `[{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]`
   - `chat_id`: `str` The ID of the associated chat assistant.
 - Failure: `Exception`
 
@@ -1527,7 +1522,7 @@ The parameters in `begin` component.
 
 - Success: A `Session` object containing the following attributes:
   - `id`: `str` The auto-generated unique identifier of the created session.
-  - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant，can I help you?"}]`
+  - `message`: `list[Message]` The messages of the created session assistant. Default: `[{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]`
   - `agent_id`: `str` The ID of the associated agent.
 - Failure: `Exception`
 

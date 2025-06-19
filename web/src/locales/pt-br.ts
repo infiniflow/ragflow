@@ -161,7 +161,7 @@ export default {
       rerankModel: 'Modelo de reranking',
       rerankPlaceholder: 'Por favor, selecione',
       rerankTip:
-        'Se deixado vazio, o RAGFlow usará uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada; se um modelo de reranking for selecionado, uma pontuação de reranking ponderada substituirá a similaridade de cosseno vetorial ponderada. Esteja ciente de que usar um modelo de reranking aumentará significativamente o tempo de resposta do sistema.',
+        'Opcional. Se deixar em branco, o RAGFlow usará uma combinação de similaridade ponderada por palavra-chave e similaridade ponderada do cosseno vetorial; se um modelo de rerank for selecionado, uma pontuação ponderada de reranking substituirá a similaridade ponderada do cosseno vetorial. Esteja ciente de que usar um modelo de rerank aumentará significativamente o tempo de resposta do sistema. Se desejar usar um modelo de rerank, certifique-se de usar um reranker SaaS; se preferir um modelo de rerank implantado localmente, certifique-se de iniciar o RAGFlow com docker-compose-gpu.yml.',
       topK: 'Top-K',
       topKTip:
         'Usado em conjunto com o Rerank model, essa configuração define o número de trechos de texto a serem enviados ao modelo reranking especificado.',
@@ -173,9 +173,9 @@ export default {
         'Use em conjunto com o método de fragmentação General. Quando desativado, arquivos de planilhas (XLSX, XLS (Excel 97-2003)) serão analisados linha por linha como pares chave-valor. Quando ativado, os arquivos de planilhas serão convertidos em tabelas HTML. Se a tabela original tiver mais de 12 linhas, o sistema dividirá automaticamente em várias tabelas HTML a cada 12 linhas. Para mais informações, consulte https://ragflow.io/docs/dev/enable_excel2html.',
       autoKeywords: 'Palavras-chave automáticas',
       autoKeywordsTip:
-        'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos.',
+        'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos. Para mais detalhes, consulte https://ragflow.io/docs/dev/autokeyword_autoquestion.',
       autoQuestions: 'Perguntas automáticas',
-      autoQuestionsTip: `Para aumentar as pontuações de classificação, extraia N perguntas para cada bloco da base de conhecimento usando o modelo de bate-papo definido em "Configurações do Modelo do Sistema". Observe que isso consome tokens extras. Os resultados podem ser visualizados e editados na lista de blocos. Erros na extração de perguntas não bloquearão o processo de fragmentação; resultados vazios serão adicionados ao bloco original.`,
+      autoQuestionsTip: `Para aumentar as pontuações de classificação, extraia N perguntas para cada bloco da base de conhecimento usando o modelo de bate-papo definido em "Configurações do Modelo do Sistema". Observe que isso consome tokens extras. Os resultados podem ser visualizados e editados na lista de blocos. Erros na extração de perguntas não bloquearão o processo de fragmentação; resultados vazios serão adicionados ao bloco original. Para mais detalhes, consulte https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       redo: 'Deseja limpar os {{chunkNum}} fragmentos existentes?',
       setMetaData: 'Definir Metadados',
       pleaseInputJson: 'Por favor, insira um JSON',
@@ -235,7 +235,7 @@ export default {
       methodTitle: 'Descrição do método de fragmentação',
       methodExamples: 'Exemplos',
       methodExamplesDescription:
-        'As capturas de tela a seguir são fornecidas para maior clareza.',
+        'Para ajudá-lo(a) a entender melhor, disponibilizamos capturas de tela relevantes para referência.',
       dialogueExamplesTitle: 'Exemplos de diálogos',
       methodEmpty:
         'Aqui será exibida uma explicação visual das categorias da base de conhecimento',

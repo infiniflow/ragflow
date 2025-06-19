@@ -1,12 +1,12 @@
 import { settledModelVariableMap } from '@/constants/knowledge';
-import { FlowFormContext } from '@/pages/agent/context';
+import { AgentFormContext } from '@/pages/agent/context';
 import useGraphStore from '@/pages/agent/store';
 import { useCallback, useContext } from 'react';
 import { useFormContext } from 'react-hook-form';
 
 export function useHandleFreedomChange() {
   const form = useFormContext();
-  const node = useContext(FlowFormContext);
+  const node = useContext(AgentFormContext);
   const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
 
   const handleChange = useCallback(

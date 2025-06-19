@@ -15,10 +15,10 @@ import React, {
 // import { shallow } from 'zustand/shallow';
 import { settledModelVariableMap } from '@/constants/knowledge';
 import { useFetchModelId } from '@/hooks/logic-hooks';
+import { ISwitchForm } from '@/interfaces/database/agent';
 import {
   ICategorizeForm,
   IRelevantForm,
-  ISwitchForm,
   RAGFlowNodeType,
 } from '@/interfaces/database/flow';
 import { message } from 'antd';
@@ -33,6 +33,7 @@ import {
   Operator,
   RestrictedUpstreamMap,
   SwitchElseTo,
+  initialAgentValues,
   initialAkShareValues,
   initialArXivValues,
   initialBaiduFanyiValues,
@@ -65,6 +66,7 @@ import {
   initialSwitchValues,
   initialTemplateValues,
   initialTuShareValues,
+  initialWaitingDialogueValues,
   initialWenCaiValues,
   initialWikipediaValues,
   initialYahooFinanceValues,
@@ -143,6 +145,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.Iteration]: initialIterationValues,
       [Operator.IterationStart]: initialIterationValues,
       [Operator.Code]: initialCodeValues,
+      [Operator.WaitingDialogue]: initialWaitingDialogueValues,
+      [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
     };
   }, [llmId]);
 
@@ -259,7 +263,7 @@ export const useHandleDrop = () => {
     [reactFlowInstance, getNodeName, nodes, initializeOperatorParams, addNode],
   );
 
-  return { onDrop, onDragOver, setReactFlowInstance };
+  return { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance };
 };
 
 export const useHandleFormValuesChange = (
@@ -539,9 +543,9 @@ export const useWatchNodeFormDataChange = () => {
         case Operator.Categorize:
           buildCategorizeEdgesByFormData(node.id, form as ICategorizeForm);
           break;
-        case Operator.Switch:
-          buildSwitchEdgesByFormData(node.id, form as ISwitchForm);
-          break;
+        // case Operator.Switch:
+        //   buildSwitchEdgesByFormData(node.id, form as ISwitchForm);
+        //   break;
         default:
           break;
       }
@@ -551,7 +555,6 @@ export const useWatchNodeFormDataChange = () => {
     buildCategorizeEdgesByFormData,
     getNode,
     buildRelevantEdgesByFormData,
-    buildSwitchEdgesByFormData,
   ]);
 };
 

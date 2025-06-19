@@ -31,7 +31,7 @@ Released on May 26, 2025.
 - [Cross-language search](./references/glossary.mdx#cross-language-search) is supported in the Knowledge and Chat modules, enhancing search accuracy and user experience in multilingual environments, such as in Chinese-English knowledge bases.
 - Agent component: A new Code component supports Python and JavaScript scripts, enabling developers to handle more complex tasks like dynamic data processing.
 - Enhanced image display: Images in Chat and Search now render directly within responses, rather than as external references. Knowledge retrieval testing can retrieve images directly, instead of texts extracted from images.
-- Claude 4 and ChatGPT o3: Developers can now use the newly released, most advanced Claude model alongside OpenAI’s latest ChatGPT o3 inference model.
+- Claude 4 and ChatGPT o3: Developers can now use the newly released, most advanced Claude model and OpenAI’s latest ChatGPT o3 inference model.
 
 > The following features are contributed by our community contributors:
 

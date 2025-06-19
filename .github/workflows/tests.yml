@@ -88,7 +88,12 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --group test --frozen && uv pip install . && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+          if [[ $GITHUB_EVENT_NAME == 'schedule' ]]; then
+            export HTTP_API_TEST_LEVEL=p3
+          else
+            export HTTP_API_TEST_LEVEL=p2
+          fi
+          UV_LINK_MODE=copy uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python && uv run --only-group test --no-default-groups pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api
 
       - name: Run frontend api tests against Elasticsearch
         run: |
@@ -98,7 +103,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
+          cd sdk/python && UV_LINK_MODE=copy uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
           
       - name: Run http api tests against Elasticsearch
         run: |
@@ -113,7 +118,7 @@ jobs:
           else
             export HTTP_API_TEST_LEVEL=p2
           fi
-          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL}
+          UV_LINK_MODE=copy uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv run --only-group test --no-default-groups pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
@@ -132,7 +137,12 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --group test --frozen && uv pip install . && source .venv/bin/activate && cd test/test_sdk_api && pytest -s --tb=short get_email.py t_dataset.py t_chat.py t_session.py t_document.py t_chunk.py
+          if [[ $GITHUB_EVENT_NAME == 'schedule' ]]; then
+            export HTTP_API_TEST_LEVEL=p3
+          else
+            export HTTP_API_TEST_LEVEL=p2
+          fi
+          UV_LINK_MODE=copy uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python && DOC_ENGINE=infinity uv run --only-group test --no-default-groups pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api
 
       - name: Run frontend api tests against Infinity
         run: |
@@ -142,7 +152,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
+          cd sdk/python && UV_LINK_MODE=copy uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_frontend_api && pytest -s --tb=short get_email.py test_dataset.py
 
       - name: Run http api tests against Infinity
         run: |
@@ -157,7 +167,7 @@ jobs:
           else
             export HTTP_API_TEST_LEVEL=p2
           fi
-          cd sdk/python && uv sync --python 3.10 --group test --frozen && source .venv/bin/activate && cd test/test_http_api && DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL}
+          UV_LINK_MODE=copy uv sync --python 3.10 --only-group test --no-default-groups --frozen && DOC_ENGINE=infinity uv run --only-group test --no-default-groups pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
