@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { DocumentParserType } from '@/constants/knowledge';
 import { useUpdateKnowledge } from '@/hooks/knowledge-hooks';
 import { useMemo } from 'react';
+import { useParams } from 'umi';
 import { AudioConfiguration } from './configuration/audio';
 import { BookConfiguration } from './configuration/book';
 import { EmailConfiguration } from './configuration/email';
@@ -48,6 +49,7 @@ export function ChunkMethodForm() {
   const form = useFormContext();
   const { t } = useTranslation();
   // const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
+  const { id: kb_id } = useParams();
 
   const { saveKnowledgeConfiguration, loading: submitLoading } =
     useUpdateKnowledge();
@@ -76,7 +78,7 @@ export function ChunkMethodForm() {
               try {
                 let beValid = await form.formControl.trigger();
                 console.log('user chunk form: ', form);
-                let [, kb_id] = location.pathname.match(/\/([^/]+)$/)!;
+
                 if (beValid) {
                   // setSubmitLoading(true);
                   let postData = form.formState.values;

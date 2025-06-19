@@ -16,6 +16,7 @@ import { Loader2Icon, Pencil, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'umi';
 
 export function GeneralForm() {
   const form = useFormContext();
@@ -32,6 +33,7 @@ export function GeneralForm() {
     [form.formState.defaultValues],
   );
   const parser_id = defaultValues['parser_id'];
+  const { id: kb_id } = useParams();
 
   // init avatar file if it exists in defaultValues
   useEffect(() => {
@@ -219,7 +221,6 @@ export function GeneralForm() {
               // console.log(isValidate);
               const { name, description, permission } = form.formState.values;
               const avatar = avatarBase64Str;
-              let [, kb_id] = location.pathname.match(/\/([^/]+)$/)!;
 
               if (isValidate) {
                 saveKnowledgeConfiguration({
