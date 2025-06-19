@@ -3,12 +3,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { IAgentForm } from '@/interfaces/database/agent';
 import { Operator } from '@/pages/agent/constant';
 import { AgentFormContext, AgentInstanceContext } from '@/pages/agent/context';
 import { Position } from '@xyflow/react';
-import { get } from 'lodash';
-import { PropsWithChildren, useCallback, useContext, useMemo } from 'react';
+import { PropsWithChildren, useCallback, useContext } from 'react';
+import { useDeleteToolNode } from '../use-delete-tool-node';
+import { useGetAgentToolNames } from '../use-get-tools';
 import { ToolCommand } from './tool-command';
 import { useUpdateAgentNodeTools } from './use-update-tools';
 
@@ -16,23 +16,24 @@ export function ToolPopover({ children }: PropsWithChildren) {
   const { addCanvasNode } = useContext(AgentInstanceContext);
   const node = useContext(AgentFormContext);
   const { updateNodeTools } = useUpdateAgentNodeTools();
-
-  const toolNames = useMemo(() => {
-    const tools: IAgentForm['tools'] = get(node, 'data.form.tools', []);
-    return tools.map((x) => x.component_name);
-  }, [node]);
+  const { toolNames } = useGetAgentToolNames();
+  const { deleteToolNode } = useDeleteToolNode();
 
   const handleChange = useCallback(
     (value: string[]) => {
-      if (Array.isArray(value) && value.length > 0 && node?.id) {
+      if (Array.isArray(value) && node?.id) {
         updateNodeTools(value);
-        addCanvasNode(Operator.Tool, {
-          position: Position.Bottom,
-          nodeId: node?.id,
-        })();
+        if (value.length > 0) {
+          addCanvasNode(Operator.Tool, {
+            position: Position.Bottom,
+            nodeId: node?.id,
+          })();
+        } else {
+          deleteToolNode(node.id); // TODO: The tool node should be derived from the agent tools data
+        }
       }
     },
-    [addCanvasNode, node?.id, updateNodeTools],
+    [addCanvasNode, deleteToolNode, node?.id, updateNodeTools],
   );
 
   return (

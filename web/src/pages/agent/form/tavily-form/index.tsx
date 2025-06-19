@@ -15,7 +15,7 @@ import { INextOperatorForm } from '../../interface';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-const MessageForm = ({ node }: INextOperatorForm) => {
+const TavilyForm = ({ node }: INextOperatorForm) => {
   const values = useValues(node);
 
   const FormSchema = z.object({
@@ -58,4 +58,4 @@ const MessageForm = ({ node }: INextOperatorForm) => {
   );
 };
 
-export default MessageForm;
+export default TavilyForm;
