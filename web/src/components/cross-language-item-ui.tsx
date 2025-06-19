@@ -45,19 +45,4 @@ export const CrossLanguageItem = ({
       />
     </div>
   );
-
-  //   return (
-  //     <Form.Item
-  //       label={t('chat.crossLanguage')}
-  //       name={name}
-  //       tooltip={t('chat.crossLanguageTip')}
-  //     >
-  //       <AntSelect
-  //         options={options}
-  //         allowClear
-  //         placeholder={t('common.languagePlaceholder')}
-  //         mode="multiple"
-  //       />
-  //     </Form.Item>
-  //   );
 };

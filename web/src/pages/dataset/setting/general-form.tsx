@@ -16,6 +16,7 @@ import { Loader2Icon, Pencil, Upload } from 'lucide-react';
 import { useContext, useEffect, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import SettingContext from '../data-set-context';
 
 export function GeneralForm() {
@@ -27,7 +28,6 @@ export function GeneralForm() {
   const [avatarBase64Str, setAvatarBase64Str] = useState(''); // Avatar Image base64
   const [submitLoading, setSubmitLoading] = useState(false); // submit button loading
 
-  // console.log('页面***form=', form.formState.defaultValues);
   const defaultValues = form.formState.defaultValues ?? {};
   const parser_id = defaultValues['parser_id'];
 
@@ -78,22 +78,28 @@ export function GeneralForm() {
         <FormField
           control={form.control}
           name="description"
-          render={({ field }) => (
-            <FormItem className="items-center space-y-0">
-              <div className="flex">
-                <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
-                  {t('flow.description')}
-                </FormLabel>
-                <FormControl className="w-3/4">
-                  <Input {...field}></Input>
-                </FormControl>
-              </div>
-              <div className="flex pt-1">
-                <div className="w-1/4"></div>
-                <FormMessage />
-              </div>
-            </FormItem>
-          )}
+          render={({ field }) => {
+            // null initialize empty string
+            if (typeof field.value === 'object' && !field.value) {
+              form.setValue('description', '  ');
+            }
+            return (
+              <FormItem className="items-center space-y-0">
+                <div className="flex">
+                  <FormLabel className="text-sm text-muted-foreground whitespace-nowrap w-1/4">
+                    {t('flow.description')}
+                  </FormLabel>
+                  <FormControl className="w-3/4">
+                    <Input {...field}></Input>
+                  </FormControl>
+                </div>
+                <div className="flex pt-1">
+                  <div className="w-1/4"></div>
+                  <FormMessage />
+                </div>
+              </FormItem>
+            );
+          }}
         />
         <FormField
           control={form.control}
@@ -213,17 +219,11 @@ export function GeneralForm() {
               const avatar = avatarBase64Str;
 
               if (isValidate) {
-                // console.log({
-                //   kb_id,
-                //   parser_id,
-                //   name,
-                //   description,
-                //   permission,
-                //   avatar,
-                // });
                 setSubmitLoading(true);
                 try {
-                  await kbService.updateKb({
+                  let {
+                    data: { code, message },
+                  } = await kbService.updateKb({
                     kb_id,
                     parser_id,
                     name,
@@ -231,6 +231,16 @@ export function GeneralForm() {
                     permission,
                     avatar,
                   });
+
+                  if (0 === code) {
+                    toast.success('', {
+                      description: message,
+                    });
+                  } else {
+                    toast.error('', {
+                      description: message,
+                    });
+                  }
                 } catch (e) {
                   console.log(e);
                 } finally {

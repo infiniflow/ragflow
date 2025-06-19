@@ -21,6 +21,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchUserInfo, useSaveSetting } from '@/hooks/user-setting-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { rsaPsw } from '@/utils';
+import { transformFile2Base64 } from '@/utils/file-util';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TFunction } from 'i18next';
 import { Loader2Icon, Pencil, Upload } from 'lucide-react';
@@ -113,11 +114,10 @@ export default function Profile() {
 
   useEffect(() => {
     if (avatarFile) {
-      const fr = new FileReader();
-      fr.onload = () => {
-        setAvatarBase64Str(fr.result as string);
-      };
-      fr.readAsDataURL(avatarFile);
+      // make use of img compression transformFile2Base64
+      (async () => {
+        setAvatarBase64Str(await transformFile2Base64(avatarFile));
+      })();
     }
   }, [avatarFile]);
 
@@ -129,7 +129,7 @@ export default function Profile() {
     //     </pre>
     //   ),
     // });
-    console.log('data=', data);
+    // console.log('data=', data);
     // final submit form
     saveSetting({
       nickname: data.userName,

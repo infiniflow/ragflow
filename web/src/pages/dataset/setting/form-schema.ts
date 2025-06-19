@@ -17,19 +17,19 @@ export const formSchema = z.object({
       layout_recognize: z.string(),
       chunk_token_num: z.number(),
       delimiter: z.string(),
-      auto_keywords: z.number(),
-      auto_questions: z.number(),
+      auto_keywords: z.number().optional(),
+      auto_questions: z.number().optional(),
       html4excel: z.boolean(),
       tag_kb_ids: z.array(z.string()).nullish(),
       topn_tags: z.number().optional(),
       raptor: z
         .object({
-          use_raptor: z.boolean(),
-          prompt: z.string(),
-          max_token: z.number(),
-          threshold: z.number(),
-          max_cluster: z.number(),
-          random_seed: z.number(),
+          use_raptor: z.boolean().optional(),
+          prompt: z.string().optional(),
+          max_token: z.number().optional(),
+          threshold: z.number().optional(),
+          max_cluster: z.number().optional(),
+          random_seed: z.number().optional(),
         })
         .refine(
           (data) => {

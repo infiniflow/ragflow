@@ -38,7 +38,7 @@ export function SliderInputFormField({
     <FormField
       control={form.control}
       name={name}
-      defaultValue={defaultValue}
+      defaultValue={defaultValue || 0}
       render={({ field }) => (
         <FormItem className=" items-center space-y-0 ">
           <div className="flex items-center">

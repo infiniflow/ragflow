@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { DocumentParserType } from '@/constants/knowledge';
 import kbService from '@/services/knowledge-service';
 import { useContext, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import SettingContext from '../data-set-context';
 import { AudioConfiguration } from './configuration/audio';
 import { BookConfiguration } from './configuration/book';
@@ -71,16 +72,29 @@ export function ChunkMethodForm() {
         <Button
           disabled={submitLoading}
           onClick={() => {
-            // console.log('用户表单: ', form, kb_id);
             (async () => {
               try {
                 let beValid = await form.formControl.trigger();
-
+                console.log('user chunk form: ', form);
                 if (beValid) {
                   setSubmitLoading(true);
                   let postData = form.formState.values;
                   delete postData['avatar']; // has submitted in first form general
-                  await kbService.updateKb({ ...postData, kb_id });
+                  let {
+                    data: { code, message },
+                  } = await kbService.updateKb({
+                    ...postData,
+                    kb_id,
+                  });
+                  if (0 === code) {
+                    toast.success('', {
+                      description: message,
+                    });
+                  } else {
+                    toast.error('', {
+                      description: message,
+                    });
+                  }
                 }
               } catch (e) {
                 console.log(e);

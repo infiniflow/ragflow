@@ -72,34 +72,40 @@ const RaptorFormFields = () => {
       <FormField
         control={form.control}
         name={UseRaptorField}
-        render={({ field }) => (
-          <FormItem className=" items-center space-y-0 ">
-            <div className="flex items-center">
-              <FormLabel
-                className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
-                tooltip={t('useRaptorTip')}
-              >
-                {t('useRaptor')}
-              </FormLabel>
-              <div className="w-3/4">
-                <FormControl>
-                  <Switch
-                    checked={raptorValue}
-                    onCheckedChange={(ev) => {
-                      setManual(true);
-                      setRaptorValue(ev);
-                      field.onChange(ev);
-                    }}
-                  ></Switch>
-                </FormControl>
+        render={({ field }) => {
+          if (typeof field.value === 'undefined') {
+            // default value set
+            form.setValue('parser_config.raptor.use_raptor', false);
+          }
+          return (
+            <FormItem className=" items-center space-y-0 ">
+              <div className="flex items-center">
+                <FormLabel
+                  className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                  tooltip={t('useRaptorTip')}
+                >
+                  {t('useRaptor')}
+                </FormLabel>
+                <div className="w-3/4">
+                  <FormControl>
+                    <Switch
+                      checked={raptorValue}
+                      onCheckedChange={(ev) => {
+                        setManual(true);
+                        setRaptorValue(ev);
+                        field.onChange(ev);
+                      }}
+                    ></Switch>
+                  </FormControl>
+                </div>
               </div>
-            </div>
-            <div className="flex pt-1">
-              <div className="w-1/4"></div>
-              <FormMessage />
-            </div>
-          </FormItem>
-        )}
+              <div className="flex pt-1">
+                <div className="w-1/4"></div>
+                <FormMessage />
+              </div>
+            </FormItem>
+          );
+        }}
       />
       {raptorValue && (
         <div className="space-y-3">
